@@ -1,5 +1,4 @@
 #include <Formats/FormatParserSharedResources.h>
-#include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/ExpressionActions.h>
@@ -54,7 +53,7 @@ void FormatParserSharedResources::initOnce(std::function<void()> f)
         [&]
         {
             if (init_exception)
-                std::rethrow_exception(copyMutableException(init_exception));
+                std::rethrow_exception(init_exception);
 
             try
             {
@@ -62,11 +61,8 @@ void FormatParserSharedResources::initOnce(std::function<void()> f)
             }
             catch (...)
             {
-                /// See `FormatFilterInfo::initKeyConditionOnce`: keep the stored exception
-                /// an immutable template and hand each caller (including this one) a
-                /// private copy, so concurrent `addMessage` up the stack cannot race.
                 init_exception = std::current_exception();
-                std::rethrow_exception(copyMutableException(init_exception));
+                throw;
             }
         });
 }

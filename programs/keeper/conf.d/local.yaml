@@ -7,4 +7,3 @@ logger:
 keeper_server:
     log_storage_path: ./logs
     snapshot_storage_path: ./snapshots
-    data_storage_path: ./data

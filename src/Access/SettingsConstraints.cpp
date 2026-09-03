@@ -62,36 +62,6 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     return SettingSourceRestrictions(); // allows everything
 }
 
-/// Settings that are always allowed to change in readonly mode, regardless of the user profile's
-/// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
-/// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
-/// that any client must be able to set on a GET request, even when `users.xml` does not declare
-/// them as `<changeable_in_readonly/>`. Hard-coding the carve-out here (rather than shipping a
-/// new `<constraints>` block in the default `users.xml`) keeps the new server compatible with
-/// older `users.xml` files - and, importantly, lets older server versions continue to start up
-/// against the new repo `programs/server/users.xml` (the integration-test framework mounts it
-/// into backwards-compat containers, where unknown setting names in `<constraints>` would
-/// otherwise be rejected with `UNKNOWN_SETTING`).
-bool isAlwaysChangeableInReadonly(std::string_view name)
-{
-    /// HTTP routing / session.
-    if (name == "database" || name == "default_format")
-        return true;
-    /// Output format selection and response compression.
-    if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
-        return true;
-    /// Query-construction settings introduced for the HTTP "table as file" feature.
-    if (name == "select" || name == "order" || name == "sort" || name == "filter")
-        return true;
-    /// Result-shaping (LIMIT / OFFSET / paging). The query itself remains read-only.
-    if (name == "limit" || name == "offset" || name == "page")
-        return true;
-    /// FROM-less SELECT helper used by the HTTP "table as file" feature.
-    if (name == "implicit_table_at_top_level")
-        return true;
-    return false;
-}
-
 }
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
@@ -176,7 +146,7 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         }
     }
 
-    for (const auto & [other_alias, other_resolved_name] : other.settings_alias_cache)
+    for (const auto & [other_alias, other_resolved_name] : settings_alias_cache)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 }
 
@@ -251,7 +221,12 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+        });
 }
 
 void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
@@ -304,18 +279,12 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
 
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
-}
-
-void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
-{
-    /// If we filter out settings that match the current default here, `compatibility` will silently override them.
-    /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
-    std::erase_if(changes, [&](SettingChange & change)
-    {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
-    });
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION, source);
+        });
 }
 
 /// The value a setting holds now.
@@ -351,16 +320,15 @@ Field castValueOfSetting(const String & name, const Field & value)
         return SettingsT::castValueUtil(name, value);
 }
 
-/// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
-/// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
+bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
     bool has_current_value = getCurrentValueOfSetting(current_settings, change.name, current_value);
 
-    if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
-        return {};
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && change.value == current_value)
+        return false;
 
     /// Put the value into the type of the setting. This throws when the value does not fit, as
     /// `max_threads = 'abc'` does not. Callers that clamp a value instead of failing the query pass
@@ -383,28 +351,23 @@ Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange
         }
     };
 
-    Field new_value;
     if (!cast_value(change.value, new_value))
-        return {};
+        return false;
 
-    if (!ignore_unchanged_settings && has_current_value)
-    {
-        /// Compare in the type of the setting. A profile with `merge_tree_enable_block_number_column = 1`
-        /// stores a Bool, the same 1 in a query arrives as a UInt64, and comparing them as they are would
-        /// make a change that keeps the value look like a real one.
-        Field cast_current_value;
-        if (cast_value(current_value, cast_current_value) && new_value == cast_current_value)
-            return {};
-    }
+    /// Compare in the type of the setting. A profile with `merge_tree_enable_block_number_column = 1`
+    /// stores a Bool, the same 1 in a query arrives as a UInt64, and comparing them as they are would
+    /// make a change that keeps the value look like a real one.
+    Field cast_current_value;
+    if (has_current_value && cast_value(current_value, cast_current_value) && new_value == cast_current_value)
+        return false;
 
-    return new_value;
+    return true;
 }
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
-                                    SettingSource source,
-                                    bool ignore_unchanged_settings) const
+                                    SettingSource source) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -432,42 +395,26 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-
-    if (ignore_unchanged_settings)
-    {
-        /// Compare in the type of the setting, as above. Casting cannot fail here: a value the setting
-        /// cannot take is refused when it is written, both in the users configuration file and by
-        /// `CREATE SETTINGS PROFILE`.
-        Field current_value;
-        if (getCurrentValueOfSetting(current_settings, change.name, current_value)
-            && new_value == castValueOfSetting<Settings>(change.name, current_value))
-            return true;
-    }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    /// Resolve aliases upfront, mirroring the Settings overload above. Otherwise a user can
-    /// bypass a constraint declared on the canonical setting name by writing to an alias,
-    /// because the constraint lookup is a plain hashmap lookup on the (still un-resolved) name.
-    std::string_view setting_name = MergeTreeSettings::resolveName(change.name);
-
-    Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
 
     if (isAnyTierRestricted())
     {
-        if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::tryGetTierOfBuiltin(setting_name).value_or(SettingsTierType::PRODUCTION)))
+        if (auto tier_checker = getTierChecker(change.name, MergeTreeSettings::tryGetTierOfBuiltin(change.name).value_or(SettingsTierType::PRODUCTION)))
             return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
     }
 
-    return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change,
@@ -536,12 +483,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         return false;
     }
 
-    /// Track the effective value through clamping so that the disallowed-values loop below
-    /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
-    /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
-    Field effective_value = new_value;
-
-    if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
+    if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -549,10 +491,9 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
         change.value = min_value;
-        effective_value = min_value;
     }
 
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
+    if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -560,22 +501,14 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
         change.value = max_value;
-        effective_value = max_value;
     }
 
     for (const auto & value : disallowed_values)
     {
-        bool equals = equals_or_cannot_compare(value, effective_value);
+        bool equals = equals_or_cannot_compare(value, new_value);
         if (equals)
-        {
-            if (reaction == THROW_ON_VIOLATION)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
-                    setting_name, applyVisitor(FieldVisitorToString(), value));
-            /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
-            /// deny-list, not a range. Drop the change and let the caller proceed with the
-            /// existing value rather than failing the query.
-            return false;
-        }
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
+                setting_name, applyVisitor(FieldVisitorToString(), value));
     }
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
@@ -630,15 +563,15 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        const bool changeable_in_readonly = (it != constraints.end()
-                && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            || isAlwaysChangeableInReadonly(resolved_name);
-        if (!changeable_in_readonly)
+        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);
     }
-    if (it == constraints.end())
-        return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
+    else // For both readonly=0 and readonly=2
+    {
+        if (it == constraints.end())
+            return Checker(Settings::resolveName); // Allowed
+    }
     return Checker(it->second, Settings::resolveName);
 }
 
@@ -647,8 +580,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 bool SettingsConstraints::isAnyTierRestricted() const
 {
     return access_control
-        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowPrivatePreviewTierSettings()
-            || !access_control->getAllowBetaTierSettings());
+        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowBetaTierSettings());
 }
 
 /// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
@@ -670,8 +602,6 @@ std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(
 
     if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
         return refuse("EXPERIMENTAL");
-    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control->getAllowPrivatePreviewTierSettings())
-        return refuse("PRIVATE PREVIEW");
     if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
         return refuse("BETA");
     return {};

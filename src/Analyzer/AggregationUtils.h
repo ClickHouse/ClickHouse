@@ -23,8 +23,7 @@ bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node);
 /** Assert that there are no aggregate function nodes in node children.
   * Do not visit subqueries.
   */
-/// `hint` is appended to the message; use it to say what to write instead.
-void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const String & hint = {});
+void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message);
 
 /** Assert that there are no GROUPING function nodes in node children.
   * Do not visit subqueries.

@@ -19,8 +19,6 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/error/en.h>
 
-#include <Common/JSONParsers/RapidJSONMemoryTrackerAllocator.h>
-
 
 namespace DB
 {
@@ -34,25 +32,15 @@ namespace ErrorCodes
 
 namespace
 {
-    /// rapidjson types whose DOM, parser stack and output buffer are all accounted against the
-    /// memory tracker, so a pathological input cannot allocate without bound (see
-    /// RapidJSONMemoryTrackerAllocator).
-    using TrackedPoolAllocator = rapidjson::MemoryPoolAllocator<RapidJSONMemoryTrackerAllocator>;
-    using TrackedValue = rapidjson::GenericValue<rapidjson::UTF8<char>, TrackedPoolAllocator>;
-    using TrackedDocument = rapidjson::GenericDocument<rapidjson::UTF8<char>, TrackedPoolAllocator, RapidJSONMemoryTrackerAllocator>;
-    using TrackedStringBuffer = rapidjson::GenericStringBuffer<rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
-    using TrackedWriter
-        = rapidjson::Writer<TrackedStringBuffer, rapidjson::UTF8<char>, rapidjson::UTF8<char>, RapidJSONMemoryTrackerAllocator>;
-
     /// Parsing is iterative (see RAPIDJSON_PARSE_DEFAULT_FLAGS above), but copying, merging and
     /// serializing a document all recurse over its tree, so a valid but deeply nested document
     /// would exhaust the thread stack. Reject such documents right after parsing; the check itself
     /// is iterative.
     constexpr size_t max_json_merge_patch_depth = 1000;
 
-    void checkJSONDepth(const TrackedValue & root)
+    void checkJSONDepth(const rapidjson::Value & root)
     {
-        VectorWithMemoryTracking<std::pair<const TrackedValue *, size_t>> to_visit;
+        VectorWithMemoryTracking<std::pair<const rapidjson::Value *, size_t>> to_visit;
         to_visit.emplace_back(&root, 1);
 
         while (!to_visit.empty())
@@ -84,7 +72,7 @@ namespace
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionJSONMergePatch final : public IFunction
+    class FunctionJSONMergePatch : public IFunction
     {
     public:
         static constexpr auto name = "JSONMergePatch";
@@ -112,18 +100,18 @@ namespace
         {
             chassert(!arguments.empty());
 
-            TrackedPoolAllocator allocator;
-            std::function<void(TrackedValue &, const TrackedValue &)> merge_objects;
+            rapidjson::Document::AllocatorType allocator;
+            std::function<void(rapidjson::Value &, const rapidjson::Value &)> merge_objects;
 
-            merge_objects = [&merge_objects, &allocator](TrackedValue & dest, const TrackedValue & src) -> void
+            merge_objects = [&merge_objects, &allocator](rapidjson::Value & dest, const rapidjson::Value & src) -> void
             {
                 if (!src.IsObject())
                     return;
 
                 for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
                 {
-                    TrackedValue key(it->name, allocator);
-                    TrackedValue value(it->value, allocator);
+                    rapidjson::Value key(it->name, allocator);
+                    rapidjson::Value value(it->value, allocator);
                     if (dest.HasMember(key))
                     {
                         if (dest[key].IsObject() && value.IsObject())
@@ -138,7 +126,7 @@ namespace
                 }
             };
 
-            auto parse_json_document = [](const ColumnString & column, TrackedDocument & document, size_t i)
+            auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
                 document.Parse(std::string{str_ref}.c_str());
@@ -160,7 +148,7 @@ namespace
             if (!first_column_arg_string)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
-            VectorWithMemoryTracking<TrackedDocument> merged_jsons;
+            std::vector<rapidjson::Document> merged_jsons;
             merged_jsons.reserve(input_rows_count);
 
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -184,7 +172,7 @@ namespace
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    TrackedDocument document(&allocator);
+                    rapidjson::Document document(&allocator);
                     if (is_const)
                         parse_json_document(*column_arg_string, document, 0);
                     else
@@ -195,11 +183,12 @@ namespace
 
             auto result = ColumnString::create();
             auto & result_string = assert_cast<ColumnString &>(*result);
+            rapidjson::CrtAllocator buffer_allocator;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                TrackedStringBuffer buffer;
-                TrackedWriter writer(buffer);
+                rapidjson::StringBuffer buffer(&buffer_allocator);
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 
                 merged_jsons[i].Accept(writer);
                 result_string.insertData(buffer.GetString(), buffer.GetSize());

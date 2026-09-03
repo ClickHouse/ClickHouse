@@ -1,7 +1,4 @@
 -- add_minmax_index_for_numeric_columns=0: Disable minmax index to not interfere with the indexHint tests. With it it would filter out more rows (correctly)
-SET use_skip_indexes_on_data_read = 1;
-SET optimize_trivial_count_query = 1;
-SET optimize_use_projections = 1;
 -- { echo }
 
 drop table if exists tbl;
@@ -42,6 +39,7 @@ CREATE TABLE XXXX (p Nullable(Int64), k Decimal(76, 39)) ENGINE = MergeTree PART
 
 INSERT INTO XXXX FORMAT Values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
 
+SELECT count() FROM XXXX WHERE indexHint(p = 1.) SETTINGS optimize_use_implicit_projections = 1, enable_analyzer=0;
 -- TODO: optimize_use_implicit_projections ignores indexHint (with analyzer) because source columns might be aliased.
 SELECT count() FROM XXXX WHERE indexHint(p = 1.) SETTINGS optimize_use_implicit_projections = 1, enable_analyzer=1;
 
