@@ -1988,8 +1988,10 @@ def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
         assert running() == "1"
 
         # Control: the same request with the genuine secret does cancel, so the check above can fail.
+        # The window is far shorter than the statement's remaining sleep, otherwise the statement
+        # ending on its own would satisfy this too.
         cancel(backend_key["key"])
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             if running() == "0":
                 break
@@ -1997,10 +1999,8 @@ def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
         else:
             raise AssertionError("the genuine secret did not cancel the statement")
 
-        try:
-            read_until_ready(timeout=5.0)
-        except Exception:
-            pass
+        # The client is told why, rather than being left to time out.
+        assert "E" in read_until_ready(timeout=10.0)
 
 
 def test_bind_portal_snapshots_statement(started_cluster):
