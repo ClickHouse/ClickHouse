@@ -99,11 +99,14 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
 TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
 {
     /// Whitespace/control in a name is still stripped rather than rejected, preserving the
-    /// historical behaviour for stored objects that are re-validated on ATTACH.
+    /// historical behaviour for stored objects that are re-validated on ATTACH. Assert the
+    /// in-place rewrite too: mutating callers send entry.name, so the stripped name is what
+    /// reaches the wire — a copy-based refactor that dropped this would be a silent regression.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-A B", "value"});
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_EQ(headers[0].name, "X-AB");
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsNameEmptyAfterNormalization)

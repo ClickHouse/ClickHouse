@@ -1091,7 +1091,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
-    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    /// reach the StorageURL ctor body. checkAndNormalizeHeaders validates and normalizes in place,
+    /// so run it on a copy and send that copy — the normalized names are what reach the wire.
     HTTPHeaderEntries headers_to_check(headers);
     context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
 
@@ -1103,7 +1104,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers_to_check, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);

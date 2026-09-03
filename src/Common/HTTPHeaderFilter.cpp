@@ -21,18 +21,21 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
     for (auto & entry : entries)
     {
+        /// Keep the user-written name for error messages: normalization mutates entry.name below.
+        const std::string reported_name = entry.name;
+
         /// Reject the characters that let a name inject or forge a header on the wire, checked on
         /// the original bytes so a caller that validates and then sends its own copy of the entries
         /// cannot emit them: CR and LF terminate the header line (request/response splitting), and
         /// ':' ends the field name, so a name like "Cookie:x" would otherwise pass this filter yet
         /// let a peer parse a forbidden "Cookie" header from it.
         if (entry.name.contains('\r') || entry.name.contains('\n') || entry.name.contains(':'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its name", entry.name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its name", reported_name);
 
         /// A bare CR or LF in a value terminates the header line, so a value carrying one could
         /// smuggle a second header into the request (request/response splitting).
         if (entry.value.contains('\n') || entry.value.contains('\r'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its value", entry.name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its value", reported_name);
 
         /// Strip the remaining whitespace and control characters from the name before the
         /// <http_forbid_headers> lookup: it canonicalises names like "Coo\tkie" so they cannot
@@ -58,7 +61,7 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
-                                                    "see <http_forbid_headers>", entry.name);
+                                                    "see <http_forbid_headers>", reported_name);
 
         /// Match the regexp against the original-case name: patterns are compiled
         /// case-insensitive by default, but an inline (?-i) scope must see the real
@@ -66,7 +69,7 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
         for (const auto & header_regex : forbidden_headers_regexp)
             if (re2::RE2::FullMatch(normalized_name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
-                                                        "see <http_forbid_headers>", entry.name);
+                                                        "see <http_forbid_headers>", reported_name);
     }
 }
 
