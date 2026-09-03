@@ -139,9 +139,8 @@ void MergingSortedAlgorithm::addInput()
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    for (size_t i = 0; i < inputs.size(); ++i)
+    for (auto & input : inputs)
     {
-        auto & input = inputs[i];
         if (!isVirtualRow(input.chunk))
             continue;
 
