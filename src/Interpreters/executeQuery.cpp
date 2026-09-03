@@ -57,6 +57,7 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -170,6 +171,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -2332,6 +2334,35 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::trino && !internal)
+        {
+            /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
+            /// the feature gate internally so users can always switch the dialect back.
+            ParserTrinoQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                end,
+                settings[Setting::allow_experimental_trino_dialect]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Settings that align the query semantics with Trino: outer joins
+            /// produce NULLs (not type defaults), set operations use the numeric
+            /// supertype (not `Variant`), and the analyzer is required - the
+            /// column alias lists (`AS t (x, y)`) and the type resolution the
+            /// translation relies on do not work without it.
+            /// They are applied to the context rather than injected into the
+            /// query text, so that they also hold for a query that carries its
+            /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
+            /// or `EXPLAIN SELECT`. An explicit `SETTINGS` clause is applied
+            /// afterwards and still wins.
+            if (!out_ast->as<ASTSetQuery>())
+            {
+                context->setSetting("join_use_nulls", true);
+                context->setSetting("use_variant_as_common_type", false);
+                context->setSetting("enable_analyzer", true);
+            }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {

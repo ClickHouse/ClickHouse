@@ -27,6 +27,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -41,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsString database;
     extern const SettingsDialect dialect;
     extern const SettingsString input_format;
@@ -238,6 +240,7 @@ void LocalConnection::sendQuery(
     state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
     state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
     state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
+    state->allow_experimental_trino_dialect = query_context->getSettingsRef()[Setting::allow_experimental_trino_dialect];
     state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
     state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
     state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
@@ -342,6 +345,8 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
+            else if (dialect == Dialect::trino)
+                parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->allow_experimental_trino_dialect);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
