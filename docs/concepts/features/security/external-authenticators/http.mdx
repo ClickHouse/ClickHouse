@@ -140,7 +140,7 @@ starts with an empty cache.
 | `allowed_role_prefix` | empty | Prefix of local role names this directory may assign; may be repeated. |
 | `default_profile` | none | Settings profile attached to every user materialized by this directory. The configured name is re-resolved on every authentication that materializes a user or reuses a cached one; if it does not resolve, the attempt fails. A cached user's profile reference is reconciled if a profile of the same name is recreated with a new identity. |
 | `networks` | any host | ClickHouse-side network restrictions (`ip`, `host`, `host_regexp`) for users of this directory. |
-| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. |
+| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. Materialized users are never evicted and `SYSTEM RELOAD USERS` does not clear them, so once the bound is reached new usernames are rejected until the server restarts. Size it for the number of distinct usernames expected over the server's uptime, or set `0`. |
 
 Unknown parameters are rejected at startup, and so is a repeated parameter: only
 `allowed_role_prefix` (and the `role` and network entries inside `allowed_roles` and
@@ -260,6 +260,11 @@ this directory whose authentication returned roles therefore fails with `NOT_IMP
 Use `SQL SECURITY INVOKER` for views. Materialized views default to `SQL SECURITY DEFINER`
 (see `default_materialized_view_sql_security`) and must be created with an explicit
 `SQL SECURITY NONE` by such users, which requires the `ALLOW_SQL_SECURITY_NONE` privilege.
+Only roles attached by the authentication trigger this rejection. With
+`distributed_ddl_use_initial_user_and_roles` enabled, an `ON CLUSTER` query executes on each
+host under the initiator's replayed roles, which do not count as authentication-scoped, so a
+`SQL SECURITY DEFINER` object is created there with a shadow user cloned from the materialized
+user, without the helper-returned roles: the object exists but has no access to its sources.
 
 ### Propagated roles {#http-external-user-directory-propagated-roles}
 
@@ -299,7 +304,14 @@ authentication server.
   same-named profile is picked up on the next authentication) or leave `default_profile`
   unset if you do not want this coupling.
 - Users found in an earlier configured access storage (for example `users.xml`) are handled
-  by that storage and never reach this directory.
+  by that storage and never reach this directory. Conversely, if `<http>` is configured
+  BEFORE the local storages, every Basic login of a locally defined user reaches this
+  directory first, so that user's name and password are sent to the external authentication
+  service on every login, and any answer other than `404` for a username the service does
+  not own fails the attempt without trying the local storage, locking that user out.
+- `allowed_roles` and `allowed_role_prefix` bound which role names the service may assign,
+  not what those roles grant: a later `GRANT` to an allowed role widens what the service can
+  hand out through it.
 - On the internal already-authenticated path (distributed/interserver queries and
   config-embedded credentials), this directory never falls through to a later storage: it
   always returns the cached user, or materializes a grant-less baseline user, regardless of
