@@ -2156,9 +2156,8 @@ static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, con
         return nullptr;
 
     /// Recurse through the types that delegate `equals` to their children, so a timezone one or more
-    /// wrappers down is just as invisible as a bare one. Rebuilding a composite drops its type
-    /// customizations (`Point` is a named `Tuple`) and a transform may pick its implementation by type
-    /// name, so each branch returns `elem_type` untouched unless a leaf timezone actually moved.
+    /// wrappers down is as invisible as a bare one. Rebuilding a composite drops its customizations
+    /// (`Point` is a named `Tuple`), so each branch returns `elem_type` untouched unless a leaf moved.
     if (elem_which.isNullable())
     {
         const DataTypePtr elem_nested = removeNullable(elem_type);
