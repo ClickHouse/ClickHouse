@@ -2402,7 +2402,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage, supporting both reads and writes.",
             .syntax = "ENGINE = DeltaLakeS3(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLake"}});
 #    endif
@@ -2440,7 +2440,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
+            .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
             .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"DeltaLake"}});
 #    endif

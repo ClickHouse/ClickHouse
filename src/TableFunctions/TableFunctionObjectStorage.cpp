@@ -2478,7 +2478,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
          {.allow_readonly = false});
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on S3.)",
             .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
@@ -2486,7 +2486,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
-         {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read and write the DeltaLake table stored on Azure object store (writes from version 26.9).)",
             .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
