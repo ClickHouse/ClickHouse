@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 30-32b of the series started in 04165_skip_index_stale_type_after_alter and continued in
+-- Cases 30-32c of the series started in 04165_skip_index_stale_type_after_alter and continued in
 -- 04869_skip_index_stale_type_absent_column: the sibling index that decides whether the mutation may
 -- record an absent column is rebuilt through something the commands do not name -- a column TTL, a
 -- `MATERIALIZE TTL`, or a `MATERIALIZED` column. The series is split across files because one test
@@ -159,7 +159,47 @@ SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '150' SETTING
 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_materialized_alias_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 32c. a bare MATERIALIZE TTL does not rebuild a sibling index through a MATERIALIZED column';
+-- Case 31 with idx_old reading a MATERIALIZED column instead of the TTL target itself.
+-- `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns the commands
+-- name, and a bare MATERIALIZE TTL names none, so idx_old is carried over here rather than rebuilt.
+DROP TABLE IF EXISTS t_sibling_materialized_ttl_only;
+CREATE TABLE t_sibling_materialized_ttl_only (
+    k UInt64,
+    d DateTime,
+    c String TTL d + INTERVAL 1 SECOND,
+    g String TTL d + INTERVAL 100 YEAR,
+    m String MATERIALIZED g,
+    INDEX idx_old (c, m) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_materialized_ttl_only SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
+ALTER TABLE t_sibling_materialized_ttl_only MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_ttl_only' AND active AND column = 'c';
+ALTER TABLE t_sibling_materialized_ttl_only MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialized_ttl_only;
+ALTER TABLE t_sibling_materialized_ttl_only MODIFY COLUMN c Nullable(UInt64);
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_sibling_materialized_ttl_only' FORMAT Null;
+ALTER TABLE t_sibling_materialized_ttl_only ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+SYSTEM START MERGES t_sibling_materialized_ttl_only;
+ALTER TABLE t_sibling_materialized_ttl_only MATERIALIZE TTL, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialized_ttl_only;
+-- Recording c at Nullable(UInt64) would let idx_old read granules built from its String values.
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_ttl_only' AND active AND column = 'c';
+SELECT count() = 64 FROM t_sibling_materialized_ttl_only WHERE g != '';
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_ttl_only';
+-- No granule is dropped anywhere in the plan: idx_old refuses instead of pruning stale granules.
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') NOT IN ('', '16/16');
+SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150;
+SELECT count() FROM t_sibling_materialized_ttl_only WHERE c = 150 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_sibling_ttl_rebuilt;
 DROP TABLE t_sibling_materialize_ttl_rebuilt;
 DROP TABLE t_sibling_materialized_rebuilt;
 DROP TABLE t_sibling_materialized_alias_rebuilt;
+DROP TABLE t_sibling_materialized_ttl_only;

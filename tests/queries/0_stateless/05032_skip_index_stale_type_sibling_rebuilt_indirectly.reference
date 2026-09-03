@@ -43,3 +43,11 @@
 0
 64
 64
+-- 32c. a bare MATERIALIZE TTL does not rebuild a sibling index through a MATERIALIZED column
+1
+1
+1
+2
+1
+0
+0

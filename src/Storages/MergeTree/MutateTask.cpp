@@ -290,15 +290,25 @@ static NameSet collectIndicesRebuiltByMutation(
     /// Exactly the set `MutationsInterpreter` derives from the same commands. A wider one here would
     /// claim a rebuild it does not perform.
     NameSet updated_columns;
+    /// `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns its
+    /// commands name, never from a column TTL target, so that subset seeds the closure below.
+    NameSet command_updated_columns;
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::Type::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
+        {
             updated_columns.insert(command.column_name);
+            command_updated_columns.insert(command.column_name);
+        }
 
         if (auto alter = command.ast(); alter && alter->update_assignments)
             for (const auto & child : alter->update_assignments->children)
-                updated_columns.insert(child->as<ASTAssignment &>().column_name);
+            {
+                const auto & assigned = child->as<ASTAssignment &>().column_name;
+                updated_columns.insert(assigned);
+                command_updated_columns.insert(assigned);
+            }
 
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
@@ -342,7 +352,7 @@ static NameSet collectIndicesRebuiltByMutation(
     /// `MutationsInterpreter` also rewrites MATERIALIZED columns that depend on a directly updated
     /// column. Include that closure before asking for ordinary column dependencies: an index can be
     /// rebuilt solely because it reads one of those MATERIALIZED columns.
-    if (!updated_columns.empty())
+    if (!command_updated_columns.empty())
     {
         const auto & columns = metadata_snapshot->getColumns();
 
@@ -371,7 +381,7 @@ static NameSet collectIndicesRebuiltByMutation(
                 NameSet(materialized->dependencies.begin(), materialized->dependencies.end()));
         }
 
-        NameSet reachable = updated_columns;
+        NameSet reachable = command_updated_columns;
         bool found_affected_materialized = true;
         while (found_affected_materialized)
         {
