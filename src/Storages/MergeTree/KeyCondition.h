@@ -81,6 +81,7 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false, /// Toggled by `use_primary_key` and `use_partition_key`; useful for testing.
+        bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
         bool preserve_direct_comparisons_ = false);
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
@@ -106,6 +107,10 @@ public:
     {
         virtual ~BloomFilter() = default;
 
+        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
+        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// value set intersect the two sequences in one pass instead of searching for each hash
+        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -520,6 +525,9 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
+        /// Analysis passes that are not allowed to execute a user subquery set this.
+        const bool require_ready_sets = false;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);

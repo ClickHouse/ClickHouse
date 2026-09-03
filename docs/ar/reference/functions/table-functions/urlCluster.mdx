@@ -29,7 +29,7 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                           |
 | `structure`    | بنية الجدول بالتنسيق `'UserID UInt64, Name String'`. وهي تحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string). |
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المعادة
 </div>
 
@@ -68,7 +68,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 </div>
 
 تُستخدم الأنماط ضمن `{ }` لإنشاء مجموعة من الأجزاء (shards) أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة وأمثلتها، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
-يُستخدم الحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الذي ترد به في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings#glob_expansion_max_elements).
+يُستخدم الحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الذي ترد به في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings/other#glob_expansion_max_elements).
 
 <div id="related">
   ## مواضيع ذات صلة

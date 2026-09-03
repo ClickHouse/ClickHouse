@@ -78,6 +78,9 @@ public:
     std::string_view getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
+
+    /// All arrays are empty iff every offset is zero.
+    bool hasOnlyTypeDefaults() const override;
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override;
@@ -236,7 +239,6 @@ private:
 
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
-
 
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>

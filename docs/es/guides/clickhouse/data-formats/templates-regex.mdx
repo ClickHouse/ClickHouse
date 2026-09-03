@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-De forma predeterminada, ClickHouse generará un error si hay filas sin coincidencia. Si prefiere omitirlas, habilite la opción [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats#format_regexp_skip_unmatched):
+De forma predeterminada, ClickHouse generará un error si hay filas sin coincidencia. Si prefiere omitirlas, habilite la opción [format&#95;regexp&#95;skip&#95;unmatched](/es/reference/settings/formats/format-regexp#format_regexp_skip_unmatched):
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

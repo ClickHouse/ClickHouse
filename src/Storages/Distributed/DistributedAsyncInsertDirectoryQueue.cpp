@@ -122,7 +122,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     const std::string & relative_path_,
     ConnectionPoolWithFailoverPtr pool_,
     ActionBlocker & monitor_blocker_,
-    BackgroundSchedulePool & bg_pool)
+    const BackgroundSchedulePoolPtr & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , disk(disk_)
@@ -151,7 +151,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
 
     initializeFilesFromDisk();
 
-    task_handle = bg_pool.createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
+    task_handle = bg_pool->createTask(storage.getStorageID(), getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
 }
 

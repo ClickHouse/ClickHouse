@@ -438,6 +438,10 @@ void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t
         return;
     }
 
+    /// Include the global discriminator in the result so values of different variants get different names.
+    if (options.notFull(name_buf))
+        name_buf << static_cast<size_t>(globalDiscriminatorByLocal(discr)) << '_';
+
     variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
 }
 
@@ -449,6 +453,11 @@ bool ColumnVariant::isDefaultAt(size_t n) const
 bool ColumnVariant::isNullAt(size_t n) const
 {
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
+}
+
+bool ColumnVariant::hasOnlyTypeDefaults() const
+{
+    return hasOnlyNulls();
 }
 
 std::string_view ColumnVariant::getDataAt(size_t) const
@@ -854,6 +863,8 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ false);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
@@ -873,6 +884,8 @@ void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 
     if (global_discr == NULL_DISCRIMINATOR)
         return;
+
+    checkDiscriminatorValue(global_discr, variants.size(), /* allow_logical_error= */ true);
 
     variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }

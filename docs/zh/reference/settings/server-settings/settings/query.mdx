@@ -47,11 +47,13 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings) 设置时收到的查询。
+用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings/log-queries#log_queries) 设置时收到的查询。
 
 查询会记录到 [system.query&#95;log](/zh/reference/system-tables/query_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
 <SystemLogParameters />
+
+`enable_user_query_log` 参数 (默认启用) 会创建 [`system.user_query_log`](/zh/reference/system-tables/user_query_log)，使每个用户无需访问该表即可查看配置的查询日志表中属于自己的记录。这仅在查询日志存储于本地时有效：如果 `engine` 委托给另一台服务器 (例如 `Distributed`)，请禁用 `enable_user_query_log`，因为 `system.user_query_log` 无法跨 ClickHouse 协议服务器边界执行按用户的访问检查，并且会拒绝从此类后端读取数据。
 
 如果该表不存在，ClickHouse 会创建它。如果在升级 ClickHouse 服务器后查询日志的结构发生变化，旧结构的表会被重命名，并自动创建一个新表。
 
@@ -67,6 +69,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -145,7 +148,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings#log_query_threads) 设置时接收到的查询线程的设置。
+用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings/log-query#log_query_threads) 设置时接收到的查询线程的设置。
 
 查询会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中，而不是单独的文件中。您可以通过 `table` 参数更改该表的名称 (见下文) 。
 
@@ -172,7 +175,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-用于记录视图 (如 live、materialized 等) 的设置，具体取决于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings#log_query_views) 设置。
+用于记录视图 (如 live、materialized 等) 的设置，具体取决于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings/log-query#log_query_views) 设置。
 
 查询会记录到 [system.query&#95;views&#95;log](/zh/reference/system-tables/query_views_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
