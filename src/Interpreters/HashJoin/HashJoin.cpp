@@ -1430,9 +1430,8 @@ void HashJoin::updateNonJoinedRowsStatus()
     has_non_joined_rows_checked = true;
 }
 
-/// Appends the not-joined rows of one hash map cell as a flat run of encoded ref words, which is the
-/// same currency the probe's lazy output records; the row store additionally needs its rows resolved
-/// to pointers, so it keeps a parallel array.
+/// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. The row store
+/// also needs them resolved to pointers, so it keeps a parallel array.
 template <typename Mapped>
 struct CollectorNonJoined
 {
@@ -1524,8 +1523,7 @@ public:
                 columnar_requests.push_back({access_index.index, type_name[dst_idx].type});
         }
 
-        /// The not-joined scan emits ref words like the probe does, so it resolves the same emit table
-        /// and runs the same kernels.
+        /// The not-joined scan emits ref words like the probe, so it runs the same kernels.
         const size_t columnar_columns_count = row_store_initialized
             ? static_cast<size_t>(std::ranges::count_if(
                   access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
@@ -1589,8 +1587,6 @@ private:
     NamesAndTypes type_name;
     bool has_row_store = false;
 
-    /// The per-column gather descriptors, resolved once in the constructor: the same currency the
-    /// probe's lazy output uses, so the not-joined rows run the same kernels.
     std::vector<GatherColumn> emit_gather;
 
     bool isBucketInRange(size_t bucket) const
@@ -1627,8 +1623,7 @@ private:
         UNREACHABLE();
     }
 
-    /// The words are flat here: a not-joined row is always one inline ref, never a list and never a
-    /// default.
+    /// Flat here: a not-joined row is always one inline ref, never a list and never a default.
     void emitColumnarOutputs(MutableColumns & columns_right, const PaddedPODArray<UInt64> & words) const
     {
         const RefWordSelection selection{

@@ -70,9 +70,8 @@ struct LazyOutput
 
     /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
     /// which is immutable once the build phase is finished. Kept beside the per-column emit table
-    /// below for the two consumers that need the whole block rather than one resolved column: the
-    /// per-row `byteSizeAt` accounting of `buildOutputFromBlocksLimitAndOffset` and the
-    /// nullable-column dispatch of `buildJoinGetOutput`.
+    /// below for the two consumers that need a whole block rather than one resolved column:
+    /// `byteSizeAt` accounting and `buildJoinGetOutput`'s nullable dispatch.
     const StoredBlock * const * stored_columns = nullptr;
 
     /// Per-block row store base pointers (block_no -> RowDataStore*), from StoredColumnsIndex::rowStoresData().
@@ -80,8 +79,7 @@ struct LazyOutput
     const RowDataStore * const * block_row_stores = nullptr;
 
     /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe
-    /// block, because it is a property of the join and not of an output chunk; empty for joinGet, which
-    /// emits through `buildJoinGetOutput` instead.
+    /// block, being a property of the join rather than of an output chunk; empty for joinGet.
     std::vector<GatherColumn> emit_gather;
 
     NamesAndTypes type_name;
@@ -247,12 +245,9 @@ public:
             }
         }
 
-        /// Resolve the StoredColumnsIndex emit table the emit kernels read: cache, per output column,
-        /// the per-block plane pointers of its source. joinGet is the one consumer that stays off it
-        /// (`buildJoinGetOutput` needs the whole block for its nullable-wrap dispatch).
-        /// `resolveEmitColumns` builds exactly the requested positions (this query's `right_indexes`)
-        /// under the index mutex, so StorageJoin queries selecting different right-column subsets each
-        /// get their columns built rather than reusing a table scoped to some other query's columns.
+        /// Cache, per output column, the per-block plane pointers of its source. Only the requested
+        /// positions are built, so StorageJoin queries selecting different right-column subsets each
+        /// get their own columns built rather than reusing another query's table.
         if (!is_join_get)
         {
             const size_t columnar_columns_count = row_store_initialized
@@ -293,8 +288,7 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    /// Distinguishes this collector from `PreSelectedRows`, which has to see one ref per row because
-    /// the additional-filter expression is evaluated per right row.
+    /// Unlike `PreSelectedRows`, which needs one ref per row for the per-row additional filter.
     static constexpr bool isLazy() { return true; }
 
     Block left_block;

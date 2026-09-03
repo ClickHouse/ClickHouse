@@ -370,9 +370,8 @@ void StoredColumnsIndex::resolveEmitColumns(
                     continue;
 
                 const IColumn * column = block->columns[pos].get();
-                /// A replicated stored column gathers through its indexes: `row' = indexes[row]`
-                /// addresses the nested column, so the planes come from the nested column and the
-                /// remap entry carries the indexes plane (see `GatherRowRemap`).
+                /// `row' = indexes[row]` addresses the nested column, so the planes come from there
+                /// and the remap entry carries the indexes plane.
                 if (const ColumnReplicated * replicated = block->replicated_columns[pos])
                 {
                     const IColumn & indexes = *replicated->getIndexes().getIndexes();
@@ -388,9 +387,8 @@ void StoredColumnsIndex::resolveEmitColumns(
                     remap[b] = {.indexes_data = indexes_raw.data(), .index_width = static_cast<UInt8>(index_width)};
                     any_replicated = true;
                     column = replicated->getNestedColumn().get();
-                    /// `remapFlatWord` puts `indexes[row]` back in a ref word's 32-bit row field, so
-                    /// the nested column the indexes address is under the same limit as a block. A
-                    /// source row that expands to no rows at all is what lets it exceed one.
+                    /// `remapFlatWord` puts `indexes[row]` back in a 32-bit row field, so the nested
+                    /// column is under a block's limit. A row expanding to none is what exceeds it.
                     if (column->size() > std::numeric_limits<UInt32>::max())
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
@@ -400,10 +398,10 @@ void StoredColumnsIndex::resolveEmitColumns(
 
                 resolveGatherNode(emit_column->gather_root, request.type, *column, b, num_blocks);
             }
-            /// A set `column_type` means a live block decided the shape. Without one - an empty right
-            /// side, or one whose blocks were all cleared - the join still emits, with every row a
-            /// default, so the shape comes from a column of the output type instead. It is kept alive
-            /// here to keep the node's plane pointers valid; no ref word can name a block, so none is read.
+            /// With no live block to decide the shape - an empty right side, or one whose blocks
+            /// were all cleared - the join still emits, every row a default, so a column of the
+            /// output type stands in. It is kept alive to keep the plane pointers valid; no ref word
+            /// can name a block, so none is read.
             if (!emit_column->gather_root.column_type)
             {
                 emit_column->shape_prototype = request.type->createColumn();

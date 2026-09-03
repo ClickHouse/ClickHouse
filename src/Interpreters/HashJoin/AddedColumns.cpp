@@ -136,8 +136,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
 {
     chassert(!has_row_store || !join_data_sorted, "Row store should be disabled when join data rerange optimization is used.");
 
-    /// The reranged build side is the one producer of the range shape, and the kernels consume it as
-    /// ranges: one copy per run of consecutive rows instead of one per row.
+    /// The reranged build side is the one producer of the range shape.
     const RefWordShape shape = join_data_sorted ? RefWordShape::Ranges : RefWordShape::Lists;
     emitColumnarOutputs(
         columns,
@@ -218,8 +217,8 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     if (columns.empty())
         return rows_limit;
 
-    /// The words this walk selects - a subset of the expanded selection, cut by the row and byte
-    /// limits - are the emit input for every columnar column, so the walk always records them.
+    /// The words this walk selects, cut by the row and byte limits, are the emit input for every
+    /// columnar column, so it always records them.
     [[maybe_unused]] PaddedPODArray<UInt64> selected_words;
     if constexpr (from_columns)
         selected_words.reserve(rows_limit);
@@ -346,8 +345,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
 
     if constexpr (from_row_store)
     {
-        /// The row store is the one output that is not addressed by ref words: it needs the resolved
-        /// row pointer, so it keeps its own walk.
+        /// The row store is not addressed by ref words: it needs the resolved row pointer.
         RowStorePointers row_store_ptrs;
         std::optional<size_t> row_store_batch_size;
         row_store_ptrs.ptrs.reserve(selection.rows);

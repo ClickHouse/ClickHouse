@@ -89,9 +89,8 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 /// up to 32766 rows to keys with up to 126 rows - still covering most practical duplication.
 [[noreturn]] void throwRowRefPointerTooLarge();
 
-/// Thrown when a range would run past the last row a ref word can address. A range is one run of
-/// consecutive rows in one block. Iterating it advances only the word's 32-bit row field, so a longer
-/// run would carry into `block_no` and start reading another block.
+/// Iterating a range advances only the word's 32-bit row field, so a run past the last addressable
+/// row would carry into `block_no` and start reading another block.
 [[noreturn]] void throwRowRefRangeOutOfRange(size_t row_no, size_t rows);
 
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
@@ -177,8 +176,8 @@ struct RowRefList
         return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
-    /// Total number of rows for this key. Load-free unless the count saturated. Wider than the
-    /// in-word counter: past saturation the count comes from `Batch::total_rows`, which is 56 bits.
+    /// Total rows for this key, load-free unless the count saturated. Wider than the in-word
+    /// counter, because past saturation it comes from `Batch::total_rows`, which is 56 bits.
     size_t rows() const
     {
         if (isInline())
@@ -197,8 +196,6 @@ struct RowRefList
         chassert(refWordIsInline(start_word));
 
         /// The run has to end inside the block it starts in - see `throwRowRefRangeOutOfRange`.
-        /// `addBlockToJoin` limits a block's rows and `RowRef` limits the field, so this only says that
-        /// same limit in the range's own terms.
         const size_t start_row = refWordRowNo(start_word);
         if (start_row + rows_ > static_cast<size_t>(std::numeric_limits<UInt32>::max()) + 1) [[unlikely]]
             throwRowRefRangeOutOfRange(start_row, rows_);
@@ -370,10 +367,9 @@ struct RowRefList
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
-        /// Range mode (inline ref / rerange): `range_word` is the current ref, `range_remaining` the
-        /// count. The count is as wide as `rows` on purpose. `Batch::total_rows` is 56 bits and the
-        /// destination is sized from `rows`, so a narrower counter would stop early and leave the tail
-        /// of that destination unwritten.
+        /// Range mode: `range_word` is the current ref, `range_remaining` the count. The count is
+        /// as wide as `rows` on purpose - `Batch::total_rows` is 56 bits, and a narrower counter
+        /// would stop early and leave the tail of the destination unwritten.
         UInt64 range_word = 0;
         size_t range_remaining = 0;
     };
@@ -425,15 +421,14 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
 
 struct GatherNode;
 
-/// Appends `length` consecutive rows of `src` starting at `begin` to `dst`. Both sides are bound to
-/// one concrete column class at plan construction, so an encoding without raw planes still copies
-/// through a bound function pointer rather than a virtual `IColumn` call.
+/// Appends `length` consecutive rows of `src` starting at `begin`. Both sides are bound to one
+/// concrete column class at plan construction, so this is a function pointer, not a virtual call.
 using GatherRowsCopy = void (*)(IColumn & dst, const IColumn & src, size_t begin, size_t length);
 
-/// One level of a gather source descriptor: the raw per-block base pointers of a stored
-/// column, mirroring the column's own nesting. Every `*_by_block` vector below is indexed by
-/// `block_no`; entries of cleared blocks stay null and are never dereferenced, because no live ref
-/// points at such a block. The pointers are valid only while the emit-table generation holds.
+/// One level of a gather source descriptor: the raw per-block base pointers of a stored column,
+/// mirroring the column's own nesting. Every `*_by_block` vector below is indexed by `block_no`; a
+/// cleared block's entry stays null and is never dereferenced, as no live ref points at it. The
+/// pointers hold only for the current emit-table generation.
 struct GatherNode
 {
     enum class Kind : UInt8
@@ -449,8 +444,7 @@ struct GatherNode
         Map, /// no planes of its own; `children[0]` is the nested `Array(Tuple(key, value))`, which is the
         /// whole of a `Map`
         Rows, /// no planes: `data_by_block` holds the source column itself and `copy_rows` appends runs
-        /// of its rows. The shape of every encoding whose rows are not an array of values, and whose own
-        /// `insertRangeFrom` is therefore the only thing that can copy them.
+        /// of its rows. The shape of every encoding whose rows are not an array of values.
     };
 
     Kind kind = Kind::Fixed;
@@ -459,24 +453,20 @@ struct GatherNode
     std::vector<const void *> aux_by_block;
     std::vector<GatherNode> children;
     std::vector<UInt8> local_to_global_by_block;
-    /// `Rows` only: the copy bound to the concrete column class, and the output type whose
-    /// `insertDefaultInto` writes an unmatched row - null below a `Nullable`, where the row is NULL
-    /// and the enclosing `insertDefault` is what fills the nested column.
+    /// `Rows` only: the bound copy, and the output type whose `insertDefaultInto` writes an
+    /// unmatched row. Null below a `Nullable`, where `insertDefault` fills the nested column.
     GatherRowsCopy copy_rows = nullptr;
     DataTypePtr type;
-    /// `Fixed` only: the `stride` bytes an unmatched row writes into the plane. Defaults are structure
-    /// everywhere else in the tree and data only here - they have to be, because `insertDefaultInto` is
-    /// not bitwise zero for every fixed-width type (an `Enum`'s default is its first declared value).
+    /// `Fixed` only: the `stride` bytes an unmatched row writes. Held as data rather than derived,
+    /// because a fixed-width default is not always bitwise zero - an `Enum`'s is its first value.
     std::vector<char> default_pattern;
-    /// The concrete column class of the first resolved block, which is what decided the shape; null
-    /// until one has. Every later block has to match it, and all stored blocks share the saved-block
-    /// structure, so a mismatch is a broken plan rather than a case to handle.
+    /// The concrete column class of the first resolved block, which decided the shape. Every later
+    /// block has to match, so a mismatch is a broken plan rather than a case to handle.
     const std::type_info * column_type = nullptr;
 };
 
-/// Per-block row indirection of a `ColumnReplicated` stored column: the gather reads
-/// `row' = indexes[row]` at `index_width` bytes and addresses the nested column with `row'`.
-/// A null `indexes_data` means the block stores the column plainly and rows pass through unchanged.
+/// Per-block row indirection of a `ColumnReplicated` stored column: `row' = indexes[row]`, read at
+/// `index_width` bytes. A null `indexes_data` means the block stores the column plainly.
 struct GatherRowRemap
 {
     const void * indexes_data = nullptr;
@@ -491,9 +481,8 @@ struct GatherColumn
     const GatherRowRemap * remap_by_block = nullptr;
 };
 
-/// One column an emit table is asked for: its position in `StoredBlock::columns` and the type of the
-/// destination it will be gathered into. The type is part of the request because it decides both which
-/// kernel reads the source and what an unmatched row writes.
+/// One column an emit table is asked for. The destination type is part of the request because it
+/// decides both which kernel reads the source and what an unmatched row writes.
 struct EmitColumnRequest
 {
     size_t position = 0;
@@ -507,9 +496,8 @@ struct EmitColumnRequest
 /// Read lock-free at probe/emit time, which is safe because probing starts only after
 /// the build phase is finished.
 ///
-/// On top of the block map it builds the emit table: for each requested output column the resolved
-/// gather source descriptor (see `EmitColumn`), whose raw per-block plane pointers let the emit kernels
-/// read a stored column without going through the stored block and its column vector.
+/// On top of the block map it builds the emit table: a resolved gather source per requested output
+/// column, whose raw plane pointers let the kernels skip the stored block and its column vector.
 /// `resolveEmitColumns` builds the requested positions lazily under `mutex` and hands back the per-column
 /// descriptors; positions already built for the current generation are reused. The table is keyed by
 /// `blocks_generation`, bumped whenever the stored blocks change (add/clearEntry, and in-place column
@@ -528,11 +516,11 @@ public:
     /// The resolved gather source for one output (saved-block) column position.
     struct EmitColumn
     {
-        /// The type this entry was resolved for. It picks the `Fixed` leaf's `default_pattern` and the
-        /// `Rows` node's `type`, so an entry reused under another type would write the wrong defaults.
+        /// The type this entry was resolved for. It picks the defaults, so reusing the entry under
+        /// another type would write the wrong ones.
         DataTypePtr request_type;
-        /// Its raw bases stay valid only until the generation changes, so a stored column's buffer must
-        /// not be mutated in place without bumping it.
+        /// The raw bases hold only until the generation changes, so mutating a stored column's
+        /// buffer in place requires bumping it.
         GatherNode gather_root;
         /// Indexed by block_no; filled only when at least one block stores the column as `ColumnReplicated`
         /// (identity entries for the blocks that do not).
@@ -568,14 +556,11 @@ public:
         return blocks[block_no];
     }
 
-    /// Resolve the emit table for the given `requests` (the output columns of one probe), building any
-    /// not-yet-built positions for the current generation (and dropping the whole table first if the
-    /// blocks changed). `out_gather` is sized to `saved_columns_count` and indexed by stored-block
-    /// column position; positions not requested stay empty. A position asked for under a second type
-    /// throws: rebuilding its entry would invalidate the pointers an earlier caller still holds.
-    /// Pointers are stable for as long as the generation does not change,
-    /// which a StorageJoin read lock or a normal join's build-then-probe guarantees for the caller's
-    /// lifetime. Holds `mutex` for the duration; called once per probe batch, never in the per-row loop.
+    /// Resolve the emit table for one probe's output columns, building the positions not yet built
+    /// for this generation and dropping the table first if the blocks changed. `out_gather` is
+    /// indexed by stored-block column position, and a position not requested stays empty. Asking for
+    /// one under a second type throws, because rebuilding its entry would invalidate the pointers an
+    /// earlier caller still holds. Called once per probe batch, never in the per-row loop.
     void resolveEmitColumns(
         size_t saved_columns_count, const std::vector<EmitColumnRequest> & requests, std::vector<GatherColumn> & out_gather);
 
