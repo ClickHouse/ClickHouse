@@ -443,7 +443,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                globCaller()).first;
         }
         else
         {
@@ -452,7 +453,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                globCaller());
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
@@ -559,6 +561,24 @@ Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/tab
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
 For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](/reference/functions/table-functions/file#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
+
+### Patterns generate addresses, they do not filter a listing {#patterns-generate-addresses}
+
+Plain HTTP offers no way to enumerate the files a server has, so a pattern in `url` is a *generator* of addresses rather than a *filter* over the files that exist. Every address of the direct product is materialized before the query starts, and their number is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements). Addresses that turn out not to exist are skipped while reading, as long as [http_skip_not_found_url_for_globs](/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) is enabled.
+
+Object storage table functions such as [s3](/reference/functions/table-functions/s3) work the other way round: the pattern is compiled into a regular expression and matched against the listing of the bucket, so a pattern that describes an enormous key space costs nothing extra. The same pattern is therefore accepted by `s3` and rejected by `url`:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 10001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+Use `s3` (or another object storage table function) when the pattern is meant to be matched against a listing, and raise `glob_expansion_max_elements` only when every generated address really has to be requested.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 

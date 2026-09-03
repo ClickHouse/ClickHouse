@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -44,6 +45,54 @@ TEST(ParseRemoteDescription, TooManyAddresses)
 {
     EXPECT_THROW(parse("a{1..100}b{1..100}", ',', 10), Exception);
     EXPECT_THROW(parse("a{1..100}", ',', 10), Exception);
+}
+
+TEST(ParseRemoteDescription, TooManyAddressesMessage)
+{
+    /// The message has to name the surface that was actually invoked, how many addresses the pattern
+    /// generates and the setting that raises the limit, otherwise there is nothing to act on.
+    auto message = [](const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
+    {
+        try
+        {
+            parseRemoteDescription(description, 0, description.size(), ',', max_addresses, caller);
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    /// A single numeric interval over the limit.
+    const auto interval = message("a{1..100}", 10, urlCaller("Table function 'url'"));
+    EXPECT_THAT(interval, testing::HasSubstr("Table function 'url'"));
+    EXPECT_THAT(interval, testing::HasSubstr("too many result addresses: 100, while at most 10 are allowed"));
+    EXPECT_THAT(interval, testing::HasSubstr("'glob_expansion_max_elements' setting"));
+    /// For `url` the message also explains why the very same pattern is accepted by `s3`.
+    EXPECT_THAT(interval, testing::HasSubstr("'s3'"));
+
+    /// A direct product over the limit: neither of the two intervals exceeds it on its own.
+    const auto product = message("a{1..4}b{1..4}", 10, urlCaller("Table function 'url'"));
+    EXPECT_THAT(product, testing::HasSubstr("Table function 'url'"));
+    EXPECT_THAT(product, testing::HasSubstr("too many result addresses: 16, while at most 10 are allowed"));
+
+    /// `remote` has a dedicated setting and no object storage hint.
+    const auto remote = message("127.0.0.{1..100}", 10, {});
+    EXPECT_THAT(remote, testing::HasSubstr("Table function 'remote'"));
+    EXPECT_THAT(remote, testing::HasSubstr("'table_function_remote_max_addresses' setting"));
+    EXPECT_THAT(remote, testing::Not(testing::HasSubstr("'s3'")));
+
+    /// The surfaces that share the parser with the table function are named as the user knows them.
+    const auto engine = message("a{1..100}", 10, urlCaller("Table engine 'URL'"));
+    EXPECT_THAT(engine, testing::HasSubstr("Table engine 'URL'"));
+    EXPECT_THAT(engine, testing::Not(testing::HasSubstr("Table function")));
+
+    const auto mysql = message("host{1..100}:3306", 10, globCaller("Table engine 'MySQL'"));
+    EXPECT_THAT(mysql, testing::HasSubstr("Table engine 'MySQL'"));
+    EXPECT_THAT(mysql, testing::HasSubstr("'glob_expansion_max_elements' setting"));
+    /// Only the `url` family gets the object storage hint.
+    EXPECT_THAT(mysql, testing::Not(testing::HasSubstr("'s3'")));
 }
 
 TEST(ParseRemoteDescription, LongDescription)
@@ -93,7 +142,10 @@ TEST(ParseRemoteDescription, OverLimitExpansionWithLongSuffix)
 TEST(ParseRemoteDescription, ExternalDatabase)
 {
     using Addresses = std::vector<std::pair<String, UInt16>>;
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1:5432|host2:5433", 10, 5432), (Addresses{{"host1", 5432}, {"host2", 5433}}));
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1", 10, 5432), (Addresses{{"host1", 5432}}));
-    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("[2001:db8::1]:5432", 10, 5432), (Addresses{{"2001:db8::1", 5432}}));
+    const auto caller = globCaller("Table engine 'PostgreSQL'");
+    EXPECT_EQ(
+        parseRemoteDescriptionForExternalDatabase("host1:5432|host2:5433", 10, 5432, caller),
+        (Addresses{{"host1", 5432}, {"host2", 5433}}));
+    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("host1", 10, 5432, caller), (Addresses{{"host1", 5432}}));
+    EXPECT_EQ(parseRemoteDescriptionForExternalDatabase("[2001:db8::1]:5432", 10, 5432, caller), (Addresses{{"2001:db8::1", 5432}}));
 }

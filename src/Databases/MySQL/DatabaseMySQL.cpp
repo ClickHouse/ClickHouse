@@ -789,7 +789,9 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+            configuration = StorageMySQL::processNamedCollectionResult(
+                *named_collection, *mysql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table_or_query=*/ false);
         }
         else
         {
@@ -811,7 +813,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             if (engine_name == "MySQL")
             {
                 size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                    host_port, max_addresses, 3306, globCaller(fmt::format("Database engine '{}'", engine_name)));
             }
             else
             {

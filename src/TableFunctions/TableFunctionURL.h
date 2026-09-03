@@ -102,6 +102,11 @@ protected:
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
 
+    /// How the surface the user invoked is named when a glob in the URL generates more addresses
+    /// than allowed. `urlCluster` overrides it so that the shared code paths (schema inference,
+    /// the `StorageURL` constructed for a secondary query on a worker) report `urlCluster`.
+    virtual RemoteDescriptionCaller globCaller() const { return urlCaller(TABLE_FUNCTION_URL_CALLER); }
+
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
     /// table function (`file`, `s3`, `azureBlobStorage`, `hdfs`) from the already-parsed arguments.

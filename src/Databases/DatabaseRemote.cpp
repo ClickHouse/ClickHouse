@@ -934,13 +934,15 @@ struct DatabaseRemoteClusters
 static DatabaseRemoteClusters buildClusters(const String & cluster_description, const String & username, const String & password, bool secure, ContextPtr context)
 {
     size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-    Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+    const RemoteDescriptionCaller caller{
+        secure ? "Database engine 'RemoteSecure'" : "Database engine 'Remote'", TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING};
+    Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses, caller);
 
     HostsByShard names;
     names.reserve(shards.size());
     for (const auto & shard : shards)
     {
-        auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses);
+        auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses, caller);
         if (replicas.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
         names.push_back(std::move(replicas));

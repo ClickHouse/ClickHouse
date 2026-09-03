@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingsChanges.h>
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -38,6 +39,11 @@ struct ParsedRemoteFunctionArguments
 /// `Remote`/`RemoteSecure` engines pass their own `StorageID` so that the table is registered as a dependent
 /// of the named collection (blocking `DROP NAMED COLLECTION` while the table exists). Table-function callers
 /// leave it null because their lifetime is bound to the query.
+///
+/// `caller` names the surface the user actually invoked (`Table function 'remoteSecure'`,
+/// `Table engine 'RemoteSecure'`, ...) when the addresses expression generates more addresses
+/// than `table_function_remote_max_addresses` allows. `name` cannot serve that purpose: it is an
+/// internal name shared by several surfaces (e.g. it stays `remote` for `remoteSecure`).
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ASTs & args,
     ContextPtr context,
@@ -45,6 +51,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool is_cluster_function,
     bool secure,
     const PreformattedMessage & help_message,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    const RemoteDescriptionCaller & caller = {});
 
 }
