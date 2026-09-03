@@ -385,8 +385,17 @@ void calculateHashTableCacheKeys(
             frame.hash.update(table_join.joinUseNulls());
             /// The residual on-clause predicate is a DAG whose node names come from
             /// `calculateActionNodeName` and are therefore branch-local; hash what it computes instead.
+            /// It reads from both sides, so give it the header it actually sees - the left columns
+            /// followed by the right ones. Without it `lhs.ts < rhs.ts` and `rhs.ts < lhs.ts` collapse
+            /// onto one hash once the qualifier index is erased, and two joins with quite different
+            /// residual selectivity would share a statistics entry.
             if (const auto & mixed = table_join.getMixedJoinExpression())
-                mixed->getActionsDAG().updateHash(frame.hash, /*build_independent=*/true);
+            {
+                Block joined_header = *node.children.at(0)->step->getOutputHeader();
+                for (const auto & column : *node.children.at(1)->step->getOutputHeader())
+                    joined_header.insert(column);
+                mixed->getActionsDAG().updateHash(frame.hash, /*build_independent=*/true, &joined_header);
+            }
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
             /// columns have different output headers and different `output_bytes` when the join result

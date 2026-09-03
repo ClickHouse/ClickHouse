@@ -285,13 +285,21 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state, bool build_independent, 
     /// tree at hand to tell a genuine qualifier from user text that looks like one, and none is needed:
     /// the type and (for a constant) the value are hashed too, so two nodes whose names normalize
     /// together stay apart on everything else.
+    /// An INPUT's name is normalized only when the header it reads from is known - which is exactly when
+    /// the name can be a planner-composed one. Two inputs whose names then normalize together
+    /// (`__table1.id` and `__table2.id`, one column from each side of a join) are told apart by where
+    /// each sits in that header.
+    ///
+    /// With no header the DAG sits at a read, where an INPUT is a physical column and its name is
+    /// already the same in every build. Normalizing there would be all cost and no benefit: a column
+    /// genuinely named `__table1.id` would be merged with one named `__table2.id`, and two different
+    /// PREWHERE predicates would share a statistics entry.
     if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
-        hash_state.update(build_independent ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+    {
+        const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
+        hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+    }
 
-    /// Two inputs of the same type whose names normalize together - `__table1.id` and `__table2.id`, the
-    /// same column taken from two join inputs - are told apart by where each sits in the header the DAG
-    /// reads. Only when that header is known: at a read there is none, and there an input's own name is
-    /// already a physical column name.
     if (build_independent && type == ActionType::INPUT && input_header)
         hash_state.update(input_header->has(result_name) ? input_header->getPositionByName(result_name) : input_header->columns());
 
