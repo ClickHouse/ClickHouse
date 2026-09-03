@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FailPoint.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -106,6 +108,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
 }
@@ -378,11 +382,93 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// The state shared between the call thread and the queue-thread RPC termination
+    /// notification (the `AsyncNotifyWhenDone` callback). The call thread publishes the
+    /// query status and marks the query as finished; the notification callback reads both.
+    struct RpcCancelState
+    {
+        std::mutex mutex;
+        bool query_finished = false;
+        bool transport_cancelled = false;
+        bool notify_done_fired = false;
+        QueryStatusPtr query_status;
+    };
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
     public:
+        BaseResponder() : cancellation_state(std::make_shared<RpcCancelState>())
+        {
+            /// Register a self-owning completion callback as the `AsyncNotifyWhenDone` tag, i.e.
+            /// it will be invoked on the queue thread when the RPC terminates (client abort, server
+            /// finish, etc.). The tag is delivered with `ok == true` regardless of whether the RPC
+            /// was cancelled, so cancellation is detected with `IsCancelled()`, which is only legal
+            /// to call after the tag has been delivered. On a client-initiated cancel of a still
+            /// running query the RPC has terminated, so the callback records `CANCELLED_BY_USER` on
+            /// the query status the same way an explicit `QueryInfo.cancel` would. The tag must be
+            /// set before the RPC starts, and it must not reference the responder once the call is
+            /// destroyed: the call may be cleaned up (`finished_calls`) before the tag is delivered,
+            /// so the callback owns itself (deletes itself upon invocation) and reaches the query
+            /// status through the shared `cancellation_state`, which outlives both the call and the
+            /// callback. `grpc_context` is dereferenced only while `query_finished == false`, which
+            /// guarantees the call (and hence the responder) is still alive: `close()` sets
+            /// `query_finished` under the same mutex before it resets the responder, so a tag that
+            /// runs after `close()` observes `query_finished == true` under that mutex and skips the
+            /// `IsCancelled()` deref of the already-destroyed responder. This is the only gRPC event
+            /// that fires when a client drops a mid-query RPC without sending an explicit `QueryInfo.cancel`.
+            auto * done_callback = new CompletionCallback;
+            notify_done_callback = done_callback;
+            *done_callback = [state = cancellation_state, &context = grpc_context, done_callback](bool)
+            {
+                bool recorded_transport_cancel = false;
+                {
+                    std::lock_guard lock{state->mutex};
+                    /// The tag has been delivered, so the callback is now responsible for deleting
+                    /// itself (it does so below). `notify_done_fired` lets the `Runner` distinguish a
+                    /// delivered tag from a responder that never had its RPC run, whose callback it
+                    /// frees during shutdown (see `Runner::~Runner`).
+                    state->notify_done_fired = true;
+                    /// The responder may already be destroyed by the time this tag runs: `close()`
+                    /// sets `query_finished` under this same mutex before it resets the responder, so
+                    /// guarding the `grpc_context` deref with `!query_finished` makes a late tag skip
+                    /// the cancel entirely instead of touching the destroyed object. A tag that runs
+                    /// ahead of `close()` holds the mutex here while deref'ing the still-alive responder,
+                    /// so `close()` blocks until the deref is done.
+                    if (!state->query_finished && context.IsCancelled())
+                    {
+                        /// The client aborted the RPC at the transport level. Remember this even when the
+                        /// query status has not been published yet, so that `executeQuery()` can replay
+                        /// the cancel once it publishes the status — otherwise an abort that arrives
+                        /// while the query is still being built would be lost and the query would keep
+                        /// running against a dead client.
+                        state->transport_cancelled = true;
+                        recorded_transport_cancel = true;
+                        if (state->query_status)
+                            state->query_status->cancelQuery(
+                                CancelReason::CANCELLED_BY_USER,
+                                std::make_exception_ptr(
+                                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                    }
+                }
+                /// Pause outside the mutex (after recording the transport abort) so an integration test can
+                /// deterministically observe that a client abort reached the queue thread before it releases
+                /// the status-publication point (`grpc_call_execute_query_pause`) and before `close()`.
+                if (recorded_transport_cancel)
+                    FailPointInjection::pauseFailPoint("grpc_call_notify_done_pause");
+                delete done_callback;
+            };
+            grpc_context.AsyncNotifyWhenDone(notify_done_callback);
+        }
+
         virtual ~BaseResponder() = default;
+
+        std::shared_ptr<RpcCancelState> cancellation_state;
+
+        /// The self-owning `AsyncNotifyWhenDone` completion callback, kept here so that `Runner`
+        /// can free it during shutdown when the tag was never delivered (a responder that never
+        /// received an RPC). A delivered tag deletes this object itself.
+        CompletionCallback * notify_done_callback = nullptr;
 
         virtual void start(GRPCService & grpc_service,
                            grpc::ServerCompletionQueue & new_call_queue,
@@ -742,6 +828,7 @@ namespace
         void readQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
+        void cancelQueryByUser();
 
         void addQueryDetailsToResult();
         void addOutputFormatToResult();
@@ -762,6 +849,9 @@ namespace
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
+        std::mutex query_context_mutex;
+        QueryStatusPtr query_status;
+        std::shared_ptr<RpcCancelState> cancellation_state;
         std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
@@ -822,6 +912,7 @@ namespace
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
+        cancellation_state = responder->cancellation_state;
     }
 
     Call::~Call()
@@ -940,7 +1031,10 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
-        query_context = session->makeQueryContext(std::move(client_info));
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_context = session->makeQueryContext(std::move(client_info));
+        }
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -1099,7 +1193,73 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
+
+        /// Inner executors that run during `::DB::executeQuery` (prepared-set building in
+        /// `PreparedSets`, scalar-subquery execution) cannot see the call thread's
+        /// `isQueryCancelled()` poll — they only poll the query context's interactive cancel
+        /// callback, which GRPCServer never installs otherwise. Install one that surfaces both the
+        /// explicit `QueryInfo.cancel` and a transport-level abort (recorded in
+        /// `RpcCancelState::transport_cancelled` by the `AsyncNotifyWhenDone` callback). It also
+        /// records the cancel on the query status (`CANCELLED_BY_USER`) directly, so a cancel that
+        /// lands while these inner pipelines are running aborts them with
+        /// `QUERY_WAS_CANCELLED_BY_CLIENT` instead of only being replayed at status publication:
+        /// `PullingAsyncPipelineExecutor` (scalar subqueries) invokes the callback but ignores its
+        /// return value, and `PreparedSets` otherwise unwinds a raw `QUERY_WAS_CANCELLED` from
+        /// `executeQuery` when the cancelled set builder produced nothing — both would surface as an
+        /// exception and leave `cancel_reason` `UNDEFINED` without the status side effect. The
+        /// `CompletedPipelineExecutor` (set building) additionally cancels its executor on `true`.
+        /// Cancelling the status is idempotent (`QueryStatus::cancelQuery` short-circuits on
+        /// `is_killed`) and race-safe: `getProcessListElementSafe` reads the query context's process
+        /// list pointer, which is only mutated on the call thread before/after this lambda can run.
+        query_context->setInteractiveCancelCallback(
+            [state = cancellation_state, ctx = query_context, this]()
+            {
+                bool client_cancel_requested = want_to_cancel;
+                if (!client_cancel_requested)
+                {
+                    std::lock_guard lock{state->mutex};
+                    client_cancel_requested = state->transport_cancelled;
+                }
+                if (client_cancel_requested)
+                {
+                    if (auto status = ctx->getProcessListElementSafe())
+                        status->cancelQuery(
+                            CancelReason::CANCELLED_BY_USER,
+                            std::make_exception_ptr(
+                                Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+                    return true;
+                }
+                return false;
+            });
+
         io = ::DB::executeQuery(query, query_context).second;
+
+        /// Publish the query status so the queue-thread cancel callback can record a cancel without
+        /// touching `query_context` or the `Context`'s process-list pointer, which are only safe to
+        /// access from the call thread. The publish happens here, on the call thread, before the
+        /// pipeline starts pulling, so cancels received after this point are applied immediately and
+        /// cancels received before it are simply deferred until the first `isQueryCancelled()` poll
+        /// in `generateOutput()` (the transform cannot have latched a soft timeout yet). If the
+        /// client already aborted the RPC before the publish, the cancel is replayed right here, so
+        /// a transport-level abort while the query is still being built is not lost.
+        /// A client abort during query construction is reproduced deterministically in the
+        /// `test_rpc_abort_before_query_status_publish_grpc` integration test by pausing on
+        /// `grpc_call_execute_query_pause` at this point.
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_status = query_context->getProcessListElementSafe();
+        }
+
+        FailPointInjection::pauseFailPoint("grpc_call_execute_query_pause");
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            cancellation_state->query_status = query_status;
+            if (cancellation_state->transport_cancelled && query_status)
+                query_status->cancelQuery(
+                    CancelReason::CANCELLED_BY_USER,
+                    std::make_exception_ptr(
+                        Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
+        }
     }
 
     void Call::processInput()
@@ -1477,7 +1637,26 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
+        /// `PreparedSets` can unwind a client cancel out of `::DB::executeQuery` as a raw
+        /// `QUERY_WAS_CANCELLED` (its set-building wrapper throws that directly when the cancelled
+        /// `CompletedPipelineExecutor` produced no set), which bypasses the `QUERY_WAS_CANCELLED_BY_CLIENT`
+        /// replay in `executeQuery()`. When a client cancel or transport abort is pending, treat a raw
+        /// `QUERY_WAS_CANCELLED` the same as code 735 so the clean-cancel wire contract (no exception
+        /// payload) is preserved; a `KILL QUERY` is never misclassified because neither flag is set.
+        bool client_cancel_pending = want_to_cancel;
+        if (!client_cancel_pending)
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            client_cancel_pending = cancellation_state->transport_cancelled;
+        }
+
+        bool is_clean_cancel = exception.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || (exception.code() == ErrorCodes::QUERY_WAS_CANCELLED && client_cancel_pending);
+
+        if (is_clean_cancel)
+            LOG_INFO(log, "Query was cancelled by the client, finalizing cleanly");
+        else
+            LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
 
         if (responder && !responder_finished)
         {
@@ -1495,7 +1674,17 @@ namespace
 
             try
             {
-                sendException(exception);
+                if (is_clean_cancel)
+                {
+                    /// A client-initiated cancel is reported through the `cancelled` result flag,
+                    /// mirroring the TCP protocol, where `QUERY_WAS_CANCELLED_BY_CLIENT` ends the
+                    /// session with EOF instead of an exception packet. Do not send an exception
+                    /// payload, so the gRPC wire contract observed on a plain cancel is preserved.
+                    result.set_cancelled(true);
+                    sendResult();
+                }
+                else
+                    sendException(exception);
             }
             catch (...)
             {
@@ -1537,6 +1726,11 @@ namespace
 
     void Call::close()
     {
+        {
+            std::lock_guard lock{cancellation_state->mutex};
+            cancellation_state->query_finished = true;
+            cancellation_state->query_status.reset();
+        }
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
@@ -1547,7 +1741,11 @@ namespace
         compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
-        query_context.reset();
+        {
+            std::lock_guard lock{query_context_mutex};
+            query_context.reset();
+            query_status.reset();
+        }
         thread_trace_context.reset();
         session.reset();
     }
@@ -1573,7 +1771,18 @@ namespace
                         }
                     }
                     if (nqi.cancel())
+                    {
+                        /// Record the hard user cancel right here on the queue thread, not on the
+                        /// next pull poll of `isQueryCancelled()`. While the pipeline is blocked (e.g.
+                        /// at a paused transform) or has already broken out after a latched soft
+                        /// timeout, the pull loop may never reach `isQueryCancelled()` in time, so
+                        /// the query status must reflect `CANCELLED_BY_USER` as soon as the message
+                        /// arrives. `cancelQuery` is thread-safe (see `QueryStatus::cancelQuery`) and
+                        /// only sets the kill flag plus cancels registered executors (all
+                        /// non-blocking). `isQueryCancelled()` will repeat the call idempotently.
                         want_to_cancel = true;
+                        cancelQueryByUser();
+                    }
                 }
                 else
                 {
@@ -1638,10 +1847,48 @@ namespace
             LOG_INFO(log, "Query cancelled");
             cancelled = true;
             result.set_cancelled(true);
+
+            /// The query status has usually already been cancelled from the queue-thread read
+            /// callback (`cancelQueryByUser()` on `QueryInfo.cancel` receipt); this is an
+            /// idempotent repeat for cancels that arrived before the query context was ready.
+            cancelQueryByUser();
+
             return true;
         }
 
         return false;
+    }
+
+    void Call::cancelQueryByUser()
+    {
+        QueryStatusPtr status;
+        {
+            std::lock_guard lock{query_context_mutex};
+            status = query_status;
+        }
+
+        /// A client-initiated gRPC cancel (`QueryInfo.cancel`) is a hard user cancellation.
+        /// Surface it through the query status so soft-timeout-aware transforms (e.g.
+        /// `DistinctTransform`) can distinguish it from an executor-side break-mode timeout,
+        /// which would otherwise be misclassified and keep a committed prefix instead of
+        /// aborting. `KILL QUERY` and the native TCP `Cancel` packet already set
+        /// `CANCELLED_BY_USER` the same way; without it, `getCancelReason()` stays `UNDEFINED`
+        /// after a soft timeout has latched and a real user cancel gets treated as a soft
+        /// timeout. The `QUERY_WAS_CANCELLED_BY_CLIENT` exception is passed the same way TCP
+        /// does: `Call::onException` recognizes this code and turns it back into a clean
+        /// `cancelled` completion, preserving the gRPC wire contract (no exception payload).
+        ///
+        /// Deliberately uses the cached `query_status` and never `Context`'s process-list pointer:
+        /// this method runs on the queue thread while the call thread may still be mutating the
+        /// context (`setProcessListElement`), which would be an unsynchronized data race. The
+        /// `QueryStatusPtr` is a strong reference captured on the call thread at publication time,
+        /// so the object stays alive and `cancelQuery` (thread-safe and idempotent by contract)
+        /// can always be applied.
+        if (status)
+            status->cancelQuery(
+                CancelReason::CANCELLED_BY_USER,
+                std::make_exception_ptr(
+                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Query cancelled by the client.")));
     }
 
     void Call::addQueryDetailsToResult()
@@ -1905,6 +2152,19 @@ public:
 
         if (queue_thread.joinable())
             queue_thread.join();
+
+        /// Free the `AsyncNotifyWhenDone` callbacks of responders that never had their tag delivered:
+        /// the queue thread is gone, so a pending tag can no longer fire, and the callback (a
+        /// self-owning object holding the shared `RpcCancelState`) would otherwise leak. A delivered
+        /// tag set `notify_done_fired` and deleted its callback already (`delete done_callback`).
+        auto free_never_fired_callbacks = [](auto & responders)
+        {
+            for (auto & responder : responders)
+                if (responder && !responder->cancellation_state->notify_done_fired)
+                    delete responder->notify_done_callback;
+        };
+        free_never_fired_callbacks(responders_for_new_calls);
+        free_never_fired_callbacks(leftover_responders);
     }
 
     void start()
@@ -1972,7 +2232,14 @@ private:
         std::lock_guard lock{mutex};
         auto responder = std::move(responders_for_new_calls[call_type]);
         if (should_stop)
+        {
+            /// Do not destroy the responder here: its `AsyncNotifyWhenDone` tag may still be pending
+            /// (an RPC that was accepted right around shutdown). Park it until after the queue thread
+            /// has been joined, so the tag, if it is delivered during the queue drain, always runs
+            /// against a live responder; `~Runner` then frees the callback if it never fired.
+            leftover_responders.push_back(std::move(responder));
             return;
+        }
         makeResponderForNewCall(call_type);
         if (responder_started_ok)
         {
@@ -1982,6 +2249,13 @@ private:
             auto * new_call_ptr = new_call.get();
             current_calls[new_call_ptr] = std::move(new_call);
             new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+        }
+        else
+        {
+            /// The RPC never started, so no tag can be delivered for this responder; keep it alive
+            /// until after the queue thread stops and let `~Runner` free its `AsyncNotifyWhenDone`
+            /// callback (see `notify_done_callback`).
+            leftover_responders.push_back(std::move(responder));
         }
     }
 
@@ -2041,6 +2315,10 @@ private:
     ThreadFromGlobalPool queue_thread;
     bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
+    /// Responders that were taken out of the pool around shutdown (an accepted RPC or a failed start)
+    /// but are never owned by a `Call`; kept alive until after `queue_thread.join()` so no pending
+    /// `AsyncNotifyWhenDone` tag dereferences a destroyed responder.
+    std::vector<std::unique_ptr<BaseResponder>> leftover_responders;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
     bool should_stop = false;

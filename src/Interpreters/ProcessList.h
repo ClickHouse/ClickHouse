@@ -285,6 +285,10 @@ public:
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
 
+    /// The query's `timeout_overflow_mode` (THROW vs BREAK). Used by processors that must
+    /// distinguish a soft prefix-preserving timeout (BREAK) from one that must raise an error (THROW).
+    OverflowMode getOverflowMode() const { return overflow_mode; }
+
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }
 

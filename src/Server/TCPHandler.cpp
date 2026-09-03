@@ -3151,6 +3151,20 @@ void TCPHandler::processCancel(QueryState & state)
     state.read_all_data = true;
     state.stop_query = true;
 
+    /// A client-initiated `Cancel` (Ctrl+C) is a hard user cancellation. Surface it through the query
+    /// status so soft-timeout-aware transforms (e.g. `DistinctTransform`) can distinguish it from an
+    /// executor-side break-mode timeout, which would otherwise be misclassified and keep a committed
+    /// prefix instead of aborting. `KILL QUERY` already sets `CANCELLED_BY_USER` the same way.
+    /// The `QUERY_WAS_CANCELLED_BY_CLIENT` exception passed to `cancelQuery` keeps the clean-cancel
+    /// protocol: the executor failures are reported with this code, so the server sends EOF instead of
+    /// an exception packet and the client exits with code 0 on Ctrl+C.
+    if (state.query_context)
+        if (auto process_list_element = state.query_context->getProcessListElementSafe())
+            process_list_element->cancelQuery(
+                CancelReason::CANCELLED_BY_USER,
+                std::make_exception_ptr(
+                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.")));
+
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
@@ -3167,7 +3181,24 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
         try
         {
             if (in->isCanceled() || in->eof())
+            {
+                /// A client that dropped the connection is a hard user cancellation, not a
+                /// break-mode soft timeout. Record it on the query status (as `KILL QUERY`, the
+                /// TCP `Cancel` packet and the gRPC cancel now do) so soft-timeout-aware transforms
+                /// (`DistinctTransform`) abort at the next boundary instead of keeping on rescanning
+                /// the committed prefix after the client is gone. The `ABORTED` exception is passed
+                /// to `cancelQuery` so pipeline workers surface the same disconnect error instead of
+                /// a generic `QUERY_WAS_CANCELLED`; we still throw it below so the query is finalized
+                /// as an aborted query with the disconnect logged.
+                if (state.query_context)
+                    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+                        process_list_element->cancelQuery(
+                            CancelReason::CANCELLED_BY_USER,
+                            std::make_exception_ptr(
+                                Exception(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.")));
+
                 throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
+            }
 
             UInt64 packet_type = 0;
             readVarUInt(packet_type, *in);

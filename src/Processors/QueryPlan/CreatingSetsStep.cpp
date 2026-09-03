@@ -55,7 +55,7 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     /// With a single input stream the set fill deduplicates just as well on its own; the pre-distinct
     /// only pays off by deduplicating disjoint streams in parallel. The partition count can drop to one
@@ -82,7 +82,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
                 /// mostly-unique input the transform may abandon and pass rows through.
                 return std::make_shared<DistinctTransform>(
-                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys);
+                    header, SizeLimits{}, 0, Names{}, build_pipeline_settings.process_list_element, /*allow_abandoning_=*/true, skip_null_keys);
             });
     }
 

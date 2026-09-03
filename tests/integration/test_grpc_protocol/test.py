@@ -1,6 +1,8 @@
+import concurrent.futures
 import gzip
 import os
 import sys
+import threading
 import time
 import uuid
 from threading import Thread
@@ -696,6 +698,9 @@ def test_cancel_while_processing_input():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
     assert result.cancelled == True
+    # The wire contract on a client cancel: the query completes flagged as cancelled
+    # without an exception payload (a plain cancel must not surface as a query error).
+    assert not result.HasField("exception"), f"cancel surfaced as an exception: {result.exception}"
 
 
 def test_cancel_while_generating_output():
@@ -710,6 +715,9 @@ def test_cancel_while_generating_output():
     results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
     assert len(results) >= 1
     assert results[-1].cancelled == True
+    # The wire contract on a client cancel: the query completes flagged as cancelled
+    # without an exception payload (a plain cancel must not surface as a query error).
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
     output = b""
     for result in results:
         output += result.output
@@ -720,6 +728,336 @@ def test_cancel_while_generating_output():
     full_output = b"".join(b"%d\t0\n" % i for i in range(10))
     assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
     assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
+
+
+def test_cancel_while_distinct_transform_output():
+    # A `DISTINCT` query that is already producing (committed prefix) when the client cancels.
+    # The cancel must be classified as hard (`CANCELLED_BY_USER` on the query status), so the
+    # `DistinctTransform` aborts instead of treating the cancel as a break-style soft timeout
+    # and keeping the committed prefix; and, per the gRPC wire contract, the final response must
+    # be flagged `cancelled` with no exception payload.
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT DISTINCT number % 2, sleep(0.2) FROM numbers(20) SETTINGS max_block_size=2"
+        )
+        time.sleep(0.5)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    results = list(stub.ExecuteQueryWithStreamIO(send_query_info()))
+    assert len(results) >= 1
+    assert results[-1].cancelled == True
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
+
+
+def test_cancel_latched_timeout_after_distinct_grpc():
+    # The gRPC cancel path (`GRPCServer` recording `CANCELLED_BY_USER` on the query status) only matters
+    # once a BREAK-mode soft timeout has ALREADY latched inside `DistinctTransform`: without a recorded
+    # cancel_reason, `isCancelledBySoftTimeout()` returns true (latched timeout + `UNDEFINED` reason) and
+    # the resumed scan keeps treating the real user cancel as a soft timeout. This test reproduces the
+    # exact scenario over gRPC: the nullable-key prepass pauses at its first 4096-row boundary (via the
+    # `distinct_transform_null_pause` failpoint), the query is held past `max_execution_time` so the
+    # pull loop's soft-timeout poll cancels the pipeline with `cancel_reason` still `UNDEFINED`, and only
+    # then is the real `QueryInfo.cancel` sent, followed by releasing the paused scan. The final response
+    # must be `cancelled` with no exception payload, and the server must have recorded
+    # `cancel_reason = CANCELLED_BY_USER` -- without the gRPC cancel fix the reason stays `UNDEFINED`
+    # and the latched soft timeout makes the resumed scan complete normally (not cancelled), so the
+    # `cancelled` assertion below fails.
+    node.query("CREATE TABLE IF NOT EXISTS null_keys_mt_lc_grpc (k LowCardinality(Nullable(UInt64))) "
+               "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+               "SETTINGS allow_suspicious_low_cardinality_types=1")
+    node.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc_grpc")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(0) FROM numbers(1000000)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(1) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(2) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc_grpc)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    ## Only the nullable-key prepass failpoint is armed for the initial pause: after the cancel is
+    ## recorded the scan is released and the hard-cancel check (which is the behaviour under test)
+    ## fires at the next boundary in the same prepass. Arming `distinct_transform_lc_pause` as well
+    ## would pause the cancelled scan a second time for no reason. The null-key failpoint is
+    ## re-armed again in the test body, right before the release, as the regression probe: the
+    ## resumed prepass must abort at its first post-cancel boundary and must NOT reach it again.
+    node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+
+    cancel_event = threading.Event()
+    results = []
+
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id)
+        ## Keep the stream half-open until the main test body has observed the latched timeout.
+        ## Note: the initial QueryInfo must not set `next_query_info` — the server's
+        ## `createExternalTables()` (invoked while executing a SELECT) treats that field as a request
+        ## for more input and would block the call thread reading the next message *before* the query
+        ## runs, never reaching the failpoint. The cancel is delivered over the async read that the
+        ## gRPC server already keeps pending for `ExecuteQueryWithStreamIO`.
+        deadline = time.monotonic() + 90
+        while not cancel_event.is_set():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("cancel was not triggered in time")
+            time.sleep(0.05)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+
+    def collect_results():
+        results.extend(list(stub.ExecuteQueryWithStreamIO(send_query_info())))
+
+    results_thread = Thread(target=collect_results)
+    results_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        ## The nullable-key prepass pauses at its first boundary with rows [0, 4096) committed.
+        wait_failpoint("distinct_transform_null_pause")
+
+        ## Hold the paused scan past `max_execution_time`: the pull loop's `checkTimeLimitSoft` poll
+        ## cancels the pipeline with `CancelledByTimeout` while `cancel_reason` stays `UNDEFINED`, so
+        ## the soft timeout is latched inside the transform.
+        time.sleep(6)
+
+        ## Now send the real gRPC `Cancel` while the soft timeout is already latched, wait for the
+        ## server to record `CANCELLED_BY_USER` on the query status, then release the paused scan.
+        ## The gRPC queue-thread read callback calls `cancelQueryByUser()` immediately upon
+        ## `QueryInfo.cancel` receipt, so `system.processes.is_cancelled` flips to 1 deterministically
+        ## -- polling it instead of sleeping fixed time removes the timing dependency entirely. The
+        ## recorded `cancel_reason` turns the cancel into a hard abort (the
+        ## `isCancelled() && !isCancelledBySoftTimeout()` check) instead of a soft-timeout continuation.
+        cancel_event.set()
+
+        deadline = time.monotonic() + 30
+        while True:
+            if time.monotonic() >= deadline:
+                assert False, "gRPC cancel did not mark the query cancelled within 30 s"
+            is_cancelled = node.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}' FORMAT TSV"
+            ).strip()
+            if is_cancelled == "1":
+                break
+            time.sleep(0.1)
+
+        ## Re-arm the nullable-key prepass failpoint now that the cancel is recorded, then release
+        ## the paused scan. If the resumed inner scan ignored the already-recorded cancel it would
+        ## keep scanning and pause again at the next 4096-row boundary, so require the second
+        ## `SYSTEM WAIT FAILPOINT ... PAUSE` to time out instead (the scan must hard-abort at its
+        ## first post-cancel boundary and never reach the re-armed failpoint).
+        node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+        node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
+        future = pool.submit(node.query, "SYSTEM WAIT FAILPOINT distinct_transform_null_pause PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=10)
+        if done:
+            future.result()
+            assert False, ("resumed nullable-key prepass paused at the re-armed failpoint: "
+                           "the recorded gRPC cancel was not honored at the first post-cancel boundary")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT distinct_transform_null_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    results_thread.join(timeout=90)
+    assert not results_thread.is_alive(), "cancelled gRPC query did not terminate within 90 s"
+    assert len(results) >= 1, "no gRPC result received"
+    assert results[-1].cancelled == True, f"gRPC cancel must complete as cancelled, got cancelled={results[-1].cancelled}"
+    assert not results[-1].HasField("exception"), f"cancel surfaced as an exception: {results[-1].exception}"
+
+    node.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node.query(
+        f"SELECT cancel_reason FROM system.query_log WHERE query_id = '{query_id}' "
+        f"ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected gRPC cancel after latched timeout to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
+
+
+def test_rpc_abort_cancel_latched_timeout_after_distinct_grpc():
+    # Same BREAK-mode soft-timeout scenario as `test_cancel_latched_timeout_after_distinct_grpc`
+    # (the nullable-key prepass pauses at its first 4096-row boundary while `max_execution_time`
+    # latches a soft timeout inside `DistinctTransform`), but the cancel is a transport-level RPC
+    # abort (`Future.cancel()` on the unary `ExecuteQuery`), not an explicit `QueryInfo.cancel`
+    # message. A client that drops the call never sends that message, and a unary `ExecuteQuery`
+    # has no server-side reads pending mid-query, so the only event the server sees is the
+    # 'notify on done' tag (recv-close delivering `ok == false`). With the `AsyncNotifyWhenDone`
+    # hook the server must apply `CANCELLED_BY_USER` from that tag the same way it does from
+    # `QueryInfo.cancel`; otherwise `cancel_reason` stays `UNDEFINED` and, once the paused scan is
+    # released, the latched soft timeout makes the resumed scan continue instead of aborting.
+    node.query("CREATE TABLE IF NOT EXISTS null_keys_mt_lc_grpc_abort (k LowCardinality(Nullable(UInt64))) "
+               "ENGINE = MergeTree PARTITION BY (CAST(if(k IS NULL, toUInt64(0), k) AS UInt64) % 4) ORDER BY tuple() "
+               "SETTINGS allow_suspicious_low_cardinality_types=1")
+    node.query("TRUNCATE TABLE IF EXISTS null_keys_mt_lc_grpc_abort")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(0) FROM numbers(1000000)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(1) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(2) FROM numbers(100)")
+    node.query("INSERT INTO null_keys_mt_lc_grpc_abort SELECT toNullable(3) FROM numbers(100)")
+
+    query = """SELECT count() FROM numbers(1000000)
+     WHERE number IN (SELECT k FROM null_keys_mt_lc_grpc_abort)
+     FORMAT Null
+     SETTINGS transform_null_in=0, max_threads=4, force_creating_set_partitions_independently=1,
+              max_execution_time=5, timeout_overflow_mode='break'"""
+
+    query_id = str(uuid.uuid4())
+
+    node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    rpc = stub.ExecuteQuery.future(clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id))
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        wait_failpoint("distinct_transform_null_pause")
+
+        time.sleep(6)
+
+        assert rpc.cancel(), "client-side RPC abort did not succeed"
+
+        # Wait for the server to record `CANCELLED_BY_USER` from the 'notify on done' tag. The
+        # queue-thread notification calls `QueryStatus::cancelQuery` immediately, so
+        # `system.processes.is_cancelled` flips to 1 deterministically (no fixed sleep).
+        deadline = time.monotonic() + 30
+        while True:
+            if time.monotonic() >= deadline:
+                assert False, "RPC abort did not cancel the query within 30 s"
+            is_cancelled = node.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}' FORMAT TSV"
+            ).strip()
+            if is_cancelled == "1":
+                break
+            time.sleep(0.1)
+
+        ## Re-arm the nullable-key prepass failpoint now that the cancel is recorded, then release
+        ## the paused scan. If the resumed inner scan ignored the already-recorded cancel it would
+        ## keep scanning and pause again at the next 4096-row boundary, so require the second
+        ## `SYSTEM WAIT FAILPOINT ... PAUSE` to time out instead (the scan must hard-abort at its
+        ## first post-cancel boundary and never reach the re-armed failpoint).
+        node.query("SYSTEM ENABLE FAILPOINT distinct_transform_null_pause")
+        node.query("SYSTEM NOTIFY FAILPOINT distinct_transform_null_pause")
+        future = pool.submit(node.query, "SYSTEM WAIT FAILPOINT distinct_transform_null_pause PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=10)
+        if done:
+            future.result()
+            assert False, ("resumed nullable-key prepass paused at the re-armed failpoint: "
+                           "the recorded RPC abort was not honored at the first post-cancel boundary")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT distinct_transform_null_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    # The client aborted the call, so the unary future must surface as cancelled.
+    deadline = time.monotonic() + 90
+    while not rpc.cancelled():
+        if time.monotonic() >= deadline:
+            assert False, "client-side unary RPC did not complete as cancelled within 90 s"
+        time.sleep(0.1)
+
+    node.query("SYSTEM FLUSH LOGS")
+    cancel_reason = node.query(
+        f"SELECT cancel_reason FROM system.query_log WHERE query_id = '{query_id}' "
+        f"ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+    ).strip()
+    assert cancel_reason == "CANCELLED_BY_USER", (
+        f"expected RPC abort after latched timeout to set cancel_reason='CANCELLED_BY_USER', got: {cancel_reason!r}"
+    )
+
+
+def test_rpc_abort_before_query_status_publish_grpc():
+    # A client abort that arrives while `Call::executeQuery()` is still building the query (i.e.
+    # before the query status is published into `RpcCancelState`) must not be lost: at that point
+    # the 'notify on done' callback observes a null query status, so it can only remember the
+    # abort in `transport_cancelled`, and `Call::executeQuery()` must replay
+    # `cancelQuery(CANCELLED_BY_USER)` right at publication. Without the replay the query would
+    # keep running to completion against the dead client with `cancel_reason` staying `UNDEFINED`.
+    query = "SELECT count() FROM numbers(100000000) FORMAT Null"
+    query_id = str(uuid.uuid4())
+
+    # Pause the server right before it publishes the query status. The client abort below then lands
+    # in the not-yet-published window (`RpcCancelState::query_status` is still null while the query
+    # is already registered in the process list). The second failpoint pauses the 'notify on done'
+    # queue-thread callback right after it records the abort in `transport_cancelled`, so the test
+    # can deterministically wait for the abort to be *seen* by the server before it releases the
+    # publication point: `rpc.cancel()` alone is only a client-side action and the server may not
+    # have processed the transport teardown yet, which would race (and sometimes lose) the replay.
+    node.query("SYSTEM ENABLE FAILPOINT grpc_call_execute_query_pause")
+    node.query("SYSTEM ENABLE FAILPOINT grpc_call_notify_done_pause")
+
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    rpc = stub.ExecuteQuery.future(clickhouse_grpc_pb2.QueryInfo(query=query, query_id=query_id))
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fn, timeout=60):
+        future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {fn} PAUSE")
+        done, _ = concurrent.futures.wait([future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fn} not triggered within {timeout} s"
+        future.result()
+
+    try:
+        wait_failpoint("grpc_call_execute_query_pause")
+
+        assert rpc.cancel(), "client-side RPC abort did not succeed"
+
+        # Wait until the queue thread recorded the abort (guaranteeing `transport_cancelled`), then
+        # release the publish point: `executeQuery()` publishes the query status and must replay the
+        # abort as a hard cancel instead of letting the query run against the dead client.
+        wait_failpoint("grpc_call_notify_done_pause")
+        node.query("SYSTEM NOTIFY FAILPOINT grpc_call_execute_query_pause")
+        node.query("SYSTEM NOTIFY FAILPOINT grpc_call_notify_done_pause")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT grpc_call_execute_query_pause")
+        node.query("SYSTEM DISABLE FAILPOINT grpc_call_notify_done_pause")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    # The client aborted the call, so the unary future must surface as cancelled.
+    deadline = time.monotonic() + 90
+    while not rpc.cancelled():
+        if time.monotonic() >= deadline:
+            assert False, "client-side unary RPC did not complete as cancelled within 90 s"
+        time.sleep(0.1)
+
+    # `rpc.cancelled()` reflects the client-side abort and resolves immediately, before the server's
+    # query log rows exist. Retry the discriminator query until the `ExceptionWhileProcessing` row
+    # (735 CANCELLED_BY_USER) appears, so the assertion cannot race ahead of the server's abort.
+    deadline = time.monotonic() + 30
+    while True:
+        node.query("SYSTEM FLUSH LOGS")
+        log_row = node.query(
+            f"SELECT type, cancel_reason, exception_code FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing' "
+            f"ORDER BY event_time DESC LIMIT 1 FORMAT TSV"
+        ).strip()
+        fields = log_row.split("\t")
+        if fields != ["ExceptionWhileProcessing", "CANCELLED_BY_USER", "735"]:
+            if time.monotonic() >= deadline:
+                assert False, (
+                    "expected pre-publication RPC abort to set cancel_reason='CANCELLED_BY_USER' and "
+                    f"interrupt the query with 735, got: {fields!r}"
+                )
+            time.sleep(0.1)
+            continue
+        break
 
 
 def test_compressed_output():

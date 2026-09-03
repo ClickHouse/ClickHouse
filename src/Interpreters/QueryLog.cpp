@@ -1,3 +1,4 @@
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -160,6 +161,15 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
+
+        {"cancel_reason", std::make_shared<DataTypeEnum8>(
+            DataTypeEnum8::Values
+            {
+                {"UNDEFINED", static_cast<Int8>(CancelReason::UNDEFINED)},
+                {"TIMEOUT", static_cast<Int8>(CancelReason::TIMEOUT)},
+                {"CANCELLED_BY_USER", static_cast<Int8>(CancelReason::CANCELLED_BY_USER)},
+                {"CANCELLED_BY_ERROR", static_cast<Int8>(CancelReason::CANCELLED_BY_ERROR)}
+            }), "Reason the query was cancelled. Values: 'UNDEFINED' = not cancelled or reason unknown, 'TIMEOUT' = cancelled by an execution timeout, 'CANCELLED_BY_USER' = cancelled by a user (KILL QUERY or a client Cancel packet), 'CANCELLED_BY_ERROR' = cancelled because a parallel part of the query failed."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
@@ -351,6 +361,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
+
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(cancel_reason);
 
     {
         /// Same as for Settings above: avoid boxing through Field. Only the key is LowCardinality.

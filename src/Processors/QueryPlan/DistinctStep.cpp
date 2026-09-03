@@ -99,7 +99,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, allow_abandoning);
+            return std::make_shared<DistinctTransform>(
+                header, set_size_limits, limit_hint, columns, settings.process_list_element, allow_abandoning);
         });
 }
 

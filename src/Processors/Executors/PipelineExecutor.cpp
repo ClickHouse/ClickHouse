@@ -24,6 +24,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 
 
@@ -276,7 +277,17 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
+        {
             cancel(ExecutionStatus::CancelledByTimeout);
+
+            /// This is the executor-side soft-timeout detection: the pull loop
+            /// (`PullingAsyncPipelineExecutor::pull`) or the internal execution loop reached
+            /// `max_execution_time` and cancelled the pipeline with `CancelledByTimeout` without
+            /// going through `cancelQuery` (so `cancel_reason` stays `UNDEFINED` until a concurrent
+            /// `CancellationChecker` overrides it). The failpoint lets a test prove that this
+            /// executor-side path (not the global checker) raised a throw-mode timeout.
+            FailPointInjection::pauseFailPoint("pipeline_executor_soft_timeout_fired");
+        }
 
         return continuing;
     }

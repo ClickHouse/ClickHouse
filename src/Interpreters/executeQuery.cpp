@@ -453,6 +453,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
+    element.cancel_reason = static_cast<Int8>(info.cancel_reason);
+
     element.thread_ids = info.thread_ids;
     element.peak_threads_usage = info.peak_threads_usage;
     if (info.profile_counters)

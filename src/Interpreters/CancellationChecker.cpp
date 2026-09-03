@@ -1,4 +1,5 @@
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/CancellationChecker.h>
@@ -53,7 +54,16 @@ void CancellationChecker::cancelTask(CancellationChecker::QueryToTrack task)
         try
         {
             if (task.overflow_mode == OverflowMode::THROW)
+            {
+                /// A test needs to pin the *executor-side* soft-timeout path (the pull loop calling
+                /// `PipelineExecutor::checkTimeLimitSoft`): if this thread reached `cancelQuery` first,
+                /// it would set `is_killed`, so the pull loop's next check would bail on the `is_killed`
+                /// short-circuit and no longer prove that *it* observed the deadline. Pausing before
+                /// `cancelQuery` keeps the checker from winning the race while the test runs; it is a
+                /// no-op unless the failpoint is enabled.
+                FailPointInjection::pauseFailPoint("cancellation_checker_cancel_pause");
                 task.query->cancelQuery(CancelReason::TIMEOUT);
+            }
             else
                 task.query->checkTimeLimit();
         }
