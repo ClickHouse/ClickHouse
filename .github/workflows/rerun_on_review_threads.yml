@@ -1,0 +1,256 @@
+# The re-trigger half of the unresolved-review-threads CI gate
+# (https://github.com/ClickHouse/ClickHouse/issues/114724).
+#
+# While a PR has unresolved review threads, the PR workflow runs only builds
+# and the preliminary checks, and its finish step records the verdict in the
+# `Review Threads` commit status (see
+# ci/jobs/scripts/workflow_hooks/review_threads.py). This workflow watches
+# `PR` workflow completions and changes to the `ignore-unresolved-threads`
+# label. When an event exposes a stale recorded verdict, it re-runs the last
+# completed `PR` workflow run for the current head commit.
+# Previously succeeded jobs are restored from the CI cache, so such a re-run
+# only executes the jobs that were skipped (or newly need to be skipped).
+#
+# GitHub Actions has no supported trigger for review-thread resolution. `PR`
+# workflow completions catch threads resolved while CI is in flight. Label
+# events use `pull_request_target` so they can reconcile fork PRs with a
+# write-capable token. This workflow never checks out or executes PR code.
+
+name: Rerun On Review Threads
+
+on:
+  workflow_run:
+    workflows: ["PR"]
+    types: [completed]
+  pull_request_target:
+    types: [labeled, unlabeled]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: rerun-on-review-threads-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # Label events matter only for the gate's override label.
+    # Keep the label name in sync with Labels.IGNORE_UNRESOLVED_THREADS in
+    # ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py.
+    if: github.event_name != 'pull_request_target' || github.event.label.name == 'ignore-unresolved-threads'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rerun the PR workflow if the recorded review-threads verdict is stale
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          WR_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+          WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          # Keep in sync with REVIEW_THREADS_STATUS_NAME in
+          # ci/jobs/scripts/workflow_hooks/review_threads.py.
+          STATUS_NAME: Review Threads
+          # Keep in sync with READY_FOR_MERGE_CUSTOM_STATUS_NAME in
+          # ci/settings/settings.py.
+          MERGEABLE_CHECK_STATUS_NAME: Mergeable Check
+          OVERRIDE_LABEL: ignore-unresolved-threads
+          # Safety valve: never grow a single run past this many attempts, so
+          # a reconciliation bug cannot re-run one workflow forever.
+          MAX_ATTEMPTS: 5
+        run: |
+          set -euo pipefail
+
+          api_with_retries() {
+            local attempt output
+            for attempt in 1 2 3; do
+              if output=$(gh api "$@"); then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              echo "GitHub API request failed (attempt $attempt/3): gh api $*" >&2
+            done
+            return 1
+          }
+
+          post_status() {
+            local state="$1"
+            local context="$2"
+            local description="$3"
+            api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha" \
+              -f state="$state" -f context="$context" \
+              -f description="$description" \
+              -f target_url="https://github.com/$GH_REPO/pull/$pr" >/dev/null
+
+            local posted_state posted_description
+            posted_state=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              --jq --arg context "$context" \
+              '[.[] | select(.context == $context)] | first | .state // empty')
+            posted_description=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              --jq --arg context "$context" \
+              '[.[] | select(.context == $context)] | first | .description // empty')
+            if [ "$posted_state" != "$state" ] || [ "$posted_description" != "$description" ]; then
+              echo "Failed to verify $context status update" >&2
+              return 1
+            fi
+          }
+
+          # --- Resolve the PR number ---
+          pr="$PR_NUMBER"
+          if [ -z "$pr" ]; then
+            pr="$WR_PR_NUMBER"
+          fi
+          if [ -z "$pr" ] && [ -n "$WR_HEAD_SHA" ]; then
+            # workflow_run.pull_requests is empty for PRs from forks - find
+            # the PR through its head commit instead.
+            pr=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+              --jq 'map(select(.state == "open")) | .[0].number // empty')
+          fi
+          if [ -z "$pr" ]; then
+            echo "No PR associated with the event - nothing to do."
+            exit 0
+          fi
+
+          # --- Current PR state ---
+          pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")
+          state=$(echo "$pr_data" | jq -r '.state')
+          head_sha=$(echo "$pr_data" | jq -r '.head.sha')
+          override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
+            '[.labels[].name] | index($label) != null')
+          if [ "$state" != "open" ]; then
+            echo "PR #$pr is $state - nothing to do."
+            exit 0
+          fi
+          if [ -n "$WR_HEAD_SHA" ] && [ "$WR_HEAD_SHA" != "$head_sha" ]; then
+            echo "Event is for $WR_HEAD_SHA but the PR head is $head_sha - a newer push supersedes it."
+            exit 0
+          fi
+
+          # --- Live unresolved review thread count ---
+          owner="${GH_REPO%%/*}"
+          name="${GH_REPO##*/}"
+          unresolved=$(api_with_retries graphql --paginate \
+            -f query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100, after: $endCursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { isResolved }
+                  }
+                }
+              }
+            }' \
+            -f owner="$owner" -f name="$name" -F pr="$pr" \
+            --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
+            | awk '{s+=$1} END {print s+0}')
+
+          desired_blocked=false
+          if [ "$unresolved" -gt 0 ] && [ "$override" != "true" ]; then
+            desired_blocked=true
+          fi
+
+          # --- Recorded verdict: the latest gate commit status on the head ---
+          # A failing marker has two distinct meanings: a limited pipeline
+          # must be replayed after threads resolve, whereas a forced full
+          # pipeline only needs its merge-gate status refreshed.
+          marker=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+            --jq "[.[] | select(.context == \"$STATUS_NAME\")] | first // {}")
+          marker_state=$(echo "$marker" | jq -r '.state // "none"')
+          marker_description=$(echo "$marker" | jq -r '.description // ""')
+          pipeline_limited=false
+          if [[ "$marker_description" == *"running the limited CI suite"* ]] \
+             || [[ "$marker_description" == *"full CI suite was skipped"* ]] \
+             || [[ "$marker_description" == *"full CI suite will be re-run"* ]]; then
+            pipeline_limited=true
+          fi
+          recorded_blocked=false
+          if [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; then
+            recorded_blocked=true
+          fi
+
+          echo "PR #$pr (head $head_sha): unresolved=$unresolved override=$override" \
+               "desired_blocked=$desired_blocked recorded=$marker_state pipeline_limited=$pipeline_limited"
+
+          if [ "$desired_blocked" = "$recorded_blocked" ]; then
+            echo "The recorded verdict matches the live state - nothing to do."
+            exit 0
+          fi
+
+          # --- Do nothing while a PR workflow run is in progress ---
+          # Checked before the refresh-only path as well: a status posted
+          # from here while "Finish Workflow" runs would land in the same
+          # time window as the gate's own verdict and could be mistaken for
+          # it by retry_infra_failures.yml.
+          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "PR")]')
+          active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
+          if [ "$active" -gt 0 ]; then
+            echo "A PR workflow run is still in progress - its finish step records the" \
+                 "fresh state, and its completion re-triggers this reconciliation."
+            exit 0
+          fi
+
+          if [ "$pipeline_limited" != "true" ]; then
+            # A full pipeline already ran. Refresh only its gate status;
+            # rerunning would be wasteful (and `ci-force-all` skips cache
+            # lookup, so it would execute the full suite again).
+            if [ "$desired_blocked" = "true" ]; then
+              state=failure
+              description="$unresolved unresolved review thread(s)"
+            else
+              state=success
+              description="all review threads resolved"
+            fi
+            # `Mergeable Check` is the aggregate verdict of the PR workflow.
+            # A new unresolved thread must block merging immediately, but do
+            # not turn an unrelated CI failure into success when it resolves.
+            if [ "$desired_blocked" = "true" ]; then
+              # This distinct description lets the resolving event identify a
+              # failure injected here rather than one from the PR workflow.
+              mergeable_description="review threads: $unresolved unresolved review thread(s)"
+              post_status failure "$MERGEABLE_CHECK_STATUS_NAME" "$mergeable_description"
+            else
+              mergeable=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+                --jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" \
+                '[.[] | select(.context == $context)] | first // {}')
+              mergeable_state=$(echo "$mergeable" | jq -r '.state // "none"')
+              mergeable_description=$(echo "$mergeable" | jq -r '.description // ""')
+              last_pr_run=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+                --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
+              last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
+              if [ "$mergeable_state" = "failure" ] \
+                 && { [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+                      && [ "$last_pr_conclusion" = "success" ] \
+                      || [ "$mergeable_description" = "Failed: review threads only" ]; }; then
+                post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
+              fi
+            fi
+            post_status "$state" "$STATUS_NAME" "$description"
+            echo "Refreshed the review-thread status without rerunning full CI."
+            exit 0
+          fi
+
+          # --- Re-run the last completed PR workflow run for this head ---
+          run_id=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .id // empty')
+          run_attempt=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .run_attempt // 0')
+          if [ -z "$run_id" ]; then
+            echo "No completed PR workflow run for $head_sha - nothing to re-run."
+            exit 0
+          fi
+          if [ "$run_attempt" -ge "$MAX_ATTEMPTS" ]; then
+            echo "Run $run_id already has $run_attempt attempts - not re-running (safety cap)."
+            exit 0
+          fi
+
+          echo "Re-running PR workflow run $run_id (attempt $run_attempt) to re-evaluate the gate..."
+          api_with_retries --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null
+          refreshed_runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "PR")]')
+          rerun_started=$(echo "$refreshed_runs" | jq --argjson run_id "$run_id" --argjson run_attempt "$run_attempt" \
+            '[.[] | select(.id == $run_id and (.status != "completed" or .run_attempt > $run_attempt))] | length')
+          if [ "$rerun_started" -eq 0 ]; then
+            echo "Failed to verify re-run of $run_id" >&2
+            exit 1
+          fi

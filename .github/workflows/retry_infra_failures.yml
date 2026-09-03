@@ -174,6 +174,55 @@ jobs:
               fi
             fi
 
+            # A red "Finish Workflow" caused by the unresolved-review-threads
+            # merge gate (the "Review Threads" commit status, see
+            # ci/jobs/scripts/workflow_hooks/review_threads.py) is an expected
+            # policy failure, not an infrastructure error. A rerun would end
+            # red again; rerun_on_review_threads.yml re-runs it once the
+            # threads are resolved.
+            if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
+              failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") | .name
+              ')
+              # The marker must come from the failed attempt itself: the gate
+              # posts the status from inside "Finish Workflow", so only a
+              # status created within that job's own time window belongs to
+              # it. A status created later (e.g. by a label event handled by
+              # rerun_on_review_threads.yml) says nothing about why this run
+              # failed, and must not suppress the retry of a genuine
+              # infrastructure failure. The time window alone is not enough:
+              # a label event can be handled while "Finish Workflow" is still
+              # running, and its refresh-only status lands inside the window.
+              # The gate's own status points at the Praktika report of this
+              # commit (ci/jobs/scripts/workflow_hooks/can_be_merged.py), while
+              # the refresher points at the pull request page, so the marker
+              # must also carry this run's report URL.
+              finish_window=$(echo "$jobs_raw" | jq -r '
+                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
+                first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
+              ')
+              finish_started_at=$(echo "$finish_window" | cut -f1)
+              finish_completed_at=$(echo "$finish_window" | cut -f2)
+              marker_state=""
+              if [ -n "$finish_started_at" ] && [ -n "$finish_completed_at" ]; then
+                statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
+                  | jq -s 'add // []') || statuses="[]"
+                marker_state=$(echo "$statuses" | jq -r \
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
+                  --arg sha "$run_sha" '
+                  [.[] | select(.context == "Review Threads") |
+                   select(.created_at >= $from and .created_at <= $to) |
+                   select((.target_url // "") | test("praktika\\.html\\?.*[?&]sha=" + $sha + "(&|$)"))] |
+                  first // {} | .state // empty
+                ')
+              fi
+              if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
+                && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
+                should_rerun=false
+                echo "  Skipping: only Finish Workflow failed due to the unresolved-review-threads merge gate."
+              fi
+            fi
+
             if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))

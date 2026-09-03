@@ -72,6 +72,43 @@ _final_job = Job.Config(
 )
 
 
+# This marker is intentionally part of the aggregate merge-status description.
+# The review-thread reconciliation workflow can clear this exact failure after
+# the dedicated override label is added, while leaving every other post-hook
+# and job failure untouched.
+_REVIEW_THREADS_POST_HOOK = (
+    "ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"
+)
+_REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"
+
+# Printed by `check_review_threads` in
+# `ci/jobs/scripts/workflow_hooks/can_be_merged.py` on the policy-block path
+# only - keep the two in sync. The hook fails for infrastructure reasons too
+# (the thread/label queries and the commit-status write all raise), and such a
+# failure must not be rewritten into the marker below: the reconciliation
+# workflow clears that marker once the threads are resolved, which would hide
+# a hook failure that had nothing to do with review threads.
+_REVIEW_THREADS_POLICY_FAILURE_MARKER = (
+    "REVIEW_THREADS_GATE: blocked by unresolved review threads"
+)
+
+
+def _is_review_threads_policy_failure(result):
+    """Whether this result is the review-thread hook concluding "blocked"."""
+    return (
+        _REVIEW_THREADS_POST_HOOK in result.name
+        and _REVIEW_THREADS_POLICY_FAILURE_MARKER in (result.info or "")
+    )
+
+
+def _review_threads_were_the_only_failed_post_hook(results):
+    """Whether the review-thread policy verdict was the sole failed post-hook."""
+    failed = [result for result in results if not result.is_ok()]
+    return bool(failed) and all(
+        _is_review_threads_policy_failure(result) for result in failed
+    )
+
+
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
@@ -622,8 +659,19 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            pr_labels = Info().pr_labels
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # The kv data is the live label state recorded by the
+            # `ci/jobs/scripts/workflow_hooks/review_threads.py` pre-hook,
+            # which fails the config run when it cannot be fetched; the
+            # `Info().pr_labels` fallback (stale on re-runs) is only for
+            # workflows without that pre-hook.
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            review_threads_pipeline_limited = False
+            if force_all:
                 print(
                     f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -638,7 +686,22 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                                 f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
+                            # The pre-hook only records that the gate could
+                            # apply. Persist whether it actually filtered a
+                            # job: missing changed-files data deliberately
+                            # bypasses all filters and therefore runs the full
+                            # pipeline.
+                            if "unresolved review thread" in reason:
+                                review_threads_pipeline_limited = True
                             continue
+            # Record the decision made by this filtering pass, rather than
+            # reconstructing it later from review-thread state. In particular,
+            # `ci-force-all` does not execute filter hooks and therefore runs
+            # the full pipeline even with unresolved review threads.
+            Info().store_kv_data(
+                "unresolved_review_threads_pipeline_limited",
+                review_threads_pipeline_limited,
+            )
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -660,8 +723,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
-            pr_labels = Info().pr_labels
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            if force_all:
                 print(
                     f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -697,8 +767,15 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            pr_labels = Info().pr_labels
-            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            # Live label state from the review_threads.py pre-hook (see the
+            # workflow filter hooks pass above).
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else force_all_kv is True
+            )
+            skip_lookup = force_all
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
@@ -904,6 +981,7 @@ def _finish_workflow(workflow, job_name):
 
     update_final_report = False
     results = []
+    review_threads_only_post_hook_failure = False
     if workflow.post_hooks:
         sw_ = Utils.Stopwatch()
         update_final_report = True
@@ -914,6 +992,10 @@ def _finish_workflow(workflow, job_name):
             else:
                 name = str(check)
             results_.append(Result.from_commands_run(name=name, command=check))
+
+        review_threads_only_post_hook_failure = (
+            _review_threads_were_the_only_failed_post_hook(results_)
+        )
 
         results.append(
             Result.create_from(
@@ -1014,6 +1096,17 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description = f"Failed: {len(failed_results)}"
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
+
+        # `Finish Workflow` aggregates all post hooks into one result. Retain
+        # a precise, run-scoped marker only when this hook is the *only*
+        # failure in the entire workflow, so the review-thread override can
+        # later clear the aggregate status without masking another failure.
+        if (
+            failed_results == ["Workflow Post Hook"]
+            and not dropped_results
+            and review_threads_only_post_hook_failure
+        ):
+            ready_for_merge_description = _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE
 
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(

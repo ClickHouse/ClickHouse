@@ -92,6 +92,8 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Disables the unresolved-review-threads CI gate (see review_threads.py)
+    IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
     # Gates the Darwin (macOS) "Fast test" job in PRs; it is skipped unless this
     # label is applied. See DARWIN_FAST_TEST_JOBS in filter_job.py.
     CI_MACOS = "ci-macos"
