@@ -476,9 +476,15 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
         applyVisitor(FieldVisitorToString(), node.getValue()));
 }
 
+/// Builds a boundary condition of a `LIMIT` range over the columns of `header`. With `INTERPOLATE`,
+/// `FillingStep` writes the interpolated values only into the column named after the interpolated alias
+/// (see `addWithFillStepIfNeeded`), while the projection expression the alias was computed from keeps
+/// default values on the filled rows. A boundary that refers to such an alias is therefore redirected to
+/// the alias column, as `Project names` does for the query result.
 std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
     const SharedHeader & header,
     const QueryTreeNodePtr & condition_node,
+    const QueryNode & query_node,
     const PlannerContextPtr & planner_context,
     const String & description)
 {
@@ -501,8 +507,24 @@ std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
             description,
             output->result_type->getName());
     }
+    String condition_name = output->result_name;
 
-    return std::make_pair(std::move(condition_actions_dag), output->result_name);
+    if (query_node.hasInterpolate())
+    {
+        ActionsDAG interpolated_columns(header->getColumnsWithTypeAndName());
+        for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
+        {
+            const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            const auto & alias_column = interpolated_columns.findInOutputs(interpolate_node_typed.getExpressionName());
+            auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
+            interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
+        }
+
+        condition_actions_dag = ActionsDAG::merge(std::move(interpolated_columns), std::move(condition_actions_dag));
+        condition_actions_dag.removeUnusedActions(Names{condition_name});
+    }
+
+    return std::make_pair(std::move(condition_actions_dag), std::move(condition_name));
 }
 
 class QueryAnalysisResult
@@ -1543,11 +1565,13 @@ void addLimitRangeStep(
     auto start_condition = buildLimitRangeCondition(
         query_plan.getCurrentHeader(),
         query_node.getLimitAfter(),
+        query_node,
         planner_context,
         "LIMIT AFTER");
     auto end_condition = buildLimitRangeCondition(
         query_plan.getCurrentHeader(),
         query_node.getLimitUntil(),
+        query_node,
         planner_context,
         "LIMIT UNTIL");
 
