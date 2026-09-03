@@ -22,6 +22,10 @@
 8 alive=1
 9 exception=0
 9 alive=1
+10 bad_predicate exception=1
+10 control exception=0
+10 control killed=0
+10 control alive=1
 12 killed=1
 12 alive=0
 13 hidden killed=0

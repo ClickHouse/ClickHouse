@@ -185,6 +185,23 @@ $CLICKHOUSE_CLIENT --user "$U1" -q \
 echo "9 alive=$(alive "foreign9$SUFFIX")"
 reset_arm
 
+# 10: a malformed predicate is diagnosed even when the caller's row policy admitted no row at all. The
+# policy rejects every row the caller owns, so the block the predicate runs over is empty while still
+# carrying its columns. Whether a statement is refused must not depend on a policy the caller usually
+# cannot see, and the privileged path refuses it whatever the row count.
+policy_on_u1 "0"
+start_victim "$U1" "own10$SUFFIX"
+echo -n "10 bad_predicate exception="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE no_such_column = 1 SYNC" 2>&1 | matched "DB::Exception"
+# The same policy with a predicate that resolves, so the arm above cannot pass because anything at all
+# fails under a policy that rejects everything. The path is otherwise silent, and the victim the policy
+# hid from the caller is still running.
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own10$SUFFIX' SYNC" 2>&1)
+echo "10 control exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "10 control killed=$(printf '%s\n' "$out" | killed "own10$SUFFIX")"
+echo "10 control alive=$(alive "own10$SUFFIX")"
+reset_arm
+
 # 12: a grant covering only some of the columns the statement reads still cannot read the table.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(query_id, user) ON system.processes TO $U1"
 start_victim "$U1" "own12$SUFFIX"
