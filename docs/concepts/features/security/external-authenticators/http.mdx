@@ -140,7 +140,7 @@ starts with an empty cache.
 | `allowed_role_prefix` | empty | Prefix of local role names this directory may assign; may be repeated. |
 | `default_profile` | none | Settings profile attached to every user materialized by this directory. The configured name is re-resolved on every authentication that materializes a user or reuses a cached one; if it does not resolve, the attempt fails. A cached user's profile reference is reconciled if a profile of the same name is recreated with a new identity. |
 | `networks` | any host | ClickHouse-side network restrictions (`ip`, `host`, `host_regexp`) for users of this directory. |
-| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. Materialized users are never evicted and `SYSTEM RELOAD USERS` does not clear them, so once the bound is reached new usernames are rejected until the server restarts. Size it for the number of distinct usernames expected over the server's uptime, or set `0`. |
+| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. Materialized users are not evicted on their own; `SYSTEM RELOAD USERS` drops all of them (see below), and so does a restart. |
 
 Unknown parameters are rejected at startup, and so is a repeated parameter: only
 `allowed_role_prefix` (and the `role` and network entries inside `allowed_roles` and
@@ -291,10 +291,20 @@ set and expiry according to the named-session rules. Interserver execution uses 
 existing already-authenticated path and does not independently contact the HTTP
 authentication server.
 
+### `SYSTEM RELOAD USERS` {#http-external-user-directory-reload}
+
+`SYSTEM RELOAD USERS` drops every user materialized by this directory. This is the way to
+recover from a reached `max_cached_users` bound without a restart, and it releases a name
+held by a materialized user so that `CREATE USER` can define it locally. Users drop back in
+on their next successful authentication. Established connections of dropped users fail on
+their next query and must reconnect; HTTP requests re-authenticate on their own, but a
+named HTTP session (`session_id`) is recreated under the new user identity, so its `SET`
+state and temporary tables are lost. The directory configuration is not reloaded.
+
 ### Limitations {#http-external-user-directory-limitations}
 
-- The directory configuration is fixed until server restart; `SYSTEM RELOAD CONFIG` does
-  not reconfigure it.
+- The directory configuration is fixed until server restart; neither `SYSTEM RELOAD CONFIG`
+  nor `SYSTEM RELOAD USERS` reconfigures it.
 - Dropping the settings profile named by `default_profile` fails authentication for users
   of this directory, including ones already materialized, and including the internal
   already-authenticated path used by distributed queries — so distributed queries on

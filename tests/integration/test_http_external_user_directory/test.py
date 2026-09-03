@@ -1432,3 +1432,55 @@ def test_response_framing_contract(started_cluster):
     )
     assert "Authentication failed" in error, error
     assert helper_request_count(instance3, "truncated_404_user") - before == 1
+
+
+def test_reload_users_drops_materialized_users(started_cluster):
+    # SYSTEM RELOAD USERS drops every materialized user of the directory. That makes the
+    # max_cached_users bound recoverable without a restart and releases a name that a
+    # materialized user held from CREATE USER (node3: <http> precedes the writable
+    # local_directory, so the held name selects the read-only http storage for insertion).
+    admin3 = lambda q: instance3.query(q, user="admin_user", password="admin_password")
+    # Fill node3's bound (3) if earlier tests have not already.
+    already = int(
+        admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip()
+    )
+    for i in range(3 - already):
+        instance3.query("SELECT 1", user=f"cache_user_{i}", password=GOOD_PASSWORD)
+    assert "Authentication failed" in instance3.query_and_get_error(
+        "SELECT 1", user="cache_user_8", password=GOOD_PASSWORD
+    )
+    held = admin3(
+        "SELECT name FROM system.users WHERE storage = 'http' LIMIT 1"
+    ).strip()
+    assert (
+        "readonly"
+        in instance3.query_and_get_error(
+            f"CREATE USER {held} IDENTIFIED BY 'local_pw'",
+            user="admin_user",
+            password="admin_password",
+        ).lower()
+    )
+
+    admin3("SYSTEM RELOAD USERS")
+
+    assert (
+        admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip() == "0"
+    )
+    assert (
+        admin3(
+            "SELECT value FROM system.metrics WHERE metric = 'HTTPUserDirectoryCachedUsers'"
+        ).strip()
+        == "0"
+    )
+    # The bound is recoverable: a previously rejected new username authenticates now.
+    assert (
+        instance3.query("SELECT 1", user="cache_user_8", password=GOOD_PASSWORD).strip()
+        == "1"
+    )
+    # The released name can be created locally.
+    admin3(f"CREATE USER {held} IDENTIFIED BY 'local_pw'")
+    assert (
+        admin3(f"SELECT storage FROM system.users WHERE name = '{held}'").strip()
+        == "local_directory"
+    )
+    admin3(f"DROP USER {held}")

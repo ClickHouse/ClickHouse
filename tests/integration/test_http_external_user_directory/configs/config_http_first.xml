@@ -23,5 +23,10 @@
         <users_xml>
             <path>/etc/clickhouse-server/users.xml</path>
         </users_xml>
+        <!-- A writable storage AFTER <http>, so node3 also has the documented CREATE USER
+             ordering trap: a name held by a materialized http user cannot be created here. -->
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
     </user_directories>
 </clickhouse>

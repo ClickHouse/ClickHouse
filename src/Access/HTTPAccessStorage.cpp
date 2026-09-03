@@ -194,6 +194,22 @@ void HTTPAccessStorage::reconcileCachedProfile(const UUID & id, const std::optio
     });
 }
 
+void HTTPAccessStorage::reload(ReloadMode reload_mode)
+{
+    /// Only an explicit `SYSTEM RELOAD USERS` clears the cache. The users.xml-only mode runs on
+    /// configuration changes, which are not a request to log this directory's users out.
+    if (reload_mode != ReloadMode::ALL)
+        return;
+
+    /// Under the materialization mutex, so `cached_user_count` and the metric stay consistent
+    /// with the storage content against a concurrent `getOrCreateUser` insert.
+    std::lock_guard lock{mutex};
+    memory_storage.removeAllExcept({});
+    const auto dropped = cached_user_count.exchange(0, std::memory_order_relaxed);
+    CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, dropped);
+    LOG_INFO(getLogger(), "Dropped {} materialized users on reload", dropped);
+}
+
 UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
 {
     /// Deliberately narrow fast path. With no `default_profile` configured there is
@@ -209,8 +225,10 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     ///   * no authentication-derived state is stored on the cached `User`: helper-returned
     ///     roles, `settings` and `valid_until` all ride on `AuthResult`, and the roles are
     ///     session-scoped by design and never added to `granted_roles`;
-    ///   * this storage is read-only, so nothing updates a cached user out from under us,
-    ///     and the cache is append-only, so a found id stays valid;
+    ///   * this storage is read-only, so nothing updates a cached user out from under us.
+    ///     The cache is append-only except for `reload`, which drops everything: a hit that
+    ///     races a reload hands the caller an id that no longer resolves, and that
+    ///     authentication fails closed exactly like any concurrent user removal would;
     ///   * with no `default_profile` the `User` holds no `parent_profile` at all, so even
     ///     the generic `removeReferencesToRemovedIDs` cascade finds no dependency to strip.
     /// So the cached entity is a pure function of immutable configuration and the

@@ -51,6 +51,14 @@ public:
     bool isEphemeral() const override { return true; }
     bool exists(const UUID & id) const override;
 
+    /// `SYSTEM RELOAD USERS` (`ReloadMode::ALL`) drops every materialized user: the
+    /// `max_cached_users` bound becomes recoverable without a restart, and a name held by a
+    /// materialized user is released for `CREATE USER`. Established sessions of dropped users
+    /// fail on their next query and must re-authenticate (HTTP requests re-authenticate on
+    /// their own; a named HTTP session is recreated under the new user id). The users.xml-only
+    /// reload mode does not touch the cache. The configuration itself is not reloaded.
+    void reload(ReloadMode reload_mode) override;
+
     const String & getHTTPAuthServerName() const { return http_auth_server_name; }
 
 private: // IAccessStorage implementations.
@@ -93,7 +101,7 @@ private: // IAccessStorage implementations.
 
     AccessControl & access_control;
 
-    /// Configuration; immutable after construction (no reload support in v1).
+    /// Configuration; immutable after construction (`reload` clears the cache, it does not reconfigure).
     String http_auth_server_name;
     std::unordered_set<String> allowed_roles;
     std::vector<String> allowed_role_prefixes;
