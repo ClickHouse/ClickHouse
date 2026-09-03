@@ -16,5 +16,13 @@ INSERT INTO t_point_04145 VALUES ((1.0, 2.0));
 SELECT h3PolygonToCells(p, 7) FROM t_point_04145; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_point_04145;
 
+-- The rejection now happens during analysis, so `EXPLAIN` alone raises it: nothing is evaluated on a
+-- row, which is precisely the case the execute-time check could not catch.
+EXPLAIN SELECT h3PolygonToCells((1.0, 2.0)::Point, 7); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SELECT h3PolygonToCellsWithContainment((1.0, 2.0)::Point, 7, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The accepted domain keeps working.
+SELECT length(h3PolygonToCells([(37.5, 55.5), (37.6, 55.5), (37.6, 55.6), (37.5, 55.6)]::Ring, 7)) > 0;
+
 -- Argument 2 = String (not UInt8) -> ILLEGAL_COLUMN. Reaches the second checkAndGetColumn after `convertToFullColumnIfConst`.
 SELECT h3PolygonToCells([(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)], 'abc'); -- { serverError ILLEGAL_COLUMN }
