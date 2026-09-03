@@ -149,28 +149,9 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
         for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
             to_create.push_back(p);
 
-    /// A component kept here would be seen as already created by the next call, which would then
-    /// never persist its entry. Deepest first, because removal fails on one that is no longer
-    /// empty, which belongs to a concurrent writer.
-    auto undo_created = [&]
-    {
-        for (const auto & created : to_create)
-        {
-            std::error_code remove_ec;
-            fs::remove(created, remove_ec);
-        }
-    };
-
     fs::create_directories(normalized, ec);
-    if (!fsync)
+    if (ec || !fsync)
         return;
-
-    /// create_directories can create some components before reporting a failure.
-    if (ec)
-    {
-        undo_created();
-        return;
-    }
 
     try
     {
@@ -186,7 +167,14 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
     }
     catch (...)
     {
-        undo_created();
+        /// A directory kept here would be seen as already created by the next call, which would
+        /// then never persist its entry. Removal fails on one that is no longer empty, which
+        /// belongs to a concurrent writer.
+        for (const auto & created : to_create)
+        {
+            std::error_code remove_ec;
+            fs::remove(created, remove_ec);
+        }
         throw;
     }
 }
