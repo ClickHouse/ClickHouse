@@ -1,5 +1,5 @@
 -- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: reads system.parts_columns, which randomized enable_block_number/offset_column add rows to.
+-- no-random-merge-tree-settings: block counts depend on the default codec, and randomized enable_block_number/offset_column add rows on merge.
 
 DROP TABLE IF EXISTS t_adaptive_on;
 DROP TABLE IF EXISTS t_adaptive_off;

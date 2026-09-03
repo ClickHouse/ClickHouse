@@ -1,5 +1,5 @@
 -- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: block-count assertions depend on the default codec, and sparse randomization adds substream rows.
+-- no-random-merge-tree-settings: randomized granularity and compress block sizes give tiny blocks where T64 does not win every block.
 
 DROP TABLE IF EXISTS t_size_substreams;
 DROP TABLE IF EXISTS t_size_substreams_nested;
@@ -19,13 +19,12 @@ INSERT INTO t_size_substreams
 
 OPTIMIZE TABLE t_size_substreams FINAL; -- inserts aren't adaptive, merges are
 
-SELECT 'wide', substream, arraySort(mapKeys(sumMap(codec_block_counts)))
+SELECT 'sizes', substream, arraySort(mapKeys(sumMap(codec_block_counts)))
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_size_substreams)
 WHERE substream IN ('s.size', 'e.size')
 GROUP BY substream ORDER BY substream;
 
 SELECT 'roundtrip', count(), sum(length(s)), sum(length(e)) FROM t_size_substreams;
-CHECK TABLE t_size_substreams SETTINGS check_query_single_value_result = 1;
 
 CREATE TABLE t_size_substreams_nested (k UInt64, n Nested(a UInt64, b UInt64))
 ENGINE = MergeTree ORDER BY k

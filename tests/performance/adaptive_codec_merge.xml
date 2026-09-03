@@ -1,5 +1,5 @@
 <test>
-    <!-- The default codec wins every block -->
+    <!-- The default codec wins every block. -->
     <create_query>
         CREATE TABLE adaptive_codec_merge (x UInt64)
         ENGINE = MergeTree ORDER BY tuple()
@@ -24,7 +24,7 @@
     <fill_query>OPTIMIZE TABLE adaptive_codec_merge FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE adaptive_codec_merge_sizes FINAL</fill_query>
 
-    <!-- 1 merge -->
+    <!-- Re-merge of the single part (1 -> 1). -->
     <query>OPTIMIZE TABLE adaptive_codec_merge FINAL</query>
     <query>OPTIMIZE TABLE adaptive_codec_merge_sizes FINAL</query>
 
