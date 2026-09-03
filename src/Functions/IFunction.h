@@ -111,6 +111,14 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
+    /** True if the function returns the same value for the same arguments within one query.
+      * The default implementations that evaluate the function on a compressed representation and then
+      * expand the result - a `LowCardinality` dictionary, the nested rows of a replicated column -
+      * share one evaluation between all the rows that map to the same source row, which is only
+      * correct for such a function.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
