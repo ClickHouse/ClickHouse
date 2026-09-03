@@ -1,8 +1,7 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Common/CurrentThread.h>
+#include <Functions/TypeMismatchStrictness.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -17,11 +16,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsBool dynamic_throw_on_type_mismatch;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -31,17 +25,24 @@ namespace ErrorCodes
     extern const int NO_COMMON_TYPE;
 }
 
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias a subcolumn of the source
+/// Dynamic's backing ColumnVariant; mutate() clones it when shared, unlike assumeMutable() which
+/// would expand the shared subcolumn in place and leave the source ColumnVariant malformed.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
+}
+
 ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
     size_t dynamic_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , dynamic_argument_index(dynamic_argument_index_)
+    , throw_on_type_mismatch(shouldThrowOnDynamicTypeMismatch())
 {
-    if (CurrentThread::isInitialized())
-    {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch];
-    }
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -272,7 +273,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         if (!isDynamic(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -312,7 +313,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         /// and cast to the result Dynamic type (it can have different max_types parameter).
         if (isDynamic(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             return castColumn(ColumnWithTypeAndName{nested_result, nested_result_type, ""}, result_type);
         }
 
@@ -582,7 +583,7 @@ FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFu
         }
     }
 
-    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic())
+    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
         return_type = makeNullableSafe(type);
     else
         return_type = std::make_shared<DataTypeDynamic>(result_max_dynamic_type);

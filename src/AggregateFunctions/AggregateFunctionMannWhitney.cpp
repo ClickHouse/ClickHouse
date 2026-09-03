@@ -216,7 +216,7 @@ public:
             data(place).addX(value, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -305,7 +305,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
         )",
         R"(
 ┌─mannWhitneyUTest('greater')(sample_data, sample_index)─┐
-│ (9,0.04042779918503192)                                │
+│ (9,0.04042779918502615)                                │
 └────────────────────────────────────────────────────────┘
         )"
     }

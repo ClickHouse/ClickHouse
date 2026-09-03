@@ -58,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int TOO_LARGE_STRING_SIZE;
 }
@@ -989,7 +990,63 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+The GenerateRandom table engine produces random data for given table schema.
+
+Usage examples:
+
+- Use in test to populate reproducible large table.
+- Generate random input for fuzzing tests.
+
+## Usage in ClickHouse Server {#usage-in-clickhouse-server}
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+The `max_array_length` and `max_string_length` parameters specify maximum length of all
+array or map columns and strings correspondingly in generated data.
+
+Generate table engine supports only `SELECT` queries.
+
+It supports all [DataTypes](/reference/data-types/index) that can be stored in a table except `AggregateFunction`.
+
+## Example {#example}
+
+**1.** Set up the `generate_engine_table` table:
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** Query the data:
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+## Details of Implementation {#details-of-implementation}
+
+- Not supported:
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - `INSERT`
+  - Indices
+  - Replication
+)DOCS_MD",
+        .syntax = "ENGINE = GenerateRandom([random_seed[, max_string_length[, max_array_length]]])",
+        .related = {"FuzzJSON", "FuzzQuery"}});
 }
 
 Pipe StorageGenerateRandom::read(
@@ -1034,8 +1091,18 @@ Pipe StorageGenerateRandom::read(
     if (query_limit && num_streams * max_block_size > query_limit)
     {
         /// We want to avoid spawning more streams than necessary
-        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
+        num_streams = std::min(
+            num_streams, static_cast<size_t>(query_limit / max_block_size + (query_limit % max_block_size != 0)));
     }
+
+    /// This engine generates its data, so only a trivial `LIMIT` bounds the number of sources.
+    static constexpr size_t max_sources = 65536;
+    if (num_streams > max_sources)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Too many streams for a `GenerateRandom` table read (the maximum is {}). "
+            "Lower `max_streams_to_max_threads_ratio` or `max_threads`",
+            max_sources);
+
     Pipes pipes;
     pipes.reserve(num_streams);
 

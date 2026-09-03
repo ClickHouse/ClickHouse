@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
-
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -44,6 +43,7 @@ public:
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t) const override
     {
@@ -65,9 +65,19 @@ public:
     {
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        return WeakHash32(s);
+        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`). The
+        /// non-initial path still combines that finalized value (like an empty ColumnTuple) so a
+        /// materialized dummy and a ColumnConst wrapper of it compose identically.
+        /// See IColumn::computeHashInto.
+        const size_t n = row_end - row_begin;
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override

@@ -13,6 +13,7 @@ namespace DB
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
     M(ARROW_FLIGHT_SERVER, "ArrowFlightSrv") \
+    M(AST_FUZZER, "ASTFuzzer") \
     M(ASYNC_COPY, "AsyncCopy") \
     M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
     M(ASYNC_LOGGER, "AsyncLogger") \
@@ -24,13 +25,16 @@ namespace DB
     M(AZURE_COPY_POOL, "AzureObjCopy") \
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
+    M(BACKGROUND_QUERY, "BackgroundQuery") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
     M(BACKUP_COORDINATION, "BackupCoord") \
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
+    M(BUCKETED_METRIC_LOG, "BMetricLog") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
@@ -39,7 +43,6 @@ namespace DB
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
-    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
@@ -54,18 +57,22 @@ namespace DB
     M(DISTRIBUTED_FLUSH, "DistFlush") \
     M(DISTRIBUTED_INIT, "DistInit") \
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
+    M(DISTRIBUTED_CACHE_WRITE, "DistrCacheWrite") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
+    M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
+    M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -78,6 +85,8 @@ namespace DB
     M(KEEPER_COMMIT, "KeeperCommit") \
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
+    M(KEEPER_TTL_GARBAGE_COLLECTOR, "KeeperTTLGC") \
+    M(KEEPER_CONTAINER_GARBAGE_COLLECTOR, "KeeperCntrGC") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
@@ -127,6 +136,8 @@ namespace DB
     M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
     M(PRETTY_WRITER, "PrettyWriter") \
     M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
+    M(QUERY_PROFILER, "QueryProfiler") \
+    M(QUERY_RUNNER, "QueryRunner") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
@@ -146,6 +157,9 @@ namespace DB
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SNAPSHOT_ASYNC, "SnapshotAsync") \
+    M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \
@@ -155,6 +169,7 @@ namespace DB
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
+    M(UDF_DRIVER, "UDFDriver") \
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \
@@ -166,6 +181,8 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
+    M(DISTRIBUTED_CACHE, "DistribCache") \
+    M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
 
 
 enum class ThreadName : uint8_t
@@ -182,9 +199,31 @@ enum class ThreadName : uint8_t
   *  which will be visible in ps, gdb, /proc,
   *  for convenience of observation and debugging.
   *
+  *  On Linux 5.17+ also names the current thread's stack VMA via
+  *  `prctl(PR_SET_VMA_ANON_NAME, ..., THREAD_STACK_VMA_NAME)`, so
+  *  `AsynchronousMetrics` can attribute the matching `/proc/self/smaps`
+  *  entry to thread stacks (`MemoryThreadStacks*`). On Darwin the same
+  *  metrics are derived directly from the Mach VM map (regions tagged
+  *  `VM_MEMORY_STACK`), so no naming step is needed here.
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
 
 std::string_view toString(ThreadName name);
+
+/// Tag attached to every named thread's stack VMA via
+/// `prctl(PR_SET_VMA_ANON_NAME)`. Appears in `/proc/self/smaps` as
+/// `[anon:<name>]` on the VMA header line. `const char *` (not
+/// `std::string_view`) so it can be passed directly to `prctl` without
+/// tripping `bugprone-suspicious-stringview-data-usage`.
+inline constexpr const char * THREAD_STACK_VMA_NAME = "clickhouse_stack";
+
+/// True if any thread observed EINVAL from `prctl(PR_SET_VMA_ANON_NAME)`,
+/// i.e. running on a Linux kernel older than 5.17. Used by
+/// `ServerAsynchronousMetrics` to surface the limitation via
+/// `system.warnings`. Always `false` on non-Linux: on Darwin the
+/// `MemoryThreadStacks*` metrics are populated from the Mach VM map and
+/// have no such kernel-version dependency, and on other platforms the
+/// metrics are simply absent, so there is nothing to warn about.
+bool isThreadStackVMANamingUnsupported() noexcept;
 }

@@ -1,10 +1,16 @@
--- Tags: long, no-fasttest, no-old-analyzer
+-- Tags: long, no-fasttest, no-old-analyzer, no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 
+SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
 SET max_rows_to_group_by = 0;
 
 CREATE TABLE test(id UInt64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS index_granularity=10000;
+
+-- Keep the part set stable: a merge would replace the parts pinned in the distributed plan.
+SYSTEM STOP MERGES test;
 
 INSERT INTO test SELECT number, '' FROM numbers(10000000);
 
@@ -13,5 +19,5 @@ INSERT INTO test SELECT number, '' FROM numbers(10000000);
 SELECT count()
 FROM test AS b JOIN test AS a ON a.id%1 = b.id%2
 WHERE a.id < 10 AND b.id < 10000000 AND NOT sleepEachRow(0.000001)
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=4, distributed_plan_default_reader_bucket_count=5, distributed_plan_max_rows_to_broadcast=0;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_max_rows_to_broadcast=0;
 

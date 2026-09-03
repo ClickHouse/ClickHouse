@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/CommonParsers.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -34,6 +36,7 @@ namespace Setting
 {
     extern const SettingsUInt64 readonly;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
@@ -88,11 +91,15 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
+    const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+            continue;
+
+        if (const auto * alias = table->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
@@ -109,7 +116,9 @@ static void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, con
     const bool check_access_for_columns = !access->isGranted(AccessType::SHOW_COLUMNS);
 
     const auto & settings = context->getSettingsRef();
-    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+        .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
     for (const auto & [database_name, database_ptr] : databases)
     {
         if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
@@ -175,8 +184,10 @@ static void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_col
     const auto & aggregate_function_combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & function_name : aggregate_functions)
     {
-        for (const auto & [combinator_name, combinator] : aggregate_function_combinators)
+        for (const auto & combinator_pair : aggregate_function_combinators)
         {
+            const auto & combinator_name = combinator_pair.name;
+            const auto & combinator = combinator_pair.combinator_ptr;
             if (combinator->isForInternalUsageOnly())
                 continue;
             res_columns[0]->insert(function_name + combinator_name);
@@ -218,7 +229,7 @@ static void fillDataWithTableFunctions(MutableColumns & res_columns, const Conte
     for (const auto & function_name : table_functions)
     {
         auto properties = table_functions_factory.tryGetProperties(function_name);
-        if ((non_readonly_allowed) || (properties && properties->allow_readonly))
+        if (non_readonly_allowed || (properties && properties->allow_readonly))
         {
             res_columns[0]->insert(function_name);
             res_columns[1]->insert(TABLE_FUNCTION_CONTEXT);
@@ -356,3 +367,6 @@ void StorageSystemCompletions::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCompletions) }

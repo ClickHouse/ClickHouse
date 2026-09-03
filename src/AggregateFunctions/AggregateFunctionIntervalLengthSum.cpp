@@ -209,7 +209,7 @@ public:
         this->data(place).add(begin, end);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -300,7 +300,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
         )",
         R"(
 ┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │                           3.1 │ Float64                                   │
+│ a  │            3.0999999046325684 │ Float64                                   │
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
         )"
     },

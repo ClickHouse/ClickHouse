@@ -54,8 +54,8 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    output_stream << "See also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/reference/settings/session-settings.\n\n";
+    output_stream << "See also: https://clickhouse.com/docs/concepts/features/interfaces/client\n";
 }
 
 
@@ -202,7 +202,7 @@ try
     prompt = format("{} :) ", global_context->getConfigRef().getString("display_name", server_display_name));
     query_processing_stage = QueryProcessingStage::Enum::Complete;
     pager = getClientConfiguration().getString("pager", "");
-    enable_highlight = getClientConfiguration().getBool("highlight", true);
+    enable_highlight = ConfigHelper::getBool(getClientConfiguration(), "highlight", true);
     multiline = getClientConfiguration().has("multiline");
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     default_database = getClientConfiguration().getString("database", "");

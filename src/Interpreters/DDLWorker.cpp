@@ -610,6 +610,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// However, for the majority of exceptions there is no sense to retry, because most likely we will just
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
+        /// `TABLE_IS_READ_ONLY` is retriable: it usually comes from a temporary ZooKeeper disconnect
+        /// on `ReplicatedMergeTree`. `TABLE_IS_PERMANENTLY_READ_ONLY` is not retriable: it is raised
+        /// by the `table_readonly` setting or static storage, where retrying would loop forever.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
@@ -827,12 +830,17 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
-        // Setting alters should be executed on all replicas
+        // Setting/comment alters should be executed on all replicas, including
+        // mixed batches (e.g. MODIFY COMMENT ..., MODIFY SETTING ...) that match
+        // neither single-type predicate. The storage layer applies such commands
+        // as local metadata without a replicated log entry, so leader-only routing
+        // would leave the followers diverged.
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter())
+            alter->isCommentAlter() ||
+            alter->isSettingsOrCommentAlter())
             return false;
     }
 
@@ -849,6 +857,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
+    String max_tries_exceeded_path = fs::path(shard_path) / "max_tries_exceeded";
     chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
@@ -886,6 +895,8 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     bool executed_by_other_leader = false;
 
     bool extra_attempt_for_replicated_database = false;
+    bool max_tries_exceeded = false;
+    const bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task) != nullptr;
 
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
@@ -925,11 +936,14 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (counter > MAX_TRIES_TO_EXECUTE)
             {
                 /// Replicated databases have their own retries, limiting retries here would break outer retries
-                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
                 if (is_replicated_database_task)
                     extra_attempt_for_replicated_database = true;
                 else
+                {
+                    zookeeper->createIfNotExists(max_tries_exceeded_path, task.host_id_str);
+                    max_tries_exceeded = true;
                     break;
+                }
             }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
@@ -958,13 +972,21 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             break;
         }
 
+        if (zookeeper->exists(max_tries_exceeded_path))
+        {
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            max_tries_exceeded = true;
+            break;
+        }
+
         String tries_count;
         zookeeper->tryGet(tries_to_execute_path, tries_count);
         if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            /// Nobody will try to execute query again
-            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-            break;
+            LOG_WARNING(
+                log,
+                "Maximum retries count for task {} exceeded, waiting until the shard lock holder confirms no attempt is in flight",
+                task.entry_name);
         }
 
         /// Will try to wait or execute
@@ -990,7 +1012,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (!keep_original_error)
                 task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
-        return false;
+        return max_tries_exceeded;
     }
 
     if (executed_by_us)

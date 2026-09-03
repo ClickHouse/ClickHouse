@@ -1,0 +1,75 @@
+---
+description: 'إعدادات أذونات الاستعلامات.'
+sidebarTitle: 'أذونات الاستعلامات'
+slug: /operations/settings/permissions-for-queries
+title: 'أذونات الاستعلامات'
+doc_type: 'reference'
+---
+
+يمكن تقسيم الاستعلامات في ClickHouse إلى عدة أنواع:
+
+1. استعلامات قراءة البيانات: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2. استعلامات كتابة البيانات: `INSERT`, `OPTIMIZE`.
+3. استعلامات تغيير الإعدادات: `SET`, `USE`.
+4. استعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
+
+تنظّم الإعدادات التالية أذونات المستخدم وفقًا لنوع الاستعلام:
+
+<div id="readonly">
+  ## readonly
+</div>
+
+يفرض قيودًا على أذونات استعلامات قراءة البيانات وكتابة البيانات وتغيير الإعدادات.
+
+عند ضبطه على 1، يسمح بما يلي:
+
+* جميع أنواع استعلامات القراءة (مثل SELECT والاستعلامات المكافئة لها).
+* الاستعلامات التي لا تعدّل إلا سياق الجلسة (مثل USE).
+
+عند ضبطه على 2، يسمح بما سبق بالإضافة إلى:
+
+* SET وCREATE TEMPORARY TABLE
+
+<Tip>
+  الاستعلامات مثل EXISTS وDESCRIBE وEXPLAIN وSHOW PROCESSLIST وغيرها تُعد مكافئة لـ SELECT، لأنها تقتصر على تنفيذ SELECT من جداول النظام.
+</Tip>
+
+القيم الممكنة:
+
+* 0 — يُسمح باستعلامات القراءة والكتابة وتغيير الإعدادات.
+* 1 — يُسمح فقط باستعلامات قراءة البيانات.
+* 2 — يُسمح باستعلامات قراءة البيانات وتغيير الإعدادات.
+
+القيمة الافتراضية: 0
+
+<Note>
+  بعد ضبط `readonly = 1`، لا يمكن للمستخدم تغيير الإعدادين `readonly` و`allow_ddl` في الجلسة الحالية.
+
+  عند استخدام الطريقة `GET` في [واجهة HTTP](/ar/concepts/features/interfaces/http)، يتم ضبط `readonly = 1` تلقائيًا. لتعديل البيانات، استخدم الطريقة `POST`.
+
+  يمنع ضبط `readonly = 1` المستخدم من تغيير الإعدادات. ومع ذلك، توجد طريقة لمنع المستخدم من تغيير إعدادات محددة فقط. كما توجد طريقة للسماح بتغيير إعدادات محددة فقط ضمن قيود `readonly = 1`. لمزيد من التفاصيل، راجع [القيود على الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings).
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+يسمح باستعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language) أو يحظرها.
+
+القيم الممكنة:
+
+* 0 — استعلامات DDL غير مسموح بها.
+* 1 — استعلامات DDL مسموح بها.
+
+القيمة الافتراضية: 1
+
+<Note>
+  لا يمكنك تنفيذ `SET allow_ddl = 1` إذا كانت قيمة `allow_ddl = 0` في الجلسة الحالية.
+</Note>
+
+<Info>
+  **KILL QUERY**
+
+  يمكن تنفيذ `KILL QUERY` مع أي تركيبة من إعدادات readonly و allow&#95;ddl.
+</Info>

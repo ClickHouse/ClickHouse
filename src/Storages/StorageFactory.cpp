@@ -54,12 +54,12 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 }
 
 
-void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
+void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features, Documentation documentation)
 {
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
-    if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
@@ -105,10 +105,6 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
-        else if (query.is_window_view)
-        {
-            name = "WindowView";
-        }
         else
         {
             if (!query.storage)
@@ -142,14 +138,6 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            if (name == "WindowView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE WindowView "
-                    "is not supported, use CREATE WINDOW VIEW statement");
-            }
-
             auto it = storages.find(name);
             if (it == storages.end())
             {
@@ -206,6 +194,11 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
+
+            if (query.sql_security)
+                check_feature(
+                    "SQL SECURITY clause",
+                    [](StorageFeatures features) { return features.supports_sql_security; });
         }
     }
 

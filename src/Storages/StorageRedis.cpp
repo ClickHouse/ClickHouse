@@ -446,7 +446,8 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    Block sample_block = metadata_snapshot->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -455,14 +456,20 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
     if (values.isNull() || values.size() == 0)
         return Chunk(std::move(columns), 0);
 
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(keys.size(), 1);
-    }
+    if (null_map && null_map->size() != keys.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
+            null_map->size(), keys.size());
 
     for (size_t i = 0; i < values.size(); ++i)
     {
+        if (null_map && !(*null_map)[i])
+        {
+            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+            continue;
+        }
+
         if (!values.get<RedisBulkString>(i).isNull())
         {
             fillColumns(keys.get<RedisBulkString>(i).value(),
@@ -551,7 +558,15 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
 
-    auto raw_keys = serializeKeysToRawString(keys[0]);
+    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
+    /// `operator->` is deleted on a temporary.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
+    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
+    /// pre-existing values if the caller passed an already sized array.
+    null_map.clear();
+    null_map.resize_fill(keys[0].column->size(), 1);
+    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
 
     if (raw_keys.size() != keys[0].column->size())
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
@@ -561,7 +576,8 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(
@@ -684,7 +700,156 @@ void registerStorageRedis(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
-    factory.registerStorage("Redis", createStorageRedis, features);
+    factory.registerStorage("Redis", createStorageRedis, features, Documentation{
+        .description = R"DOCS_MD(
+This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
+```
+
+**Engine Parameters**
+
+- `host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
+- `db_index` — Redis db index range from 0 to 15, default is 0.
+- `password` — User password, default is blank string.
+- `pool_size` — Redis max connection pool size, default is 16.
+- `primary_key_name` - any column name in the column list.
+
+:::note Serialization
+`PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
+Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+Full scans with `SELECT * FROM redis_table` can fail with binary deserialization errors if the selected Redis database contains keys or values that were not written by ClickHouse.
+:::
+
+Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
+
+:::note Filtering
+Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+:::
+
+## Usage example {#usage-example}
+
+Create a table in ClickHouse using `Redis` engine with plain arguments:
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+Or using [named collections](/concepts/features/configuration/server-config/named-collections):
+
+```xml
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
+```
+
+Insert:
+
+```sql title="Query"
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+```
+
+```sql title="Query"
+SELECT COUNT(*) FROM redis_table;
+```
+
+```text title="Response"
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE key='1';
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 1   │  1 │ 1  │  1 │
+└─────┴────┴────┴────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE v1=2;
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 2   │  2 │ 2  │  2 │
+└─────┴────┴────┴────┘
+```
+
+Update:
+
+Note that the primary key cannot be updated.
+
+```sql title="Query"
+ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
+```
+
+Delete:
+
+```sql title="Query"
+ALTER TABLE redis_table DELETE WHERE key='1';
+```
+
+Truncate:
+
+Flush Redis db asynchronously. Also `Truncate` support SYNC mode.
+
+```sql title="Query"
+TRUNCATE TABLE redis_table SYNC;
+```
+
+Join:
+
+Join with other tables.
+
+```sql title="Query"
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
+```
+
+## Limitations {#limitations}
+
+Redis engine also supports scanning queries, such as `where k > xx`, but it has some limitations:
+1. Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
+2. During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.
+)DOCS_MD",
+        .syntax = "ENGINE = Redis('host:port' [, db_index [, password [, pool_size]]]) PRIMARY KEY(key)",
+        .related = {"EmbeddedRocksDB"}});
 }
 
 }

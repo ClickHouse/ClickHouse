@@ -10,10 +10,13 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE null_as_default (i Int8, s String DEFAU
 $CLICKHOUSE_CLIENT --query="CREATE TABLE default_by_other_column (a Float32 DEFAULT 100, b Float64 DEFAULT a, c Tuple(String, Float64) DEFAULT ('default', b / 4)) ENGINE = Memory";
 
 echo 'CSV'
-echo '\N, 1, \N, "2019-07-22", "[10, 20, 30]", \N
+# `t` occupies one cell per element here, because input_format_csv_deserialize_separate_columns_into_tuple
+# is on by default, so its nulls are element values and give the element defaults rather than the
+# column DEFAULT. The other formats below read the tuple as a single field and still take the DEFAULT.
+echo '\N, 1, \N, "2019-07-22", "[10, 20, 30]", \N, \N
 1, world, 3, "2019-07-23", \N, tuple, 3.14
 2, \N, 123, \N, "[]", test, 2.71828
-3, \N, \N, \N, \N, \N' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO null_as_default FORMAT CSV";
+3, \N, \N, \N, \N, \N, \N' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO null_as_default FORMAT CSV";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
 $CLICKHOUSE_CLIENT --query="TRUNCATE TABLE null_as_default";
 
