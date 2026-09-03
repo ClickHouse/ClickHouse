@@ -9,6 +9,9 @@
 -- same result type while its persisted bytes change. Changes on columns not feeding such a
 -- structure, or that leave the on-disk type of every fed subcolumn unchanged, stay metadata-only.
 
+-- Read-in-order on the base table would decline the forced projections in this test
+-- (`PROJECTION_NOT_USED`), so disable it: plan shape is not this test's subject.
+SET optimize_read_in_order = 0;
 SET enable_json_type = 1;
 SET allow_experimental_json_lazy_type_hints = 1;
 SET allow_suspicious_types_in_order_by = 1;

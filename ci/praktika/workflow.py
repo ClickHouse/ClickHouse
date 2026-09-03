@@ -8,6 +8,13 @@ from .utils import Utils
 
 
 class Workflow:
+    # A workflow filter hook normally returns (True, reason) to skip a job or
+    # (False, "") to stay neutral. Returning (False, FILTER_HOOK_FORCE_JOB)
+    # force-includes the job: it is then exempt from the later "filter not
+    # affected jobs" pass, which would otherwise drop it when no changed file
+    # matches its digest_config.
+    FILTER_HOOK_FORCE_JOB = "force"
+
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
