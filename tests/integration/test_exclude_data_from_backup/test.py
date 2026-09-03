@@ -247,6 +247,27 @@ def test_except_data_rejects_inner_table_name():
     instance.query("DROP DATABASE test")
 
 
+def test_except_data_rejects_system_users():
+    """Test that system.users cannot be used in EXCEPT DATA FROM TABLE"""
+    instance.query("DROP USER IF EXISTS u1")
+    instance.query("CREATE USER u1 IDENTIFIED BY 'test123'")
+
+    backup_name = new_backup_name()
+    # Should throw error when trying to exclude data from system.users
+    # because system.users backup contains entities (users), not table data
+    try:
+        instance.query(f"BACKUP TABLE system.users EXCEPT DATA FROM TABLE system.users TO {backup_name}")
+        assert False, "Expected exception when using system.users in EXCEPT DATA FROM TABLE, but query succeeded"
+    except Exception as e:
+        error_message = str(e)
+        # Must be rejected by SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION (1015)
+        assert ("SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION" in error_message or
+                "1015" in error_message), \
+            f"Expected SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION (1015), got: {error_message}"
+
+    instance.query("DROP USER IF EXISTS u1")
+
+
 def test_except_data_from_table_unqualified():
     """Test EXCEPT DATA FROM TABLE with unqualified table name (uses current database)
 

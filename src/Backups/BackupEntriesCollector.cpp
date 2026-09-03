@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION;
+    extern const int SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION;
 }
 
 
@@ -100,6 +101,19 @@ namespace
         int sleep_counter = attempt_no / attempts_before_sleep;
         std::chrono::milliseconds sleep_time = intExp2(std::min(sleep_counter, 10)) * min_sleep;
         return std::min(sleep_time, max_sleep);
+    }
+
+    /// Check if a system table's backup contains entities rather than table data.
+    bool isSystemTableWithEntityBackup(const String & database_name, const String & table_name)
+    {
+        if (database_name != DatabaseCatalog::SYSTEM_DATABASE)
+            return false;
+
+        static const std::unordered_set<String> system_tables_with_entity_backup = {
+            "users", "roles", "settings_profiles", "row_policies", "quotas", "functions"
+        };
+
+        return system_tables_with_entity_backup.contains(table_name);
     }
 }
 
@@ -534,6 +548,21 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
                     backQuoteIfNeed(except_data_table_name.first),
                     backQuoteIfNeed(except_data_table_name.second));
             }
+
+            /// Validate that system tables with entity backup are not used in EXCEPT DATA FROM TABLE
+            if (isSystemTableWithEntityBackup(except_data_table_name.first, except_data_table_name.second))
+            {
+                throw Exception(
+                    ErrorCodes::SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION,
+                    "System table {}.{} cannot be specified in EXCEPT DATA FROM TABLE clause because its backup "
+                    "contains entities (users, roles, functions), not table data. Use EXCEPT TABLE {}.{} instead, "
+                    "or omit the exclusion clause entirely.",
+                    backQuoteIfNeed(except_data_table_name.first),
+                    backQuoteIfNeed(except_data_table_name.second),
+                    backQuoteIfNeed(except_data_table_name.first),
+                    backQuoteIfNeed(except_data_table_name.second));
+            }
+
             database_info.except_data_table_names.emplace(except_data_table_name.second);
         }
     }
@@ -558,6 +587,21 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
                         backQuoteIfNeed(except_data_table_name.first),
                         backQuoteIfNeed(except_data_table_name.second));
                 }
+
+                /// Validate that system tables with entity backup are not used in EXCEPT DATA FROM TABLE
+                if (isSystemTableWithEntityBackup(except_data_table_name.first, except_data_table_name.second))
+                {
+                    throw Exception(
+                        ErrorCodes::SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION,
+                        "System table {}.{} cannot be specified in EXCEPT DATA FROM TABLE clause because its backup "
+                        "contains entities (users, roles, functions), not table data. Use EXCEPT TABLE {}.{} instead, "
+                        "or omit the exclusion clause entirely.",
+                        backQuoteIfNeed(except_data_table_name.first),
+                        backQuoteIfNeed(except_data_table_name.second),
+                        backQuoteIfNeed(except_data_table_name.first),
+                        backQuoteIfNeed(except_data_table_name.second));
+                }
+
                 database_info.except_data_table_names.emplace(except_data_table_name.second);
             }
         }
