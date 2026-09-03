@@ -166,9 +166,14 @@ DESCRIBE timeSeriesSamples($db.ts) SETTINGS describe_include_virtual_columns = 1
 EOF
 
 # A row policy on the TimeSeries table cannot be enforced on the target table's rows, so the read fails
-# closed while the policy exists, and works again once it is dropped.
+# closed while the policy exists, and works again once it is dropped. The two siblings hold that contract
+# in their own read paths, so each is refused on its own; both tables are read successfully just above.
 ${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY $policy ON $db.ts FOR SELECT USING 0 TO $user"
-${CLIENT_USER} -q "SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }"
+${CLIENT_USER} <<EOF
+SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM $db.sel_dst FORMAT Null; -- { serverError ACCESS_DENIED }
+SELECT * FROM $db.pq_dst FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
 ${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY $policy ON $db.ts"
 echo 'select again after the row policy is dropped'
 ${CLIENT_USER} <<EOF
