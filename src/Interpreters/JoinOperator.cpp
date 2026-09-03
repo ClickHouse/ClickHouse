@@ -5,15 +5,20 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/MergeJoin.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/ActionsDAG.h>
 
 
@@ -25,6 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -111,6 +117,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
@@ -133,8 +140,9 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
-    : join_analyze_mode(join_analyze_mode_)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_, bool temporary_storage_available_)
+    : temporary_storage_available(temporary_storage_available_)
+    , join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
@@ -174,6 +182,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
+    spill_codec_authorized = spillCodecAuthorizedBySession(query_settings);
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
@@ -228,6 +237,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
+    spill_codec_authorized = settings[QueryPlanSerializationSetting::spill_codec_authorized];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
     join_output_by_rowlist_perkey_rows_threshold = settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
@@ -250,7 +260,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -285,6 +295,24 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::max_joined_block_size_bytes] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    /// `spill_codec_authorized` is a plan-setting name older peers do not know, and
+    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
+    /// when the spill behavior of this join actually depends on it: a join that can never reach temporary
+    /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
+    /// the matching comment in `AggregatingStep::serializeSettings` and
+    /// `spillCodecAuthorizationMustBeSerialized`.
+    /// The setting was added in serialization version 10. Older workers cannot safely execute a plan that
+    /// can spill with an experimental codec because they would silently lose the opt-in.
+    if (spillCodecAuthorizationMustBeSerialized(
+            canSpillToTemporaryFiles(join_operator), spill_codec_authorized, temporary_files_codec))
+    {
+        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An experimental temporary-files codec requires query plan serialization version >= {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
+
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
+    }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;
@@ -305,6 +333,83 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+}
+
+bool JoinSettings::joinAlgorithmAlwaysBuildsSomeJoin(JoinAlgorithm algorithm)
+{
+    /// The branches of `PlannerJoins::tryCreateJoin` for these entries end in an unconditional in-memory
+    /// hash join, so `chooseJoinAlgorithm`'s first-buildable-wins loop never consults anything listed after
+    /// them. The other entries build a join only when the shape admits their algorithm and otherwise let
+    /// the loop move on (`direct` additionally needs a key-value storage, which is unknown here, so it
+    /// conservatively does not terminate the loop).
+    return algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
+        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
+
+bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) const
+{
+    /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins) is chosen before the algorithm list is
+    /// consulted at all and streams the right table to disk as soon as the in-memory size limits would be
+    /// exceeded — but only when the join shape admits a `ConstantJoin`: a join keyed by a genuine equality
+    /// never reaches it, so for such a join the size limits alone cannot cause a spill.
+    if (join_operator.canBecomeConstantJoin() && (max_rows_in_join != 0 || max_bytes_in_join != 0))
+        return true;
+
+    /// Both spilling implementations accept only some kind/strictness pairs, and both require the
+    /// single-clause join shape (`TableJoin::oneDisjunct`), which a top-level disjunction never plans
+    /// into; a join the implementation rejects falls back to an in-memory algorithm (or fails to plan)
+    /// instead of spilling. `MergeJoin` additionally declines a join whose ON expression becomes a mixed
+    /// join expression, because it never evaluates one.
+    const bool single_clause_join = !join_operator.expressionIsTopLevelDisjunction();
+    const bool spilling_hash_join_is_possible = single_clause_join && GraceHashJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_is_possible = single_clause_join
+        && !join_operator.buildsMixedJoinExpression()
+        && MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_limit_is_set = max_rows_in_join != 0 || max_bytes_in_join != 0 || default_max_bytes_in_join != 0;
+    const bool external_join_threshold_is_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.;
+
+    /// `chooseJoinAlgorithm` walks the algorithm list in order and the first algorithm that builds a join
+    /// wins, so this walks the same list the same way: a spill-capable candidate that may be chosen makes
+    /// the answer true, while an entry that always builds an in-memory join makes everything after it
+    /// unreachable. Where this cannot decide exactly what the planner does, it errs towards true:
+    /// under-emitting the opt-in would make a shard reject the codec at its first spill.
+    for (auto algorithm : join_algorithms)
+    {
+        /// `prefer_partial_merge` tries `MergeJoin` (which writes the right table through
+        /// `SortedBlocksWriter` once the in-memory size limits are hit) before falling back to the hash
+        /// branch; `partial_merge` has no fallback; `auto` tries the hash branch first and otherwise wraps
+        /// `MergeJoin` in `JoinSwitcher` (an in-memory hash join that converts to `MergeJoin` on the same
+        /// limits). Only the kind/strictness pairs `MergeJoin` supports can end up there; e.g. a keyed
+        /// `RIGHT ANY` join under `auto` falls back to an in-memory hash join.
+        if ((algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+             || algorithm == JoinAlgorithm::AUTO)
+            && merge_join_is_possible
+            && merge_join_limit_is_set)
+            return true;
+
+        /// An external-join threshold converts the hash branch into a spilling hash join
+        /// (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin` consult
+        /// `max_bytes_before_external_join` for `hash` / `parallel_hash` / `default` / `auto`, and
+        /// `prefer_partial_merge` falls back to the same branch); the other algorithms never look at it.
+        /// The raw settings are tested rather than the effective threshold so the answer does not depend on
+        /// the local memory limits of whoever asks.
+        if (external_join_threshold_is_set
+            && temporary_storage_available
+            && spilling_hash_join_is_possible
+            && (algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE || !merge_join_is_possible)
+            && joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
+            return true;
+
+        /// `grace_hash` always spills - when the join is one it can be built for at all.
+        if (algorithm == JoinAlgorithm::GRACE_HASH && spilling_hash_join_is_possible)
+            return true;
+
+        if (joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
+            return false;
+    }
+
+    return false;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
@@ -365,6 +470,209 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
     }
+}
+
+/// The test `addJoinPredicatesToTableJoin` (`JoinStepLogical.cpp`) uses to claim a condition as a
+/// hash-join key: an equality whose operands come from the two different inputs.
+static bool hasCrossSideEquality(const std::vector<JoinActionRef> & conditions)
+{
+    for (const auto & condition : conditions)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            return true;
+    }
+
+    return false;
+}
+
+bool JoinOperator::canBecomeConstantJoin() const
+{
+    if (isCrossOrComma(kind))
+        return true;
+
+    /// A cross-side equality is claimed as a hash-join key (`addJoinPredicatesToTableJoin` in
+    /// `JoinStepLogical.cpp`), so with one present the planning keeps at least one key clause: the
+    /// predicate is not constant and the no-keys conversion to CROSS never fires, ruling `ConstantJoin`
+    /// out.
+    if (hasCrossSideEquality(expression))
+        return false;
+
+    /// A top-level disjunction splits into one clause per disjunct (`tryAddDisjunctiveConditions` in
+    /// `JoinStepLogical.cpp`) when every disjunct carries its own key, keeping the join keyed; only a
+    /// keyless disjunct makes the planning fall back to the conversion to CROSS.
+    if (expressionIsTopLevelDisjunction())
+    {
+        for (const auto & disjunct : expression.front().getArguments())
+        {
+            auto conjuncts = disjunct.isFunction(JoinConditionOperator::And) ? disjunct.getArguments() : std::vector<JoinActionRef>{disjunct};
+            if (!hasCrossSideEquality(conjuncts))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// Any other expression shape may still degenerate to a constant or convert to CROSS, so it
+    /// conservatively keeps the answer true.
+    return true;
+}
+
+bool JoinOperator::expressionIsTopLevelDisjunction() const
+{
+    /// The shape test of `tryAddDisjunctiveConditions` (`JoinStepLogical.cpp`). A disjunction that is one
+    /// of several top-level conjuncts does not split the join: the other conjuncts still provide the keys
+    /// of a single clause, and the disjunction becomes a filter or a residual condition.
+    return expression.size() == 1 && expression.front().isFunction(JoinConditionOperator::Or);
+}
+
+bool JoinOperator::hasCrossSideEqualityCondition() const
+{
+    return hasCrossSideEquality(expression);
+}
+
+bool ieJoinCanCompareOperandTypes(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
+{
+    auto comparison_is_incompatible = [](const DataTypePtr & type)
+    {
+        bool result = false;
+        auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
+        check(*type);
+        if (!result)
+            type->forEachChild(check);
+        return result;
+    };
+
+    if (comparison_is_incompatible(lhs_type) || comparison_is_incompatible(rhs_type))
+        return false;
+
+    /// `tryExtractIEJoinDescription` casts both sides of the condition to a common type; a combination
+    /// `predicateOperandsToCommonType` cannot handle is declined, so that the planning falls back to the
+    /// generic handling (which compares such operands in a filter) instead of throwing.
+    return lhs_type->equals(*rhs_type) || tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) != nullptr;
+}
+
+bool JoinOperator::hasCrossSideInequalityPair() const
+{
+    /// `tryGetIEJoinKeyCondition` (`JoinStepLogical.cpp`): an inequality whose operands come from the two
+    /// different inputs and whose operand types the operator can compare.
+    size_t count = 0;
+    for (const auto & condition : expression)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Less && op != JoinConditionOperator::LessOrEquals
+            && op != JoinConditionOperator::Greater && op != JoinConditionOperator::GreaterOrEquals)
+            continue;
+        if (!(lhs.fromLeft() && rhs.fromRight()) && !(lhs.fromRight() && rhs.fromLeft()))
+            continue;
+        if (!ieJoinCanCompareOperandTypes(lhs.getType(), rhs.getType()))
+            continue;
+        if (++count >= 2)
+            return true;
+    }
+
+    return false;
+}
+
+bool JoinOperator::canPushDownFromOn(std::optional<JoinTableSide> side) const
+{
+    switch (strictness)
+    {
+        case JoinStrictness::Any:
+            /// We cannot push down to either side for ANY JOIN.
+            /// Let's say we have LEFT ANY JOIN:
+            /// 1. If we push down filter to the right side,
+            /// we may filter out rows that would otherwise match the left side rows,
+            /// resulting in different join results.
+            /// 2. If we push down filter to the left side,
+            /// we may filter out rows that should be included in the join result
+            /// with defaults or NULLs.
+            return false;
+        case JoinStrictness::All:
+        {
+            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
+            bool is_suitable_kind = kind == JoinKind::Inner
+                || kind == JoinKind::Cross
+                || kind == JoinKind::Comma
+                || (side == JoinTableSide::Left && kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && kind == JoinKind::Left);
+
+            return is_suitable_kind;
+        }
+        case JoinStrictness::Semi:
+            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
+            return side.has_value();
+        case JoinStrictness::Anti:
+            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
+            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
+            return (side == JoinTableSide::Left && kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && kind == JoinKind::Left);
+        default:
+            /// TODO: Support RightAny strictness?
+            return false;
+    }
+}
+
+bool JoinOperator::hasSingleSidePreFilterCondition() const
+{
+    for (const auto & condition : expression)
+    {
+        /// `concatConditions(join_expression, side)` (`JoinStepLogical.cpp`), which builds the pre-filter
+        /// condition of the clause, groups a condition over the left input or over no input at all with the
+        /// left side; a condition over both inputs belongs to no side and stays in the ON clause.
+        std::optional<JoinTableSide> side;
+        if (condition.fromLeft() || condition.fromNone())
+            side = JoinTableSide::Left;
+        else if (condition.fromRight())
+            side = JoinTableSide::Right;
+
+        if (side && !canPushDownFromOn(side))
+            return true;
+    }
+
+    return false;
+}
+
+bool JoinOperator::buildsMixedJoinExpression() const
+{
+    /// A condition left in the ON clause can be applied as a filter over the join result instead of being
+    /// evaluated during the join, which is what the planning does whenever the kind and the strictness
+    /// allow it (`build_mixed_join_expression` in `JoinStepLogical.cpp`).
+    if (canPushDownFromOn())
+        return false;
+
+    /// An ASOF join claims its one cross-side inequality as the ASOF key (more than one is an error), so
+    /// that condition does not end up in the mixed expression.
+    bool asof_key_is_pending = strictness == JoinStrictness::Asof;
+
+    for (const auto & condition : expression)
+    {
+        /// A condition over a single input (or over no input at all) becomes the pre-filter condition of
+        /// the clause, not part of the mixed expression.
+        if (condition.fromLeft() || condition.fromNone() || condition.fromRight())
+            continue;
+
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        const bool operands_are_cross_side = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+
+        /// Claimed as a hash-join key (`addJoinPredicatesToTableJoin`).
+        if (operands_are_cross_side && (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals))
+            continue;
+
+        if (asof_key_is_pending && operands_are_cross_side
+            && (op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals
+                || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals))
+        {
+            asof_key_is_pending = false;
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const

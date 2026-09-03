@@ -11,6 +11,7 @@
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 
+#include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -2773,3 +2774,69 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTrailingBytesAfterValidPayload)
 }
 
 }
+
+#if USE_PCO
+
+/// `PCO` is type-specific: a codec instance created from a concrete column type pins the element width
+/// and the pcodec number type of its blocks. Such an instance must reject a (corrupted or mismatched)
+/// block whose declared width or embedded number type disagrees, instead of decoding it into
+/// differently-typed values — e.g. a `UInt64` payload read back as pairs of `UInt32` values. The untyped
+/// method-byte instance has no expectation and validates the block against itself only.
+TEST(PcoCodec, TypedDecodeRejectsMismatchedBlock)
+{
+    constexpr size_t num_values = 4096;
+
+    /// A block legitimately produced by a `UInt64`-typed instance.
+    std::vector<UInt64> values_u64(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values_u64[i] = i * 1000;
+
+    const auto codec_u64 = makeCodec("PCO", std::make_shared<DataTypeUInt64>());
+    const auto * source_u64 = reinterpret_cast<const char *>(values_u64.data());
+    const auto source_u64_size = static_cast<UInt32>(values_u64.size() * sizeof(UInt64));
+    PODArray<char> encoded_u64(codec_u64->getCompressedReserveSize(source_u64_size));
+    const UInt32 encoded_u64_size = codec_u64->compress(source_u64, source_u64_size, encoded_u64.data());
+
+    /// It round-trips through the matching typed instance and through the untyped method-byte instance
+    /// (the normal read path, which has no column type to check against).
+    const auto codec_untyped = CompressionCodecFactory::instance().get(static_cast<uint8_t>(CompressionMethodByte::PCO));
+    {
+        PODArray<char> decoded(source_u64_size);
+        ASSERT_EQ(codec_u64->decompress(encoded_u64.data(), encoded_u64_size, decoded.data()), source_u64_size);
+        ASSERT_EQ(0, memcmp(source_u64, decoded.data(), source_u64_size));
+        ASSERT_EQ(codec_untyped->decompress(encoded_u64.data(), encoded_u64_size, decoded.data()), source_u64_size);
+        ASSERT_EQ(0, memcmp(source_u64, decoded.data(), source_u64_size));
+    }
+
+    /// A `UInt32`-typed instance must reject that block: its byte count is a plausible `UInt32` payload,
+    /// but the declared element width 8 does not match the column width 4.
+    const auto codec_u32 = makeCodec("PCO", std::make_shared<DataTypeUInt32>());
+    {
+        PODArray<char> decoded(source_u64_size);
+        ASSERT_THROW(codec_u32->decompress(encoded_u64.data(), encoded_u64_size, decoded.data()), Exception);
+    }
+
+    /// A same-width block of a different number type (`Int32` for a `UInt32` column) must fail closed too.
+    std::vector<Int32> values_i32(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values_i32[i] = static_cast<Int32>(i) - 2048;
+
+    const auto codec_i32 = makeCodec("PCO", std::make_shared<DataTypeInt32>());
+    const auto * source_i32 = reinterpret_cast<const char *>(values_i32.data());
+    const auto source_i32_size = static_cast<UInt32>(values_i32.size() * sizeof(Int32));
+    PODArray<char> encoded_i32(codec_i32->getCompressedReserveSize(source_i32_size));
+    const UInt32 encoded_i32_size = codec_i32->compress(source_i32, source_i32_size, encoded_i32.data());
+
+    {
+        PODArray<char> decoded(source_i32_size);
+        ASSERT_THROW(codec_u32->decompress(encoded_i32.data(), encoded_i32_size, decoded.data()), Exception);
+
+        /// While the matching typed instance and the untyped instance accept it.
+        ASSERT_EQ(codec_i32->decompress(encoded_i32.data(), encoded_i32_size, decoded.data()), source_i32_size);
+        ASSERT_EQ(0, memcmp(source_i32, decoded.data(), source_i32_size));
+        ASSERT_EQ(codec_untyped->decompress(encoded_i32.data(), encoded_i32_size, decoded.data()), source_i32_size);
+        ASSERT_EQ(0, memcmp(source_i32, decoded.data(), source_i32_size));
+    }
+}
+
+#endif

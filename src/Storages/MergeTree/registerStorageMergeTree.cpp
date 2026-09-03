@@ -865,16 +865,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
         /// strict TTL rebuild (`INSERT`, background TTL merge) would throw.
+        /// A genuine metadata load also gates the recompression-codec normalization and exempts the codec
+        /// from the codec checks; `allow_suspicious_ttl_expressions` must not by itself
+        /// be treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec
+        /// instead of having it silently normalized. See `TTLDescription::getTTLFromAST`.
         TTLValidationMode ttl_validation_mode = TTLValidationMode::Validate;
         if (!is_fresh_definition)
             ttl_validation_mode = TTLValidationMode::Attach;
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
 
+        /// A fresh definition validates its `RECOMPRESS` codec against the session settings:
+        /// `allow_suspicious_ttl_expressions` is an escape hatch for suspicious TTL *expressions* and must not
+        /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
+        /// The validation settings must come from the *local* (session) context: `context` is the global one.
+        const CodecValidationSettings ttl_codec_validation_settings
+            = is_fresh_definition ? CodecValidationSettings(local_settings) : CodecValidationSettings::trusted();
+
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, ttl_codec_validation_settings);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -923,10 +934,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce a gated codec into existing tables via a config default plus a restart, without
         /// anyone enabling that codec (at startup the check runs against the default
-        /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
-        /// documented to skip all sanity checks and is left alone.
+        /// profile, which is where such a config default can be legitimately allowed). Because such values
+        /// are not persisted into the table metadata, a session-level opt-in is not durable: the table
+        /// would fail this very check on the next load (short `ATTACH`, server restart), when it runs
+        /// against the default profile. So config-inherited values additionally require the opt-in in the
+        /// default profile — the same policy source `Context::chooseCompressionCodec` uses for the
+        /// server-level `<compression>` config. `FORCE_RESTORE` is documented to skip all sanity checks
+        /// and is left alone.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
+            std::optional<Settings> default_profile_settings;
+
             const auto is_stored_in_definition = [&](std::string_view name)
             {
                 if (!args.storage_def->settings)
@@ -941,13 +959,90 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 if (codec.empty())
                     return;
-                if (is_fresh_definition || !is_stored_in_definition(name))
+                if (is_stored_in_definition(name))
+                {
+                    /// Stored values are durable: they were gated when they were introduced, so only
+                    /// fresh definitions are checked. The experimental part is gated by the session
+                    /// settings, and the untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`)
+                    /// runs along with it, so that a fresh definition rejects such a codec CREATE-like
+                    /// instead of `MergeTreeData` silently dropping the setting on the sanitize path.
+                    if (is_fresh_definition)
+                    {
+                        CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                        CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
+                    }
+                }
+                else
+                {
+                    /// A config-inherited value is not marked as `changed`, so `checkCompressionCodecSettings`
+                    /// will never look at it. This is the only place that rejects a codec which can never work
+                    /// on an untyped stream (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of
+                    /// the validation runs here as well; the experimental part must hold for both the session
+                    /// and the default profile, because only the latter survives a restart. `validateCodecString`
+                    /// runs with the sanity checks disabled, so the lossy-on-untyped case (`SZ3`) needs the
+                    /// explicit `checkCodecStringSafeForUntypedData` predicate next to it.
                     CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+                    CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
+
+                    if (!default_profile_settings)
+                        default_profile_settings = context->getGlobalContext()->getDefaultProfileSettings();
+
+                    try
+                    {
+                        CompressionCodecFactory::instance().validateCodecString(
+                            codec, CodecValidationSettings(*default_profile_settings));
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage(
+                            "The value of the setting '{}' is inherited from the <merge_tree> config defaults and is not stored "
+                            "in the table metadata, so enabling an experimental codec only in the session is not enough: "
+                            "the table would fail to load after a server restart. Enable it in the default profile instead",
+                            name);
+                        throw;
+                    }
+                }
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
             validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
+        }
+
+        /// On the metadata-load path the stored `SETTINGS` clause is exempt from the checks above and from
+        /// `sanityCheck` (which `MergeTreeData` skips for these modes), so it can carry a codec that cannot
+        /// work on an untyped stream — e.g. a pre-fix or hand-edited definition with
+        /// `marks_compression_codec = 'PCO'`. Left untouched it would only fail later, at the first write,
+        /// when the stored string is re-resolved without a column type. Reset such settings here, restoring
+        /// the pre-override effective value from `initial_storage_settings` (the current config defaults) —
+        /// which is exactly what the setting resolves to on the next load once the entry is dropped from
+        /// the stored metadata below — and drop them from the stored `settings_changes` AST: otherwise
+        /// `SHOW CREATE` / backup metadata would keep advertising the codec, and a later `ALTER` that
+        /// re-parses `settings_changes` (re-running `sanityCheck`) would reject it, making unrelated
+        /// `ALTER`s impossible.
+        if (!is_fresh_definition)
+        {
+            if (auto resets = storage_settings->sanitizeCompressionCodecSettings(initial_storage_settings); !resets.empty())
+            {
+                for (const auto & reset : resets)
+                    LOG_WARNING(getLogger("registerStorageMergeTree"), "Table {}: {}", args.table_id.getNameForLogs(), reset.note);
+
+                if (args.storage_def->settings)
+                {
+                    std::unordered_set<std::string_view> reset_names;
+                    for (const auto & reset : resets)
+                        reset_names.insert(reset.setting_name);
+
+                    auto & changes = args.storage_def->settings->changes;
+                    std::erase_if(changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
+
+                    /// If the unsafe codec was the only stored setting, drop the AST entirely: a non-null
+                    /// `ASTSetQuery` with an empty `changes` list would format as a bare `SETTINGS` clause,
+                    /// making `SHOW CREATE` / backup metadata unparseable.
+                    if (changes.empty())
+                        metadata.settings_changes = nullptr;
+                }
+            }
         }
 
         /// UNIQUE KEY tables must reside on local-only storage policies.
@@ -1052,7 +1147,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, ttl_codec_validation_settings);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 

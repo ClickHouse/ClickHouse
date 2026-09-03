@@ -14,6 +14,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
@@ -66,6 +67,9 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
@@ -120,6 +124,33 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     for (const auto & grouping_set : grouping_sets_params)
     {
         if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+            return true;
+    }
+
+    return false;
+}
+
+static bool keysCanGoTwoLevel(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        if (!header.has(key))
+            return true;
+    }
+
+    Sizes key_sizes;
+    return AggregatedDataVariants::isConvertibleToTwoLevel(AggregatedDataVariants::chooseMethod(header, keys, key_sizes));
+}
+
+bool aggregationCanGoTwoLevel(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    if (grouping_sets_params.empty())
+        return keysCanGoTwoLevel(header, keys);
+
+    /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        if (keysCanGoTwoLevel(header, grouping_set.used_keys))
             return true;
     }
 
@@ -572,7 +603,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
             SortingStep::fullSortStreams(
-                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */, settings.tmp_data_scope);
         }
 
         if (pipeline.getNumStreams() > 1)
@@ -978,6 +1009,40 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
+    /// External aggregation on a remote shard has to spill with the initiator's
+    /// `temporary_files_codec`, buffer size, and `spill_codec_authorized` opt-in. The temporary
+    /// data scope is not part of the plan payload and can be absent on the initiator even though a
+    /// worker has one, so the query settings travel independently with the step and are re-applied
+    /// in `deserialize`.
+    ///
+    /// `spill_codec_authorized` is registered in serialization version 8. A pre-v8 peer cannot safely
+    /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
+    /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it (see
+    /// `spillCodecAuthorizationMustBeSerialized`): `Aggregator::executeOnBlock` reaches
+    /// `writeToTemporaryFile` only when `max_bytes_before_external_group_by` is set, only from a two-level
+    /// hash-table state (which additionally needs a nonzero two-level threshold - both go to the receiver
+    /// in the settings written above - and a method that can convert at all, see
+    /// `aggregationCanGoTwoLevel`), so an aggregation that must stay in memory never resolves the codec
+    /// and must not carry the opt-in. A v8 reader that does not receive it keeps the default (`false`),
+    /// which for such a plan encodes the identical spill behavior.
+    settings[QueryPlanSerializationSetting::temporary_files_codec] = params.temporary_files_codec;
+    settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = params.temporary_files_buffer_size;
+    const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
+        && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+        && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
+    if (spillCodecAuthorizationMustBeSerialized(
+            external_aggregation_is_reachable,
+            params.spill_codec_authorized,
+            params.temporary_files_codec))
+    {
+        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An experimental temporary-files codec requires query plan serialization version >= {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
+
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
+    }
+
     /// `QueryPlanSerializationSettings` is a strict named schema, so these two names may go on the wire only
     /// towards a peer whose version knows them; see the comment below on the packed-string-keys setting.
     /// A peer that predates them has no adaptive aggregator at all, so leaving them out is also the correct
@@ -1167,6 +1232,19 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// Re-apply the initiator's temporary data settings, see `serializeSettings`.
+    /// The parent is the worker query's own temporary-data scope (installed by `ProcessList::insert`),
+    /// so the shard keeps enforcing `max_temporary_data_on_disk_size_for_query` / `..._for_user`;
+    /// it falls back to the server-wide root scope when there is no query-local scope,
+    /// same as the local path in `Planner::getAggregatorParams`.
+    auto tmp_data_scope = ctx.context->getTempDataOnDisk();
+    if (tmp_data_scope)
+        tmp_data_scope = tmp_data_scope->childScope(
+            /* metrics */ {},
+            ctx.settings[QueryPlanSerializationSetting::temporary_files_buffer_size],
+            ctx.settings[QueryPlanSerializationSetting::temporary_files_codec],
+            ctx.settings[QueryPlanSerializationSetting::spill_codec_authorized]);
+
     Aggregator::Params params{
         keys,
         aggregates,
@@ -1177,7 +1255,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
-        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        tmp_data_scope,
+        ctx.settings[QueryPlanSerializationSetting::temporary_files_codec],
+        ctx.settings[QueryPlanSerializationSetting::spill_codec_authorized],
+        ctx.settings[QueryPlanSerializationSetting::temporary_files_buffer_size],
         0, //settings[QueryPlanSerializationSetting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],
         ctx.settings[QueryPlanSerializationSetting::compile_aggregate_expressions],

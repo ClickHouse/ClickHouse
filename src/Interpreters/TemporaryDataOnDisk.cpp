@@ -10,6 +10,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/UUID.h>
 
@@ -58,8 +59,14 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsString temporary_files_codec;
+}
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
@@ -74,9 +81,69 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     if (settings.compression_codec.empty())
         return CompressionCodecFactory::instance().get("LZ4");
 
-    return CompressionCodecFactory::instance().get(settings.compression_codec);
+    auto codec = CompressionCodecFactory::instance().get(settings.compression_codec);
+
+    /// Temporary files hold raw serialized data with no column type, which bypasses the per-column
+    /// type checks of column-level codecs. A codec that requires the column type to compress
+    /// (e.g. `PCO`) would otherwise be accepted here and only fail later, at the first external
+    /// sort/join/aggregation spill, with a confusing message. Reject such codecs up front, mirroring
+    /// the validation of the `marks_compression_codec` / `primary_key_compression_codec` MergeTree
+    /// settings, which are likewise applied to untyped streams. A gated codec (experimental or beta) is a
+    /// session-gated policy: it is allowed when the session that set `temporary_files_codec` enabled that
+    /// very codec (its dedicated `enable_<family>_codec` setting, or - for an experimental one - the
+    /// blanket `allow_experimental_codecs`). The decision is carried in the settings because the query
+    /// settings are no longer available at spill time; see `spillCodecAuthorizedBySession`.
+    if (CompressionCodecFactory::isCodecStringGated(settings.compression_codec) && !settings.spill_codec_authorized)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'temporary_files_codec' cannot use the codec {}: the session did not enable it with the "
+            "codec's 'enable_<family>_codec' setting (or with 'allow_experimental_codecs')",
+            settings.compression_codec);
+    if (codec->requiresColumnTypeToCompress())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'temporary_files_codec' cannot use the codec {} because it requires a column type and the setting "
+            "is applied to untyped data",
+            settings.compression_codec);
+
+    return codec;
 }
 
+}
+
+bool temporaryFilesCodecIsGated(const String & compression_codec)
+{
+    if (compression_codec.empty())
+        return false;
+
+    const auto & factory = CompressionCodecFactory::instance();
+
+    /// This can run while a plan is being serialized, for a query that may never spill, so it must
+    /// classify rather than throw. A codec that cannot compress untyped data at all (`SZ3`, `PCO`, ...)
+    /// makes the spill itself fail with the same `getCodec` error on every peer, with and without the
+    /// session opt-in - there is nothing to communicate, and classifying it below would be pointless.
+    /// The same goes for a codec string that cannot be resolved at all: the spill fails with the
+    /// identical error wherever the plan runs.
+    try
+    {
+        if (!factory.getReasonUnsafeForUntypedData(compression_codec).empty())
+            return false;
+        return CompressionCodecFactory::isCodecStringGated(compression_codec);
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
+}
+
+bool spillCodecAuthorizedBySession(const Settings & settings)
+{
+    return CompressionCodecFactory::areCodecGatesSatisfied(settings[Setting::temporary_files_codec], settings);
+}
+
+bool spillCodecAuthorizationMustBeSerialized(bool spill_is_reachable, bool spill_codec_authorized, const String & compression_codec)
+{
+    return spill_is_reachable && spill_codec_authorized && temporaryFilesCodecIsGated(compression_codec);
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -362,14 +429,18 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
-TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_, bool spill_codec_authorized_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
     child_settings.metrics = metrics_;
     if (buffer_size_)
         child_settings.buffer_size = buffer_size_;
     if (!compression_codec_.empty())
+    {
+        /// The experimental-codecs opt-in travels together with the codec it applied to.
         child_settings.compression_codec = compression_codec_;
+        child_settings.spill_codec_authorized = spill_codec_authorized_;
+    }
     return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
 }
 

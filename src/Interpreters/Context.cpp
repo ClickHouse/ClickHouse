@@ -388,6 +388,7 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
@@ -713,6 +714,9 @@ struct ContextSharedPart : boost::noncopyable
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
+    /// Bumped every time the selector is invalidated, so a policy read outside the lock can be
+    /// detected as stale and re-read instead of being baked into a freshly built selector.
+    mutable UInt64 compression_codec_selector_generation TSA_GUARDED_BY(mutex) = 0;
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -968,6 +972,8 @@ struct ContextSharedPart : boost::noncopyable
 
         std::lock_guard lock(mutex);
         config = config_value;
+        compression_codec_selector.reset();
+        ++compression_codec_selector_generation;
         access_control->setExternalAuthenticatorsConfig(*config_value);
     }
 
@@ -2201,12 +2207,23 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     std::lock_guard lock(shared->mutex);
     shared->users_config = config;
     shared->access_control->setUsersConfig(*shared->users_config);
+    /// The selector uses the effective default-profile settings. Rebuild it after a users reload
+    /// so changes to `allow_experimental_codecs` take effect without restarting the server.
+    shared->compression_codec_selector.reset();
+    ++shared->compression_codec_selector_generation;
 }
 
 ConfigurationPtr Context::getUsersConfig()
 {
     SharedLockGuard lock(shared->mutex);
     return shared->users_config;
+}
+
+void Context::resetCompressionCodecSelector()
+{
+    std::lock_guard lock(shared->mutex);
+    shared->compression_codec_selector.reset();
+    ++shared->compression_codec_selector_generation;
 }
 
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
@@ -7312,20 +7329,49 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->compression_codec_selector)
+    /// The selector is built once and shared, so the experimental-codec gate must come from the
+    /// server-level policy (the default profile), not from the settings of whichever query happens
+    /// to trigger the lazy build.
+    ///
+    /// The policy is read *without* holding `shared->mutex`: reading it goes through `AccessControl`,
+    /// which takes that same non-recursive mutex (and may do IO), so reading it under the lock
+    /// deadlocks the very first `MergeTree` part write of the process. The generation counter detects
+    /// a config or users reload racing with that read, in which case the policy is re-read, so the
+    /// selector is never built from a policy older than the config it is built for.
+    while (true)
     {
-        constexpr auto config_name = "compression";
-        const auto & config = shared->getConfigRefWithLock(lock);
+        UInt64 generation = 0;
 
-        if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
-        else
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
+        {
+            SharedLockGuard lock(shared->mutex);
+            if (shared->compression_codec_selector)
+                return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+            generation = shared->compression_codec_selector_generation;
+        }
+
+        const Settings default_profile_settings = getGlobalContext()->getDefaultProfileSettings();
+
+        {
+            std::lock_guard lock(shared->mutex);
+
+            if (!shared->compression_codec_selector)
+            {
+                if (shared->compression_codec_selector_generation != generation)
+                    continue;
+
+                constexpr auto config_name = "compression";
+                const auto & config = shared->getConfigRefWithLock(lock);
+
+                if (config.has(config_name))
+                    shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(
+                        config, "compression", CodecValidationSettings(default_profile_settings));
+                else
+                    shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
+            }
+
+            return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+        }
     }
-
-    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 
@@ -7887,6 +7933,17 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 String Context::getDefaultProfileName() const
 {
     return shared->default_profile_name;
+}
+
+Settings Context::getDefaultProfileSettings()
+{
+    /// `getSettingsRef` on the global context contains the `system_profile` snapshot. Construct
+    /// the effective settings from the current `default_profile` instead, so `SYSTEM RELOAD USERS`
+    /// changes this server-level policy without restarting the server.
+    Settings default_profile_settings;
+    default_profile_settings.applyChanges(
+        getAccessControl().getSettingsProfileInfo(getAccessControl().getID<SettingsProfile>(getDefaultProfileName()))->settings);
+    return default_profile_settings;
 }
 
 String Context::getSystemProfileName() const

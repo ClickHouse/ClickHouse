@@ -38,6 +38,8 @@ class TemporaryFileHolder;
 
 class FileCache;
 
+struct Settings;
+
 struct TemporaryDataMetrics
 {
     CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
@@ -54,12 +56,38 @@ struct TemporaryDataOnDiskSettings
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
     String compression_codec = {};
 
+    /// Whether the session that provided `compression_codec` authorized it: it is not experimental, or
+    /// the session enabled it - with the codec's dedicated `enable_<family>_codec` setting, or with the
+    /// blanket `allow_experimental_codecs`. The codec string is resolved lazily at the first spill, when
+    /// the query settings are no longer available, so the authorization has to be carried along with the
+    /// codec (see `spillCodecAuthorizedBySession`).
+    bool spill_codec_authorized = false;
+
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
     /// Counters to update when files are created or data is written
     TemporaryDataMetrics metrics;
 };
+
+/// Whether `compression_codec` (a `temporary_files_codec` value; empty means the default `LZ4`)
+/// resolves to a gated codec, i.e. spilling with it requires the session's authorization.
+bool temporaryFilesCodecIsGated(const String & compression_codec);
+
+/// Whether `settings` authorize the `temporary_files_codec` they configure as a spill codec: it is not
+/// gated, or the session enabled it (its dedicated `enable_<family>_codec` setting, or - for an
+/// experimental codec - the blanket `allow_experimental_codecs`). Computed where the query settings still exist, because the spill happens
+/// long afterwards; the result travels as `TemporaryDataOnDiskSettings::spill_codec_authorized`.
+bool spillCodecAuthorizedBySession(const Settings & settings);
+
+/// Whether a query-plan step that spills with `compression_codec` has to carry the
+/// `spill_codec_authorized` opt-in on the wire, so a remote shard resolves the same codec the initiator
+/// accepted. `QueryPlanSerializationSettings` is a strict named schema - `readBinary` throws on a name it
+/// does not know - so a peer that predates the setting rejects any plan carrying it. The name therefore
+/// goes on the wire only when the spill behavior of the step actually depends on it: the step can reach
+/// temporary files at all (`spill_is_reachable`), the opt-in is set, *and* the codec it enables is
+/// experimental. In every other case the reader's default (`false`) encodes the identical spill behavior.
+bool spillCodecAuthorizationMustBeSerialized(bool spill_is_reachable, bool spill_codec_authorized, const String & compression_codec);
 
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
 using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
@@ -105,7 +133,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
+    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {}, bool spill_codec_authorized_ = false);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 

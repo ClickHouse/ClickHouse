@@ -1,0 +1,8 @@
+only	1000
+two	1000
+t_only.sql:0
+t_two.sql:0
+only_after_reload	1000
+two_after_reload	1000
+two_granularity_kept	1
+two_codec_dropped	1

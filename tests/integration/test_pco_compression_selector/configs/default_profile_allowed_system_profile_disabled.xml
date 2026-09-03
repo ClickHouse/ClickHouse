@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_codecs>1</allow_experimental_codecs>
+        </default>
+        <system>
+            <allow_experimental_codecs>0</allow_experimental_codecs>
+        </system>
+    </profiles>
+</clickhouse>

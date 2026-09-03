@@ -8812,6 +8812,9 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \
+    DECLARE(Bool, enable_pco_codec, false, R"(
+Enables the `PCO` compression codec.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_quantized_codec, false, R"(
 Enables the `Quantized` compression codec.
 )", EXPERIMENTAL) \

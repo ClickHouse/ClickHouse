@@ -480,6 +480,9 @@ public:
 
     CompressionCodecPtr default_codec;
 
+    /// The codec read from the part metadata before `default_codec` is sanitized for future writes.
+    CompressionCodecPtr on_disk_default_codec;
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.

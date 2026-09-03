@@ -1,0 +1,4 @@
+initial	ZSTD(3)
+count	1000
+sum_after_update	500500
+mutated_codec	ZSTD(3)

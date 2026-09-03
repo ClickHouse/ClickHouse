@@ -18,6 +18,14 @@ node = cluster.add_instance(
     user_configs=["configs/enable_zxc_codec.xml"],
     stay_alive=True,
 )
+# Same config default, but the default profile does NOT opt in: a session-level
+# opt-in alone must not let the config default into a table, because the value is
+# not stored in the table metadata and the table would fail to load on restart,
+# when it is re-validated against the default profile.
+node_profile_disabled = cluster.add_instance(
+    "node_profile_disabled",
+    main_configs=["configs/merge_tree.xml"],
+)
 
 DISABLED = {"enable_zxc_codec": 0}
 ENABLED = {"enable_zxc_codec": 1}
@@ -98,6 +106,42 @@ def test_attach_with_stored_codec_setting_is_exempt(started_cluster):
     node.query("DETACH TABLE t_stored")
     node.query("ATTACH TABLE t_stored", settings=DISABLED)
     node.query("DROP TABLE t_stored SYNC")
+
+
+def test_session_opt_in_is_not_durable_without_default_profile(started_cluster):
+    # With the default profile at `allow_experimental_codecs = 0`, a session-level
+    # opt-in must not accept the config-inherited experimental default: nothing is
+    # written into the table metadata, so the table would become unloadable after
+    # a restart, when the value is re-validated against the default profile.
+    error = node_profile_disabled.query_and_get_error(
+        "CREATE TABLE t_session (x UInt64) ENGINE = MergeTree ORDER BY x",
+        settings=ENABLED,
+    )
+    assert "default profile" in error
+
+    # An explicit non-experimental override is stored and therefore fine.
+    node_profile_disabled.query(
+        "CREATE TABLE t_session (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS default_compression_codec = 'LZ4'",
+        settings=ENABLED,
+    )
+
+    # Resetting the stored setting would fall back to the non-durable config
+    # default, so it is rejected too, even with the session opt-in.
+    error = node_profile_disabled.query_and_get_error(
+        "ALTER TABLE t_session RESET SETTING default_compression_codec",
+        settings=ENABLED,
+    )
+    assert "default profile" in error
+
+    # An explicit experimental codec is stored in the metadata (durable), so the
+    # session opt-in is sufficient for it.
+    node_profile_disabled.query(
+        "ALTER TABLE t_session MODIFY SETTING default_compression_codec = 'ZXC'",
+        settings=ENABLED,
+    )
+    node_profile_disabled.query("DETACH TABLE t_session")
+    node_profile_disabled.query("ATTACH TABLE t_session")
+    node_profile_disabled.query("DROP TABLE t_session SYNC")
 
 
 def test_restart_with_config_default_allowed_in_default_profile(started_cluster):

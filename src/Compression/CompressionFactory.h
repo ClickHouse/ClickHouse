@@ -44,9 +44,24 @@ struct CodecValidationSettings
     /// An already accepted codec must not be re-judged by the current session, or existing tables could fail to load.
     static CodecValidationSettings trusted() { return {}; }
 
+    /// Enforce the codec gate, but skip the suspicious-codec sanity checks. For the escape
+    /// hatches that only relax validation (e.g. `allow_suspicious_ttl_expressions`): relaxing the checks
+    /// must not silently enable a gated codec.
+    static CodecValidationSettings withoutSanityCheck(const Settings & settings_)
+    {
+        CodecValidationSettings result(settings_);
+        result.skip_sanity_check = true;
+        return result;
+    }
+
+    static CodecValidationSettings withoutSanityCheck(Settings &&) = delete;
+
     /// nullptr on trusted paths (every gated / suspicious codec is accepted).
     /// Otherwise a gated codec must be enabled by its dedicated setting.
     const Settings * settings = nullptr;
+
+    /// Skip the suspicious-codec sanity checks even though `settings` is set. See `withoutSanityCheck`.
+    bool skip_sanity_check = false;
 
 private:
     CodecValidationSettings() = default;
@@ -86,6 +101,30 @@ public:
     /// `primary_key_compression_codec`, `default_compression_codec`). The suspicious-codec sanity checks do not apply to this form.
     void validateCodecString(const String & compression_codec, const CodecValidationSettings & validation_settings) const;
 
+    /// Throw if `compression_codec` can never work on data whose column type is unknown, i.e. if
+    /// `getReasonUnsafeForUntypedData` classifies it as unsafe. `validateCodecString` alone is not enough
+    /// for the codec-valued MergeTree settings: it validates with the sanity checks disabled, so it rejects
+    /// a codec that requires the column type (`T64`) but accepts a lossy one (`SZ3`), which would then only
+    /// fail later, at the first mark / primary key / part write. `setting_name` is only used in the message.
+    void checkCodecStringSafeForUntypedData(const String & compression_codec, std::string_view setting_name) const;
+
+    /// Whether the codec family `family_name` is gated behind a dedicated `enable_<family>_codec`
+    /// setting, i.e. it is not generally available. An unknown or ungated family is not gated.
+    static bool isCodecFamilyGated(const String & family_name);
+
+    /// Whether any codec family in the chain `compression_codec` (a codec name or chain such as
+    /// `"PCO, LZ4"`) is gated. Classifies instead of throwing: a string that cannot be parsed as a
+    /// codec chain is reported as ungated and fails later, where the codec is actually resolved.
+    static bool isCodecStringGated(const String & compression_codec);
+
+    /// Whether `settings` satisfy the gate of every codec in the chain `compression_codec`: each gated
+    /// codec's dedicated `enable_<family>_codec` setting, or - for an experimental one - the blanket
+    /// `allow_experimental_codecs` escape hatch. Unlike `validateCodecString` this classifies instead of
+    /// throwing: it is meant for callers that record the session's authorization long before the codec is
+    /// resolved (the `temporary_files_codec` spill settings), so an unresolvable codec string is reported
+    /// as authorized here and fails later, where it is actually used, with a precise message.
+    static bool areCodecGatesSatisfied(const String & compression_codec, const Settings & settings);
+
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain
@@ -112,6 +151,32 @@ public:
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
 
+    /// Return a human-readable reason why `compression_codec` (a codec name or chain such as
+    /// `"PCO, LZ4"`) can not be safely applied without a column type — because a codec in it
+    /// requires a column type or is lossy — or an empty string if it is safe. Experimentality is
+    /// not classified here: it is a session-gated policy, not a data-safety property.
+    /// Unlike `get(const String &)`, this does NOT throw while resolving a lossy codec (e.g. `SZ3`)
+    /// without a column type; it classifies it. This lets callers both reject such a codec on the
+    /// create path and normalize (reset) it on the metadata-load path, where throwing would fail the
+    /// load. Genuinely invalid codec strings still throw (e.g. `UNKNOWN_CODEC`).
+    String getReasonUnsafeForUntypedData(const String & compression_codec) const;
+
+    /// Same as above, but for a codec chain given as a `CODEC(...)` AST (e.g. a stored
+    /// `TTL ... RECOMPRESS CODEC(...)` clause), so the caller need not round-trip it through a string.
+    String getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const;
+
+    /// Whether the `CODEC(...)` AST consists of exactly the `Default` alias and nothing else. Callers
+    /// that resolve codecs without a column type (e.g. `MergeTreeData::getCompressionCodecForPart`) use
+    /// this to treat `CODEC(Default)` as "no forced codec, follow the normal default selection"
+    /// (the `default_compression_codec` setting, then the server `<compression>` selector) instead of
+    /// resolving the alias to the factory's hardcoded fallback codec.
+    static bool isDefaultCodecAlias(const ASTPtr & codec_ast);
+
+    /// Whether the `CODEC(...)` AST contains the `Default` alias anywhere in the chain (e.g.
+    /// `CODEC(Delta, Default)`). Callers that resolve such a chain without a column type must supply
+    /// a `current_default` obtained from the same normal default selection, so the alias does not
+    /// silently resolve to the factory's hardcoded fallback codec.
+    static bool containsDefaultCodecAlias(const ASTPtr & codec_ast);
     /// Names of the dedicated settings gating registered codec families.
     Strings getGateSettingNames() const;
 
@@ -138,6 +203,20 @@ protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
 
 private:
+    /// Upper-cases the codec family names of a parsed `CODEC(...)` clause in place, and nothing else.
+    ///
+    /// A codec string coming from a setting (`temporary_files_codec`, `default_compression_codec`, ...) is
+    /// not necessarily spelled the way the family is registered in the factory, so the family names are
+    /// normalized before the lookup. Only the identifiers and function names may be touched: upper-casing
+    /// the whole string before parsing would rewrite literal arguments too, turning e.g. `T64('bit')` into
+    /// `T64('BIT')`, which the codec rejects with `Wrong modification for T64` - so a valid stored setting
+    /// would fail to resolve, and `getReasonUnsafeForUntypedData` would throw instead of classifying it.
+    static void upperCaseCodecFamilyNames(const ASTPtr & codec_ast);
+
+    /// The codec family names of a chain string such as `"PCO, LZ4"`, in order. Throws if the string
+    /// cannot be parsed as a codec chain; the classifying callers above catch that.
+    static Strings getCodecFamilyNamesOfChain(const String & compression_codec);
+
     ASTPtr validateCodecAndGetPreprocessedASTImpl(
         const ASTPtr & ast, const DataTypePtr & column_type, const Settings * settings, bool sanity_check) const;
 

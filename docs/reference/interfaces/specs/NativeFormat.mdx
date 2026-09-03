@@ -1406,6 +1406,22 @@ These three codecs are the ones the server produces for whole-stream `Native` fr
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
 
+### Per-column codec frames {#per-column-codec-frames}
+
+The three method bytes above (`NONE`/`LZ4`/`ZSTD`) are the only ones a ClickHouse transport *emits*: `compress=1` output and the network compression path use one of them. However, the shared `CompressedReadBuffer` that decodes a frame dispatches on the method byte against the full codec registry, so any registered per-column codec byte (listed below) is *accepted* on input — including on the HTTP `decompress=1` path. An interoperating implementation therefore need not produce these frames, but a fully general reader must recognise them (or reject unknown bytes rather than misparse them).
+
+`0xa0` (PCO) carries a self-describing body written by the `PCO` codec:
+
+```text
+[1 byte:  W]        ← element width in bytes (1, 2, 4 or 8); high bit 0x80 = "stored"
+[1 byte:  B]        ← number of leading raw bytes = uncompressed_size mod W
+[B bytes]           ← the raw leading partial value (as in Gorilla/FPC)
+[payload]           ← if the 0x80 flag is set: the raw uncompressed bytes;
+                      otherwise: a standalone pcodec (.pco) stream of (uncompressed_size − B) / W values
+```
+
+When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is byte-for-byte compatible with the reference pcodec implementation and self-describes its number type; the stored form (flag set) is used only when compression would not shrink the block, bounding the output to the input size plus the two header bytes. `PCO` needs the column type to compress, but it decodes without one: the element width `W` and the number type carried inside the `.pco` stream are sufficient. A decoder that does know the expected column type additionally rejects a block whose `W` — or, for the compressed form, whose embedded number type — disagrees with that type, instead of reinterpreting the values.
+
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
 | Byte   | Method            |
@@ -1423,8 +1439,9 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9d` | `SZ3`             |
 | `0x9e` | `Quantized`       |
 | `0x9f` | `ZXC`             |
+| `0xa0` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
 
-`0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+`0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression). A table can be created with `CODEC(ALP)` only when the `enable_alp_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an **experimental** asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. A table can be created with `CODEC(ZXC)` only when the `enable_zxc_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0xa0` (`PCO`) is an **experimental** lossless codec for fixed-width numeric columns. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when the `enable_quantized_codec` setting is set, and the method byte is always accepted on decompression.
 

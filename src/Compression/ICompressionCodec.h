@@ -101,6 +101,13 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
+    /// If the codec needs the column data type to compress (e.g. `PCO`, which depends on the element
+    /// width and whether it is float/signed/unsigned). Such a codec cannot be used in the untyped
+    /// compression settings (`marks_compression_codec`, `primary_key_compression_codec`,
+    /// `default_compression_codec`, `temporary_files_codec`) or in `TTL ... RECOMPRESS`, which resolve
+    /// codecs without a column type. An instance created without a type can still decompress.
+    virtual bool requiresColumnTypeToCompress() const { return false; }
+
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 

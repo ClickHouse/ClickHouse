@@ -1136,7 +1136,8 @@ void AlterCommand::apply(
             context,
             metadata.primary_key,
             context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
+                                                                                 : TTLValidationMode::Validate,
+            CodecValidationSettings(context->getSettingsRef()));
     }
     else if (type == REMOVE_TTL)
     {
@@ -1834,19 +1835,71 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
+    ///
+    /// A TTL none of the commands touched is rebuilt from stored metadata here, not created as fresh DDL,
+    /// so it is rebuilt with exactly the metadata-load semantics (`TTLValidationMode::Attach`, and the
+    /// `RECOMPRESS` codecs exempt from the codec checks): whatever the server loads must survive
+    /// an unrelated `ALTER`, otherwise a table whose TTL was accepted under `allow_suspicious_ttl_expressions`
+    /// or whose `TTL ... RECOMPRESS` codec was accepted with an experimental codec enabled, and which the
+    /// server happily loads on every start, would reject every `ALTER ADD COLUMN` in a session without those
+    /// settings. This does not weaken the check that an `ALTER` may not break a TTL: the expression is still
+    /// rebuilt against the new columns, and `checkTTLExpression` still requires a `Date` / `DateTime` result
+    /// type in every mode - only the suspicious-TTL policy checks, which the stored TTL passed (or was
+    /// exempted from) when it was created, are skipped.
+    ///
+    /// Whether a TTL is touched is decided from the commands rather than by comparing the rebuilt AST with
+    /// the stored one: `RENAME COLUMN` rewrites the stored TTL AST (renaming the columns it references)
+    /// without changing the TTL itself, and must stay on load semantics. A command that does change a TTL
+    /// keeps the strict fresh-DDL validation and codec gate (`MODIFY TTL` is additionally validated against
+    /// the session settings when the command itself is applied above).
+    const auto & session_settings = context->getSettingsRef();
+    const auto fresh_ddl_validation_mode = session_settings[Setting::allow_suspicious_ttl_expressions]
+        ? TTLValidationMode::SkipValidation
+        : TTLValidationMode::Validate;
+
+    bool table_ttl_changed_by_command = false;
+    std::unordered_set<String> columns_with_ttl_changed_by_command;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::MODIFY_TTL || command.type == AlterCommand::REMOVE_TTL)
+            table_ttl_changed_by_command = true;
+        else if (
+            (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+            && (command.ttl != nullptr || command.to_remove == AlterCommand::RemoveProperty::TTL))
+            columns_with_ttl_changed_by_command.insert(command.column_name);
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            /// The set is matched against `getColumnTTLs`, which is keyed by the column names after ALL
+            /// commands have been applied, so a later rename of a column whose TTL an earlier command of
+            /// this same statement set (`ADD COLUMN c ... TTL ..., RENAME COLUMN c TO d`) must carry the
+            /// mark over to the final name - otherwise the fresh TTL would be rebuilt with the
+            /// metadata-load semantics and skip the fresh-DDL validation and codec gate.
+            if (auto it = columns_with_ttl_changed_by_command.find(command.column_name);
+                it != columns_with_ttl_changed_by_command.end())
+            {
+                columns_with_ttl_changed_by_command.erase(it);
+                columns_with_ttl_changed_by_command.insert(command.rename_to);
+            }
+        }
+    }
+
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
         try
         {
+            const bool changed_by_command = columns_with_ttl_changed_by_command.contains(name);
             auto new_ttl_entry = TTLDescription::getTTLFromAST(
                 ast,
                 metadata_copy.columns,
                 context,
                 metadata_copy.primary_key,
-                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                     : TTLValidationMode::Validate);
+                changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
+                changed_by_command ? CodecValidationSettings(session_settings) : CodecValidationSettings::trusted());
             metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
         }
         catch (const Exception & exception)
@@ -1865,8 +1918,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 metadata_copy.columns,
                 context,
                 metadata_copy.primary_key,
-                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                     : TTLValidationMode::Validate);
+                table_ttl_changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
+                table_ttl_changed_by_command ? CodecValidationSettings(session_settings) : CodecValidationSettings::trusted());
         }
         catch (const Exception & exception)
         {
@@ -2157,8 +2210,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                /// The type is optional here, and a codec can resolve differently per type, so
-                /// validate against the type the column will have, as `apply` does.
+                /// A codec-only `MODIFY COLUMN x CODEC(...)` leaves `command.data_type` null; `apply`
+                /// then falls back to the existing column type. Mirror that here so a type-dependent
+                /// codec (e.g. `PCO`) is validated against the real column type instead of being
+                /// rejected as untyped.
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type ? command.data_type : all_columns.get(column_name).type,

@@ -1,6 +1,8 @@
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -38,12 +40,31 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
     if (ttl_description)
     {
-        /// FIXME: Implement in other way -- not string comparison
-        const std::string next_codec = astToString(ttl_description->recompression_codec);
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
+        bool will_change_codec = false;
+        const auto & current_codec_ptr = part->on_disk_default_codec ? part->on_disk_default_codec : part->default_codec;
+        const std::string current_codec = astToString(current_codec_ptr->getFullCodecDesc());
+        if (CompressionCodecFactory::containsDefaultCodecAlias(ttl_description->recompression_codec))
+        {
+            /// A `Default` alias — exact `CODEC(Default)`, or inside a chain like `CODEC(Delta, Default)` —
+            /// is written with the alias resolved through the normal default selection, so the raw AST would
+            /// never match the concrete codec of an already recompressed part: comparing it literally would
+            /// keep scheduling recompression-only merges forever, while skipping it entirely would never
+            /// rewrite a part whose codec differs from the current default (e.g. a part written under `LZ4`
+            /// before `default_compression_codec` was changed to `ZSTD`). Resolve it the same way the merge
+            /// will — `MergeTreeData::getCompressionCodecForPart` — and compare the concrete chains.
+            const auto resolved_codec
+                = part->storage.getCompressionCodecForPart(metadata_snapshot, part->getBytesOnDisk(), part->ttl_infos, current_time)
+                      .codec;
+            will_change_codec = astToString(resolved_codec->getFullCodecDesc()) != current_codec;
+        }
+        else
+        {
+            /// FIXME: Implement in other way -- not string comparison
+            will_change_codec = astToString(ttl_description->recompression_codec) != current_codec;
+        }
 
         return PartProperties::RecompressTTLInfo{
-            .will_change_codec = (next_codec != current_codec),
+            .will_change_codec = will_change_codec,
             .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
         };
     }

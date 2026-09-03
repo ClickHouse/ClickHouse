@@ -384,6 +384,9 @@ Aggregator::Params::Params(
     size_t max_bytes_before_external_group_by_,
     bool empty_result_for_aggregation_by_empty_set_,
     TemporaryDataOnDiskScopePtr tmp_data_scope_,
+    String temporary_files_codec_,
+    bool spill_codec_authorized_,
+    size_t temporary_files_buffer_size_,
     size_t max_threads_,
     size_t min_free_disk_space_,
     bool compile_aggregate_expressions_,
@@ -413,6 +416,9 @@ Aggregator::Params::Params(
     , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
+    , temporary_files_codec(std::move(temporary_files_codec_))
+    , spill_codec_authorized(spill_codec_authorized_)
+    , temporary_files_buffer_size(temporary_files_buffer_size_)
     , max_threads(max_threads_)
     , min_free_disk_space(min_free_disk_space_)
     , compile_aggregate_expressions(compile_aggregate_expressions_)

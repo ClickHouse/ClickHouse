@@ -2534,6 +2534,16 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
+    /// Reject experimental / column-type-requiring codecs in the untyped compression settings.
+    void checkCompressionCodecSettings() const;
+
+    /// Reset any untyped compression-codec setting that `checkCompressionCodecSettings` would reject,
+    /// for the metadata-load path (ATTACH / SECONDARY_CREATE) where the check is skipped. The setting is
+    /// restored from `base` (the pre-override effective settings) when the baseline value is safe, and
+    /// from the declaration default otherwise. Returns, per reset setting, its name and a
+    /// human-readable note.
+    std::vector<MergeTreeSettings::CompressionCodecSettingReset> sanitizeCompressionCodecSettings(const MergeTreeSettingsImpl & base);
+
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
     /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
@@ -2810,19 +2820,106 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
-    /// The marks, primary key and default compression codec settings are applied without a column data type, so
-    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
-    /// be used in that context: there is no floating-point column to validate against, and applying it would
-    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
-    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
-    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
-    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
-    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
-    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
-    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+    checkCompressionCodecSettings();
+}
+
+/// Whether a codec is unsafe for the untyped MergeTree compression settings
+/// (`default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec`).
+///
+/// These settings are applied to untyped streams: `marks_compression_codec` and
+/// `primary_key_compression_codec` compress the marks and primary key directly, and
+/// `default_compression_codec` becomes the part default codec, which is fed raw into the statistics
+/// and text-index streams. So a codec that requires a column type (e.g. `PCO`) or is lossy
+/// (e.g. `SZ3`) would only fail later, at the first such write. Experimental codecs are not
+/// classified as unsafe here: they are gated with the session `allow_experimental_codecs` setting
+/// where fresh user input enters (see `registerStorageMergeTree` and
+/// `MergeTreeData::checkAlterIsPossible`), and stored metadata carrying one must remain loadable.
+///
+/// Returns an empty string if the codec is safe, otherwise a human-readable reason. The classification
+/// is delegated to `CompressionCodecFactory::getReasonUnsafeForUntypedData`, which — unlike
+/// `CompressionCodecFactory::get(const String &)` — does not throw while resolving a lossy codec without
+/// a column type. That matters for `sanitizeCompressionCodecSettings`: on the metadata-load path it must
+/// be able to reset such a setting rather than let the load fail.
+static String unsafeUntypedCompressionCodecReason(const String & codec_string)
+{
+    return CompressionCodecFactory::instance().getReasonUnsafeForUntypedData(codec_string);
+}
+
+void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
+{
+    auto check_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name)
+    {
+        if (!changed)
+            return;
+
+        if (auto reason = unsafeUntypedCompressionCodecReason(codec_string); !reason.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting '{}' cannot use the codec {} because {}",
+                setting_name,
+                codec_string,
+                reason);
+    };
+
+    const auto & dcc = (*this)[MergeTreeSetting::default_compression_codec];
+    check_codec_setting(dcc.value, dcc.changed, "default_compression_codec");
+    const auto & mcc = (*this)[MergeTreeSetting::marks_compression_codec];
+    check_codec_setting(mcc.value, mcc.changed, "marks_compression_codec");
+    const auto & pcc = (*this)[MergeTreeSetting::primary_key_compression_codec];
+    check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
+}
+
+std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings(const MergeTreeSettingsImpl & base)
+{
+    /// `checkCompressionCodecSettings` only runs from `sanityCheck`, which `MergeTreeData` skips on the
+    /// metadata-load path (ATTACH / SECONDARY_CREATE / RESTORE). So an `ATTACH TABLE ... SETTINGS
+    /// marks_compression_codec = 'PCO'` (or `primary_key_compression_codec` / `default_compression_codec`)
+    /// would still load, and only fail later at the first write when the stored string is re-resolved
+    /// untyped. Reset such settings here so the table stays writable. The replacement value comes from
+    /// `base`, the pre-override effective settings (e.g. the current `<merge_tree>` config defaults) —
+    /// resetting to the declaration default instead would make the running table write with a codec that
+    /// differs from what the setting resolves to on the next load, once the caller drops it from the
+    /// stored `settings_changes`. Only when the baseline value is itself unsafe (possible on load paths
+    /// that skip config validation) fall back to the declaration default.
+    std::vector<MergeTreeSettings::CompressionCodecSettingReset> resets;
+
+    auto sanitize_codec_setting = [&](auto setting_index, std::string_view setting_name)
+    {
+        const auto & current = (*this)[setting_index];
+        if (!current.changed)
+            return;
+
+        auto reason = unsafeUntypedCompressionCodecReason(current.value);
+        if (reason.empty())
+            return;
+
+        const auto & base_setting = base[setting_index];
+        if (base_setting.changed && unsafeUntypedCompressionCodecReason(base_setting.value).empty())
+        {
+            resets.push_back({String(setting_name), fmt::format(
+                "Setting '{}' cannot use the codec {} because {}; restoring the current configured default {}",
+                setting_name,
+                current.value,
+                reason,
+                base_setting.value.empty() ? "(empty)" : String(base_setting.value))});
+            (*this)[setting_index] = base_setting;
+        }
+        else
+        {
+            resets.push_back({String(setting_name), fmt::format(
+                "Setting '{}' cannot use the codec {} because {}; resetting it to the default codec",
+                setting_name,
+                current.value,
+                reason)});
+            resetToDefault(setting_name);
+        }
+    };
+
+    sanitize_codec_setting(MergeTreeSetting::default_compression_codec, "default_compression_codec");
+    sanitize_codec_setting(MergeTreeSetting::marks_compression_codec, "marks_compression_codec");
+    sanitize_codec_setting(MergeTreeSetting::primary_key_compression_codec, "primary_key_compression_codec");
+
+    return resets;
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -3058,6 +3155,11 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
+}
+
+std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettings::sanitizeCompressionCodecSettings(const MergeTreeSettings & base_settings)
+{
+    return impl->sanitizeCompressionCodecSettings(*base_settings.impl);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

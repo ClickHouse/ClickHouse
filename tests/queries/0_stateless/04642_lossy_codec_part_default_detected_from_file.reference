@@ -1,0 +1,4 @@
+detect_codec	LZ4
+chain_codec	LZ4
+detect_after_mutation	1000	500500
+chain_after_mutation	1000	500500

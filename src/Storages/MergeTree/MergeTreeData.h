@@ -1444,11 +1444,16 @@ public:
 
     /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
     /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    /// `part_size_not_yet_active` is the compressed size of the part when it is not counted in
+    /// `getTotalActiveSizeInBytes` yet (e.g. on the metadata-load path of an attached part): it is added
+    /// to the total so a `<compression>` selector with `min_part_size_ratio` sees the ratio the part
+    /// would have once active, matching an ordinary write of the same part.
     PartCompressionCodec getCompressionCodecForPart(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size_compressed,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t current_time) const;
+        time_t current_time,
+        size_t part_size_not_yet_active = 0) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 

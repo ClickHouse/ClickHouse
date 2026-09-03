@@ -4,6 +4,7 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
+#include <Common/logger_useful.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -277,8 +278,44 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+    /// The pre-override settings, kept as the baseline the sanitization below restores from.
+    std::shared_ptr<const MergeTreeSettings> baseline_settings;
+    if (mode > LoadingStrictnessLevel::CREATE)
+        baseline_settings = std::make_shared<MergeTreeSettings>(*merge_tree_settings);
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+
+    if (mode > LoadingStrictnessLevel::CREATE)
+    {
+        /// On the metadata-load path (short-syntax ATTACH / SECONDARY_CREATE / RESTORE — callers pass
+        /// CREATE for a full-definition ATTACH, which is fresh user input) the projection settings
+        /// allow-list and `sanityCheck` below are skipped, so a projection can carry untyped
+        /// compression-codec settings (e.g. `WITH SETTINGS (marks_compression_codec = 'PCO')`) that
+        /// CREATE would reject. Left untouched they would only fail later, when the first projection
+        /// materialization or merge re-resolves the stored codec string without a column type. Reset
+        /// them here — restoring the pre-override value, mirroring the base-table sanitization in
+        /// `registerStorageMergeTree` — and drop them from the stored `definition_ast` too so the fix is
+        /// durable (the AST is re-parsed on every load and by `ALTER`s that recalculate projections).
+        if (auto resets = merge_tree_settings->sanitizeCompressionCodecSettings(*baseline_settings); !resets.empty())
+        {
+            for (const auto & reset : resets)
+                LOG_WARNING(getLogger("ProjectionDescription"), "Projection {}: {}", result.name, reset.note);
+
+            auto & cloned_definition = result.definition_ast->as<ASTProjectionDeclaration &>();
+            if (cloned_definition.with_settings)
+            {
+                std::unordered_set<std::string_view> reset_names;
+                for (const auto & reset : resets)
+                    reset_names.insert(reset.setting_name);
+
+                auto & ast_changes = cloned_definition.with_settings->changes;
+                std::erase_if(ast_changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
+                if (ast_changes.empty())
+                    cloned_definition.reset(cloned_definition.with_settings);
+            }
+        }
+    }
+
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides

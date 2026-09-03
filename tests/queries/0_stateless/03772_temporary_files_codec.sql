@@ -75,3 +75,14 @@ GROUP BY log_comment
 ORDER BY log_comment
 ;
 
+-- Temporary files hold untyped data, so an experimental codec or a codec that requires a column
+-- type to compress (e.g. `PCO`) must be rejected when the spill happens, not accepted and then
+-- failing later with a confusing message. The external-sort settings above force a spill.
+SELECT * FROM (SELECT number, 'payload' FROM numbers(2_000_000)) ORDER BY number
+SETTINGS temporary_files_codec = 'PCO'
+FORMAT Null; -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM (SELECT number, 'payload' FROM numbers(2_000_000)) ORDER BY number
+SETTINGS temporary_files_codec = 'PCO, LZ4'
+FORMAT Null; -- { serverError BAD_ARGUMENTS }
+

@@ -30,6 +30,37 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
     extern const int OPENSSL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+void CompressionCodecFactory::upperCaseCodecFamilyNames(const ASTPtr & codec_ast)
+{
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return;
+
+    for (auto & child : func->arguments->children)
+    {
+        if (const auto * identifier = child->as<ASTIdentifier>())
+            child = make_intrusive<ASTIdentifier>(Poco::toUpper(identifier->name()));
+        else if (auto * inner_func = child->as<ASTFunction>())
+        {
+            inner_func->name = Poco::toUpper(inner_func->name);
+
+            /// Identifier-valued codec arguments (e.g. the `ALP` variant in `ALP(auto)`) were also
+            /// upper-cased by the old whole-string normalization these string entry points replace, and
+            /// the codec builders expect them upper-case, so a stored `'ALP(auto)'` must keep loading.
+            /// Literal arguments (e.g. `T64('bit')`) are case-sensitive and stay as written.
+            if (inner_func->arguments)
+            {
+                for (auto & argument : inner_func->arguments->children)
+                {
+                    if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                        argument = make_intrusive<ASTIdentifier>(Poco::toUpper(argument_identifier->name()));
+                }
+            }
+        }
+    }
 }
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
@@ -66,8 +97,122 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    upperCaseCodecFamilyNames(ast);
     return CompressionCodecFactory::instance().get(ast, nullptr);
+}
+
+String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & compression_codec) const
+{
+    if (compression_codec.empty())
+        return {};
+
+    ParserCodec codec_parser;
+    auto ast = parseQuery(
+        codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    upperCaseCodecFamilyNames(ast);
+
+    return getReasonUnsafeForUntypedData(ast);
+}
+
+void CompressionCodecFactory::checkCodecStringSafeForUntypedData(
+    const String & compression_codec, std::string_view setting_name) const
+{
+    if (auto reason = getReasonUnsafeForUntypedData(compression_codec); !reason.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Setting '{}' cannot use the codec {} because {}", setting_name, compression_codec, reason);
+}
+
+bool CompressionCodecFactory::isDefaultCodecAlias(const ASTPtr & codec_ast)
+{
+    if (!codec_ast)
+        return false;
+
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments || func->arguments->children.size() != 1)
+        return false;
+
+    const auto & inner_codec_ast = func->arguments->children.front();
+    if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        return family_name->name() == DEFAULT_CODEC_NAME;
+    if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        return ast_func->name == DEFAULT_CODEC_NAME && (!ast_func->arguments || ast_func->arguments->children.empty());
+    return false;
+}
+
+bool CompressionCodecFactory::containsDefaultCodecAlias(const ASTPtr & codec_ast)
+{
+    if (!codec_ast)
+        return false;
+
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return false;
+
+    for (const auto & inner_codec_ast : func->arguments->children)
+    {
+        if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        {
+            if (family_name->name() == DEFAULT_CODEC_NAME)
+                return true;
+        }
+        else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        {
+            if (ast_func->name == DEFAULT_CODEC_NAME)
+                return true;
+        }
+    }
+    return false;
+}
+
+String CompressionCodecFactory::getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const
+{
+    if (!codec_ast)
+        return {};
+
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", codec_ast->formatForErrorMessage());
+
+    /// Build each codec in the chain individually via `getImpl`, which (unlike `get(ast, column_type)`)
+    /// does not apply the null-column-type lossy guard. That guard throws for lossy codecs such as `SZ3`,
+    /// but here we must be able to classify them (so the caller can reset the offending setting) rather
+    /// than throw. `getImpl` never reaches the guard, so we inspect `isLossyCompression` ourselves.
+    for (const auto & inner_codec_ast : func->arguments->children)
+    {
+        String codec_family_name;
+        ASTPtr codec_arguments;
+        if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        {
+            codec_family_name = family_name->name();
+            codec_arguments = {};
+        }
+        else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        {
+            codec_family_name = ast_func->name;
+            codec_arguments = ast_func->arguments;
+        }
+        else
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+
+        /// `Default` is an alias for the server default codec, which is always safe for untyped data.
+        if (codec_family_name == DEFAULT_CODEC_NAME)
+            continue;
+
+        /// Experimentality is deliberately not classified here: it is a policy gate, not a data-safety
+        /// property. It is enforced with the session `allow_experimental_codecs` setting at the points
+        /// where fresh user input enters (`validateCodecAndGetPreprocessedAST` and the codec-valued
+        /// MergeTree settings gates in `registerStorageMergeTree` / `MergeTreeData::checkAlterIsPossible`),
+        /// while stored metadata carrying an experimental codec must remain loadable and writable.
+        auto codec = getImpl(codec_family_name, codec_arguments, nullptr);
+        if (codec->requiresColumnTypeToCompress())
+            return "it requires a column type and can not be applied to untyped data";
+        if (codec->isLossyCompression())
+            return "it is lossy and can only be applied to floating-point columns, not to untyped data";
+    }
+
+    return {};
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(
@@ -186,9 +331,10 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             catch (const Exception & e)
             {
                 /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
-                /// without SSL support. They cannot expose a description, so skip them rather than failing the whole
+                /// without SSL support, and `PCO` registers one that throws `SUPPORT_IS_DISABLED` when the server is
+                /// built without Rust. They cannot expose a description, so skip them rather than failing the whole
                 /// `system.codecs` query. Any other failure is unexpected and must propagate.
-                if (e.code() == ErrorCodes::OPENSSL_ERROR)
+                if (e.code() == ErrorCodes::OPENSSL_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
                     return;
                 throw;
             }
@@ -222,9 +368,10 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         catch (const Exception & e)
         {
             /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
-            /// without SSL support. They have no documentation to expose, so skip them rather than failing the whole
+            /// without SSL support, and `PCO` registers one that throws `SUPPORT_IS_DISABLED` when the server is built
+            /// without Rust. They have no documentation to expose, so skip them rather than failing the whole
             /// `system.documentation` query. Any other failure is unexpected and must propagate.
-            if (e.code() == ErrorCodes::OPENSSL_ERROR)
+            if (e.code() == ErrorCodes::OPENSSL_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
                 continue;
             throw;
         }
@@ -331,6 +478,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecPco(*this);
 
     default_codec = get("LZ4", {});
 }

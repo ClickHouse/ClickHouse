@@ -561,7 +561,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         outer_scope_columns,
         changed_types,
         settings[Setting::join_use_nulls],
-        JoinSettings(settings, query_context->getJoinAnalyzeMode()),
+        JoinSettings(settings, query_context->getJoinAnalyzeMode(), query_context->getTempDataOnDisk() != nullptr),
         SortingStep::Settings(settings));
 
     bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];

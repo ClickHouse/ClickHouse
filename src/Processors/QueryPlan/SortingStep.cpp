@@ -1,7 +1,8 @@
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -108,6 +109,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
 }
 
 namespace ErrorCodes
@@ -165,6 +167,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
+    spill_codec_authorized = spillCodecAuthorizedBySession(settings);
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -189,9 +192,10 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
+    spill_codec_authorized = settings[QueryPlanSerializationSetting::spill_codec_authorized];
 }
 
-void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings, bool sorting_is_reachable, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
@@ -205,6 +209,23 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    /// `spill_codec_authorized` is registered in serialization version 8. A pre-v8 peer cannot safely
+    /// execute a plan that can spill with an experimental codec because it would silently lose the opt-in.
+    /// For v8 and later it goes on the wire only when the spill behavior of this step actually depends on it:
+    /// `MergeSortingTransform::consume`
+    /// touches the temporary data only when `max_bytes_before_external_sort` is set, so a sort that stays
+    /// in memory never resolves the codec and must not carry the opt-in. See the matching comment in
+    /// `AggregatingStep::serializeSettings` and `spillCodecAuthorizationMustBeSerialized`.
+    if (spillCodecAuthorizationMustBeSerialized(
+            sorting_is_reachable && max_bytes_in_block_before_external_sort != 0, spill_codec_authorized, temporary_files_codec))
+    {
+        if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "An experimental temporary-files codec requires query plan serialization version >= {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC);
+
+        settings[QueryPlanSerializationSetting::spill_codec_authorized] = true;
+    }
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
@@ -458,18 +479,25 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline,
+    const Settings & sort_settings,
+    const SortDescription & result_sort_desc,
+    UInt64 limit_,
+    TopKThresholdTrackerPtr threshold_tracker,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope)
 {
     bool increase_sort_description_compile_attempts = true;
 
+    /// The scope must be the one of the query that is being executed (see `BuildQueryPipelineSettings::tmp_data_scope`),
+    /// so that `max_temporary_data_on_disk_size_for_query` / `..._for_user` are accounted for the spilled data.
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-    if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
+    if (const auto & data = tmp_data_scope)
         tmp_data_on_disk = data->childScope({
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
             .num_files = ProfileEvents::ExternalSortWritePart},
-            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
+            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec, sort_settings.spill_codec_authorized);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
@@ -509,6 +537,7 @@ void SortingStep::fullSortStreams(
     const Settings & sort_settings,
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope,
     const bool skip_partial_sort,
     TopKThresholdTrackerPtr threshold_tracker)
 {
@@ -537,15 +566,21 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, tmp_data_scope);
 }
 
-void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
+void SortingStep::fullSort(
+    QueryPipelineBuilder & pipeline,
+    const SortDescription & result_sort_desc,
+    const UInt64 limit_,
+    QueryPipelineProcessorsCollector & collector,
+    const TemporaryDataOnDiskScopePtr & tmp_data_scope,
+    const bool skip_partial_sort)
 {
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, tmp_data_scope, skip_partial_sort, threshold_tracker);
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
@@ -576,7 +611,7 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     }
 }
 
-void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
@@ -640,7 +675,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    fullSort(pipeline, result_description, limit, collector);
+    fullSort(pipeline, result_description, limit, collector, build_settings.tmp_data_scope);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
@@ -730,9 +765,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/type == Type::Full, version);
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;

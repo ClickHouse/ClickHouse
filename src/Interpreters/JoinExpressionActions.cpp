@@ -232,7 +232,7 @@ std::pair<ActionsDAG, JoinExpressionActions::NodeToSourceMapping> JoinExpression
     return std::make_pair(std::move(actions_dag), std::move(expression_sources));
 }
 
-JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_)
+JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_)
     : node_ptr(node_)
     , data(data_)
 {
@@ -240,10 +240,9 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActio
     /// TODO: once we have map with sources initialized in advance we may do lookup there instead
     if (node_ptr)
     {
-        auto data_ptr = data.lock();
-        if (!data_ptr)
+        if (!data)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create JoinActionRef nullptr data");
-        auto raw_nodes = data_ptr->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
+        auto raw_nodes = data->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
@@ -265,7 +264,7 @@ const ActionsDAG::Node * JoinActionRef::getNode() const
 {
     if (!node_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get node for nullptr");
-    if (data.expired())
+    if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pointer to actions DAG is expired");
     return node_ptr;
 }
@@ -485,10 +484,9 @@ JoinActionRef JoinActionRef::resolveAliases() const
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
 {
-    auto data_ptr = data.lock();
-    if (!data_ptr)
+    if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get data for JoinActionRef");
-    return data_ptr;
+    return data;
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const std::vector<JoinActionRef> & actions)

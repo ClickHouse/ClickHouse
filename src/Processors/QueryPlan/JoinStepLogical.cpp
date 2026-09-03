@@ -684,46 +684,6 @@ static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
     });
 }
 
-/// If side is not specified, check if filter can be executed after JOIN itself.
-static bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
-{
-    switch (join_operator.strictness)
-    {
-        case JoinStrictness::Any:
-            /// We cannot push down to either side for ANY JOIN.
-            /// Let's say we have LEFT ANY JOIN:
-            /// 1. If we push down filter to the right side,
-            /// we may filter out rows that would otherwise match the left side rows,
-            /// resulting in different join results.
-            /// 2. If we push down filter to the left side,
-            /// we may filter out rows that should be included in the join result
-            /// with defaults or NULLs.
-            return false;
-        case JoinStrictness::All:
-        {
-            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
-            bool is_suitable_kind = join_operator.kind == JoinKind::Inner
-                || join_operator.kind == JoinKind::Cross
-                || join_operator.kind == JoinKind::Comma
-                || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
-                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
-
-            return is_suitable_kind;
-        }
-        case JoinStrictness::Semi:
-            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
-            return side.has_value();
-        case JoinStrictness::Anti:
-            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
-            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
-            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
-                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
-        default:
-            /// TODO: Support RightAny strictness?
-            return false;
-    }
-}
-
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 
 
@@ -944,24 +904,11 @@ struct IEJoinPlanDescription
 };
 
 /// Whether SQL comparison of the type diverges from the `IColumn::compareAt` total order the
-/// IEJoin operator matches by: comparison of `Tuple` decomposes elementwise (IEEE NaN, NULL
-/// propagation), and comparison of `Dynamic` and `Variant` unwraps the underlying values
-/// (NULL values and mismatched alternatives yield NULL or throw, while `compareAt` orders them).
-/// Other types (including `Array`) compare via `compareAt` itself; the operator handles the
-/// top-level NULL/NaN divergence by excluding such rows from matching.
-static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
-{
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
-    check(*type);
-    if (!result)
-        type->forEachChild(check);
-    return result;
-}
-
 /// An inequality between the two tables that the IEJoin operator can use as one of its two key
 /// conditions, or std::nullopt when the condition has a different shape or compares operands the
-/// operator cannot handle. Pure: the caller commits the condition by casting its operands.
+/// operator cannot handle (`ieJoinCanCompareOperandTypes`, which `JoinOperator` reuses to tell
+/// whether this join has the IEJoin shape at all). Pure: the caller commits the condition by
+/// casting its operands.
 static std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
 tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 {
@@ -969,16 +916,8 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
     if (!inequality)
         return {};
 
-    /// The commit in `tryExtractIEJoinDescription` casts both sides of the condition to a common
-    /// type; probe that here, so that a combination `predicateOperandsToCommonType` cannot handle
-    /// makes the caller fall back to the generic handling (which compares such operands in a
-    /// filter) instead of throwing.
     const auto & [predicate_op, lhs, rhs] = *inequality;
-    const auto & lhs_type = lhs.getType();
-    const auto & rhs_type = rhs.getType();
-    if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
-        return {};
-    if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
+    if (!ieJoinCanCompareOperandTypes(lhs.getType(), rhs.getType()))
         return {};
 
     return inequality;
@@ -1420,9 +1359,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
+    /// The temporary data scope must be the one of the query that is being executed, not the server-wide root,
+    /// so that a spilling join is accounted in `max_temporary_data_on_disk_size_for_query` / `..._for_user`.
+    /// See `QueryPlanOptimizationSettings::tmp_data_scope`.
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
-        Context::getGlobalContextInstance()->getTempDataOnDisk());
+        optimization_settings.tmp_data_scope);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)
@@ -1598,7 +1540,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
 
     const bool build_mixed_join_expression
-        = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
+        = on_clause_condition && (is_disjunctive_condition || !join_operator.canPushDownFromOn());
 
     /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
     /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
@@ -2042,7 +1984,7 @@ static bool canBeEvaluatedOnSide(
 std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(
     JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header)
 {
-    if (!canPushDownFromOn(join_operator, side))
+    if (!join_operator.canPushDownFromOn(side))
         return {};
 
     const auto & stream_header = side == JoinTableSide::Left ? left_header : right_header;
@@ -2187,10 +2129,52 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings);
-    sorting_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, join_operator, version);
+
+    /// The sorting settings of a join are consumed only by the sorts the planner adds around a
+    /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`), so they must
+    /// not put the spill-codec opt-in on the wire for a join that can only be executed by an in-memory
+    /// algorithm. An enabled sorting-based algorithm counts only when this join's shape lets the planner
+    /// pick it. A full-sorting-merge join needs a kind/strictness pair `MergeJoinAlgorithm` implements, the
+    /// single-clause join shape (`FullSortingMergeJoin::isSupported` requires `TableJoin::oneDisjunct`, and
+    /// a top-level disjunction never plans into a single clause) and a clause without a pre-filter
+    /// condition, which a single-side condition of the ON expression would become; since
+    /// `chooseJoinAlgorithm` walks the `join_algorithm` list in first-buildable-wins order, it must also be
+    /// listed before any entry that always builds an in-memory hash join (e.g. under
+    /// `hash,full_sorting_merge` the sorts are never added). An IEJoin needs two cross-side inequalities
+    /// over operands its operator can compare in the ON expression (`tryExtractIEJoinDescription`), and is
+    /// planned only when `ie_join` heads the list (`isIEJoinPreferred`) or no condition provides an equality
+    /// join key (the no-keys fallback). A mixed join expression, which `FullSortingMergeJoin::isSupported`
+    /// declines as well, is ruled out the same way. Its remaining tests - `USING` with `join_use_nulls` and
+    /// a special storage - cannot be reached from a serialized plan at all: `TableJoin::hasUsing` is false
+    /// whenever a join operator is set, and a plan with a `JoinStepLogicalLookup`, the only source of a
+    /// special storage and of `join_use_nulls` here, is not serializable.
+    bool full_sorting_merge_join_is_reachable = false;
+    if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness)
+        && !join_operator.expressionIsTopLevelDisjunction()
+        && !join_operator.hasSingleSidePreFilterCondition()
+        && !join_operator.buildsMixedJoinExpression())
+    {
+        for (auto algorithm : join_settings.join_algorithms)
+        {
+            if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            {
+                full_sorting_merge_join_is_reachable = true;
+                break;
+            }
+            if (JoinSettings::joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
+                break;
+        }
+    }
+    bool ie_join_is_reachable = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
+        && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness)
+        && join_operator.hasCrossSideInequalityPair()
+        && (join_settings.join_algorithms.front() == JoinAlgorithm::IE_JOIN
+            || !join_operator.hasCrossSideEqualityCondition());
+    bool join_can_use_sorting = full_sorting_merge_join_is_reachable || ie_join_is_reachable;
+    sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting, version);
 }
 
 static void serializeNodeList(

@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
@@ -220,6 +221,8 @@ TableJoin::TableJoin(
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
     , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
     , temporary_files_codec(settings[Setting::temporary_files_codec])
+    , spill_codec_authorized(spillCodecAuthorizedBySession(settings))
+    , temporary_files_buffer_size(settings[Setting::temporary_files_buffer_size])
     , output_by_rowlist_perkey_rows_threshold(settings[Setting::join_output_by_rowlist_perkey_rows_threshold])
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
@@ -255,6 +258,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , spill_codec_authorized(settings.spill_codec_authorized)
     , temporary_files_buffer_size(settings.temporary_files_buffer_size)
     , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
@@ -1309,7 +1313,7 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .current_metric = CurrentMetrics::TemporaryFilesForJoin,
         .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
+        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec, spill_codec_authorized);
 }
 
 bool allowParallelHashJoin(

@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -69,17 +71,58 @@ private:
 public:
     CompressionCodecSelector() = default;    /// Always returns the default method.
 
-    CompressionCodecSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    /// `validation_settings` carries the server-level policy (the default profile), not the settings of
+    /// whichever query happens to construct the selector first: the selector is built once and shared.
+    CompressionCodecSelector(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const CodecValidationSettings & validation_settings)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
+
+        const auto & factory = CompressionCodecFactory::instance();
 
         for (const auto & name : keys)
         {
             if (!startsWith(name, "case"))
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'case'", config_prefix, name);
 
-            elements.emplace_back(config, config_prefix + "." + name);
+            const auto & element = elements.emplace_back(config, config_prefix + "." + name);
+
+            /// The chosen codec becomes the part's default codec, which some writers (statistics and
+            /// text-index streams) feed raw, untyped data into. A codec that requires a column type
+            /// (e.g. `PCO`) would only fail later, at the first such write, with a confusing error.
+            /// Reject it here — mirroring how the `default_compression_codec`, `marks_compression_codec`
+            /// and `primary_key_compression_codec` settings are validated — so a misconfiguration is
+            /// reported when the server configuration is loaded. A lossy codec (e.g. `SZ3`) is rejected
+            /// by `get` itself while resolving without a column type.
+            /// A gated codec (experimental or beta) is rejected as well, unless the server-level policy
+            /// (the default profile) enables it: the selected codec becomes the default codec of every new
+            /// part, so putting a gated codec there must be as explicit an opt-in as using one in a query.
+            auto codec = factory.get(element.family_name, element.level);
+            if (codec->requiresColumnTypeToCompress())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The '{}' configuration cannot use the codec {} because it requires a column type and is applied"
+                    " to untyped data",
+                    config_prefix,
+                    element.family_name);
+            if (CompressionCodecFactory::isCodecFamilyGated(element.family_name))
+            {
+                try
+                {
+                    factory.validateCodec(element.family_name, element.level, validation_settings);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage(
+                        "while checking the '{}' configuration: a gated codec can only be used there when it is"
+                        " enabled in the default profile",
+                        config_prefix);
+                    throw;
+                }
+            }
         }
     }
 

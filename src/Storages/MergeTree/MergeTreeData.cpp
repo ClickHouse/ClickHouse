@@ -797,6 +797,10 @@ MergeTreeData::MergeTreeData(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
             getContext()->wasBackgroundPoolAutoLowered());
     }
+    /// On ATTACH / SECONDARY_CREATE / RESTORE the sanity checks above are skipped; untyped
+    /// compression-codec settings that `checkCompressionCodecSettings` would reject at CREATE time
+    /// (e.g. `SETTINGS marks_compression_codec = 'PCO'`) are sanitized in `registerStorageMergeTree`,
+    /// where the pre-override config defaults needed to restore the effective value are available.
 
     if (!date_column_name.empty())
     {
@@ -5397,9 +5401,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
     /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying a
-    /// gated codec must not re-enter the table without the session opting in. The CREATE-time
-    /// counterpart of this check lives in `registerStorageMergeTree`.
+    /// gated codec must not re-enter the table without the session opting in. Moreover, a reset
+    /// value is no longer stored in the table metadata, so the session opt-in alone is not durable — the
+    /// table would fail to load after a server restart, when the config-inherited value is re-validated
+    /// against the default profile (see `registerStorageMergeTree`, where the CREATE-time counterpart of
+    /// this check lives). Resets therefore additionally require the opt-in in the default profile.
     std::unique_ptr<MergeTreeSettings> default_settings;
+    std::optional<Settings> default_profile_settings;
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
@@ -5407,22 +5415,57 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
         {
-            String codec;
             if (command.type == AlterCommand::MODIFY_SETTING)
             {
                 Field value;
-                if (command.settings_changes.tryGet(setting_name, value))
-                    codec = value.safeGet<String>();
+                if (!command.settings_changes.tryGet(setting_name, value))
+                    continue;
+
+                const auto & codec = value.safeGet<String>();
+                if (!codec.empty())
+                {
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+                    CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, setting_name);
+                }
             }
             else if (command.settings_resets.contains(setting_name))
             {
                 if (!default_settings)
                     default_settings = getDefaultSettings();
-                codec = default_settings->get(setting_name).safeGet<String>();
-            }
+                const auto codec = default_settings->get(setting_name).safeGet<String>();
+                if (codec.empty())
+                    continue;
 
-            if (!codec.empty())
+                /// The post-reset value is inherited from the config, so it is not marked as `changed` and
+                /// `checkCompressionCodecSettings` (called from `changeSettings`) will never look at it.
+                /// This is the only place that rejects a codec which can never work on an untyped stream
+                /// (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of the validation has to
+                /// run here as well; the experimental part must hold for both the session and the default
+                /// profile, because only the latter survives a restart. `validateCodecString` runs with the
+                /// sanity checks disabled, so the lossy-on-untyped case (`SZ3`) needs the explicit
+                /// `checkCodecStringSafeForUntypedData` predicate next to it.
                 CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
+                CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, setting_name);
+
+                if (!default_profile_settings)
+                    default_profile_settings = local_context->getGlobalContext()->getDefaultProfileSettings();
+
+                try
+                {
+                    CompressionCodecFactory::instance().validateCodecString(
+                        codec, CodecValidationSettings(*default_profile_settings));
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage(
+                        "The post-reset value of the setting '{}' is inherited from the <merge_tree> config defaults and "
+                        "is not stored in the table metadata, so enabling an experimental codec only in the session "
+                        "is not enough: the table would fail to load after a server restart. Enable it in the default "
+                        "profile instead",
+                        setting_name);
+                    throw;
+                }
+            }
         }
     }
 
@@ -10734,30 +10777,52 @@ MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
     const StorageMetadataPtr & metadata_snapshot,
     size_t part_size_compressed,
     const IMergeTreeDataPart::TTLInfos & ttl_infos,
-    time_t current_time) const
+    time_t current_time,
+    size_t part_size_not_yet_active) const
 {
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
-    if (best_ttl_entry)
+    /// The normal default selection, matching an ordinary part write: the `default_compression_codec`
+    /// setting, then the server `<compression>` selector.
+    auto choose_default_codec = [&]() -> CompressionCodecPtr
+    {
+        auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
+        if (!codec_setting.empty())
+            return CompressionCodecFactory::instance().get(codec_setting);
+
+        /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
+        /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
+        /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
+        /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
+        /// A part on the metadata-load path is not counted in the total yet; add its size back so
+        /// the ratio matches what an ordinary write of this part would see once it is active.
+        auto total_active_size = getTotalActiveSizeInBytes() + part_size_not_yet_active;
+        double part_size_ratio = total_active_size > 0
+            ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
+            : 0.0;
+
+        return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    };
+
+    /// A `RECOMPRESS CODEC(Default)` entry — user-specified, or the result of normalizing a codec that is
+    /// unsafe for untyped data on the metadata-load path (see `TTLDescription::getTTLFromAST`) — does not
+    /// force a codec: fall through to the normal default selection (the `default_compression_codec`
+    /// setting, then the server `<compression>` selector), matching an ordinary part write, instead of
+    /// resolving the `Default` alias to the factory's hardcoded fallback (`LZ4`) here.
+    if (best_ttl_entry && !CompressionCodecFactory::isDefaultCodecAlias(best_ttl_entry->recompression_codec))
+    {
+        /// A `Default` entry inside a longer chain (e.g. `CODEC(Delta, Default)`) is the same alias:
+        /// resolve it through the normal default selection too, not to the factory's hardcoded fallback.
+        CompressionCodecPtr current_default;
+        if (CompressionCodecFactory::containsDefaultCodecAlias(best_ttl_entry->recompression_codec))
+            current_default = choose_default_codec();
         return {
-            .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}),
-            .is_explicit_recompression = !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec)};
+            .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}, current_default),
+            .is_explicit_recompression = true};
+    }
 
-    auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
-    if (!codec_setting.empty())
-        return {.codec = CompressionCodecFactory::instance().get(codec_setting)};
-
-    /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
-    /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
-    /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
-    /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
-    auto total_active_size = getTotalActiveSizeInBytes();
-    double part_size_ratio = total_active_size > 0
-        ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
-        : 0.0;
-
-    return {.codec = getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio)};
+    return {.codec = choose_default_codec()};
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const

@@ -309,6 +309,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 {
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
                     .compression_codec = settings[Setting::temporary_files_codec],
+                    .spill_codec_authorized = spillCodecAuthorizedBySession(settings),
                     .buffer_size = settings[Setting::temporary_files_buffer_size],
                     .metrics = {}, /// Metrics are set by child scopes
                 };
@@ -962,6 +963,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
         {
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
             .compression_codec = settings[Setting::temporary_files_codec],
+            .spill_codec_authorized = spillCodecAuthorizedBySession(settings),
             .buffer_size = settings[Setting::temporary_files_buffer_size],
             .metrics = {}, /// Metrics are set by child scopes
         };

@@ -857,6 +857,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
+            /// The server-level `<compression>` selector is validated against the codec gates of the
+            /// default profile, so it has to be rebuilt when the profiles change. Unlike a users
+            /// configuration reload, this path does not go through `Context::setUsersConfig`.
+            system_context->resetCompressionCodecSelector();
             break;
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {

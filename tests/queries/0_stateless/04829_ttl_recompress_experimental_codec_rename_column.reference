@@ -1,0 +1,4 @@
+rename referenced column ok
+TTL event_date + toIntervalMonth(1) RECOMPRESS CODEC(ZXC)
+rename unreferenced column ok
+modify ttl gated

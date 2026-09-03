@@ -16,6 +16,9 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsBool spill_codec_authorized;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 }
 
@@ -60,25 +63,54 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
 }
 
-Aggregator::Params makeParams(bool serialize_string_with_zero_byte)
+Aggregator::Params makeParams(
+    bool serialize_string_with_zero_byte,
+    const String & temporary_files_codec = "LZ4",
+    bool spill_codec_authorized = false,
+    size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
-    /// Merge-only constructor.
     return Aggregator::Params(
         Names{"k"},
         AggregateDescriptions{},
         /*overflow_row=*/false,
+        /*max_rows_to_group_by=*/0,
+        OverflowMode::THROW,
+        /*group_by_two_level_threshold=*/1,
+        /*group_by_two_level_threshold_bytes=*/0,
+        /*max_bytes_before_external_group_by=*/1,
+        /*empty_result_for_aggregation_by_empty_set=*/false,
+        /*tmp_data_scope=*/nullptr,
+        temporary_files_codec,
+        spill_codec_authorized,
+        temporary_files_buffer_size,
         /*max_threads=*/1,
+        /*min_free_disk_space=*/0,
+        /*compile_aggregate_expressions=*/false,
+        /*min_count_to_compile_aggregate_expression=*/0,
         /*max_block_size=*/65536,
+        /*enable_prefetch=*/false,
+        /*only_merge=*/false,
+        /*optimize_group_by_constant_keys=*/false,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation=*/false,
         serialize_string_with_zero_byte,
-        /*enable_packed_string_keys=*/true);
+        /*enable_parallel_single_level_merge=*/false,
+        /*enable_packed_string_keys=*/true,
+        /*enable_adaptive_aggregator=*/false,
+        /*adaptive_aggregator_freeze_threshold=*/0,
+        /*adaptive_aggregator_freeze_threshold_bytes=*/0);
 }
 
-std::unique_ptr<AggregatingStep> makeAggregatingStep(bool serialize_string_with_zero_byte)
+std::unique_ptr<AggregatingStep> makeAggregatingStep(
+    bool serialize_string_with_zero_byte,
+    const String & temporary_files_codec = "LZ4",
+    bool spill_codec_authorized = false,
+    size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
     return std::make_unique<AggregatingStep>(
         makeHeader(),
-        makeParams(serialize_string_with_zero_byte),
+        makeParams(serialize_string_with_zero_byte, temporary_files_codec, spill_codec_authorized, temporary_files_buffer_size),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*max_block_size=*/65536,
@@ -130,6 +162,49 @@ TEST(AggregatingStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurvives)
     tryRegisterAggregateFunctions();
 
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeAggregatingStep(true)));
+}
+
+TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTemporaryStorage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const auto step = makeAggregatingStep(
+        /*serialize_string_with_zero_byte=*/false,
+        /*temporary_files_codec=*/"ZXC",
+        /*spill_codec_authorized=*/true,
+        /*temporary_files_buffer_size=*/123456);
+    QueryPlanSerializationSettings written;
+    step->serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    WriteBufferFromOwnString out;
+    written.writeChangedBinary(out);
+    ReadBufferFromString in(out.str());
+    QueryPlanSerializationSettings read;
+    read.readBinary(in);
+
+    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_codec].value, "ZXC");
+    EXPECT_TRUE(read[QueryPlanSerializationSetting::spill_codec_authorized]);
+    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_buffer_size], 123456);
+}
+
+TEST(AggregatingStepSettingsRoundTrip, ExperimentalSpillCodecOptInIsVersioned)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const auto step = makeAggregatingStep(
+        /*serialize_string_with_zero_byte=*/false,
+        /*temporary_files_codec=*/"ZXC",
+        /*spill_codec_authorized=*/true);
+    QueryPlanSerializationSettings settings;
+    EXPECT_THROW(
+        step->serializeSettings(settings, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
+
+    step->serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    WriteBufferFromOwnString out;
+    settings.writeChangedBinary(out);
+    EXPECT_TRUE(out.str().contains("spill_codec_authorized"));
 }
 
 TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)

@@ -617,6 +617,11 @@ if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
 
+if (TARGET ch_rust::pco)
+    target_include_directories(clickhouse_compression PRIVATE $<TARGET_PROPERTY:ch_rust::pco,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_compression PUBLIC ch_rust::pco)
+endif()
+
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
