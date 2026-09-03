@@ -65,6 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 readonly;
+    extern const SettingsBool resumable_backup_from_snapshot;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -86,6 +87,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int WRONG_BACKUP_SETTINGS;
 }
 
 using OperationID = BackupOperationID;
@@ -165,8 +167,8 @@ namespace
         /// Authorize the locator that will actually be opened: `BackupImpl::getBaseBackupUnlocked`
         /// fills the credentials from the outer locator first, so a base missing them is not malformed.
         BackupInfo effective_base_backup_info = *base_backup_info;
-        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, context))
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, context);
 
         BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
     }
@@ -433,6 +435,11 @@ struct BackupsWorker::BackupStarter
         backup_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
+        const bool resumable_backup_from_snapshot = backup_context->getSettingsRef()[Setting::resumable_backup_from_snapshot];
+        if (resumable_backup_from_snapshot)
+            throw Exception(
+                ErrorCodes::WRONG_BACKUP_SETTINGS,
+                "Setting `resumable_backup_from_snapshot` is only supported in ClickHouse Cloud");
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
 
