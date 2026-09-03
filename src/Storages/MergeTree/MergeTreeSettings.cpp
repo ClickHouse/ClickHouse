@@ -9,6 +9,7 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
 #include <Storages/System/FillEngineSettingsColumns.h>
+#include <Storages/enumerateSettings.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -3234,4 +3235,9 @@ void MergeTreeSettings::fillReplicatedEngineSettingsColumns(MutableColumnsAndCon
     /// settings differ from the rest of the family and are registered with their own fill function.
     context->getReplicatedMergeTreeSettings().dumpToSystemMergeTreeSettingsColumns(params);
 }
+TableSettings MergeTreeSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

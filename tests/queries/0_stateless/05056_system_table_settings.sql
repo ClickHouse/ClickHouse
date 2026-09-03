@@ -20,11 +20,19 @@ CREATE TABLE kfk (a String) ENGINE = Kafka
 SELECT '-- structure';
 SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'table_settings' ORDER BY position;
 
-SELECT '-- every engine reports its SETTINGS clause';
+SELECT '-- every engine reports what its definition states';
+-- Only the settings each definition names: an engine that keeps a settings struct also reports
+-- every other setting it has, and listing all of those would pin values this test is not about.
 SELECT table, engine, name, value, changed, source
 FROM system.table_settings
-WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain')
+WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain') AND source = 'definition'
 ORDER BY table, name;
+
+SELECT '-- an engine with a settings struct reports its defaults too, one without does not';
+SELECT table, countIf(source = 'default') > 0 AS has_defaults
+FROM system.table_settings
+WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg')
+GROUP BY table ORDER BY table;
 
 SELECT '-- a secret is masked, and says so';
 SELECT name, value, is_masked

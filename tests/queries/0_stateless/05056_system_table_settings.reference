@@ -10,15 +10,14 @@ source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'definitio
 is_masked	UInt8
 description	String
 type	String
--- every engine reports its SETTINGS clause
+-- every engine reports what its definition states
 jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
 mt	MergeTree	index_granularity	4096	1	definition
-plain	Memory	compress	0	0	default
-plain	Memory	max_bytes_to_keep	0	0	default
-plain	Memory	max_rows_to_keep	0	0	default
-plain	Memory	min_bytes_to_keep	0	0	default
-plain	Memory	min_rows_to_keep	0	0	default
+-- an engine with a settings struct reports its defaults too, one without does not
+jn	0
+lg	0
+mt	1
 -- a secret is masked, and says so
 kafka_sasl_password	[HIDDEN]	1
 -- a setting that is not secret is not masked

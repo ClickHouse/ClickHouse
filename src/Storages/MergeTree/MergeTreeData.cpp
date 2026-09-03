@@ -245,6 +245,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString compatibility;
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
@@ -13862,5 +13863,52 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
     return file_name;
 }
 
+
+TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
+{
+    auto settings = getSettings()->enumerateSettings();
+
+    /// A `MergeTree` table is created from the settings the server has in effect, not from the
+    /// compiled defaults, and `Context` builds those by applying the `compatibility` setting first
+    /// and the config section second - see `Context::getMergeTreeSettings`. Both leave a setting
+    /// simply "changed", so telling them apart needs the two intermediate baselines rebuilt here.
+    /// The replicated family reads an additional config section and so has its own baseline.
+    const MergeTreeSettings & server_effective = supportsReplication()
+        ? query_context->getReplicatedMergeTreeSettings()
+        : query_context->getMergeTreeSettings();
+
+    const MergeTreeSettings compiled_defaults;
+    MergeTreeSettings after_compatibility(compiled_defaults);
+
+    /// Empty by default, and then `applyCompatibilitySetting` does nothing and no setting can have
+    /// come from it - so the extra baseline costs nothing in the ordinary case.
+    const String compatibility = query_context->getSettingsRef()[Setting::compatibility];
+    if (!compatibility.empty())
+        after_compatibility.applyCompatibilitySetting(compatibility);
+
+    NameSet changed_by_config;
+    for (const auto & change : server_effective.changesFrom(after_compatibility))
+        changed_by_config.insert(change.name);
+
+    NameSet changed_by_compatibility;
+    if (!compatibility.empty())
+        for (const auto & change : after_compatibility.changesFrom(compiled_defaults))
+            changed_by_compatibility.insert(change.name);
+
+    for (auto & setting : settings)
+    {
+        if (setting.origin != TableSettingOrigin::Other)
+            continue;
+
+        /// Config before compatibility, because the config section is applied second and wins.
+        if (changed_by_config.contains(setting.name))
+            setting.origin = TableSettingOrigin::Config;
+        else if (changed_by_compatibility.contains(setting.name))
+            setting.origin = TableSettingOrigin::Compatibility;
+    }
+
+    /// Last: the table's own `SETTINGS` clause is applied after everything above.
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+}
 
 }
