@@ -1502,7 +1502,10 @@ def main():
     # The collect-logs gate must see the run's real outcome, or a bugfix
     # validation job that reproduced a crash would attach neither its cores nor
     # its full logs.
-    test_run_failed = bool(test_result) and not test_result.is_ok()
+    # A setup failure never reaches the test stage, so `test_result` stays None
+    # and a predicate reading it alone sees "nothing failed".
+    setup_failed = test_result is None and not res
+    test_run_failed = (bool(test_result) and not test_result.is_ok()) or setup_failed
 
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
