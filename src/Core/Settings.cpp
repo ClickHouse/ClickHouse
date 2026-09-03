@@ -660,6 +660,23 @@ Possible values:
 
 See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 )", 0) \
+    DECLARE(UInt64, s3_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an S3 engine table or into the [s3](/sql-reference/table-functions/s3) table function starts a new object as soon as at least this number of bytes has been written into the current one. The keys of the new objects follow the same pattern as for `s3_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the key of the first object already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next objects are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first object as well.
+
+The decision to start a new object is made after writing a block, so an object can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the object is taken into account, so for a compressed object it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If an object with the generated key already exists, the behavior is controlled by `s3_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused key is taken, otherwise an exception is thrown, and the objects written before that are left as is. If `s3_truncate_on_insert` is enabled, existing objects are overwritten instead.
+
+A truncating insert starts the numbering over, and the objects of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. The numbered names are not attributed to a particular table, so nothing is deleted if `s3_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the objects belong to this table.
+
+Possible values:
+- 0 — All the data is written into a single object.
+- Positive integer — The number of bytes after which a new object is started.
+)", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](/reference/engines/table-engines/integrations/s3) engine tables.
 
@@ -669,6 +686,23 @@ Possible values:
 )", 0) \
     DECLARE(Bool, azure_create_new_file_on_insert, false, R"(
 Enables or disables creating a new file on each insert in azure engine tables
+)", 0) \
+    DECLARE(UInt64, azure_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an Azure Blob Storage engine table or into the [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage) table function starts a new blob as soon as at least this number of bytes has been written into the current one. The names of the new blobs follow the same pattern as for `azure_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first blob already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next blobs are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first blob as well.
+
+The decision to start a new blob is made after writing a block, so a blob can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the blob is taken into account, so for a compressed blob it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a blob with the generated name already exists, the behavior is controlled by `azure_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the blobs written before that are left as is. If `azure_truncate_on_insert` is enabled, existing blobs are overwritten instead.
+
+A truncating insert starts the numbering over, and the blobs of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its prefix. The numbered names are not attributed to a particular table, so nothing is deleted if `azure_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the blobs belong to this table.
+
+Possible values:
+- 0 — All the data is written into a single blob.
+- Positive integer — The number of bytes after which a new blob is started.
 )", 0) \
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
@@ -791,6 +825,23 @@ initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
+)", 0) \
+    DECLARE(UInt64, hdfs_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into an HDFS engine table or into the [hdfs](/sql-reference/table-functions/hdfs) table function starts a new file as soon as at least this number of bytes has been written into the current file. The names of the new files follow the same pattern as for `hdfs_create_new_file_on_insert`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a file with the generated name already exists, the behavior is controlled by `hdfs_create_new_file_on_insert`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `hdfs_truncate_on_insert` is enabled, existing files are overwritten instead.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. The numbered names are not attributed to a particular table, so nothing is deleted if `hdfs_create_new_file_on_insert` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
+
+Possible values:
+- 0 — All the data is written into a single file.
+- Positive integer — The number of bytes after which a new file is started.
 )", 0) \
     DECLARE(Bool, hdfs_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [HDFS](/reference/engines/table-engines/integrations/hdfs) engine tables.
@@ -6385,6 +6436,23 @@ Enables or disables creating a new file on each insert in file engine tables if 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
 - 1 — `INSERT` query creates a new file.
+)", 0) \
+    DECLARE(UInt64, engine_file_split_on_write_by_size_bytes, 0, R"(
+If not zero, `INSERT` into a [File](/engines/table-engines/special/file) engine table or into the [file](/sql-reference/table-functions/file) table function starts a new file as soon as at least this number of bytes has been written into the current file. The names of the new files follow the same pattern as for `engine_file_allow_create_multiple_files`:
+
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
+
+If the name of the first file already contains a number in this scheme, the numbering continues from it: for `data.5.Parquet` the next files are `data.6.Parquet`, `data.7.Parquet`, etc. It allows to start the numbering from an arbitrary offset, and to have the number in the first file as well.
+
+The decision to start a new file is made after writing a block, so a file can be larger than the specified size - the block that crossed the limit is written in full. The size of the data as it is written to the file is taken into account, so for a compressed file it is the size of the compressed data, and for a file that already existed it also includes its initial size. Formats that buffer the data internally, such as `Parquet`, are taken into account only when they write the data out, e.g. on the boundary of a row group. The data is formatted by a single thread, because the amount of the written data has to be known after every block.
+
+If a file with the generated name already exists, the behavior is controlled by `engine_file_allow_create_multiple_files`: if it is enabled, the number is skipped and the next unused name is taken, otherwise an exception is thrown, and the files written before that are left as is. If `engine_file_truncate_on_insert` is enabled, existing files are overwritten instead.
+
+A truncating insert starts the numbering over, and the files of the numbered sequence that are left over from a larger previous insert are deleted, so that the stale data does not stay visible neither for this table nor for a glob pattern over its directory. The numbered names are not attributed to a particular table, so nothing is deleted if `engine_file_allow_create_multiple_files` is enabled at the same time: in that mode an insert can step over the names taken by someone else, and it is not known which of the files belong to this table.
+
+Possible values:
+- 0 — All the data is written into a single file.
+- Positive integer — The number of bytes after which a new file is started.
 )", 0) \
     DECLARE(Bool, engine_file_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [File](/reference/engines/table-engines/special/file) engine tables.

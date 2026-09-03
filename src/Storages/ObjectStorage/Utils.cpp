@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -50,11 +51,10 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
     if (settings.create_new_file_on_insert)
     {
-        auto pos = key.find_first_of('.');
         String new_key;
         do
         {
-            new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
+            new_key = setSequenceNumberInFileName(key, sequence_number);
             ++sequence_number;
         }
         while (object_storage.exists(StoredObject(new_key)));
@@ -68,6 +68,58 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         "If you want to overwrite it, enable setting {}_truncate_on_insert, if you "
         "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
         configuration.getNamespace(), key, configuration.getTypeName(), configuration.getTypeName());
+}
+
+String getNextKeyForSplittingBySize(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
+    const String & key,
+    size_t & sequence_number)
+{
+    while (true)
+    {
+        String new_key = setSequenceNumberInFileName(key, sequence_number);
+        ++sequence_number;
+
+        if (settings.truncate_on_insert || !object_storage.exists(StoredObject(new_key)))
+            return new_key;
+
+        /// The name is already taken: either skip it and try the next number, or refuse to write.
+        if (!settings.create_new_file_on_insert)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object in bucket {} with key {} already exists, but it is needed to continue writing the data split by size. "
+                "If you want to overwrite it, enable setting {}_truncate_on_insert, if you want to skip the taken names, "
+                "enable setting {}_create_new_file_on_insert",
+                configuration.getNamespace(), new_key, configuration.getTypeName(), configuration.getTypeName());
+    }
+}
+
+/// The numbered keys are not attributed to a particular table - the storage keeps no metadata about the objects
+/// it has written. The removal is done only when the numbered keys are unambiguously overwritten by this insert
+/// anyway: `*_truncate_on_insert` claims the whole numbered sequence of the key, while `*_create_new_file_on_insert`
+/// lets an insert step over the keys taken by someone else, and then it is not known which of the objects belong
+/// to this table - nothing is deleted in that case.
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const String & key,
+    size_t sequence_number,
+    bool create_new_file_on_insert)
+{
+    if (create_new_file_on_insert)
+        return;
+
+    while (true)
+    {
+        String stale_key = setSequenceNumberInFileName(key, sequence_number);
+        ++sequence_number;
+
+        if (!object_storage.exists(StoredObject(stale_key)))
+            break;
+
+        object_storage.removeObjectIfExists(StoredObject(stale_key));
+    }
 }
 
 void resolveSchemaAndFormat(

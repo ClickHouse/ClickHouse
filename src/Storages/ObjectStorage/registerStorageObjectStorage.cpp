@@ -609,6 +609,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [s3_split_on_write_by_size_bytes](/reference/settings/session-settings/s3#s3_split_on_write_by_size_bytes) - splits the written data into multiple numbered objects of approximately the specified size. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
 - [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the engine. Empty (disabled) by default.
 
@@ -1049,6 +1050,7 @@ libhdfs3 support HDFS namenode HA.
 
 - [hdfs_truncate_on_insert](/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [hdfs_create_new_file_on_insert](/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_split_on_write_by_size_bytes](/reference/settings/session-settings/hdfs#hdfs_split_on_write_by_size_bytes) - splits the written data into multiple numbered files of approximately the specified size. Disabled by default.
 - [hdfs_skip_empty_files](/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**

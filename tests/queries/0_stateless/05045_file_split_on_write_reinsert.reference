@@ -1,0 +1,14 @@
+--- A truncating insert into the same table starts the numbering over and overwrites the split files
+data.1.tsv	200	300	499
+data.tsv	300	0	299
+500	124750
+--- A second insert continues after the taken names with engine_file_allow_create_multiple_files
+data.1.tsv	300
+data.2.tsv	300
+data.3.tsv	100
+data.4.tsv	300
+data.5.tsv	100
+data.tsv	400
+1500	624250
+--- An exception if the names of the split files are taken by the previous insert
+FILE_ALREADY_EXISTS

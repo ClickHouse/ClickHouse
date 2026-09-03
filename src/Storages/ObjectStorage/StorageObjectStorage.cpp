@@ -1,5 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <algorithm>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -22,6 +24,7 @@
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -810,11 +813,49 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// A truncating insert overwrites the table: it starts from the base key, the split objects
+    /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
+    if (settings.truncate_on_insert)
+    {
+        paths.resize(1);
+        if (settings.split_on_write_by_size_bytes)
+            removeStaleSplitObjects(
+                *object_storage,
+                paths.front().path,
+                getStartSequenceNumber(paths.front().path, 1),
+                settings.create_new_file_on_insert);
+    }
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path,
+            getStartSequenceNumber(paths.front().path, 1)))
     {
         paths.push_back({*new_key});
     }
     configuration->setPaths(paths);
+
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The new objects are registered in the configuration, so that they are visible for reading from the same table.
+    /// The numbering is derived per insert from the key of the object this insert starts with:
+    /// the next objects continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
+    StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    if (settings.split_on_write_by_size_bytes)
+    {
+        get_next_path = [storage = object_storage, config = configuration, settings,
+                         key = paths.back().path,
+                         sequence_number = getStartSequenceNumber(paths.back().path, 1)]() mutable -> String
+        {
+            String new_key = getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+            auto all_paths = config->getPaths();
+            if (std::find_if(all_paths.begin(), all_paths.end(), [&](const auto & p) { return p.path == new_key; }) == all_paths.end())
+            {
+                all_paths.push_back({new_key});
+                config->setPaths(all_paths);
+            }
+            return new_key;
+        };
+    }
 
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
@@ -823,7 +864,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        settings.split_on_write_by_size_bytes,
+        std::move(get_next_path));
 }
 
 bool StorageObjectStorage::optimize(

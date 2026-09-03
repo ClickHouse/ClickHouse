@@ -36,6 +36,7 @@ namespace Setting
 {
     extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool s3_create_new_file_on_insert;
+    extern const SettingsUInt64 s3_split_on_write_by_size_bytes;
     extern const SettingsBool s3_ignore_file_doesnt_exist;
     extern const SettingsUInt64 s3_list_object_keys_size;
     extern const SettingsBool s3_skip_empty_files;
@@ -155,6 +156,7 @@ StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const
     return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::s3_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::s3_create_new_file_on_insert],
+        .split_on_write_by_size_bytes = settings[Setting::s3_split_on_write_by_size_bytes],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_s3],
         .schema_inference_mode = settings[Setting::schema_inference_mode],
         .skip_empty_files = settings[Setting::s3_skip_empty_files],

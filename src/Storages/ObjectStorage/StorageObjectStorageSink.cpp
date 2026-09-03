@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
+#include <Storages/NumberedFileName.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
 #include <Interpreters/Context.h>
@@ -56,15 +57,32 @@ namespace
 
 StorageObjectStorageSink::StorageObjectStorageSink(
     const std::string & path_,
-    ObjectStoragePtr object_storage,
+    ObjectStoragePtr object_storage_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context,
-    const String & format,
-    const String & compression_method)
+    ContextPtr context_,
+    const String & format_,
+    const String & compression_method_,
+    size_t split_on_write_by_size_bytes_,
+    GetNextPathCallback get_next_path_)
     : SinkToStorage(sample_block_)
     , path(path_)
+    , object_storage(object_storage_)
+    , format_settings(format_settings_)
     , sample_block(sample_block_)
+    , context(context_)
+    , format(format_)
+    , compression_method(compression_method_)
+    , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
+    , get_next_path(std::move(get_next_path_))
+{
+    if (split_on_write_by_size_bytes && !get_next_path)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");
+
+    initialize();
+}
+
+void StorageObjectStorageSink::initialize()
 {
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
@@ -72,21 +90,45 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
+    /// The pointer is taken before the move, but it is assigned to the field only afterwards,
+    /// otherwise the lifetime analysis considers the field to be dangling.
+    auto * buffer_ptr = buffer.get();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
         chosen_compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
         settings[Setting::snappy_mode]);
+    destination_buf = buffer_ptr;
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
+    /// With the parallel formatting, the data is written into the buffer by a background thread,
+    /// and the amount of the written data cannot be checked after every block without a data race.
+    writer = split_on_write_by_size_bytes
+        ? FormatFactory::instance().getOutputFormat(format, *write_buf, *sample_block, context, format_settings)
+        : FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
 {
     if (isCancelled())
         return;
+
+    /// The previous object is already finished. Start the next one only now, when there is data for it.
+    if (split_on_write_by_size_bytes && !writer)
+    {
+        path = get_next_path();
+        initialize();
+    }
+
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+
+    /// Continue writing into a new object as soon as the current one became large enough.
+    /// The current block is always written in full, so the object can be larger than the requested size.
+    if (split_on_write_by_size_bytes && destination_buf->count() >= split_on_write_by_size_bytes)
+    {
+        finalizeBuffers();
+        releaseBuffers();
+    }
 }
 
 void StorageObjectStorageSink::onFinish()
@@ -124,6 +166,7 @@ void StorageObjectStorageSink::releaseBuffers()
 {
     writer.reset();
     write_buf.reset();
+    destination_buf = nullptr;
 }
 
 void StorageObjectStorageSink::cancelBuffers()
@@ -170,13 +213,34 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
+    /// The objects written after the first one are named after the key of the partition: `data.1.tsv`, `data.2.tsv`, ...
+    const String key_for_splitting = file_path;
+
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
+            *object_storage, *configuration, query_settings, file_path, getStartSequenceNumber(file_path, 1)))
     {
         file_path = *new_key;
     }
 
     last_written_object_path = file_path;
+
+    StorageObjectStorageSink::GetNextPathCallback get_next_path;
+    if (query_settings.split_on_write_by_size_bytes)
+    {
+        if (query_settings.truncate_on_insert)
+            removeStaleSplitObjects(
+                *object_storage,
+                key_for_splitting,
+                getStartSequenceNumber(key_for_splitting, 1),
+                query_settings.create_new_file_on_insert);
+
+        get_next_path = [storage = object_storage, config = configuration, settings = query_settings,
+                         key = key_for_splitting,
+                         sequence_number = getStartSequenceNumber(key_for_splitting, 1)]() mutable -> String
+        {
+            return getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
+        };
+    }
 
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
@@ -185,7 +249,9 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        query_settings.split_on_write_by_size_bytes,
+        std::move(get_next_path));
 }
 
 }
