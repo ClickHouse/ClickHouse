@@ -278,7 +278,7 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled.
 - **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
-- **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
+- **The recursive CTE itself cannot be materialized**: `MATERIALIZED` on the self-referencing CTE of a `WITH RECURSIVE` query is not allowed and results in an `UNSUPPORTED_METHOD` exception. Other, non-recursive CTEs of the same `WITH RECURSIVE` clause may be materialized: they are evaluated once and every recursive step reads the snapshot.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
 ## Common Scalar Expressions {#common-scalar-expressions}
@@ -637,6 +637,71 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
+### Keyed recursion {#keyed-recursion}
+
+By default a recursive `CTE` is evaluated naively: every step re-derives rows from the whole working table and the result is the concatenation of all steps, so a recursive query over cyclic data does not terminate on its own and has to be guarded explicitly (see [Cycle detection](#cycle-detection)).
+
+The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (semi-naive) evaluation:
+
+- The recursion accumulates one row per key. A produced row whose key is already accumulated replaces the accumulated row.
+- Only rows that actually changed the accumulated state form the working table of the next step, so a row that is re-derived unchanged is not propagated. This is what makes the recursion terminate on cyclic data without a cycle guard.
+- The result of the `CTE` is the accumulated keyed table at convergence, not the concatenation of the steps.
+- The accumulated state is additionally exposed to the recursive members under the name `<cte_name>_settled`, so a recursive member can compare a candidate row against the currently accumulated one and refute rows that are not an improvement.
+
+The key columns must be a subset of the projection columns of the non-recursive term, and the `CTE` must actually be recursive; otherwise `BAD_ARGUMENTS` is raised.
+
+**Example:** Reachability over a cyclic graph
+
+```sql
+CREATE TABLE edges (u UInt64, v UInt64) ENGINE = Memory;
+INSERT INTO edges VALUES (1, 2), (2, 3), (3, 1), (3, 4);
+
+WITH RECURSIVE reach USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node
+    UNION ALL
+    SELECT e.v AS node FROM reach r INNER JOIN edges e ON e.u = r.node
+)
+SELECT node FROM reach ORDER BY node;
+```
+
+```text
+┌─node─┐
+│    1 │
+│    2 │
+│    3 │
+│    4 │
+└──────┘
+```
+
+**Example:** Shortest paths, refuting non-improving candidates with `<cte_name>_settled`
+
+```sql
+CREATE TABLE w_edges (u UInt64, v UInt64, w Float64) ENGINE = Memory;
+INSERT INTO w_edges VALUES (1, 2, 1), (2, 3, 1), (1, 3, 5), (3, 4, 1), (1, 4, 10);
+
+WITH RECURSIVE sp USING KEY (node) AS
+(
+    SELECT 1 :: UInt64 AS node, 0 :: Float64 AS cost
+    UNION ALL
+    SELECT e.v AS node, s.cost + e.w AS cost
+    FROM sp s
+    INNER JOIN w_edges e ON e.u = s.node
+    LEFT JOIN sp_settled st ON st.node = e.v
+    WHERE s.cost + e.w < if(st.node = 0, 1e308, st.cost)
+)
+SELECT node, cost FROM sp ORDER BY node;
+```
+
+```text
+┌─node─┬─cost─┐
+│    1 │    0 │
+│    2 │    1 │
+│    3 │    2 │
+│    4 │    3 │
+└──────┴──────┘
+```
+
 ## Trailing Comma {#trailing-comma}
 
 A comma is allowed after the last element in the `WITH` clause:
@@ -652,6 +717,7 @@ SELECT total, doubled;
 WITH <expression> AS <identifier>
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 WITH RECURSIVE <identifier> AS <subquery expression>
+WITH RECURSIVE <identifier> USING KEY (<key columns>) AS <subquery expression>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
