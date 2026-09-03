@@ -97,8 +97,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_minute_of_hour_is_constant_during_epoch = true;
 
     /// The UTC time of day at which a local day begins: 66600 for `Asia/Kolkata`, whose +05:30 puts local
-    /// midnight at 18:30 the day before. The two flags above assert that every epoch day begins at it, which
-    /// is what lets its complements below stand in for the offset.
+    /// midnight at 18:30 the day before.
     const Time utc_time_of_day_at_local_midnight = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
     hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
     minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
