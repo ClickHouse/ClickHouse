@@ -616,6 +616,8 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(
 
     FailPointInjection::pauseFailPoint(FailPoints::s3_read_before_get_object);
     CurrentThread::checkIfNotCancelled();
+    if (read_settings.isReadCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
 
     if (request_started)
         *request_started = true;

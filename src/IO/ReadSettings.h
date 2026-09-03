@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <memory>
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -137,6 +139,15 @@ struct ReadSettings
 
     /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
+
+    /// Stops reads owned by one read pool without cancelling the whole query. This is used when
+    /// the client requests a partial result and the processors already in flight must be drained.
+    std::shared_ptr<const std::atomic_bool> read_cancelled;
+
+    bool isReadCancelled() const
+    {
+        return read_cancelled && read_cancelled->load(std::memory_order_relaxed);
+    }
 
     bool enable_filesystem_read_prefetches_log = false;
 

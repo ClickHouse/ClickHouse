@@ -125,6 +125,7 @@ private:
     void fillPerThreadTasks(size_t threads, size_t sum_marks);
 
     void startPrefetches();
+    void checkIfNotCancelledBeforeCreatingReaders() const;
     void createPrefetchedReadersForTask(ThreadTask & task);
     std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 

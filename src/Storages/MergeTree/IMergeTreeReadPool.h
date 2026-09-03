@@ -21,6 +21,9 @@ public:
     /// Returns true if tasks are returned in the same order as the order of ranges passed to pool
     virtual bool preservesOrderOfRanges() const = 0;
 
+    /// Stop operations owned by this read pool without cancelling the whole query.
+    virtual void cancelReading() noexcept = 0;
+
     /// task_idx is an implementation defined identifier that helps
     /// to get required task. E.g. it may be number of thread in case of Default reading type or an index of a part in case of InOrder/InReverseOrder reading type.
     virtual MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) = 0;

@@ -470,20 +470,29 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        auto result = readCurrentTask(*task, *algorithm);
-
-        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
-        /// This allows MergingSortedTransform to reprioritize sources when:
-        /// - PREWHERE filters all rows (merge gets updated position without actual data)
-        /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
-        if (virtual_row_conversions && !result.is_finished)
+        try
         {
-            auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
-            if (vrow.chunk)
-                pending_virtual_row.emplace(std::move(vrow));
-        }
+            auto result = readCurrentTask(*task, *algorithm);
 
-        return result;
+            /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+            /// This allows MergingSortedTransform to reprioritize sources when:
+            /// - PREWHERE filters all rows (merge gets updated position without actual data)
+            /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
+            if (virtual_row_conversions && !result.is_finished)
+            {
+                auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
+                if (vrow.chunk)
+                    pending_virtual_row.emplace(std::move(vrow));
+            }
+
+            return result;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                break;
+            throw;
+        }
     }
 
     return {Chunk(), 0, 0, true, {}};

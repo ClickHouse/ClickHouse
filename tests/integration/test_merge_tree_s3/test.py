@@ -321,6 +321,73 @@ def test_prefetch_stops_after_native_client_cancel(cluster):
     check_no_objects_after_drop(cluster, table_name=table)
 
 
+def test_prefetch_stops_after_partial_result_cancel(cluster):
+    node = cluster.instances["node"]
+    table = "s3_prefetch_partial_result_cancellation"
+    query_id = uuid.uuid4().hex
+    s3_failpoint = "s3_read_before_get_object"
+    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
+
+    create_table(node, table, min_bytes_for_wide_part=0)
+    node.query(
+        f"INSERT INTO {table} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {s3_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
+    query_request = node.get_query_request(
+        f"SELECT sum(id) FROM {table} SETTINGS "
+        "partial_result_on_first_cancel=1, max_threads=1, load_marks_asynchronously=1, "
+        "allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
+        "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {s3_failpoint} PAUSE", timeout=60)
+        query_request.process.send_signal(signal.SIGINT)
+        node.query(
+            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
+        )
+
+        assert node.query(
+            "SELECT is_cancelled FROM system.processes "
+            f"WHERE query_id='{query_id}'"
+        ).strip() == "0"
+        profile_events_at_cancellation = node.query(
+            "SELECT ProfileEvents['S3GetObject'], "
+            "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.processes "
+            f"WHERE query_id='{query_id}'"
+        ).strip()
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+
+        answer, error = query_request.get_answer_and_error()
+        assert answer.strip() == "0", answer
+        assert error == "", error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {s3_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
+        if query_request.process.poll() is None:
+            query_request.process.kill()
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT type, ProfileEvents['S3GetObject'], "
+            "ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip()
+        == f"QueryFinish\t{profile_events_at_cancellation}"
+    )
+    assert node.query(f"SELECT sum(id) FROM {table}").strip() == str(sum(range(4096)))
+    check_no_objects_after_drop(cluster, table_name=table)
+
+
 def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
     node = cluster.instances["node"]
     object_name = "data/s3_read_big_at_cancellation.parquet"

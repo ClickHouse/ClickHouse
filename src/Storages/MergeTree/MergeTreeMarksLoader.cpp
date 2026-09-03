@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -41,6 +42,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -345,6 +347,10 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+            CurrentThread::checkIfNotCancelled();
+            if (read_settings.isReadCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "MergeTree read was cancelled by the client");
+
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
