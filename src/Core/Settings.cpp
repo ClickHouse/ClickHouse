@@ -5189,6 +5189,16 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_push_subcolumns_into_subqueries, true, R"(
+Enables or disables reading of subcolumns inside subqueries and CTEs when a subcolumn of an exported column is requested outside. This reduces the amount of data to read.
+
+For example, the query `SELECT data.a FROM (SELECT * FROM test)` with a `JSON` column `data` reads only the subcolumn `data.a` from the table instead of the whole column `data`.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for query optimization. The default is `false`.
 

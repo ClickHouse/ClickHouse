@@ -802,38 +802,6 @@ bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
     return function_name != "distinctJSONPaths";
 }
 
-/// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
-/// from the same table) down to the underlying storage column. Used to let the function-to-subcolumn
-/// rewrite see through `c ALIAS some_storage_column` (possibly chained) and rewrite as if the query
-/// had referenced the storage column directly.
-///
-/// Returns nullptr if any step is not a same-table ColumnNode. In particular this guards against
-/// ColumnNodes whose expression is not really a "rename":
-///   * non-trivial ALIAS bodies (function calls, casts), where the value differs from the source column.
-///   * ARRAY JOIN columns (source is ArrayJoinNode), where the column is an unrolled element.
-///   * JOIN USING columns (source is JoinNode, expression is a ListNode), where the value comes from the join.
-///   * subquery columns (source is QueryNode or UnionNode), which are not storage columns.
-ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
-{
-    auto initial_source = column_node->getColumnSource();
-    if (!initial_source->as<TableNode>() && !initial_source->as<TableFunctionNode>())
-        return nullptr;
-
-    while (column_node->hasExpression())
-    {
-        auto * inner = column_node->getExpression()->as<ColumnNode>();
-        if (!inner)
-            return nullptr;
-        /// Every step must come from the same TableNode as the outer column. This rejects
-        /// ARRAY JOIN, JOIN USING, and subquery-resolved aliases whose expression happens to be
-        /// a ColumnNode of an unrelated source. Substituting those would change query semantics.
-        if (inner->getColumnSource().get() != initial_source.get())
-            return nullptr;
-        column_node = inner;
-    }
-    return column_node;
-}
-
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.

@@ -1,0 +1,92 @@
+empty of an Array
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr.size0 UInt64
+0
+1
+notEmpty of an Array
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr.size0 UInt64
+0
+1
+empty and length share the size0 subcolumn
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr.size0 UInt64
+0	2
+1	0
+empty of a String
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: s.size UInt64
+0
+1
+empty of a Map
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: m.size0 UInt64
+0
+0
+mapContainsKey
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: m.keys Array(String)
+0
+1
+isNotNull
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: n.null UInt8
+0
+1
+isNull and isNotNull share the null subcolumn
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: n.null UInt8
+0	1
+1	0
+count of a Nullable
+│  Header: sum(not(__table1.`x.null`)) UInt64
+└──ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: n.null UInt8
+1
+count of a Nullable with GROUP BY
+0
+1
+through a CTE and two levels of subqueries
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr.size0 UInt64
+0
+1
+through UNION ALL
+│  Header: isNotNull(x) UInt8
+├──ReadFromMergeTree (default.t_push_subcolumns_carriers)
+│     Header: n.null UInt8
+└──ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: n.null UInt8
+0
+0
+1
+1
+the whole column is read anyway
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr Array(UInt32)
+0	[1,2]
+1	[]
+a defaultable JOIN side is not rewritten
+│  Header: __table2.x Nullable(UInt32)
+├──ReadFromMergeTree (default.t_push_subcolumns_carriers)
+│     Header: id UInt32
+└──ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: n Nullable(UInt32)
+0
+0
+the map key is itself a pushed subcolumn
+Output: has(m.keys, tup.a)
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Output: m.keys, tup.a
+0
+1
+a non-constant map key is not rewritten into has
+0
+0
+the setting is off
+ReadFromMergeTree (default.t_push_subcolumns_carriers)
+Header: arr Array(UInt32)
+QBit element read through a subquery
+ReadFromMergeTree (default.t_push_subcolumns_qbit)
+Header: v.2 FixedString(1)
+FE

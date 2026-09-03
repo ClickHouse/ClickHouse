@@ -1,0 +1,24 @@
+aliasing only in the non-leftmost branch is not rewritten
+Output: getSubcolumn(tup, \'a\'), tup
+│     Output: tup, tup
+Output: tup
+1	(10,'ten')
+2	(2,'two')
+aliasing only in the leftmost branch is not rewritten
+Output: getSubcolumn(tup, \'a\'), tup
+│     Output: tup
+Output: tup, tup
+1	(10,'ten')
+2	(2,'two')
+no cross-branch aliasing is rewritten
+Output: tup.a, other
+│     Output: other, tup.a
+Output: other, tup.a
+1	(10,'ten')
+1	(10,'ten')
+dead alias-equivalent sibling through a non-leftmost branch class
+Output: tup.a
+│     Output: tup.a
+Output: tup.a
+1
+2

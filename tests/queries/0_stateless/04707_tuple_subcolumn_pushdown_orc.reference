@@ -21,3 +21,5 @@
 2	0
 999	111
 2	0
+-- an unnamed tuple hint through a subquery reads element values, not defaults
+1	645

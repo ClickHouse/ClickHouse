@@ -1,0 +1,48 @@
+whole column alive next to a derived subcolumn export, not pushed
+Output: getSubcolumn(tup.a, \'b\'), tup
+Output: tup.a, tup
+1	((1,'one'),10)
+2	((2,'two'),20)
+whole column alive under an alias name, not pushed
+Output: getSubcolumn(tup.a, \'b\'), tup
+Output: tup.a, tup
+1	((1,'one'),10)
+2	((2,'two'),20)
+the derived export itself alive next to its subcolumn, not pushed
+Output: getSubcolumn(tup.a, \'b\'), tup.a
+Output: tup.a
+1	(1,'one')
+2	(2,'two')
+sibling subcolumn export alive, pushed
+Output: tup.a.b, tup.d
+Output: tup.d, tup.a.b
+1	10
+2	20
+whole column exported but read only through subcolumns, pushed
+Output: tup.a.b, tup.d
+Output: tup.a.b, tup.d
+1	10
+2	20
+derived export alone, pushed
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+two levels, whole column alive in the middle query, not pushed
+Output: getSubcolumn(getSubcolumn(tup, \'a\'), \'b\'), tup
+Output: tup
+1	((1,'one'),10)
+2	((2,'two'),20)
+two levels, whole column not exported by the middle query, pushed to the table
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+two levels, unreferenced whole column exported by the middle query, pushed to the table
+Output: tup.a.b
+Output: tup.a.b
+1
+2
+setting off, not pushed
+1	((1,'one'),10)
+2	((2,'two'),20)

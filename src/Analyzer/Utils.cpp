@@ -1866,4 +1866,25 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     return true;
 }
 
+ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
+{
+    auto initial_source = column_node->getColumnSource();
+    if (!initial_source->as<TableNode>() && !initial_source->as<TableFunctionNode>())
+        return nullptr;
+
+    while (column_node->hasExpression())
+    {
+        auto * inner = column_node->getExpression()->as<ColumnNode>();
+        if (!inner)
+            return nullptr;
+        /// Every step must come from the same TableNode as the outer column. This rejects
+        /// ARRAY JOIN, JOIN USING, and subquery-resolved aliases whose expression happens to be
+        /// a ColumnNode of an unrelated source. Substituting those would change query semantics.
+        if (inner->getColumnSource().get() != initial_source.get())
+            return nullptr;
+        column_node = inner;
+    }
+    return column_node;
+}
+
 }

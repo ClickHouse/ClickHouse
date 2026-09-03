@@ -51,6 +51,7 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
+#include <Analyzer/Passes/PushSubcolumnsIntoSubqueriesPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
@@ -207,12 +208,17 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
 {
-    // Run only query tree passes that doesn't affect output header:
-    // 1. QueryAnalysisPass
-    // 2. GroupingFunctionsResolvePass
-    // 3. AutoFinalOnQueryPass
-    // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, 4);
+    /// Run only query tree passes that don't affect the output header:
+    /// 1. QueryAnalysisPass
+    /// 2. GroupingFunctionsResolvePass
+    /// 3. AutoFinalOnQueryPass
+    /// 4. PushSubcolumnsIntoSubqueriesPass
+    /// 5. RemoveUnusedProjectionColumnsPass
+    constexpr size_t up_to_pass_index = 5;
+    /// Keep the list above in sync with addQueryTreePasses: adding a pass before
+    /// `RemoveUnusedProjectionColumnsPass` would silently exclude it here.
+    chassert(passes.size() >= up_to_pass_index && passes[up_to_pass_index - 1]->getName() == "RemoveUnusedProjectionColumnsPass");
+    run(query_tree_node, up_to_pass_index);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
@@ -270,6 +276,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+    /// Should run before RemoveUnusedProjectionColumnsPass, so that a column replaced
+    /// with its subcolumns can be removed from the subquery projection if it is not used anywhere else.
+    manager.addPass(std::make_unique<PushSubcolumnsIntoSubqueriesPass>());
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());

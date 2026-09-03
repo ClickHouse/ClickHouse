@@ -91,3 +91,11 @@ check_collision() {
 
 check_collision 't Tuple(a Tuple(b UInt64), `a.b` UInt64)' 'tuple(tuple(111::UInt64), 999::UInt64)'
 check_collision 't Tuple(`a.b` UInt64, a Tuple(b UInt64))' 'tuple(999::UInt64, tuple(111::UInt64))'
+
+# The unnamed-tuple hint through a subquery: the subcolumn pushdown pass must keep reading the
+# whole tuple as well instead of pushing the ordinal element name into the file read.
+echo '-- an unnamed tuple hint through a subquery reads element values, not defaults'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT countIf(tupleElement(tup, 1) = 11111), countIf(tupleElement(tup, 2) = '7')
+    FROM (SELECT tup FROM file('${DATA_FILE}', ORC, 'id Int64, tup Tuple(Int64, String)'))
+    SETTINGS enable_analyzer = 1, optimize_functions_to_subcolumns = 1, optimize_push_subcolumns_into_subqueries = 1"
