@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
@@ -248,4 +249,9 @@ void ObjectStorageQueueSettings::fillEngineSettingsColumns(MutableColumnsAndCons
 {
     fillEngineSettingsColumnsFromImpl<ObjectStorageQueueSettingsImpl>(params);
 }
+TableSettings ObjectStorageQueueSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

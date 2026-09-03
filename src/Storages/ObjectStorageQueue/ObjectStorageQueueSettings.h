@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -74,6 +76,8 @@ struct ObjectStorageQueueSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
     static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:

@@ -2113,4 +2113,39 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     }
 }
 
+TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
+{
+    /// This storage keeps no settings object: `getSettings` rebuilds one, and the values it puts in
+    /// come from three places - the table metadata in Keeper, which every replica shares; the
+    /// metadata object; and plain members of this storage. An `ALTER ... MODIFY SETTING` run on
+    /// another replica changes the first without this replica's definition changing, which is why
+    /// this table is asked rather than a settings type enumerated statically.
+    auto settings = getSettings().enumerateSettings();
+
+    /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
+    /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
+    /// against the table metadata instead. Recover the distinction by value.
+    for (auto & setting : settings)
+        setting.origin = setting.value == setting.default_value
+            ? TableSettingOrigin::Default
+            : TableSettingOrigin::Other;
+
+    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+
+    /// Applied after the definition, because for these the shared metadata is what the table
+    /// actually uses: an `ALTER` on another replica has already changed them here, while this
+    /// replica's `CREATE` query still states whatever it was created with.
+    static const NameSet held_in_shared_metadata{
+        "mode", "after_processing", "keeper_path", "loading_retries", "processing_threads_num",
+        "parallel_inserts", "last_processed_path", "bucketing_mode", "partitioning_mode",
+        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
+        "buckets"};
+
+    for (auto & setting : settings)
+        if (held_in_shared_metadata.contains(setting.name))
+            setting.origin = TableSettingOrigin::SharedMetadata;
+
+    return settings;
+}
+
 }
