@@ -449,18 +449,10 @@ bool isLikePatternFunction(const String & function_name)
         || function_name == "mapContainsValueLike";
 }
 
-}
-
-/// A `FixedString` constant is compared to a `String` column ignoring its trailing zero padding
-/// (`'hello' = toFixedString('hello', 10)` is true), but the index terms are extracted from the raw
-/// padded bytes. For an n-gram tokenizer that yields n-grams containing `\0`, which never occur in
-/// the stored data, so every granule looked unmatched and matching rows were silently dropped.
-/// Strip the padding the way the comparison does. Stripping can only remove terms from the search,
-/// never add one, so a `FixedString` indexed column stays sound too - it just loses the pruning the
-/// padding n-grams would have given.
-/// `MergeTreeIndexBloomFilter.cpp` does the same for its own condition, in
+/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be
+/// taken from the value without it. `MergeTreeIndexBloomFilter.cpp` does the same in
 /// `coerceStringFieldLikeSearchFunction`.
-static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
     auto inner_type = removeNullable(removeLowCardinality(type));
 
@@ -483,6 +475,8 @@ static Field stripFixedStringPaddingForTerms(const Field & field, const DataType
     }
 
     return field;
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -885,13 +879,12 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
 
             /// See stripFixedStringPaddingForTerms: a `FixedString` set element carries its padding,
             /// which the comparison ignores but the tokenizer would not.
-            String element(ref);
+            std::string_view element = column->getDataAt(row);
             if (is_fixed_string_element)
-                element.resize(element.find_last_not_of('\0') + 1);
+                element = element.substr(0, element.find_last_not_of('\0') + 1);
 
             forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
         }

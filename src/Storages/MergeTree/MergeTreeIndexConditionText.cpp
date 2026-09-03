@@ -931,14 +931,8 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
-/// A `FixedString` constant is compared to a `String` column ignoring its trailing zero padding
-/// (`'hello' = toFixedString('hello', 10)` is true), but the index terms are extracted from the raw
-/// padded bytes. For an n-gram tokenizer that yields n-grams containing `\0`, which never occur in
-/// the stored data, so every granule looked unmatched and matching rows were silently dropped.
-/// Strip the padding the way the comparison does. Stripping can only remove terms from the search,
-/// never add one, so a `FixedString` indexed column stays sound too - it just loses the pruning the
-/// padding n-grams would have given.
-/// `MergeTreeIndexBloomFilter.cpp` does the same for its own condition, in
+/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be
+/// taken from the value without it. `MergeTreeIndexBloomFilter.cpp` does the same in
 /// `coerceStringFieldLikeSearchFunction`.
 static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
@@ -963,6 +957,33 @@ static Field stripFixedStringPaddingForTerms(const Field & field, const DataType
     }
 
     return field;
+}
+
+/// The terms of a value stay terms of the same value extended with zero bytes only for tokenizers
+/// that split on a zero byte or that emit substrings. `array` stores the whole value as a single
+/// term, `splitByString` keeps the padding inside the last one, and so on.
+static bool tokenizerToleratesZeroPadding(ITokenizer::Type tokenizer_type)
+{
+    return tokenizer_type == ITokenizer::Type::SplitByNonAlpha || tokenizer_type == ITokenizer::Type::Ngrams;
+}
+
+/// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
+/// only sound there when the tokenizer keeps the terms of the unpadded value, otherwise the search
+/// would look for a term the index never stored and prune a granule holding matching rows.
+static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Block & header)
+{
+    if (tokenizerToleratesZeroPadding(tokenizer_type))
+        return true;
+
+    /// A text index is always defined on a single expression.
+    if (header.columns() != 1)
+        return false;
+
+    auto indexed_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(indexed_type.get()))
+        indexed_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+
+    return !isFixedString(indexed_type);
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -1030,7 +1051,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+    if (canStripFixedStringPadding(tokenizer->getType(), header))
+        value_field = stripFixedStringPaddingForTerms(value_field, value_type);
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1815,15 +1837,15 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
+    const bool strip_fixed_string_padding = canStripFixedStringPadding(tokenizer->getType(), header);
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
-        auto ref = set_column.getDataAt(row);
-        String element(ref);
+        std::string_view element = set_column.getDataAt(row);
 
         /// See stripFixedStringPaddingForTerms: a `FixedString` set element carries its padding.
-        if (WhichDataType(set_column.getDataType()).isFixedString())
-            element.resize(element.find_last_not_of('\0') + 1);
+        if (WhichDataType(set_column.getDataType()).isFixedString() && strip_fixed_string_padding)
+            element = element.substr(0, element.find_last_not_of('\0') + 1);
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
@@ -1837,7 +1859,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(element));
+        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(element)));
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.
