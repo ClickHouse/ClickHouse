@@ -2119,8 +2119,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
-        /// Let the top-level merge defer whole groups behind their virtual rows; useless
-        /// for a single group and wrong for the partition-wise output (it feeds aggregation).
+        /// Let the top-level merge defer whole groups behind their virtual rows. Needed in both
+        /// modes: the default mode gets its lazy win from it, and the per-block boundaries can
+        /// reach the read-ahead transform only through it (the preliminary merge used to be
+        /// disabled for that mode). Useless for a single group and wrong for the partition-wise
+        /// output (it feeds aggregation).
         bool emit_boundary_virtual_rows = virtual_row_conversion && pipes.size() > 1 && !output_each_partition_through_separate_port;
 
         auto merge_streams = [&](Pipe & pipe)

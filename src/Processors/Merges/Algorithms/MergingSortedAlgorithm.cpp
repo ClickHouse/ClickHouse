@@ -368,6 +368,8 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::forwardVirtualRow(size_t sourc
 
     Status result(std::move(chunk));
     result.required_source = source_num;
+    /// The consumer may park this whole group behind the boundary and never come back for it,
+    /// so the member is read only once the consumer asks for more (see `IMergingTransformBase`).
     result.required_source_on_demand = true;
     return result;
 }
