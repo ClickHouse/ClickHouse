@@ -10,6 +10,9 @@
 -- The `count()` of ten is the witness that more than one pass ran: a single pass could return at most
 -- the three rows of the view.
 --
+-- Two `loop` of the same view are two different joins and are counted apart, so the deduplication has to
+-- name the `loop` and not the relation it wraps.
+--
 -- The algorithm is set explicitly, because the choice among the algorithms allowed by `join_algorithm`
 -- is made at run time and depends on the number of threads.
 
@@ -27,7 +30,15 @@ CREATE VIEW v_with_join AS SELECT src.a AS a FROM src JOIN dim ON src.a = dim.a;
 
 SELECT 'one join in a view restarted by the loop table function';
 SELECT count() FROM (SELECT * FROM loop(v_with_join) LIMIT 10)
-SETTINGS log_comment = '05057_loop_one_join', join_algorithm = 'hash';
+SETTINGS log_comment = '05057_loop_a_one_branch', join_algorithm = 'hash';
+
+SELECT 'two loop branches over the same joined view';
+SELECT count() FROM (
+    SELECT * FROM loop(v_with_join) LIMIT 10
+    UNION ALL
+    SELECT * FROM loop(v_with_join) LIMIT 10
+)
+SETTINGS log_comment = '05057_loop_b_two_branches', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness
@@ -35,7 +46,8 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
-  AND log_comment = '05057_loop_one_join';
+  AND log_comment LIKE '05057\_loop\_%'
+ORDER BY log_comment;
 
 DROP TABLE v_with_join;
 DROP TABLE src;
