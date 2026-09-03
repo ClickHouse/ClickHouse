@@ -911,9 +911,10 @@ void SystemLog<LogElement>::prepareTable()
             auto old_create_query_ast = getCreateTableQueryClean(table_id, getContext());
             auto expected_create_query_ast = getCreateTableQuery();
 
-            auto & expected_create = expected_create_query_ast->as<ASTCreateQuery &>();
-            const String expected_comment
-                = expected_create.comment ? expected_create.comment->as<ASTLiteral &>().value.safeGet<String>() : String{};
+            auto & expected_create = expected_create_query_ast->template as<ASTCreateQuery &>();
+            const String expected_comment = expected_create.comment
+                ? expected_create.comment->template as<ASTLiteral &>().value.template safeGet<String>()
+                : String{};
 
             auto format_without_comment = [](ASTPtr query_ast)
             {
