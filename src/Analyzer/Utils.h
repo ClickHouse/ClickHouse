@@ -253,16 +253,13 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 /// the type).
 bool typeNeedsExactLiteralSerialization(const IDataType & type);
 
-/// True if a `DateTime` can appear anywhere in this type. Its text form is local date-time text, which two
-/// UTC instants share across a DST overlap, so under a named `Variant` member it is rendered as the raw
-/// Unix timestamp instead. `Date`/`Date32` text is unambiguous and stays as text.
-bool typeMayContainDateTime(const IDataType & type);
-
 /// Build a literal AST for a constant column value, serializing leaves whose type or value a plain literal
 /// cannot carry exactly so they round-trip across distributed / serialized-plan boundaries: decimal-backed
 /// leaves (`Decimal`, `DateTime64`, `Time64`) as exact decimal carriers rather than through `Float64` or the
-/// `DateTime` text-parsing heuristics, and the active member of a `Variant` under its own type name. Other
-/// values use the same representation as `getFieldFromColumnForASTLiteral`.
+/// `DateTime` text-parsing heuristics, and the active member of a `Variant` under its own type name. Such a
+/// leaf is reached through `Nullable`, `Array`, `Tuple`, `Map`, `Variant`, `Dynamic` and `Object`; under any
+/// other wrapper (notably `LowCardinality`) it keeps the plain literal form. Other values use the same
+/// representation as `getFieldFromColumnForASTLiteral`.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a

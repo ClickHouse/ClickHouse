@@ -1572,7 +1572,12 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type)
     return result;
 }
 
-/// True if a `DateTime` can appear anywhere in this type.
+namespace
+{
+
+/// A `DateTime`'s text form is local date-time text, and two UTC instants in a DST overlap share one such
+/// text (parsing picks the earlier), so under a named `Variant` member it has to be rendered as its raw
+/// Unix timestamp instead. `Date`/`Date32` text is unambiguous and stays as text.
 bool typeMayContainDateTime(const IDataType & type)
 {
     bool result = false;
@@ -1581,9 +1586,6 @@ bool typeMayContainDateTime(const IDataType & type)
     type.forEachChild(check);
     return result;
 }
-
-namespace
-{
 
 UInt32 decimalFieldScale(const Field & field)
 {
@@ -1747,17 +1749,20 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
             const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
             auto global_discr = variant_column.globalDiscriminatorAt(row);
+            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
+            /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly, then name the whole
+            /// `Variant` as well: `array` and `map` resolve their own result type from their arguments before
+            /// any enclosing cast runs, so a value left at its bare member type would first have to survive
+            /// common-type resolution against its siblings.
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                return make_intrusive<ASTLiteral>(Null());
+                return makeCastToTypeNameAST(make_intrusive<ASTLiteral>(Null()), type->getName());
             const auto & member_type = variant_types[global_discr];
             auto member_ast = columnConstantToExactLiteralASTImpl(
                 variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
                 /*date_time_as_numbers=*/true);
-            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
-            /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
-            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. The wrapping is
-            /// skipped for a scalar member that already casts itself to its own type.
-            return makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
+            return makeCastToTypeNameAST(
+                makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
         }
         case TypeIndex::Dynamic:
         {
