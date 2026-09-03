@@ -23,6 +23,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ValidationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
@@ -7077,6 +7078,31 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             "Recursive CTE subquery {} with {} union mode is unsupported, only UNION ALL union mode is supported",
             union_node_typed.formatASTForErrorMessage(),
             toString(union_node_typed.getUnionMode()));
+
+        /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
+        /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
+        /// would inline them and the subquery would be re-executed on every step. The snapshot is taken once,
+        /// before the recursion starts, while the working table of this recursive CTE is still empty, so a
+        /// materialized CTE reading the working table cannot be supported: fail instead of snapshotting an
+        /// empty table.
+        for (size_t i = 1; i < queries_nodes_size; ++i)
+        {
+            traverseQueryTree(queries_nodes[i], Everything{}, [&](const QueryTreeNodePtr & node)
+            {
+                auto * table_node = node->as<TableNode>();
+                if (!table_node || !table_node->isMaterializedCTE())
+                    return;
+
+                if (isStorageUsedInTree(recursive_cte_table->storage, table_node->getMaterializedCTESubquery().get()))
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
+                        table_node->getMaterializedCTE()->cte_name,
+                        union_node_typed.getCTEName(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+                table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
+            });
+        }
 
         union_node_typed.setRecursiveCTETable(std::move(*recursive_cte_table));
     }
