@@ -144,6 +144,10 @@ ReachableFilesResult collectReachableFiles(
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
 
+    /// Read it bypassing the UUID-keyed content cache. The reachable set of this very listing is
+    /// what is being computed, and the cache is keyed by the trusted UUID and the path: a table
+    /// replaced at the same root would be answered with the previous table's cached JSON, and the
+    /// check below would then re-confirm the UUID that came from it.
     auto metadata = getMetadataJSONObject(
         metadata_path,
         object_storage,
@@ -151,7 +155,7 @@ ReachableFilesResult collectReachableFiles(
         context,
         log,
         compression_method,
-        persistent_table_components.getTableUuid());
+        /* table_uuid */ std::nullopt);
 
     /// The whole reachable set is derived from this file, and the read may have gone to storage
     /// rather than to the cache: a table replaced at the same root reaches a different set of

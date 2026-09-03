@@ -336,6 +336,10 @@ Pipe executeRemoveOrphanFiles(
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
 
+    /// Read it bypassing the UUID-keyed content cache: the cache is keyed by the trusted UUID and
+    /// the path, so a table replaced at the same root would be answered with the previous table's
+    /// cached JSON, and the check below would re-confirm the UUID that came from it while the
+    /// deletion acts on the table now in storage.
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
         object_storage,
@@ -343,7 +347,7 @@ Pipe executeRemoveOrphanFiles(
         context,
         log,
         compression_method,
-        persistent_components.getTableUuid());
+        /* table_uuid */ std::nullopt);
 
     /// The read may have gone to storage rather than to the cache, so the incarnation alone does
     /// not vouch for the file: check that it still belongs to the validated table.
