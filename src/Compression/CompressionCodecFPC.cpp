@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
@@ -70,6 +71,7 @@ uint8_t CompressionCodecFPC::getMethodByte() const
 void CompressionCodecFPC::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    hash.update(float_width);
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_)

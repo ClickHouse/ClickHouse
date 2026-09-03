@@ -86,20 +86,7 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### هل يمكنني الاتصال بقواعد بيانات Postgres التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة؟
 </div>
 
-نعم! يوفّر ClickPipes for Postgres طريقتين للاتصال بقواعد البيانات ضمن الشبكات الخاصة:
-
-1. **SSH Tunneling**
-   * مناسب لمعظم حالات الاستخدام
-   * راجع تعليمات الإعداد [هنا](/ar/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * يعمل في جميع المناطق
-
-2. **AWS PrivateLink**
-   * متاح في ثلاث مناطق AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * للاطلاع على تعليمات الإعداد التفصيلية، راجع [وثائق PrivateLink](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * في المناطق التي لا يتوفر فيها PrivateLink، يُرجى استخدام SSH Tunneling
+نعم. راجع [شبكات ClickPipes](/ar/integrations/clickpipes/networking) لمعرفة طرق وصول ClickPipes إلى مصدر بيانات غير متاح عبر الإنترنت العام.
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### كيف يتم التعامل مع UPDATEs وDELETEs؟

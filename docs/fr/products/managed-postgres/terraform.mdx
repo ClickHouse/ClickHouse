@@ -14,16 +14,8 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 Les services ClickHouse Managed Postgres peuvent être créés et gérés à l’aide de la ressource `clickhouse_postgres_service` du [fournisseur Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). Cette page présente la configuration du fournisseur ainsi que des exemples de configuration pour cette ressource et les sources de données associées.
 
 <Note>
-  Cette ressource est en alpha et son comportement peut évoluer dans les prochaines versions du fournisseur. Elle est incluse dans le build standard du fournisseur. Cette page documente la version **v3.21.0** du fournisseur et les versions ultérieures, qui ont modifié la gestion des identifiants ; les versions antérieures se comportent différemment et, depuis le 31 juillet 2026, ne fonctionnent plus correctement. Consultez les [releases du fournisseur](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) pour plus de détails.
+  Cette ressource est en alpha et son comportement peut évoluer dans les prochaines versions du fournisseur. Elle est incluse dans le build standard du fournisseur. Cette page documente la version **v3.21.0** du fournisseur et les versions ultérieures. Consultez les [releases du fournisseur](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) pour plus de détails.
 </Note>
-
-<Warning>
-  **Mettez à niveau vers le fournisseur v3.21.0 avant le 31 juillet 2026**
-
-  Depuis le **31 juillet 2026**, l’API Managed Postgres ne renvoie plus le mot de passe du superutilisateur ni la chaîne de connexion dans ses réponses ; les identifiants ne sont renvoyés que lors de la création d’un service ou de la réinitialisation de son mot de passe. Les versions du fournisseur **v3.21.0 et ultérieures** fonctionnent de manière identique avant et après ce changement. Les anciennes versions du fournisseur dépendent du fait que l’API renvoie les identifiants : depuis le 31 juillet 2026, elles ne renseignent plus `connection_string`, et un service créé sans `password` déclaré aboutit alors que le mot de passe généré n’est jamais récupéré.
-
-  Mettez à niveau avant le 31 juillet 2026. Votre état migre automatiquement lors du premier plan ou apply avec v3.21.0. Si l’un de vos services s’appuie sur un mot de passe généré par le serveur (pas de `password` dans la configuration), récupérez-le d’abord avec `terraform state pull` et déclarez-le, car v3.21.0 exige `password` ou `password_wo` pour un service standard.
-</Warning>
 
 <div id="provider-setup">
   ## Configuration du fournisseur
@@ -73,7 +65,7 @@ La ressource `clickhouse_postgres_service` accepte les arguments suivants :
 | `read_replica_of`          | Non                                                          | ID d’un service principal à répliquer. Voir [Répliques de lecture](#read-replicas). Mutuellement exclusif avec `restore_to_point_in_time`.                                                                                                                                       |
 | `restore_to_point_in_time` | Non                                                          | Crée le service en restaurant un autre service à un instant donné. Voir [Restauration à un instant donné](#point-in-time-restore). Mutuellement exclusif avec `read_replica_of`.                                                                                                 |
 
-Les attributs suivants sont en lecture seule et sont renseignés par ClickHouse Cloud après la création : `id`, `state`, `created_at`, `is_primary`, `hostname`, `port` et `username`. Il n’existe pas d’attribut `connection_string` (supprimé dans la v3.21.0) : construisez les URI de connexion à partir de `hostname`, `port`, `username` et du mot de passe que vous déclarez, par exemple `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
+Les attributs suivants sont en lecture seule et sont renseignés par ClickHouse Cloud après la création : `id`, `state`, `created_at`, `is_primary`, `hostname`, `port` et `username`. Il n’existe pas d’attribut `connection_string` : construisez les URI de connexion à partir de `hostname`, `port`, `username` et du mot de passe que vous déclarez, par exemple `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
   Le `password` est stocké en texte brut dans votre état Terraform. Protégez votre fichier d’état en conséquence, par exemple avec un backend distant utilisant le chiffrement au repos, ou utilisez `password_wo` pour que le mot de passe ne figure plus du tout dans l’état.
@@ -167,7 +159,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +172,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Importation de services existants
 </div>
 
-Les services Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service :
+Les services ClickHouse Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service :
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

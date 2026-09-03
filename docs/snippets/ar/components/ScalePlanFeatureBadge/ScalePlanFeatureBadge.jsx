@@ -10,5 +10,4 @@ export const ScalePlanFeatureBadge = ({feature='هذه الميزة', linking_ve
         </div>
     )
 }
-
 export default ScalePlanFeatureBadge;

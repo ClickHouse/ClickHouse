@@ -95,7 +95,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "21"
+LLVM_VERSION = "22"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -562,8 +562,8 @@ def main():
     # --- Stage: Checkout submodules ---
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         def do_checkout():
-            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init")
-            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3)
+            r = Shell.check(f"mkdir -p {PGO_BUILD_DIR} && git submodule sync && git submodule init", strict=True)
+            r = r and Shell.check("contrib/update-submodules.sh --max-procs 10", retries=3, strict=True)
             return r
 
         results.append(

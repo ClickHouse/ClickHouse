@@ -111,7 +111,8 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #endif
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final;
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
+
     size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const final;
@@ -129,6 +130,8 @@ public:
     Int64 getInt(size_t n) const final { return Int64(data[n].value); }
     UInt64 get64(size_t n) const final;
     bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
+
+    bool hasOnlyTypeDefaults() const override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;

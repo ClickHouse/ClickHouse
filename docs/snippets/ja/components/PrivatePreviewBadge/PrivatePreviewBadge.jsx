@@ -12,5 +12,4 @@ export const PrivatePreviewBadge = () => {
         </div>
     )
 }
-
 export default PrivatePreviewBadge;

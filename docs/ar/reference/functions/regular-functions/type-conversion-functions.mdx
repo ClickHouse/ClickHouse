@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 يستخدم ClickHouse عمومًا [السلوك نفسه المستخدم في برامج C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-تختلف دوال `to<type>` و[CAST](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [CAST](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings#cast_keep_nullable).
+تختلف دوال `to<type>` و[cast](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [cast](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   انتبه إلى احتمال فقدان البيانات إذا جرى تحويل قيم من نوع بيانات إلى نوع أصغر (على سبيل المثال من `Int64` إلى `Int32`) أو بين
@@ -317,9 +317,9 @@ SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
 ```
 
 ```response title=Response
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **تعذّر التحويل مع قيمة افتراضية ضمنية**
@@ -760,7 +760,7 @@ AS parseDateTime32BestEffort
 
 ```response title=Response
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
 ```
 
@@ -798,7 +798,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -837,7 +837,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -965,7 +965,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1004,7 +1004,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1043,7 +1043,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1082,7 +1082,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1121,7 +1121,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1441,7 +1441,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1492,7 +1492,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1532,7 +1532,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
 ```
@@ -1572,7 +1572,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1612,7 +1612,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1772,7 +1772,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ```response title=Response
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2025-01-04 23:00:00  │
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1946,7 +1946,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
 
 ```response title=Response
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
 └───────────────────────────┴────────────────────────────┘
 ```
 
@@ -1978,15 +1978,16 @@ reinterpretAsFixedString(x)
 **مثال على الاستخدام**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsFixedString(toDate('1970-03-07'))
+    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsFixedString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
-│ A                                                           │ A                                              │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
+│ 510E0000                                                         │ 4100                                                │
+└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="reinterpretAsFloat32">
@@ -2338,15 +2339,16 @@ reinterpretAsString(x)
 **مثال على الاستخدام**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsString(toDate('1970-03-07'))
+    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
-│ A                                                      │ A                                         │
-└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
+│ 510E                                                        │ 41                                             │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 **مثال على تحويل Array إلى String**
@@ -2639,7 +2641,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
 
 ```response title=Response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2684,9 +2686,11 @@ FORMAT Vertical;
 ```
 
 ```response title=Response
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
 ```
 
 <div id="toBFloat16OrNull">
@@ -2741,9 +2745,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-\N
-12.25
-12.3125
+\N	12.25	12.3125
 ```
 
 <div id="toBFloat16OrZero">
@@ -2798,9 +2800,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-0
-12.25
-12.3125
+0	12.25	12.3125
 ```
 
 <div id="toBool">
@@ -2841,6 +2841,8 @@ FORMAT Vertical
 ```
 
 ```response title=Response
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true
@@ -2911,7 +2913,7 @@ SELECT toDate(20297)
 أُضيف في: v21.9.0
 
 يحوّل الوسيطة إلى نوع البيانات [Date32](/ar/reference/data-types/date32).
-إذا كانت القيمة خارج النطاق، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
+إذا كانت القيمة خارج النطاق `[0000-01-01, 9999-12-31]`، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
 إذا كانت الوسيطة من النوع [`Date`](/ar/reference/data-types/date)، فتُؤخذ حدودها في الاعتبار.
 
 **البنية**
@@ -2920,7 +2922,7 @@ SELECT toDate(20297)
 toDate32(expr)
 ```
 
-**المعاملات**
+**وسيط**
 
 * `expr` — القيمة المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date)
 
@@ -2940,11 +2942,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
 ```
 
-**خارج النطاق**
+**قبل عام 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2956,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:             1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2962,9 +2964,11 @@ toTypeName(value): Date32
   ## toDate32OrDefault
 </div>
 
-استُحدث في: v21.11.0
+أُضيف في: v21.11.0
 
-يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا كانت القيمة خارج النطاق، فإن `toDate32OrDefault` تُرجع قيمة الحد الأدنى التي يدعمها [Date32](/ar/reference/data-types/date32). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار. وتُرجع القيمة الافتراضية إذا كان الوسيط غير صالح.
+يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا تعذّر تحويل الوسيط، بما في ذلك القيمة الرقمية الواقعة خارج نطاق [Date32](/ar/reference/data-types/date32)، فإن الدالة تُرجع قيمة افتراضية تكون إما الوسيط الثاني (إذا تم تحديده)، أو `1900-01-01` بخلاف ذلك، وهي القيمة الافتراضية التاريخية لـ [Date32](/ar/reference/data-types/date32) (وليست حدها الأدنى، وهو `0000-01-01`). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار.
+
+لاحظ أنه، بخلاف [toDate32](#toDate32)، لا تقيِّد هذه الدالة الوسيط الرقمي الواقع خارج النطاق ضمن حدود [Date32](/ar/reference/data-types/date32)؛ بل يُعامل هذا الوسيط على أنه غير قابل للتحويل.
 
 **البنية**
 
@@ -2997,6 +3001,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**رقم خارج النطاق**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3046,8 +3060,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 أُضيف في: v21.9.0
 
-يحوّل قيمة مُدخلة إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
-وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
+يحوّل قيمة الإدخال إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد القيمة الافتراضية `1900-01-01` إذا كانت الوسيطة غير صالحة.
+وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد `1900-01-01` إذا كانت الوسيطة غير صالحة.
+لاحظ أن `1900-01-01` قيمة افتراضية تاريخية للإدخال غير الصالح، وليست الحد الأدنى لـ [Date32](/ar/reference/data-types/date32)، وهو `0000-01-01`.
 
 انظر أيضًا:
 
@@ -3061,13 +3076,13 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 toDate32OrZero(x)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `x` — تمثيل نصي لتاريخ. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد الحد الأدنى لقيم `Date32` (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
+تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد القيمة الافتراضية التاريخية للإدخال غير الصالح (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
 
 **أمثلة**
 
@@ -3258,13 +3273,15 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
   ## toDateTime32
 </div>
 
-استُحدثت في: v20.9.0
+مُتاح منذ: v20.9.0
 
 يحوّل قيمة الإدخال إلى النوع `DateTime`.
-يدعم التحويل من `String` و`FixedString` و`Date` و`Date32` و`DateTime` أو من الأنواع الرقمية (`(U)Int*` و`Float*` و`Decimal`).
-يوفّر DateTime32 نطاقًا أوسع مقارنةً بـ `DateTime`، إذ يدعم التواريخ من `1900-01-01` إلى `2299-12-31`.
+يدعم التحويل من `String` أو `FixedString` أو `Date` أو `Date32` أو `Time` أو `DateTime` أو `DateTime64` أو الأنواع الرقمية (`(U)Int8` أو `(U)Int16` أو `(U)Int32` أو `(U)Int64` أو `BFloat16` أو `Float32` أو `Float64`). لا تُدعم قيم `Decimal` و`Time64` وتؤدي إلى استثناء؛ أما النوع `Time` وأنواع الأعداد الصحيحة العريضة، مثل `(U)Int128`/`(U)Int256`، فتلتف قيمها بدلاً من إشباعها.
+`DateTime32` اسم مستعار لـ `DateTime` ويدعم التواريخ من `1970-01-01 00:00:00` إلى `2106-02-07 06:28:15`.
+عند التحويل من سلسلة أو من أحد الأنواع الرقمية القابلة للإشباع المذكورة أعلاه، تُقيَّد القيم الواقعة خارج هذا النطاق بحدوده. لا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وتؤدي إلى استثناء.
+تتبع التحويلات من أنواع التاريخ والوقت الأخرى، مثل `Date32` أو `DateTime64`، الإعداد `date_time_overflow_behavior`: فقد ينتج عن وضع `ignore` الافتراضي قيم ملتفة، بينما يقيّد `saturate` القيم بحدود النطاق، ويطرح `throw` استثناءً.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 toDateTime32(x[, timezone])
@@ -3272,7 +3289,7 @@ toDateTime32(x[, timezone])
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`Date32`](/ar/reference/data-types/date32) أو [`Time`](/ar/reference/data-types/time) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64)
 * `timezone` — اختياري. المنطقة الزمنية لقيمة `DateTime` المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3281,45 +3298,40 @@ toDateTime32(x[, timezone])
 
 **أمثلة**
 
-**القيمة ضمن النطاق**
+**من سلسلة نصية**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**كعدد عشري بدقة محددة**
+**من Unix timestamp**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
-**مع تحديد منطقة زمنية**
+**باستخدام منطقة زمنية**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -3355,9 +3367,9 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **بصيغة Decimal بدقة**
@@ -3369,9 +3381,12 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **باستخدام المنطقة الزمنية**
@@ -3381,9 +3396,9 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
 ```
 
 <div id="toDateTime64OrDefault">
@@ -3432,7 +3447,7 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 ```
 
 ```response title=Response
-2000-12-31 23:00:00.000
+2001-01-01 00:00:00.000
 ```
 
 <div id="toDateTime64OrNull">
@@ -3818,7 +3833,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3870,7 +3885,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4039,7 +4054,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4097,7 +4112,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4266,7 +4281,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4318,7 +4333,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4383,11 +4398,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
 ```
 
@@ -4488,7 +4503,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4546,7 +4561,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4646,13 +4661,14 @@ toFixedString(s, N)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
 ```
 
 ```response title=Response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
 ```
 
 <div id="toFloat32">
@@ -4819,7 +4835,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat32OrZero">
@@ -5033,7 +5049,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat64OrZero">
@@ -5251,7 +5267,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt128OrZero">
@@ -5477,7 +5493,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt16OrZero">
@@ -5536,7 +5552,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
 ```
 
@@ -5708,7 +5724,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt256OrZero">
@@ -5934,7 +5950,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt32OrZero">
@@ -5993,7 +6009,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
 ```
 
@@ -6169,7 +6185,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt64OrZero">
@@ -6395,7 +6411,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt8OrZero">
@@ -6454,7 +6470,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
 ```
 
@@ -6500,7 +6516,7 @@ SELECT
 
 ```response title=Response
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
 ```
 
@@ -7099,10 +7115,23 @@ SELECT
   ## toTime
 </div>
 
-أُضيف في: v1.1.0
+أُضيف في: v25.5.0
 
 يحوّل قيمة الإدخال إلى النوع [Time](/ar/reference/data-types/time).
 يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
+تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
+
+<Info>
+  **`toTime` القديم**
+
+  قبل v25.5، كانت `toTime` دالة مختلفة تحوّل تاريخًا مع وقت إلى تاريخ ثابت (`1970-01-02`) مع الحفاظ على
+  مكوّن الوقت. ولا تزال تلك الدالة متاحة بالاسم [`toTimeWithFixedDate`](/ar/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+  يؤدي أيضًا ضبط [`use_legacy_to_time`](/ar/reference/settings/session-settings#use_legacy_to_time) على `1` إلى إبقاء الاسم `toTime` مرتبطًا بالدالة القديمة،
+  أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
+  أثناء تمكين الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
+  تكون القيمة الافتراضية للإعداد `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6، ولهذا تضبطها الأمثلة أدناه صراحةً.
+</Info>
 
 **البنية**
 
@@ -7112,7 +7141,7 @@ toTime(x)
 
 **الوسيطات**
 
-* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
@@ -7299,7 +7328,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-طُرح في: v1.1.0
+طُرح في: v25.5.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، ولكنه يعيد `NULL` في حال حدوث خطأ.
 يشبه [`toTime`](#toTime)، لكنه يعيد `NULL` بدلًا من طرح استثناء عند حدوث أخطاء في التحويل.
@@ -7309,13 +7338,13 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 * [`toTime`](#toTime)
 * [`toTimeOrZero`](#toTimeOrZero)
 
-**الصياغة**
+**بنية**
 
 ```sql
 toTimeOrNull(x)
 ```
 
-**المعاملات**
+**وسيطة**
 
 * `x` — تمثيل نصي لوقت. [`String`](/ar/reference/data-types/string)
 
@@ -7341,12 +7370,12 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-استُحدث في: v1.1.0
+استُحدث في: v25.5.0
 
 يحوّل قيمة الإدخال إلى قيمة من النوع Time، لكنه يعيد `00:00:00` في حال حدوث خطأ.
 يشبه toTime، لكنه يعيد `00:00:00` بدلًا من إطلاق استثناء عند حدوث أخطاء في التحويل.
 
-**الصيغة**
+**بنية**
 
 ```sql
 toTimeOrZero(x)
@@ -7542,7 +7571,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt128OrZero">
@@ -7777,7 +7806,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt16OrZero">
@@ -8008,7 +8037,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt256OrZero">
@@ -8243,7 +8272,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt32OrZero">
@@ -8478,7 +8507,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt64OrZero">
@@ -8713,7 +8742,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt8OrZero">
@@ -8807,7 +8836,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
 ```response title=Response
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
@@ -8982,9 +9011,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 ```response title=Response
-┌─toUnixTimestamp64Nano(dt64)────┐
-│            1739489491011123456 │
-└────────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1739489491011123456 │
+└─────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Second">
