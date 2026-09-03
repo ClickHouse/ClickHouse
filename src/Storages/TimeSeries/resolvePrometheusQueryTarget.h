@@ -33,8 +33,9 @@ void checkNoBypassedReadRestriction(
 
 /// The wrapper's SELECT grant (table functions are exempt from the planner's check), then what a plain SELECT through
 /// it would apply and the rewrite cannot (its row policy, filters keyed to it; the shard-local table's are checked by
-/// the selector on each shard), then every replica's shard-local target: a TimeSeries table declaring the wrapper's
-/// `time_series` type, or the read is refused.
+/// the selector on each shard), then READ ON REMOTE, which the generated cluster() call would enforce only later,
+/// then every replica's shard-local target: a TimeSeries table declaring the wrapper's `time_series` type, or the
+/// read is refused.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
 /// The same targets for a write, refused while any replica is unreachable, has no such table or does not show its
