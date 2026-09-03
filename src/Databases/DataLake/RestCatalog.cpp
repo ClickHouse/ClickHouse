@@ -306,7 +306,12 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (catalog_state.auth_header.has_value())
     {
-        return DB::HTTPHeaderEntries{catalog_state.auth_header.value()};
+        /// Normalize the header that is actually sent to the catalog (the stored setting is kept
+        /// verbatim for compatibility). Mirrors the schema-inference path in StorageURL: the name
+        /// that reaches the wire is the validated, normalized one, not the raw stored bytes.
+        DB::HTTPHeaderEntries header_entries{catalog_state.auth_header.value()};
+        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+        return header_entries;
     }
 
     /// Option 2: user provided grant_type and client credentials for OAuthClientCredentialsRequest.

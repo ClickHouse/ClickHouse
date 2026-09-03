@@ -535,6 +535,38 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
+TEST(RestCatalog, AuthHeaderNameIsNormalizedBeforeSending)
+{
+    /// getAuthHeaders is protected; expose it so the test can inspect what is actually sent.
+    struct ExposeAuthHeaders : public RestCatalog
+    {
+        using RestCatalog::RestCatalog;
+        using RestCatalog::getAuthHeaders;
+    };
+
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// The stored auth_header keeps the user's bytes, but the header actually sent to the catalog
+    /// must carry the normalized name (whitespace stripped), matching the StorageURL path.
+    ExposeAuthHeaders catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"X-A B: Bearer token",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    ASSERT_TRUE(snapshot->auth_header.has_value());
+    const auto headers = catalog.getAuthHeaders(*snapshot, /* update_token */ false);
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].name, "X-AB");
+}
+
 TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 {
     RestCatalogTestServer server(CatalogShape::Empty);
