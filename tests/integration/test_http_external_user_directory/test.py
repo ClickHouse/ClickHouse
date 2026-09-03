@@ -44,17 +44,18 @@ def admin2(query, **kwargs):
     )
 
 
+def admin3(query, **kwargs):
+    return instance3.query(
+        query, user="admin_user", password="admin_password", **kwargs
+    )
+
+
 def query4_local(query, user=None, password=None, nothrow=False):
-    # node4's http directory restricts `networks` to `127.0.0.1/32`.
-    # `instance4.query` (the normal helper) runs `clickhouse-client` as a SEPARATE process
-    # on the test-runner host, connecting to node4 over the docker bridge network — node4
-    # sees that connection's address as the container's own docker-network IP, never
-    # `127.0.0.1`, so a query issued that way is always rejected by this networks policy
-    # regardless of credentials. To make a query actually originate from node4's own
-    # loopback (as the `networks` policy requires), run `clickhouse-client` INSIDE node4's
-    # container via `exec_in_container`, pointed at `--host 127.0.0.1`. stderr is
-    # redirected into stdout (`2>&1`) because `exec_in_container` with `nothrow=True`
-    # only returns stdout.
+    # node4's directory restricts `networks` to `127.0.0.1/32`; `instance4.query` runs
+    # `clickhouse-client` on the test-runner host over the docker bridge network, which node4
+    # never sees as `127.0.0.1`. Run the client inside node4's own container instead, against
+    # its own loopback. stderr is redirected into stdout because `exec_in_container` with
+    # `nothrow=True` only returns stdout.
     cmd = "/usr/bin/clickhouse client --host 127.0.0.1"
     if user is not None:
         cmd += f" --user {shlex.quote(user)}"
@@ -140,6 +141,9 @@ def started_cluster():
         cluster.shutdown()
 
 
+# --- Happy path and roles ---
+
+
 def test_http_directory_registered_on_every_node(started_cluster):
     for node in [instance, instance2, instance3, instance4]:
         directories = node.query(
@@ -151,9 +155,8 @@ def test_http_directory_registered_on_every_node(started_cluster):
 
 
 def test_node3_directory_order_http_before_users_xml(started_cluster):
-    # Guards Blocker 1: node3 must have the http directory BEFORE users.xml, and NOT an
-    # implicit users_config ahead of it. system.user_directories is ordered by precedence;
-    # assert http precedes any users.xml/users_config storage and appears exactly once each.
+    # node3's http directory must precede users.xml, with no implicit users_config ahead of
+    # it; system.user_directories orders storages by precedence.
     rows = instance3.query(
         "SELECT type FROM system.user_directories ORDER BY precedence",
         user="admin_user",
@@ -232,9 +235,8 @@ def test_wrong_password_fails_closed(started_cluster):
 
 
 def test_membership_change_between_authentications(started_cluster):
-    # Two authentications of the same username with different helper-returned
-    # role sets: each session gets exactly its own set, and the cached user
-    # never accumulates grants.
+    # Two authentications of the same username with different helper-returned role sets each
+    # get exactly their own set, and the cached user never accumulates grants.
     roles_a = instance.query(
         "SELECT arrayJoin(currentRoles())", user="dual_user", password="password_a"
     ).strip()
@@ -251,15 +253,9 @@ def test_membership_change_between_authentications(started_cluster):
 
 
 def test_two_simultaneous_sessions_keep_own_roles(started_cluster):
-    # Reattachment to a named `session_id` rebinds roles per
-    # request (see "Replace authentication-scoped external roles on named-session
-    # reattachment"), so this is a rebind smoke test, not proof of concurrent-session
-    # isolation: each request's roles follow its own authentication, and touching session
-    # B does not alter what session A's NEXT authenticated request sees. It does not show
-    # the two sessions holding independent state concurrently while both are in use — that
-    # shape (two connections open and doing work at once, each keeping its own lifetime) is
-    # covered by `test_two_established_sessions_expire_independently`'s native-connection
-    # form, for expiry rather than roles.
+    # Reattaching a named session under a different authentication rebinds its roles at
+    # request time; this is a sequential rebind check, not proof of concurrent isolation
+    # between two sessions held open at once.
     def http_roles(password, session):
         return instance.http_query(
             "SELECT arrayJoin(currentRoles())",
@@ -338,20 +334,18 @@ def test_failed_auth_does_not_materialize_user(started_cluster):
 
 
 def test_ephemeral_user_cannot_get_persistent_grants(started_cluster):
-    # The entire session-scoped model rests on the storage being read-only:
-    # nobody can attach persistent grants or alter the ephemeral user.
+    # The session-scoped model rests on the storage being read-only: nobody can attach
+    # persistent grants or alter the ephemeral user.
     instance.query(
         "SELECT 1", user="http_user", password=GOOD_PASSWORD
     )  # ensure materialized
     for ddl in [
         "GRANT reader TO http_user",
         "GRANT SELECT ON default.protected TO http_user",
-        # DEFAULT ROLE NONE (rather than a named role) so this DDL reaches the
-        # storage's readonly write path instead of failing earlier with
-        # SET_NON_GRANTED_ROLE: InterpreterSetRoleQuery::updateUserSetDefaultRoles
-        # validates that a role is already granted to the user before any storage
-        # write is attempted, and the ephemeral http_user can never actually have
-        # a role granted (that's the very readonly behavior this test checks).
+        # DEFAULT ROLE NONE (not a named role) reaches the storage's readonly write path
+        # directly, instead of failing earlier in
+        # InterpreterSetRoleQuery::updateUserSetDefaultRoles's check that the role is
+        # already granted to the user.
         "ALTER USER http_user DEFAULT ROLE NONE",
     ]:
         error = instance.query_and_get_error(
@@ -366,18 +360,16 @@ def test_ephemeral_user_cannot_get_persistent_grants(started_cluster):
 
 
 def test_empty_password_fails(started_cluster):
-    # Borrowed from the LDAP directory suite (test_authentication_fail): an empty
-    # password must fail like any wrong password, fail-closed.
+    # An empty password must fail like any wrong password, fail-closed.
     assert "Authentication failed" in instance.query_and_get_error(
         "SELECT 1", user="http_user", password=""
     )
 
 
 def test_role_dropped_and_recreated(started_cluster):
-    # Borrowed from the LDAP directory suite (test_role_mapping): roles are resolved
-    # by name at every authentication, not by a cached UUID. While the role does not
-    # exist, authentication fails closed (unlike LDAP, which skips the role); after
-    # re-creation, authentication succeeds with the new role entity.
+    # Roles are resolved by name at every authentication, not by a cached UUID: while the
+    # role is dropped, authentication fails closed (unlike LDAP, which skips the role); after
+    # recreation, authentication succeeds with the new role entity.
     admin("DROP ROLE external_team1")
     try:
         assert "Authentication failed" in instance.query_and_get_error(
@@ -418,19 +410,21 @@ def test_role_attached_row_policy_and_profile_apply(started_cluster):
     assert value == "1000"
 
 
+# --- Fallback and failure matrix ---
+
+
 def test_404_falls_through_to_later_storage(started_cluster):
-    # On node3 the http directory is configured BEFORE users.xml. admin_user is unknown
-    # to the helper (404), so authentication must fall through to users.xml and succeed.
-    # Use a fresh admin credential name to make the mock-consulted assertion unambiguous.
+    # node3 orders the http directory before users.xml; admin_user is unknown to the helper
+    # (404), so authentication must fall through to users.xml and succeed. Use a fresh admin
+    # credential name so the mock-consulted assertion below is unambiguous.
     assert (
         instance3.query(
             "SELECT currentUser()", user="admin_user", password="admin_password"
         ).strip()
         == "admin_user"
     )
-    # Non-vacuity guard (Blocker 1): prove the http directory was actually consulted first
-    # and returned 404 — i.e. the mock saw admin_user. If users.xml preceded http, the mock
-    # would never see admin_user and this assertion fails.
+    # Confirms the http directory was actually consulted first (the mock saw admin_user)
+    # rather than skipped.
     seen = instance3.exec_in_container(
         ["bash", "-c", "curl -s 'http://localhost:8000/seen?user=admin_user'"]
     ).strip()
@@ -438,9 +432,9 @@ def test_404_falls_through_to_later_storage(started_cluster):
 
 
 def test_wrong_password_does_not_fall_through(started_cluster):
-    # On node3, shadowed_user is known to BOTH the helper (http directory, first) and
-    # users.xml (second, password xml_password). The helper answers 401 for xml_password,
-    # which must fail closed WITHOUT trying users.xml — the key no-fallback row of the matrix.
+    # shadowed_user exists in both the helper (http directory, first) and users.xml (second,
+    # password xml_password). The helper rejects xml_password with 401, which must fail
+    # closed without falling through to users.xml.
     assert "Authentication failed" in instance3.query_and_get_error(
         "SELECT 1", user="shadowed_user", password="xml_password"
     )
@@ -453,15 +447,17 @@ def test_wrong_password_does_not_fall_through(started_cluster):
     )
 
 
+# --- Settings ---
+
+
 def test_default_profile_resolved_late_and_fail_closed(started_cluster):
     admin4 = lambda q: instance4.query(q, user="admin_user", password="admin_password")
-    # node4's directory declares default_profile=sql_profile, which does not exist yet:
-    # the very first materialization must fail closed.
+    # node4's directory declares default_profile=sql_profile, which does not exist yet: the
+    # very first materialization must fail closed.
     assert "Authentication failed" in query4_local(
         "SELECT 1", user="aux_user", password=GOOD_PASSWORD, nothrow=True
     )
-    # After the profile is created (in a SQL-driven storage, i.e. after this directory
-    # was constructed), materialization succeeds and the profile applies.
+    # After the profile is created, materialization succeeds and the profile applies.
     admin4(
         "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345"
     )
@@ -472,23 +468,18 @@ def test_default_profile_resolved_late_and_fail_closed(started_cluster):
 
 
 def test_networks_allow_localhost(started_cluster):
-    # node4's directory is restricted to `127.0.0.1/32`. `instance4.query` (the ordinary
-    # helper) issues `clickhouse-client` from the test-runner host over the docker bridge
-    # network, which node4 never sees as `127.0.0.1` — so this test must use
-    # `query4_local`, which runs `clickhouse-client` INSIDE node4's own container against
-    # its own loopback. The rejection path from a remote client is covered
-    # (`test_networks_reject_remote_client`).
+    # Must use query4_local: instance4.query connects over the docker bridge network, which
+    # node4's `127.0.0.1/32` networks policy never allows. Rejection from a remote client is
+    # covered by test_networks_reject_remote_client below.
     assert (
         query4_local("SELECT 1", user="aux_user", password=GOOD_PASSWORD).strip() == "1"
     )
 
 
 def test_response_settings_override_profile_value(started_cluster):
-    # Response settings are applied after profile initialization
-    # and override the profile-provided value (sql_profile sets max_rows_to_read=12345,
-    # the response returns 777). Requires sql_profile to exist — runs after
-    # test_default_profile_resolved_late_and_fail_closed created it; create it here
-    # too with IF NOT EXISTS to stay order-independent.
+    # Response settings apply after profile initialization and override the profile value
+    # (sql_profile sets max_rows_to_read=12345, the response returns 777). Recreate
+    # sql_profile with IF NOT EXISTS so this test doesn't depend on run order.
     instance4.query(
         "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345",
         user="admin_user",
@@ -503,8 +494,8 @@ def test_response_settings_override_profile_value(started_cluster):
 
 
 def test_helper_down_fails_closed(started_cluster):
-    # Infrastructure failure is fail-closed (never a fallthrough). Kill node4's mock
-    # server, authenticate, then restart the mock for later tests.
+    # Infrastructure failure is fail-closed (never a fallthrough). Kill node4's mock server,
+    # authenticate, then restart the mock for later tests.
     instance4.exec_in_container(
         ["bash", "-c", "pkill -f http_auth_server.py"], user="root"
     )
@@ -517,14 +508,10 @@ def test_helper_down_fails_closed(started_cluster):
 
 
 def test_default_profile_dropped_and_recreated_for_cached_user(started_cluster):
-    # Regression for the cached-user default_profile blocker found in review: getOrCreateUser
-    # must re-resolve default_profile on every call, not just at first materialization, and
-    # fail closed for an ALREADY-CACHED user too. Sequence:
-    #   authenticate (cached, sees 12345) -> drop profile -> authenticate fails closed ->
-    #   recreate same name with a different value -> authenticate succeeds, sees the new value.
-    # This directly exercises the failure-matrix contract for a materialized user, which
-    # test_default_profile_resolved_late_and_fail_closed does not: that test only covers a
-    # missing profile before the FIRST materialization.
+    # getOrCreateUser re-resolves default_profile on every authentication, not just at first
+    # materialization, and fails closed for an already-cached user too. Sequence: authenticate
+    # (cached) -> drop profile -> authenticate fails closed -> recreate the same name with a
+    # different value -> authenticate succeeds with the new value.
     admin4 = lambda q: instance4.query(q, user="admin_user", password="admin_password")
     admin4(
         "CREATE SETTINGS PROFILE IF NOT EXISTS sql_profile SETTINGS max_rows_to_read = 12345"
@@ -555,8 +542,8 @@ def test_default_profile_dropped_and_recreated_for_cached_user(started_cluster):
         ).strip()
         == "54321"
     )
-    # This is the last test in this file that depends on sql_profile's specific value;
-    # later tests only use sql_profile's existence, not its value.
+    # This is the last test in this file that depends on sql_profile's specific value; later
+    # tests only rely on sql_profile's existence, not its value.
 
 
 def test_response_settings_apply(started_cluster):
@@ -568,10 +555,13 @@ def test_response_settings_apply(started_cluster):
     assert value == "7"
 
 
+# --- Fallback and failure matrix ---
+
+
 def test_local_user_shadows_helper_user(started_cluster):
-    # On node (users.xml first), local_user exists in users.xml AND in the helper.
-    # The xml password works; the helper password does not, because users.xml
-    # finds the user and fails closed on a wrong password without falling through.
+    # On node (users.xml first), local_user exists in users.xml AND in the helper. The xml
+    # password works; the helper password does not, because users.xml finds the user first
+    # and fails closed on a wrong password without falling through.
     assert (
         instance.query(
             "SELECT currentUser()", user="local_user", password="local_password"
@@ -602,12 +592,13 @@ def test_totally_unknown_user_fails(started_cluster):
     )
 
 
+# --- Cache bound and concurrency ---
+
+
 def test_max_cached_users_bound(started_cluster):
-    # node3's directory allows at most 3 materialized users (soft bound; this test is
-    # sequential, so no overshoot occurs). One slot is taken by shadowed_user if an
-    # earlier test materialized it; count from system.users first and fill up to the
-    # bound deterministically.
-    admin3 = lambda q: instance3.query(q, user="admin_user", password="admin_password")
+    # node3 allows at most 3 materialized users (soft bound; the test is sequential, so no
+    # overshoot occurs). Count already-materialized users first (shadowed_user may already
+    # hold a slot) and fill up to the bound deterministically.
     already = int(
         admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip()
     )
@@ -668,11 +659,10 @@ def test_concurrent_first_authentication_converges(started_cluster):
 
 
 def test_distinct_users_authenticate_concurrently(started_cluster):
-    # Proves remote HTTP I/O is NOT serialized by a directory-wide lock: N distinct
-    # usernames authenticate at once, and the mock's handler barriers all N requests
-    # before releasing any. With a directory-wide lock the second request never reaches
-    # the mock while the first is blocked, so the barrier never fills and the mock times
-    # out (requests fail). Without such a lock, all N arrive and the barrier releases.
+    # Remote HTTP I/O is not serialized by a directory-wide lock: N distinct usernames
+    # authenticate at once, and the mock's handler barriers all N requests before releasing
+    # any. A directory-wide lock would keep the barrier from ever filling (the second request
+    # never reaches the mock while the first is blocked), so requests would time out instead.
     import threading
 
     n = 4
@@ -696,9 +686,12 @@ def test_distinct_users_authenticate_concurrently(started_cluster):
     assert results == ["1"] * n, results
 
 
+# --- Distributed ---
+
+
 def test_distributed_query_propagates_helper_roles(started_cluster):
-    # Mirror the LDAP push test: role grants and the local table exist on both nodes,
-    # data only on node2, a Distributed table on the initiator.
+    # Role grants and the local table exist on both nodes; data lives only on node2, and the
+    # Distributed table sits on the initiator.
     admin("GRANT SELECT ON default.* TO cluster_role")
     admin2("GRANT SELECT ON default.* TO cluster_role")
     admin(
@@ -712,9 +705,9 @@ def test_distributed_query_propagates_helper_roles(started_cluster):
         "CREATE TABLE IF NOT EXISTS default.distributed_table AS default.local_table "
         "ENGINE = Distributed(test_cluster, default, local_table)"
     )
-    # distributed_user gets cluster_role from the helper on node; the role must be
-    # effective on node2 via interserver propagation, where the user is materialized
-    # through AlwaysAllowCredentials without an HTTP request.
+    # distributed_user gets cluster_role from the helper on node; the role must be effective
+    # on node2 via interserver propagation, where the user is materialized through
+    # AlwaysAllowCredentials without an HTTP request.
     result = instance.query(
         "SELECT count() FROM default.distributed_table",
         user="distributed_user",
@@ -731,12 +724,9 @@ def test_distributed_query_propagates_helper_roles(started_cluster):
 
 
 def test_receiving_node_does_not_contact_its_http_server(started_cluster):
-    # The central interserver contract: on the AlwaysAllowCredentials path the receiving
-    # node must NOT call its own HTTP auth server. Prove it directly by stopping node2's
-    # mock, then running a distributed query as a FRESH (uncached-on-node2) helper user.
-    # The initiator (node) still authenticates it against node's live mock; node2 must
-    # materialize it via AlwaysAllowCredentials with node2's mock DOWN and the query must
-    # still succeed. (interserver_user is delegated cluster_role by node's mock.)
+    # On the AlwaysAllowCredentials path, the receiving node must not call its own HTTP auth
+    # server: stop node2's mock, then run a distributed query as a fresh (uncached-on-node2)
+    # helper user. node2 must still materialize the user and the query must still succeed.
     admin2("GRANT SELECT ON default.* TO cluster_role")  # idempotent
     instance2.exec_in_container(
         ["bash", "-c", "pkill -f http_auth_server.py"], user="root"
@@ -759,8 +749,7 @@ def test_receiving_node_does_not_contact_its_http_server(started_cluster):
 
 
 def test_distributed_query_through_view_preserves_roles(started_cluster):
-    # Context-copy regression (cf. the external-role loss history): the same
-    # distributed read, but through a normal VIEW on the initiator.
+    # Same distributed read as above, but through a normal VIEW on the initiator.
     admin(
         "CREATE VIEW IF NOT EXISTS default.distributed_view AS SELECT * FROM default.distributed_table"
     )
@@ -788,13 +777,10 @@ def test_local_view_context_copy_preserves_roles(started_cluster):
 
 
 def test_distributed_query_fails_closed_on_role_unknown_remotely(started_cluster):
-    # halfcluster_user returns [reader, only_node1_role]; only_node1_role exists only on
-    # `node`. These roles travel via ClientInfo.current_roles (Context::getCurrentRoles,
-    # which includes external roles). The receiver resolves that set in
-    # makeQueryContextImpl and FAILS CLOSED on any size mismatch (ACCESS_DENIED) — it does
-    # NOT drop the unknown role and run with the resolvable remainder. This is the
-    # current_roles path, verified fail-closed on origin/master; distinct from the legacy
-    # external_roles (granted_roles) push, which does silently drop unknown names.
+    # halfcluster_user gets [reader, only_node1_role]; only_node1_role exists only on `node`.
+    # Propagated roles travel via ClientInfo.current_roles, and the receiver fails closed
+    # (ACCESS_DENIED) on any unresolvable role rather than dropping it and running with the
+    # resolvable remainder.
     admin("GRANT SELECT ON default.* TO only_node1_role")
     error = instance.query_and_get_error(
         "SELECT count() FROM default.distributed_table",
@@ -805,14 +791,10 @@ def test_distributed_query_fails_closed_on_role_unknown_remotely(started_cluster
 
 
 def test_networks_reject_remote_client(started_cluster):
-    # node4's directory allows only 127.0.0.1/32. A client connecting from node2's
-    # address must be rejected (the fail-closed `networks` row of the matrix;
-    # complements the allow test above).
-    # ADAPTATION: the brief's literal command invokes a `clickhouse-client` binary, which
-    # this image does not provide (`bash: line 1: clickhouse-client: command not found`,
-    # verified by running the test). Use the same `/usr/bin/clickhouse client` multi-call
-    # invocation as `query4_local` above, which this suite already established as the
-    # working form in this image.
+    # node4's directory allows only 127.0.0.1/32. A client connecting from node2's address
+    # must be rejected (the fail-closed networks row of the matrix; complements the allow
+    # test above). This image has no `clickhouse-client` binary; use `/usr/bin/clickhouse
+    # client` instead.
     output = instance2.exec_in_container(
         [
             "bash",
@@ -827,6 +809,9 @@ def http_sess(sql, user, password, session):
     return instance.http_query(
         sql, user=user, password=password, params={"session_id": session}
     )
+
+
+# --- Named sessions ---
 
 
 def test_named_session_rebind_replaces_roles(started_cluster):
@@ -891,8 +876,8 @@ def test_named_session_applies_auth_settings_at_creation_only(started_cluster):
 
 
 def test_legacy_http_user_named_session_settings(started_cluster):
-    # Regression scope for the behavior change: a pre-created user with IDENTIFIED WITH
-    # HTTP now also gets its auth-server settings at named-session creation.
+    # A pre-created user with IDENTIFIED WITH HTTP also gets its auth-server settings at
+    # named-session creation.
     admin(
         "CREATE USER IF NOT EXISTS legacy_settings_user IDENTIFIED WITH HTTP SERVER 'main_server' SCHEME 'BASIC'"
     )
@@ -919,10 +904,9 @@ def test_legacy_http_user_named_session_settings(started_cluster):
 
 
 def test_named_session_role_profile_contract(started_cluster):
-    # Contract test (decided: login-time role-profile state). Role-derived settings and
-    # constraints are established when the named session is CREATED and are NOT rebuilt
-    # when a reattachment rebinds the role set. Privileges/row policies DO follow the
-    # rebind (covered by test_named_session_rebind_replaces_roles).
+    # Role-derived settings and constraints are established when the named session is created
+    # and are not rebuilt when a later reattachment rebinds the role set; privileges and row
+    # policies do follow the rebind (see test_named_session_rebind_replaces_roles).
     admin(
         "CREATE SETTINGS PROFILE IF NOT EXISTS cap_profile SETTINGS max_threads MAX 4"
     )
@@ -945,8 +929,8 @@ def test_named_session_role_profile_contract(started_cluster):
         params={"session_id": session_b},
     )
     assert "max_threads" in error
-    # Direction 2: a session CREATED under probe_role_a (no constraint) keeps its
-    # looser settings state after a rebind to probe_role_b — documented behavior.
+    # Direction 2: a session CREATED under probe_role_a (no constraint) keeps its looser
+    # settings state after a rebind to probe_role_b — documented behavior.
     session_a = "sess_contract_created_a"
     http_sess("SELECT 1", "probe_user", "password_a", session_a)
     http_sess("SET max_threads = 16", "probe_user", "password_a", session_a)
@@ -962,17 +946,15 @@ def test_named_session_role_profile_contract(started_cluster):
 
 
 def test_two_established_sessions_expire_independently(started_cluster):
-    # Two NATIVE (persistent TCP) connections authenticate ONCE
-    # each with different ABSOLUTE deadlines and are held open CONCURRENTLY. Per-query
-    # expiry enforcement (Session::checkIfUserIsStillValid on TCP) then applies to each
-    # connection independently — the short one must expire while the long one keeps working,
-    # proving neither authentication modifies the other's lifetime. Both clients start at
-    # the same time (background processes) and each sends statements spaced by client-side
-    # sleeps so their last statements run after the short deadline.
-    # ADAPTATION: this image does not provide a `clickhouse-client` binary (verified by
-    # other tests in this suite, e.g. `test_networks_reject_remote_client`); use
-    # `/usr/bin/clickhouse client` instead. `--multiquery` also errors on this version
-    # (multi-statement queries are the default now), so it is dropped.
+    # Two native (persistent TCP) connections authenticate once each with different absolute
+    # deadlines and stay open concurrently. Per-query expiry enforcement
+    # (Session::checkIfUserIsStillValid) then applies to each independently, so the short one
+    # expires while the long one keeps working. Both clients start at the same time and each
+    # sends statements spaced by client-side sleeps so their last statements run after the
+    # short deadline.
+    # This image has no `clickhouse-client` binary; use `/usr/bin/clickhouse client` instead.
+    # `--multiquery` also errors on this version (multi-statement queries are the default
+    # now), so it is dropped.
     import time
 
     now = int(time.time())
@@ -993,19 +975,13 @@ def test_two_established_sessions_expire_independently(started_cluster):
 
 
 def test_named_session_expiry_replaced_for_async_insert(started_cluster):
-    # Named-session expiry replacement, DETERMINISTIC deferred vehicle. A plain
-    # reattach cannot prove replacement — every HTTP request re-authenticates, so the
-    # request's own user_authenticated_with already carries the new deadline. An async
-    # INSERT is genuinely deferred: AsynchronousInsertQueue captures
-    # query_context->getAuthenticationValidUntil() at enqueue (the COPIED named-Context
-    # field, src/Interpreters/AsynchronousInsertQueue.cpp:631) and re-checks it at flush,
-    # throwing USER_EXPIRED if now > deadline (same file, ~line 1106).
-    #
-    # Create the named session under a SHORT deadline, reattach under a LONG one (which must
-    # WRITE the new expiry into the reused named Context via setAuthenticationValidUntil),
-    # then enqueue an async insert whose flush lands AFTER the short deadline. Setter present
-    # -> captured long deadline -> flush ok, row lands. Setter missing -> captured stale
-    # short deadline -> flush throws USER_EXPIRED, row does not land.
+    # A plain reattach can't prove named-session expiry replacement, because every HTTP
+    # request re-authenticates and so already carries its own deadline. An async insert is
+    # genuinely deferred: it captures the authentication deadline at enqueue and re-checks it
+    # at flush, throwing USER_EXPIRED if the deadline has passed. Create the session under a
+    # short deadline, reattach under a long one (which must overwrite the stored expiry), then
+    # let the flush land after the short deadline: the row lands only if the reattach's
+    # deadline was actually honored.
     import time
 
     admin(
@@ -1019,17 +995,13 @@ def test_named_session_expiry_replaced_for_async_insert(started_cluster):
         "SELECT 1", "expiry_user", f"until_{now + 3600}", session
     )  # reattach, long
     # wait_for_async_insert=1 blocks until flush; the busy timeout pushes the flush past the
-    # 5s short deadline. async_insert_use_adaptive_busy_timeout defaults to true, in which
-    # case async_insert_busy_timeout_max_ms is NOT the flush delay — it is only the ceiling
-    # the adaptive algorithm ramps toward from async_insert_busy_timeout_min_ms (default
-    # 50ms); the real delay would then be nondeterministic and could flush well before the
-    # short deadline, making this test vacuous. Disable adaptive behavior so
-    # async_insert_busy_timeout_max_ms is used directly (confirmed against
-    # AsynchronousInsertQueue.cpp: the non-adaptive branch returns max_ms as-is).
+    # 5s short deadline. async_insert_use_adaptive_busy_timeout defaults to true, which makes
+    # the flush delay ramp from async_insert_busy_timeout_min_ms toward the max rather than
+    # use max_ms directly — nondeterministic, and possibly flushing before the short deadline.
+    # Disable it so async_insert_busy_timeout_max_ms applies directly.
     # http_query raises on any server error, so a missing setter (flush-time USER_EXPIRED)
     # fails this test with the actual server error; http_query_and_get_error would be wrong
-    # here because it raises when the query SUCCEEDS. Explicit timeout: this request
-    # deliberately takes ~7 seconds.
+    # here since it raises when the query succeeds. This request deliberately takes ~7 seconds.
     started = time.monotonic()
     instance.http_query(
         "INSERT INTO default.async_target SETTINGS async_insert=1, wait_for_async_insert=1, "
@@ -1037,18 +1009,15 @@ def test_named_session_expiry_replaced_for_async_insert(started_cluster):
         user="expiry_user",
         password=f"until_{now + 3600}",
         params={"session_id": session},
-        # ADAPTATION: http_query defaults to GET unless `data` is passed (see
-        # helpers/cluster.py: `method = "POST" if data else "GET"`), and INSERT over GET is
-        # rejected as readonly. Force POST explicitly, matching the precedent in
-        # test_insert_over_http_query_log/test.py.
+        # http_query defaults to GET unless `data` is passed, and INSERT over GET is rejected
+        # as readonly; force POST explicitly.
         method="POST",
         timeout=20,
     )
     elapsed = time.monotonic() - started
     # The request must have genuinely waited past the short (5s) deadline for the flush-time
-    # expiry re-check to be what's under test, rather than the setter having merely made an
-    # already-fast flush pass. A future change to the default busy timeout must fail this
-    # test rather than pass it vacuously.
+    # expiry re-check to be what's under test, rather than an already-fast flush merely
+    # passing.
     assert elapsed > 5, (
         f"async insert returned in {elapsed:.1f}s, too fast to have exercised "
         "the flush-time expiry re-check"
@@ -1057,12 +1026,11 @@ def test_named_session_expiry_replaced_for_async_insert(started_cluster):
 
 
 def test_failed_named_session_init_not_reusable(started_cluster):
-    # Regression for the named-session cleanup guard. Creating a named session fails when a
-    # returned setting violates a constraint from the returned role's profile
-    # (checkSettingsConstraints throws AFTER acquireSession has published the session).
-    # The failed session must not remain reusable: a later request with the same
-    # session_id must get a FRESH session that applies its own auth settings, not the
-    # half-initialized one (which took the reuse branch and applied no settings).
+    # Creating a named session can fail after acquireSession has already published it
+    # (checkSettingsConstraints throws when a returned setting violates the returned role's
+    # profile). The failed session must not remain reusable: a later request with the same
+    # session_id must get a fresh session that applies its own auth settings, not the
+    # half-initialized one.
     admin(
         "CREATE SETTINGS PROFILE IF NOT EXISTS guard_cap_profile SETTINGS max_threads MAX 4"
     )
@@ -1076,10 +1044,9 @@ def test_failed_named_session_init_not_reusable(started_cluster):
         params={"session_id": session},
     )
     assert err
-    # Request 2: same session_id, a VALID authentication returning max_result_rows=555.
-    # If the failed session were left reusable, request 2 would take the reuse branch and
-    # NOT apply auth settings, so max_result_rows would not be 555. The guard removed the
-    # failed session, so request 2 creates a fresh one and applies its settings.
+    # Request 2: same session_id, a valid authentication returning max_result_rows=555. If the
+    # failed session were left reusable, this would take the reuse branch and not apply auth
+    # settings, so max_result_rows would not be 555.
     value = instance.http_query(
         "SELECT getSetting('max_result_rows')",
         user="guard_user",
@@ -1090,8 +1057,8 @@ def test_failed_named_session_init_not_reusable(started_cluster):
 
 
 def _event_value(event_name):
-    # system.events is cumulative since server startup and has no row for an event that
-    # has never fired, so a missing row is treated as 0.
+    # system.events is cumulative since server startup and has no row for an event that has
+    # never fired, so a missing row is treated as 0.
     result = admin(
         f"SELECT value FROM system.events WHERE event = '{event_name}'"
     ).strip()
@@ -1107,10 +1074,9 @@ def _metric_value(metric_name):
 
 def test_metrics(started_cluster):
     # Delta-based, not absolute: system.events/system.metrics are cumulative since server
-    # startup and this test runs last among many sharing one cluster, so an absolute
-    # `> 0` assertion would pass regardless of what this test does. Single-threaded and
-    # nothing else runs concurrently in this suite, so a snapshot-then-act-then-snapshot
-    # pair is race-free.
+    # startup, so an absolute `> 0` assertion would pass regardless of what this test does.
+    # Nothing else runs concurrently in this suite, so a snapshot-then-act-then-snapshot pair
+    # is race-free.
     def snapshot():
         return {
             "requests": _event_value("HTTPUserDirectoryAuthRequests"),
@@ -1147,10 +1113,9 @@ def test_metrics(started_cluster):
     assert after["requests"] == before["requests"] + 1
     assert after["failures"] == before["failures"] + 1
 
-    # 4. A username the mock server does not know: 404 (UserNotFound) fallthrough, then
-    # "Authentication failed" overall since `users.xml` (the implicit `users_config`
-    # storage) precedes `http`, which is the last storage on `node`, so
-    # `throw_if_user_not_exists` is true for it. Not a failure:
+    # 4. A username the mock server does not know: 404 (UserNotFound) falls through, then
+    # fails overall because users.xml precedes http (the last storage on `node`), so
+    # throw_if_user_not_exists is true for it. Not a directory failure:
     # HTTPUserDirectoryAuthFailures must stay unchanged.
     before = snapshot()
     assert "Authentication failed" in instance.query_and_get_error(
@@ -1161,11 +1126,14 @@ def test_metrics(started_cluster):
     assert after["failures"] == before["failures"]
 
 
+# --- Named sessions ---
+
+
 def test_named_session_refused_by_session_limit_not_reusable(started_cluster):
-    # Admission (`trackSession`, USER_SESSION_LIMIT_EXCEEDED) is part of named-session
-    # creation. A creation refused there must not leave a reusable session behind: the
-    # refused request's role-derived constraints and auth settings would otherwise be
-    # frozen into a session that a later, differently authorized request then reuses.
+    # Admission (trackSession, USER_SESSION_LIMIT_EXCEEDED) is part of named-session creation.
+    # A creation refused there must not leave a reusable session behind: the refused request's
+    # role-derived constraints and auth settings would otherwise be frozen into a session that
+    # a later, differently authorized request then reuses.
     admin(
         "CREATE SETTINGS PROFILE IF NOT EXISTS one_session_profile SETTINGS max_sessions_for_user = 1"
     )
@@ -1200,7 +1168,7 @@ def test_named_session_refused_by_session_limit_not_reusable(started_cluster):
             delay=0.1,
         )
         # Creation of the named session is refused by max_sessions_for_user = 1 (from
-        # limit_role_a's profile) AFTER setUser applied that role's settings/constraints and
+        # limit_role_a's profile) after setUser applied that role's settings/constraints and
         # the auth setting max_result_rows = 111.
         error = instance.http_query_and_get_error(
             "SELECT 1",
@@ -1214,9 +1182,9 @@ def test_named_session_refused_by_session_limit_not_reusable(started_cluster):
         thread.join()
 
     # The same session_id under limit_role_b (no session limit, max_threads MAX 4,
-    # max_result_rows = 555) must get a FRESH session: the constraint of the creating role
-    # binds and the creating request's auth setting is applied. A leftover of the refused
-    # creation would have neither (created under limit_role_a with max_result_rows = 111).
+    # max_result_rows = 555) must get a fresh session: the creating role's constraint binds
+    # and the creating request's auth setting is applied. A leftover of the refused creation
+    # would have neither.
     error = instance.http_query_and_get_error(
         "SET max_threads = 16",
         user="limit_user",
@@ -1236,8 +1204,8 @@ def test_definer_view_rejected_for_user_with_helper_roles(started_cluster):
     # A SQL SECURITY DEFINER object created by an ephemeral user is bound to a single
     # persistent shadow `<user>:definer`, replaced on every such creation. Helper-returned
     # roles are per-authentication and may differ between simultaneous sessions of the same
-    # username, so no single shadow can represent them: the creation fails closed instead
-    # of persisting a definer that later creations by the same username would redefine.
+    # username, so no single shadow can represent them: the creation fails closed instead of
+    # persisting a definer that a later creation by the same username would redefine.
     admin("GRANT CREATE VIEW ON default.* TO external_definer")
     admin("GRANT SELECT ON default.protected TO external_definer")
     error = instance.query_and_get_error(
@@ -1305,11 +1273,14 @@ def test_custom_settings_follow_prefix_policy(started_cluster):
         assert "Authentication failed" in error, (user, error)
 
 
+# --- Framing and retries ---
+
+
 def test_helper_request_counts(started_cluster):
     # Any HTTP response the helper returns is final: it is parsed exactly once and never
     # re-sent to the helper, so a rejected password, a rate limit, a server error or a
-    # malformed body each cost the helper exactly one request. Only transport failures
-    # (no HTTP response at all) are retried, up to max_tries (3 in config_main.xml).
+    # malformed body each cost the helper exactly one request. Only transport failures (no
+    # HTTP response at all) are retried, up to max_tries (3 in config_main.xml).
     for user, password in [
         ("http_user", "wrong_password"),
         ("err429_user", GOOD_PASSWORD),
@@ -1344,17 +1315,13 @@ def test_helper_request_counts(started_cluster):
 def test_distributed_query_does_not_rebuild_profiles_from_propagated_roles(
     started_cluster,
 ):
-    # Regression for the provenance rule. An ordinary user gets a NON-default role whose
-    # profile caps max_threads at 4 and sets max_rows_to_read_leaf = 1. The session is
-    # created without the role, so without that profile; `SET ROLE` inside the session
-    # enables the role for authorization but does not rebuild the session's creation-time
-    # profile state, so `SET max_threads = 16` succeeds. A Distributed query then pushes the
-    # current role to node2 for authorization only. If node2 treated the propagated role as
-    # fresh authentication-time profile input, it would install the role's profile there:
-    # max_rows_to_read_leaf = 1 (a value the initiator never sends, because it is unchanged
-    # on the initiator) is enforced on node2's own read of two rows and fails the query.
-    # (A MAX constraint alone cannot detect this: a secondary query's propagated settings are
-    # clamped quietly, not rejected.)
+    # A role's profile (max_threads MAX 4, max_rows_to_read_leaf = 1) is granted but not part
+    # of the session's creation-time state; SET ROLE enables it for authorization without
+    # rebuilding that state, so SET max_threads = 16 succeeds locally.
+    # The Distributed query then pushes the role to node2 for authorization only: if node2
+    # treated it as fresh profile input, it would enforce max_rows_to_read_leaf = 1 there and
+    # fail the read of two rows — a MAX constraint alone wouldn't catch this, since propagated
+    # settings are clamped quietly rather than rejected.
     for run in [admin, admin2]:
         run("CREATE USER IF NOT EXISTS replay_user IDENTIFIED BY 'replay_password'")
         run("CREATE ROLE IF NOT EXISTS replay_constraint_role")
@@ -1390,8 +1357,8 @@ def test_distributed_query_does_not_rebuild_profiles_from_propagated_roles(
         "SET max_threads = 16"
     )  # must succeed: SET ROLE does not rebuild constraints
     assert in_session("SELECT getSetting('max_threads')").strip() == "16"
-    # sum(x), not count(): a trivial count is answered from part metadata without
-    # reading rows, so the leaf read limit would never be consulted.
+    # sum(x), not count(): a trivial count is answered from part metadata without reading
+    # rows, so the leaf read limit would never be consulted.
     assert in_session("SELECT sum(x) FROM default.replay_distributed").strip() == "15"
 
 
@@ -1399,8 +1366,8 @@ def test_response_framing_contract(started_cluster):
     # A 200 body carries authentication state, so its complete reception must be verifiable:
     # Content-Length or chunked framing is required, and a detectable truncation fails the
     # attempt. A body delimited only by connection close is rejected even when it is valid,
-    # because a helper dying right after the headers would be indistinguishable from an
-    # empty response. None of these failures is retried (one helper request each).
+    # because a helper dying right after the headers would be indistinguishable from an empty
+    # response. None of these failures is retried (one helper request each).
     for user in [
         "truncated_200_user",
         "close_delimited_empty_user",
@@ -1434,13 +1401,15 @@ def test_response_framing_contract(started_cluster):
     assert helper_request_count(instance3, "truncated_404_user") - before == 1
 
 
+# --- Reload ---
+
+
 def test_reload_users_drops_materialized_users(started_cluster):
     # SYSTEM RELOAD USERS drops every materialized user of the directory. That makes the
     # max_cached_users bound recoverable without a restart and releases a name that a
     # materialized user held from CREATE USER (node3: <http> precedes the writable
     # local_directory, so the held name selects the read-only http storage for insertion).
-    admin3 = lambda q: instance3.query(q, user="admin_user", password="admin_password")
-    # Fill node3's bound (3) if earlier tests have not already.
+    # Fill node3's bound (3) if it isn't already full.
     already = int(
         admin3("SELECT count() FROM system.users WHERE storage = 'http'").strip()
     )
