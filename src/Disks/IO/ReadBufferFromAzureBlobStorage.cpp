@@ -42,6 +42,28 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
+}
+
+namespace
+{
+
+/// A successful `Download` is not enough to trust the body: the endpoint may have ignored the
+/// requested range and answered `200 OK` with the whole object from byte 0, or `206 Partial
+/// Content` for a different range. Consuming such a body as if it started at `requested_offset`
+/// would hand the caller the wrong bytes under the right offsets - silent data corruption - so
+/// the start of the returned range is checked against the requested one before the body is read.
+/// The SDK reports a `200 OK` response as the range starting at 0, so a full-object response is
+/// accepted exactly when the request started at 0, where it is a correct answer, the same as in
+/// `ReadWriteBufferFromHTTP`.
+void checkReturnedRange(const Azure::Storage::Blobs::Models::DownloadBlobResult & result, size_t requested_offset, const String & path)
+{
+    if (result.ContentRange.Offset != static_cast<int64_t>(requested_offset))
+        throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+            "Azure Blob Storage returned a range starting at offset {} instead of the requested offset {} for file {}",
+            result.ContentRange.Offset, requested_offset, path);
+}
+
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -308,6 +330,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             auto download_response = blob_client->Download(download_options, azure_context);
+            checkReturnedRange(download_response.Value, offset, path);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
@@ -463,6 +486,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = client.Download(download_options, azure_context);
+            checkReturnedRange(download_response.Value, range_begin, path);
+
             if (blob_storage_log)
             {
                 blob_storage_log->addEvent(

@@ -23,6 +23,7 @@
 namespace DB::ErrorCodes
 {
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int HTTP_RANGE_NOT_SATISFIABLE;
 }
 
 namespace
@@ -78,7 +79,10 @@ void assertCountsUpFromZero(const std::string & data)
 /// two ways a remote endpoint can: every response carries at most `max_response_size` bytes no
 /// matter how much was requested (an endpoint that caps or truncates its ranged responses), and
 /// no byte at position `served_size` or beyond is ever served (a blob that is shorter than the
-/// caller believes), while `blob_size` is what the endpoint claims in `Content-Range`.
+/// caller believes), while `blob_size` is what the endpoint claims in `Content-Range`. With
+/// `ignore_range`, the endpoint disregards the requested range altogether and answers every
+/// request with `200 OK` and the object from byte 0, the way an endpoint that does not support
+/// ranged requests does.
 class MisbehavingRangeTransport : public Azure::Core::Http::HttpTransport
 {
 public:
@@ -87,12 +91,14 @@ public:
         size_t served_size_,
         size_t blob_size_,
         bool send_etag_,
-        std::optional<int64_t> reported_length_ = {})
+        std::optional<int64_t> reported_length_ = {},
+        bool ignore_range_ = false)
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
         , send_etag(send_etag_)
         , reported_length(reported_length_)
+        , ignore_range(ignore_range_)
     {
     }
 
@@ -100,7 +106,7 @@ public:
     {
         /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional.
         size_t range_start = 0;
-        if (auto range = request.GetHeader("x-ms-range"); range.HasValue())
+        if (auto range = request.GetHeader("x-ms-range"); range.HasValue() && !ignore_range)
         {
             const std::string & value = range.Value();
             if (const size_t eq_pos = value.find('='); eq_pos != std::string::npos)
@@ -112,17 +118,20 @@ public:
             : 0;
         const size_t range_end = range_start + (response_size == 0 ? 0 : response_size - 1);
 
-        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
-            1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
+        auto response = ignore_range
+            ? std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Ok, "OK")
+            : std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::PartialContent, "Partial Content");
 
         /// The length of the body as the endpoint chooses to report it, which is not necessarily
         /// the number of bytes the body actually holds.
         const int64_t length_to_report = reported_length.value_or(static_cast<int64_t>(response_size));
 
         response->SetHeader("Content-Length", std::to_string(length_to_report));
-        response->SetHeader(
-            "Content-Range",
-            "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
+        /// A `200 OK` response to a ranged request carries no `Content-Range`.
+        if (!ignore_range)
+            response->SetHeader(
+                "Content-Range",
+                "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
             response->SetHeader("ETag", "\"0x8DA000000000000\"");
@@ -137,6 +146,7 @@ private:
     size_t blob_size;
     bool send_etag;
     std::optional<int64_t> reported_length;
+    bool ignore_range;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -149,11 +159,13 @@ std::string readWithRightBound(
     size_t read_until_position,
     size_t buffer_size,
     size_t max_read_retries = 1,
-    bool send_etag = true)
+    bool send_etag = true,
+    bool ignore_range = false)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
-    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(max_response_size, served_size, blob_size, send_etag);
+    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
+        max_response_size, served_size, blob_size, send_etag, /* reported_length */ std::nullopt, ignore_range);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
@@ -210,13 +222,14 @@ std::string readWithoutRightBound(
 }
 
 /// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
-/// at a time, without any read having been performed on it yet.
-std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(size_t max_response_size, size_t blob_size)
+/// at a time, without any read having been performed on it yet. With `ignore_range`, the endpoint
+/// answers every request with `200 OK` and the object from byte 0.
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBuffer(size_t max_response_size, size_t blob_size, bool ignore_range = false)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
     client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
-        max_response_size, blob_size, blob_size, /* send_etag */ true);
+        max_response_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt, ignore_range);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
@@ -441,6 +454,77 @@ TEST(AzureReadWithoutRightBound, TruncatedObject)
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    }
+}
+
+/// `readBigAt` asks for bytes 40..55, but the endpoint ignores the range and answers `200 OK` with
+/// the whole object from byte 0. Consuming that body would hand the caller bytes 0..15 under the
+/// offsets 40..55, so the read must fail instead.
+TEST(AzureReadBigAt, RangeIgnoredByEndpoint)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100, /* ignore_range */ true);
+
+    std::string destination(16, '\0');
+    try
+    {
+        buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 40, {});
+        FAIL() << "Expected an exception on a full-object response to a positioned read at a nonzero offset";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+    }
+}
+
+/// A `200 OK` response with the whole object is a correct answer to a positioned read that starts
+/// at byte 0, so it must be accepted there.
+TEST(AzureReadBigAt, FullObjectResponseAtZero)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100, /* ignore_range */ true);
+
+    std::string destination(16, '\0');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {}));
+
+    ASSERT_EQ(bytes_read, destination.size());
+    assertCountsUpFromZero(destination);
+}
+
+/// A sequential read that starts at byte 40 after a seek, against an endpoint that ignores the
+/// range and answers `200 OK` with the object from byte 0: the reader must not advance as though
+/// the bytes it received belonged to offset 40.
+TEST(AzureSequentialRead, RangeIgnoredAfterSeek)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100, /* ignore_range */ true);
+    buffer->seek(40, SEEK_SET);
+
+    try
+    {
+        buffer->next();
+        FAIL() << "Expected an exception on a full-object response to a sequential read at a nonzero offset";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
+    }
+}
+
+/// The endpoint honours nothing about the range: it answers every request with `200 OK` and at
+/// most 40 bytes of the object from byte 0. The first response is a correct answer to the request
+/// that started at byte 0, but when the reader reopens the download at offset 40 it gets bytes
+/// 0..39 again. Those must not be delivered as bytes 40..79: the read must fail.
+TEST(AzureReadUntilPosition, RangeIgnoredOnReopen)
+{
+    try
+    {
+        readWithRightBound(
+            /* max_response_size */ 40, /* served_size */ 1000, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64,
+            /* max_read_retries */ 4, /* send_etag */ true, /* ignore_range */ true);
+        FAIL() << "Expected an exception on a full-object response to a reopened download at a nonzero offset";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
     }
 }
 
