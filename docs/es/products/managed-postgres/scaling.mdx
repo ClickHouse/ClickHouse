@@ -163,7 +163,7 @@ ClickHouse Managed Postgres supervisa el uso de disco y escala el almacenamiento
 
 * **85 % de uso de disco**: Recibe una [notificación](/es/products/managed-postgres/monitoring/notifications) a través de la consola de Cloud y por correo electrónico.
 * **90 % de uso de disco**: Se inicia el escalado automático. El almacenamiento aumenta al siguiente tamaño disponible para la familia de instancias correspondiente. La CPU y la memoria se mantienen igual, salvo que el tamaño actual de la instancia no admita un disco más grande; en ese caso, también se aumenta el tamaño de la instancia. Las [réplicas de lectura](/es/products/managed-postgres/read-replicas) se escalan junto con la instancia primaria.
-* **95 % de uso de disco**: La conmutación omite cualquier ventana de mantenimiento configurada y se realiza en cuanto el nuevo servidor está listo.
+* **95 % de uso de disco**: La conmutación se realiza en cuanto el nuevo servidor está listo, sin ninguna espera.
 
 Si su instancia ya cuenta con la configuración más grande disponible, el escalado automático no puede ampliarla más. Libere espacio en disco o póngase en contacto con [soporte](https://clickhouse.com/support/program).
 
@@ -173,7 +173,7 @@ Si su instancia ya cuenta con la configuración más grande disponible, el escal
 
 El almacenamiento no se redimensiona in situ. El escalado automático sigue el mismo [proceso de escalado](#scaling-process) que un cambio manual del tipo de instancia: se aprovisiona un servidor de reemplazo con más almacenamiento, se restaura a partir del backup más reciente, se pone al día con el WAL y una conmutación controlada lo promueve a servidor primario. Las instancias con [alta disponibilidad](/es/products/managed-postgres/high-availability) obtienen instancias standby de reemplazo con el nuevo tamaño como parte de la misma operación.
 
-La conmutación es el único paso que implica tiempo de inactividad, normalmente de menos de un minuto. Si se configura una [ventana de mantenimiento](/es/products/managed-postgres/upgrades#maintenance-windows), la conmutación espera hasta esa ventana, a menos que el uso de disco alcance el 95 %. Durante la conmutación, se cierran las conexiones abiertas y se revierten las transacciones en curso. La cadena de conexión no cambia: se actualiza el DNS para que apunte al nuevo servidor primario y las aplicaciones con lógica de reconexión estándar se recuperan automáticamente.
+La conmutación es el único paso que implica tiempo de inactividad, normalmente de menos de un minuto. Una [ventana de actualización programada](/es/products/managed-postgres/upgrades#scheduled-upgrades) configurada no la retrasa: la ventana se aplica al mantenimiento de la plataforma, no al escalado. Durante la conmutación, se cierran las conexiones abiertas y se revierten las transacciones en curso. La cadena de conexión no cambia: se actualiza el DNS para que apunte al nuevo servidor primario y las aplicaciones con lógica de reconexión estándar se recuperan automáticamente.
 
 <div id="autoscaling-read-only">
   ### Modo de solo lectura
@@ -198,7 +198,7 @@ Una instancia con 1024 GB de almacenamiento ejecuta una carga de trabajo con un 
 
 1. Cuando se utilizan 870 GB (85 %), recibe una notificación de almacenamiento.
 2. Cuando se utilizan 922 GB (90 %), se inicia el escalado automático. Se aprovisiona un servidor de reemplazo con 2048 GB de almacenamiento y se restaura a partir del backup más reciente mientras la instancia sigue atendiendo tráfico.
-3. Cuando el reemplazo se ha puesto al día, se realiza la conmutación, dentro de la ventana de mantenimiento si hay una configurada. Las conexiones se interrumpen durante menos de un minuto, la aplicación se vuelve a conectar al mismo hostname y el uso vuelve a situarse en torno al 45 %.
+3. Cuando el reemplazo se ha puesto al día, se realiza la conmutación. Las conexiones se interrumpen durante menos de un minuto, la aplicación se vuelve a conectar al mismo hostname y el uso vuelve a situarse en torno al 45 %.
 4. Si el espacio libre cae por debajo del 2 % (unos 20 GB) antes de que se complete la conmutación, la instancia pasa a modo de solo lectura. Las escrituras se reanudan automáticamente cuando finaliza la conmutación al disco más grande.
 
 <div id="resources">

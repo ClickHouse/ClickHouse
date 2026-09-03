@@ -195,6 +195,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
+    /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
+    /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
+    const Node & addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -301,6 +305,8 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
+    bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
@@ -447,6 +453,12 @@ public:
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
+    struct SplitArrayJoinResult;
+
+    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
+    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
+    std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
+
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
     /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
     SplitResult splitActionsForFilter(
@@ -589,6 +601,13 @@ struct ActionsDAG::SplitResult
     ActionsDAG first;
     ActionsDAG second;
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+};
+
+struct ActionsDAG::SplitArrayJoinResult
+{
+    ActionsDAG before;                 /// computes the array argument under array_join_column_name, passes columns through
+    ActionsDAG after;                  /// consumes array_join_column_name (element type) as input, produces the original outputs
+    std::string array_join_column_name;
 };
 
 struct ActionsDAG::ActionsForFilterPushDown
