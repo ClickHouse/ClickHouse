@@ -66,3 +66,7 @@ INNER JOIN ON, cross-type equi-key that changes the number of rows: result
 5
 6
 6
+INNER JOIN ON, cross-type float equi-key: result
+0	-0
+INNER JOIN ON, cross-type equi-key with a nested float: result
+[0]	[-0]
