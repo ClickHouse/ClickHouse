@@ -58,7 +58,8 @@ for data that must be loaded in the background.
 | Request | Error |
 |---|---|
 | `SET run_query_in_background = 1` | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
-| A query inside an explicit transaction, or with `implicit_transaction = 1` | `Background queries inside transactions are not supported` |
+| A query inside an explicit transaction | `Background queries inside transactions are not supported` |
+| A query with `implicit_transaction = 1` | `Background queries with 'implicit_transaction' are not supported` |
 | A secondary query, requested for example with `clickhouse-client --query_kind secondary_query` | `run_query_in_background cannot be used for a secondary query` |
 | A query processing stage other than `Complete`, requested for example with `clickhouse-client --stage with_mergeable_state` | `run_query_in_background cannot be used with the WithMergeableState query processing stage` |
 | The `SETTINGS` clause of a `CREATE` or `ATTACH` that carries a storage definition, because the client sends that clause to the server unresolved | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query` |
@@ -115,7 +116,7 @@ X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
 
 That header only reaches a client that reads the response. When you need a handle on the query that does not depend on the response arriving, send your own `query_id` as a URL parameter instead. 
 
-The client then knows the ID before it makes the request, and can monitor or `KILL` the query even if it never sees the response:
+The client then knows the ID before it makes the request, and can monitor or `KILL` the query on the accepting node even if it never sees the response:
 
 ```bash
 curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
@@ -164,6 +165,24 @@ LIMIT 1;
 The submission request can succeed even if background execution later fails. In that case, the exception is recorded
 in `system.query_log` rather than returned over the original connection.
 
+:::note Clustered and load-balanced deployments
+`system.processes`, `system.query_log`, and `KILL QUERY` are node-local: each one only sees the queries of the server that answers it.
+
+A background query belongs to the server that accepted it, which is not necessarily the one your next request reaches through a load balancer. Read the whole cluster instead:
+
+```sql
+SELECT hostName(), query_id, elapsed, query
+FROM clusterAllReplicas(my_cluster, system.processes)
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+The same applies to `system.query_log`, and cancellation needs the cluster-wide form:
+
+```sql
+KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+:::
+
 ## Query log flush delay {#query-log-flush-delay}
 
 Entries are buffered before they appear in `system.query_log`. 
@@ -184,3 +203,5 @@ A background query is tracked by the server that accepted it, which is not neces
 ```sql
 SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
 ```
+
+Flushing cluster-wide only makes each server write out its own buffered entries. It does not make another server's `system.query_log` visible locally, so still read the log through `clusterAllReplicas` as described in [Monitor execution](#monitor-execution).
