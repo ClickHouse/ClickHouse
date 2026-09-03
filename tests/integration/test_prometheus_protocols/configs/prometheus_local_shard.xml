@@ -1,0 +1,32 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <!-- The shard-local TimeSeries table is in the caller's database, and a table of
+                 another engine answers to the same name in the probe connection's. -->
+            <local_write>
+                <url>/local/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_local</table>
+                </handler>
+            </local_write>
+            <local_api>
+                <url_prefix>/local_api</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>metrics.prom_local</table>
+                </handler>
+            </local_api>
+            <!-- The same two databases the other way round: healthy under the name the probe
+                 connection resolves, wrong engine under the one the sink reaches. -->
+            <swap_write>
+                <url>/swap/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_swap</table>
+                </handler>
+            </swap_write>
+        </handlers>
+    </prometheus>
+</clickhouse>

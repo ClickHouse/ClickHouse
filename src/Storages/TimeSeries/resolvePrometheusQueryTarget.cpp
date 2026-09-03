@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool prefer_localhost_replica;
 }
 
 namespace DistributedSetting
@@ -137,16 +138,19 @@ namespace
         const auto metadata = storage.getInMemoryMetadataPtr(context, false);
         const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
-        /// Sent as text over each replica's own connection, so an undeclared remote database resolves
-        /// to that replica's configured default, exactly as the sink's and the rewrite's queries do.
-        const String database_predicate = remote_id.database_name.empty()
-            ? "currentDatabase()"
-            : quoteString(remote_id.database_name);
-        const String table_predicate = quoteString(remote_id.table_name);
-        const String probe_query = "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate
-            + " AND name = " + table_predicate + ") AS engine, (SELECT type FROM system.columns WHERE database = "
-            + database_predicate + " AND table = " + table_predicate + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries)
-            + ") AS ts_type";
+        /// Sent as text over each replica's own connection, so an undeclared remote database resolves to that
+        /// replica's configured default - except where the sink and the rewrite skip the connection and run on
+        /// this context instead (DistributedSink, SelectStreamFactory), which resolves it here.
+        auto make_probe_query = [&](bool runs_on_the_caller)
+        {
+            const String database_predicate = !remote_id.database_name.empty()
+                ? quoteString(remote_id.database_name)
+                : (runs_on_the_caller ? quoteString(context->getCurrentDatabase()) : "currentDatabase()");
+            const String table_predicate = quoteString(remote_id.table_name);
+            return "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate + " AND name = " + table_predicate
+                + ") AS engine, (SELECT type FROM system.columns WHERE database = " + database_predicate + " AND table = " + table_predicate
+                + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type";
+        };
         const auto nullable_string = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
         const auto probe_header = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}});
 
@@ -163,10 +167,17 @@ namespace
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
-        for (const auto & shard : cluster->getShardsInfo())
-            for (const auto & pool : shard.per_replica_pools)
+        const bool prefer_localhost_replica = context->getSettingsRef()[Setting::prefer_localhost_replica];
+        const auto & shards_info = cluster->getShardsInfo();
+        const auto & shards_addresses = cluster->getShardsAddresses();
+        for (size_t shard_index = 0; shard_index != shards_info.size(); ++shard_index)
+            for (size_t replica_index = 0; replica_index != shards_info[shard_index].per_replica_pools.size(); ++replica_index)
             {
-                RemoteQueryExecutor probe(pool, probe_query, probe_header, probe_context);
+                const auto & pool = shards_info[shard_index].per_replica_pools[replica_index];
+                /// A cluster assembled from a subset of another carries no addresses: treat those as remote.
+                const bool runs_on_the_caller = prefer_localhost_replica && shard_index < shards_addresses.size()
+                    && replica_index < shards_addresses[shard_index].size() && shards_addresses[shard_index][replica_index].is_local;
+                RemoteQueryExecutor probe(pool, make_probe_query(runs_on_the_caller), probe_header, probe_context);
                 bool answered = false;
                 try
                 {
@@ -183,7 +194,12 @@ namespace
                                 fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
                         else if (engine.safeGet<String>() != "TimeSeries")
                             ++wrong_engine_replicas;
-                        else if (!ts_type.isNull() && ts_type.safeGet<String>() != time_series_type)
+                        /// Not exposed to the probe, or not there at all: the type went unchecked either way.
+                        else if (ts_type.isNull())
+                            unavailable_replicas.push_back(fmt::format(
+                                "{} (no `{}` column on {})", pool->getAddress(), TimeSeriesColumnNames::TimeSeries,
+                                backQuoteIfNeed(remote_id.table_name)));
+                        else if (ts_type.safeGet<String>() != time_series_type)
                         {
                             ++wrong_type_replicas;
                             wrong_types.insert(ts_type.safeGet<String>());

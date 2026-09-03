@@ -1,0 +1,12 @@
+<clickhouse>
+    <users>
+        <!-- Its unqualified names resolve in `metrics`, while the probe's own connection
+             authenticates as `default` and resolves them in `default`. -->
+        <prom_metrics>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <default_database>metrics</default_database>
+        </prom_metrics>
+    </users>
+</clickhouse>
