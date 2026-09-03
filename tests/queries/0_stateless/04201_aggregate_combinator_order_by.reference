@@ -1,0 +1,28 @@
+-- basic ASC
+1	['a','b','c']
+2	['e','d']
+-- DESC
+1	['c','b','a']
+2	['d','e']
+-- LIMIT
+1	['a','b']
+2	['e','d']
+-- DESC LIMIT
+1	['c','b']
+2	['d','e']
+-- multi-key
+['c','b','a','d','e']
+-- sum
+1	30
+2	20
+-- parametric
+1	['a','b','c']
+2	['e','d']
+-- NULLS FIRST
+['a','c','b']
+-- NULLS LAST
+['c','b','a']
+-- distributed
+['a','b','c']
+-- empty
+[]

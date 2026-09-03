@@ -107,6 +107,7 @@ void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & fac
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
+void registerAggregateFunctionCombinatorOrderBy(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory &);
@@ -229,6 +230,7 @@ void registerAggregateFunctions()
         auto & factory = AggregateFunctionCombinatorFactory::instance();
 
         registerAggregateFunctionCombinatorIf(factory);
+        registerAggregateFunctionCombinatorOrderBy(factory);
         registerAggregateFunctionCombinatorArray(factory);
         registerAggregateFunctionCombinatorForEach(factory);
         registerAggregateFunctionCombinatorSimpleState(factory);
