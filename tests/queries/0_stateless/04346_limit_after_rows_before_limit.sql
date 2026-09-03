@@ -1,7 +1,8 @@
--- rows_before_limit_at_least must reflect the rows read before the AFTER/UNTIL range, i.e. the full
--- input the LimitRangeTransform scanned, even when an outer settings LimitStep sits downstream.
--- A downstream settings LimitStep must not shadow the range transform's counter (which would report
--- rows after the range instead of before it). This must match normal LIMIT semantics: 10, not 3.
+-- Without the `limit` setting, rows_before_limit_at_least is owned by the range transform and counts
+-- every row it read before the AFTER/UNTIL range was applied, as for a plain LIMIT: all 10 rows here.
+-- The `limit` setting is applied as an outer LIMIT wrapped around the whole query (see
+-- `applyQueryConstructionSettings`), so with it the counter belongs to that outer LIMIT and reports the
+-- rows the range produced, exactly as an explicit outer `SELECT * FROM (...) LIMIT n` would.
 
 SET output_format_write_statistics = 0;
 SET exact_rows_before_limit = 1;
