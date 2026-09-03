@@ -16,8 +16,9 @@ INSERT INTO j VALUES (1, '1');
 CREATE TABLE c (k UInt64) ENGINE = MergeTree ORDER BY k AS SELECT 1;
 CREATE TABLE f (id UInt64, c UInt64) ENGINE = MergeTree ORDER BY id AS SELECT 1, 1;
 
--- The names are qualified because `joinGet` resolves its table on whichever node executes it,
--- which is not the initiator when `prefer_localhost_replica` is 0.
+-- The dictionary and `Join` names are qualified because both are resolved against the current
+-- database of whichever node executes the function, which is not the initiator when
+-- `prefer_localhost_replica` is 0.
 
 -- The same lambda argument name in both scopes.
 SELECT arrayMap(xx -> dictGetString(currentDatabase() || '.d', 'attr', xx), [id])
