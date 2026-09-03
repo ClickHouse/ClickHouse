@@ -7,11 +7,11 @@ keywords: ['clickhousectl', 'CLI', 'Cloud 管理', '本地开发']
 doc_type: 'reference'
 ---
 
-ClickHouse 命令行客户端 (`clickhousectl`) 是一款统一的命令行工具，用于管理 ClickHouse Cloud 资源，并支持基于 ClickHouse 的本地开发。它还可管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
+ClickHouse 命令行客户端 (`clickhousectl`) 是一款统一的命令行工具，用于管理 ClickHouse Cloud 资源，并支持基于 ClickHouse 的本地开发。它还可管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务和 [ClickPipes](/zh/integrations/clickpipes)。
 
-<div id="installation">
-  ## 安装
-</div>
+本页是 `clickhousectl` 0.4.2 命令集的参考文档。运行 `clickhousectl --version` 可查看已安装的版本，对任意命令运行 `clickhousectl <command> --help` 可获取完整的 标志 列表。
+
+## 安装 {#installation}
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -19,149 +19,386 @@ curl https://clickhouse.com/cli | sh
 
 为方便使用，系统还会自动创建一个 `chctl` 别名。
 
-<div id="cloud-management">
-  ## Cloud 管理
-</div>
+将现有安装更新到最新版本：
+
+```bash
+clickhousectl update           # self-update
+clickhousectl update --check   # check for updates without installing
+```
+
+## Cloud 管理 {#cloud-management}
 
 直接通过命令行在 ClickHouse Cloud 中完成身份验证并管理您的服务。
 
-<div id="authentication">
-  ### 身份验证
-</div>
+### 身份验证 {#authentication}
 
 ```bash
-clickhousectl cloud auth
+# Log in with an API key (read/write access)
+clickhousectl cloud auth login --api-key <key> --api-secret <secret>
+
+# Log in with the OAuth device flow (interactive; read-only access)
+clickhousectl cloud auth login
+
+# Show which credential source is active
+clickhousectl cloud auth status
+
+# Log out and clear saved credentials
+clickhousectl cloud auth logout
+
+# Create a new ClickHouse Cloud account
+clickhousectl cloud auth signup
 ```
 
-系统会提示你输入 API 密钥 和 secret，并将它们保存到 `.clickhouse/credentials.json` (仅限当前项目，且已加入 git 忽略) 。
-
-你也可以使用环境变量：
+API 密钥 保存在 `.clickhouse/credentials.json` 中 (位于项目本地，已加入 git 忽略列表) 。你也可以使用环境变量：
 
 ```bash
 export CLICKHOUSE_CLOUD_API_KEY=your-key
 export CLICKHOUSE_CLOUD_API_SECRET=your-secret
 ```
 
-<div id="services">
-  ### 服务
-</div>
+凭据优先次序从高到低依次为：`--api-key`/`--api-secret` 命令行参数、`.clickhouse/credentials.json` 中的项目凭据、环境变量 (先 shell，后 `.env`) 、通过 `cloud auth login` 获取的 OAuth 令牌。
+
+OAuth 令牌仅具备只读权限；写入类命令 (create、delete、start、stop、update、scale) 需使用 API 密钥 进行身份验证。
+
+### 服务 {#services}
 
 ```bash
-# 列出服务
+# List services
 clickhousectl cloud service list
 
-# 创建服务
+# Create a service
 clickhousectl cloud service create --name my-service \
   --provider aws \
   --region us-east-1
 
-# 获取服务详情
+# Get service details
 clickhousectl cloud service get <service-id>
 
-# 扩缩服务
+# Update service settings (name, IP allow list, tags, endpoints, ...)
+clickhousectl cloud service update <service-id> --add-ip-allow 0.0.0.0/0
+
+# Scale a service
 clickhousectl cloud service scale <service-id> \
   --min-replica-memory-gb 24 \
   --max-replica-memory-gb 48 \
   --num-replicas 3
 
-# 启动/停止服务
+# Start/stop a service
 clickhousectl cloud service start <service-id>
 clickhousectl cloud service stop <service-id>
 
-# 删除服务
+# Reset the default user password
+clickhousectl cloud service reset-password <service-id>
+
+# Delete a service
 clickhousectl cloud service delete <service-id>
 ```
 
-<div id="postgres-services">
-  ### Postgres 服务 (Beta)
-</div>
+### 运行查询 {#running-queries}
 
-创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
+通过 Query API 经 HTTP 对 Cloud 服务执行 SQL —— 无需本地 `clickhouse` binary，也无需 服务密码。`--id` 和 `--name` 必须且只能指定其中一个：
 
 ```bash
-# List Postgres services
-clickhousectl cloud postgres list
+# Query by service ID or by name
+clickhousectl cloud service query --id <service-id> -q 'SELECT 1'
+clickhousectl cloud service query --name my-service -q 'SELECT version()'
 
-# Create a Postgres service
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m6gd.xlarge \
-  --pg-version 18
+# Run a query from a SQL file (use "-" for stdin), choosing an output format.
+# The file must hold a single statement
+clickhousectl cloud service query --id <service-id> \
+  --queries-file report.sql --format JSONEachRow
 
-# Get service details
-clickhousectl cloud postgres get <pg-id>
+# With neither --query nor --queries-file, SQL is read from stdin
+echo 'SELECT 1' | clickhousectl cloud service query --id <service-id>
 
-# Update a service
-clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
-
-# Delete a service
-clickhousectl cloud postgres delete <pg-id>
+# Replace a stored Query API key that the endpoint rejects
+clickhousectl cloud service repair-query-key <service-id>
 ```
 
-<div id="organizations">
-  ### 组织
-</div>
+使用 API 密钥 身份验证时，查询以读写权限运行。如果 服务 的查询端点已授权该 key，则直接使用该已通过身份验证的 key；否则，首次查询会自动创建一个查询端点和一个该 服务 专属的读/写 key，并将该 key 保存到 `.clickhouse/credentials.json` 中。传入 `--no-auto-enable` 可让命令直接失败，而不是自动创建这些资源。使用 OAuth 时，SQL 以你的 cloud 用户身份运行，仅具有只读权限 (仅限 `SELECT`) ，且不会创建任何资源。
+
+需要注意的事项：
+
+* `service query` 每个请求只执行一条语句。无论通过哪种方式传入——`--query`、`--queries-file` 还是 stdin——Query API 都会拒绝多语句 SQL，并返回 `Error: SQL error 62: Syntax error (Multi-statements are not allowed)`。单条语句末尾带 `;` 没有问题。如需执行脚本，请运行 `clickhousectl local use latest`，改用 `clickhouse client` 连接该 服务。
+* `--query` 与 `--queries-file` 互斥 (退出码 2) 。只有在两者都未提供时才会读取 stdin。`--query` 从不读取 stdin，因此在使用它的同时重定向或通过管道传入数据会直接报错，而不会静默地变成空操作：`Error: --query cannot be combined with SQL or data on stdin.` 应改为将 `INSERT` 及其数据作为单个 stream 发送——`printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <service-id>`——或使用 `--queries-file -` 从 stdin 读取完整语句。
+* 在终端中，默认输出格式为 `PrettyCompact`；通过管道输出时为 `TabSeparated`。`--json` 表示选择 `JSONEachRow`，且不能与 `--format` 同时使用 (退出码 2) 。
+* 如果已存储的 Query API 密钥 被端点以 HTTP 401/403 拒绝，它永远不会被自动替换；命令行客户端读取该 key 的管理记录只是为了报告原因。请使用 `clickhousectl cloud service repair-query-key <service-id>` 替换这一个 credential，该命令同时会删除被替换掉的 key。对于正在运行的 服务，只有在使用新 key 的探测查询成功后，命令才会以 0 退出，结果会在 `--json` 输出的 `verification` 中报告。如果在 readiness 窗口结束时 Query API 仍拒绝该 key，命令会以 1 退出，但修复依然有效：不要重复运行它，改为运行 `cloud service query`。
+* Query API 大约在 30 秒后超时；语句仍会在 服务 上继续运行，但结果会丢失。如需执行耗时更长的语句，请运行 `clickhousectl local use latest`，将标准的 `clickhouse` binary 加入 `PATH`，并改用 `clickhouse client --host <host> --secure --port 9440 --user default --password <password>` 连接。
+
+### 服务端点与配置 {#service-endpoints-and-configuration}
 
 ```bash
-clickhousectl cloud org list
-clickhousectl cloud org get <org-id>
+# Query endpoints (used by the Query API)
+clickhousectl cloud service query-endpoint get <service-id>
+clickhousectl cloud service query-endpoint create <service-id> --role sql_console_admin
+clickhousectl cloud service query-endpoint delete <service-id>
+
+# Private endpoints. --endpoint-id takes an AWS VPC endpoint ID, a GCP PSC
+# connection ID, or an Azure private endpoint Resource ID / resourceGuid
+clickhousectl cloud service private-endpoint get-config <service-id>
+clickhousectl cloud service private-endpoint create <service-id> --endpoint-id <endpoint-id>
+
+# Backup configuration
+clickhousectl cloud service backup-config get <service-id>
+clickhousectl cloud service backup-config update <service-id> --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-start-time 02:00 --backup-period-hours 24
+clickhousectl cloud service backup-config update <service-id> --clear-backup-start-time
+
+# Prometheus metrics for a service (always raw Prometheus exposition text)
+clickhousectl cloud service prometheus <service-id>
 ```
 
-<div id="api-keys">
-  ### API 密钥
-</div>
+`--backup-start-time` 必须正好为整点 (`HH:00`) ，并且在发起任何 API 调用之前由命令行客户端进行校验。它还要求备份周期为 `24` 或 `48` 小时：请在同一条命令中传入 `--backup-period-hours 24` 或 `--backup-period-hours 48`，或者事先已存储了这两个值之一。若已存储的周期为其他值，命令行客户端会在调用 API 之前拒绝执行，并提示 `Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48.`
 
-```bash
-clickhousectl cloud key list
-clickhousectl cloud key create --name ci-key --role-id <role-id>
-clickhousectl cloud key delete <key-id>
-```
+`--clear-backup-start-time` 会移除已存储的开始时间，并解除该限制。将其与 `--backup-period-hours` 搭配使用，即可在一次调用中清除开始时间并设置任意周期。该参数与 `--backup-start-time` 互斥。
 
-<div id="members-and-invitations">
-  ### 成员与邀请
-</div>
-
-```bash
-clickhousectl cloud member list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-```
-
-<div id="backups">
-  ### 备份
-</div>
+### 备份 {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-<div id="json-output">
-  ### JSON 输出
-</div>
+若要恢复备份，请基于该备份创建一个新的 服务：`clickhousectl cloud service create --name restored-service --backup-id <backup-id>`。
+
+### ClickPipes {#clickpipes}
+
+管理 [ClickPipes](/zh/integrations/clickpipes)，用于将数据摄取到 Cloud 服务中。大多数命令以服务 ID 作为第一个参数。
+
+```bash
+# List pipes and get details
+clickhousectl cloud clickpipe list <service-id>
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+
+# Create a pipe. Sources: object-storage, kafka, kinesis, pubsub,
+# postgres, mysql, mongodb, bigquery
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name my-pipe \
+  --source-url 'https://bucket.s3.us-east-1.amazonaws.com/data/*.json' \
+  --format JSONEachRow \
+  --database default \
+  --table events
+
+# A Postgres pipe needs at least one --table-mapping or --table-mapping-json
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name my-cdc-pipe \
+  --host pg.example.com \
+  --pg-database appdb \
+  --username replicator \
+  --password <password> \
+  --table-mapping public.orders:orders \
+  --sync-interval-seconds 30 \
+  --ca-certificate ./source-ca.pem
+
+# Lifecycle
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # CDC pipes only
+clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
+
+# Scaling and settings. scale requires at least one of
+# --replicas, --cpu-millicores, or --memory-gb
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> --replicas 2
+clickhousectl cloud clickpipe settings get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id>
+
+# Discover a source schema without creating a pipe (beta)
+clickhousectl cloud clickpipe schema-discover <service-id> kafka [options]
+clickhousectl cloud clickpipe schema-discover <service-id> kinesis [options]
+clickhousectl cloud clickpipe schema-discover <service-id> object-storage [options]
+clickhousectl cloud clickpipe schema-discover <service-id> pubsub [options]
+
+# Reverse private endpoints: AWS PrivateLink, Amazon MSK multi-VPC,
+# Google Private Service Connect
+clickhousectl cloud clickpipe reverse-private-endpoint list <service-id>
+clickhousectl cloud clickpipe reverse-private-endpoint get <service-id> <endpoint-id>
+clickhousectl cloud clickpipe reverse-private-endpoint create <service-id> \
+  --type VPC_ENDPOINT_SERVICE \
+  --description 'kafka source' \
+  --vpc-endpoint-service-name <vpc-endpoint-service-name>
+clickhousectl cloud clickpipe reverse-private-endpoint update <service-id> <endpoint-id> \
+  --custom-private-dns-mapping pg.internal.example.com
+clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endpoint-id>
+```
+
+须知事项：
+
+* `clickpipe create postgres` 需要 `--table-mapping <schema.table:target_table>` (可重复指定，每个 标志 对应一张表) 或 `--table-mapping-json <json>` 二者之一，也可同时使用。JSON 形式会原样接受 API 的表映射对象，并且是设置 `excludedColumns`、`sortingKeys`、`partitionByExpr`、`partitionKey` 和 `tableEngine` 的唯一方式。请注意，`partitionKey` 用于对初始 snapshot 分区以实现并行处理，与目标表的 `PARTITION BY` (即 `partitionByExpr`) 无关。使用 `--auth IAM_ROLE` 时必须指定 `--iam-role`，而在基本身份验证下指定该参数会被拒绝；`--replication-slot-name` 仅在 `--replication-mode cdc_only` 下有效。
+* Postgres CDC 设置在创建 pipe 时生效：`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots` 和 `--delete-on-merge`。创建之后只有 sync interval 和 pull batch size 可以修改，snapshot 与初始加载相关的设置无法修改。
+* 任意 `clickpipe create` 子命令中的 `--role <role>` 可重复指定，用于选择授予该 pipe 的 destination 用户的 ClickHouse 角色。它会替换该用户原本会获得的 角色：未指定 `--role` 时，该用户拥有 `clickpipes_system` 和 `default_role`；指定 `--role my_role` 时，则拥有 `clickpipes_system` 和 `my_role`。该 角色 必须能够在 destination database 中创建表——只读 角色 会导致创建失败并报 `Not enough privileges`。API 保留名称 `clickpipes` 和 `clickpipes_system` 会被拒绝。
+* 对于 Postgres source，TLS 和 certificate verification 默认开启。若 source 的证书链由公共信任机构签发，则无需 CA 文件；若 source CA 为私有或自签名，请通过 `--ca-certificate <path>` 传入其 PEM bundle。对于 ClickHouse Cloud Postgres source，可使用 `clickhousectl cloud postgres certs get` 获取该 bundle。hostname 验证默认使用 `--host`，除非通过 `--tls-host <hostname>` 覆盖。
+* 对于 Kafka 和 Kinesis pipe，省略 `--auth` 时会根据 credential 相关 标志 自动推断；若未提供任何 credential 标志，则不发送 authentication 信息。
+* `clickpipe settings` 仅涵盖流式 (Kafka、Kinesis) 和对象存储 pipe 的摄取设置，且对非 Kafka pipe 会省略 Kafka 专有设置。数据库 CDC pipe (Postgres、MySQL、MongoDB、BigQuery) 没有摄取设置：对其执行 `settings get` 会以退出码 1 退出，并提示改用 `clickhousectl cloud clickpipe get <service-id> <clickpipe-id>`，其 sync interval 和 pull batch size 由该命令报告。
+* pipe 只能使用已达到 `Ready` 状态的 reverse private endpoint；AWS PrivateLink endpoint 会一直处于 `PendingAcceptance`，直到在拥有该 source 的账户中接受连接请求。Kafka pipe 通过 `--reverse-private-endpoint-id` (可重复指定) 按 ID 引用 endpoint；Postgres 和 MySQL CDC pipe 则将 endpoint 的某个 `dnsNames` 作为 `--host` 传入。
+* Google Cloud Pub/Sub pipe 处于受限预览阶段：创建之前请 contact support 为你的组织启用该功能。`--service-account-file` 接收 GCP service account JSON 密钥的路径，或使用 `-` 从 stdin 读取密钥；密钥绝不支持内联传入，因此不会出现在进程列表和 shell 历史记录中。
+
+### Postgres 服务 (Beta) {#postgres-services}
+
+创建并管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
+
+```bash
+# List Postgres services, optionally filtering client-side.
+# Filter keys: state, region, name, provider, isPrimary
+clickhousectl cloud postgres list
+clickhousectl cloud postgres list --filter state=running --filter isPrimary=true
+
+# Create a Postgres service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size m7i.2xlarge \
+  --pg-version 18
+
+# Get service details
+clickhousectl cloud postgres get <pg-id>
+
+# Update a service
+clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge --add-tag env=prod
+
+# Reset the password (exactly one of --password or --generate)
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Runtime configuration (postgresql.conf + PgBouncer) and CA certificates.
+# config patch takes exactly one of --set (repeatable) or --file
+clickhousectl cloud postgres config get <pg-id>
+clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
+clickhousectl cloud postgres config replace <pg-id> --file config.json
+clickhousectl cloud postgres certs get <pg-id>
+
+# Read replicas, failover, and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres promote <replica-id> --wait
+clickhousectl cloud postgres switchover <pg-id> --wait
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Restart a service
+clickhousectl cloud postgres restart <pg-id>
+
+# Delete a service
+clickhousectl cloud postgres delete <pg-id>
+```
+
+须知事项：
+
+* `--provider` 默认为 `aws`；也支持 `gcp`，并可使用 `c4-standard-4` 等 GCP 机器规格。`--size` 由 Cloud API 校验，而非命令行客户端，因此不受支持的规格只会在服务端被拒绝。
+* 角色变更是最终一致的，且 API 会在实际应用 `promote` 和 `switchover` 之前就予以确认，因此仅凭退出码 0 并不能说明角色已变更。两者均支持 `--wait`，可持续轮询直至目标报告新角色，并可用 `--wait-timeout <seconds>` (默认 300) 限制轮询时长。原主节点在此后数分钟内仍可能报告 `isPrimary=true`，因此请通过 `clickhousectl cloud postgres list --filter isPrimary=true` 确认有且仅有一个服务为主节点。
+* `postgres delete` 在任意状态下均可执行，包括 `running`，因此无需先停止该服务。
+
+### 组织 {#organizations}
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+clickhousectl cloud org update <org-id> --name new-name
+clickhousectl cloud org prometheus
+clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
+```
+
+### API 密钥 {#api-keys}
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key get <key-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key update <key-id>
+clickhousectl cloud key delete <key-id>
+```
+
+### 成员与邀请 {#members-and-invitations}
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member get <user-id>
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud member remove <user-id>
+
+clickhousectl cloud invitation list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud invitation get <invitation-id>
+clickhousectl cloud invitation delete <invitation-id>
+```
+
+### 活动日志 {#activity-log}
+
+```bash
+clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
+clickhousectl cloud activity get <activity-id>
+```
+
+### JSON 输出 {#json-output}
 
 使用 `--json` 标志可让任何云端命令返回 JSON 格式的响应：
 
 ```bash
-clickhousectl cloud --json service list
+clickhousectl cloud service list --json
 ```
 
-<div id="local-development">
-  ## 本地开发
-</div>
+`org prometheus` 和 `service prometheus` 命令是例外：它们始终输出原始的 Prometheus exposition 文本，并会静默忽略 `--json`。
 
-命令行客户端 还可管理本地的 ClickHouse 安装和服务器。要开始进行本地开发，请参阅 [clickhousectl (CLI)](/zh/get-started/setup/self-managed/clickhousectl) 页面。
+## 本地开发 {#local-development}
 
-<div id="requirements">
-  ## 要求
-</div>
+该命令行客户端还可管理本地 ClickHouse 安装、本地服务器以及基于 Docker 的本地 Postgres 实例。有关本地开发的入门内容，请参阅 [clickhousectl (CLI)](/zh/get-started/setup/self-managed/clickhousectl) 页面。
+
+```bash
+# Manage installed ClickHouse versions. install also accepts stable, lts,
+# a partial version like 25.12, an exact version, or a Postgres image
+# selector like postgres@18
+clickhousectl local install latest
+clickhousectl local list
+clickhousectl local use <version>
+clickhousectl local which
+clickhousectl local remove <exact-version>
+
+# Scaffold a project (.clickhouse/ plus clickhouse/ and postgres/ directories)
+clickhousectl local init
+
+# Manage local server instances (data persists in .clickhouse/servers/)
+clickhousectl local server start [name]
+clickhousectl local server list          # --global lists servers across projects
+clickhousectl local server stop [name]
+clickhousectl local server stop-all
+clickhousectl local server remove [name]
+clickhousectl local server configs       # named overlays for `server start --config`
+clickhousectl local server dotenv
+
+# Connect to a running server with clickhouse-client
+clickhousectl local client -q 'SELECT 1;'
+clickhousectl local client --host db.example.com --port 9000 --version 25.12
+
+# Local Postgres instances (requires Docker)
+clickhousectl local postgres start --name <name>
+clickhousectl local postgres client
+clickhousectl local postgres stop [name]
+clickhousectl local postgres stop-all
+clickhousectl local postgres remove [name]
+clickhousectl local postgres dotenv
+```
+
+需要了解的事项：
+
+* `local` 命令是项目级的：它们只使用当前工作目录下的 `.clickhouse` 目录，绝不会向上查找父目录。运行前请先切换到项目根目录。
+* `clickhousectl local use` 还会创建 `~/.local/bin/clickhouse` 符号链接，从而可以直接使用 `clickhouse client`、`clickhouse benchmark`、`clickhouse format` 等标准子命令。传入 `--no-global` 可跳过创建符号链接。
+* `local remove` 需要指定确切的已安装版本。如果某个版本正被任意项目中运行的服务器使用，或者它是当前的默认版本，则会拒绝移除；使用 `--force` 则会停止这些服务器，并清除默认版本和全局符号链接。
+* 未指定名称时，`local server stop` 会停止 `default` (若存在) ，否则停止唯一已知的服务器；若存在多个非默认服务器，则会要求指定名称。未指定名称的 `local server remove` 只会选择已存在的 `default`——它绝不会去猜测某个自定义服务器。
+* `local client` 支持通过 `-v`/`--version` 在直连主机/端口模式下选择已安装的客户端版本，可重复使用 `-q` 执行多条查询，`--queries-file` 也可接受多个路径。同时使用 `--query` 和 `--queries-file` 属于用法错误。
+* `local postgres start` 会一直阻塞，直到 PostgreSQL 接受连接为止，等待时长上限由 `--wait-timeout` 指定的秒数决定 (默认 60，最大 600) 。省略 `--port` 时，若 5432 空闲则使用该端口，否则自动选择一个端口；显式指定的端口若已被占用，则会被拒绝。
+
+## 其他命令 {#other-commands}
+
+```bash
+# Install the ClickHouse agent skills into supported coding agents
+clickhousectl skills --agent claude
+
+# Manage anonymous usage telemetry: command name, flag and argument names
+# (never their values). Opt out with DO_NOT_TRACK=1
+clickhousectl telemetry status
+clickhousectl telemetry disable
+clickhousectl telemetry enable
+```
+
+## 要求 {#requirements}
 
 * macOS (aarch64、x86&#95;64) 或 Linux (aarch64、x86&#95;64)
-* Cloud 命令需要 [ClickHouse Cloud API 密钥](/zh/products/cloud/features/admin-features/api/openapi)
+* Cloud 命令需要 [ClickHouse Cloud API 密钥](/zh/products/cloud/features/admin-features/api/openapi) 才能获得写入权限；OAuth 登录为只读
+* `clickhousectl local postgres` 需要 Docker

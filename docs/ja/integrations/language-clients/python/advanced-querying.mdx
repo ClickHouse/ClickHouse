@@ -7,9 +7,7 @@ title: '高度なクエリ'
 doc_type: 'reference'
 ---
 
-<div id="querycontexts">
-  ## QueryContexts
-</div>
+## QueryContexts {#querycontexts}
 
 ClickHouse Connect は、標準のクエリを `QueryContext` 内で実行します。`QueryContext` には、ClickHouse データベースに対するクエリの構築に使用される主要な構造と、結果を `QueryResult` またはその他の応答データ構造に変換するための設定が含まれます。これには、クエリ自体、パラメータ、設定、読み取りフォーマット、その他のプロパティが含まれます。
 
@@ -32,9 +30,7 @@ assert result.first_row == (79,)
 
 `QueryContext` はスレッドセーフではありませんが、マルチスレッド環境では `QueryContext.updated_copy` メソッドを呼び出すことで、そのコピーを取得できます。
 
-<div id="streaming-queries">
-  ## ストリーミングクエリ
-</div>
+## ストリーミングクエリ {#streaming-queries}
 
 ClickHouse Connect クライアントは、データをストリームとして取得するための複数のメソッドを提供しています (Python ジェネレーターとして実装されています) 。
 
@@ -48,9 +44,7 @@ ClickHouse Connect クライアントは、データをストリームとして�
 
 各メソッドは `StreamContext` を返し、`with` ステートメントで開く必要があります。async クライアントのストリーミングメソッドは `await` で待機し、`async with` で開きます。
 
-<div id="data-blocks">
-  ### データブロック
-</div>
+### データブロック {#data-blocks}
 
 ClickHouse Connect は、主要な `query` メソッドから取得されるすべてのデータを、ClickHouse server から受信するブロックのストリームとして処理します。これらのブロックは、ClickHouse との間でカスタムの「Native」フォーマットを使って送受信されます。「ブロック」は、指定されたデータ型のバイナリデータで構成されたカラムの並びにすぎず、各カラムには同じ数のデータ値が含まれます。 (列指向データベースである ClickHouse では、データもこれに近い形式で保存されます。) クエリから返されるブロックのサイズは、複数のレベル (user profile、user、session、または query) で設定できる 2 つのユーザー設定によって決まります。設定項目は次のとおりです。
 
@@ -61,15 +55,11 @@ ClickHouse Connect は、主要な `query` メソッドから取得されるす�
 
 Client の `query_*_stream` メソッドのいずれかを使用すると、結果はブロック単位で返されます。ClickHouse Connect は、一度に 1 つのブロックだけを読み込みます。これにより、大きな結果セット全体をメモリに読み込むことなく、大量のデータを処理できます。アプリケーションは、任意の数のブロックを処理できるようにしておく必要があり、各ブロックの正確なサイズは制御できない点に注意してください。
 
-<div id="http-data-buffer-for-slow-processing">
-  ### 処理が遅い場合の HTTP データバッファ
-</div>
+### 処理が遅い場合の HTTP データバッファ {#http-data-buffer-for-slow-processing}
 
 アプリケーションによるブロックの消費がサーバーの生成より大幅に遅い場合、処理が完了する前に HTTP 接続が閉じられることがあります。アプリケーションに、より多くの応答データをバッファリングできるだけの十分なメモリがある場合は、共通設定の `http_buffer_size` を増やしてください。デフォルトは 10 MiB です。lz4 と zstd の応答バイトはこのバッファ内で圧縮されたまま保持されるため、実効容量は大きくなります。
 
-<div id="streamcontexts">
-  ### StreamContexts
-</div>
+### StreamContexts {#streamcontexts}
 
 各 `query_*_stream` メソッド (`query_row_block_stream` など) は、Python のコンテキストマネージャーとジェネレーターを組み合わせた ClickHouse の `StreamContext` オブジェクトを返します。基本的な使い方は次のとおりです。
 
@@ -88,9 +78,7 @@ with client.query_row_block_stream(
 
 `StreamContext` の `source` プロパティを使うと、カラム名と型を含む親の結果オブジェクトにアクセスできます。ほとんどのストリームではこれは `QueryResult` ですが、`query_np_stream` と `query_df_stream` メソッドでは代わりに `NumpyResult` が公開されます。
 
-<div id="stream-types">
-  ### ストリームの種類
-</div>
+### ストリームの種類 {#stream-types}
 
 `query_column_block_stream` メソッドは、ブロックを、ネイティブの Python データ型として格納されたカラムデータのシーケンスとして返します。上記の `taxi_trips` クエリを使うと、返されるデータはリストになり、その各要素は対応するカラムのすべてのデータを含む別のリスト (またはタプル) になります。したがって `block[0]` は、文字列だけを含むタプルになります。カラム指向のフォーマットは、運賃の合計を足し上げるといった、あるカラム内のすべての値に対する集計処理で最もよく使われます。
 
@@ -114,13 +102,9 @@ with df_stream:
 
 最後に、`query_arrow_stream` は ClickHouse の `ArrowStream` レスポンスを `StreamContext` でラップします。各反復では、PyArrow の `RecordBatch` が返されます。
 
-<div id="streaming-examples">
-  ### ストリーミングの使用例
-</div>
+### ストリーミングの使用例 {#streaming-examples}
 
-<div id="stream-rows">
-  #### 行のストリーミング
-</div>
+#### 行のストリーミング {#stream-rows}
 
 ```python
 import clickhouse_connect
@@ -138,9 +122,7 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-<div id="stream-row-blocks">
-  #### 行ブロックをストリーミングする
-</div>
+#### 行ブロックをストリーミングする {#stream-row-blocks}
 
 ```python
 import clickhouse_connect
@@ -153,9 +135,7 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-<div id="stream-pandas-dataframes">
-  #### Pandas DataFrame をストリーミングする
-</div>
+#### Pandas DataFrame をストリーミングする {#stream-pandas-dataframes}
 
 ```python
 import clickhouse_connect
@@ -170,9 +150,7 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-<div id="stream-arrow-batches">
-  #### Arrow バッチをストリーミングする
-</div>
+#### Arrow バッチをストリーミングする {#stream-arrow-batches}
 
 ```python
 import clickhouse_connect
@@ -186,9 +164,7 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-<div id="async-stream-rows">
-  #### 行を非同期でストリームする
-</div>
+#### 行を非同期でストリームする {#async-stream-rows}
 
 ```python
 import asyncio
@@ -208,15 +184,11 @@ async def main():
 asyncio.run(main())
 ```
 
-<div id="numpy-pandas-and-arrow-queries">
-  ## NumPy、Pandas、Arrow クエリ
-</div>
+## NumPy、Pandas、Arrow クエリ {#numpy-pandas-and-arrow-queries}
 
 ClickHouse Connect には、NumPy、Pandas、Arrow のデータ構造を扱うための専用のクエリメソッドが用意されています。これらのメソッドを使用すると、手動で変換しなくても、クエリ結果をこれらの一般的なデータフォーマットで直接取得できます。
 
-<div id="numpy-queries">
-  ### NumPy クエリ
-</div>
+### NumPy クエリ {#numpy-queries}
 
 `query_np` メソッドは、ClickHouse Connect の `QueryResult` ではなく、NumPy 配列としてクエリ結果を返します。
 
@@ -241,9 +213,7 @@ print(np_array)
 #  [4 8]]
 ```
 
-<div id="pandas-queries">
-  ### Pandas クエリ
-</div>
+### Pandas クエリ {#pandas-queries}
 
 `query_df` メソッドは、ClickHouse Connect の `QueryResult` ではなく、クエリ結果を Pandas の DataFrame として返します。
 
@@ -267,9 +237,7 @@ print(df)
 # 4       4        8
 ```
 
-<div id="pyarrow-queries">
-  ### PyArrow クエリ
-</div>
+### PyArrow クエリ {#pyarrow-queries}
 
 `query_arrow` メソッドは、ClickHouse の `Arrow` 出力フォーマットを直接使用して PyArrow Table を返します。受け付ける引数は `query`、`parameters`、`settings`、`external_data`、`transport_settings` です。`use_strings` オプションは、ClickHouse の `String` カラムを Arrow の文字列として出力するか、バイナリ値として出力するかを制御します。
 
@@ -295,9 +263,7 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-<div id="arrow-backed-dataframes">
-  ### Arrow バックエンド DataFrames
-</div>
+### Arrow バックエンド DataFrames {#arrow-backed-dataframes}
 
 ClickHouse Connect は、`query_df_arrow` と `query_df_arrow_stream` により、Arrow の結果から DataFrame を効率的に作成できます。これらのメソッドは Python の行オブジェクトを経由する変換を避け、対象のライブラリが対応していれば Arrow バッファを再利用します。
 
@@ -306,9 +272,7 @@ ClickHouse Connect は、`query_df_arrow` と `query_df_arrow_stream` により�
   * `dataframe_library="polars"` は、`pl.from_arrow` を使って作成された Polars DataFrame を返します。
 * `query_df_arrow_stream`: Arrow のバッチを Pandas または Polars の DataFrame としてストリーミングします。
 
-<div id="query-to-arrow-backed-dataframe">
-  #### ArrowバックエンドのDataFrameへのクエリ
-</div>
+#### ArrowバックエンドのDataFrameへのクエリ {#query-to-arrow-backed-dataframe}
 
 ```python
 import clickhouse_connect
@@ -344,18 +308,14 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-<div id="notes-and-caveats">
-  #### 注意事項と留意点
-</div>
+#### 注意事項と留意点 {#notes-and-caveats}
 
 * Arrow スキーマは ClickHouse によって制御されます。Arrow で直接表現できない型は、バイナリフィールドを含む互換性のある物理型で返される場合があります。アプリケーション固有の変換を適用する前に、`table.schema` または DataFrame の dtype を確認してください。
 * Arrow バックエンドの Pandas の結果を利用するには、Pandas 2.0 以降が必要です。
 * `use_strings` は、サーバーが `output_format_arrow_string_as_string` をサポートしている場合に、ClickHouse の `String` カラムで Arrow の string フィールドと binary フィールドのどちらを使用するかを制御します。
 * `tz_mode="schema"` は、Arrow ベースのクエリメソッドではまだサポートされていません。これらのメソッドは警告を出し、Arrow レスポンスで提供されたタイムゾーンのメタデータを保持します。
 
-<div id="read-formats">
-  ## 読み取りフォーマット
-</div>
+## 読み取りフォーマット {#read-formats}
 
 読み取りフォーマットは、`query`、`query_np`、`query_df` が返す値を制御します。raw メソッドや Arrow メソッドには適用されません。これらのメソッドはサーバーの出力フォーマットを直接使用するためです。たとえば、UUID の読み取りフォーマットを `"string"` に設定すると、`uuid.UUID` オブジェクトではなく UUID 文字列が返されます。
 
@@ -395,42 +355,43 @@ client.query(
 )
 ```
 
-<div id="read-format-options-python-types">
-  ### 読み取りフォーマットオプション (Python 型)
-</div>
+### 読み取りフォーマットオプション (Python 型) {#read-format-options-python-types}
 
-| ClickHouse Type       | ネイティブ Python 型          | 読み取りフォーマット        | 備考                                                                   |
-| --------------------- | ----------------------- | ----------------- | -------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | string            |                                                                      |
-| UInt64                | int                     | signed            | Superset は現在、大きな符号なし UInt64 値を処理できません                                |
-| [U]Int[128,256]       | int                     | string            | Pandas と NumPy の int 値は最大 64 ビットのため、これらは文字列として返すことができます              |
-| BFloat16              | float                   | -                 | Python の float はすべて内部的に 64 ビットです                                     |
-| Float32               | float                   | string            | Python の float はすべて内部的に 64 ビットです                                     |
-| Float64               | float                   | string            |                                                                      |
-| Decimal               | decimal.Decimal         | -                 |                                                                      |
-| String                | str                     | bytes             | ClickHouse の String 型のカラムには固有のエンコーディングがないため、可変長のバイナリデータにも使われます       |
-| FixedString           | bytes                   | string            | FixedString は固定長のバイト配列ですが、Python の文字列として扱われることもあります                  |
-| Enum[8,16]            | str                     | int               | ネイティブフォーマットではラベルが返されます。`int` は元の整数値を返します。                            |
-| Date                  | datetime.date           | int               | 整数フォーマットは 1970-01-01 からの日数を返します。                                     |
-| Date32                | datetime.date           | int               | 整数フォーマットは、より広い範囲の符号付き日オフセットを返します。                                    |
-| DateTime              | datetime.datetime       | int               | 整数フォーマットはエポック秒を返します。                                                 |
-| DateTime64            | datetime.datetime       | int               | 整数フォーマットは、カラムの精度での ticks を返します。Python の `datetime` はマイクロ秒までに制限されます。  |
-| Time                  | datetime.timedelta      | int, string, time | 整数フォーマットは秒を返します。`time` フォーマットは `datetime.time` に収まる値に限られます。          |
-| Time64                | datetime.timedelta      | int, string, time | 整数フォーマットは、カラムの精度での ticks を返します。Python の `timedelta` はマイクロ秒までに制限されます。 |
-| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP アドレスは文字列または整数として読み取れます。                                           |
-| IPv6                  | `ipaddress.IPv6Address` | string            | IP アドレスは文字列として読み取れ、適切な形式であれば IP アドレスとして挿入できます                        |
-| Tuple                 | dict or tuple           | tuple, dict, json | 名前付き Tuple は既定で辞書を返し、名前のない Tuple は tuple を返します。                      |
-| Map                   | dict                    | -                 |                                                                      |
-| Nested                | Sequence[dict]          | -                 |                                                                      |
-| UUID                  | uuid.UUID               | string            | UUID は RFC 4122 に準拠した形式の文字列として読み取れます<br />                           |
-| JSON                  | dict                    | string            | 既定では Python の辞書が返されます。`string` フォーマットでは JSON 文字列が返されます               |
-| Variant               | object                  | typed             | `typed` は `TypedVariant(value, type_name)` を返すため、元のメンバー型が保持されます。     |
-| Dynamic               | object                  | -                 | 値に格納されている ClickHouse のデータ型に対応する Python 型を返します                        |
-| QBit                  | list[float]             | -                 | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                      |
+| ClickHouse Type       | ネイティブ Python 型          | 読み取りフォーマット        | 備考                                                                                                                                        |
+| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                                                           |
+| UInt64                | int                     | signed            | Superset は現在、大きな符号なし UInt64 値を処理できません                                                                                                     |
+| [U]Int[128,256]       | int                     | string            | Pandas と NumPy の int 値は最大 64 ビットのため、これらは文字列として返すことができます                                                                                   |
+| BFloat16              | float                   | -                 | Python の float はすべて内部的に 64 ビットです                                                                                                          |
+| Float32               | float                   | string            | Python の float はすべて内部的に 64 ビットです                                                                                                          |
+| Float64               | float                   | string            |                                                                                                                                           |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                                                           |
+| Interval*             | int                     | string            | 値は、その interval 型の単位における符号付き 64 ビットのカウントです。                                                                                                |
+| String                | str                     | bytes             | ClickHouse の String 型のカラムには固有のエンコーディングがないため、可変長のバイナリデータにも使われます                                                                            |
+| FixedString           | bytes                   | string            | FixedString は固定長のバイト配列ですが、Python の文字列として扱われることもあります                                                                                       |
+| Enum[8,16]            | str                     | int               | ネイティブフォーマットではラベルが返されます。`int` は元の整数値を返します。                                                                                                 |
+| Date                  | datetime.date           | int               | 整数フォーマットは 1970-01-01 からの日数を返します。                                                                                                          |
+| Date32                | datetime.date           | int               | 整数フォーマットは、より広い範囲の符号付き日オフセットを返します。                                                                                                         |
+| DateTime              | datetime.datetime       | int               | 整数フォーマットはエポック秒を返します。                                                                                                                      |
+| DateTime64            | datetime.datetime       | int               | 整数フォーマットは、カラムの精度での ticks を返します。Python の `datetime` はマイクロ秒までに制限されます。                                                                       |
+| Time                  | datetime.timedelta      | int, string, time | 整数フォーマットは秒を返します。`time` フォーマットは `datetime.time` に収まる値に限られます。                                                                               |
+| Time64                | datetime.timedelta      | int, string, time | scale 0 から 9 までがサポートされます。整数フォーマットは、カラムの精度での ticks を返します。Python の `timedelta` はマイクロ秒までに制限されます。                                             |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP アドレスは文字列または整数として読み取れます。                                                                                                                |
+| IPv6                  | `ipaddress.IPv6Address` | string            | IP アドレスは文字列として読み取れ、適切な形式であれば IP アドレスとして挿入できます                                                                                             |
+| Tuple                 | dict or tuple           | tuple, dict, json | 名前付き Tuple は既定で辞書を返し、名前のない Tuple は tuple を返します。`Tuple()` の値は `()` を返します。                                                                  |
+| Map                   | dict                    | -                 |                                                                                                                                           |
+| Nested                | Sequence[dict]          | -                 |                                                                                                                                           |
+| UUID                  | uuid.UUID               | string            | UUID は RFC 4122 に準拠した形式の文字列として読み取れます<br />                                                                                                |
+| JSON                  | dict                    | string            | 既定では Python の辞書が返されます。`string` フォーマットでは JSON 文字列が返されます                                                                                    |
+| Variant               | object                  | typed             | `typed` は `TypedVariant(value, type_name)` を返すため、元のメンバー型が保持されます。                                                                          |
+| Dynamic               | object                  | -                 | 値に格納されている ClickHouse のデータ型に対応する Python 型を返します                                                                                             |
+| MultiPoint            | list[tuple]             | -                 | 各 point は 2 要素の tuple として返されます。                                                                                                           |
+| Geometry              | tuple or list           | typed             | Point の値は 2 要素の tuple です。MultiPoint を含むその他のメンバーはネストしたリストを使用します。メンバー型を保持するには、`Geometry` キーで `typed` を選択してください。`Variant` のフォーマット設定は適用されません。 |
+| QBit                  | list[float]             | -                 | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                                                                                           |
 
-<div id="external-data">
-  ## 外部データ
-</div>
+`query_np`、`query_np_stream`、`query_df`、`query_df_stream` は `Time64` の scale 0、3、6、9 をサポートします。その他の scale は、対応する NumPy の時間単位が存在しないため `ProgrammingError` を送出します。これらの精度を保持するには、`int` または `string` の読み取りフォーマットを指定した通常の Python クエリを使用してください。実験的な [Rust codec](/ja/integrations/language-clients/python/rust-codec#known-behavior-differences) には、`Dynamic` 内に格納された `Time64` に関する例外が記載されています。
+
+## 外部データ {#external-data}
 
 ClickHouse のクエリでは、サポートされている任意の入力フォーマットで外部データを受け取ることができます。クライアントはデータをリクエストの一部として送信し、クエリ内ではそれを一時的な外部テーブルとして参照できます。詳しくは、[ClickHouse external data documentation](/ja/reference/engines/table-engines/special/external-data) を参照してください。Client のクエリメソッドは、`external_data` パラメータを通じて `clickhouse_connect.driver.external.ExternalData` オブジェクトを受け取ります。
 
@@ -473,9 +434,7 @@ result = client.query(
 
 chDB バックエンドは外部データをサポートしていません。
 
-<div id="time-zones">
-  ## タイムゾーン
-</div>
+## タイムゾーン {#time-zones}
 
 ClickHouse の `DateTime` および `DateTime64` の値は、epoch ベースの数値として送信されます。ClickHouse Connect は、カラムのメタデータ、クエリのオーバーライド、クライアントのタイムゾーンポリシーを使用して、これらを Python の `datetime` オブジェクトに変換します。
 

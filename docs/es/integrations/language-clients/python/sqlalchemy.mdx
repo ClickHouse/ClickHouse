@@ -15,9 +15,7 @@ Instale las dependencias de SQLAlchemy con el extra del paquete:
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-<div id="sqlalchemy-connect">
-  ## Conectar con SQLAlchemy
-</div>
+## Conectar con SQLAlchemy {#sqlalchemy-connect}
 
 Cree un motor con la URL `clickhousedb://` o `clickhousedb+connect://`:
 
@@ -37,9 +35,7 @@ Los parámetros de consulta de la URL pueden contener ajustes de ClickHouse, opc
 
 Consulte [Argumentos y ajustes de conexión](/es/integrations/language-clients/python/driver-api#connection-arguments) para ver las opciones de client disponibles.
 
-<div id="sqlalchemy-per-query-settings">
-  ### Ajustes por consulta
-</div>
+### Ajustes por consulta {#sqlalchemy-per-query-settings}
 
 Pase los ajustes de ClickHouse mediante las opciones de ejecución de SQLAlchemy. Los ajustes se pueden establecer en un motor, una conexión o una sentencia. El valor de una sentencia tiene prioridad sobre un valor de conexión o de motor con la misma clave.
 
@@ -54,9 +50,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-<div id="sqlalchemy-per-query-read-formats">
-  ### Formatos de lectura por consulta
-</div>
+### Formatos de lectura por consulta {#sqlalchemy-per-query-read-formats}
 
 Configure los formatos de lectura de ClickHouse en un motor, una conexión o una sentencia mediante las opciones de ejecución de SQLAlchemy con `query_formats`. Los formatos de la sentencia se aplican primero y, por tanto, sobrescriben las claves y los comodines coincidentes de la conexión o el motor.
 
@@ -71,9 +65,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-<div id="sqlalchemy-server-side-parameters">
-  ### Parámetros del lado del servidor
-</div>
+### Parámetros del lado del servidor {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy normalmente procesa los parámetros del lado del cliente. Para usar parámetros del lado del servidor de ClickHouse, actívelos al crear el motor:
 
@@ -88,9 +80,7 @@ En este modo, cada valor vinculado debe tener un tipo de SQLAlchemy compatible c
 
 Los nombres de vinculación deben ser nombres BareWord ASCII de ClickHouse. Los nombres que empiezan y terminan con `$` se rechazan porque el driver principal los reserva para parámetros de consulta binarios sin procesar.
 
-<div id="sqlalchemy-core-queries">
-  ## Consultas de SQLAlchemy Core
-</div>
+## Consultas de SQLAlchemy Core {#sqlalchemy-core-queries}
 
 El dialecto admite consultas `SELECT` de SQLAlchemy Core con `JOIN`, filtros, ordenación, límites y `OFFSET`, `DISTINCT` y consultas compuestas.
 
@@ -125,15 +115,52 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-<div id="sqlalchemy-literal-rendering">
-  ### Representación de literales
-</div>
+### Representación de literales {#sqlalchemy-literal-rendering}
 
 Cuando SQLAlchemy inserta en línea un valor vinculado mediante `literal_binds` o `literal_execute`, el dialecto utiliza el entrecomillado de ClickHouse para los tipos String genéricos y los tipos de ClickHouse. Esto también se aplica a través de envolturas `TypeDecorator` y selecciones `with_variant()`. Los valores String conservan los signos de porcentaje y las barras invertidas, incluso cuando quedan otros parámetros vinculados.
 
-<div id="sqlalchemy-json-subcolumns">
-  ### Subcolumnas JSON
-</div>
+### Indicaciones de tipo en JSON {#sqlalchemy-json-type-hints}
+
+Declara rutas JSON tipadas mediante la correspondencia `typed_paths`. El tipo de una ruta puede ser una clase de tipo de ClickHouse SQLAlchemy, una instancia configurada o una cadena con un nombre de tipo de ClickHouse. Las cadenas con nombres de tipo admiten tipos que carecen de constructor en SQLAlchemy, como `Dynamic`, y también pueden usarse para expresiones de tipo configuradas complejas. Además, conservan los nombres en un `Tuple` con nombre.
+
+Las cadenas con nombres de tipo pueden contener tipos JSON anidados configurados, como ``Array(JSON(`child` UInt32))``. Los nombres de tipo de ClickHouse reconocidos no distinguen entre mayúsculas y minúsculas en estas cadenas y se emiten con su capitalización canónica. Cada cadena debe contener una única expresión de tipo completa. El texto sobrante al final y los argumentos JSON anidados mal formados se rechazan.
+
+Un `Tuple()` vacío no es compatible como ruta JSON tipada, ya que ClickHouse no puede serializarlo a través del Native format de una JSON column. El driver principal admite `Tuple()` en columnas de consulta e inserción en cualquier posición, incluso anidado en tuplas posicionales o con nombre, dentro de `Array` y como `Nullable(Tuple())` allí donde el servidor lo habilite.
+
+```python
+from sqlalchemy import Column, MetaData, Table
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column(
+        "payload",
+        JSON(
+            typed_paths={
+                "event.id": UInt32,
+                "details": "Tuple(id UInt32, label Nullable(String))",
+                "attributes": "Variant(String, Array(String))",
+            },
+            max_dynamic_paths=256,
+            max_dynamic_types=16,
+            skip_paths=["internal.debug"],
+            skip_regexps=[r"^private\."],
+        ),
+    ),
+)
+```
+
+Para rutas que son identificadores simples de Python, los argumentos con nombre son una forma abreviada de `typed_paths`; por ejemplo, `JSON(user_id=UInt32)`. Use `typed_paths` para rutas con puntos, espacios, comillas invertidas, puntos codificados como `%2E` o nombres que coincidan con opciones del constructor. Se admite una ruta tipada llamada `SKIP` a través de la correspondencia. Las claves de `typed_paths` y los valores de `skip_paths` son nombres decodificados. Las comillas invertidas y las comillas dobles iniciales o finales se tratan como caracteres literales de la ruta, y no como entrecomillado SQL ya aplicado. Dentro de una cadena de tipo sin procesar, las comillas invertidas y las comillas dobles son sintaxis de identificadores de ClickHouse.
+
+Se pueden configurar hasta 1000 rutas tipadas. `max_dynamic_paths` acepta valores de 0 a 10000. `max_dynamic_types` acepta valores de 0 a 254. Estos rangos también se aplican dentro de las cadenas de tipo JSON anidadas sin procesar. Los valores predeterminados explícitos del servidor, 1024 y 32, se omiten del DDL generado. Las rutas de omisión simples se deduplican. Python no valida las cadenas de expresiones regulares porque ClickHouse utiliza la sintaxis RE2. Las expresiones regulares duplicadas se conservan.
+
+Una ruta de omisión simple no puede llamarse exactamente `REGEXP`, porque ClickHouse reserva ese token para `SKIP REGEXP`. Nombres como `REGEXP_foo` siguen siendo válidos. En una cadena de tipo JSON sin procesar, un operando `SKIP` simple debe ser un identificador de ClickHouse o un identificador compuesto separado por puntos. Un identificador compuesto sin comillas no puede empezar por `REGEXP`; entrecomille ese primer componente cuando forme parte de los datos de la ruta. `SKIP REGEXP` debe tener un único literal de cadena entre comillas simples. Entrecomille las partes del identificador con comillas invertidas o comillas dobles cuando contengan espacios o signos de puntuación. Las indicaciones de tipo JSON sin procesar admiten `Variant(...)`; `Variant` por sí solo no tiene un constructor público de SQLAlchemy. Los miembros de `Variant` se ordenan y deduplican según los mismos nombres canónicos que utiliza ClickHouse.
+
+El constructor ordena los argumentos en la misma forma canónica que devuelve ClickHouse. Los tipos reflejados, las copias de tipos de SQLAlchemy y la autogeneración de Alembic conservan la configuración.
+
+### Subcolumnas JSON {#sqlalchemy-json-subcolumns}
 
 Para una columna declarada o representada como `JSON` de ClickHouse, use corchetes para seleccionar un segmento cada vez de una ruta de subcolumna respaldada por almacenamiento:
 
@@ -179,9 +206,7 @@ En este ejemplo, los verificadores de tipos interpretan `request_id` como `Colum
 
 Cada segmento se delimita con comillas invertidas de forma independiente, incluidos los nombres con espacios o comillas invertidas. Las comillas invertidas no hacen que un punto se trate como literal en el manejo de rutas JSON de ClickHouse. Cuando `json_type_escape_dots_in_keys` está habilitado, use la codificación `%2E` de ClickHouse para los puntos literales en las claves. Acceda a una clave denominada `a.b` como `payload["a%2Eb"]`, no como `payload["a.b"]`.
 
-<div id="sqlalchemy-query-extensions">
-  ### Extensiones de consultas de ClickHouse
-</div>
+### Extensiones de consultas de ClickHouse {#sqlalchemy-query-extensions}
 
 Importa `select` desde `clickhouse_connect.cc_sqlalchemy` para exponer métodos tipados de ClickHouse a los verificadores estáticos de tipos. El `sqlalchemy.select` estándar también dispone de estos métodos en tiempo de ejecución.
 
@@ -257,9 +282,7 @@ stmt = select(
 
 La construcción estándar `values()` de SQLAlchemy se compila como la sintaxis de función de tabla `VALUES` de ClickHouse, incluso cuando se usa en una expresión de tabla común. La forma CTE requiere SQLAlchemy 2.0.42 o una versión posterior, en la que se añadió `Values.cte()`.
 
-<div id="sqlalchemy-materialized-ctes">
-  ### CTE materializadas
-</div>
+### CTE materializadas {#sqlalchemy-materialized-ctes}
 
 De forma predeterminada, ClickHouse inserta en línea una expresión de tabla común, por lo que el cuerpo de una CTE a la que se hace referencia más de una vez se ejecuta una vez por cada referencia. Pase `materialized=True` a `.cte()` para generar `WITH <name> AS MATERIALIZED (...)`, lo que calcula el cuerpo una sola vez:
 
@@ -301,11 +324,11 @@ La palabra clave solo se representa en el dialecto de ClickHouse, por lo que una
 
 ClickHouse no admite CTE materializadas recursivas. Las funciones auxiliares de SQLAlchemy generan un `ValueError` cuando se establecen `recursive=True` y `materialized=True`.
 
-<div id="sqlalchemy-ddl-reflection">
-  ## DDL y reflexión
-</div>
+## DDL y reflexión {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect proporciona tipos de datos de ClickHouse, motores de tablas, definiciones de diccionarios, DDL de bases de datos y reflexión de tablas.
+
+Las columnas `Variant` independientes se reflejan mediante un tipo interno de SQLAlchemy, y la autogeneración de Alembic conserva sus nombres de tipo canónicos sin procesar, sin cambios de tipo repetidos. Las columnas `Geometry` y `MultiPoint` se reflejan como tipos públicos de SQLAlchemy.
 
 ```python
 import sqlalchemy as db
@@ -339,9 +362,7 @@ Los valores String de las cláusulas `DEFAULT`, `MATERIALIZED`, `ALIAS` y `TTL` 
 
 Los argumentos de clave de MergeTree, como `order_by`, `partition_by`, `primary_key`, `sample_by` y `ttl`, aceptan columnas y expresiones SQL de SQLAlchemy, así como cadenas simples.
 
-<div id="sqlalchemy-inserts">
-  ## Inserciones y uso básico de ORM
-</div>
+## Inserciones y uso básico de ORM {#sqlalchemy-inserts}
 
 Se admiten las inserciones con Core y los modelos ORM sencillos. Prefiera las inserciones con Core para rutas de datos de gran volumen.
 
@@ -383,9 +404,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-<div id="sqlalchemy-alembic">
-  ## Migraciones con Alembic
-</div>
+## Migraciones con Alembic {#sqlalchemy-alembic}
 
 ClickHouse Connect incluye integración con Alembic para las migraciones de esquemas de ClickHouse. Instálalo con:
 
@@ -407,9 +426,7 @@ Los índices de omisión de datos de ClickHouse no son índices de SQLAlchemy. `
 
 Consulta el [ejemplo completo de Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). Los usuarios que migren desde `clickhouse-sqlalchemy` también deberían leer la [guía de migración](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
-<div id="scope-and-limitations">
-  ## Alcance y limitaciones
-</div>
+## Alcance y limitaciones {#scope-and-limitations}
 
 * ClickHouse no ofrece transacciones tradicionales a través de este dialecto HTTP. `engine.begin()` y `Session.commit()` organizan el trabajo del lado de Python, pero commit y rollback no tienen efecto en el servidor.
 * El dialecto no implementa `UPDATE`, transacciones de dos fases, secuencias, `RETURNING` ni niveles avanzados de aislamiento. Use ClickHouse SQL explícito para las mutations del servidor cuando sea necesario.

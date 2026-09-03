@@ -7,9 +7,7 @@ title: 'Requêtes avancées'
 doc_type: 'reference'
 ---
 
-<div id="querycontexts">
-  ## QueryContexts
-</div>
+## QueryContexts {#querycontexts}
 
 ClickHouse Connect exécute les requêtes standard dans un `QueryContext`. Le `QueryContext` contient les structures clés utilisées pour construire des requêtes sur la base de données ClickHouse, ainsi que la configuration utilisée pour traiter le résultat en `QueryResult` ou dans une autre structure de données de réponse. Cela inclut la requête elle-même, les paramètres, les settings, les formats de lecture et d’autres propriétés.
 
@@ -32,9 +30,7 @@ assert result.first_row == (79,)
 
 Notez que les `QueryContext` ne sont pas thread-safe, mais vous pouvez en obtenir une copie dans un environnement multithread en appelant la méthode `QueryContext.updated_copy`.
 
-<div id="streaming-queries">
-  ## Requêtes en streaming
-</div>
+## Requêtes en streaming {#streaming-queries}
 
 Le ClickHouse Connect Client fournit plusieurs méthodes pour récupérer des données sous forme de flux (implémenté sous la forme d’un générateur Python) :
 
@@ -48,9 +44,7 @@ Le ClickHouse Connect Client fournit plusieurs méthodes pour récupérer des do
 
 Chaque méthode renvoie un `StreamContext` qui doit être ouvert avec une instruction `with`. Les méthodes de streaming du client async sont attendues et ouvertes avec `async with`.
 
-<div id="data-blocks">
-  ### Blocs de données
-</div>
+### Blocs de données {#data-blocks}
 
 ClickHouse Connect traite toutes les données de la méthode principale `query` comme un flux de blocs reçus du serveur ClickHouse. Ces blocs sont transmis depuis et vers ClickHouse dans le format personnalisé « Native ». Un « bloc » est simplement une séquence de colonnes de données binaires, où chaque colonne contient le même nombre de valeurs du type de données spécifié. (En tant que base de données colonnaire, ClickHouse stocke ces données sous une forme similaire.) La taille d’un bloc renvoyé par une requête est régie par deux paramètres utilisateur qui peuvent être définis à plusieurs niveaux (profil utilisateur, utilisateur, session ou requête). Il s’agit de :
 
@@ -61,15 +55,11 @@ Indépendamment de `preferred_block_size_bytes`, un bloc ne dépassera pas `max_
 
 Lors de l’utilisation de l’une des méthodes `query_*_stream` du Client, les résultats sont renvoyés bloc par bloc. ClickHouse Connect ne charge qu’un seul bloc à la fois. Cela permet de traiter de grandes quantités de données sans devoir charger en mémoire l’intégralité d’un ensemble de résultats volumineux. Notez que l’application doit être prête à traiter un nombre quelconque de blocs et que la taille exacte de chaque bloc ne peut pas être contrôlée.
 
-<div id="http-data-buffer-for-slow-processing">
-  ### Buffer de données HTTP pour un traitement lent
-</div>
+### Buffer de données HTTP pour un traitement lent {#http-data-buffer-for-slow-processing}
 
 Si une application consomme les blocs bien plus lentement que le serveur ne les produit, la connexion HTTP peut se fermer avant la fin du traitement. Augmentez le paramètre global `http_buffer_size` si l’application dispose de suffisamment de mémoire pour mettre en mémoire tampon davantage de données de réponse. La valeur par défaut est de 10 MiB. Les octets de réponse lz4 et zstd restent compressés dans ce buffer, ce qui en augmente la capacité effective.
 
-<div id="streamcontexts">
-  ### StreamContexts
-</div>
+### StreamContexts {#streamcontexts}
 
 Chacune des méthodes `query_*_stream` (comme `query_row_block_stream`) renvoie un objet ClickHouse `StreamContext`, qui combine un contexte Python et un générateur. Voici l’utilisation de base :
 
@@ -88,9 +78,7 @@ Si la connexion échoue pendant la lecture d’un résultat, une `StreamFailureE
 
 Vous pouvez utiliser la propriété `source` du `StreamContext` pour accéder à l’objet résultat parent, qui inclut les noms de colonnes et les types. Pour la plupart des flux, il s’agit d’un `QueryResult` ; les méthodes `query_np_stream` et `query_df_stream` exposent à la place un `NumpyResult`.
 
-<div id="stream-types">
-  ### Types de flux
-</div>
+### Types de flux {#stream-types}
 
 La méthode `query_column_block_stream` renvoie le bloc sous la forme d’une séquence de données de colonnes stockées dans des data types Python natifs. En reprenant les queries `taxi_trips` ci-dessus, les données renvoyées seront une liste dans laquelle chaque élément est lui-même une liste (ou un tuple) contenant toutes les données de la colonne correspondante. Ainsi, `block[0]` serait un tuple ne contenant que des chaînes de caractères. Les formats orientés colonnes sont surtout utilisés pour effectuer des opérations d’agrégation sur toutes les valeurs d’une colonne, par exemple pour additionner le montant total des courses.
 
@@ -114,13 +102,9 @@ La méthode `query_df_arrow_stream` convertit les batches Arrow en DataFrames Pa
 
 Enfin, `query_arrow_stream` encapsule une réponse `ArrowStream` de ClickHouse dans un `StreamContext`. Chaque itération renvoie un `RecordBatch` PyArrow.
 
-<div id="streaming-examples">
-  ### Exemples en streaming
-</div>
+### Exemples en streaming {#streaming-examples}
 
-<div id="stream-rows">
-  #### Flux de lignes
-</div>
+#### Flux de lignes {#stream-rows}
 
 ```python
 import clickhouse_connect
@@ -138,9 +122,7 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-<div id="stream-row-blocks">
-  #### flux de blocs de lignes
-</div>
+#### flux de blocs de lignes {#stream-row-blocks}
 
 ```python
 import clickhouse_connect
@@ -153,9 +135,7 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-<div id="stream-pandas-dataframes">
-  #### Flux de DataFrames Pandas
-</div>
+#### Flux de DataFrames Pandas {#stream-pandas-dataframes}
 
 ```python
 import clickhouse_connect
@@ -170,9 +150,7 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-<div id="stream-arrow-batches">
-  #### Flux de lots Arrow
-</div>
+#### Flux de lots Arrow {#stream-arrow-batches}
 
 ```python
 import clickhouse_connect
@@ -186,9 +164,7 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-<div id="async-stream-rows">
-  #### Flux de lignes asynchrone
-</div>
+#### Flux de lignes asynchrone {#async-stream-rows}
 
 ```python
 import asyncio
@@ -208,15 +184,11 @@ async def main():
 asyncio.run(main())
 ```
 
-<div id="numpy-pandas-and-arrow-queries">
-  ## Requêtes NumPy, Pandas et Arrow
-</div>
+## Requêtes NumPy, Pandas et Arrow {#numpy-pandas-and-arrow-queries}
 
 ClickHouse Connect propose des méthodes de requête spécialisées pour manipuler les structures de données NumPy, Pandas et Arrow. Ces méthodes vous permettent de récupérer le résultat de la requête directement dans ces formats de données courants, sans conversion manuelle.
 
-<div id="numpy-queries">
-  ### Requêtes NumPy
-</div>
+### Requêtes NumPy {#numpy-queries}
 
 La méthode `query_np` renvoie le résultat de la requête sous la forme d&#39;un tableau NumPy plutôt que d&#39;un `QueryResult` de ClickHouse Connect.
 
@@ -241,9 +213,7 @@ print(np_array)
 #  [4 8]]
 ```
 
-<div id="pandas-queries">
-  ### Requêtes Pandas
-</div>
+### Requêtes Pandas {#pandas-queries}
 
 La méthode `query_df` renvoie le résultat de la requête sous forme de Pandas DataFrame plutôt que de `QueryResult` ClickHouse Connect.
 
@@ -267,9 +237,7 @@ print(df)
 # 4       4        8
 ```
 
-<div id="pyarrow-queries">
-  ### Requêtes PyArrow
-</div>
+### Requêtes PyArrow {#pyarrow-queries}
 
 La méthode `query_arrow` renvoie une PyArrow Table en utilisant directement le format `Arrow` de ClickHouse. Elle accepte `query`, `parameters`, `settings`, `external_data` et `transport_settings`. L’option `use_strings` contrôle si les colonnes `String` de ClickHouse sont renvoyées sous forme de chaînes Arrow ou de valeurs binaires.
 
@@ -295,9 +263,7 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-<div id="arrow-backed-dataframes">
-  ### DataFrames basés sur Arrow
-</div>
+### DataFrames basés sur Arrow {#arrow-backed-dataframes}
 
 ClickHouse Connect prend en charge la création efficace de DataFrames à partir de résultats Arrow via `query_df_arrow` et `query_df_arrow_stream`. Ces méthodes évitent la conversion via des objets ligne Python et réutilisent les tampons Arrow lorsque la bibliothèque cible le permet :
 
@@ -306,9 +272,7 @@ ClickHouse Connect prend en charge la création efficace de DataFrames à partir
   * `dataframe_library="polars"` renvoie un DataFrame Polars créé via `pl.from_arrow`.
 * `query_df_arrow_stream` : diffuse des batches Arrow sous forme de DataFrames Pandas ou Polars.
 
-<div id="query-to-arrow-backed-dataframe">
-  #### Requête vers un DataFrame basé sur Arrow
-</div>
+#### Requête vers un DataFrame basé sur Arrow {#query-to-arrow-backed-dataframe}
 
 ```python
 import clickhouse_connect
@@ -344,18 +308,14 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-<div id="notes-and-caveats">
-  #### Remarques et mises en garde
-</div>
+#### Remarques et mises en garde {#notes-and-caveats}
 
 * ClickHouse contrôle le schéma Arrow. Les types sans représentation Arrow directe peuvent être renvoyés à l’aide d’un type physique compatible, y compris des champs binaires. Inspectez `table.schema` ou les dtypes du DataFrame avant d’appliquer des conversions spécifiques à l’application.
 * Les résultats Pandas basés sur Arrow nécessitent Pandas 2.0 ou version ultérieure.
 * `use_strings` détermine si les colonnes ClickHouse `String` utilisent des champs de chaîne Arrow ou des champs binaires lorsque le serveur prend en charge `output_format_arrow_string_as_string`.
 * `tz_mode="schema"` n’est pas encore pris en charge par les méthodes de requête basées sur Arrow. Elles émettent un avertissement et conservent les métadonnées de fuseau horaire fournies par la réponse Arrow.
 
-<div id="read-formats">
-  ## Formats de lecture
-</div>
+## Formats de lecture {#read-formats}
 
 Les formats de lecture contrôlent les valeurs renvoyées par `query`, `query_np` et `query_df`. Ils ne s&#39;appliquent pas aux méthodes raw ou Arrow, car ces méthodes utilisent directement un format de sortie du serveur. Par exemple, définir le format de lecture de UUID sur `"string"` renvoie des chaînes UUID au lieu d&#39;objets `uuid.UUID`.
 
@@ -395,42 +355,43 @@ client.query(
 )
 ```
 
-<div id="read-format-options-python-types">
-  ### Options de format de lecture (types Python)
-</div>
+### Options de format de lecture (types Python) {#read-format-options-python-types}
 
-| ClickHouse Type       | Type Python natif       | Formats de lecture | Commentaires                                                                                                                                                 |
-| --------------------- | ----------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Int[8-64], UInt[8-32] | int                     | string             |                                                                                                                                                              |
-| UInt64                | int                     | signed             | Superset ne gère pas actuellement les grandes valeurs UInt64 non signées                                                                                     |
-| [U]Int[128,256]       | int                     | string             | Les valeurs int de Pandas et NumPy sont limitées à 64 bits au maximum, elles peuvent donc être renvoyées sous forme de chaînes                               |
-| BFloat16              | float                   | -                  | Tous les float Python utilisent en interne 64 bits                                                                                                           |
-| Float32               | float                   | string             | Tous les float Python utilisent en interne 64 bits                                                                                                           |
-| Float64               | float                   | string             |                                                                                                                                                              |
-| Decimal               | decimal.Decimal         | -                  |                                                                                                                                                              |
-| String                | str                     | bytes              | Les colonne de type String ClickHouse n&#39;ont pas d&#39;encodage intrinsèque, elles servent donc aussi à stocker des données binaires de longueur variable |
-| FixedString           | bytes                   | string             | Les FixedString sont des tableaux d&#39;octets de taille fixe, mais sont parfois traités comme des chaînes Python                                            |
-| Enum[8,16]            | str                     | int                | Le Native format renvoie les labels ; `int` renvoie l&#39;entier sous-jacent.                                                                                |
-| Date                  | datetime.date           | int                | Le format entier renvoie le nombre de jours depuis le 1970-01-01.                                                                                            |
-| Date32                | datetime.date           | int                | Le format entier renvoie un décalage en jours signé plus large.                                                                                              |
-| DateTime              | datetime.datetime       | int                | Le format entier renvoie les secondes depuis l&#39;epoch.                                                                                                    |
-| DateTime64            | datetime.datetime       | int                | Le format entier renvoie les ticks à la précision de la colonne. Python `datetime` est limité aux microsecondes.                                             |
-| Time                  | datetime.timedelta      | int, string, time  | Le format entier renvoie les secondes. Le format `time` est limité aux valeurs compatibles avec `datetime.time`.                                             |
-| Time64                | datetime.timedelta      | int, string, time  | Le format entier renvoie les ticks à la précision de la colonne. Python `timedelta` est limité aux microsecondes.                                            |
-| IPv4                  | `ipaddress.IPv4Address` | string, int        | Les adresses IP peuvent être lues sous forme de chaînes ou d&#39;entiers.                                                                                    |
-| IPv6                  | `ipaddress.IPv6Address` | string             | Les adresses IP peuvent être lues sous forme de chaînes et, si elles sont correctement formatées, insérées comme adresses IP                                 |
-| Tuple                 | dict or tuple           | tuple, dict, json  | Les tuples nommés renvoient des dictionnaires par défaut ; les tuples non nommés renvoient des tuples.                                                       |
-| Map                   | dict                    | -                  |                                                                                                                                                              |
-| Nested                | Sequence[dict]          | -                  |                                                                                                                                                              |
-| UUID                  | uuid.UUID               | string             | Les UUIDs peuvent être lus comme des chaînes formatées conformément à la RFC 4122<br />                                                                      |
-| JSON                  | dict                    | string             | Un dictionnaire Python est renvoyé par défaut. Le format `string` renvoie une chaîne JSON                                                                    |
-| Variant               | object                  | typed              | `typed` renvoie `TypedVariant(value, type_name)` afin de préserver le type membre d&#39;origine.                                                             |
-| Dynamic               | object                  | -                  | Renvoie le type Python correspondant au type de données ClickHouse stocké pour la valeur                                                                     |
-| QBit                  | list[float]             | -                  | NumPy est utilisé automatiquement pour une transposition des bits plus rapide lorsqu&#39;il est installé.                                                    |
+| ClickHouse Type       | Type Python natif       | Formats de lecture | Commentaires                                                                                                                                                                                                                                                      |
+| --------------------- | ----------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | string             |                                                                                                                                                                                                                                                                   |
+| UInt64                | int                     | signed             | Superset ne gère pas actuellement les grandes valeurs UInt64 non signées                                                                                                                                                                                          |
+| [U]Int[128,256]       | int                     | string             | Les valeurs int de Pandas et NumPy sont limitées à 64 bits au maximum, elles peuvent donc être renvoyées sous forme de chaînes                                                                                                                                    |
+| BFloat16              | float                   | -                  | Tous les float Python utilisent en interne 64 bits                                                                                                                                                                                                                |
+| Float32               | float                   | string             | Tous les float Python utilisent en interne 64 bits                                                                                                                                                                                                                |
+| Float64               | float                   | string             |                                                                                                                                                                                                                                                                   |
+| Decimal               | decimal.Decimal         | -                  |                                                                                                                                                                                                                                                                   |
+| Interval*             | int                     | string             | Les valeurs sont des compteurs signés sur 64 bits exprimés dans l&#39;unité du type interval.                                                                                                                                                                     |
+| String                | str                     | bytes              | Les colonne de type String ClickHouse n&#39;ont pas d&#39;encodage intrinsèque, elles servent donc aussi à stocker des données binaires de longueur variable                                                                                                      |
+| FixedString           | bytes                   | string             | Les FixedString sont des tableaux d&#39;octets de taille fixe, mais sont parfois traités comme des chaînes Python                                                                                                                                                 |
+| Enum[8,16]            | str                     | int                | Le Native format renvoie les labels ; `int` renvoie l&#39;entier sous-jacent.                                                                                                                                                                                     |
+| Date                  | datetime.date           | int                | Le format entier renvoie le nombre de jours depuis le 1970-01-01.                                                                                                                                                                                                 |
+| Date32                | datetime.date           | int                | Le format entier renvoie un décalage en jours signé plus large.                                                                                                                                                                                                   |
+| DateTime              | datetime.datetime       | int                | Le format entier renvoie les secondes depuis l&#39;epoch.                                                                                                                                                                                                         |
+| DateTime64            | datetime.datetime       | int                | Le format entier renvoie les ticks à la précision de la colonne. Python `datetime` est limité aux microsecondes.                                                                                                                                                  |
+| Time                  | datetime.timedelta      | int, string, time  | Le format entier renvoie les secondes. Le format `time` est limité aux valeurs compatibles avec `datetime.time`.                                                                                                                                                  |
+| Time64                | datetime.timedelta      | int, string, time  | Les scales 0 à 9 sont prises en charge. Le format entier renvoie les ticks à la précision de la colonne. Python `timedelta` est limité aux microsecondes.                                                                                                         |
+| IPv4                  | `ipaddress.IPv4Address` | string, int        | Les adresses IP peuvent être lues sous forme de chaînes ou d&#39;entiers.                                                                                                                                                                                         |
+| IPv6                  | `ipaddress.IPv6Address` | string             | Les adresses IP peuvent être lues sous forme de chaînes et, si elles sont correctement formatées, insérées comme adresses IP                                                                                                                                      |
+| Tuple                 | dict or tuple           | tuple, dict, json  | Les tuples nommés renvoient des dictionnaires par défaut ; les tuples non nommés renvoient des tuples. Une valeur `Tuple()` renvoie `()`.                                                                                                                         |
+| Map                   | dict                    | -                  |                                                                                                                                                                                                                                                                   |
+| Nested                | Sequence[dict]          | -                  |                                                                                                                                                                                                                                                                   |
+| UUID                  | uuid.UUID               | string             | Les UUIDs peuvent être lus comme des chaînes formatées conformément à la RFC 4122<br />                                                                                                                                                                           |
+| JSON                  | dict                    | string             | Un dictionnaire Python est renvoyé par défaut. Le format `string` renvoie une chaîne JSON                                                                                                                                                                         |
+| Variant               | object                  | typed              | `typed` renvoie `TypedVariant(value, type_name)` afin de préserver le type membre d&#39;origine.                                                                                                                                                                  |
+| Dynamic               | object                  | -                  | Renvoie le type Python correspondant au type de données ClickHouse stocké pour la valeur                                                                                                                                                                          |
+| MultiPoint            | list[tuple]             | -                  | Chaque point est renvoyé sous forme de tuple à 2 éléments.                                                                                                                                                                                                        |
+| Geometry              | tuple or list           | typed              | Les valeurs Point sont des tuples à 2 éléments. Les autres membres, y compris MultiPoint, utilisent des listes imbriquées. Sélectionnez `typed` avec la clé `Geometry` pour préserver le type membre. Les paramètres de format `Variant` ne s&#39;appliquent pas. |
+| QBit                  | list[float]             | -                  | NumPy est utilisé automatiquement pour une transposition des bits plus rapide lorsqu&#39;il est installé.                                                                                                                                                         |
 
-<div id="external-data">
-  ## Données externes
-</div>
+`query_np`, `query_np_stream`, `query_df` et `query_df_stream` prennent en charge les scales `Time64` 0, 3, 6 et 9. Les autres scales déclenchent une `ProgrammingError` car elles n&#39;ont pas d&#39;unité de temps NumPy correspondante. Utilisez une requête Python standard avec le format de lecture `int` ou `string` pour préserver ces précisions. Le [codec Rust](/fr/integrations/language-clients/python/rust-codec#known-behavior-differences) expérimental documente une exception pour `Time64` stocké dans `Dynamic`.
+
+## Données externes {#external-data}
 
 Les requêtes ClickHouse peuvent accepter des données externes dans n’importe quel format d’entrée pris en charge. Le client envoie les données avec la requête, et celle-ci peut y faire référence comme à une table externe temporaire. Consultez la [documentation ClickHouse sur les données externes](/fr/reference/engines/table-engines/special/external-data). Les méthodes de requête du client acceptent un objet `clickhouse_connect.driver.external.ExternalData` via le paramètre `external_data`.
 
@@ -473,9 +434,7 @@ Des fichiers de données externes supplémentaires peuvent être ajoutés à l�
 
 Le backend chDB ne prend pas en charge les données externes.
 
-<div id="time-zones">
-  ## Fuseaux horaires
-</div>
+## Fuseaux horaires {#time-zones}
 
 Les valeurs ClickHouse `DateTime` et `DateTime64` sont transmises sous forme de valeurs numériques basées sur l’epoch. ClickHouse Connect les convertit en objets Python `datetime` à l’aide des métadonnées des colonnes, des redéfinitions de requête et de la politique de fuseau horaire du client.
 
