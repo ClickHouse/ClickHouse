@@ -1,5 +1,5 @@
 -- Coverage test for ArithmeticOperationsInAgrFuncOptimize.cpp — literal-first and negative-reversal paths
--- With enable_analyzer=1 (default), the equivalent pass runs in the new analyzer.
+-- With enable_analyzer=1 (default), the equivalent pass runs in the analyzer.
 -- Exercises:
 --   lines 31-44  exchangeExtractFirstArgument (literal is the first operand)
 --   lines 67     zeroField for Int64 literals (negative literal comparison)
