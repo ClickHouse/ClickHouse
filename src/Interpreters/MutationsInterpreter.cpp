@@ -2596,9 +2596,9 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     Block header = builder.getHeader();
 
-    /// Defensive: a stage that rewrites the whole part - an `ALTER DELETE` filter does - routes to
-    /// `MutateAllPartColumnsTask`, which writes every column from the pipeline and never consults
-    /// this. The guard keeps the two from disagreeing if that ever stops being true.
+    /// The same pair of conditions `prepareMutationStages` uses to put every physical column into a
+    /// stage's `output_columns`. Subtracting from a header that was deliberately made complete there
+    /// would contradict it, so the two have to agree, whatever the caller then does with the result.
     const bool rewrites_whole_part = settings.return_all_columns
         || std::any_of(
             stages.begin(),
