@@ -12,6 +12,36 @@ SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 1000000000
 -- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
 
+-- The Log family and File take their own seconds-typed timed lock, and MergeTree index analysis waits
+-- for an index-analysis thread with a microsecond timeout; a huge or negative value must not overflow
+-- now() + duration in either. The CREATE/INSERT statements take the same locks in range.
+DROP TABLE IF EXISTS t_04327_log;
+DROP TABLE IF EXISTS t_04327_stripe_log;
+DROP TABLE IF EXISTS t_04327_file;
+DROP TABLE IF EXISTS t_04327_indexes;
+CREATE TABLE t_04327_log (x UInt64) ENGINE = Log;
+CREATE TABLE t_04327_stripe_log (x UInt64) ENGINE = StripeLog;
+CREATE TABLE t_04327_file (x UInt64) ENGINE = File(TSV);
+CREATE TABLE t_04327_indexes (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS merge_selector_algorithm = 'Manual';
+INSERT INTO t_04327_log VALUES (1);
+INSERT INTO t_04327_stripe_log VALUES (1);
+INSERT INTO t_04327_file VALUES (1);
+INSERT INTO t_04327_indexes VALUES (1);
+INSERT INTO t_04327_indexes VALUES (2);
+INSERT INTO t_04327_indexes VALUES (3);
+INSERT INTO t_04327_indexes VALUES (4);
+SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = 100000000000;
+SELECT count() FROM t_04327_stripe_log SETTINGS lock_acquire_timeout = 100000000000;
+SELECT count() FROM t_04327_file SETTINGS lock_acquire_timeout = 100000000000;
+SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = -100000000000;
+SELECT sum(x) FROM t_04327_indexes WHERE x > 0 SETTINGS lock_acquire_timeout = 100000000000, max_threads = 8;
+SELECT sum(x) FROM t_04327_indexes WHERE x > 0 SETTINGS lock_acquire_timeout = -100000000000, max_threads = 8;
+DROP TABLE t_04327_log;
+DROP TABLE t_04327_stripe_log;
+DROP TABLE t_04327_file;
+DROP TABLE t_04327_indexes;
+
 -- SYSTEM SYNC MERGES builds its deadline as now() + max_execution_time; a huge value must not overflow.
 -- SYSTEM commands take no trailing SETTINGS clause, so the timeout is set on the session. With all
 -- scheduled parts already covered the command returns immediately, so this just exercises the clamp.
