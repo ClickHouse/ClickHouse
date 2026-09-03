@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 LOG="$CLICKHOUSE_TMP/err-$CLICKHOUSE_DATABASE"
-# On slow lanes (amd_msan + WasmEdge under parallel load) the server can need
+# On slow lanes (amd_msan under parallel load) the server can need
 # more than the default 10 s handshake_timeout_ms to send Hello; the resulting
 # SOCKET_TIMEOUT NetException then leaks into stderr and trips `grep Exception`.
 # Give connect + handshake a generous budget so the run stays deterministic.
