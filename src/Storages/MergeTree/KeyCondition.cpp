@@ -2092,6 +2092,23 @@ static bool applyDeterministicDagToColumn(
             out_column = input_column;
             out_type = input_type;
 
+            /// The round-trip through dag.input_type that this fast path skips is only a harmless
+            /// detour when it cannot change the value (e.g. String -> Dynamic -> String). For
+            /// same-family types that differ only in scale (e.g. DateTime64(6) vs DateTime64(3)),
+            /// that intermediate cast is a real, value-changing rounding step -- exactly the
+            /// rounding that stored key values already went through -- so skipping it renders the
+            /// constant at the wrong precision. Decline the fast path here and let the normal
+            /// (slower) path perform the intermediate cast, so the constant is rounded the same
+            /// way the key space was built.
+            if (const auto * lhs_dt64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
+            {
+                if (const auto * rhs_dt64 = typeid_cast<const DataTypeDateTime64 *>(dag.input_type.get()))
+                {
+                    if (lhs_dt64->getScale() != rhs_dt64->getScale())
+                        return false;
+                }
+            }
+
             if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
                 return false;
 
