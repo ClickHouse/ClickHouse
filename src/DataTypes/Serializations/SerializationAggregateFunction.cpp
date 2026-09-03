@@ -740,8 +740,25 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
         return;
     }
 
+    /// Backward compatibility: released parsed the multi-argument `value` payload by pre-reading a single
+    /// `CSV` field and handing its content to the tuple's `deserializeWholeText`, so a row was written as
+    /// one bounded field, e.g. `"(1.0,2.0)"` for `AggregateFunction(corr, Float64, Float64)`. The unified
+    /// path parses the temporary tuple with `SerializationTuple::deserializeTextCSV`, which consumes one
+    /// outer `CSV` cell per tuple element while `input_format_csv_deserialize_separate_columns_into_tuple`
+    /// is enabled (the default), and would therefore swallow the cells of the following columns. Keep the
+    /// temporary tuple field-local, the same way `Nullable(Tuple)` does in `SerializationNullable`.
+    std::optional<FormatSettings> tuple_settings_storage;
+    if (settings.csv.deserialize_separate_columns_into_tuple
+        && settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value
+        && function->getArgumentTypes().size() > 1)
+    {
+        tuple_settings_storage = settings;
+        tuple_settings_storage->csv.deserialize_separate_columns_into_tuple = false;
+    }
+    const FormatSettings & effective_settings = tuple_settings_storage ? *tuple_settings_storage : settings;
+
     auto method = DESERIALIZE_METHOD(deserializeTextCSV);
-    deserializeFromValues<method>(column, istr, settings, function);
+    deserializeFromValues<method>(column, istr, effective_settings, function);
 }
 
 size_t SerializationAggregateFunction::allocatedBytes() const
