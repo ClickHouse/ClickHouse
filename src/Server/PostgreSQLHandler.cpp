@@ -396,9 +396,8 @@ void PostgreSQLHandler::run()
 
     /// A `CancelRequest` for this connection arrives on a different connection, so the secret has
     /// to be reachable from the whole server for as long as this one is open.
-    const String cancellation_query_id = currentQueryId();
-    server.context()->getProcessList().registerPostgreSQLCancellationKey(cancellation_query_id, secret_key);
-    SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(cancellation_query_id); });
+    server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
+    SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
 
     try
     {
@@ -684,9 +683,9 @@ void PostgreSQLHandler::cancelRequest()
 
     /// The process ID and secret key authenticate this otherwise unauthenticated request.
     /// PostgreSQL exposes no response, so report the outcome only to the log.
-    String query_id = queryIdFor(msg->process_id);
-    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(query_id, msg->secret_key);
-    LOG_DEBUG(log, "Cancellation of query {}: {}", query_id, code == CancellationCode::CancelSent ? "sent" : "not sent");
+    CancellationCode code = server.context()->getProcessList().sendCancelToPostgreSQLQuery(msg->process_id, msg->secret_key);
+    LOG_DEBUG(log, "Cancellation request for connection {}: {}", msg->process_id,
+        code == CancellationCode::CancelSent ? "sent" : "not sent");
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)

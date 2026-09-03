@@ -26,6 +26,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <map>
 #include <unordered_map>
 #include <vector>
 
@@ -400,8 +401,8 @@ public:
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
     /// query_id -> User
     using QueriesToUser = std::unordered_map<String, String>;
-    /// query_id -> the `BackendKeyData` secret of the PostgreSQL connection running it
-    using PostgreSQLCancellationKeys = std::unordered_map<String, UInt32>;
+    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id its statements run under
+    using PostgreSQLCancellationKeys = std::map<std::pair<Int32, UInt32>, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -433,9 +434,10 @@ protected:
     /// Stores query IDs and associated users, used for query ID uniqueness check
     QueriesToUser queries_to_user;
 
-    /// A `CancelRequest` arrives on its own unauthenticated connection and carries only the secret
-    /// from `BackendKeyData`, so the secret is the credential. It is kept here rather than in the
-    /// query ID because `system.processes` and `system.query_log` expose query IDs verbatim.
+    /// A `CancelRequest` arrives on its own unauthenticated connection and carries only the pair from
+    /// `BackendKeyData`, so the secret is the credential. It is kept here rather than in the query ID
+    /// because `system.processes` and `system.query_log` expose query IDs verbatim. Keying on the whole
+    /// pair keeps a connection that reuses a connection ID from displacing a live one.
     PostgreSQLCancellationKeys postgresql_cancellation_keys;
 
     /// Stores info about queries grouped by their priority
@@ -561,14 +563,14 @@ public:
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
-    /// Remember the `BackendKeyData` secret that authenticates `CancelRequest` for the PostgreSQL
-    /// connection whose statements run under `query_id`.
-    void registerPostgreSQLCancellationKey(const String & query_id, UInt32 secret_key);
-    void unregisterPostgreSQLCancellationKey(const String & query_id);
+    /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
+    /// connection, and the query ID its statements run under.
+    void registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id);
+    void unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key);
 
-    /// Cancel an unauthenticated PostgreSQL request by its server-assigned query ID. Cancels only
-    /// when `secret_key` matches the registered secret; queries from other interfaces never match.
-    CancellationCode sendCancelToPostgreSQLQuery(const String & current_query_id, UInt32 secret_key);
+    /// Cancel an unauthenticated PostgreSQL request. Cancels only the query of the connection that
+    /// was given exactly this pair; queries from other interfaces never match.
+    CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
     void killAllQueries();
 };

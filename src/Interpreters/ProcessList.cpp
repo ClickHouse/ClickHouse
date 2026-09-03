@@ -814,21 +814,21 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
-void ProcessList::registerPostgreSQLCancellationKey(const String & query_id, UInt32 secret_key)
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
 {
     LockAndBlocker lock(mutex);
-    postgresql_cancellation_keys[query_id] = secret_key;
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
 }
 
 
-void ProcessList::unregisterPostgreSQLCancellationKey(const String & query_id)
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
 {
     LockAndBlocker lock(mutex);
-    postgresql_cancellation_keys.erase(query_id);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
 }
 
 
-CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id, UInt32 secret_key)
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
 {
     QueryStatusPtr elem;
 
@@ -837,10 +837,11 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current
 
         /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
         /// unknown connection.
-        auto cancellation_key = postgresql_cancellation_keys.find(current_query_id);
-        if (cancellation_key == postgresql_cancellation_keys.end() || cancellation_key->second != secret_key)
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
             return CancellationCode::NotFound;
 
+        const String & current_query_id = cancellation_key->second;
         auto query_user = queries_to_user.find(current_query_id);
         if (query_user == queries_to_user.end())
             return CancellationCode::NotFound;
