@@ -1,0 +1,11 @@
+--- every column resolves through the pg_attribute -> pg_type join, arrays through typelem
+n|1700|numeric|N|
+u|2950|uuid|U|
+an|1231|_numeric|A|numeric
+au|2951|_uuid|A|uuid
+ai|1007|_int4|A|int4
+s|25|text|S|
+--- no pg_attribute row is left without a pg_type row (built-in catalog rows included)
+0
+--- format_type agrees with the catalog on the oid type
+oid

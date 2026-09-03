@@ -81,26 +81,28 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     result->function_name = ast_ident->as<ASTIdentifier>()->full_name;
 
-    if (!open_bracket.ignore(pos, expected))
-        return false;
-
-    ASTPtr ast_args;
-    if (!exp_args.parse(pos, ast_args, expected))
-        return false;
-
-    for (size_t i = 0; i < ast_args->children.size(); ++i)
+    /// The parameter list is optional: PostgreSQL's `EXECUTE name` runs a prepared statement that takes
+    /// no parameters, and there are no empty parentheses in that case.
+    if (open_bracket.ignore(pos, expected))
     {
-        /// The expression list parser accepts arbitrary expressions, but only literals are valid here.
-        const auto * literal = ast_args->children[i]->as<ASTLiteral>();
-        if (!literal)
-        {
-            expected.add(pos, "literal");
+        ASTPtr ast_args;
+        if (!exp_args.parse(pos, ast_args, expected))
             return false;
+
+        /// A parameter does not have to be a literal: PostgreSQL accepts an arbitrary expression here
+        /// (`EXECUTE s(1 + 1)`, `EXECUTE s(current_date)`). The parameters are substituted into the
+        /// statement body textually, so an expression is passed along as its SQL text, parenthesized to
+        /// stay a single operand regardless of the precedence context of the `$n` it replaces.
+        for (const auto & child : ast_args->children)
+        {
+            if (const auto * literal = child->as<ASTLiteral>())
+                result->arguments.push_back(fieldToString(literal->value));
+            else
+                result->arguments.push_back("(" + child->formatWithSecretsOneLine() + ")");
         }
-        result->arguments.push_back(fieldToString(literal->value));
+        if (!close_bracket.ignore(pos, expected))
+            return false;
     }
-    if (!close_bracket.ignore(pos, expected))
-        return false;
 
     return true;
 }

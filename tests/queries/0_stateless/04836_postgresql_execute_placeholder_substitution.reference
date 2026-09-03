@@ -1,0 +1,17 @@
+PREPARE
+42
+SELECT 0
+PREPARE
+42
+SELECT 0
+PREPARE
+$1 stays literal|42
+SELECT 0
+PREPARE
+42
+SELECT 0
+PREPARE
+42
+SELECT 0
+Wrong number of parameters for prepared statement 'too_few': the statement references parameter $2, but 1 parameter(s) were supplied
+Wrong number of parameters for prepared statement 'too_many': the statement uses 1 parameter(s), but 2 were supplied

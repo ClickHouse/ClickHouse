@@ -10,9 +10,12 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
+#include <Poco/String.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
 #include <Poco/RandomStream.h>
@@ -69,6 +72,7 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
+    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -152,8 +156,22 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
+    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
+
+    /// Array types (`typcategory` = 'A'); each carries the OID of its element type in `typelem`.
+    /// The same OIDs are served by the `pg_type` emulation (see PostgreSQLHandler).
+    BOOL_ARRAY = 1000,
+    INT2_ARRAY = 1005,
+    INT4_ARRAY = 1007,
+    TEXT_ARRAY = 1009,
+    INT8_ARRAY = 1016,
+    FLOAT4_ARRAY = 1021,
+    FLOAT8_ARRAY = 1022,
+    DATE_ARRAY = 1182,
+    NUMERIC_ARRAY = 1231,
+    UUID_ARRAY = 2951,
 };
 
 class ColumnTypeSpec
@@ -161,8 +179,11 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
+    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
+    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
+    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -280,6 +301,50 @@ public:
      * (if type is provided for the message by the protocol).
      */
     virtual void deserialize(ReadBuffer & in) = 0;
+
+protected:
+    /** Reads the length field every frontend message starts with and, on destruction, verifies that the
+      * body the message read is exactly as long as the length announced.
+      *
+      * Without that check a variable-length message (`Query`, `Parse`, `Bind`, `Execute`, `Close`) would
+      * stop after its last logical field and leave any extra bytes in the stream, where they would be
+      * read as the next message type - a malformed frame such as `Q "SELECT 1\0<extra>"` would execute
+      * successfully and then desynchronize the session. A short length is rejected for the same reason:
+      * the fields have already read into the following message.
+      */
+    class PayloadBoundary
+    {
+    public:
+        PayloadBoundary(ReadBuffer & in_, const char * message_name_)
+            : in(in_), message_name(message_name_)
+        {
+            readBinaryBigEndian(declared_size, in);
+            if (declared_size < static_cast<Int32>(sizeof(Int32)))
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Wrong message length {} in {}, it must be at least 4", declared_size, message_name);
+            bytes_read_before_body = in.count();
+        }
+
+        /// Must be called at the end of `deserialize`. It is not done in the destructor because
+        /// `deserialize` may legitimately leave the body unread while unwinding on another error.
+        void check() const
+        {
+            const size_t body_size = in.count() - bytes_read_before_body;
+            const size_t message_size = body_size + sizeof(Int32);
+            if (message_size != static_cast<size_t>(declared_size))
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Message {} announces a length of {} bytes, but its body is {} bytes",
+                                message_name, declared_size, message_size);
+        }
+
+        Int32 size() const { return declared_size; }
+
+    private:
+        ReadBuffer & in;
+        const char * message_name;
+        Int32 declared_size = 0;
+        size_t bytes_read_before_body = 0;
+    };
 };
 
 class BackendMessage : public IMessage, public ISerializable
@@ -714,9 +779,9 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Query");
         readNullTerminated(query, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -731,17 +796,24 @@ public:
     String function_name;
     String sql_query;
     Int16 num_params{};
+    /// The type OID declared for each parameter, `0` where the client leaves the type unspecified.
+    /// They decide how a `Bind` parameter value is turned into an SQL literal, so they are kept with
+    /// the prepared statement rather than discarded.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Parse");
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
         Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
+        {
             readBinaryBigEndian(oid_param, in);
+            parameter_types.push_back(oid_param);
+        }
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -777,13 +849,22 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
+    /// The raw wire value of each parameter in its text encoding. It is not SQL text: it becomes an
+    /// SQL literal only in `PreparedStatemetsManager::attachBindQuery`, by the parameter's type OID.
     VectorWithMemoryTracking<String> parameters;
+    /// `1` where the corresponding parameter is SQL `NULL` (wire length `-1`). A separate flag rather
+    /// than a sentinel value: the four-character string `NULL` is a perfectly ordinary parameter.
+    VectorWithMemoryTracking<UInt8> parameter_is_null;
     Int16 num_params{};
+    /// A non-default parameter format code is noted here rather than rejected in `deserialize`: the
+    /// message is received outside the recoverable extended-query path (a malformed frame must close
+    /// the connection), while an unsupported format in a well-formed frame is an ordinary recoverable
+    /// error, reported from `PreparedStatemetsManager::attachBindQuery`.
+    bool has_binary_parameter_format = false;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Bind");
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
@@ -793,6 +874,8 @@ public:
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
+            if (format_param != 0)
+                has_binary_parameter_format = true;
         }
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
@@ -806,19 +889,26 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back("NULL");
+                parameters.emplace_back();
+                parameter_is_null.push_back(1);
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
+            parameter_is_null.push_back(0);
         }
 
+        /// The requested result format codes are read and ignored. The server always writes text
+        /// `DataRow` values and says so in `RowDescription`, whose per-field format code is what a
+        /// client uses to decode a row (this is how Npgsql, the JDBC driver and libpq read results).
         Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
+
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -857,10 +947,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Describe");
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -878,10 +968,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Execute");
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -926,12 +1016,12 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        PayloadBoundary boundary(in, "Close");
         Int8 byte = 0;
         readBinaryBigEndian(byte, in);
         close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
+        boundary.check();
     }
 
     MessageType getMessageType() const override
@@ -971,6 +1061,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz != static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in Sync, it must be 4", sz);
     }
 
     MessageType getMessageType() const override
@@ -1000,7 +1093,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(static_cast<Int32>(-1), out);
+        writeBinaryBigEndian(type_spec.type_modifier, out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
@@ -1131,18 +1224,27 @@ public:
 
 class CopyInResponse : public BackendMessage
 {
+    int num_columns;
+
 public:
+    explicit CopyInResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('G');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<char>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
     Int32 size() const override
     {
-        return 4 + 1 + 2;
+        return 4 + 1 + 2 + 2 * num_columns;
     }
 
     MessageType getMessageType() const override
@@ -1215,11 +1317,46 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz != static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyDone, it must be 4", sz);
     }
 
     MessageType getMessageType() const override
     {
         return MessageType::COPY_DONE;
+    }
+};
+
+/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
+/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
+class CopyFail : FrontMessage
+{
+public:
+    String message;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
+        message.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte = 0;
+            readBinary(byte, in);
+            message.push_back(byte);
+        }
+        /// The reason is a null-terminated string; drop the trailing NUL if present.
+        if (!message.empty() && message.back() == '\0')
+            message.pop_back();
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_FAIL;
     }
 };
 
@@ -1317,14 +1454,15 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17
+        SET = 17,
+        ROLLBACK = 18
     };
 private:
-    String enum_to_string[18] =
+    String enum_to_string[19] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
+        "TRUNCATE", "USE", "SET", "ROLLBACK"
     };
 
     String value;
@@ -1375,7 +1513,12 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
+    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
+    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
+    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
+    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
+    // through unchanged, which is what keyword matching needs.
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1385,7 +1528,8 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            if (std::isspace(query[i]))
+            const char c = query[i];
+            if (isWhitespaceASCII(c))
             {
                 if (!prev_was_space)
                 {
@@ -1395,7 +1539,7 @@ public:
             }
             else
             {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
                 prev_was_space = false;
             }
         }
@@ -1414,7 +1558,11 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
+            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
+            {"END", Command::COMMIT},
+            {"ROLLBACK", Command::ROLLBACK},
+            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
@@ -1878,6 +2026,110 @@ public:
 namespace PostgresPreparedStatements
 {
 
+/// If `body[i]` starts an opaque SQL token, returns the position just past it; otherwise returns `i`.
+/// Opaque tokens are the constructs a PostgreSQL-flavored scan must not look inside:
+///   - a string literal or a quoted identifier (`'`, `"` or a backtick; a doubled quote is an escaped
+///     quote in all three, and a backslash additionally escapes the next character in a single-quoted
+///     string - ClickHouse semantics, since the text is executed as ClickHouse SQL);
+///   - a `--` line comment or a `/* */` block comment (block comments nest, as in PostgreSQL and
+///     ClickHouse);
+///   - a bare identifier or keyword. Both PostgreSQL and the ClickHouse lexer allow `$` inside an
+///     unquoted identifier, so in `foo$1bar` the whole text is one identifier, not a reference to a
+///     parameter, and `foo$tag$` does not open a dollar-quoted string either. A word cannot start
+///     with a digit, so numeric constants are not consumed here. PostgreSQL identifiers may start
+///     with a letter, an underscore or a non-ASCII character, and continue with those plus digits
+///     and `$`;
+///   - a dollar-quoted string `$tag$ ... $tag$`, where the tag may be empty. The tag of a
+///     placeholder never starts with a digit, so a `$n` placeholder is never consumed here.
+/// An unterminated token extends to the end of the text.
+inline size_t skipOpaqueSQLToken(const String & body, size_t i)
+{
+    const size_t size = body.size();
+    const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+    const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+    const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
+    const auto is_word_start = [&](char c) { return is_tag_start(c) || static_cast<unsigned char>(c) >= 0x80; };
+    const auto is_word_char = [&](char c) { return is_tag_char(c) || static_cast<unsigned char>(c) >= 0x80; };
+
+    const char c = body[i];
+    if (c == '\'' || c == '"' || c == '`')
+    {
+        size_t j = i + 1;
+        while (j < size)
+        {
+            if (c == '\'' && body[j] == '\\' && j + 1 < size)
+            {
+                j += 2;
+                continue;
+            }
+            if (body[j] == c)
+            {
+                if (j + 1 < size && body[j + 1] == c)
+                {
+                    j += 2;
+                    continue;
+                }
+                ++j;
+                break;
+            }
+            ++j;
+        }
+        return j;
+    }
+
+    if (c == '-' && i + 1 < size && body[i + 1] == '-')
+    {
+        const size_t j = body.find('\n', i);
+        return j == String::npos ? size : j;
+    }
+
+    if (c == '/' && i + 1 < size && body[i + 1] == '*')
+    {
+        size_t depth = 1;
+        size_t j = i + 2;
+        while (j < size && depth > 0)
+        {
+            if (body[j] == '/' && j + 1 < size && body[j + 1] == '*')
+            {
+                ++depth;
+                j += 2;
+            }
+            else if (body[j] == '*' && j + 1 < size && body[j + 1] == '/')
+            {
+                --depth;
+                j += 2;
+            }
+            else
+                ++j;
+        }
+        return j;
+    }
+
+    if (is_word_start(c))
+    {
+        size_t j = i + 1;
+        while (j < size && (is_word_char(body[j]) || body[j] == '$'))
+            ++j;
+        return j;
+    }
+
+    if (c == '$' && i + 1 < size && (is_tag_start(body[i + 1]) || body[i + 1] == '$'))
+    {
+        size_t j = i + 1;
+        while (j < size && is_tag_char(body[j]))
+            ++j;
+        if (j < size && body[j] == '$')
+        {
+            const String tag = body.substr(i, j - i + 1);
+            const size_t close = body.find(tag, j + 1);
+            return close == String::npos ? size : close + tag.size();
+        }
+        return i;
+    }
+
+    return i;
+}
+
 class PreparedStatemetsManager
 {
 public:
@@ -1888,10 +2140,25 @@ public:
 
     void addStatement(ASTPreparedStatement * statement)
     {
+        addStatement(statement, {});
+    }
+
+    /// `parameter_types` are the type OIDs an extended-protocol `Parse` declares for the statement's
+    /// parameters; a simple-query `PREPARE` supplies none, and its `EXECUTE` arguments are SQL text
+    /// already, so they need no literalization.
+    void addStatement(ASTPreparedStatement * statement, const VectorWithMemoryTracking<Int32> & parameter_types)
+    {
+        /// The unnamed prepared statement is replaceable, but PostgreSQL
+        /// requires clients to close a named statement before parsing another
+        /// statement under the same name.
+        if (!statement->function_name.empty() && statements.contains(statement->function_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prepared statement '{}' already exists", statement->function_name);
+
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
         statements[statement->function_name] = statement->function_body;
+        statement_parameter_types[statement->function_name] = parameter_types;
     }
 
     String getStatement(ASTExecute * execute)
@@ -1906,6 +2173,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
+        statement_parameter_types.erase(function_name);
     }
 
     /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
@@ -1916,6 +2184,7 @@ public:
     void tryDeleteStatement(const String & function_name)
     {
         statements.erase(function_name);
+        statement_parameter_types.erase(function_name);
     }
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
@@ -1929,9 +2198,17 @@ public:
                 "Named portals are not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
 
+        /// A parameter is decoded from its text encoding; a binary encoding would additionally require
+        /// decoding the wire representation of every type declared by the `Parse` message.
+        if (query->has_binary_parameter_format && query->num_params > 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary parameter formats are not supported in the PostgreSQL wire protocol");
+
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
         /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
+        /// A portal captures its statement at `Bind` time. Replacing or closing
+        /// the prepared statement later must not alter an already-bound portal.
+        bound_statement = getStatement(query->function_name, literalizeBindParameters(*query));
         bind_query = std::move(query);
     }
 
@@ -1940,14 +2217,13 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto result = getStatement(bind_query->function_name, bind_query->parameters);
-
-        return result;
+        return *bound_statement;
     }
 
     void resetBindQuery()
     {
         bind_query.reset();
+        bound_statement.reset();
     }
 
     bool bindReferencesStatement(const String & function_name) const
@@ -1957,8 +2233,114 @@ public:
 
 private:
     UnorderedMapWithMemoryTracking<String, String> statements;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<Int32>> statement_parameter_types;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
+    std::optional<String> bound_statement;
+
+    /// Turns the wire values of a `Bind` message into SQL literals, using the parameter type OIDs the
+    /// matching `Parse` declared. The values arrive in their text encoding, which is not SQL text:
+    /// pasting them into the statement verbatim would only work where the bytes happen to be valid
+    /// SQL, so `SELECT length($1)` bound to `abc` would become `SELECT length(abc)`.
+    ///
+    /// A numeric or boolean type is written as a bare constant (and validated as one, so a value can
+    /// never inject SQL); everything else - including a parameter whose type the client left
+    /// unspecified - becomes a quoted string literal. This mirrors PostgreSQL, where a parameter of
+    /// the `unknown` type is exactly a string literal and gets its type from the context.
+    VectorWithMemoryTracking<String> literalizeBindParameters(const PostgreSQLProtocol::Messaging::BindQuery & query) const
+    {
+        const auto types_it = statement_parameter_types.find(query.function_name);
+        VectorWithMemoryTracking<String> literals;
+        literals.reserve(query.parameters.size());
+
+        for (size_t i = 0; i < query.parameters.size(); ++i)
+        {
+            if (i < query.parameter_is_null.size() && query.parameter_is_null[i])
+            {
+                literals.emplace_back("NULL");
+                continue;
+            }
+
+            Int32 type_oid = 0;
+            if (types_it != statement_parameter_types.end() && i < types_it->second.size())
+                type_oid = types_it->second[i];
+
+            literals.push_back(literalizeBindParameter(type_oid, query.parameters[i], i));
+        }
+
+        return literals;
+    }
+
+    static String literalizeBindParameter(Int32 type_oid, const String & value, size_t index)
+    {
+        switch (type_oid)
+        {
+            /// `bool`.
+            case 16:
+            {
+                const String folded = Poco::toLower(value);
+                if (folded == "t" || folded == "true" || folded == "1" || folded == "y" || folded == "yes" || folded == "on")
+                    return "true";
+                if (folded == "f" || folded == "false" || folded == "0" || folded == "n" || folded == "no" || folded == "off")
+                    return "false";
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Invalid input syntax for type boolean in parameter ${}: {}", index + 1, quoteString(value));
+            }
+            /// `int8`, `int2`, `int4`, `oid`, `float4`, `float8`, `numeric`.
+            case 20:
+            case 21:
+            case 23:
+            case 26:
+            case 700:
+            case 701:
+            case 1700:
+            {
+                if (!isNumericConstant(value))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid input syntax for a numeric type in parameter ${}: {}", index + 1, quoteString(value));
+                return value;
+            }
+            default:
+                return quoteString(value);
+        }
+    }
+
+    /// Whether the text is a plain decimal constant: an optional sign, digits with at most one
+    /// decimal point, and an optional exponent. Deliberately strict - anything else is quoted
+    /// instead of being pasted into the statement as SQL.
+    static bool isNumericConstant(const String & value)
+    {
+        size_t i = 0;
+        const size_t size = value.size();
+        if (i < size && (value[i] == '+' || value[i] == '-'))
+            ++i;
+
+        size_t digits = 0;
+        size_t points = 0;
+        for (; i < size && (isNumericASCII(value[i]) || value[i] == '.'); ++i)
+        {
+            if (value[i] == '.')
+                ++points;
+            else
+                ++digits;
+        }
+        if (digits == 0 || points > 1)
+            return false;
+
+        if (i == size)
+            return true;
+        if (value[i] != 'e' && value[i] != 'E')
+            return false;
+        ++i;
+        if (i < size && (value[i] == '+' || value[i] == '-'))
+            ++i;
+
+        size_t exponent_digits = 0;
+        for (; i < size && isNumericASCII(value[i]); ++i)
+            ++exponent_digits;
+        return exponent_digits > 0 && i == size;
+    }
 
     String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
@@ -1966,17 +2348,87 @@ private:
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        auto body = it->second;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        return substitutePlaceholders(it->second, function_name, arguments);
+    }
+
+    /// Substitutes `$n` placeholders with the supplied arguments, PostgreSQL-style: every occurrence of a
+    /// placeholder is replaced (a placeholder may be referenced any number of times, including zero), the
+    /// placeholder number is read as a whole (`$10` is the tenth parameter, not `$1` followed by `0`), and
+    /// the argument count must match the statement exactly - the statement must not reference a parameter
+    /// beyond the supplied ones, and every supplied argument must be referenced by number (PostgreSQL
+    /// reports both as `wrong number of parameters`). The scan is SQL-aware: a `$n` inside a string
+    /// literal, a quoted identifier, a bare identifier (`$` is a valid identifier character, so
+    /// `foo$1bar` is a single identifier), a dollar-quoted string or a comment is ordinary text, not a
+    /// placeholder. Substituted argument text is never rescanned, so an argument containing `$1` cannot
+    /// trigger another round of substitution.
+    static String substitutePlaceholders(const String & body, const String & function_name, const VectorWithMemoryTracking<String> & arguments)
+    {
+        String result;
+        result.reserve(body.size());
+
+        const size_t size = body.size();
+        size_t max_placeholder = 0;
+        size_t i = 0;
+
+        /// Copies body[i..end) to the result verbatim and advances the cursor.
+        auto copy_through = [&](size_t end)
         {
-            auto templ = "$" + std::to_string(i + 1);
-            auto pos = body.find(templ);
-            if (pos != std::string::npos)
+            result.append(body, i, end - i);
+            i = end;
+        };
+
+        const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+
+        while (i < size)
+        {
+            const char c = body[i];
+            /// String literals, quoted identifiers, comments, bare identifiers and dollar-quoted
+            /// strings are copied through as opaque tokens - a `$n` inside them is not a placeholder
+            /// (see `skipOpaqueSQLToken`). A word cannot start with a digit (`1$2` is the constant `1`
+            /// followed by the placeholder `$2`), so numeric constants are not consumed there and a
+            /// placeholder right after one is still substituted.
+            if (const size_t opaque_end = skipOpaqueSQLToken(body, i); opaque_end != i)
             {
-                body.replace(pos, templ.size(), arguments[i]);
+                copy_through(opaque_end);
+            }
+            else if (c == '$' && i + 1 < size && is_digit(body[i + 1]))
+            {
+                size_t j = i + 1;
+                size_t n = 0;
+                bool overflow = false;
+                while (j < size && is_digit(body[j]))
+                {
+                    if (n > arguments.size())
+                        overflow = true;
+                    else
+                        n = n * 10 + (body[j] - '0');
+                    ++j;
+                }
+                if (overflow || n == 0 || n > arguments.size())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Wrong number of parameters for prepared statement '{}': the statement references parameter {}, "
+                        "but {} parameter(s) were supplied",
+                        function_name, body.substr(i, j - i), arguments.size());
+                max_placeholder = std::max(max_placeholder, n);
+                result += arguments[n - 1];
+                i = j;
+            }
+            else
+            {
+                result += c;
+                ++i;
             }
         }
-        return body;
+
+        if (max_placeholder != arguments.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Wrong number of parameters for prepared statement '{}': the statement uses {} parameter(s), "
+                "but {} were supplied",
+                function_name, max_placeholder, arguments.size());
+
+        return result;
     }
 
 };
