@@ -119,6 +119,10 @@ public:
     void closeSession(const String & session_id);
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
+
+    /// Initializes a freshly created context from this session's authentication: the
+    /// authentication's roles, GRANTS clause and expiry, plus propagated interserver roles.
+    void setAuthenticatedUser(Context & context, const std::vector<UUID> & propagated_external_roles) const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
     void recordLoginSuccess(ContextPtr login_context) const;
 

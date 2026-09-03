@@ -608,11 +608,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    /// A fresh authenticated context: the authentication-returned roles also initialize profiles.
-    new_session_context->setUserFromAuthentication(
-        *user_id,
-        {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
-        pushed_external_roles);
+    setAuthenticatedUser(*new_session_context, pushed_external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -677,12 +673,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         /// Set user information for the new context: current profiles, roles, access rights.
         if (!access->tryGetUser())
         {
-            /// A fresh authenticated context: the authentication-returned roles also initialize
-            /// profiles; this is the creation-time state that reattachment does not rebuild.
-            new_session_context->setUserFromAuthentication(
-                *user_id,
-                {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
-                pushed_external_roles);
+            /// Creation-time state that reattachment does not rebuild.
+            setAuthenticatedUser(*new_session_context, pushed_external_roles);
             max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
 
             /// Apply session settings received from the authentication server once, when the
@@ -776,6 +768,14 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
 ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
 {
     return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
+}
+
+void Session::setAuthenticatedUser(Context & context, const std::vector<UUID> & propagated_external_roles) const
+{
+    context.setUserFromAuthentication(
+        *user_id,
+        {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
+        propagated_external_roles);
 }
 
 std::shared_ptr<SessionLog> Session::getSessionLog() const
@@ -874,13 +874,9 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    /// This is the first context built from this session's authentication (no session context),
-    /// so the authentication-returned roles initialize profiles; propagated roles are authorization-only.
+    /// The first context built from this session's authentication (there is no session context).
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUserFromAuthentication(
-            *user_id,
-            {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
-            propagated_external_roles);
+        setAuthenticatedUser(*query_context, propagated_external_roles);
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
