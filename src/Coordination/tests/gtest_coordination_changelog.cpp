@@ -8,13 +8,16 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <IO/ReadHelpers.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <future>
+#include <mutex>
 #include <thread>
 
 
@@ -50,6 +53,93 @@ namespace ProfileEvents
     extern const Event KeeperLogsEntryReadFromCommitReadAhead;
     extern const Event KeeperLogsEntryReadFromLatestCache;
     extern const Event KeeperChangelogStartupReadEntries;
+}
+
+namespace
+{
+
+class LatchRecoveryDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    void prepareRead(
+        const String & path,
+        const DB::ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        DB::ReadPipeline & pipeline) const override
+    {
+        if (path.starts_with("changelog_") && validation_arrivals.load() < 2)
+            arriveAndWait(validation_arrivals, validation_mutex, validation_cv);
+        DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (path.starts_with("tmp_changelog_") && cleanup_arrivals.load() < 2)
+            arriveAndWait(cleanup_arrivals, cleanup_mutex, cleanup_cv);
+        DB::DiskLocal::removeFileIfExists(path);
+    }
+
+    mutable std::atomic<size_t> validation_arrivals{0};
+    std::atomic<size_t> cleanup_arrivals{0};
+
+private:
+    static void arriveAndWait(
+        std::atomic<size_t> & arrivals,
+        std::mutex & mutex,
+        std::condition_variable & cv)
+    {
+        std::unique_lock lock(mutex);
+        const size_t count = ++arrivals;
+        if (count == 2)
+            cv.notify_all();
+        else
+            cv.wait(lock, [&] { return arrivals.load() >= 2; });
+    }
+
+    mutable std::mutex validation_mutex;
+    mutable std::condition_variable validation_cv;
+    std::mutex cleanup_mutex;
+    std::condition_variable cleanup_cv;
+};
+
+struct InventoryLatch
+{
+    void arriveAndWait()
+    {
+        std::unique_lock lock(mutex);
+        const size_t count = ++arrivals;
+        if (count == 2)
+            cv.notify_all();
+        else
+            cv.wait(lock, [&] { return arrivals.load() >= 2; });
+    }
+
+    std::atomic<size_t> arrivals{0};
+    std::mutex mutex;
+    std::condition_variable cv;
+};
+
+class InventoryLatchDisk final : public DB::DiskLocal
+{
+public:
+    InventoryLatchDisk(const String & disk_name, const String & path, std::shared_ptr<InventoryLatch> latch_)
+        : DB::DiskLocal(disk_name, path)
+        , latch(std::move(latch_))
+    {
+    }
+
+    DB::DirectoryIteratorPtr iterateDirectory(const String & path) const override
+    {
+        latch->arriveAndWait();
+        return DB::DiskLocal::iterateDirectory(path);
+    }
+
+private:
+    std::shared_ptr<InventoryLatch> latch;
+};
+
 }
 
 
@@ -4264,6 +4354,273 @@ TYPED_TEST(CoordinationChangelogTest, StartupReadOutOfScopeCompressionDoesNotFor
     ASSERT_EQ(reference.getNextEntryIndex(), parallel_reader.getNextEntryIndex());
     for (uint64_t i = reference.getStartIndex(); i < reference.getNextEntryIndex(); ++i)
         EXPECT_EQ(reference.termAt(i), parallel_reader.termAt(i)) << "index " << i;
+}
+
+TYPED_TEST(CoordinationChangelogTest, SnapshotCoveredGapUsesInclusivePreviousIndexBoundary)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the test requires the parallel uncompressed startup path";
+
+    const auto write_single_entry = [&](const std::string & directory, uint64_t index)
+    {
+        this->setLogDirectory(directory);
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 1,
+            .startup_read_max_streams = 1,
+        };
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(index - 1, 0);
+        writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), index));
+        writer.flush();
+    };
+
+    for (const uint64_t startup_streams : {1, 4})
+    {
+        for (const bool covered : {true, false})
+        {
+            SCOPED_TRACE(fmt::format("streams={} covered={}", startup_streams, covered));
+            const std::string suffix = fmt::format("{}_{}", startup_streams, covered);
+            ChangelogDirTest logs("./logs_gap_" + suffix);
+            ChangelogDirTest first("./logs_gap_first_" + suffix);
+            ChangelogDirTest second("./logs_gap_second_" + suffix);
+            write_single_entry(first.path, 200500000);
+            write_single_entry(second.path, 200600001);
+            fs::copy_file(first.path + "/changelog_200500000_200500000.bin", logs.path + "/changelog_200500000_200500000.bin");
+            fs::copy_file(second.path + "/changelog_200600001_200600001.bin", logs.path + "/changelog_200600001_200600001.bin");
+
+            this->setLogDirectory(logs.path);
+            const DB::LogFileSettings settings{
+                .force_sync = false,
+                .compress_logs = false,
+                .rotate_interval = 1,
+                .startup_read_max_streams = startup_streams,
+            };
+            DB::Changelog reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            const uint64_t last_committed = covered ? 200600000 : 200599999;
+            if (covered)
+            {
+                ASSERT_NO_THROW(reader.readChangelogAndInitWriter(last_committed, 200000));
+                EXPECT_EQ(reader.getNextEntryIndex(), 200600002);
+            }
+            else
+            {
+                EXPECT_THROW(reader.readChangelogAndInitWriter(last_committed, 200000), DB::Exception);
+                EXPECT_TRUE(fs::exists(logs.path + "/changelog_200500000_200500000.bin"));
+                EXPECT_TRUE(fs::exists(logs.path + "/changelog_200600001_200600001.bin"));
+            }
+        }
+    }
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRemovesMarkedPartialDestination)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    for (const bool legacy_marker : {false, true})
+    {
+        SCOPED_TRACE(std::string("legacy_marker=") + (legacy_marker ? "true" : "false"));
+        const std::string suffix = legacy_marker ? "legacy" : "v1";
+        ChangelogDirTest regular("./logs_recovery_regular_" + suffix);
+        ChangelogDirTest latest("./logs_recovery_latest_" + suffix);
+        DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+        DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+        this->keeper_context->setLogDisk(regular_disk);
+        {
+            const DB::LogFileSettings settings{
+                .force_sync = false,
+                .compress_logs = false,
+                .rotate_interval = 10,
+                .startup_read_max_streams = 4,
+            };
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            for (uint64_t index = 1; index <= 3; ++index)
+                writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), index));
+            writer.flush();
+        }
+
+        constexpr std::string_view path = "changelog_1_10.bin";
+        String complete_bytes;
+        {
+            auto input = regular_disk->readFile(String(path), DB::getReadSettings());
+            DB::readStringUntilEOF(complete_bytes, *input);
+        }
+        ASSERT_GT(complete_bytes.size(), 1);
+        const auto complete_digest = DB::computeKeeperFileDigest(regular_disk, String(path));
+        {
+            auto output = latest_disk->writeFile(String(path));
+            output->write(complete_bytes.data(), complete_bytes.size() / 2);
+            output->finalize();
+        }
+        {
+            auto marker = latest_disk->writeFile("tmp_" + String(path));
+            if (!legacy_marker)
+            {
+                const auto payload = DB::serializeKeeperMoveMarker(complete_digest);
+                marker->write(payload.data(), payload.size());
+            }
+            marker->finalize();
+        }
+
+        this->keeper_context->setLatestLogDisk(latest_disk);
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .startup_read_max_streams = 4,
+        };
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        EXPECT_FALSE(latest_disk->existsFile("tmp_" + String(path)));
+        EXPECT_FALSE(latest_disk->existsFile(String(path)));
+        EXPECT_TRUE(regular_disk->existsFile(String(path)));
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 4);
+    }
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRunsIndependentDigestAndCleanupGroupsInParallel)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the parallel recovery test uses uncompressed changelogs";
+
+    ChangelogDirTest logs("./logs_parallel_recovery");
+    DB::DiskPtr plain_disk = std::make_shared<DB::DiskLocal>("plain", logs.path);
+    this->keeper_context->setLogDisk(plain_disk);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 1,
+        .startup_read_max_streams = 4,
+    };
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        writer.appendEntry(1, getLogEntry("one", 1));
+        writer.appendEntry(2, getLogEntry("two", 2));
+        writer.flush();
+    }
+    for (const auto & path : {"changelog_1_1.bin", "changelog_2_2.bin"})
+    {
+        const auto payload = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(plain_disk, path));
+        auto marker = plain_disk->writeFile("tmp_" + String(path));
+        marker->write(payload.data(), payload.size());
+        marker->finalize();
+    }
+
+    auto latch_disk = std::make_shared<LatchRecoveryDisk>("latched", logs.path);
+    this->keeper_context->setLogDisk(latch_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    EXPECT_EQ(latch_disk->validation_arrivals, 2);
+    EXPECT_EQ(latch_disk->cleanup_arrivals, 2);
+    EXPECT_FALSE(latch_disk->existsFile("tmp_changelog_1_1.bin"));
+    EXPECT_FALSE(latch_disk->existsFile("tmp_changelog_2_2.bin"));
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryInventoriesDistinctDisksInParallel)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the parallel recovery test is independent of compression";
+
+    ChangelogDirTest regular("./logs_parallel_inventory_regular");
+    ChangelogDirTest latest("./logs_parallel_inventory_latest");
+    auto latch = std::make_shared<InventoryLatch>();
+    auto regular_disk = std::make_shared<InventoryLatchDisk>("regular", regular.path, latch);
+    auto latest_disk = std::make_shared<InventoryLatchDisk>("latest", latest.path, latch);
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+
+    DB::Changelog recovered(
+        this->log,
+        DB::LogFileSettings{.force_sync = false, .compress_logs = false, .startup_read_max_streams = 2},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    EXPECT_EQ(latch->arrivals, 2);
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRemovesInvalidMarkersAndOrphans)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    for (const bool unknown_version : {false, true})
+    {
+        SCOPED_TRACE(std::string("unknown_version=") + (unknown_version ? "true" : "false"));
+        ChangelogDirTest logs(unknown_version ? "./logs_unknown_marker" : "./logs_malformed_marker");
+        DB::DiskPtr disk = std::make_shared<DB::DiskLocal>("logs", logs.path);
+        this->keeper_context->setLogDisk(disk);
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .startup_read_max_streams = 4,
+        };
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            writer.appendEntry(1, getLogEntry("one", 1));
+            writer.flush();
+        }
+
+        String marker_contents = "malformed";
+        if (unknown_version)
+        {
+            marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(disk, "changelog_1_10.bin"));
+            marker_contents[8] = 2;
+        }
+        auto marker = disk->writeFile("tmp_changelog_1_10.bin");
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+        auto orphan = disk->writeFile("tmp_changelog_999_999.bin");
+        orphan->finalize();
+
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        EXPECT_FALSE(disk->existsFile("changelog_1_10.bin"));
+        EXPECT_FALSE(disk->existsFile("tmp_changelog_1_10.bin"));
+        EXPECT_FALSE(disk->existsFile("tmp_changelog_999_999.bin"));
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 1);
+    }
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPrefersHigherPrecedenceMarkerlessCopy)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    ChangelogDirTest regular("./logs_markerless_regular");
+    ChangelogDirTest latest("./logs_markerless_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    const auto write_log = [&](const DB::DiskPtr & disk, size_t entries)
+    {
+        this->keeper_context->setLogDisk(disk);
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= entries; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), index));
+        writer.flush();
+    };
+    write_log(regular_disk, 2);
+    write_log(latest_disk, 1);
+
+    this->keeper_context->setLogDisk(regular_disk);
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(recovered.getNextEntryIndex(), 2);
+    EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_TRUE(latest_disk->existsFile("changelog_1_10.bin"));
 }
 
 

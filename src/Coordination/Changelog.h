@@ -690,12 +690,14 @@ private:
 
     /// Serial startup read: files streamed one by one, each record inserted via addEntryWithLocation.
     /// Fallback for compression, a single in-scope file, streams=0, or forced testing.
-    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from) TSA_REQUIRES(writer_mutex);
+    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from)
+        TSA_REQUIRES(writer_mutex);
 
     /// Parallel metadata read (all in-scope files concurrently) + serial stitch.
     void readChangelogAndInitWriterParallelLocked(
-        uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
-        TSA_REQUIRES(writer_mutex);
+        uint64_t last_commited_log_index,
+        uint64_t start_to_read_from,
+        std::vector<ChangelogFileDescriptionPtr> in_scope_files) TSA_REQUIRES(writer_mutex);
 
     /// Outcome of reading the last in-scope changelog file, as needed by finalizeChangelogsAfterRead.
     /// A trimmed-down, header-visible stand-in for the serial/parallel readers' own (.cpp-local)
