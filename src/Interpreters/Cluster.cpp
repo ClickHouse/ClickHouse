@@ -153,9 +153,7 @@ Cluster::Address::Address(
     /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
     /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
     /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
-    is_local = treat_local_port_as_remote
-        ? false
-        : isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_local = !treat_local_port_as_remote && isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
