@@ -1126,22 +1126,41 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return updated_steps;
         }
 
-        /// Unlike the main push-down above, addFilterOnTop builds the partial FilterStep directly
-        /// against the join input header without fix_predicate_for_join_logical_step. So a function
-        /// node whose type was computed for the join output (e.g. equals over a USING key widened to
-        /// Nullable) would be applied to the non-widened input column and trip the result-type check
-        /// in updateHeader. Restrict the partial predicate to columns with stable types across the join.
+        /// Restrict the partial predicate to columns with stable types across the join.
+        /// `addFilterOnTop` builds the FilterStep against the join input header, so
+        /// `fix_predicate_for_join_logical_step` remaps JOIN-output aliases
+        /// (`__table1.bid`) to the child's physical names (`bid`). Type-changing
+        /// columns still have no partial-path conversion, so they stay excluded.
         Names left_stream_stable_columns_to_push_down = get_available_columns_for_filter(
             true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
         Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
             false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
 
+        auto remap_partial_predicate_for_logical_join = [&](ActionsDAG filter_dag) -> ActionsDAG
+        {
+            if (!logical_join)
+                return filter_dag;
+
+            auto required_actions = get_required_pre_actions(logical_join->getOutputActions(), filter_dag.getInputs());
+            if (required_actions.empty())
+                return filter_dag;
+
+            filter_dag = fix_predicate_for_join_logical_step(
+                std::move(filter_dag), JoinExpressionActions::getSubDAG(required_actions));
+            /// `fix_predicate_for_join_logical_step` projects unused inputs as extra outputs.
+            /// `addFilterOnTop` expects a single filter column and rebuilds the header itself.
+            filter_dag.getOutputs().resize(1);
+            filter_dag.removeUnusedActions();
+            return filter_dag;
+        };
+
         {
             auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
             {
-                const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
-                addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
+                auto remapped = remap_partial_predicate_for_logical_join(std::move(*left_partial_filter_dag));
+                const auto partial_predicate_column_name = remapped.getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 0, nodes, std::move(remapped));
                 ++updated_steps;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
@@ -1154,8 +1173,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
             {
-                const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
-                addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
+                auto remapped = remap_partial_predicate_for_logical_join(std::move(*right_partial_filter_dag));
+                const auto partial_predicate_column_name = remapped.getOutputs().front()->result_name;
+                addFilterOnTop(*child_node, 1, nodes, std::move(remapped));
                 ++updated_steps;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
