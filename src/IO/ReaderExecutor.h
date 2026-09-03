@@ -6,6 +6,7 @@
 #include <IO/ReadContinuityTracker.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ICacheProvider.h>
+#include <IO/ReadPlan.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -30,9 +31,6 @@ namespace DB
 class ReadBufferFromFileBase;
 class EncryptionHeaderCache;
 
-/// Ordered cache chain, front = fastest tier.
-using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
-
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves bytes from an
 /// `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time. Drives the experimental
 /// `use_reader_executor` read path. One instance per column-stream; not thread-safe.
@@ -48,6 +46,7 @@ public:
         size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
         size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
         size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
+        size_t plan_look_ahead = DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD;
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
         std::shared_ptr<EncryptionHeaderCache> encryption_header_cache = nullptr;
         CacheChain cache_chain = {};
@@ -186,10 +185,15 @@ private:
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
-    /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
-    /// miss ranges and populate them. A range another thread is already downloading is fetched
-    /// through from source. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
+    /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
+    /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
+    ChainedBuffers readThroughCaches(size_t pos, size_t max_serve);
+    /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end);
+    /// rebuilds from `pos` on a seek or gap.
+    void ensureResolved(size_t pos);
+    /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
+    /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
+    ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve);
     void dropLongConnection();
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
@@ -220,6 +224,10 @@ private:
     CacheChain cache_chain;
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
+    size_t plan_look_ahead;
+    /// Cache residency of the look-ahead span, held across serves (see `ReadPlan`). Empty without caches.
+    /// Also owns the executor-local memory hold for fetched bytes no tier accepted.
+    ReadPlan read_plan;
 
 #if USE_SSL
     /// Immutable per-layer decryption config, parsed once by `initDecryption`. SSL builds only.

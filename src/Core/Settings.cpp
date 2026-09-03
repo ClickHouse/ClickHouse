@@ -813,6 +813,8 @@ Drain bound for the experimental `ReaderExecutor`: a long source connection drop
 Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be at least 4 KiB.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, DEFAULT_READER_EXECUTOR_BLOCK_SIZE, R"(
 Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be at least 4 KiB.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead, DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD, R"(
+How far ahead the experimental `ReaderExecutor` resolves cache residency into its held read plan (a cheap probe, not a read), so one resolve serves many windows. Must be at least 4 KiB.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

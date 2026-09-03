@@ -26,6 +26,9 @@ public:
     /// Total bytes held (sum of the disjoint intervals' sizes).
     size_t totalBytes() const;
 
+    /// The disjoint intervals in increasing-offset order (read-only view).
+    const VectorWithMemoryTracking<ByteRange> & ranges() const { return intervals; }
+
 private:
     VectorWithMemoryTracking<ByteRange> intervals;
 };
