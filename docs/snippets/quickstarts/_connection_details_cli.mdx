@@ -90,7 +90,13 @@ The username is `default` unless you created additional database users.
 
 ## Get a password {#get-a-password}
 
-The password for the `default` user is returned exactly once, by `clickhousectl cloud service create` - no API or CLI call can read it back later. If you saved it at creation time, use that and skip ahead. If it's lost, generate a new one:
+The password for the `default` user is returned exactly once, by `clickhousectl cloud service create` - no API or CLI call can read it back later. If you saved it at creation time, assign it to the variable the later steps use and skip the reset:
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+If it's lost, generate a new one:
 
 ```bash
 CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
@@ -142,6 +148,12 @@ Connected to ClickHouse 26.2.1.558 as default
 ## Cleanup {#cleanup}
 
 This guide only reads service metadata and (optionally) resets a password - it creates no new cloud resources, so there is nothing to clean up.
+
+One exception: if your service was `stopped` and you started it just to verify connectivity, it now keeps running and billing for compute. Stop it again if you don't need it running yet:
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
 
 ## Next steps {#next-steps}
 
