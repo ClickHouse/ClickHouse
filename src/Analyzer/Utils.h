@@ -257,9 +257,10 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// cannot carry exactly so they round-trip across distributed / serialized-plan boundaries: decimal-backed
 /// leaves (`Decimal`, `DateTime64`, `Time64`) as exact decimal carriers rather than through `Float64` or the
 /// `DateTime` text-parsing heuristics, and the active member of a `Variant` under its own type name. Such a
-/// leaf is reached through `Nullable`, `Array`, `Tuple`, `Map`, `Variant`, `Dynamic` and `Object`; under any
-/// other wrapper (notably `LowCardinality`) it keeps the plain literal form. Other values use the same
-/// representation as `getFieldFromColumnForASTLiteral`.
+/// leaf is reached through `Nullable`, `Array`, `Tuple`, `Map`, `Variant` and `Dynamic`; under any other
+/// wrapper (notably `LowCardinality`) it keeps the plain literal form, as does a `Variant` below an
+/// `Object`, whose JSON text carries no discriminator. Other values use the same representation as
+/// `getFieldFromColumnForASTLiteral`.
 /// With `date_time_as_numbers`, a `DateTime` leaf is rendered as its raw Unix timestamp named by its own
 /// type, instead of local date-time text, which two instants share across a DST overlap. Clear it for a
 /// consumer that parses this text itself, such as an external database, where `_CAST` is not valid syntax.
