@@ -22,7 +22,7 @@ SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count() FROM tab FINAL WHERE c1 = 0 SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM tab FINAL PREWHERE c1 = 0 SETTINGS use_query_condition_cache = 1 FORMAT Null;
-SELECT count(*) > 0 FROM system.query_condition_cache;
+SELECT countIf(startsWith(matching_marks, '0')) FROM system.query_condition_cache;
 SELECT count() FROM tab FINAL WHERE c1 = 0 SETTINGS use_query_condition_cache = 1;
 
 DROP TABLE tab;
