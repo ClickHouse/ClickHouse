@@ -510,7 +510,6 @@ String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
 
 namespace
 {
-/// The query context of the calling thread, or null when it does not belong to a query.
 ContextPtr getCurrentQueryContext()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
@@ -524,8 +523,6 @@ FileCacheQueryBudgetPtr FileCache::getQueryBudget(size_t query_limit_bytes) cons
     if (!query_limit_allowed || query_limit_bytes == 0)
         return nullptr;
 
-    /// The budget belongs to a query and dies with it. Work which is not a query (merges,
-    /// background downloads) has none: this limit has always been per query.
     auto query_context = getCurrentQueryContext();
     if (!query_context)
         return nullptr;

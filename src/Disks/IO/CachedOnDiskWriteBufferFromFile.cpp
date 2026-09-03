@@ -480,7 +480,6 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , query_id(query_id_)
     , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
-    /// Taken here, in the query's thread, and shared with the query's reads of the same cache.
     , query_budget(cache_->getQueryBudget(settings_.filesystem_cache_query_limit_bytes))
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
     , is_distributed_cache(is_distributed_cache_)

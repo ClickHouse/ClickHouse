@@ -1437,8 +1437,6 @@ public:
     bool hasQueryContext() const { return !query_context.expired(); }
 
     /// How much this query may still write into `cache`, see `filesystem_cache_query_limit_bytes`.
-    /// One budget per cache the query uses, created on the first read or write buffer which needs
-    /// it and living as long as the query, so nothing has to clean it up.
     FileCacheQueryBudgetPtr getFilesystemCacheQueryBudget(const FileCache & cache, size_t size_limit) const;
     bool isInternalSubquery() const;
 

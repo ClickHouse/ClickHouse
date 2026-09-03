@@ -751,8 +751,6 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    /// Taken from the budget before the cache locks, so that a query which is over its limit is
-    /// refused without contending for them.
     if (query_budget && !query_budget->tryChargeBytes(size_to_reserve))
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
