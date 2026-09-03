@@ -2,6 +2,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Databases/IDatabase.h>
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
@@ -229,18 +230,34 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
 
 TableSettings IStorage::getTableSettings(ContextPtr context) const
 {
-    /// Only what the table's own `SETTINGS` clause states. Values are read straight out of the
-    /// stored AST, so unlike an override backed by a settings struct there is no accessor to give a
-    /// type-faithful rendering, nor a default, type, description or tier to report.
-    const auto metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-    if (!metadata_snapshot || !metadata_snapshot->settings_changes)
+    /// Only what the table's own `SETTINGS` clause states, read from the stored `CREATE` query -
+    /// the same source `SHOW CREATE TABLE` renders, and the only one every engine keeps.
+    ///
+    /// `StorageInMemoryMetadata::settings_changes` would be the tidier source, but only
+    /// `MergeTree`, `Memory` and `ALTER ... MODIFY SETTING` ever populate it, so reading it here
+    /// would report nothing for most engines. `ALTER` writes its changes back into the stored
+    /// `CREATE` query as well, so this stays current.
+    ///
+    /// Values come from the AST, so there is no settings accessor to give a type-faithful
+    /// rendering, nor a default, type, description or tier to report.
+    const auto table_id = getStorageID();
+    if (table_id.database_name.empty())
         return {};
 
-    const auto & changes = metadata_snapshot->settings_changes->as<const ASTSetQuery &>().changes;
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+    if (!database)
+        return {};
+
+    const auto create_query = database->tryGetCreateTableQuery(table_id.table_name, context);
+    if (!create_query)
+        return {};
+
+    const auto & create = create_query->as<const ASTCreateQuery &>();
+    if (!create.storage || !create.storage->settings)
+        return {};
 
     TableSettings result;
-    result.reserve(changes.size());
-    for (const auto & change : changes)
+    for (const auto & change : create.storage->settings->as<const ASTSetQuery &>().changes)
     {
         TableSetting setting;
         setting.name = change.name;
