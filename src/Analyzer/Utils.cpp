@@ -1697,9 +1697,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::DateTime:
-            /// A `DateTime` is backed by a Unix timestamp, but its text form is local date-time text, and two
-            /// UTC instants in a DST overlap share one such text (parsing picks the earlier). The raw timestamp
-            /// is unambiguous and time-zone independent.
+            /// Under a named `Variant` member the raw Unix timestamp is used instead of the text form.
             if (date_time_as_numbers)
                 return makeASTFunction(
                     "_CAST", make_intrusive<ASTLiteral>((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
@@ -1758,11 +1756,19 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return makeCastToTypeNameAST(make_intrusive<ASTLiteral>(Null()), type->getName());
             const auto & member_type = variant_types[global_discr];
-            auto member_ast = columnConstantToExactLiteralASTImpl(
-                variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
-                /*date_time_as_numbers=*/true);
-            return makeCastToTypeNameAST(
-                makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            auto member_ast = makeCastToTypeNameAST(
+                columnConstantToExactLiteralASTImpl(
+                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
+                    /*date_time_as_numbers=*/true),
+                member_type->getName());
+            /// Naming a string-like member is not enough: conversion of a string to a `Variant` with more than
+            /// one member parses the text and picks whichever member it parses as, so `'42'` under
+            /// `Variant(String, UInt64)` would arrive as a `UInt64`. A single-member `Variant` is not parsed
+            /// that way, and widening it keeps the member matched by name.
+            if (variant_types.size() > 1 && isStringOrFixedString(removeNullable(removeLowCardinality(member_type))))
+                member_ast = makeCastToTypeNameAST(
+                    std::move(member_ast), std::make_shared<DataTypeVariant>(DataTypes{member_type})->getName());
+            return makeCastToTypeNameAST(std::move(member_ast), type->getName());
         }
         case TypeIndex::Dynamic:
         {

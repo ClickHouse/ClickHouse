@@ -228,8 +228,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// `columnConstantToExactLiteralAST` already casts a scalar `Decimal`/`DateTime64`/`Time64` value to its
-        /// own type, so skip a redundant identity cast to the same type. A `Variant` member cast is never
-        /// skipped: a member type name can never equal the `Variant`'s own name.
+        /// own type, so skip a redundant identity cast to the same type.
         return makeCastToTypeNameAST(std::move(exact_ast), constant_value_type->getName());
     }
 
