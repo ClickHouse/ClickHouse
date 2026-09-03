@@ -21,7 +21,6 @@
 #include <Formats/EscapingRuleUtils.h>
 
 #include <algorithm>
-#include <unordered_set>
 
 namespace DB
 {
@@ -387,27 +386,17 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             readVarUInt(num_types, *structure_stream);
             reserveOrThrowTooManyTypes(structure_state->flattened_data_types, num_types);
             String data_type_name;
-            std::unordered_set<String> type_names;
             for (size_t i = 0; i != num_types; ++i)
             {
-                DataTypePtr data_type;
                 if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
                 {
-                    data_type = decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity);
+                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity));
                 }
                 else
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    data_type = getDataTypesCache().getType(data_type_name);
+                    structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
                 }
-
-                /// Duplicates would map two different indexes onto the same variant discriminator,
-                /// which makes the offsets of that variant inconsistent with its size.
-                if (!type_names.insert(data_type->getName()).second)
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Duplicate type {} in the list of types of a flattened Dynamic column", data_type->getName());
-
-                structure_state->flattened_data_types.push_back(std::move(data_type));
             }
 
             structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
