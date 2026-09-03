@@ -197,9 +197,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **start&#95;pos 引数を指定した場合**
@@ -209,9 +209,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 <div id="countSubstringsCaseInsensitiveUTF8">
@@ -247,9 +247,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **start&#95;pos 引数を使用する場合**
@@ -259,9 +259,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="extract">
@@ -456,7 +456,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 導入バージョン: v25.10.0
 
-[`hasAnyTokens`](#hasAnyTokens) と同様ですが、`needle` 文字列またはArrayに含まれるすべてのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
+[`hasAnyTokens`](#hasAnyTokens) と同様ですが、`needle` 文字列または配列内のすべてのトークンが `input` 文字列に一致する場合は 1 を、それ以外の場合は 0 を返します。`input` がカラムの場合は、この条件を満たすすべての行を返します。
 
 <Note>
   カラム `input` には、最適なパフォーマンスを得るために [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
@@ -485,26 +485,28 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **構文**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **別名**: `hasAllToken`
 
 **引数**
 
-* `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array)
+* `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Nullable(String)`](/ja/reference/data-types/nullable) または [`Nullable(FixedString)`](/ja/reference/data-types/nullable) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array) または [`Array(Nullable(String))`](/ja/reference/data-types/array) または [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
 * `needles` — 検索するトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-すべてのneedleが一致する場合は1、それ以外の場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+すべてのneedleが一致する場合は1を返します。そうでない場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
-**文字列のneedleを使った基本的な使い方**
+**文字列のニードルを使った基本的な使い方**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -524,9 +526,11 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Array内で検索するneedleをAS-IS (トークン化なし) で指定する**
+**Array内で AS-IS (トークン化なし) で検索する needles を指定する**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -549,6 +553,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **`tokens` 関数を使って needles を生成する**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -575,14 +581,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **Array と Map カラムの使用例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -602,6 +610,8 @@ INSERT INTO log VALUES
 **Array型のカラムの例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -629,6 +639,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **mapKeysの使用例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -656,6 +668,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **mapValues の例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -686,7 +700,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 導入バージョン: v25.10.0
 
-`needle` の文字列またはArrayの中に少なくとも1つのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
+`needle` の文字列または配列の中に少なくとも1つのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
 
 <Note>
   最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義する必要があります。
@@ -715,7 +729,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **構文**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **別名**: `hasAnyToken`
@@ -724,7 +738,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) or [`FixedString`](/ja/reference/data-types/fixedstring) or [`Nullable(String)`](/ja/reference/data-types/nullable) or [`Nullable(FixedString)`](/ja/reference/data-types/nullable) or [`Array(String)`](/ja/reference/data-types/array) or [`Array(FixedString)`](/ja/reference/data-types/array) or [`Array(Nullable(String))`](/ja/reference/data-types/array) or [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
 * `needles` — 検索対象のトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -735,6 +749,8 @@ hasAnyTokens(input, needles)
 **文字列のneedleを使った基本的な使い方**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -754,9 +770,11 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**ArrayでAS-IS (トークン化なし) で検索するneedleを指定する**
+**配列内でAS-IS (トークン化なし) として検索する検索語を指定する**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -779,6 +797,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **`tokens` 関数で needle を生成する**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -801,6 +821,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **ArrayカラムとMapカラムの使用例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -820,6 +842,8 @@ INSERT INTO log VALUES
 **Arrayカラムを使った例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -847,6 +871,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **mapKeysを使った例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -874,6 +900,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **mapValuesを使った例**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -913,7 +941,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 検索を行う前に、この関数はテキスト索引に指定されたトークナイザーを使用して、`input` 引数と `phrase` 引数の両方をトークン化します。
 カラムにテキスト索引が定義されていない場合は、省略可能な第 3 引数としてトークナイザーが指定されていない限り、代わりに `splitByNonAlpha` トークナイザーが使用されます。
-トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
+トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
+テキスト索引でもポストプロセッサが定義されている場合、`hasPhrase` では `splitByRegexp` がサポートされないことに注意してください。
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。
@@ -1088,9 +1117,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequenceUTF8">
@@ -1125,9 +1154,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **不一致の部分列**
@@ -1137,9 +1166,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 <div id="hasToken">
@@ -1267,9 +1296,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="highlight">
@@ -1441,9 +1470,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **マッチしないパターン**
@@ -1538,7 +1567,7 @@ RE2 のデフォルトの動作とは異なり、`.` は改行にも一致しま
 
 単に部分文字列を検索したいだけであれば、代わりに [`like`](#like) または [`position`](#position) 関数を使用できます。これらはこの関数よりも大幅に高速です。
 
-代替の演算子構文: `haystack REGEXP pattern`。
+代替の演算子構文: `haystack REGEXP pattern` または `haystack ~ pattern` (PostgreSQL スタイル) 。
 
 **構文**
 
@@ -1595,6 +1624,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 └────────────────────────┴──────────────────────────┘
 ```
 
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+導入バージョン: v26.8.0
+
+[`match`](#match) と似ていますが、大文字と小文字を区別せずに一致を判定します。
+
+この関数は RE2 正規表現ライブラリを使用します。サポートされている構文については、[re2](https://github.com/google/re2/wiki/Syntax) を参照してください。
+
+代替の演算子構文: `haystack ~* pattern` (PostgreSQL スタイル) 。
+
+**構文**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**引数**
+
+* `haystack` — パターンを検索する対象の文字列。 [`String`](/ja/reference/data-types/string)
+* `pattern` — 正規表現のパターン。定数にすることも、カラムから取得することもできます。 [`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+大文字と小文字を区別せずにパターンに一致する場合は `1`、そうでない場合は `0` を返します。 [`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
 <div id="multiFuzzyMatchAllIndices">
   ## multiFuzzyMatchAllIndices
 </div>
@@ -1628,9 +1699,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAny">
@@ -1672,9 +1743,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAnyIndex">
@@ -1683,7 +1754,7 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 
 導入バージョン: v20.1.0
 
-[`multiFuzzyMatchAny`](#multiFuzzyMatchAny) と同様ですが、一定の[編集距離](https://en.wikipedia.org/wiki/Edit_distance)内で検索対象文字列に一致する任意のインデックスを返します。
+[`multiFuzzyMatchAny`](#multiFuzzyMatchAny) と同様ですが、一定の[編集距離](https://en.wikipedia.org/wiki/Edit_distance)内で検索対象文字列に一致する任意の索引を返します。
 
 **構文**
 
@@ -1710,9 +1781,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAllIndices">
@@ -1747,9 +1818,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAny">
@@ -1824,7 +1895,7 @@ multiMatchAnyIndex(haystack, [pattern1, pattern2, ..., patternn])
 
 **戻り値**
 
-最初に一致したパターンのインデックス (1 から始まる) を返します。どのパターンにも一致しない場合は 0 を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+最初に一致したパターンの索引 (1 から始まる) を返します。どのパターンにも一致しない場合は 0 を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -1835,9 +1906,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositions">
@@ -1911,9 +1982,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsCaseInsensitiveUTF8">
@@ -1948,9 +2019,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsUTF8">
@@ -2098,9 +2169,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAnyUTF8">
@@ -2157,11 +2228,11 @@ multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 **引数**
 
 * `haystack` — 検索対象の文字列。[`String`](/ja/reference/data-types/string)
-* `needles` — 検索する文字列の配列。[`Array(String)`](/ja/reference/data-types/array)
+* `needles` — 検索する文字列の Array。[`Array(String)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-haystack 内で最初に見つかった needle について、needles 配列内での 1 始まりの索引 (位置) を返します。needle が 1 つも見つからない場合は 0 を返します。検索では大文字と小文字を区別します。[`UInt64`](/ja/reference/data-types/int-uint)
+haystack 内で最初に見つかった needle について、needles Array 内での 1 始まりの索引 (位置) を返します。needle が 1 つも見つからない場合は 0 を返します。検索では大文字と小文字を区別します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -2172,9 +2243,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **大文字と小文字を区別する挙動**
@@ -2184,21 +2255,21 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**一致する索引が見つかりません**
+**一致する項目が見つかりません**
 
 ```sql title=Query
 SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitive">
@@ -2207,7 +2278,7 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 
 導入バージョン: v20.1.0
 
-文字列 `haystack` 内で最も左側で見つかった needle&#95;i のインデックス `i` (1始まり) を返し、見つからない場合は 0 を返します。
+文字列 `haystack` 内で最も左側で見つかった needle&#95;i の索引 `i` (1始まり) を返し、見つからない場合は 0 を返します。
 大文字と小文字を区別しません。
 
 **構文**
@@ -2234,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitiveUTF8">
@@ -2271,9 +2342,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **UTF-8の大文字・小文字の扱い**
@@ -2283,21 +2354,21 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**一致する索引が見つかりません**
+**一致する項目が見つかりません**
 
 ```sql title=Query
 SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexUTF8">
@@ -2333,9 +2404,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstPosition">
@@ -2508,12 +2579,12 @@ ngramDistance(haystack, needle)
 
 **引数**
 
-* `haystack` — 比較する文字列。[`String`](/ja/reference/data-types/string)
-* `needle` — 比較する文字列。[`String`](/ja/reference/data-types/string)
+* `haystack` — 比較対象の文字列。[`String`](/ja/reference/data-types/string)
+* `needle` — 比較対象の文字列。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-`0` から `1` までの Float32 の数値を返します。戻り値が小さいほど、文字列の類似度は高くなります。[`Float32`](/ja/reference/data-types/float)
+`0` から `1` までの Float32 型の数値を返します。戻り値が小さいほど、文字列の類似度は高くなります。[`Float32`](/ja/reference/data-types/float)
 
 **例**
 
@@ -2525,7 +2596,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2563,9 +2634,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceCaseInsensitiveUTF8">
@@ -2574,7 +2645,7 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 
 導入バージョン: v20.1.0
 
-[`ngramDistance`](#ngramDistance) の、UTF-8 に対応した大文字と小文字を区別しないバリアントです。
+[`ngramDistance`](#ngramDistance) の、大文字と小文字を区別しない UTF-8 バリアントです。
 `needle` および `haystack` は UTF-8 でエンコードされた文字列であることを前提とし、大文字と小文字は区別されません。
 大文字と小文字を区別せずに、2 つの UTF-8 文字列間の 3-gram 距離を計算します。
 戻り値が小さいほど、文字列同士の類似度は高くなります。
@@ -2592,7 +2663,7 @@ ngramDistanceCaseInsensitiveUTF8(haystack, needle)
 
 **戻り値**
 
-`0` から `1` までの Float32 値を返します。[`Float32`](/ja/reference/data-types/float)
+`0` から `1` までの Float32 型の数値を返します。[`Float32`](/ja/reference/data-types/float)
 
 **例**
 
@@ -2603,9 +2674,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceUTF8">
@@ -2761,7 +2832,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2800,7 +2871,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2838,9 +2909,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 <div id="notLike">
@@ -2877,9 +2948,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **マッチしないパターン**
@@ -2889,9 +2960,93 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+導入バージョン: v26.8.0
+
+[`match`](#match) と似ていますが、結果を否定します。文字列が正規表現パターンに一致しないことを確認します。
+
+この関数は RE2 正規表現ライブラリを使用します。サポートされている構文については、[re2](https://github.com/google/re2/wiki/Syntax) を参照してください。
+
+代替の演算子構文: `haystack !~ pattern` (PostgreSQL 形式) 。
+
+**構文**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**引数**
+
+* `haystack` — パターンを検索する対象の文字列。 [`String`](/ja/reference/data-types/string)
+* `pattern` — 正規表現のパターン。定数にすることも、カラムから取得することもできます。 [`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+パターンに一致する場合は `0`、そうでない場合は `1` を返します。 [`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+導入バージョン: v26.8.0
+
+[`matchCaseInsensitive`](#matchCaseInsensitive) と似ていますが、結果を否定します。文字列が正規表現パターンに大文字と小文字を区別せずに一致しないことを確認します。
+
+この関数は RE2 正規表現ライブラリを使用します。サポートされている構文については、[re2](https://github.com/google/re2/wiki/Syntax) を参照してください。
+
+代替の演算子構文: `haystack !~* pattern` (PostgreSQL 形式) 。
+
+**構文**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**引数**
+
+* `haystack` — パターンを検索する対象の文字列。 [`String`](/ja/reference/data-types/string)
+* `pattern` — 正規表現のパターン。定数にすることも、カラムから取得することもできます。 [`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+大文字と小文字を区別せずにパターンに一致する場合は `0`、そうでない場合は `1` を返します。 [`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="position">
@@ -3088,9 +3243,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
