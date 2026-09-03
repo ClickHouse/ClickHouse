@@ -227,20 +227,21 @@ def test_removing_constraint_from_non_default_profile():
     )
 
 
-@pytest.mark.xfail(
-    reason="Removing the VALUE of a setting from the default profile is stuck until restart, by the "
-    "same stale global snapshot which used to keep removed constraints alive: `Context::createCopy` "
-    "copies the settings of the global context and `Context::setUser` applies the profile changes on "
-    "top of them. Fixing it needs a snapshot of the settings taken before the system profile is "
-    "applied at startup, which is a separate change."
+@pytest.mark.parametrize(
+    "reload_statement", ["SYSTEM RELOAD USERS", "SYSTEM RELOAD CONFIG"]
 )
-def test_removing_setting_falls_back_to_default():
+def test_removing_setting_falls_back_to_default(reload_statement):
     assert node.query("SELECT getSetting('max_memory_usage')") == "10000000000\n"
 
     node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "configs/removed_settings.xml"),
         "/etc/clickhouse-server/users.d/z.xml",
     )
-    node.query("SYSTEM RELOAD CONFIG")
+    node.query(reload_statement)
 
     assert node.query("SELECT getSetting('max_memory_usage')") == "0\n"
+
+    # The settings which are still in the profile must keep their values: they are re-applied on top
+    # of the restored ones, so a fix which just resets everything does not pass.
+    assert node.query("SELECT getSetting('load_balancing')") == "first_or_random\n"
+    assert node.query("SELECT getSetting('alter_sync')") == "2\n"

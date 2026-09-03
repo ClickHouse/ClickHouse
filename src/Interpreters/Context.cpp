@@ -601,6 +601,10 @@ struct ContextSharedPart : boost::noncopyable
     String system_profile_name;                                 /// Profile used by system processes
     String background_profile_name;                             /// Profile used by background operations
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
+    /// The settings the system profile changed at startup, with the values they had before it was
+    /// applied. An unset value means the setting was left at its default. Written once, by
+    /// `setDefaultProfiles`. See its use in `setCurrentProfilesWithLock`.
+    std::vector<std::pair<String, std::optional<Field>>> settings_before_profiles;
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
@@ -2549,6 +2553,22 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
+
+    /// A `Complete` info lists every profile which applies to the principal, so it replaces what the
+    /// profiles left on this context instead of being layered on top of it. Without this a value
+    /// deleted from the configuration would survive in the snapshot inherited from the global
+    /// context - the same way a deleted constraint used to, see `SettingsProfilesInfo::Composition`.
+    if (profiles_info.composition == SettingsProfilesInfo::Composition::Complete)
+    {
+        for (const auto & [name, value_before_profiles] : shared->settings_before_profiles)
+        {
+            if (value_before_profiles)
+                settings->set(name, *value_before_profiles);
+            else
+                settings->setDefaultValue(name);
+        }
+    }
+
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
@@ -7863,7 +7883,27 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     /// the default value set in the config might be outside of the constraints range
     /// It makes it possible to change the value of experimental settings with a restrictive `allow_feature_tier`
     bool check_constraints = false;
+    Settings settings_before_profiles = *settings;
     setCurrentProfile(shared->system_profile_name, check_constraints);
+
+    /// Remember what the profile changed here. Every other context is copied from this one, so it
+    /// inherits these values, and a complete set of profiles is later applied on top of that copy as
+    /// a delta - which cannot express a setting that is gone from the configuration. Restoring them
+    /// from here is what lets a removed value take effect without restarting the server.
+    std::vector<std::pair<String, std::optional<Field>>> changed_by_profiles;
+    for (const auto & change : settings->changes())
+    {
+        std::optional<Field> value_before;
+        if (settings_before_profiles.isChanged(change.name))
+        {
+            value_before = settings_before_profiles.get(change.name);
+            /// Was already set to the same value before, so the profile did not change it.
+            if (*value_before == change.value)
+                continue;
+        }
+        changed_by_profiles.emplace_back(change.name, std::move(value_before));
+    }
+    shared->settings_before_profiles = std::move(changed_by_profiles);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
     adjustSettingsForMakeDistributedPlan(*settings);

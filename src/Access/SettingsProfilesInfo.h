@@ -40,8 +40,9 @@ struct SettingsProfilesInfo
     /// `Complete` - the whole set of profiles which applies to a principal: the default profile,
     ///     the profiles targeting the user and its roles, the settings of the roles and the settings
     ///     of the user. Produced only by `SettingsProfilesCache::mergeSettingsAndConstraintsFor` and
-    ///     applied only by `Context::setUser`. Composition replaces the previous constraints, so a
-    ///     constraint which was deleted from the configuration actually goes away.
+    ///     applied only by `Context::setUser`. Composition replaces the previous constraints, and the
+    ///     settings the profiles left on the context, so a constraint or a value which was deleted
+    ///     from the configuration actually goes away.
     ///
     /// This is deliberately a property of the object rather than an argument of
     /// `getConstraintsAndProfileIDs`: whether replacing is safe depends on how the info was produced,
