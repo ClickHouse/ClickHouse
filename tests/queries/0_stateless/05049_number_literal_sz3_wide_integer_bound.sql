@@ -6,6 +6,7 @@
 -- has to be accepted, or a table whose metadata carries that spelling can no longer be attached.
 
 SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 
 DROP TABLE IF EXISTS t_sz3_wide;
 CREATE TABLE t_sz3_wide (x Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 100000000000000000000))) ENGINE = Memory;

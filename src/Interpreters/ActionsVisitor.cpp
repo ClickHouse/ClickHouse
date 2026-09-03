@@ -1920,10 +1920,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (arguments_present)
     {
         /// Deferred NumberLiteral resolution for comparison functions only.
-        static const std::unordered_set<String> comparison_functions = {
-            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        };
-        if (node.arguments && comparison_functions.contains(node.name))
+        if (node.arguments && functionIsComparisonOperator(node.name))
         {
             const auto & args = node.arguments->children;
             const auto & index = data.actions_stack.getLastActionsIndex();

@@ -3102,18 +3102,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve NumberLiteral constants: replace each with a properly typed value based on context.
     {
-        static const std::unordered_set<String> comparison_functions = {
-            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-            "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
-        };
-        bool is_comparison = comparison_functions.contains(function_name);
+        bool is_comparison = functionIsComparisonOperator(function_name) || functionIsInOrGlobalInOperator(function_name);
 
         /// A tuple or array of literals is one literal, so its elements are resolved to their default
         /// type before the compared type is known. Rebuild it element-wise, like the IN right-hand side.
-        static const std::unordered_set<String> element_wise_comparison_functions = {
-            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        };
-        if (function_arguments_size == 2 && element_wise_comparison_functions.contains(function_name))
+        if (function_arguments_size == 2 && functionIsComparisonOperator(function_name))
         {
             for (size_t i = 0; i < 2; ++i)
             {
