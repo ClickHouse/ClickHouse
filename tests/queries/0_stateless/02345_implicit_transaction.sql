@@ -78,7 +78,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     'implicit_True',
     count() as all,
-    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000') as is_empty
+    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000',0) as is_empty
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
@@ -90,7 +90,7 @@ FORMAT JSONEachRow;
 SELECT
     'implicit_False',
     count() as all,
-    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000') as is_empty
+    transaction_id = (0,0,'00000000-0000-0000-0000-000000000000',0) as is_empty
 FROM system.query_log
 WHERE
     current_database = currentDatabase() AND

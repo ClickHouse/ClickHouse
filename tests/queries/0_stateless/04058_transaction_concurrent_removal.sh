@@ -47,7 +47,7 @@ tx 3 "ROLLBACK"
 # After rollback the active part is restored
 $CLICKHOUSE_CLIENT -q "
     SELECT 'restored_after_rollback',
-        removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000'),
+        removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000', 0),
         removal_csn = 0
     FROM system.parts
     WHERE database = currentDatabase()

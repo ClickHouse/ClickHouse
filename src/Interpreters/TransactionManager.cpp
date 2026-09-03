@@ -145,8 +145,6 @@ ZooKeeperPtr TransactionManager::getZooKeeper() const
     return zookeeper;
 }
 
-namespace fs = std::filesystem;
-
 String TransactionManager::cleanupLockPath() const { return zookeeper_path + "/cleanup_lock"; }
 
 void TransactionManager::tryAcquireCleanupLock()

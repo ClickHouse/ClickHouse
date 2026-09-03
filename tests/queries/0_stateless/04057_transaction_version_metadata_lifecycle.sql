@@ -16,7 +16,7 @@ SELECT 'non_txn_creation_csn_is_1',
     creation_csn = 1
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't'
-    AND creation_tid = (1, 1, '00000000-0000-0000-0000-000000000000')
+    AND creation_tid = (1, 1, '00000000-0000-0000-0000-000000000000', 0)
     AND active;
 
 -- 2. Transactional insert: creation_csn = 0 (unknown) inside transaction,
@@ -27,7 +27,7 @@ SELECT 'in_txn_creation_csn_is_0',
     creation_csn = 0
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't'
-    AND creation_tid != (1, 1, '00000000-0000-0000-0000-000000000000')
+    AND creation_tid != (1, 1, '00000000-0000-0000-0000-000000000000', 0)
     AND active;
 COMMIT;
 
@@ -35,7 +35,7 @@ SELECT 'committed_creation_csn_positive',
     creation_csn > 1
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't'
-    AND creation_tid != (1, 1, '00000000-0000-0000-0000-000000000000')
+    AND creation_tid != (1, 1, '00000000-0000-0000-0000-000000000000', 0)
     AND active;
 
 -- 3. Transactional insert rolled back: creation_csn = RolledBackCSN = 18446744073709551615
@@ -54,13 +54,13 @@ WHERE database = currentDatabase() AND table = 't'
 BEGIN TRANSACTION;
 ALTER TABLE t DROP PARTITION ID 'all';
 -- Inside the removal transaction: removal_tid is set, removal_csn is still 0
-SELECT 'in_removal_txn_removal_tid_set', removal_tid != (0, 0, '00000000-0000-0000-0000-000000000000'),
+SELECT 'in_removal_txn_removal_tid_set', removal_tid != (0, 0, '00000000-0000-0000-0000-000000000000', 0),
     removal_csn = 0
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't'
     AND active = 0
     AND removal_csn = 0
-    AND removal_tid != (0, 0, '00000000-0000-0000-0000-000000000000')
+    AND removal_tid != (0, 0, '00000000-0000-0000-0000-000000000000', 0)
 ORDER BY name;
 COMMIT;
 
@@ -80,7 +80,7 @@ ROLLBACK;
 
 -- After rollback: removal_tid = empty, removal_csn = 0 for the active part
 SELECT 'rollback_removal_tid_empty',
-    removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000'),
+    removal_tid = (0, 0, '00000000-0000-0000-0000-000000000000', 0),
     removal_csn = 0
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't' AND active

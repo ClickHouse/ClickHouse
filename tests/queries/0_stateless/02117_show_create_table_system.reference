@@ -592,12 +592,14 @@ CREATE TABLE system.parts
     `creation_tid` Tuple(
         UInt64,
         UInt64,
-        UUID),
+        UUID,
+        Int64),
     `removal_tid_lock` UInt64,
     `removal_tid` Tuple(
         UInt64,
         UInt64,
-        UUID),
+        UUID,
+        Int64),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,
