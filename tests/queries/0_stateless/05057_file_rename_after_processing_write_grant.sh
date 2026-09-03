@@ -25,7 +25,7 @@ RENAME="rename_files_after_processing='processed_%a'"
 for name in direct_select wrapped_url cluster_initiator cluster_no_setting cluster_granted \
             explain_pipeline explain_plan granted_write urldb_denied urldb_granted \
             cached_armed_for_reader cached_armed_for_owner cached_unarmed \
-            dist_insert_denied dist_insert_granted; do
+            cluster_unoptimized dist_insert_denied dist_insert_granted; do
     echo 7 > "${FILES_DIR}/${name}.csv"
 done
 
@@ -74,6 +74,14 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "SELECT * FROM fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_initiator.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}" 2>&1 |
     grep -o -m1 'WRITE ON FILE'
 file_state cluster_initiator
+
+echo '--- and through fileCluster() even when no plan optimization runs, which builds no task iterator'
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "EXPLAIN PLAN optimize = 0 SELECT * FROM
+     fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_unoptimized.csv', 'CSV', 'x UInt8')
+     SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state cluster_unoptimized
 
 echo '--- EXPLAIN PIPELINE builds the readers, so it renames too, and is refused'
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
@@ -185,6 +193,9 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
 file_state cluster_granted
 
 echo '--- as does a distributed INSERT SELECT, which also delivers its rows'
+# Emptied first so the count below is this arm's own: a regression that let the refused insert
+# through would otherwise show up here rather than where it happened.
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE ${CLICKHOUSE_DATABASE}.dst"
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.dist SELECT * FROM
      fileCluster('test_shard_localhost', '${FILES_DIR}/dist_insert_granted.csv', 'CSV', 'x UInt8')

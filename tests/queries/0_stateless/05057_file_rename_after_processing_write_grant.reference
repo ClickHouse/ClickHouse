@@ -9,6 +9,9 @@ intact
 --- the same through fileCluster(), refused on the initiator
 WRITE ON FILE
 intact
+--- and through fileCluster() even when no plan optimization runs, which builds no task iterator
+WRITE ON FILE
+intact
 --- EXPLAIN PIPELINE builds the readers, so it renames too, and is refused
 WRITE ON FILE
 intact
