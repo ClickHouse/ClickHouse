@@ -643,7 +643,7 @@ By default a recursive `CTE` is evaluated naively: every step re-derives rows fr
 
 The optional `USING KEY (<key columns>)` modifier switches the `CTE` to keyed (semi-naive) evaluation. It is experimental and requires the setting `allow_experimental_keyed_recursive_cte` to be enabled:
 
-- The recursion accumulates one row per key. A produced row whose key is already accumulated replaces the accumulated row.
+- The recursion accumulates one row per key. A produced row whose key is already accumulated replaces the accumulated row. If several rows with the same key are produced within one step, the last produced one is kept.
 - Only rows that actually changed the accumulated state form the working table of the next step, so a row that is re-derived unchanged is not propagated. This is what makes the recursion terminate on cyclic data without a cycle guard.
 - The result of the `CTE` is the accumulated keyed table at convergence, not the concatenation of the steps.
 - The accumulated state is additionally exposed to the recursive members under the name `<cte_name>_settled`, so a recursive member can compare a candidate row against the currently accumulated one and refute rows that are not an improvement.

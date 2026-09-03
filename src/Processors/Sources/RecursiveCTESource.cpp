@@ -315,17 +315,28 @@ private:
         {
             buildStepExecutor();
 
-            MutableColumns delta_columns = header->cloneEmptyColumns();
+            /// Collect the rows produced by the step. Several rows may be produced for the same key
+            /// within one step; the last produced one is the candidate for that key.
+            StepCandidates candidates(header->cloneEmptyColumns());
 
             Chunk chunk;
             while (executor->pull(chunk))
             {
                 if (chunk.getNumRows() > 0)
-                    upsertChunkIntoAccumulated(chunk, delta_columns);
+                    collectStepCandidates(chunk, candidates);
                 chunk.clear();
             }
 
             executor.reset();
+
+            /// Apply the candidates to the accumulated state. A candidate identical to the accumulated
+            /// row for its key does not change the state and is not propagated; the others replace the
+            /// accumulated row and form the next step's working table. Comparing the final candidate per
+            /// key against the state at the start of the step keeps the frontier consistent with the
+            /// accumulated state: a key that transiently changes and returns to its accumulated value
+            /// within one step is not propagated, so the recursion converges.
+            MutableColumns delta_columns = header->cloneEmptyColumns();
+            applyStepCandidates(candidates, delta_columns);
 
             size_t delta_rows = delta_columns.empty() ? 0 : delta_columns[0]->size();
             if (delta_rows == 0)
@@ -352,11 +363,21 @@ private:
         keyed_result_columns = buildAccumulatedBlock().getColumns();
     }
 
-    void upsertChunkIntoAccumulated(const Chunk & chunk, MutableColumns & delta_columns)
+    /// Rows produced by one recursive step, with the index of the last produced row per key.
+    struct StepCandidates
+    {
+        explicit StepCandidates(MutableColumns columns_) : columns(std::move(columns_)) {}
+
+        MutableColumns columns;
+        PaddedPODArray<UInt128> row_hashes;
+        std::unordered_map<UInt128, size_t, UInt128Hash> last_row_for_key;
+    };
+
+    void collectStepCandidates(const Chunk & chunk, StepCandidates & candidates)
     {
         const auto & chunk_columns = chunk.getColumns();
         size_t rows = chunk.getNumRows();
-        size_t columns_size = accumulated_columns.size();
+        size_t columns_size = candidates.columns.size();
 
         for (size_t row = 0; row < rows; ++row)
         {
@@ -364,6 +385,27 @@ private:
             for (auto key_column_index : key_column_indices)
                 chunk_columns[key_column_index]->updateHashWithValue(row, key_hash);
             UInt128 key = key_hash.get128();
+
+            size_t new_row_index = candidates.columns[0]->size();
+            for (size_t i = 0; i < columns_size; ++i)
+                candidates.columns[i]->insertFrom(*chunk_columns[i], row);
+            candidates.row_hashes.push_back(key);
+            candidates.last_row_for_key[key] = new_row_index;
+        }
+    }
+
+    void applyStepCandidates(const StepCandidates & candidates, MutableColumns & delta_columns)
+    {
+        size_t rows = candidates.row_hashes.size();
+        size_t columns_size = accumulated_columns.size();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const UInt128 & key = candidates.row_hashes[row];
+
+            /// Superseded by a later row with the same key within this step.
+            if (candidates.last_row_for_key.at(key) != row)
+                continue;
 
             auto it = accumulated_index.find(key);
             if (it != accumulated_index.end())
@@ -373,7 +415,7 @@ private:
                 bool row_changed = false;
                 for (size_t i = 0; i < columns_size; ++i)
                 {
-                    if (accumulated_columns[i]->compareAt(existing_row, row, *chunk_columns[i], /*nan_direction_hint*/ 1) != 0)
+                    if (accumulated_columns[i]->compareAt(existing_row, row, *candidates.columns[i], /*nan_direction_hint*/ 1) != 0)
                     {
                         row_changed = true;
                         break;
@@ -396,8 +438,8 @@ private:
             size_t new_row_index = accumulated_columns[0]->size();
             for (size_t i = 0; i < columns_size; ++i)
             {
-                accumulated_columns[i]->insertFrom(*chunk_columns[i], row);
-                delta_columns[i]->insertFrom(*chunk_columns[i], row);
+                accumulated_columns[i]->insertFrom(*candidates.columns[i], row);
+                delta_columns[i]->insertFrom(*candidates.columns[i], row);
             }
             accumulated_row_hashes.push_back(key);
             accumulated_live.push_back(static_cast<UInt8>(1));

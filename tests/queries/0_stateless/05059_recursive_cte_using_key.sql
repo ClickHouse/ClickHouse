@@ -47,6 +47,39 @@ WITH RECURSIVE pairs USING KEY (a, b) AS
 )
 SELECT a, b FROM pairs ORDER BY a, b;
 
+-- 3b. A step may produce several rows for one key: the last produced one is the candidate for that key,
+-- and a candidate identical to the accumulated row is a no-op. Here every step re-derives the accumulated
+-- row after a transient (1, 1), so the recursion converges instead of running into the depth limit.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 0 AS v
+    UNION ALL
+    SELECT k, arrayJoin([v + 1, v]) FROM t WHERE v = 0
+)
+SELECT * FROM t SETTINGS max_recursive_cte_evaluation_depth = 5;
+
+-- 3c. The working table of the next step holds only the final row per key, so a recursive member never
+-- sees a row that was superseded within the same step: (1, 'b') is superseded by (1, 'c') in the first
+-- step, so the second member does not derive (2, 'b') from it.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 'a' AS s
+    UNION ALL
+    SELECT k, arrayJoin(['b', 'c']) FROM t WHERE s = 'a'
+    UNION ALL
+    SELECT 2, s FROM t WHERE k = 1 AND s = 'b'
+)
+SELECT * FROM t ORDER BY k;
+
+-- 3d. Within a step the last produced row for a key wins.
+WITH RECURSIVE t USING KEY (k) AS
+(
+    SELECT 1 AS k, 0 AS v
+    UNION ALL
+    SELECT k, arrayJoin([10, 20]) FROM t WHERE v = 0
+)
+SELECT * FROM t;
+
 -- 4. USING KEY requires the CTE to actually be recursive.
 WITH RECURSIVE notrec USING KEY (x) AS (SELECT 1 AS x UNION ALL SELECT 2 AS x) SELECT * FROM notrec; -- { serverError BAD_ARGUMENTS }
 

@@ -9,5 +9,8 @@
 0	0
 1	2
 2	1
+1	0
+1	c
+1	20
 WITH RECURSIVE\n    r USING KEY (a, b) AS\n    (\n        SELECT\n            1 AS a,\n            2 AS b\n        UNION ALL\n        SELECT\n            a,\n            b\n        FROM r\n    )\nSELECT *\nFROM r
 WITH RECURSIVE r USING KEY (a, b) AS (SELECT 1 AS a, 2 AS b UNION ALL SELECT a, b FROM r) SELECT * FROM r
