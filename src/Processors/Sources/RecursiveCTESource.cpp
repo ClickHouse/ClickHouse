@@ -446,7 +446,7 @@ private:
         ssize_t result_size_hint = static_cast<ssize_t>(accumulated_live.size() - accumulated_dead);
         for (const auto & accumulated_column : accumulated_columns)
             result_columns.push_back(accumulated_column->filter(accumulated_live, result_size_hint));
-        return header->cloneWithColumns(std::move(result_columns));
+        return header->cloneWithColumns(result_columns);
     }
 
     void pushBlockIntoStorage(StoragePtr & storage, Block block)
