@@ -167,9 +167,13 @@ String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
     {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements]);
-        if (!uris.empty())
-            return uris[0];
+        /// Only the first address is needed, to read the hive partitioning and the virtual columns off
+        /// its path, so the rest of the pattern is never generated and never counted against the limit.
+        RemoteDescriptionGenerator generator(
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+        String first_uri;
+        if (generator.next(first_uri))
+            return first_uri;
     }
     return uri;
 }
@@ -294,47 +298,155 @@ namespace
     }
 }
 
+/// How many addresses are generated at a time. A pattern that fits into one batch behaves exactly as
+/// it did when the whole direct product was materialized up front - in particular `size` is exact -
+/// and the default `glob_expansion_max_elements` is this same value, so only a raised limit is ever
+/// served in more than one batch.
+static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
+
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
     Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+        : generator(uri_, 0, uri_.size(), ',', max_addresses, "url")
+        , max_addresses_upper_bound(max_addresses)
+        , filter_virtual_columns(virtual_columns)
+        , filter_hive_columns(hive_columns)
+        , filter_context(context)
     {
-        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
 
-        std::optional<ActionsDAG> filter_dag;
-        if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+        std::lock_guard lock(mutex);
+        fillBatch();
 
-        if (filter_dag)
-        {
-            std::vector<String> paths;
-            paths.reserve(uris.size());
-            for (const auto & uri : uris)
-                paths.push_back(Poco::URI(uri).getPath());
-
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
-        }
+        /// When the whole pattern fitted into the first batch its addresses are all known, so the
+        /// caller gets the exact number that survived the filter, as it did before.
+        exact_size = exhausted ? std::optional<size_t>(batch.size()) : std::nullopt;
     }
 
     String next()
     {
-        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-        if (current_index >= uris.size())
-            return {};
+        std::lock_guard lock(mutex);
 
-        return uris[current_index];
+        while (batch_index == batch.size())
+        {
+            if (exhausted)
+                return {};
+            fillBatch();
+        }
+
+        return batch[batch_index++];
     }
 
+    /// The exact number of addresses when the pattern fitted into the first batch, an upper bound
+    /// otherwise. It is only used to detect an empty glob.
     size_t size()
     {
-        return uris.size();
+        std::lock_guard lock(mutex);
+        if (exact_size)
+            return *exact_size;
+
+        /// Not exhausted, so at least one more address exists beyond the batch; the query can never
+        /// consume more than the limit anyway.
+        const auto total = generator.totalCount();
+        return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+    }
+
+    /// How many streams are worth starting when the caller wants up to `requested` of them. Every
+    /// stream asks for an address as soon as it starts, so starting more of them than there are
+    /// servable addresses forces another batch at once - and generating one past the limit throws,
+    /// failing a query whose surviving addresses were all within it. When a filter pruned some of the
+    /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
+    /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
+    /// after the first batch still gets its parallelism. Rejected addresses count as generated:
+    /// prefetching stops at the limit rather than walking an unbounded pattern.
+    size_t sizeForStreams(size_t requested)
+    {
+        std::lock_guard lock(mutex);
+        if (exact_size)
+            return *exact_size;
+
+        if (!filter_dag)
+        {
+            const auto total = generator.totalCount();
+            return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+        }
+
+        while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
+            fillBatch();
+
+        /// Never zero: when everything buffered was pruned and the limit is reached, the one stream
+        /// left is the one that asks past the limit and turns that into the error it always was.
+        return std::max<size_t>(1, batch.size() - batch_index);
     }
 
 private:
-    Strings uris;
-    std::atomic_size_t index = 0;
+    /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
+    /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
+    /// when the pattern is exhausted or the whole portion was filtered out.
+    void fillBatch() TSA_REQUIRES(mutex)
+    {
+        batch.erase(batch.begin(), batch.begin() + batch_index);
+        batch_index = 0;
+
+        /// Never generate more addresses than the limit allows. Asking for one past it is what makes
+        /// the generator report that the pattern is too large - and only a query that reads that far
+        /// ever asks.
+        size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
+        if (target == 0)
+            target = 1;
+
+        Strings fresh;
+        fresh.reserve(target);
+        String uri;
+        while (fresh.size() < target)
+        {
+            if (!generator.next(uri))
+                break;
+            ++generated;
+            fresh.push_back(std::move(uri));
+        }
+        exhausted = generator.isExhausted();
+
+        if (filter_dag && !fresh.empty())
+        {
+            /// The sets of the filter are built on first use: an empty glob must not run the subqueries
+            /// of a `_path IN (...)` predicate, which it did not do when the addresses were materialized
+            /// up front and the filter was skipped for an empty list.
+            if (!filter_actions)
+            {
+                VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
+                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+
+            std::vector<String> paths;
+            paths.reserve(fresh.size());
+            for (const auto & fresh_uri : fresh)
+                paths.push_back(Poco::URI(fresh_uri).getPath());
+
+            VirtualColumnUtils::filterByPathOrFile(
+                fresh, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+        }
+
+        batch.insert(batch.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
+    }
+
+    std::mutex mutex;
+
+    RemoteDescriptionGenerator generator TSA_GUARDED_BY(mutex);
+    const size_t max_addresses_upper_bound;
+
+    std::optional<ActionsDAG> filter_dag TSA_GUARDED_BY(mutex);
+    ExpressionActionsPtr filter_actions TSA_GUARDED_BY(mutex);
+    const NamesAndTypesList filter_virtual_columns;
+    const NamesAndTypesList filter_hive_columns;
+    const ContextPtr filter_context;
+
+    Strings batch TSA_GUARDED_BY(mutex);
+    size_t batch_index TSA_GUARDED_BY(mutex) = 0;
+    size_t generated TSA_GUARDED_BY(mutex) = 0;
+    bool exhausted TSA_GUARDED_BY(mutex) = false;
+    std::optional<size_t> exact_size;
 };
 
 StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
@@ -348,6 +460,11 @@ String StorageURLSource::DisclosedGlobIterator::next()
 size_t StorageURLSource::DisclosedGlobIterator::size()
 {
     return pimpl->size();
+}
+
+size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
+{
+    return pimpl->sizeForStreams(requested);
 }
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
@@ -862,80 +979,64 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
+    /// Writes the next address to try into its argument, returns false when there are none left.
+    using URLProducer = std::function<bool(String &)>;
+
     class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
+        /// `url_producer_` yields the addresses to try, one at a time. Inference stops at the first
+        /// address it can read from, so a pattern is only expanded as far as that.
         URLReadBufferIterator(
-            const std::vector<String> & urls_to_check_,
+            URLProducer url_producer_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
-            : WithContext(context_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
         {
-            url_options_to_check.reserve(urls_to_check_.size());
-            for (const auto & url : urls_to_check_)
-                url_options_to_check.push_back(getFailoverOptions(url, getContext()->getSettingsRef()[Setting::glob_expansion_max_elements]));
+            produceMoreURLs();
         }
 
         Data next() override
         {
             bool is_first = (current_index == 0);
-            if (is_first)
-            {
-                /// If format is unknown we iterate through all url options on first iteration and
-                /// try to determine format by file name.
-                if (!format)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        for (const auto & url : options)
-                        {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
-                            {
-                                format = format_from_file_name;
-                                break;
-                            }
-                        }
-                    }
-                }
 
-                /// For default mode check cached columns for all urls on first iteration.
-                if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        if (auto cached_columns = tryGetColumnsFromCache(options))
-                            return {nullptr, cached_columns, format};
-                    }
-                }
-            }
+            /// The addresses of the first batch are examined before anything is read, and the
+            /// batches `produceMoreURLs` appends later must get the same pass, as the materializing
+            /// iterator gave it to every address at once.
+            if (auto cached_columns = scanNewURLOptions())
+                return {nullptr, cached_columns, format};
 
             std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
             do
             {
                 if (current_index == url_options_to_check.size())
                 {
-                    if (is_first)
+                    if (!produceMoreURLs())
                     {
-                        if (format)
+                        if (is_first)
+                        {
+                            if (format)
+                                throw Exception(
+                                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                    "The table structure cannot be extracted from a {} format file, because all files are empty. "
+                                    "You can specify table structure manually",
+                                    *format);
+
                             throw Exception(
                                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                "The table structure cannot be extracted from a {} format file, because all files are empty. "
-                                "You can specify table structure manually",
-                                *format);
+                                "The data format cannot be detected by the contents of the files, because there are no files with provided path "
+                                "You can specify the format manually");
 
-                        throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "The data format cannot be detected by the contents of the files, because there are no files with provided path "
-                            "You can specify the format manually");
+                        }
 
+                        return {nullptr, std::nullopt, format};
                     }
 
-                    return {nullptr, std::nullopt, format};
+                    if (auto cached_columns = scanNewURLOptions())
+                        return {nullptr, cached_columns, format};
                 }
 
                 if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
@@ -1022,6 +1123,59 @@ namespace
         }
 
     private:
+        /// Appends the next portion of addresses. Returns false once the producer is exhausted, which
+        /// is the only way inference learns that there is nothing left to try.
+        bool produceMoreURLs()
+        {
+            const size_t size_before = url_options_to_check.size();
+            const size_t max_addresses = getContext()->getSettingsRef()[Setting::glob_expansion_max_elements];
+
+            /// As in the glob iterator: stay within the limit, and ask for one past it only when the
+            /// caller has read everything that is allowed, so that it is the reader that hits it.
+            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses - std::min(max_addresses, size_before));
+            if (target == 0)
+                target = 1;
+
+            String url;
+            while (url_options_to_check.size() - size_before < target && url_producer(url))
+                url_options_to_check.push_back(getFailoverOptions(url, max_addresses));
+
+            return url_options_to_check.size() != size_before;
+        }
+
+        /// Examines the addresses appended since the previous scan: when the format is unknown it is
+        /// looked for in the file names, and in `DEFAULT` mode the schema cache is consulted, in
+        /// which case the cached columns are returned. Reading only starts once this found neither.
+        std::optional<ColumnsDescription> scanNewURLOptions()
+        {
+            if (!format)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size(); ++i)
+                {
+                    for (const auto & url : url_options_to_check[i])
+                    {
+                        auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                        {
+                            format = format_from_file_name;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            std::optional<ColumnsDescription> cached_columns;
+            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size() && !cached_columns; ++i)
+                    cached_columns = tryGetColumnsFromCache(url_options_to_check[i]);
+            }
+
+            scanned_options = url_options_to_check.size();
+            return cached_columns;
+        }
+
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
         {
             auto context = getContext();
@@ -1068,8 +1222,10 @@ namespace
             return std::nullopt;
         }
 
+        URLProducer url_producer;
         std::vector<std::vector<String>> url_options_to_check;
         size_t current_index = 0;
+        size_t scanned_options = 0;
         String current_url_option;
         std::optional<String> format;
         const CompressionMethod & compression_method;
@@ -1097,13 +1253,26 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
     Poco::Net::HTTPBasicCredentials credentials;
 
-    std::vector<String> urls_to_check;
+    URLProducer url_producer;
     if (urlWithGlobs(uri))
-        urls_to_check = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+    {
+        auto generator = std::make_shared<RemoteDescriptionGenerator>(
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+        url_producer = [generator](String & out) { return generator->next(out); };
+    }
     else
-        urls_to_check = {uri};
+    {
+        url_producer = [uri, done = false](String & out) mutable
+        {
+            if (done)
+                return false;
+            done = true;
+            out = uri;
+            return true;
+        };
+    }
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1368,7 +1537,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        num_streams = std::min(num_streams, glob_iterator->size());
+        num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
     else
     {
@@ -2775,6 +2944,7 @@ SELECT * FROM url_engine_table
 ## Details of Implementation {#details-of-implementation}
 
 - Reads and writes can be parallel
+- Patterns in `{ }` in the URL generate a set of addresses, as described for the [url](/reference/functions/table-functions/url#globs-in-url) table function. The addresses are generated one by one as the query reads them, so [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) limits how many of them a single query may read rather than how large the pattern is.
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.

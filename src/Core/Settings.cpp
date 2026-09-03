@@ -4764,6 +4764,8 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
 )", 0) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
+
+The `url` table function and the `URL` table engine generate the addresses of a pattern one by one, so for them this limits how many addresses a single query is allowed to generate rather than how large the pattern is. A query that stops early, for example under a `LIMIT`, can use a pattern that describes many more addresses than this. A `_path` or `_file` predicate is applied to every generated address, so the ones it rejects are counted as well.
 )", 0) \
     DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
 Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
