@@ -590,14 +590,14 @@ An `ON` section can contain several conditions combined using the `AND` and `OR`
 - reference both left and right tables
 - use the equality operator
 
-Other conditions may use other logical operators but they must reference either the left or the right table of a query.
+Other conditions may use other operators. A condition that references only the left or only the right table is applied to that table; a condition that references both is checked on the rows the join keys matched.
 
 Rows are joined if the whole complex condition is met. If the conditions are not met, rows may still be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
 
 The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
 <Note>
-If a condition references columns from different tables, then only the equality operator (`=`) is supported so far.
+A condition that references columns from different tables may use any operator. Only conditions that use the equality operator (`=`) become join keys; the rest are evaluated on the joined rows. An `ON` section that contains no equality between the two tables at all is offered to three paths in turn, as described in [JOIN with an arbitrary ON condition](#join-with-an-arbitrary-on-condition): an eligible pair of inequalities goes to `ie_join` when that algorithm is enabled; an `ALL INNER JOIN` that `ie_join` did not claim becomes a `CROSS JOIN` with the condition as a filter on top of it, as long as `hash` is enabled; everything left is executed as a block nested loop join.
 </Note>
 
 **Example**
@@ -669,9 +669,8 @@ Query with `INNER` type of a join and conditions with `OR` and `AND`:
 
 <Note>
 
-By default, non-equal conditions are supported as long as they use columns from the same table.
-For example, `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, because `t1.b > 0` uses columns only from `t1` and `t2.b > t2.c` uses columns only from `t2`.
-However, you can try experimental support for conditions like `t1.a = t2.key AND t1.b > t2.key`, check out the section below for more details.
+A non-equal condition that uses columns from a single table, such as `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, is applied to that table alone: `t1.b > 0` uses columns only from `t1` and `t2.b > t2.c` uses columns only from `t2`.
+A non-equal condition that compares columns of different tables, such as `t1.a = t2.key AND t1.b > t2.key`, is also supported; check out the sections below for more details.
 </Note>
 
 ```sql title="Query"
@@ -688,7 +687,13 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 ## JOIN with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-ClickHouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash`, `parallel_hash` and `grace_hash` join algorithms. A non equi condition that is evaluated during the join may not contain `arrayJoin`, because such a condition must preserve the number of rows; a condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected; a non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
+ClickHouse supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions.
+
+When the `ON` section contains an equality between the two tables next to the inequality, the equality is the join key and the inequality is checked on the rows it matched. Such a mixed condition is executed only by the `hash`, `parallel_hash` and `grace_hash` join algorithms.
+
+When the `ON` section contains no equality between the two tables, there is no join key to match on. An eligible pair of inequalities over the same pair of tables is executed by [`ie_join`](/reference/settings/session-settings/join#join_algorithm) when that algorithm is enabled and the join type is one it supports. A condition `ie_join` does not claim goes to the next path: an `ALL INNER` join becomes a `CROSS JOIN` with the condition as a filter on top of it, as long as `hash` is enabled; every other join is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition), where the whole routing — including what makes a pair of inequalities eligible — is described.
+
+A non equi condition that is evaluated during the join may not contain `arrayJoin`, because such a condition must preserve the number of rows; a condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected; a non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 
 **Example**
 
@@ -735,6 +740,61 @@ key1    e    5    5    5            0    0    \N
 key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
+
+## JOIN with an arbitrary ON condition {#join-with-an-arbitrary-on-condition}
+
+The `ON` section may be an arbitrary boolean expression over the columns of both tables: a range check, an arithmetic comparison, or a call to any scalar function. When such an expression contains no equality between the two tables, there is no join key to match rows on, and ClickHouse can still execute the join, as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) — it materializes the right table and evaluates the condition on pairs of rows.
+
+Every join type and strictness is supported this way, except `ASOF JOIN` and `PASTE JOIN`, which prescribe the shape of their own condition, and `ANY FULL JOIN`, which is not implemented for any join. The block nested loop join is not one of the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step.
+
+Two other paths are tried before it, in this order. Each one either claims the condition or leaves it to the path below, so which of the three executes the join depends on the shape of the condition and on `join_algorithm`:
+
+1. `ie_join` claims an eligible pair of inequalities between the two tables when it is listed in `join_algorithm`, as it is by default, and the join type is one it supports: the `ALL` strictness of `INNER`, `LEFT`, `RIGHT` and `FULL`, and `SEMI` and `ANTI` of `LEFT` and `RIGHT`. An inequality is eligible when the algorithm orders its operands the way SQL compares them: it sorts by the column's internal total order, so an operand of type `Tuple`, `Dynamic` or `Variant`, at the top level or nested inside another type, is not eligible, because that order also orders values whose SQL comparison is `NULL` or an error. A join whose right side is a prepared lookup storage — a table with `ENGINE = Join`, a dictionary, or a key-value engine such as `EmbeddedRocksDB` — is never claimed either. A single inequality, an ineligible pair, a join type it does not support, or a `join_algorithm` that does not list it, goes to the next path.
+2. An `ALL INNER` join whose condition was not claimed above is rewritten to a `CROSS JOIN` with the whole condition applied afterwards, as long as `hash` is listed in `join_algorithm`, as it is by default. Any other kind or strictness, and an `ALL INNER` join under a `join_algorithm` that excludes `hash`, goes to the next path.
+3. The block nested loop join executes every condition that reaches it.
+
+So, with the default `join_algorithm`, `INNER JOIN t2 ON t1.a < t2.b` is executed as a `CROSS JOIN` with a filter, while the same condition under `LEFT JOIN`, or under `INNER JOIN` with `join_algorithm` set to a list without `hash`, is executed as a block nested loop join.
+
+A condition that reaches the block nested loop join was rejected with `INVALID_JOIN_ON_EXPRESSION` before this operator existed; with the analyzer enabled (`enable_analyzer = 1`, the default) such a query now runs instead of failing, unless it calls `arrayJoin`, as described below. The two paths above already ran their share of keyless conditions before the operator existed, and still do: an `ALL INNER` join ran as a `CROSS JOIN` with a filter, and `ie_join`, when enabled, ran the pairs of inequalities it claimed. No `join_algorithm` value turns the operator off — the paths above only divert particular shapes of condition to another algorithm — so a condition that reaches the operator is executed however expensive it turns out to be, bounded only by the general limits described below. What does turn it off is [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow): with `allow_block_nested_loop_join = 0`, or with [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) set to a version before the operator shipped, a condition that reaches it is rejected with `INVALID_JOIN_ON_EXPRESSION` again, while the two paths above keep running the conditions they claim. Not every condition reaches it: an `ON` section that is a bare column rather than a function call is still rejected with `INVALID_JOIN_ON_EXPRESSION` while the join is being planned, and so is a disjunction one of whose operands is such a column, unless the general planning of disjunctions is in use — which needs [`allow_general_join_planning`](/reference/settings/session-settings/allow#allow_general_join_planning) and either `hash` or `auto` in `join_algorithm`, all of which hold by default.
+
+`arrayJoin` is the one function the operator cannot execute. It evaluates the condition over a batch of candidate row pairs and uses the result as a filter over that batch, so a condition that changes the row count answers for no pair; a condition routed to this operator that calls `arrayJoin` keeps failing with `INVALID_JOIN_ON_EXPRESSION`. The same condition may still run when an earlier path handles the join instead: the `CROSS JOIN` rewrite of an `ALL INNER` join applies the condition after the join, which places the `arrayJoin` outside the join itself.
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE orders (id UInt32, amount UInt32) ENGINE = Memory;
+CREATE TABLE discounts (min_amount UInt32, max_amount UInt32, pct UInt32) ENGINE = Memory;
+
+INSERT INTO orders VALUES (1, 50), (2, 150), (3, 300);
+INSERT INTO discounts VALUES (100, 199, 5), (200, 1000, 10);
+
+SELECT o.id, o.amount, d.pct
+FROM orders AS o
+LEFT JOIN discounts AS d ON o.amount BETWEEN d.min_amount AND d.max_amount
+ORDER BY o.id;
+```
+
+```response title="Response"
+┌─id─┬─amount─┬─pct─┐
+│  1 │     50 │   0 │
+│  2 │    150 │   5 │
+│  3 │    300 │  10 │
+└────┴────────┴─────┘
+```
+
+The row that matched nothing is padded according to [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls), as in any other join: with a default value above, and with `NULL` when the setting is enabled.
+
+**Strictness**
+
+`ANY` and `SEMI` normally keep one row per group of rows that share a join key. There is no such group here, so they keep one row per row of the table that drives the join: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once — each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query. For `ANY INNER` this extends to the number of rows: pairing each row of both sides greedily, in whatever order the rows are examined, may leave a different number of rows unpaired, so the result of `count()` over an `ANY INNER` join with no join key is not reproducible and depends on the number of threads and on the physical order of the right table.
+
+**Performance**
+
+Every pair of rows is examined, so the work grows with the *product* of the two tables' row counts rather than with their sum. A block nested loop join is therefore orders of magnitude more expensive than a hash join on the same data, and the gap widens as the tables grow. If a query can be written with at least one equality in its `ON` section, write it that way.
+
+`LEFT ANY`, `ANY INNER`, `LEFT SEMI` and `LEFT ANTI` joins stop scanning the right table at a left row's first matching row, which usually makes them cheaper than the corresponding `ALL` join. Their right-driven counterparts (`RIGHT ANY`, `RIGHT SEMI`, `RIGHT ANTI`) examine every pair, because the result depends on which right rows matched. [`join_any_take_last_row`](/reference/settings/session-settings/join#join_any_take_last_row) has no effect here: with no join key there is no group of matching rows to take the last one of.
+
+Memory is bounded by the materialized right table plus one batch of candidate pairs and the right-table blocks the pending output rows still point into; it does not grow with the size of the result. The settings that bound the right table are the ones listed under [Memory limitations](#memory-limitations): [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) limit it, with [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode) deciding what happens when a limit is reached, while [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) and [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) make it spill to disk instead of being held in RAM.
 
 ## NULL and NaN values in JOIN keys {#null-values-in-join-keys}
 

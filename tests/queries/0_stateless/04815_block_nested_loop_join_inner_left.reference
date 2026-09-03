@@ -1,0 +1,32 @@
+l.x < r.y
+inner routed	1
+inner	1
+left routed	1
+left	1
+l.x BETWEEN r.y - 3 AND r.y + 3
+inner routed	1
+inner	1
+left routed	1
+left	1
+l.x + l.id > r.y
+inner routed	1
+inner	1
+left routed	1
+left	1
+sipHash64(l.x, r.y) % 4 = 0
+inner routed	1
+inner	1
+left routed	1
+left	1
+l.s LIKE r.s
+inner routed	1
+inner	1
+left routed	1
+left	1
+l.x + r.y < -1000000
+inner routed	1
+inner	1
+left routed	1
+left	1
+chunked	1
+chunked count	2646

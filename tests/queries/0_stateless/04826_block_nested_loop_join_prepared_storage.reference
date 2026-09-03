@@ -1,0 +1,51 @@
+join engine	0	1	x	0
+join engine	0	2	y	0
+join engine	0	3	z	0
+join engine	1	2	y	0
+join engine	1	3	z	0
+join engine	2	3	z	0
+join engine	3	\N	\N	1
+join engine expression	0	2
+join engine expression	0	3
+join engine expression	0	4
+join engine expression	1	3
+join engine expression	1	4
+join engine expression	2	4
+join engine expression	3	\N
+join engine full	2	3	z
+join engine full	3	\N	\N
+join engine full	4	\N	\N
+join engine full	\N	1	x
+join engine full	\N	2	y
+dictionary	0	1	x	0
+dictionary	0	2	y	0
+dictionary	0	3	z	0
+dictionary	1	2	y	0
+dictionary	1	3	z	0
+dictionary	2	3	z	0
+dictionary	3	\N	\N	1
+dictionary expression	0	2
+dictionary expression	0	3
+dictionary expression	0	4
+dictionary expression	1	3
+dictionary expression	1	4
+dictionary expression	2	4
+dictionary expression	3	\N
+join engine no use_nulls	0	1	x
+join engine no use_nulls	0	2	y
+join engine no use_nulls	0	3	z
+join engine no use_nulls	1	2	y
+join engine no use_nulls	1	3	z
+join engine no use_nulls	2	3	z
+join engine no use_nulls	3	0	
+dictionary no use_nulls	0	1	x
+dictionary no use_nulls	0	2	y
+dictionary no use_nulls	0	3	z
+dictionary no use_nulls	1	2	y
+dictionary no use_nulls	1	3	z
+dictionary no use_nulls	2	3	z
+dictionary no use_nulls	3	0	
+lookup kept	0	
+lookup kept	1	x
+lookup kept	2	y
+lookup kept	3	z
