@@ -2606,12 +2606,13 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         {
             for (const auto & [column_name, _] : stage.column_to_updated)
                 readonly_stage_columns.insert(column_name);
-            continue;
         }
-
-        rewrites_whole_part |= stage.affects_all_columns;
-        for (const auto & [column_name, _] : stage.column_to_updated)
-            written_by_stages.insert(column_name);
+        else
+        {
+            rewrites_whole_part |= stage.affects_all_columns;
+            for (const auto & [column_name, _] : stage.column_to_updated)
+                written_by_stages.insert(column_name);
+        }
     }
 
     Block header = builder.getHeader();
