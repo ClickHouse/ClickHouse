@@ -91,7 +91,7 @@ namespace ErrorCodes
 namespace
 {
 
-UInt32 generateCancelKey()
+UInt32 generateRandomUInt32()
 {
     UInt32 secret_key = 0;
 
@@ -307,7 +307,8 @@ PostgreSQLHandler::PostgreSQLHandler(
     , prepared_statements_manager(std::nullopt)
 {
     /// `BackendKeyData` identifies every statement on this connection for cancellation.
-    secret_key = generateCancelKey();
+    secret_key = generateRandomUInt32();
+    query_id_token = generateRandomUInt32();
 
     changeIO(socket());
 
@@ -664,16 +665,18 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->flush();
 }
 
-String PostgreSQLHandler::queryIdFor(Int32 connection_id_)
+String PostgreSQLHandler::queryIdFor(Int32 connection_id_, UInt32 query_id_token_)
 {
-    /// The secret from `BackendKeyData` is deliberately not part of the ID: it authenticates
-    /// `CancelRequest`, and `system.processes` and `system.query_log` expose query IDs verbatim.
-    return fmt::format("postgres:{:d}", connection_id_);
+    /// The random component is a token of its own and never the secret from `BackendKeyData`:
+    /// `system.processes` and `system.query_log` expose query IDs verbatim, while the secret
+    /// authenticates `CancelRequest`. It still has to be here, because a query ID that another
+    /// interface can predict can be occupied to keep a PostgreSQL statement from starting.
+    return fmt::format("postgres:{:d}:{:d}", connection_id_, query_id_token_);
 }
 
 String PostgreSQLHandler::currentQueryId() const
 {
-    return queryIdFor(connection_id);
+    return queryIdFor(connection_id, query_id_token);
 }
 
 void PostgreSQLHandler::cancelRequest()

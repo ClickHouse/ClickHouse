@@ -1859,6 +1859,18 @@ def _assert_cancel_request_does_not_cancel_http_query(node, query_id, pid, key):
     assert result == {"output": "435\n"}
 
 
+def _pg_query_id_from_log(node, marker):
+    """The query id a PostgreSQL statement ran under. A client is never told it, and it carries a
+    random token, so a test that needs it has to read it back from the server."""
+    node.query("SYSTEM FLUSH LOGS query_log", password="123")
+    return node.query(
+        "SELECT query_id FROM system.query_log"
+        f" WHERE query_id LIKE 'postgres:%' AND query LIKE '%{marker}%' AND type = 'QueryFinish'"
+        " ORDER BY event_time_microseconds DESC LIMIT 1",
+        password="123",
+    ).strip()
+
+
 def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
     """An unauthenticated PostgreSQL CancelRequest may only cancel queries that actually run on the
     PostgreSQL interface. Any other interface lets a client choose its own query id, so a query that
@@ -1866,16 +1878,18 @@ def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
     that connection's genuine `BackendKeyData` pair."""
     node = started_cluster.instances["node"]
 
-    # An idle PostgreSQL connection: its credential is valid, but no query of its own is running.
     backend_key = {}
-    sock, _ = _pg_raw_extended_query_session(node, backend_key)
+    sock, read_until_ready = _pg_raw_extended_query_session(node, backend_key)
     with sock:
+        # One statement, so the connection's query id can be read back, then the connection idles.
+        sock.sendall(_fe("Q", b"SELECT 20250808\x00"))
+        assert "Z" in read_until_ready()
         assert backend_key, "the server did not send BackendKeyData"
+        query_id = _pg_query_id_from_log(node, "20250808")
+        assert query_id.startswith(f"postgres:{backend_key['pid']}:"), query_id
+
         _assert_cancel_request_does_not_cancel_http_query(
-            node,
-            f"postgres:{backend_key['pid']}",
-            backend_key["pid"],
-            backend_key["key"],
+            node, query_id, backend_key["pid"], backend_key["key"]
         )
 
 
@@ -1896,15 +1910,10 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
         assert "Z" in read_until_ready()
     assert backend_key, "the server did not send BackendKeyData"
 
-    node.query("SYSTEM FLUSH LOGS query_log", password="123")
-    query_id = node.query(
-        "SELECT query_id FROM system.query_log"
-        " WHERE query_id LIKE 'postgres:%' AND query LIKE 'SELECT 20250807%' AND type = 'QueryFinish'"
-        " ORDER BY event_time_microseconds DESC LIMIT 1",
-        password="123",
-    ).strip()
+    query_id = _pg_query_id_from_log(node, "20250807")
     # The credential is not part of the query id, so `system.query_log` does not publish it.
-    assert query_id == f"postgres:{backend_key['pid']}"
+    assert query_id.startswith(f"postgres:{backend_key['pid']}:"), query_id
+    assert str(backend_key["key"]) not in query_id, (query_id, backend_key)
 
     _assert_cancel_request_does_not_cancel_http_query(
         node, query_id, backend_key["pid"], backend_key["key"]
@@ -1940,11 +1949,12 @@ def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
     sock, read_until_ready = _pg_raw_extended_query_session(node, backend_key)
     with sock:
         assert backend_key, "the server did not send BackendKeyData"
-        query_id = f"postgres:{backend_key['pid']}"
+        marker = "cancel_wrong_secret_20250903"
 
         def running():
             return node.http_query(
-                f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+                "SELECT count() FROM system.processes"
+                f" WHERE query LIKE '%{marker}%' AND query NOT LIKE '%system.processes%'",
                 user="default",
                 password="123",
             ).strip()
@@ -1960,7 +1970,7 @@ def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
         sock.sendall(
             _fe(
                 "Q",
-                b"SELECT sum(sleepEachRow(0.3) + number) FROM numbers(60)"
+                b"SELECT '" + marker.encode() + b"', sum(sleepEachRow(0.3) + number) FROM numbers(60)"
                 b" SETTINGS max_block_size = 1, max_threads = 1\x00",
             )
         )

@@ -45,10 +45,10 @@ echo "--- the statement is running"
 count_running
 
 echo "--- under a query id the client can cancel"
-# The connection ID from `BackendKeyData` maps to `postgres:<connection id>`. The secret from the
-# same message is the credential for `CancelRequest`, so it must not appear in this query ID.
+# The connection ID from `BackendKeyData` maps to `postgres:<connection id>:<token>`. The token is
+# not the secret from that message: the secret authenticates `CancelRequest` and is kept server side.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT match(query_id, '^postgres:\\d+\$') FROM system.processes
+    SELECT match(query_id, '^postgres:\\d+:\\d+\$') FROM system.processes
     WHERE query LIKE '%${MARKER}%' AND query NOT LIKE '%system.processes%'"
 
 # Make `psql` send `CancelRequest`.
