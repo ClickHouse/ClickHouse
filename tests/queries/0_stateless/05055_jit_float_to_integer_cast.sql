@@ -50,4 +50,32 @@ SELECT count() FROM (SELECT c0 FROM t_jit_float_cast_arms GROUP BY c0 HAVING uni
 
 DROP TABLE t_jit_float_cast_arms;
 
+-- Every row above is a value oracle, so all of them would still pass if the conversions silently
+-- stopped or started being compiled. These pin which of the two shapes compiles. Each shape has one
+-- compilable child, so once its `CAST` is declined nothing is left to compile: a declined shape
+-- reaches zero even where the control compiles. `CompiledFunctionExecute` counts executions of an
+-- already-compiled node, so a warm compiled cache does not change any of the three.
+SELECT CAST(toFloat64(number) AS Bool) FROM numbers(2)
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_bool' FORMAT Null;
+SELECT CAST(toFloat64(number) AS UInt8) FROM numbers(2)
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_declined' FORMAT Null;
+SELECT toFloat64(number) + 1 FROM numbers(2)
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_control' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+WITH shapes AS
+(
+    SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05055_%'
+    GROUP BY log_comment
+)
+-- The control keeps the first column honest in a build without the embedded compiler, where every
+-- shape is interpreted and an absolute assertion would go green on nothing being compiled.
+SELECT
+    (SELECT compiled FROM shapes WHERE log_comment = '05055_bool')
+        = (SELECT compiled FROM shapes WHERE log_comment = '05055_control'),
+    (SELECT compiled FROM shapes WHERE log_comment = '05055_declined') = 0;
+
 DROP TABLE t_jit_float_cast;
