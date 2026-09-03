@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -252,23 +253,26 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         return false;
     };
 
-    /// Resolve the name extracted from `ORDER BY` to the exact storage column: try the full input name first, so that a
-    /// genuinely dotted storage column (e.g. a `Nested` component `n.vec`) is matched as-is rather than conflated with a
-    /// different top-level column. Only if that fails, strip a single leading qualifier (the analyzer qualifies table
-    /// columns as `__table1.vec`) and retry. Truncating unconditionally would turn `n.vec` into `vec` and bind the query
-    /// to the index of the wrong column.
-    bool has_vector_similarity_index = has_vector_similarity_index_on(search_column);
-    if (!has_vector_similarity_index && search_column.contains('.'))
+    /// Resolve the name extracted from `ORDER BY` to the exact storage column. The name is either already a storage
+    /// column - including a genuinely dotted one, such as a `Nested` component `n.vec` or even `n.values.id` - or it
+    /// carries the table qualifier which the analyzer prepends (`__table1.vec`). Peel the leading component only when it
+    /// is a proven qualifier, i.e. when the full name is not a column of this table while the remainder is. Peeling
+    /// based on the index lookup alone would turn `n.values.id` into `values.id` and, if such a column happens to be
+    /// indexed, rank candidates by a different vector column instead of falling back to an exact scan.
+    const ColumnsDescription & storage_columns = read_from_mergetree_step->getStorageMetadata()->getColumns();
+    auto is_storage_column = [&storage_columns](const String & column_name)
+    {
+        return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    };
+
+    if (!is_storage_column(search_column) && search_column.contains('.'))
     {
         const String unqualified = search_column.substr(search_column.find('.') + 1);
-        if (has_vector_similarity_index_on(unqualified))
-        {
+        if (is_storage_column(unqualified))
             search_column = unqualified;
-            has_vector_similarity_index = true;
-        }
     }
 
-    if (!has_vector_similarity_index)
+    if (!has_vector_similarity_index_on(search_column))
         return no_layers_updated;
 
     /// The `_distance` column is an internal virtual column populated by the vector search optimization.
