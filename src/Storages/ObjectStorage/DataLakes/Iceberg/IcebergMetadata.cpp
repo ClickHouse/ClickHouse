@@ -1642,7 +1642,8 @@ void IcebergMetadata::drop(bool delete_data)
             return;
         }
 
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
+        /// `listFiles` joins the path and the prefix, so the prefix has to stay empty.
+        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
