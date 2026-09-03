@@ -2530,12 +2530,16 @@ static bool shouldUseQueryCacheForSubquery(
 /// the ban - and make the outer distributed plan's shape depend on cache contents again - just by
 /// specifying `SETTINGS make_distributed_plan = 0` while the outer query is still planned
 /// distributed. The exception is the in-process local fragment of a distributed plan
-/// (`is_local_plan_for_distributed_query`): it is never serialized, so reads are safe there.
+/// (`is_local_plan_for_distributed_query`): it is never serialized, so reads are safe there. The
+/// exception covers the whole fragment, not only its root: nested subqueries and CTEs of that
+/// fragment are planned through `SelectQueryOptions::subquery`, which clears the root flag and
+/// raises the sticky `inside_local_plan_for_distributed_query` instead. Without it the fragment's
+/// own subqueries would keep losing safe cache hits on the initiator and the local replica.
 static bool shouldReadFromQueryCacheForSubquery(const Settings & settings, const SelectQueryOptions & select_query_options)
 {
     if (!settings[Setting::enable_reads_from_query_cache])
         return false;
-    if (select_query_options.is_local_plan_for_distributed_query)
+    if (select_query_options.is_local_plan_for_distributed_query || select_query_options.inside_local_plan_for_distributed_query)
         return true;
     return !settings[Setting::make_distributed_plan] && !select_query_options.building_distributed_plan;
 }
