@@ -160,6 +160,15 @@ protected:
 
     virtual void flushImpl();
 
+    /// Counterpart of `flushImpl` for the framing payload boundary: re-attach format-owned buffers
+    /// to the payload buffer after the framing has taken the boundary. A format-owned buffer can
+    /// write straight into the payload buffer's memory and keep its own copy of the write position
+    /// (`PeekableWriteBuffer`, used by the formats that can replace a partially written row with an
+    /// exception), while the framing finalizes and restarts the payload buffer at every boundary
+    /// (see `IFramingFormat::onPayload`) - which moves that position back to the start and may move
+    /// the memory. Without re-attaching, the next row would be written outside the payload buffer.
+    virtual void reattachBuffers() {}
+
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}

@@ -34,6 +34,28 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
 }
 
+TEST(ColumnObject, HasOnlyTypeDefaults)
+{
+    auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
+    auto static_column = static_type->createColumn();
+    auto & static_object = assert_cast<ColumnObject &>(*static_column);
+
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+    static_object.insert(Object{});
+    static_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+
+    auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1)");
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & dynamic_object = assert_cast<ColumnObject &>(*dynamic_column);
+
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{});
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_FALSE(dynamic_object.hasOnlyTypeDefaults());
+}
+
 TEST(ColumnObject, GetName)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=20, b.d UInt32, a.b Array(String))");
@@ -443,7 +465,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
-    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 16);
+    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 4, 16);
     column_object->repairDuplicatesInDynamicPathsAndSharedData(0);
     ASSERT_EQ((*column_object)[0], (Object{{"a", Field(1u)}}));
     ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));

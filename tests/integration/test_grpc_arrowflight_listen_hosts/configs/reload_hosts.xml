@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- The container hostname resolves to the address of the container: a specific address that
+         the node is still reachable at. -->
+    <listen_host>reload_node</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <grpc_port>9200</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+</clickhouse>
