@@ -15,6 +15,12 @@ SELECT [[(0., 0.)::Point::Geometry]] FROM remote('127.0.0.1', system.one) SETTIN
 -- text `2023-10-29 02:10:00` in the DST overlap, so the text form comes back an hour early.
 SELECT arrayMap(x -> toUnixTimestamp(assumeNotNull(variantElement(x, 'DateTime(\'Europe/Berlin\')'))), [toDateTime(1698541800, 'Europe/Berlin')::Variant(DateTime('Europe/Berlin'), String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 
+-- A `DateTime` sibling of the `Variant` in the same compound is rendered by the same walker, so it is exact
+-- for the same reason, under every wrapper the walker descends through.
+SELECT toUnixTimestamp(t.1) FROM (SELECT (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64, String)) AS t FROM remote('127.0.0.1', system.one)) SETTINGS prefer_localhost_replica = 0;
+SELECT toUnixTimestamp(mapKeys(m)[1]) FROM (SELECT map(toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64, String)) AS m FROM remote('127.0.0.1', system.one)) SETTINGS prefer_localhost_replica = 0;
+SELECT toUnixTimestamp(a[1].1) FROM (SELECT [(toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64, String))] AS a FROM remote('127.0.0.1', system.one)) SETTINGS prefer_localhost_replica = 0;
+
 -- Naming a string-like member is not enough: a cast of a string to a `Variant` with more than one member
 -- parses the text and picks whichever member it parses as, so `'42'` would arrive as a `UInt64`. Both arms
 -- read `variantType` on the secondary server, so they see the member actually stored there.
