@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest
 -- Tag no-fasttest: fasttest builds with ENABLE_LIBRARIES=0, which leaves the `JSON` type no JSON parser
--- Tag no-parallel-replicas: the assertions below are about a single node's index analysis
 -- A `JSONAllPaths` index may skip a granule that lacks the path only when the compared constant
 -- differs from the value a missing path produces. An `Enum` constant carries its labels in its own
 -- type and the comparison uses the label, so an empty label is that value and nothing may be skipped.
