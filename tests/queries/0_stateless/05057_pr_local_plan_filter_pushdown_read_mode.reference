@@ -38,3 +38,18 @@ Read type: Default
 242
 342
 442
+sort inside the fragment, the filter cannot reach the replicas
+no AST predicate push-down
+Read type: Default
+42
+142
+242
+342
+442
+the replicas run a serialized plan
+Read type: Default
+42
+142
+242
+342
+442

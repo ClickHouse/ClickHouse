@@ -29,6 +29,11 @@ SET parallel_replicas_plan_based = 0;
 -- optimizations that fold it in.
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+-- `parallel_replicas_filter_pushdown` puts the equality in the replicas' query by rewriting it, and
+-- only lets it into the local plan when that rewrite reaches them. Pin the two settings that decide
+-- whether it does; 05057 covers what happens when it does not.
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+SET serialize_query_plan = 0;
 
 SELECT 'equality, default: not in the local plan';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step

@@ -19,6 +19,11 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
+    /// The fragment this step stands for, before it is spliced into the outer plan. Whoever adds a
+    /// condition to it has to know what the fragment reads: see `fixedColumnMayChangeReadMode` in
+    /// `filterPushDown.cpp`.
+    const QueryPlan * getQueryPlan() const { return query_plan.get(); }
+
     /// Context of the subquery this local plan reads, carrying the same per-subquery
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }

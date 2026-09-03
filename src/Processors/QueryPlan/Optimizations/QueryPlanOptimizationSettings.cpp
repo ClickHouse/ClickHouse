@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -374,7 +375,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
-    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
+    parallel_replicas_filter_pushdown_reaches_replicas = from[Setting::parallel_replicas_filter_pushdown]
+        && from[Setting::allow_push_predicate_ast_for_distributed_subqueries] && !from[Setting::serialize_query_plan];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

@@ -7,6 +7,10 @@
 -- fragment - where a view's own `ORDER BY` puts it, and the refusal does not apply - an ordinary
 -- predicate never gets in without `parallel_replicas_filter_pushdown`, which puts it in the replicas'
 -- query as well. A join runtime filter does get in, and fixes nothing, so the mode is unchanged.
+--
+-- `parallel_replicas_filter_pushdown` ships the predicate by rewriting the replicas' query, so it is
+-- only as good as that rewrite: the last section turns off each of the two settings that make the
+-- rewrite reach them, and the predicate has to stay out of the local plan again.
 
 DROP TABLE IF EXISTS t_pr_read_mode;
 DROP VIEW IF EXISTS v_pr_read_mode;
@@ -41,6 +45,11 @@ SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET parallel_replicas_allow_view_over_mergetree = 0;
 SET parallel_replicas_plan_based = 0;
+-- The condition is shipped to the replicas by rewriting their query, so pin the settings that decide
+-- whether that rewrite happens and reaches them - the assertions below are about which side has the
+-- condition. The end of the test turns each of them off in turn.
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+SET serialize_query_plan = 0;
 -- `parallel_replicas_filter_pushdown` is left at its default, so the replicas never see the filter.
 
 SET optimize_read_in_order = 1, optimize_aggregation_in_order = 0;
@@ -101,6 +110,30 @@ FROM (
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%' OR explain LIKE '%Prewhere filter column%';
 SELECT v.ts FROM v_sorted_pr_read_mode AS v JOIN b_pr_read_mode AS bb ON v.tenant = bb.tenant
 WHERE v.tenant = 42 ORDER BY v.ts LIMIT 5;
+
+SELECT 'sort inside the fragment, the filter cannot reach the replicas';
+-- `parallel_replicas_filter_pushdown` ships the condition by rewriting the replicas' query. Where that
+-- rewrite cannot happen the condition stays on the initiator, so it must not go into the local plan
+-- either - otherwise the initiator reads in order and announces `WithOrder` while the replicas, still
+-- reading their own unfiltered query, announce `Default`.
+SET enable_join_runtime_filters = 0;
+SET parallel_replicas_filter_pushdown = 1;
+
+SELECT 'no AST predicate push-down';
+SET allow_push_predicate_ast_for_distributed_subqueries = 0;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT ts FROM v_sorted_pr_read_mode WHERE tenant = 42 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT ts FROM v_sorted_pr_read_mode WHERE tenant = 42 LIMIT 5;
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+
+SELECT 'the replicas run a serialized plan';
+SET serialize_query_plan = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT ts FROM v_sorted_pr_read_mode WHERE tenant = 42 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT ts FROM v_sorted_pr_read_mode WHERE tenant = 42 LIMIT 5;
+SET serialize_query_plan = 0;
 
 DROP TABLE b_pr_read_mode;
 DROP VIEW v_sorted_pr_read_mode;

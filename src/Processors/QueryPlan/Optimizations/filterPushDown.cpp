@@ -19,12 +19,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -1119,10 +1121,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-/// Whether a condition might decide how the step below it reads. Read-in-order treats a column that a
-/// filter pins to a single value as satisfying any position of the sort key, so `WHERE tenant = 42` can
-/// turn a read into an in-order one, while `WHERE tenant > 42`, a bare boolean or a join runtime filter
-/// leave the decision alone.
+/// Whether a condition might fix a column to a single value. Read-in-order treats such a column as
+/// satisfying any position of the sort key, so `WHERE tenant = 42` can turn a read into an in-order
+/// one, while `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
 ///
 /// `appendFixedColumnsFromFilterExpression` is the analysis that collects those columns, but it only
 /// walks `and` chains: an equality under any other node is invisible to it. Missing one costs that
@@ -1145,6 +1146,37 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
             if (name == "equals" || name == "isNotDistinctFrom")
                 return true;
         }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+/// Whether a fixed column could change how `plan` reads. A fixed column only ever matters against a
+/// sort key, so a fragment whose reads are all unsorted - `ORDER BY ()` - reads the same way with or
+/// without the condition. Any other source is left as "it could": a step that only expands into its
+/// real reads later (`ReadFromMerge`) has nothing to inspect yet, and being wrong here costs the mode
+/// mismatch this whole gate exists to prevent.
+static bool fixedColumnMayChangeReadMode(const QueryPlan * plan)
+{
+    if (!plan || !plan->isInitialized())
+        return false;
+
+    std::vector<const QueryPlan::Node *> stack{plan->getRootNode()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        {
+            if (!reading->getStorageMetadata()->getSortingKey().column_names.empty())
+                return true;
+        }
+        else if (typeid_cast<const ISourceStep *>(node->step.get()))
+            return true;
 
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -1427,14 +1459,17 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
         /// Only the initiator's own share of the read gets the condition here; the replicas plan from
-        /// their own query, which carries it only when `parallel_replicas_filter_pushdown` splices it in.
+        /// their own query, which carries it only when `parallel_replicas_filter_pushdown` splices it in
+        /// - and only in the configurations `parallel_replicas_filter_pushdown_reaches_replicas` names.
         /// A condition the replicas do not have may not change what the local fragment announces to the
         /// shared coordinator - an equality fixes a sort key column, which lets a sort or an aggregation
         /// inside the fragment read in order, and the initiator would then announce `WithOrder` against
-        /// the replicas' `Default`. Only a condition that fixes a column can do that, see
-        /// `mayFixColumn`; the rest go in either way. A join runtime filter has to, being the one
-        /// condition the setting could never mirror: `addFilters` drops non-deterministic functions.
-        if (settings.parallel_replicas_filter_pushdown)
+        /// the replicas' `Default`. Only a condition that fixes a column can do that, and only against a
+        /// fragment that reads by a sort key; the rest go in either way. A join runtime filter has to,
+        /// being the one condition the setting could never mirror: `addFilters` drops non-deterministic
+        /// functions.
+        if (settings.parallel_replicas_filter_pushdown_reaches_replicas
+            || !fixedColumnMayChangeReadMode(parallel_replicas_local_plan->getQueryPlan()))
         {
             // actual push down will be done when plan for local parallel replica will be optimized
             FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};

@@ -11,9 +11,9 @@ SET optimize_aggregation_in_order=1; -- issue is related to this optimization
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
--- The `HAVING` filter is pushed into the initiator's local plan unconditionally, which used to make the
--- initiator pick a different coordination mode than the replicas, see
--- https://github.com/ClickHouse/ClickHouse/issues/95524
+-- `materialize(0)` fixes no column, so it goes into the initiator's local plan whether or not
+-- `parallel_replicas_filter_pushdown` is set. It used to make the initiator pick a different
+-- coordination mode than the replicas, see https://github.com/ClickHouse/ClickHouse/issues/95524
 SELECT a
 FROM t1
 GROUP BY a
