@@ -814,7 +814,13 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1
+        /// A `LowCardinality` result makes the execution path evaluate the function once per distinct
+        /// dictionary key and fan the result out to every row that references it, which is only sound
+        /// when the function returns the same value for the same argument. `rand(x)`,
+        /// `generateUUIDv4(x)` and friends take the column argument precisely to get an independent
+        /// value per row, so they must see the materialized column.
+        if (canBeExecutedOnLowCardinalityDictionary() && isDeterministicInScopeOfQuery() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1
             && num_full_ordinary_columns == 0 && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
         return type_without_low_cardinality;
