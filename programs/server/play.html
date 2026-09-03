@@ -8285,8 +8285,10 @@ async function fetchFlameGraphStacks(source, trace_type)
     /// bound this is a full scan of a table that grows quickly on a busy server with profiling enabled.
     /// The bound is computed in the server's clock: the page passes how long ago the run started (a
     /// difference of two browser timestamps, so the browser and server clocks disagreeing does not
-    /// matter) and the server subtracts it from its `now()`; the slack covers the request latency.
-    const age_sec = Math.ceil((Date.now() - source.started_at_ms) / 1000) + 300;
+    /// matter) and the server subtracts it from its `now()`. The start was stamped before the run's
+    /// request left the browser, so the age already errs on the safe side; the slack only covers the
+    /// latency of this lookup itself and small clock adjustments on the server.
+    const age_sec = Math.ceil((Date.now() - source.started_at_ms) / 1000) + 10;
     const time_filter = ` AND event_date >= toDate(now() - ${age_sec}) - 1 AND event_time >= now() - ${age_sec}`;
     const query = `SELECT arrayJoin(${stack}) AS stack FROM system.trace_log`
         + ` WHERE query_id = ${quoteStringLiteral(source.query_id)} AND trace_type = ${quoteStringLiteral(trace_type)}${time_filter}${size_filter}`;
