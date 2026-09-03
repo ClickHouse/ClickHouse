@@ -36,9 +36,9 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
 
@@ -216,7 +216,18 @@ ASTPtr ASTCreateUserQuery::clone() const
         res->children.push_back(ast_clone);
     }
 
+    if (global_valid_until)
+    {
+        res->global_valid_until = global_valid_until->clone();
+        res->children.push_back(res->global_valid_until);
+    }
+
     return res;
+}
+
+void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &global_valid_until);
 }
 
 
@@ -245,6 +256,14 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (new_name)
         formatRenameTo(*new_name, ostr, format);
 
+    /// The global (user-level) VALID UNTIL/VALID FOR clause must be printed before the IDENTIFIED list:
+    /// the parser treats VALID UNTIL/VALID FOR as global only while no authentication method has been
+    /// parsed yet, and after an IDENTIFIED list the clause would bind to the last authentication method.
+    /// Formatting it first keeps the round-trip exact, which matters when the query text is re-parsed,
+    /// e.g. by the replicas of an ON CLUSTER DDL query.
+    if (global_valid_until)
+        formatValidUntil(*global_valid_until, global_valid_until_is_interval, ostr, format);
+
     if (!authentication_methods.empty())
     {
         if (add_identified_with)
@@ -253,9 +272,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
-
-    if (global_valid_until)
-        formatValidUntil(*global_valid_until, ostr, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);

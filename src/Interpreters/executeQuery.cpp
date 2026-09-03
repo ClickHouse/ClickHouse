@@ -1,7 +1,11 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -13,6 +17,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -21,6 +26,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -28,20 +34,29 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
+#include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -59,6 +74,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
@@ -69,7 +85,9 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -80,13 +98,17 @@
 #if CLICKHOUSE_CLOUD
 #include <Common/Licensing/LicenseChecker.h>
 #endif
+#include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/CompressionMethod.h>
 
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -94,8 +116,15 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/QueryFuzzer.h>
+#include <Interpreters/QueryOracleChecker.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
+#include <base/getFQDNOrHostName.h>
 
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+
+#include <Poco/Logger.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <exception>
@@ -137,11 +166,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
+    extern const SettingsBool ast_fuzzer_oracle;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -152,6 +183,7 @@ namespace Setting
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 interactive_delay;
@@ -189,6 +221,10 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsBool run_query_in_background;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsBool send_profile_events;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -212,6 +248,17 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString database;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsDouble page;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -225,6 +272,7 @@ namespace ErrorCodes
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
+    extern const int AST_FUZZER_ORACLE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
@@ -235,11 +283,14 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char framing_finalize_throw[];
+    extern const char framing_throw_after_final_progress[];
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
@@ -463,6 +514,16 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
     return interval_milliseconds;
 }
 
+/// The HTTP request URL is persisted to the query_log without its query string and fragment,
+/// so that potentially sensitive request parameters (e.g. a `password` parameter or raw query
+/// text) are never stored in the logs. The full URL remains available at runtime via
+/// `currentRequestURL()`.
+static String httpRequestURLForLogging(const ContextPtr & context)
+{
+    const String & url = context->getHTTPRequestURL();
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -495,6 +556,8 @@ QueryLogElement logQueryStart(
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.is_internal = log_as_internal;
 
@@ -643,7 +706,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -951,6 +1014,8 @@ void logExceptionBeforeStart(
     elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
@@ -1156,6 +1221,991 @@ private:
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
 
+/// The introspection port is open while the shared state is either not fully constructed or is being
+/// torn down, so anything that creates, changes or removes state is rejected there.
+static bool isAllowedOnIntrospectionPort(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+            return true;
+        default:
+            return false;
+    }
+}
+
+
+/// Convert a comma-separated `sort` setting (identifiers / positional references with optional
+/// `+`/`-` prefix) into an `ORDER BY` expression string, e.g. `a,-b,2` -> `a ASC, b DESC, 2`.
+static String convertSortToOrderBy(const String & sort)
+{
+    String result;
+    auto flush_one = [&](String item)
+    {
+        while (!item.empty() && (item.front() == ' ' || item.front() == '\t'))
+            item.erase(0, 1);
+        while (!item.empty() && (item.back() == ' ' || item.back() == '\t'))
+            item.pop_back();
+        if (item.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Empty element in `sort` setting (a stray, leading, or trailing comma?). "
+                "Each element must be a column name or a positive positional reference.");
+
+        String direction = " ASC";
+        String name = item;
+        if (item[0] == '-')
+        {
+            direction = " DESC";
+            name = item.substr(1);
+        }
+        else if (item[0] == '+')
+            name = item.substr(1);
+
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty identifier in `sort` setting");
+
+        const bool all_digits = std::all_of(name.begin(), name.end(), isNumericASCII);
+        /// Positional references are 1-based, so reject a zero position (e.g. `sort=0`), which would
+        /// otherwise become a constant `ORDER BY 0` no-op instead of a clear error.
+        if (all_digits && name.find_first_not_of('0') == String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Positional reference in `sort` setting must be a positive integer (1-based), got '{}'. "
+                "Use `order` for complex expressions.", name);
+        if (!all_digits)
+            for (char c : name)
+                if (!isAlphaNumericASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid character '{}' in identifier '{}' in `sort` setting. Use `order` for complex expressions.", c, name);
+
+        if (!result.empty())
+            result += ", ";
+        /// Positional references emit as bare numbers so `sort=1,-2` becomes `ORDER BY 1, 2 DESC`.
+        result += all_digits ? name : backQuoteIfNeed(name);
+        result += direction;
+    };
+
+    String current;
+    for (char c : sort)
+    {
+        if (c == ',')
+        {
+            flush_one(current);
+            current.clear();
+        }
+        else
+            current += c;
+    }
+    flush_one(current);
+    return result;
+}
+
+
+/// Decode a `limit` / `offset` setting value (as it appears in a `SETTINGS` clause) into `Float64`.
+/// The settings are `Double`, so the value may be negative or fractional; the raw parsed field can
+/// be any numeric type or a quoted string.
+static Float64 fieldToLimitOffsetFloat(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Float64: return f.safeGet<Float64>();
+        case Field::Types::UInt64: return static_cast<Float64>(f.safeGet<UInt64>());
+        case Field::Types::Int64: return static_cast<Float64>(f.safeGet<Int64>());
+        case Field::Types::String: return parseFromString<Float64>(f.safeGet<String>());
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
+    }
+}
+
+/// Translate the `page` setting into `limit` / `offset` (`offset = limit * (page - 1)`), in place.
+/// A negative `page` selects from the tail (`page = -1` is the last page). Mirrors the validation
+/// and arithmetic applied to the top-level query in `applyQueryConstructionSettings`, so the `page`
+/// setting behaves the same whether it appears on the top-level query or on a (sub)query's own
+/// `SETTINGS` clause.
+static void translatePageToLimitOffset(Float64 page, Float64 & limit, Float64 & offset)
+{
+    if (page == 0)
+        return;
+    if (limit == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` requires `limit` to be set (got page={}, limit=0).", page);
+    if (offset != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` cannot be combined with `offset` (got page={}, offset={}).", page, offset);
+    if (limit < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+            "Use a positive `limit` with `page` for pagination, or a negative `limit` alone for tail selection.", page, limit);
+
+    if (page > 0)
+    {
+        offset = limit * (page - 1);
+    }
+    else
+    {
+        offset = limit * (page + 1);
+        limit = -limit;
+    }
+}
+
+/// Build `SELECT [select_expr] FROM (inner) [WHERE filter_expr] [ORDER BY order_expr]
+/// [LIMIT limit] [OFFSET offset]` and return it as an `ASTSelectWithUnionQuery`, with `inner` as the
+/// derived-table subquery. An empty `select_expr` means `SELECT *`; a zero `limit` / `offset` is
+/// omitted (and the SQL `LIMIT` grammar handles negative/fractional values natively). This is the
+/// shared core that materializes the construction settings, used both for the top-level query (from
+/// the context, in `applyQueryConstructionSettings`) and for each (sub)query / `UNION` arm that
+/// carries them in its own `SETTINGS` clause.
+static ASTPtr wrapAsConstructedSelect(
+    ASTPtr inner,
+    const String & select_expr,
+    const String & filter_expr,
+    const String & order_expr,
+    Float64 limit,
+    Float64 offset,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
+    {
+        return parseQuery(parser, text.data(), text.data() + text.size(),
+            fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
+    };
+
+    auto outer_select = make_intrusive<ASTSelectQuery>();
+
+    ASTPtr select_list;
+    if (select_expr.empty())
+    {
+        select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+    }
+    else
+    {
+        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
+        select_list = parse_component(select_parser, select_expr, "`select` setting");
+    }
+    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    /// The derived-table subquery must hold an `ASTSelectWithUnionQuery`. A bare `ASTSelectQuery`
+    /// (e.g. a single `UNION` arm passed by the per-arm wrapper) is wrapped in a one-element union.
+    if (!inner->as<ASTSelectWithUnionQuery>())
+    {
+        auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
+        inner_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        inner_union->list_of_selects->children.push_back(std::move(inner));
+        inner_union->children.push_back(inner_union->list_of_selects);
+        inner = std::move(inner_union);
+    }
+    auto subquery = make_intrusive<ASTSubquery>(std::move(inner));
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(subquery);
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    if (!filter_expr.empty())
+    {
+        ParserExpression filter_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
+    }
+    if (!order_expr.empty())
+    {
+        ParserOrderByExpressionList order_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
+    }
+    if (limit != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit)));
+    if (offset != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset)));
+
+    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
+    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    outer_union->list_of_selects->children.push_back(std::move(outer_select));
+    outer_union->children.push_back(outer_union->list_of_selects);
+    return outer_union;
+}
+
+/// The construction settings (`select` / `filter` / `order` / `sort` and `limit` / `offset` / `page`)
+/// read from a single `SETTINGS` clause. `page` is translated to `limit` / `offset`, `sort` is
+/// converted to `order` (and conflicts with an explicit `order`).
+struct ConstructionSettings
+{
+    String select_expr;
+    String filter_expr;
+    String order_expr;
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool present = false;
+
+    bool empty() const
+    {
+        return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
+    }
+};
+
+/// A `SETTINGS` node carries three independent payloads: `changes` (`name = value`), `default_settings`
+/// (`name = DEFAULT` resets) and `query_parameters`. Construction-settings consumption only removes from
+/// `changes`, so a node may only be pruned once all three are empty — otherwise a `… = DEFAULT` reset or
+/// a query parameter sitting alongside a construction setting would be silently dropped from the
+/// (sub)query scope, changing its settings contract.
+static bool isEmptySetQuery(const ASTSetQuery & set_query)
+{
+    return set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty();
+}
+
+static bool isConstructionSettingName(std::string_view name)
+{
+    return name == "select" || name == "filter" || name == "order" || name == "sort"
+        || name == "limit" || name == "offset" || name == "page";
+}
+
+/// Read and remove the construction settings from a single `SETTINGS` clause into `out` (accumulating
+/// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
+static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
+{
+    /// The construction settings are read straight out of `changes` here instead of being applied to a
+    /// `BaseSettings` schema, so nothing else rejects the value-less form `SETTINGS name` for them. None
+    /// of them is Bool (`limit` / `offset` / `page` are `Double`, the rest are `String`), so the shorthand
+    /// is always an error, and it has to be reported before anything is consumed — otherwise the
+    /// `Field(true)` the parser records for it would surface below as a `BAD_GET` / `BAD_ARGUMENTS` from
+    /// reading the value, instead of the `TYPE_MISMATCH` the shorthand contract promises.
+    for (const auto & change : set_query.changes)
+        if (change.shorthand && isConstructionSettingName(change.name))
+            BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name);
+
+    /// Take a construction setting's *effective* value and erase ALL its occurrences. `ParserSetQuery`
+    /// appends one entry per occurrence and normal setting application is last-wins, so read the last
+    /// match (to agree with the effective value) and remove every copy — `SettingsChanges::removeSetting`
+    /// erases only the first, and any leftover would be re-consumed by `wrapNestedConstructionSettings` /
+    /// re-applied by the analyzer and cap the derived subquery a second time.
+    auto take_all = [&](std::string_view name) -> std::optional<Field>
+    {
+        std::optional<Field> result;
+        std::erase_if(set_query.changes, [&](const SettingChange & change)
+        {
+            if (change.name != name)
+                return false;
+            result = change.value;
+            return true;
+        });
+        /// A `name = DEFAULT` reset lives in `default_settings` and is applied after all `changes`
+        /// (`InterpreterSetQuery` runs `resetSettingsToDefaultValue` last), so it wins: the effective
+        /// construction value becomes the setting's default (absent). Erase the reset and drop any captured
+        /// `changes` value, so e.g. `limit = 3, limit = DEFAULT` leaves no construction limit.
+        bool has_reset = false;
+        std::erase_if(set_query.default_settings, [&](const String & reset_name)
+        {
+            if (reset_name != name)
+                return false;
+            has_reset = true;
+            return true;
+        });
+        if (has_reset)
+            result = std::nullopt;
+        return result;
+    };
+
+    auto take_string = [&](std::string_view name, String & dst)
+    {
+        if (auto value = take_all(name))
+        {
+            dst = value->safeGet<String>();
+            out.present = true;
+        }
+    };
+
+    take_string("select", out.select_expr);
+    take_string("filter", out.filter_expr);
+
+    String order_expr;
+    String sort_expr;
+    take_string("order", order_expr);
+    take_string("sort", sort_expr);
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+    if (!order_expr.empty())
+        out.order_expr = order_expr;
+
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool has_limit_offset = false;
+    if (auto value = take_all("limit"))
+    {
+        limit = fieldToLimitOffsetFloat(*value);
+        has_limit_offset = true;
+    }
+    if (auto value = take_all("offset"))
+    {
+        offset = fieldToLimitOffsetFloat(*value);
+        has_limit_offset = true;
+    }
+    if (auto value = take_all("page"))
+    {
+        translatePageToLimitOffset(fieldToLimitOffsetFloat(*value), limit, offset);
+        has_limit_offset = true;
+    }
+    if (has_limit_offset)
+    {
+        out.limit = limit;
+        out.offset = offset;
+        out.present = true;
+    }
+}
+
+/// Read and remove the construction settings from a (sub)query's own query-level `SETTINGS` clauses
+/// into `out`. A single `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery`
+/// (`settings()`); a `UNION … SETTINGS …` keeps it on the union node (`settings_ast`). Both are
+/// consumed so the subquery's own interpreter does not re-apply them on top of the wrapping.
+static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_union, ConstructionSettings & out)
+{
+    auto take = [&](ASTPtr & settings_ptr, ASTSelectQuery * owner_select)
+    {
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return;
+        takeConstructionSettingsFromSetQuery(*set_query, out);
+        if (isEmptySetQuery(*set_query))
+        {
+            settings_ptr.reset();
+            if (owner_select)
+                owner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+        }
+    };
+
+    take(select_union.settings_ast, nullptr);
+    if (select_union.list_of_selects)
+    {
+        for (auto & select_child : select_union.list_of_selects->children)
+        {
+            if (auto * inner_select = select_child->as<ASTSelectQuery>())
+            {
+                ASTPtr inner_settings = inner_select->settings();
+                take(inner_settings, inner_select);
+            }
+        }
+    }
+}
+
+/// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting
+/// (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`). Exposed (via
+/// `QueryConstructionSettings.h`) so a stored view's inner query — which bypasses this file's wrapping
+/// — can cheaply decide whether it needs construction-settings materialization before execution.
+bool hasConstructionSettings(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
+        for (const auto & change : set_query->changes)
+            if (isConstructionSettingName(change.name))
+                return true;
+        /// A `name = DEFAULT` reset lives in `default_settings`, not `changes` (see
+        /// `takeConstructionSettingsFromSetQuery`), but it is just as much a construction setting on
+        /// the (sub)query. Without this a `CREATE VIEW … SETTINGS limit = DEFAULT` or an
+        /// `ALTER TABLE … MODIFY QUERY … SETTINGS filter = DEFAULT` would slip an unsupported
+        /// construction-setting form past the stored-view guard.
+        for (const auto & reset_name : set_query->default_settings)
+            if (isConstructionSettingName(reset_name))
+                return true;
+    }
+    for (const auto & child : ast.children)
+        if (child && hasConstructionSettings(*child))
+            return true;
+    return false;
+}
+
+/// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
+/// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
+/// wrapping that subquery as a derived table — the same way the top-level query is handled by
+/// `applyQueryConstructionSettings`. A `SETTINGS` clause therefore applies to its own scope: it caps
+/// / filters / orders that subquery's result, but does not affect deeper subqueries or the outer
+/// query. The session/user settings are NOT read here — they apply only to the outermost query (from
+/// the context, in `applyQueryConstructionSettings`).
+void wrapNestedConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    if (!ast)
+        return;
+
+    /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
+    /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
+    /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
+    /// as for a standalone `SELECT` (e.g. `INSERT INTO a SELECT … SETTINGS limit = 1` inserts one row).
+    /// The source `SELECT` is stored both as the `select` member and in `children`; recurse into the
+    /// member and keep the matching `children` entry in sync, so the rewrite is visible where
+    /// `InterpreterInsertQuery` / `InterpreterCreateQuery` read it. Settings on the `INSERT` / `CREATE`
+    /// node itself (not on the source `SELECT`) are left alone — like any setting, they do not
+    /// propagate into the `SELECT`, so they have no effect on the result it produces.
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapNestedConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        /// A view definition (ordinary / materialized / window, including a `POPULATE` materialized view)
+        /// cannot carry construction settings — that is rejected in `InterpreterCreateQuery`. Do NOT wrap
+        /// a view's source `SELECT` here: a `POPULATE` materialized view is an immediate-insert `CREATE`,
+        /// so without the `!isView()` guard its `SETTINGS` would be materialized and removed here, and the
+        /// rejection (which checks the stored `SELECT`) would no longer fire. Only a non-view
+        /// immediate-insert `CREATE` (`CREATE TABLE … AS SELECT`) is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        /// `ALTER … MODIFY QUERY` stores a (materialized) view's query as a *definition*: its
+        /// construction settings (trailing, nested-subquery, or per-`UNION`-arm) are rejected in
+        /// `AlterCommand::parse` (mirroring the `CREATE VIEW` guard), not materialized. Skip ONLY this
+        /// command's `SELECT`. The generic recursion below still reaches every other ALTER command, so
+        /// executable mutation predicates / update expressions — e.g.
+        /// `DELETE WHERE id IN (SELECT … SETTINGS limit = …)` — keep getting their nested construction
+        /// settings materialized as before (otherwise `limit`/`offset` would be stripped downstream and
+        /// the mutation would run uncapped).
+        return;
+    }
+
+    /// Bottom-up: handle inner-most subqueries before their parents.
+    for (auto & child : ast->children)
+        wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+
+    auto * select_union = ast->as<ASTSelectWithUnionQuery>();
+    if (!select_union || select_union->out_file)
+        return;
+
+    ConstructionSettings cs;
+    takeNestedConstructionSettings(*select_union, cs);
+    if (!cs.present || cs.empty())
+        return;
+
+    ast = wrapAsConstructedSelect(
+        ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+        max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+/// Independently apply the construction settings that a `UNION` arm carries in its own `SETTINGS`
+/// clause. The parser attaches a query-level *trailing* `SETTINGS` clause only to the last arm, so a
+/// construction setting on a NON-last arm is unambiguously per-arm — e.g.
+/// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
+/// every arm that carries one is wrapped as a derived table with its own
+/// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
+/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
+/// never leak into the context as (spurious) query-level settings.
+///
+/// When only the last arm carries the setting, it is indistinguishable from a query-level trailing
+/// `SETTINGS` clause (the grammar produces the same AST), so it is intentionally left to the
+/// query-level handling (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`).
+void wrapPerArmConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    if (!ast)
+        return;
+
+    /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
+    /// `select` member in sync, so per-arm settings on a source `UNION` are materialized too (see
+    /// `wrapNestedConstructionSettings`).
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        /// As in `wrapNestedConstructionSettings`: skip a view definition (construction settings in one
+        /// are rejected in `InterpreterCreateQuery`); only a non-view immediate-insert `CREATE` is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapPerArmConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        /// As in `wrapNestedConstructionSettings`: skip ONLY a `MODIFY QUERY` command's stored view
+        /// `SELECT` (its construction settings — including one on a non-last `UNION` arm — are rejected
+        /// in `AlterCommand::parse`). Keep descending into the rest of the ALTER so mutation predicates
+        /// / update expressions still have their nested construction settings materialized.
+        return;
+    }
+
+    /// Bottom-up: handle inner-most unions before their parents.
+    for (auto & child : ast->children)
+        wrapPerArmConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+
+    auto * select_union = ast->as<ASTSelectWithUnionQuery>();
+    if (!select_union || !select_union->list_of_selects)
+        return;
+    auto & arms = select_union->list_of_selects->children;
+    if (arms.size() < 2)
+        return;
+
+    auto arm_construction_settings = [](ASTSelectQuery * select) -> ASTSetQuery *
+    {
+        if (!select)
+            return nullptr;
+        ASTPtr settings_ptr = select->settings();
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return nullptr;
+        for (const auto & change : set_query->changes)
+            if (isConstructionSettingName(change.name))
+                return set_query;
+        /// A `name = DEFAULT` reset lives in `default_settings`, not `changes`; it is still an arm-local
+        /// construction setting for per-arm-mode detection and the last-arm ambiguity rejection below.
+        /// Otherwise a mixed `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = DEFAULT` would be
+        /// accepted and silently re-scoped to whole-union instead of being rejected as ambiguous.
+        for (const auto & reset_name : set_query->default_settings)
+            if (isConstructionSettingName(reset_name))
+                return set_query;
+        return nullptr;
+    };
+
+    /// Per-arm mode is triggered only by a non-last arm carrying one of these settings.
+    bool per_arm = false;
+    for (size_t i = 0; i + 1 < arms.size(); ++i)
+        if (arm_construction_settings(arms[i]->as<ASTSelectQuery>()))
+            per_arm = true;
+    if (!per_arm)
+        return;
+
+    /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
+    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
+    /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
+    /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
+    /// (`… FROM (SELECT … SETTINGS …)`), remain available and unambiguous.
+    if (arm_construction_settings(arms.back()->as<ASTSelectQuery>()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Ambiguous query-construction `SETTINGS` in a UNION: a non-last arm carries an arm-local "
+            "construction setting while the last arm also carries `SETTINGS`, whose scope (per-arm vs "
+            "whole-union) cannot be determined from the query. Nest each arm's settings in a subquery, "
+            "or apply a whole-union cap via an outer query, to make the scope explicit.");
+
+    for (auto & arm : arms)
+    {
+        auto * select = arm->as<ASTSelectQuery>();
+        auto * set_query = arm_construction_settings(select);
+        if (!set_query)
+            continue;
+
+        ConstructionSettings cs;
+        takeConstructionSettingsFromSetQuery(*set_query, cs);
+        if (isEmptySetQuery(*set_query))
+            select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+        if (cs.empty())
+            continue;
+
+        arm = wrapAsConstructedSelect(
+            arm, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+            max_query_size, max_parser_depth, max_parser_backtracks);
+    }
+}
+
+/// Apply the query-construction settings (`select`/`filter`/`order`/`sort`) by wrapping the parsed
+/// query AST as a derived table, and translate the `page` setting into `limit`/`offset`. The
+/// wrapping is composed from AST nodes (never by concatenating query text), so a trailing `;`, a
+/// top-level `FORMAT` clause, comments, or operator precedence in the base query are handled
+/// correctly. Settings that have no effect (the AST is not a `SELECT`/`UNION`) are left to apply
+/// elsewhere or ignored. This runs after the query's own `SETTINGS` clause has been applied, so
+/// these settings are first-class on every protocol.
+static void applyQueryConstructionSettings(
+    ASTPtr & ast,
+    ContextMutablePtr context,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    /// The construction settings shape a query's *result*. `INSERT … SELECT`, `CREATE … AS SELECT`
+    /// and similar queries do not return a result to the client — their `SELECT` feeds the inserted /
+    /// created table — so the construction settings are irrelevant to them and intentionally left
+    /// unapplied here (and the nested wrappers stop at those query kinds). Only the result-producing
+    /// `SELECT` / `UNION` (and, below, the query explained by `EXPLAIN`) is wrapped.
+
+    /// `EXPLAIN <query> SETTINGS …` carries the construction settings on the `ASTExplainQuery`; the
+    /// explained query is what actually runs. Apply the construction settings to it so the explained
+    /// plan matches what `EXPLAIN`-less execution of the same query would do (otherwise e.g.
+    /// `EXPLAIN SELECT * FROM t SETTINGS filter = 'a > 0'` would plan the unfiltered query).
+    if (auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        if (const ASTPtr & explained = explain_query->getExplainedQuery())
+        {
+            ASTPtr wrapped = explained;
+            applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != explained)
+                explain_query->replaceExplainedQuery(wrapped);
+        }
+        return;
+    }
+
+    /// The construction settings shape a query's *result*, so they apply only to a result-producing
+    /// `SELECT` / `UNION` (the `EXPLAIN`-ed query is handled above; `INSERT … SELECT` / `CREATE … AS
+    /// SELECT` and other non-result queries are intentionally left untouched). Bail out for any other
+    /// query kind BEFORE validating or applying `page` / `order` / `sort`: otherwise a repair statement
+    /// such as `SET page = 0` — run while the session still carries `page` from a previous query —
+    /// would hit the `page requires limit` check below and fail before `InterpreterSetQuery` clears it.
+    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
+    if (!base_select)
+        return;
+
+    const auto & settings = context->getSettingsRef();
+
+    /// `page` is sugar over `limit`/`offset`: `offset = limit * (page - 1)`.
+    if (const Float64 page = settings[Setting::page]; page != 0)
+    {
+        const Float64 limit = settings[Setting::limit];
+        if (limit == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` requires `limit` to be set (got page={}, limit=0).", page);
+        if (settings[Setting::offset] != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with `offset` (got page={}, offset={}).", page, settings[Setting::offset].value);
+        if (limit < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+                "Use a positive `limit` with `page` for pagination, or a negative `limit` alone for tail selection.", page, limit);
+
+        SettingsChanges page_change;
+        if (page > 0)
+            page_change.setSetting("offset", limit * (page - 1));
+        else
+        {
+            page_change.setSetting("limit", -limit);
+            page_change.setSetting("offset", limit * (page + 1));
+        }
+        context->checkSettingsConstraints(page_change, SettingSource::QUERY);
+        context->applySettingsChanges(page_change);
+    }
+
+    const String & select_expr = settings[Setting::select];
+    String order_expr = settings[Setting::order];
+    const String & sort_expr = settings[Setting::sort];
+
+    /// The effective filter is the `filter` setting composed (with `AND`) with the HTTP-supplied
+    /// filters kept in the context channel. Keeping them separate lets an in-query
+    /// `SETTINGS filter = ...` override the `filter` setting without dropping the URL-path / `?filter=`
+    /// filters supplied out-of-band by the HTTP interface (which would otherwise be lost).
+    String filter_expr = settings[Setting::filter];
+    if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
+        filter_expr = filter_expr.empty() ? http_filter : "(" + filter_expr + ") AND (" + http_filter + ")";
+
+    /// `limit` / `offset` are `Double` settings (they may be negative for tail selection or
+    /// fractional for a share of the result). They are applied like every other query-modification
+    /// setting: by wrapping the base query as a derived table and putting a `LIMIT`/`OFFSET` on the
+    /// outer query. This way the cap applies to the *final* result (correct for `UNION`), the
+    /// SQL `LIMIT` grammar handles the negative/fractional values natively, and combining with an
+    /// explicit `LIMIT` in the base query is left to the optimizer's limit push-down — instead of
+    /// the brittle arithmetic combining that used to fold the setting into the base query's clause.
+    const Float64 limit_setting = settings[Setting::limit];
+    const Float64 offset_setting = settings[Setting::offset];
+
+    if (select_expr.empty() && filter_expr.empty() && order_expr.empty() && sort_expr.empty()
+        && limit_setting == 0 && offset_setting == 0)
+        return;
+
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+
+    /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
+    /// top-level-only output options; detach them from the base and re-attach them to the outer
+    /// query, so they shape the final (wrapped) result. The base `SETTINGS` were already applied
+    /// to the context above.
+    ASTPtr base_out_file = base_select->out_file;
+    ASTPtr base_format = base_select->format_ast;
+    ASTPtr base_settings = base_select->settings_ast;
+    ASTPtr base_compression = base_select->compression;
+    ASTPtr base_compression_level = base_select->compression_level;
+    const bool base_outfile_with_stdout = base_select->isIntoOutfileWithStdout();
+    const bool base_outfile_append = base_select->isOutfileAppend();
+    const bool base_outfile_truncate = base_select->isOutfileTruncate();
+    base_select->reset(base_select->out_file);
+    base_select->reset(base_select->format_ast);
+    base_select->reset(base_select->settings_ast);
+    base_select->reset(base_select->compression);
+    base_select->reset(base_select->compression_level);
+    base_select->setIsIntoOutfileWithStdout(false);
+    base_select->setIsOutfileAppend(false);
+    base_select->setIsOutfileTruncate(false);
+
+    /// Reject a construction setting that appears in BOTH the query's own (`SELECT`-local) `SETTINGS` and
+    /// the trailing query-level `SETTINGS` (e.g. `... SETTINGS limit = 5 FORMAT TSV SETTINGS limit = 2`).
+    /// Normal application makes the SELECT-local clause win (it is applied last), but the reattached-settings
+    /// merge treats the query-level clause as the outer scope — so the two precedences disagree. Reject
+    /// rather than silently pick one, matching the `sort`+`order` and ambiguous UNION-arm rejections.
+    if (base_settings)
+    {
+        if (const auto * trailing = base_settings->as<ASTSetQuery>())
+        {
+            const ASTSetQuery * local = nullptr;
+            if (base_select->list_of_selects && !base_select->list_of_selects->children.empty())
+                if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+                    if (auto last_settings = last_select->settings())
+                        local = last_settings->as<ASTSetQuery>();
+            if (local)
+            {
+                static constexpr std::string_view construction_names[] = {
+                    "select", "filter", "order", "sort", "limit", "offset", "page"};
+                auto mentions = [](const ASTSetQuery & s, std::string_view name)
+                {
+                    if (s.changes.tryGet(name))
+                        return true;
+                    for (const auto & reset_name : s.default_settings)
+                        if (reset_name == name)
+                            return true;
+                    return false;
+                };
+                for (std::string_view name : construction_names)
+                    if (mentions(*trailing, name) && mentions(*local, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Construction setting `{}` is set in both the query's own `SETTINGS` clause and the "
+                            "trailing query-level `SETTINGS` clause; set it in only one.", name);
+            }
+        }
+    }
+
+    /// All construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`)
+    /// are consumed here — materialized into the outer wrapper's `SELECT` / `WHERE` / `ORDER BY` /
+    /// `LIMIT` / `OFFSET` below. Strip them from every `SETTINGS` clause carried by the base query so
+    /// they are not applied a second time, either by the base query's interpreter (the analyzer reads
+    /// `limit` / `offset` from the query's own `SETTINGS` clause) or by the later
+    /// `wrapNestedConstructionSettings` pass — the query-level `SETTINGS` clause is re-attached to the
+    /// outer wrapper below, and that pass would otherwise re-consume the construction settings still in
+    /// it and wrap the query a second time (e.g. `SETTINGS select = 'number AS x'` would expose only
+    /// `x` in the first wrap and then fail to resolve `number` in the second). A single
+    /// `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery` (`settings()`), while a
+    /// `UNION … SETTINGS …` or the `… FORMAT … SETTINGS …` suffix keeps it on the union node
+    /// (`settings_ast`), so both locations have to be handled.
+    auto strip_construction_settings = [](ASTPtr & settings_ptr)
+    {
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return;
+        /// Erase ALL occurrences of each construction setting (`ParserSetQuery` appends one entry per
+        /// occurrence, and `removeSetting` would drop only the first — a leftover would be re-consumed by
+        /// the later `wrapNestedConstructionSettings` pass and cap the wrapped query a second time).
+        std::erase_if(set_query->changes, [](const SettingChange & change)
+        {
+            return change.name == "select" || change.name == "filter" || change.name == "order"
+                || change.name == "sort" || change.name == "limit" || change.name == "offset"
+                || change.name == "page";
+        });
+        if (isEmptySetQuery(*set_query))
+            settings_ptr.reset();
+    };
+
+    strip_construction_settings(base_settings);
+    for (auto & select_child : base_select->list_of_selects->children)
+    {
+        if (auto * inner_select = select_child->as<ASTSelectQuery>())
+        {
+            if (ASTPtr inner_settings = inner_select->settings())
+            {
+                strip_construction_settings(inner_settings);
+                if (!inner_settings)
+                    inner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+            }
+        }
+    }
+
+    /// The trailing `SETTINGS` clause of the base query is the *query-level* `SETTINGS` clause: the
+    /// parser attaches it to the last `SELECT` of the union, and that is where
+    /// `InterpreterSetQuery::applySettingsFromQuery` reads the query-level settings from. Keep it
+    /// query-level by detaching it from the (now nested) base query and merging it into the outer
+    /// query's `SETTINGS`. Otherwise a query-level setting would silently change meaning by becoming
+    /// subquery-level — e.g. `use_query_cache` on a subquery is an explicit opt-in for the Planner's
+    /// subquery-level query result cache.
+    if (!base_select->list_of_selects->children.empty())
+    {
+        if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+        {
+            if (ASTPtr last_settings = last_select->settings())
+            {
+                last_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+                if (!base_settings)
+                    base_settings = last_settings;
+                else
+                {
+                    /// Both can be present (e.g. `(SELECT … SETTINGS a = 1) SETTINGS b = 2`); the
+                    /// union-level clause is the outer one, so it wins on conflicts. Merge all three
+                    /// `ASTSetQuery` carriers — `changes` (`name = value`), `default_settings`
+                    /// (`name = DEFAULT`) and `query_parameters` — so a reset or a query parameter carried
+                    /// only by the inner arm is not dropped from the wrapped query's settings contract.
+                    auto & base_set = base_settings->as<ASTSetQuery &>();
+                    auto & last_set = last_settings->as<ASTSetQuery &>();
+
+                    /// A setting named in `base` (as a value or a DEFAULT reset) already wins, so carry
+                    /// over only the inner arm's settings that `base` does not mention.
+                    auto base_mentions_setting = [&](std::string_view name)
+                    {
+                        if (base_set.changes.tryGet(name))
+                            return true;
+                        for (const auto & reset_name : base_set.default_settings)
+                            if (reset_name == name)
+                                return true;
+                        return false;
+                    };
+
+                    for (const auto & change : last_set.changes)
+                        if (!base_mentions_setting(change.name))
+                            base_set.changes.push_back(change);
+                    for (const auto & reset_name : last_set.default_settings)
+                        if (!base_mentions_setting(reset_name))
+                            base_set.default_settings.push_back(reset_name);
+                    for (const auto & param : last_set.query_parameters)
+                    {
+                        bool exists = false;
+                        for (const auto & base_param : base_set.query_parameters)
+                            if (base_param.first == param.first)
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            base_set.query_parameters.push_back(param);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Materialize `implicit_table_at_top_level` into the base query *before* it is wrapped.
+    /// The setting (set e.g. by the HTTP path interface for `/db/t?query=SELECT x`) makes a
+    /// top-level FROM-less `SELECT` read from the path table. The analyzer applies it only to a
+    /// non-subquery FROM-less `SELECT` (`QueryTreeBuilder::buildJoinTree`), but the wrapping below
+    /// turns the base query into a derived-table subquery `SELECT * FROM (SELECT x)`. A single-arm
+    /// base then becomes a subquery (`buildSelectWithUnionExpression` forwards `is_subquery = true`
+    /// to the lone arm), so `SELECT x` would fall back to `system.one` and `x` would not resolve
+    /// against `db.t`. Splice the table in as an explicit `FROM` on every FROM-less arm of the base
+    /// so it keeps reading from the path table once nested. The setting itself is left set: it is a
+    /// no-op for the outer wrapper (which now has a `FROM`) and still covers any FROM-less arm that is
+    /// not a plain `ASTSelectQuery` (e.g. a nested parenthesized union), matching the analyzer, whose
+    /// multi-arm path builds each arm as a non-subquery regardless.
+    if (const String & implicit_table = settings[Setting::implicit_table_at_top_level]; !implicit_table.empty())
+    {
+        ASTPtr tables_template;
+        for (auto & select_child : base_select->list_of_selects->children)
+        {
+            auto * inner_select = select_child->as<ASTSelectQuery>();
+            if (!inner_select || inner_select->tables())
+                continue;
+            if (!tables_template)
+            {
+                ParserTablesInSelectQuery tables_parser;
+                tables_template = parseQuery(
+                    tables_parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
+                    "implicit_table_at_top_level setting", max_query_size, max_parser_depth, max_parser_backtracks);
+            }
+            inner_select->setExpression(ASTSelectQuery::Expression::TABLES, tables_template->clone());
+        }
+    }
+
+    /// Build `SELECT [select] FROM (base) [WHERE filter] [ORDER BY order] [LIMIT][OFFSET]` from the
+    /// effective (session + top-level `SETTINGS`) construction settings — the outermost scope.
+    ASTPtr outer_union_ast = wrapAsConstructedSelect(
+        ast, select_expr, filter_expr, order_expr, limit_setting, offset_setting,
+        max_query_size, max_parser_depth, max_parser_backtracks);
+
+    /// Re-attach the top-level-only output options (`INTO OUTFILE`, `FORMAT`, the query-level
+    /// `SETTINGS`, and the `INTO OUTFILE` compression) to the outer (wrapped) query so they shape the
+    /// final result.
+    auto & outer_union = outer_union_ast->as<ASTSelectWithUnionQuery &>();
+    if (base_out_file)
+        outer_union.set(outer_union.out_file, base_out_file);
+    if (base_format)
+        outer_union.set(outer_union.format_ast, base_format);
+    if (base_settings)
+        outer_union.set(outer_union.settings_ast, base_settings);
+    if (base_compression)
+        outer_union.set(outer_union.compression, base_compression);
+    if (base_compression_level)
+        outer_union.set(outer_union.compression_level, base_compression_level);
+    outer_union.setIsIntoOutfileWithStdout(base_outfile_with_stdout);
+    outer_union.setIsOutfileAppend(base_outfile_append);
+    outer_union.setIsOutfileTruncate(base_outfile_truncate);
+
+    ast = std::move(outer_union_ast);
+
+    /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
+    /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
+    /// would otherwise double-cap the result and re-introduce the combining behavior we just removed).
+    if (limit_setting != 0 || offset_setting != 0)
+    {
+        context->setSetting("limit", Field(static_cast<Float64>(0)));
+        context->setSetting("offset", Field(static_cast<Float64>(0)));
+    }
+}
+
+
+static void checkQueryIsAllowedOnIntrospectionPort(const IAST & ast, const Context & context)
+{
+    if (!isAllowedOnIntrospectionPort(ast))
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "Only diagnostic queries are allowed on the introspection port: "
+            "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+
+    const auto * system_query = ast.as<ASTSystemQuery>();
+    if (system_query
+        && (system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG
+            || system_query->type == ASTSystemQuery::Type::RELOAD_USERS)
+        && !context.isServerCompletelyStarted())
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "SYSTEM {} is not allowed on the introspection port until the server is completely started, "
+            "because reloading the configuration may break the initialization order",
+            ASTSystemQuery::typeToString(system_query->type));
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1185,6 +2235,12 @@ static BlockIO executeQueryImpl(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+
+    /// A trace started by sampling (`opentelemetry_start_trace_probability`) exists only in the thread-local context.
+    /// Write the sampled context back, so that everything that forwards `ClientInfo` to secondary queries (remote and distributed
+    /// queries, DDL entries) carries the trace even where the ambient context is not available.
+    if (query_span && query_span->isTraceEnabled() && context->getClientTraceContext().trace_id == UUID{})
+        context->setClientTraceContext(OpenTelemetry::CurrentContext());
 
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
@@ -1233,11 +2289,20 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
+            const char * kql_pos = begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
-            ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            {
+                /// A plain `SET` passes even when the gate is off, so a session that is
+                /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
+                /// (or turn the gate back on) instead of being stranded until reconnect.
+                out_ast = tryParseKQLSetStatement(
+                    kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+            }
+            else
+                out_ast = parseKQLQuery(
+                    kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
@@ -1267,6 +2332,50 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        {
+            /// Allow `SET` queries in plain SQL so users can switch back to another dialect
+            /// without being locked into JSON-only input. The experimental gate must be
+            /// applied only to the JSON-deserialization branch — otherwise a session with
+            /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
+            /// cannot execute `SET dialect = 'clickhouse'` to recover.
+            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            {
+                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+            {
+                if (!settings[Setting::enable_json_ast_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for clickhouse_json dialect is disabled "
+                        "(turn on setting 'enable_json_ast_dialect')");
+
+                if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+                /// A single-statement `clickhouse_json` query may carry a trailing `;` delimiter, just as
+                /// the SQL path and the JSON multiquery scanner accept one. `Poco::JSON::Parser` rejects
+                /// any trailing non-whitespace ("Excess characters found after JSON end"), so strip one
+                /// trailing `;` (and surrounding whitespace) before deserializing. Anything else after the
+                /// object is still rejected by the JSON parser as excess input.
+                const char * json_end = end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > begin && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+
+                out_ast = IAST::createFromJSON(String(begin, json_end),
+                    settings[Setting::max_ast_depth],
+                    settings[Setting::max_ast_elements]);
+                checkASTSizeLimits(*out_ast, settings);
+            }
         }
         else
         {
@@ -1524,9 +2633,128 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            if (client_info.is_from_introspection_port)
+                checkQueryIsAllowedOnIntrospectionPort(*out_ast, *context);
+
+            const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
+
+            /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
+            /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
+            /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
+            /// values are not read into the context as (spurious) query-level settings.
+            wrapPerArmConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
+            /// change the database that unqualified names resolve to, not just be stored as a string.
+            /// Apply it here — after all SETTINGS have been resolved — so every protocol (native TCP,
+            /// in-query `SETTINGS database='db'`, and the HTTP `database` URL parameter / header) gets
+            /// the same behavior. Previously only `HTTPHandler` honored it, via a one-off
+            /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
+            /// URL *path*, which is already applied before we reach here.
+            if (const String & database_setting = settings[Setting::database];
+                !database_setting.empty() && database_setting != context->getCurrentDatabase())
+            {
+                context->setCurrentDatabase(database_setting);
+            }
+
+            const auto client_interface = context->getClientInfo().interface;
+            const bool run_query_in_background = settings[Setting::run_query_in_background].value;
+
+            /// The query itself may contain `SETTINGS run_query_in_background = 1`.
+            /// So to avoid infinite recursion, executeQueryInBackground sets flags.background = true
+            /// which indicates that we're on background query execution thread
+            /// and should ignore any parsed run_query_in_background values.
+            if (flags.background)
+            {
+                if (run_query_in_background)
+                    context->setSetting("run_query_in_background", false);
+            }
+            /// HTTP handler needs to know if run_query_in_background = 1 before calling executeQuery,
+            /// so it can make detached query context (which is copied from global context, not session context).
+            /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1` or `SETTINGS profile = 'detached_queries'`).
+            else if (run_query_in_background != run_query_in_background_before_settings_from_query
+                && (client_interface == ClientInfo::Interface::TCP || client_interface == ClientInfo::Interface::HTTP))
+            {
+                if (client_interface == ClientInfo::Interface::HTTP)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be changed in the SETTINGS clause of the query over HTTP. "
+                        "Pass it as an HTTP URL parameter, or set it at the user or profile level");
+
+                /// ClickHouse Client parses the SETTINGS clause and passes the settings separately from the query for almost all queries except for:
+                /// CREATE TABLE t (n UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS <storage_setting> = 123, run_query_in_background = 1
+                /// So this exception should only be thrown for such CREATE (and ATTACH) queries.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "run_query_in_background cannot be changed in the SETTINGS clause of this particular query, "
+                    "because the client sends this clause to the server unresolved. "
+                    "Pass it as a client setting, or set it at the user or profile level");
+            }
+            else if (run_query_in_background
+                && (client_interface == ClientInfo::Interface::TCP || client_interface == ClientInfo::Interface::HTTP))
+            {
+                if (flags.internal)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used for an internal query");
+
+                if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used for a secondary query");
+
+                if (stage != QueryProcessingStage::Complete)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be used with the {} query processing stage",
+                        QueryProcessingStage::toString(stage));
+
+                const auto * insert_query = out_ast->as<ASTInsertQuery>();
+                ASTPtr input_function;
+                if (insert_query)
+                    insert_query->tryFindInputFunction(input_function);
+                if ((istr && !istr->eof())
+                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function)))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "A query whose data streams over the connection cannot be run in the background");
+
+                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
+                BlockIO io;
+                io.dispatched = true;
+                return io;
+            }
+
+            /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`/`page`) on the
+            /// parsed AST. Doing it here — rather than by rewriting the query text in the HTTP handler
+            /// — avoids a parse/serialize/parse round-trip and makes these first-class settings on
+            /// every protocol (HTTP URL parameters, an in-query `SETTINGS` clause, the native TCP
+            /// protocol). The HTTP-only `compression` setting (response-body shaping) is the only one
+            /// that is still consumed before execution by `HTTPHandler`.
+            applyQueryConstructionSettings(out_ast, context,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// A subquery's OWN `SETTINGS` clause (e.g. `… FROM (SELECT … SETTINGS filter = 'a > 0',
+            /// limit = 5)` or `view(SELECT … SETTINGS limit = 5)`) shapes that subquery's scope. It is
+            /// not reachable via the top-level wrapping above (which only handles the outermost,
+            /// session-derived settings), so materialize each subquery's own construction settings
+            /// here. A `SETTINGS` clause therefore applies to its own scope only — not to deeper
+            /// subqueries, and not to the outer query.
+            wrapNestedConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// The construction settings above (`select` / `filter` / `order` / `sort`, top-level, per-arm,
+            /// and nested) are parsed into ASTs only here — after the single `ReplaceQueryParameterVisitor`
+            /// pass that runs on the parsed query text. Their snippets may themselves reference query
+            /// parameters (e.g. HTTP `&filter=number<{n:UInt64}&param_n=3`, or an in-query
+            /// `SETTINGS filter = 'number < {n:UInt64}'`), so substitute parameters once more on the
+            /// now-wrapped AST. The first pass is gated on the query *text* containing `{`, of which the
+            /// snippets are not part, so this second pass is required even when the base query has none.
+            if (const auto & query_parameters = context->getQueryParameters(); !query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(out_ast);
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -1708,7 +2936,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
@@ -1910,7 +3138,7 @@ static BlockIO executeQueryImpl(
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
@@ -1968,9 +3196,6 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
-
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
 
         if (query_plan)
         {
@@ -2120,6 +3345,23 @@ std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalA
 }
 
 
+/// Resolve the output format taking into account explicit overrides via `format`/`output_format` settings.
+/// The override wins over the FORMAT clause in the query and over the default format from Context.
+static String resolveOutputFormatName(const ContextPtr & context, const ASTQueryWithOutput * ast_query_with_output)
+{
+    const auto & settings = context->getSettingsRef();
+    const String & format_override = settings[Setting::format];
+    const String & output_format_override = settings[Setting::output_format];
+
+    if (!output_format_override.empty())
+        return output_format_override;
+    if (!format_override.empty())
+        return format_override;
+    if (ast_query_with_output && ast_query_with_output->format_ast != nullptr)
+        return getIdentifierName(ast_query_with_output->format_ast);
+    return context->getDefaultFormat();
+}
+
 static bool isReadOnlyQuery(const ASTPtr & ast)
 {
     auto kind = ast->getQueryKind();
@@ -2196,6 +3438,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();
@@ -2318,49 +3561,103 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
 
-            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
+            /// Run the fuzzed query on its own thread group, so that code reading the query context
+            /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
+            /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            /// The oracle's nested queries run on `fuzz_context` too, so keep the switcher alive
+            /// across them as well.
+            ThreadGroupSwitcher thread_group_switcher(
+                ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
-            if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
-                {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
-                }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
+                /// Inner scope so `result`'s `finish_callbacks`/`exception_callbacks`
+                /// are destroyed BEFORE the oracle runs. Those callbacks captured
+                /// shared_ptrs (context, implicit_tcl_executor, query_span, ...) that
+                /// the oracle's nested `executeQuery` may release/transfer ownership of.
+                /// Letting them outlive the inner execution caused UAFs in `~$_2` /
+                /// `~$_3` lambda destructors (#105741). The callbacks are never invoked
+                /// by `executeASTFuzzerQueries` itself, so destroying them earlier loses
+                /// nothing.
+                auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
-                    /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
-                    /// time limit between pipeline tasks, so without a cancel callback it ignores the
-                    /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
-                    /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
-                    /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
-                    Stopwatch fuzzed_query_watch;
-                    executor.setCancelCallback(
-                        [&fuzzed_query_watch, &process_list_element]()
+                if (result.second.pipeline.initialized())
+                {
+                    if (result.second.pipeline.pushing())
+                    {
+                        /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                        result.second.pipeline.cancel();
+                    }
+                    else
+                    {
+                        if (result.second.pipeline.pulling())
                         {
-                            if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
-                                return true;
-                            if (process_list_element && !process_list_element->checkTimeLimitSoft())
-                                return true;
-                            return fuzzed_query_watch.elapsedMilliseconds() > 30000;
-                        },
-                        /*interactive_timeout_ms=*/100);
-                    executor.execute();
+                            result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                        }
+                        CompletedPipelineExecutor executor(result.second.pipeline);
+
+                        /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
+                        /// time limit between pipeline tasks, so without a cancel callback it ignores the
+                        /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
+                        /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
+                        /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
+                        Stopwatch fuzzed_query_watch;
+                        executor.setCancelCallback(
+                            [&fuzzed_query_watch, &process_list_element]()
+                            {
+                                if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+                                    return true;
+                                if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                return fuzzed_query_watch.elapsedMilliseconds() > 30000;
+                            },
+                            /*interactive_timeout_ms=*/100);
+                        executor.execute();
+                    }
+                }
+            } /// ~result here — inner BlockIO callbacks released before oracle runs.
+
+            /// Run oracle checks on the successfully-executed fuzzed query.
+            if (context->getSettingsRef()[Setting::ast_fuzzer_oracle])
+            {
+                try
+                {
+                    QueryOracleChecker oracle_checker;
+                    oracle_checker.check(fuzzed_ast, fuzz_context);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    {
+                        LOG_FATAL(logger,
+                            "AST Fuzzer oracle mismatch detected!\n"
+                            "Fuzzed query: {}\n"
+                            "{}",
+                            fuzzed_query, e.message());
+                        /// Rethrow with the final server-side fuzzed query attached: the
+                        /// client only sees this exception's message, and with
+                        /// `ast_fuzzer_runs > 0` its own seed query differs from the query
+                        /// that actually triggered the mismatch, so without this the CI
+                        /// artifact (`fuzzer.log`) would omit the real reproducer.
+                        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                            "{}\nServer-side fuzzed query (the actual reproducer): {}",
+                            e.message(), fuzzed_query);
+                    }
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
+                }
+                catch (...)
+                {
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", getCurrentExceptionMessage(false));
                 }
             }
 
             reset_transactions();
             base_ast = fuzzed_ast;
         }
-        catch (...)
+        catch (const Exception & e)
         {
             reset_transactions();
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
@@ -2391,9 +3688,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format_ast
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+        String format_name = resolveOutputFormatName(context, ast_query_with_output);
 
         const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
         if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
@@ -2453,8 +3748,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     {
                         executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
                     }
-                    catch (...)
+                    catch (const Exception & e)
                     {
+                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                            throw; /// Oracle mismatch — propagate to abort the server
                         tryLogCurrentException("ASTFuzzer");
                     }
                 });
@@ -2462,6 +3759,269 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     }
 
     return std::make_pair(std::move(ast), std::move(res));
+}
+
+namespace
+{
+
+/// Framing formats (see IFramingFormat.h) multiplex data, totals, extremes, progress, logs,
+/// and profile events packets in a single output stream. They are currently implemented
+/// for the HTTP protocol only and are ignored for other interfaces.
+/// Whether the output format produces valid UTF-8 text. Text framings (see `requiresTextPayload`)
+/// embed the payload as text and can only be used with such formats.
+///
+/// Binary formats (such as `Native` or `RowBinary`) are detected by their content type: text formats
+/// declare a charset (e.g. `text/tab-separated-values; charset=UTF-8`, `application/json; charset=UTF-8`),
+/// while binary formats use types such as `application/octet-stream` without a charset.
+///
+/// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
+/// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
+/// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
+/// Some formats produce raw bytes only under certain settings or headers (for example `CustomSeparated`
+/// with a `Raw` escaping rule, `SQLInsert` with a non-UTF-8 table or column name written verbatim, or
+/// settings-driven literals that the serializations write verbatim - the `CSV` field delimiter, the
+/// `TSV` / `CSV` `NULL` representations, and the `Bool` representations - see
+/// `settingsLiteralsMayProduceRawBytes`), which is detected with the settings-and-header-aware
+/// `checkIfOutputFormatMayProduceRawBytes`.
+bool outputFormatProducesText(
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    const FormatSettings & format_settings,
+    const Block & header)
+{
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings, header))
+        return false;
+    const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+    return content_type.starts_with("text/") || content_type.contains("charset=");
+}
+
+FramingFormatPtr createFramingFormatIfApplicable(
+    const ContextMutablePtr & context,
+    WriteBuffer & ostr,
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    bool carries_no_payload = false,
+    const Block & header = {})
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return nullptr;
+
+    const String & framing_name = context->getSettingsRef()[Setting::framing_output_format].value;
+    if (boost::iequals(framing_name, "None"))
+        return nullptr;
+
+    FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
+
+    /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
+    /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
+    /// `LineAsString`) that write the column bytes verbatim.
+    bool binary_payload = false;
+
+    /// When the stream carries no output payload (`carries_no_payload`), the output format contributes
+    /// no bytes, so its properties are irrelevant: the payloads are plain text (the framing's own JSON),
+    /// and the format probes are skipped - the format name may not even refer to an existing format
+    /// (for example a mistyped `default_format` on an `INSERT`, which formats no output).
+    if (!carries_no_payload)
+    {
+        binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings, header);
+    }
+
+    auto framing = createFramingFormat(
+        framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
+
+    /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
+    /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
+    /// the payloads, but `JSONEachPacketString` puts the bytes into a JSON
+    /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
+    ///
+    /// When the stream carries no output payload (`carries_no_payload`), the output format
+    /// contributes no bytes, so this compatibility check is skipped and the framing is used
+    /// regardless of the output format. This is the case for a framed exception (a single `exception`
+    /// packet, always JSON) and for a successful query without a result stream (`INSERT`, DDL: only
+    /// the `progress` / `log` / `profile_events` packets are written).
+    if (!carries_no_payload && framing->requiresTextPayload() && binary_payload)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The framing format {} embeds the output as text and is not compatible with the output format {}, "
+            "which is not guaranteed to produce valid UTF-8 text. "
+            "Use the JSONEachPacketBase64 framing format, which encodes arbitrary bytes safely.",
+            framing->getName(),
+            format_name);
+
+    return framing;
+}
+
+/// The queues for server logs and profile events that a framing format sends as packets.
+struct FramingQueues
+{
+    std::shared_ptr<InternalTextLogsQueue> logs_queue;
+    InternalProfileEventsQueuePtr profile_events_queue;
+};
+
+/// Attach or detach the logs and profile-events queues on the current thread (the thread group of
+/// the query inherits them) so they match the effective settings: a framing format requested over
+/// HTTP, plus `send_logs_level` / `send_profile_events`. The queues are owned by `queues` here (the
+/// thread group keeps only a weak reference), so dropping one detaches it and stops the capture.
+///
+/// This is idempotent and is called twice, because the settings that govern framing are only final
+/// after the query's own `SETTINGS` clause has been applied inside `executeQueryImpl`:
+///  - before the query is interpreted, so the logs and profile events emitted during parsing,
+///    planning and analysis are captured (matching the native protocol) when framing is requested
+///    from the session or the URL;
+///  - after `executeQueryImpl`, to reconcile the queues with the effective settings - so a framing
+///    format (or `send_logs_level` / `send_profile_events`) enabled only by the query's `SETTINGS`
+///    clause gets its queues, and the inverse override (framing or the queues disabled by the query)
+///    drops them instead of capturing packets that nobody drains.
+///
+/// The queues are wired into the framing format later, once it is created (the framing format only
+/// becomes known after the output format's header is available). Anything a query enables only through
+/// its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not
+/// known before parsing, so the corresponding queues start capturing only from query execution onwards.
+/// The parse / plan / analysis phase logs and profile events are captured only when the setting comes
+/// from the session or the URL. In particular, a query that fails during analysis (before pipeline
+/// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
+/// `SETTINGS` clause delivers just the framed `exception` packet, not the analysis-phase logs.
+///
+/// `send_logs_source_regexp` has the same late-discovery caveat: the queue filters by source when a log
+/// entry is enqueued (`InternalTextLogsQueue::isNeeded`), so a regexp set only in the query's own
+/// `SETTINGS` clause takes effect from query execution onwards. The parse / plan / analysis phase
+/// entries are filtered by the session / URL value (unfiltered when it is not set there), so entries
+/// already buffered may not match the query-level regexp, and entries dropped by a narrower session /
+/// URL regexp cannot be recovered by a broader query-level one.
+///
+/// Does nothing unless the query runs over HTTP.
+void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return;
+
+    const Settings & settings = context->getSettingsRef();
+    const bool framing_enabled = !boost::iequals(settings[Setting::framing_output_format].value, "None");
+
+    const auto client_logs_level = settings[Setting::send_logs_level];
+    if (framing_enabled && client_logs_level != LogsLevel::none)
+    {
+        if (!queues.logs_queue)
+            queues.logs_queue = std::make_shared<InternalTextLogsQueue>();
+        queues.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+        queues.logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
+        CurrentThread::attachInternalTextLogsQueue(queues.logs_queue, client_logs_level);
+    }
+    else if (queues.logs_queue)
+    {
+        queues.logs_queue.reset();
+        CurrentThread::attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+    }
+
+    if (framing_enabled && settings[Setting::send_profile_events])
+    {
+        if (!queues.profile_events_queue)
+        {
+            queues.profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+            CurrentThread::attachInternalProfileEventsQueue(queues.profile_events_queue);
+        }
+    }
+    else if (queues.profile_events_queue)
+    {
+        queues.profile_events_queue.reset();
+        CurrentThread::attachInternalProfileEventsQueue(nullptr);
+    }
+}
+
+/// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
+void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues)
+{
+    if (queues.logs_queue)
+        framing.setLogsQueue(queues.logs_queue);
+
+    if (queues.profile_events_queue)
+        framing.setProfileEventsQueue(
+            queues.profile_events_queue, getFQDNOrHostName(), context->getSettingsRef()[Setting::interactive_delay]);
+}
+
+}
+
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context)
+{
+    /// Best-effort check that INSERT/OPTIMIZE query's target table exists.
+    /// (For other queries, it's not trivial to check this).
+    {
+        std::optional<StorageID> target_table_id;
+
+        if (const auto * insert_query = ast->as<ASTInsertQuery>();
+            insert_query && !insert_query->table_function)
+        {
+            if (insert_query->table_id)
+                target_table_id = insert_query->table_id;
+            else if (auto table = insert_query->getTable(); !table.empty())
+                target_table_id = StorageID{insert_query->getDatabase(), table};
+        }
+        else if (const auto * optimize_query = ast->as<ASTOptimizeQuery>();
+            optimize_query && optimize_query->cluster.empty())
+        {
+            if (auto table = optimize_query->getTable(); !table.empty())
+                target_table_id = StorageID{optimize_query->getDatabase(), table};
+        }
+
+        if (target_table_id)
+            DatabaseCatalog::instance().getTable(context->resolveStorageID(*target_table_id), context);
+    }
+
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries with 'implicit_transaction' are not supported");
+
+    if (context->hasSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
+
+    /// The caller keeps using its own context to finish the response, so the background query gets its own copy.
+    auto background_context = Context::createCopy(context);
+    background_context->makeQueryContext();
+
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
+    {
+        try
+        {
+            auto thread_group = ThreadGroup::createForQuery(background_context);
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
+            SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
+
+            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
+            try
+            {
+                if (io.pipeline.initialized())
+                {
+                    if (io.pipeline.pulling())
+                    {
+                        PullingPipelineExecutor executor(io.pipeline);
+                        Block block;
+                        while (executor.pull(block))
+                            ;
+                    }
+                    else if (io.pipeline.completed())
+                    {
+                        CompletedPipelineExecutor executor(io.pipeline);
+                        executor.execute();
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Queries that receive data from the client cannot be run in the background");
+                    }
+                }
+            }
+            catch (...)
+            {
+                io.onException();
+                throw;
+            }
+
+            io.onFinish();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("executeQueryInBackground");
+        }
+    });
 }
 
 void executeQuery(
@@ -2572,22 +4132,72 @@ void executeQuery(
     String format_name;
     OutputFormatPtr output_format;
 
+    /// If a framing format is requested, attach its logs and profile-events queues to the current
+    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// analysis are captured too (they are wired into the framing format once it is created below).
+    /// The queues are reconciled with the effective settings again after `executeQueryImpl` has
+    /// applied the query's own `SETTINGS` clause (see `syncFramingQueuesWithSettings`).
+    FramingQueues framing_queues;
+    syncFramingQueuesWithSettings(context, framing_queues);
+
     auto update_format_on_exception_if_needed = [&]()
     {
-        if (!output_format)
+        /// The data path may have thrown from `setFraming` after the output format was already
+        /// created: a format that defers totals and extremes to finalization (`Template`) or writes
+        /// progress in-band (`JSONEachRowWithProgress`) is rejected there. Such a leftover format is
+        /// not framed, and it writes to the payload buffer of a framing format that was destroyed
+        /// during stack unwinding, so it must not carry the exception. Recreate the format in that
+        /// case too, so the error is delivered as a framed `exception` packet rather than falling
+        /// back to a plain HTTP error body.
+        const bool unusable_for_framed_exception = output_format && !output_format->getFraming()
+            && context->getClientInfo().interface == ClientInfo::Interface::HTTP
+            && !boost::iequals(context->getSettingsRef()[Setting::framing_output_format].value, "None");
+
+        if (!output_format || unusable_for_framed_exception)
         {
+            /// `executeQueryImpl` may have applied the query's `SETTINGS` clause before throwing, so
+            /// reconcile the queues with the effective settings before framing the exception, so the
+            /// accumulated `log` / `profile_events` packets match the effective framing settings.
+            syncFramingQueuesWithSettings(context, framing_queues);
+
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                    ? getIdentifierName(ast_query_with_output->format_ast)
-                    : context->getDefaultFormat();
+                format_name = resolveOutputFormatName(context, ast_query_with_output);
 
-                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
-                if (output_format && output_format->supportsWritingException())
+                /// The exception stream carries only the `exception` packet (always JSON), so the framing
+                /// is created for the exception even when the output format cannot be embedded as text or
+                /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
+                /// attached before the query are wired in as well, so any `log` / `profile_events` packets
+                /// accumulated during parsing and planning are still drained on `finalize`.
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*carries_no_payload=*/ true);
+                if (framing)
+                {
+                    /// With a framing format, the exception packet is written by the framing itself and
+                    /// the output format writes nothing in exception-only mode (see
+                    /// `framing_exception_only`), so the format here is only a carrier for the framing.
+                    /// It is created as `Null` rather than as the query's own format, because the real
+                    /// format may not even be constructible on the exception path - for example
+                    /// `Template` with a row template referencing columns of the header, which is empty
+                    /// here.
+                    output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+                    output_format->setFraming(framing, /*for_exception=*/ true);
+                    setFramingQueues(*framing, context, framing_queues);
+                }
+                else
+                {
+                    output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                }
+
+                /// With a framing format, the exception is written as a packet regardless of
+                /// whether the output format supports writing exceptions.
+                if (output_format && (framing || output_format->supportsWritingException()))
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.content_type = framing
+                        ? framing->getContentType()
+                        : FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.framed = framing != nullptr;
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -2610,9 +4220,17 @@ void executeQuery(
                 /// Ignore this exception and report the original one
                 LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
+            catch (...)
+            {
+                /// Not only `DB::Exception` can be thrown here: for example, the `set_result_details`
+                /// callback may throw standard or Poco exceptions. Ignore them the same way, so the
+                /// original query exception is reported instead of the secondary failure.
+                tryLogCurrentException(getLogger("executeQuery"), "while updating the output format to write the exception");
+            }
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
+
     try
     {
         streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
@@ -2634,6 +4252,13 @@ void executeQuery(
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
+
+    /// The query's own `SETTINGS` clause (applied inside `executeQueryImpl`) may enable or disable
+    /// framing / logs / profile events differently from the session or URL defaults that
+    /// `syncFramingQueuesWithSettings` saw before parsing. Reconcile the queues with the effective
+    /// settings, now that they are final, before the framing format is created and the pipeline is
+    /// executed - so the queues match the framing decision and no queue captures packets nobody drains.
+    syncFramingQueuesWithSettings(context, framing_queues);
 
     const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
     if (!additional_http_headers.empty())
@@ -2662,8 +4287,68 @@ void executeQuery(
         }
     }
 
+    if (streams.dispatched)
+    {
+        istr.reset();
+
+        /// query_finish_callback() below finalizes the response, so the details must be set before it.
+        /// The callback is consumed so that the SCOPE_EXIT above does not set them a second time,
+        /// including when the call throws.
+        if (auto set_result_details_copy = std::exchange(set_result_details, nullptr))
+            set_result_details_copy(result_details);
+
+        if (query_finish_callback)
+            query_finish_callback();
+        return;
+    }
+
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
+
+    /// A framing format also multiplexes the auxiliary packets (progress, logs, profile events) for
+    /// HTTP queries that produce no result stream - a successful `INSERT`, a DDL query, or any other
+    /// query without output. This matches the native protocol, which streams progress, logs and
+    /// profile events for such queries too, and keeps `framing_output_format` consistent: without it
+    /// the setting would be a silent no-op for these queries - the response would not switch to the
+    /// framing content type, no packets would be written, and the logs / profile-events queues
+    /// attached by `syncFramingQueuesWithSettings` would accumulate unread until query teardown.
+    ///
+    /// The payload carrier is a `Null` output format, because there is no data to format; only the
+    /// framing's own packets are written. Returns whether a framing format was set up. Applies to the
+    /// HTTP protocol only, and is a no-op unless `framing_output_format` is enabled.
+    auto setup_framing_for_no_result_query = [&]() -> bool
+    {
+        /// The output format is irrelevant here (no payload is produced), so the payload-compatibility
+        /// check is skipped (`carries_no_payload`).
+        auto framing = createFramingFormatIfApplicable(
+            context, ostr, context->getDefaultFormat(), output_format_settings, /*carries_no_payload=*/ true);
+        if (!framing)
+            return false;
+
+        output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+        output_format->setFraming(framing);
+        setFramingQueues(*framing, context, framing_queues);
+
+        /// The carrier is not part of the pipeline, so it is finalized explicitly (below, after the
+        /// query-finish logging) to flush the pending throttled progress update; the framing format
+        /// itself is finalized separately after that, so it must not be finalized by the carrier.
+        output_format->deferFramingFinalize();
+
+        /// Route progress to the framing format so `progress` packets are emitted during execution
+        /// (relevant for a long-running `INSERT`); the logs and profile events accumulated in the
+        /// queues are drained when the framing format is finalized after the query-finish logging.
+        auto previous_progress_callback = context->getProgressCallback();
+        pipeline.setProgressCallback([captured_output_format = output_format, previous_progress_callback] (const Progress & progress)
+        {
+            if (previous_progress_callback)
+                previous_progress_callback(progress);
+            captured_output_format->onProgress(progress);
+        });
+
+        result_details.content_type = framing->getContentType();
+        result_details.framed = true;
+        return true;
+    };
 
     try
     {
@@ -2671,13 +4356,12 @@ void executeQuery(
         {
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
+            setup_framing_for_no_result_query();
         }
         else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+            format_name = resolveOutputFormatName(context, ast_query_with_output);
 
             const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
             if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)
@@ -2687,12 +4371,40 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-                format_name,
-                *out_buf,
-                materializeBlock(pipeline.getHeader()),
-                context,
-                output_format_settings);
+            const Block header = pipeline.getHeader();
+
+            /// The header is passed so the framing can detect output formats that write parts of the
+            /// header verbatim (for example `SQLInsert` column names), which may not be valid UTF-8.
+            if (auto framing = createFramingFormatIfApplicable(
+                    context, *out_buf, format_name, output_format_settings, /*carries_no_payload=*/ false, header))
+            {
+                /// The framing format needs to know the boundaries between the formatted packets,
+                /// so parallel formatting is not applicable.
+                output_format = FormatFactory::instance().getOutputFormat(
+                    format_name,
+                    framing->getPayloadBuffer(),
+                    materializeBlock(header),
+                    context,
+                    output_format_settings);
+
+                output_format->setFraming(framing);
+                setFramingQueues(*framing, context, framing_queues);
+
+                /// Finalize the framing format ourselves after the query-finish logging (below),
+                /// rather than letting the output format do it during pipeline execution, so the
+                /// trailing server logs (for example "Read N rows" and the peak memory usage) are
+                /// included in the stream, just like the native protocol does.
+                output_format->deferFramingFinalize();
+            }
+            else
+            {
+                output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+                    format_name,
+                    *out_buf,
+                    materializeBlock(pipeline.getHeader()),
+                    context,
+                    output_format_settings);
+            }
 
             output_format->setAutoFlush();
 
@@ -2707,14 +4419,18 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.content_type = output_format->getFraming()
+                ? output_format->getFraming()->getContentType()
+                : FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.framed = output_format->getFraming() != nullptr;
             result_details.format = format_name;
 
             pipeline.complete(output_format);
         }
         else
         {
-            pipeline.setProgressCallback(context->getProgressCallback());
+            if (!setup_framing_for_no_result_query())
+                pipeline.setProgressCallback(context->getProgressCallback());
         }
 
         /// input stream might be consumed into some source proceccors/format readers
@@ -2762,6 +4478,12 @@ void executeQuery(
                 {
                     executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
                 }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                        throw; /// Oracle mismatch — propagate so CI sees it
+                    tryLogCurrentException("ASTFuzzer");
+                }
                 catch (...)
                 {
                     tryLogCurrentException("ASTFuzzer");
@@ -2786,19 +4508,131 @@ void executeQuery(
         throw;
     }
 
-    QueryFinishCallback finish_callback;
-    if (query_finish_callback)
-    {
-        finish_callback = [&]()
-        {
-            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
-            /// so the X-ClickHouse-Summary header is correct.
-            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
-            query_finish_callback();
-        };
-    }
+    const auto & framing = output_format ? output_format->getFraming() : nullptr;
 
-    finishExecutedQuery(streams, finish_callback);
+    if (framing)
+    {
+        try
+        {
+            /// Test-only: emulate `finishExecutedQuery` / `finalize` throwing below, to test that the
+            /// failure is still delivered as a framed `exception` packet (see the `catch` block).
+            fiu_do_on(FailPoints::framing_finalize_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the framing format");
+            });
+
+            /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
+            /// trailing server logs and profile events - emitted by the query-finish logging in
+            /// `onFinish` - are included in the stream, like the native protocol does. The order is:
+            ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct) and
+            ///      stash the final counters in the framing format (see below),
+            ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
+            ///   3. finalize the framing format: it drains those logs and profile events, and then
+            ///      writes the final `progress` packet, so it is really the last packet of a
+            ///      successful stream,
+            ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
+            finishExecutedQuery(streams, [&]()
+            {
+                auto progress_callback = context->getProgressCallback();
+
+                /// Forward the final progress flush (`result_rows` / `result_bytes` / `memory_usage`)
+                /// to the framing format too, so the framed stream ends with a `progress` packet
+                /// carrying the final counters, like the native protocol does and as
+                /// `docs/en/interfaces/framing-formats.md` documents. These counters are known only
+                /// after the query finished, so no earlier `progress` packet carries them.
+                ///
+                /// `writeFinalProgress` hands them to the framing format, which writes the packet at
+                /// the very end of its (deferred, see above) finalization - after the trailing logs
+                /// and profile events emitted by `onFinish` and `logPeakMemoryUsage` below. Writing
+                /// the packet here directly would order it before that trailing drain, and the stream
+                /// would not actually end with `progress`. It works uniformly for both paths: for a
+                /// pulling query the output format was finalized by the pipeline (its data is already
+                /// written) before these counters were known, and on the no-result path the `Null`
+                /// payload carrier is not part of the pipeline, so its pending (throttled) progress
+                /// update is folded into the final one.
+                progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    captured_output_format->writeFinalProgress(progress);
+                };
+
+                flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
+
+                /// Test-only: emulate a failure after the final counters were stashed in the framing
+                /// format (see `writeFinalProgress` above) but before the query fully finished - the
+                /// same window where `BlockIO::onFinish` (a query-log write, for example) can throw.
+                /// The recovery must deliver a framed `exception` packet and must not emit the
+                /// success-style final `progress` packet (see `IFramingFormat::finalize`).
+                fiu_do_on(FailPoints::framing_throw_after_final_progress,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after stashing the final progress");
+                });
+            });
+
+            /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
+            /// included in the stream. Otherwise it would be logged only when the query's thread group is
+            /// destroyed (from `QueryScope`, after this function returns) - too late for the framing format.
+            /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
+            if (auto thread_group = CurrentThread::getGroup())
+                thread_group->memory_tracker.logPeakMemoryUsage();
+
+            /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
+            /// pipeline): finalize it now, so its wrapping buffers are released and the trailing logs
+            /// are pumped. Its pending (throttled) progress update was folded into the final progress
+            /// stashed in the framing format above (see `writeFinalProgress`). The framing finalization
+            /// itself is deferred (see `deferFramingFinalize` above), and for a pulling query the
+            /// output format was already finalized by the pipeline, so this is a no-op.
+            output_format->finalize();
+
+            framing->finalize();
+        }
+        catch (...)
+        {
+            /// `finishExecutedQuery` (specifically `BlockIO::onFinish`), `output_format->finalize`, or
+            /// `framing->finalize` can throw after the query has otherwise succeeded, with packets
+            /// possibly already streamed to the client. Deliver the failure as a framed `exception`
+            /// packet - the same mechanism used for a failure during `executeQueryImpl` above - instead
+            /// of letting it escape to the generic HTTP error path, which would append a plain-text
+            /// error after an already-started packet stream, breaking the "always a stream of packets"
+            /// contract. `handle_exception_in_output_format` finalizes the HTTP output itself (as it
+            /// does for the early-failure path), so `query_finish_callback` must not be called again.
+            if (handle_exception_in_output_format)
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+            throw;
+        }
+
+        /// The response stream is closed outside of the recovery block above: on HTTP this callback is
+        /// `HTTPHandler::Output::finalize`, which starts pushing the delayed results, finalizing the
+        /// compression, and closing the socket. Once that started, the framed stream is no longer safely
+        /// re-framable - a failure in the middle of it has already put some (or all) of the success
+        /// stream on the wire, and routing it back through `handle_exception_in_output_format` would
+        /// append a second framed response (a fresh `exception` packet stream) after a partial success
+        /// response, which is worse than a truncated one. This is the same fail-close rule as for a
+        /// half-written packet (see `IFramingFormat`): the client observes a truncated response and an
+        /// aborted connection instead of a well-formed terminal packet. The generic HTTP error path
+        /// enforces this too: `HTTPHandler::trySendExceptionToClient` appends nothing to a framed
+        /// response once its transmission or finalization has started (see
+        /// `QueryResultDetails::framed`).
+        if (query_finish_callback)
+            query_finish_callback();
+    }
+    else
+    {
+        QueryFinishCallback finish_callback;
+        if (query_finish_callback)
+        {
+            finish_callback = [&]()
+            {
+                /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+                /// so the X-ClickHouse-Summary header is correct.
+                flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+                query_finish_callback();
+            };
+        }
+
+        finishExecutedQuery(streams, finish_callback);
+    }
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

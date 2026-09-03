@@ -1,0 +1,49 @@
+<test>
+    <settings>
+        <max_insert_threads>8</max_insert_threads>
+        <optimize_use_projections>0</optimize_use_projections>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>key</name>
+            <values>
+                <value>s8</value>
+                <value>s16</value>
+                <value>s24</value>
+                <value>s32</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_low_card_str
+        (
+            s8 String,
+            s16 String,
+            s24 String,
+            s32 String
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <!-- 4 distinct keys per column; lengths 8 / 16 / 24 / 32 bytes cover the
+         PackedStringRef inline (up to 11 bytes), medium and large layouts.
+         The 12..24 byte columns track the band where the legacy StringHashTable
+         kept keys inline in the cell while PackedStringRef dereferences an arena pointer. -->
+    <fill_query>
+        INSERT INTO t_low_card_str
+        SELECT
+            concat('k8_____', toString(number % 4)),
+            concat('k16____________', toString(number % 4)),
+            concat('k24____________________', toString(number % 4)),
+            concat('k32____________________________', toString(number % 4))
+        FROM numbers_mt(50000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_low_card_str FINAL</fill_query>
+
+    <query>SELECT {key}, count() FROM t_low_card_str GROUP BY {key} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_low_card_str</drop_query>
+</test>

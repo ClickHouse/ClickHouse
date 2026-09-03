@@ -51,11 +51,11 @@ OPTIMIZE TABLE <table> FINAL;
   ### 它会忽略安全限制
 </div>
 
-通常，ClickHouse 会避免合并大于约 150 GB 的 parts (可通过 [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) 配置) 。但 `OPTIMIZE FINAL` **会无视这一安全保护机制**，这意味着：
+通常，ClickHouse 会避免合并大于约 150 GB 的 parts (可通过 [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/zh/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) 配置) 。但 `OPTIMIZE FINAL` **会无视这一安全保护机制**，这意味着：
 
 * 它可能会尝试将**多个 150 GB 的 parts**合并成一个巨大的 part
 * 这可能导致**合并耗时很长**、**内存压力增大**，甚至出现**内存不足错误**
-* 这些大的 part 之后可能会变得难以继续合并，也就是说，出于上述原因，进一步合并它们的尝试可能会失败。在必须依赖合并才能保证查询时行为正确的情况下，这可能会带来不良后果，例如 [ReplacingMergeTree 中的重复数据不断累积](/zh/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts)，从而导致查询时性能下降。
+* 这些大的 part 后续可能会变得难以继续合并；也就是说，出于上述原因，进一步合并它们的尝试可能会失败。在必须依赖合并才能保证查询时行为正确的情况下，这可能会带来不良后果，例如 [ReplacingMergeTree 中的重复数据不断累积](/zh/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts)，从而导致查询时性能下降。
 
 <div id="let-background-merges-do-the-work">
   ## 让后台合并来处理即可

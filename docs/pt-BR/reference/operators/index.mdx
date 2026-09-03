@@ -1,6 +1,6 @@
 ---
 description: 'Documentação sobre Operadores'
-sidebarTitle: 'Operadores'
+sidebarTitle: 'Visão geral'
 slug: /sql-reference/operators/
 title: 'Operadores'
 doc_type: 'reference'
@@ -12,9 +12,13 @@ O ClickHouse transforma os operadores nas funções correspondentes durante a et
   ## Operadores de acesso
 </div>
 
-`a[N]` – Acesso a um elemento de um Array. A função `arrayElement(a, N)`.
+`a[N]` – Acesso a um elemento de um array. A função `arrayElement(a, N)`.
+`N` também pode ser um array de inteiros; nesse caso, os elementos em todas essas posições são retornados como um array,
+assim como em `arrayMap(i -> a[i], N)`. As posições podem ser anuláveis. Uma posição `NULL` produz `NULL` quando o tipo de elemento
+pode ser encapsulado em `Nullable`; para tipos de elemento que não podem estar dentro de `Nullable` (como `Array`, `Map`), produz
+o valor padrão do tipo de elemento, assim como para um índice `NULL` escalar.
 
-`a.N` – Acesso a um elemento de uma tupla. A função `tupleElement(a, N)`.
+`a.N` – Acesso a um elemento de tupla. A função `tupleElement(a, N)`.
 
 <div id="numeric-negation-operator">
   ## Operador de negação numérica
@@ -111,6 +115,32 @@ Para subtração de tuplas: [tupleMinus](/pt-BR/reference/functions/regular-func
 </div>
 
 `a ILIKE b` – a função `ilike(a, b)`.
+
+<div id="match-function">
+  ### função match
+</div>
+
+`a REGEXP b` – A função `match(a, b)`.
+
+`a ~ b` – A função `match(a, b)` (correspondência por expressão regular no estilo PostgreSQL).
+
+<div id="notmatch-function">
+  ### Função notMatch
+</div>
+
+`a !~ b` – A função `notMatch(a, b)` (verifica se `a` não corresponde à expressão regular `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### Função matchCaseInsensitive
+</div>
+
+`a ~* b` – A função `matchCaseInsensitive(a, b)` (correspondência de expressão regular sem distinção entre maiúsculas e minúsculas).
+
+<div id="notmatchcaseinsensitive-function">
+  ### Função notMatchCaseInsensitive
+</div>
+
+`a !~* b` – A função `notMatchCaseInsensitive(a, b)` (verifica se `a` não corresponde à expressão regular `b`, sem diferenciar maiúsculas de minúsculas).
 
 <div id="between-function">
   ### Função BETWEEN
@@ -493,7 +523,7 @@ O tipo do resultado depende dos tipos dos operandos:
 | `Date32`          | `Time64(s)`      | `DateTime64(s)`   |
 
 <Note>
-  O resultado usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings#session_timezone) (ou o fuso horário padrão do servidor, se nenhum fuso horário da sessão estiver definido). A configuração [`date_time_overflow_behavior`](/pt-BR/reference/settings/formats#date_time_overflow_behavior) controla o que acontece quando o resultado fica fora do intervalo representável.
+  O resultado usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings/other#session_timezone) (ou o fuso horário padrão do servidor, se nenhum fuso horário da sessão estiver definido). A configuração [`date_time_overflow_behavior`](/pt-BR/reference/settings/formats/date-time#date_time_overflow_behavior) controla o que acontece quando o resultado fica fora do intervalo representável.
 </Note>
 
 Exemplos:
@@ -540,9 +570,9 @@ Os operadores pós-fixados `AT TIME ZONE` e `AT LOCAL` convertem um valor `DateT
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-`zone` pode ser qualquer expressão constante do tipo string que resulte em um nome de fuso horário válido (por exemplo, `'America/Denver'`, `'UTC'` ou `concat('America', '/', 'Denver')`). Como `AT TIME ZONE` é convertido em `toTimeZone`, aplicam-se as mesmas regras para argumentos de fuso horário: expressões não constantes, como uma referência de coluna, exigem [`allow_nonconst_timezone_arguments = 1`](/pt-BR/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+`zone` pode ser qualquer expressão constante do tipo string que resulte em um nome de fuso horário válido (por exemplo, `'America/Denver'`, `'UTC'` ou `concat('America', '/', 'Denver')`). Como `AT TIME ZONE` é convertido em `toTimeZone`, aplicam-se as mesmas regras para argumentos de fuso horário: expressões não constantes, como uma referência de coluna, exigem [`allow_nonconst_timezone_arguments = 1`](/pt-BR/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments).
 
-`AT LOCAL` usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings#session_timezone) atual (ou o padrão do servidor, se nenhum fuso horário da sessão estiver definido). Em tabelas `Distributed`, `session_timezone` deve ser definido explicitamente; quando está vazio, `timeZone()` é local ao shard e não pode ser usado como argumento constante de `toTimeZone`, causando uma exceção `ILLEGAL_COLUMN`.
+`AT LOCAL` usa o [fuso horário da sessão](/pt-BR/reference/settings/session-settings/other#session_timezone) atual (ou o padrão do servidor, se nenhum fuso horário da sessão estiver definido). Em tabelas `Distributed`, `session_timezone` deve ser definido explicitamente; quando está vazio, `timeZone()` é local ao shard e não pode ser usado como argumento constante de `toTimeZone`, causando uma exceção `ILLEGAL_COLUMN`.
 
 <Note>
   Diferentemente do PostgreSQL, em que `timestamp without time zone AT TIME ZONE zone` reinterpreta o horário como pertencente ao fuso fornecido antes da conversão, o ClickHouse sempre mantém o mesmo ponto absoluto no tempo e apenas altera o rótulo de fuso horário usado na exibição. Ambas as formas são equivalentes a `toTimeZone` e não alteram o timestamp subjacente.
@@ -682,7 +712,7 @@ O ClickHouse oferece suporte aos operadores `IS NULL` e `IS NOT NULL`.
   * `0`, caso contrário.
 * Para outros valores, o operador `IS NULL` sempre retorna `0`.
 
-Pode ser otimizado habilitando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NULL FROM table` é transformada em `SELECT n.null FROM TABLE`.
+Pode ser otimizado habilitando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NULL FROM table` é transformada em `SELECT n.null FROM TABLE`.
 
 {/* */}
 
@@ -717,7 +747,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Pode ser otimizado ativando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NOT NULL FROM table` é transformada em `SELECT NOT n.null FROM TABLE`.
+Pode ser otimizado ativando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NOT NULL FROM table` é transformada em `SELECT NOT n.null FROM TABLE`.
 
 <div id="checking-boolean-values">
   ## Verificando valores booleanos

@@ -1,0 +1,57 @@
+---
+title: 'Connector overview'
+sidebarTitle: 'Overview'
+description: 'Observability and support for ClickHouse clusters in environments you operate, with no standing access'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+<Note>
+The ClickHouse Connector is in Private Preview. To request access, contact your ClickHouse account team.
+</Note>
+
+## What the connector does {#what-the-connector-does}
+
+The ClickHouse Connector is a component you deploy inside your own environment, alongside ClickHouse clusters you operate. It gives ClickHouse the visibility needed to monitor those clusters and the ability to support them when you ask for help, without granting ClickHouse standing access to your environment. The connector ships as a single binary named `clicklink`, which contains both the connector daemons and the `clicklink clctl` command-line tooling you use to install and operate them.
+
+The connector has two components:
+
+- **The scraper** collects metrics from an allowlist of ClickHouse system tables, plus infrastructure metadata and health status, and ships them to ClickHouse Cloud.
+- **The troubleshooter** lets ClickHouse support engineers run read-only diagnostics, but only during a [support session](/products/bring-your-own-cloud/connector/support-sessions) that you enable and can end at any time.
+
+Every connection the connector makes is outbound. ClickHouse Cloud never initiates a connection into your environment; the [architecture](/products/bring-your-own-cloud/connector/architecture) page lists every connection, its protocol, and how it authenticates.
+
+## When to use it {#when-to-use-it}
+
+Deploy the connector when ClickHouse monitors or supports ClickHouse clusters running in your environment and your security posture requires that:
+
+- All access paths originate from inside your boundary, with no inbound connectivity.
+- Support access is time-boxed, enabled by you, and revocable by you at any moment.
+- Everything ClickHouse reads is read-only: ClickHouse table access always, plus namespace-scoped workload metadata and logs during a session you enabled. Every support-session command is recorded in an audit log you own.
+
+## How it works {#how-it-works}
+
+ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding. You run `clicklink clctl init --enroll` once, from a workstation with kubeconfig access for a Kubernetes install or directly on the host for a Linux VM install. That single invocation redeems the token, creates dedicated read-only ClickHouse users for each component, obtains an mTLS client certificate, deploys and starts the daemons, and verifies their health.
+
+From then on, the scraper periodically reads the allowlisted system tables and ships metrics, metadata, and health status to your connector endpoint over mutually authenticated TLS. The troubleshooter stays idle: it maintains an outbound command channel, but that channel carries nothing until you enable a support session. The mTLS certificate renews automatically with no action on your side.
+
+## Requirements at a glance {#requirements-at-a-glance}
+
+- **A deployment target.** Any conformant Kubernetes cluster (installed with the Helm chart) or any systemd Linux host, amd64 or arm64.
+- **Outbound network access on port 443** to your connector endpoint and its enrollment endpoint, plus `releases.clicklink.clickhouse.com` and ECR Public at install time. This is the standard path; air-gapped and mirrored alternatives exist for every step, see [onboarding](/products/bring-your-own-cloud/connector/onboarding).
+- **A reachable ClickHouse native listener.** The connector talks to each cluster over the native protocol; on Kubernetes it auto-detects secure (9440) or plaintext (9000).
+- **An enrollment token.** ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding.
+- **ClickHouse admin access during setup.** Initial provisioning creates the connector's read-only users. An admin password, when one is set, is prompted once and never stored.
+- **Admin access to a Kubernetes API server during provisioning**, on both install targets: access bundles are anchored to Kubernetes ServiceAccounts. See [onboarding](/products/bring-your-own-cloud/connector/onboarding).
+
+See [onboarding](/products/bring-your-own-cloud/connector/onboarding) for the full walkthrough of both install targets.
+
+## Next steps {#next-steps}
+
+- [Onboarding](/products/bring-your-own-cloud/connector/onboarding): install and enroll the connector on Kubernetes or a Linux VM.
+- [Architecture](/products/bring-your-own-cloud/connector/architecture): components, every connection, certificate lifecycle, and what data leaves your environment.
+- [Support sessions](/products/bring-your-own-cloud/connector/support-sessions): how you enable, scope, audit, and revoke support access.
+- [Configuration](/products/bring-your-own-cloud/connector/configuration) and [operations](/products/bring-your-own-cloud/connector/operations): tuning, upgrades, and day-2 tasks.
+- [FAQ](/products/bring-your-own-cloud/connector/reference/faq): common questions, including data egress and revocation.
+
+The connector serves environments you operate yourself. If you would rather have ClickHouse operate the clusters inside your cloud account, that is the [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) deployment model; see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) page for how the two differ.

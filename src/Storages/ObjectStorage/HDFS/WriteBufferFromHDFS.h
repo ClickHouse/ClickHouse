@@ -30,7 +30,8 @@ public:
         const WriteSettings & write_settings_ = {},
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = O_WRONLY,
-        BlobStorageLogWriterPtr blob_log_ = {});
+        BlobStorageLogWriterPtr blob_log_ = {},
+        const String & directories_cleanup_root_ = {});
 
     ~WriteBufferFromHDFS() override;
 
@@ -42,6 +43,7 @@ public:
 
 private:
     void finalizeImpl() override;
+    void cancelImpl() noexcept override;
 
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
