@@ -288,6 +288,8 @@ add_contrib (libcotp-cmake libcotp)
 add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
+add_contrib (ipcrypt2-cmake ipcrypt2)
+
 add_contrib (librseq-cmake librseq)
 add_contrib (silk-cmake silk)
 
