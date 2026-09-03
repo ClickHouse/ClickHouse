@@ -115,7 +115,6 @@ def test_remote_write_over_distributed():
     protobuf = convert_time_series_to_protobuf(time_series)
     send_protobuf_to_remote_write(node.ip_address, 9093, "/dist/write", protobuf)
 
-    # The wrapper inserts asynchronously by default, so the 204 precedes the shard-side landing.
     # Every sample lands exactly once across the shards, and the fixed hash split fills both.
     assert_eq_with_retry(
         node,
@@ -136,6 +135,41 @@ def test_remote_write_over_distributed():
         node.ip_address, 9093, "/api/v1/query", "count(dist_metric)", evaluation_time
     )
     assert f'"{len(HOSTS)}"' in http_result
+
+
+def test_remote_write_over_distributed_ignores_async_insert():
+    """A queued batch would be flushed after the shard-target check, into whatever answers to
+    the shard-local name by then, so this path always inserts in the foreground."""
+    async_inserts_before = int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
+        )
+    )
+    time_series = [
+        ({"__name__": "async_dist_metric", "host": host}, {START_TIME: 1.0})
+        for host in HOSTS
+    ]
+    protobuf = convert_time_series_to_protobuf(time_series)
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/dist/write?async_insert=1", protobuf
+    )
+
+    # On the shards already, without a flush or a retry, and no asynchronous insert ran at all.
+    on_the_shards = int(
+        node.query(
+            "SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = 'async_dist_metric')"
+            " + (SELECT count() FROM timeSeriesTags(shard_1.ts_local) WHERE metric_name = 'async_dist_metric')"
+        )
+    )
+    assert on_the_shards == len(HOSTS)
+    assert (
+        int(
+            node.query(
+                "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
+            )
+        )
+        == async_inserts_before
+    )
 
 
 def test_remote_write_refuses_insert_shard_id():

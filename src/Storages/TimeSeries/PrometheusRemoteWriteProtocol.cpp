@@ -306,10 +306,13 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     /// Written through the wrapper's own sink, which would accept shard targets no prometheus read
     /// surface can answer from, and a caller's own shard choice: both are refused before it runs.
     checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
-    /// Delivered to the shards by the INSERT itself: a batch queued on the initiator would be replayed
-    /// after that check, into whatever answers to the shard-local name by then.
+    /// Delivered to the shards by this INSERT: a batch queued on the initiator, by the sink or the async
+    /// insert queue, would be flushed after that check, into whatever answers to the shard-local name by then.
     if (resolvePrometheusQueryTarget(*time_series_storage))
+    {
         context_->setSetting("distributed_foreground_insert", true);
+        context_->setSetting("async_insert", false);
+    }
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
