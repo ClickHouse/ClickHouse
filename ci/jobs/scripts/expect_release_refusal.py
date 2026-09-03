@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Run release_job.py and pass only if it is refused with the expected message.
+"""Run release_job.py and score a dry-run negative check three ways.
 
 The out-of-order and recovery-misuse dry-run PR checks assert that prepare()
-*rejects* an invalid dispatch, so here a zero exit (the run was not refused) is
-the failure, and the refusal message must match so an unrelated failure is not
-scored as a pass."""
+*rejects* an invalid dispatch. A pass is either: the sentinel selector found no
+candidate in the live release state (release_job.py exits 0 with
+"No commit to ...; skipping"), so there is nothing to rehearse; or prepare()
+refused with the expected message and every other step is clean. Everything
+else — an unrefused success, the wrong refusal message, or a non-refusal step
+failure (Checkout Back, Post Slack Message, cleanup) — is a real failure."""
 import json
 import subprocess
 import sys
@@ -12,26 +15,44 @@ import sys
 from ci.praktika._environment import _Environment
 from ci.praktika.result import Result
 
+_REFUSAL_STEP = "Prepare Release Info"
 
-def _mark_refusal_expected(expected: str) -> None:
-    # The child release_job.py ran under this job's JOB_NAME and, on the refusal
-    # we expect, wrote a FAIL result file that the outer runner reads as the job
-    # verdict. Rewrite that file so the expected refusal reads as XFAIL (scored
-    # OK) instead of a failure.
+
+def _score_expected_refusal(expected: str) -> int:
     path = Result.file_name_static(_Environment.get().JOB_NAME)
-
-    def xfail(node):
-        if node.get("status") not in ("OK", "XFAIL", "XPASS", "SKIPPED"):
-            node["status"] = "XFAIL"
-        for child in node.get("results") or []:
-            xfail(child)
-
     with open(path, "r", encoding="utf-8") as f:
         result = json.load(f)
-    xfail(result)
+
+    # Only the Prepare Release Info leaf is expected to fail (the refusal); any other failed leaf is a real failure that must keep the job red.
+    other_failures = []
+
+    def visit(node):
+        children = node.get("results") or []
+        if not children and node.get("status") not in (
+            "OK",
+            "XFAIL",
+            "XPASS",
+            "SKIPPED",
+        ):
+            if node.get("name") == _REFUSAL_STEP:
+                node["status"] = "XFAIL"
+            else:
+                other_failures.append(node.get("name"))
+        for child in children:
+            visit(child)
+
+    visit(result)
+    if other_failures:
+        print(f"ERROR: release refused as expected, but other steps failed: {other_failures}")
+        return 1
+
+    # The job's own verdict is a pass (it refused as required); Mergeable Check
+    # blocks on any non-OK top-level status, so mark it OK, not XFAIL.
+    result["status"] = "OK"
     result["info"] = f"Refused as expected with [{expected}]"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=4)
+    return 0
 
 
 def main() -> int:
@@ -49,14 +70,17 @@ def main() -> int:
     )
     print(proc.stdout, end="")
     if proc.returncode == 0:
+        # No candidate to rehearse is a pass; any other clean exit means the guard never fired.
+        if "No commit to" in proc.stdout and "skipping" in proc.stdout:
+            print("No candidate in the live release state; nothing to rehearse")
+            return 0
         print(f"ERROR: expected the release job to be refused with [{expected}], but it succeeded")
         return 1
     if expected not in proc.stdout:
         print(f"ERROR: the release job was refused, but not with the expected message [{expected}]")
         return 1
     print(f"Refused as expected with [{expected}]")
-    _mark_refusal_expected(expected)
-    return 0
+    return _score_expected_refusal(expected)
 
 
 if __name__ == "__main__":
