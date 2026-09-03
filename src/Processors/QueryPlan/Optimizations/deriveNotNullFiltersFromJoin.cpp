@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionPlannerOnlyFilter.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB::QueryPlanOptimizations
@@ -14,20 +15,50 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
+/// Collect the columns of `root` that are reachable through NULL-propagating functions.
+void collectColumnsThroughNullPropagatingFunctions(const ActionsDAG::Node * root, NameSet & columns)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack = {root};
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::ALIAS:
+                stack.push_back(node->children.front());
+                break;
+
+            case ActionsDAG::ActionType::INPUT:
+                if (isNullableOrLowCardinalityNullable(node->result_type))
+                    columns.insert(node->result_name);
+                break;
+
+            case ActionsDAG::ActionType::FUNCTION:
+                if (node->function && node->function->isNullPropagating())
+                    stack.insert(stack.end(), node->children.begin(), node->children.end());
+                break;
+
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                break;
+        }
+    }
+}
+
 void collectDroppedNullableColumns(const JoinActionRef & side, NameSet & left_columns, NameSet & right_columns, bool drop_left, bool drop_right)
 {
-    const auto * node = side.getNode();
-    /// TODO: support argument columns of a NULL-propagating expression (e.g. `key + 1`).
-    if (node->type != ActionsDAG::ActionType::INPUT)
-        return;
-
-    if (!isNullableOrLowCardinalityNullable(node->result_type))
-        return;
-
     if (side.fromLeft() && drop_left)
-        left_columns.insert(node->result_name);
+        collectColumnsThroughNullPropagatingFunctions(side.getNode(), left_columns);
     else if (side.fromRight() && drop_right)
-        right_columns.insert(node->result_name);
+        collectColumnsThroughNullPropagatingFunctions(side.getNode(), right_columns);
 }
 
 bool tryAddDerivedNotNullFilter(QueryPlan::Node & join_node, size_t child_index, const NameSet & columns, QueryPlan::Nodes & nodes)

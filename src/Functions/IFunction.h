@@ -54,6 +54,9 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// True when a NULL argument makes the result NULL, which the default implementation for Nulls guarantees.
+    bool isNullPropagating() const { return useDefaultImplementationForNulls(); }
+
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
