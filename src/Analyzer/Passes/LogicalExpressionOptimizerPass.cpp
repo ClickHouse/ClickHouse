@@ -912,6 +912,17 @@ static AddComparisonFilterResult addComparisonFilter(
 
     auto & filters = filter_map[expression];
 
+    /// `equals` compares the string family zero-padded, while the converted constant is compared
+    /// bytewise: `s = toFixedString('a', 2)` holds for the `String` value `'a'`, but converts to
+    /// `'a\0'`. Pruning the other conjuncts of the same expression against such a key would drop
+    /// conditions that are not implied by it (`s != 'a'` above), so keep the filter out of the
+    /// analysis and let it be emitted as-is.
+    if (stringFamilyPairIsNotEqualityEquivalent(expr_type, new_filter.constant_node->getResultType()))
+    {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     auto is_nan_field = [](const Field & f)
     { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
 
