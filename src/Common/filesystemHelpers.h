@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 
 #include <filesystem>
 #include <memory>
@@ -101,5 +102,8 @@ time_t getChangeTime(const std::string & path);
 bool isSymlink(const fs::path & path);
 bool isSymlinkNoThrow(const fs::path & path);
 fs::path readSymlink(const fs::path & path);
+
+/// Returns false and logs a warning if the file cannot be removed (a missing file is not an error).
+bool tryDelete(const fs::path & path, LoggerPtr log);
 
 }
