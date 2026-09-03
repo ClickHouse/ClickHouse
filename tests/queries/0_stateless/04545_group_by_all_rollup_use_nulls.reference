@@ -22,3 +22,13 @@ Nullable(UInt64)
 1	12
 2	15
 \N	36
+-- correlated subquery over the key --
+0	0
+1	1
+2	2
+\N	\N
+----
+0	0
+1	1
+2	2
+\N	\N

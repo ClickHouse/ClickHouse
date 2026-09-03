@@ -6292,12 +6292,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else if (query_node_typed.isGroupByAll())
     {
-        /// Under group_by_use_nulls the GROUP BY ALL keys must be registered as
-        /// nullable_group_by_keys before the projection is resolved, so expand GROUP BY ALL now
-        /// instead of at the end of resolveQuery. resolveGroupByNode below registers the keys and
-        /// clears the caches, so the projection is re-resolved with the Nullable promotion. (#110915)
+        /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
+        /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
+        /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
+        auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
         resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         expandGroupByAll(query_node_typed);
+        query_node_typed.getProjectionNode() = std::move(unresolved_projection);
     }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
