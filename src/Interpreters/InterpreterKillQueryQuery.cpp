@@ -8,7 +8,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
@@ -401,7 +401,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto txn = TransactionLog::instance().tryGetRunningTransaction(tid_hash);
+                auto txn = TransactionManager::instance().tryGetRunningTransaction(tid_hash);
                 if (txn)
                 {
                     txn->onException();

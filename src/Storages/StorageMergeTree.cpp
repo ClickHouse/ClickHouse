@@ -24,7 +24,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -175,7 +175,7 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     if (mutation.tid.isNonTransactional())
         return {};
 
-    auto txn = TransactionLog::instance().tryGetRunningTransaction(mutation.tid.getHash());
+    auto txn = TransactionManager::instance().tryGetRunningTransaction(mutation.tid.getHash());
     if (txn)
         return txn;
 
@@ -1530,7 +1530,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (auto txn = tryGetTransactionForMutation(*to_kill, log.load()))
     {
         LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", to_kill->tid, mutation_id);
-        TransactionLog::instance().rollbackTransaction(txn);
+        TransactionManager::instance().rollbackTransaction(txn);
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
@@ -1587,7 +1587,7 @@ void StorageMergeTree::loadMutations()
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
                 {
-                    if (auto csn = TransactionLog::getCSN(entry.tid))
+                    if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
                         entry.writeCSN(csn);
@@ -2171,7 +2171,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (transactions_enabled.load(std::memory_order_relaxed))
     {
         /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
-        txn = TransactionLog::instance().beginTransaction();
+        txn = TransactionManager::instance().beginTransaction();
         transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
     }
 
@@ -2500,7 +2500,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isNonTransactional() && !TransactionLog::getCSN(tid))
+            if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 

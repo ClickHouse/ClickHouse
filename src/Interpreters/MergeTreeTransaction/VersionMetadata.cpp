@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -35,18 +35,18 @@ extern const int LOGICAL_ERROR;
 extern const int SERIALIZATION_ERROR;
 extern const int STALE_VERSION;
 extern const int CORRUPTED_DATA;
-extern const int CANNOT_OPEN_FILE;
+extern const int NO_SUCH_DATA_PART;
 }
 
-VersionMetadata::VersionMetadata(IMergeTreeDataPart * merge_tree_data_part_)
-    : merge_tree_data_part(merge_tree_data_part_)
+VersionMetadata::VersionMetadata(String part_name_, const IStorage * storage_)
+    : part_name(std::move(part_name_))
+    , storage(storage_)
 {
 }
 
 bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 {
     auto current_info = getInfo();
-
     LOG_TEST(
         log,
         "Object {}, info {}, checking visible for snapshot_version {}, current_tid {}",
@@ -54,15 +54,18 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
         current_info.toString(true),
         snapshot_version,
         current_tid);
+    const bool visible = isVisible(current_info, snapshot_version, current_tid);
+    LOG_TEST(log, "Object {}, visible {}", getObjectName(), visible);
+    return visible;
+}
 
+bool VersionMetadata::isVisible(const VersionInfo & current_info, CSN snapshot_version, TransactionID current_tid)
+{
     if (auto visible = current_info.isVisible(snapshot_version, current_tid))
-    {
-        LOG_TEST(log, "Object {}, visible {}", getObjectName(), *visible);
         return *visible;
-    }
 
-    // Data part has creation_tid/removal_tid, but does not have creation_csn/removal_csn
-
+    /// `isVisible` returned nullopt: the part has creation_tid/removal_tid but at least one CSN is
+    /// still unknown, so fall back to a CSN lookup below.
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
     /// are definitely not visible for us (because the transaction can be committed with greater CSN only),
@@ -81,8 +84,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     auto current_creation_csn = current_info.creation_csn;
     if (!current_info.creation_csn)
     {
-        current_creation_csn = TransactionLog::getCSN(current_info.creation_tid);
-        LOG_TEST(log, "Object {}, current_creation_csn {}", getObjectName(), current_creation_csn);
+        current_creation_csn = TransactionManager::getCSN(current_info.creation_tid);
         if (!current_creation_csn)
             return false; /// Part creation is not committed yet
     }
@@ -94,10 +96,34 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 
     auto current_removal_csn = current_info.removal_csn;
     if (!current_info.removal_tid.isEmpty())
-        current_removal_csn = TransactionLog::getCSN(current_info.removal_tid);
+        current_removal_csn = TransactionManager::getCSN(current_info.removal_tid);
 
-    LOG_TEST(log, "Object {}, current_removal_csn {}", getObjectName(), current_removal_csn);
-    return current_creation_csn <= snapshot_version && (!current_removal_csn || snapshot_version < current_removal_csn);
+    const bool result = current_creation_csn <= snapshot_version && (!current_removal_csn || snapshot_version < current_removal_csn);
+    /// Log the CSNs resolved via `getCSN` that decided visibility. This overload is static, so it
+    /// uses a standalone logger; correlate to the object name via the line logged by the non-static
+    /// `isVisible` right before (same thread, TID, snapshot).
+    if (!current_info.creation_tid.isNonTransactional())
+        LOG_DEBUG(
+            ::getLogger("VersionMetadata"),
+            "Resolved creation_csn {}, removal_csn {} (creation_tid {}) for snapshot {} (TID {}), visible {}",
+            current_creation_csn,
+            current_removal_csn,
+            current_info.creation_tid,
+            snapshot_version,
+            current_tid,
+            result);
+    return result;
+}
+
+bool isCreationCommitted(const VersionInfo & version_info)
+{
+    if (version_info.creation_tid.isNonTransactional())
+        return true;
+    if (version_info.creation_csn == Tx::RolledBackCSN)
+        return false;
+    if (Tx::isCommittedCSN(version_info.creation_csn))   /// stamped — no getCSN round-trip needed
+        return true;
+    return Tx::isCommittedCSN(TransactionManager::getCSN(version_info.creation_tid));
 }
 
 void VersionMetadata::setAndStoreRemovalCSN(CSN csn)
@@ -134,7 +160,7 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
-void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
+void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid, const LockFingerprint & lock_fingerprint)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
@@ -149,10 +175,33 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
             info.removal_csn = Tx::NonTransactionalCSN;
         return true;
     };
-    updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
+
+    if (lock_fingerprint.hasFingerprint())
+        updateRemovalInfoUnderLockThenStore(update_function, lock_fingerprint);
+    else
+        updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
-void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
+bool VersionMetadata::resetRemovalTID(const LockFingerprint & lock_fingerprint)
+{
+    LOG_TEST(log, "Object {}, resetRemovalTID", getObjectName());
+
+    /// Only reached from rollback, so a source this transaction also created is rolled back with it.
+    auto update_function = [](VersionInfo & info) { return info.resetRemovalForOwnRollback(); };
+
+    if (lock_fingerprint.hasFingerprint())
+        return updateRemovalInfoUnderLockThenStore(update_function, lock_fingerprint);
+    return updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
+}
+
+bool VersionMetadata::updateRemovalInfoUnderLockThenStore(
+    std::function<bool(VersionInfo & current_info)> update_info_func, const LockFingerprint &)
+{
+    /// No lock backend (disk-backed parts): the fingerprint is meaningless, persist unguarded.
+    return updateInfoWithRefreshDataThenStoreAndSetMetadata(std::move(update_info_func));
+}
+
+bool VersionMetadata::lockRemovalTID(const TransactionID & tid, LockKind kind, const TransactionInfoContext & context, LockFingerprint * acquired)
 {
     LOG_TEST(
         log,
@@ -200,8 +249,20 @@ void VersionMetadata::lockRemovalTID(const TransactionID & tid, const Transactio
         UNREACHABLE();
     }
 
-    if (tryLockRemovalTID(tid, context, &locked_by))
-        return;
+    /// `tryLockRemovalTID` raises `NO_SUCH_DATA_PART` (Keeper path) when the part znode is gone
+    /// (a peer's merge / TRUNCATE / DROP already removed it). Translate that into a `false`
+    /// return so callers skip removal without a try/catch.
+    try
+    {
+        if (tryLockRemovalTID(tid, kind, context, &locked_by, acquired))
+            return true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NO_SUCH_DATA_PART)
+            return false;
+        throw;
+    }
 
     on_error();
     UNREACHABLE();
@@ -232,8 +293,6 @@ void VersionMetadata::setAndStoreCreationTID(const TransactionID & tid, Transact
 bool VersionMetadata::canBeRemoved() const
 {
     auto current_info = getInfo();
-    LOG_TEST(log, "Object {}, canBeRemoved {}", getObjectName(), current_info.toString(/*one_line=*/true));
-
     if (current_info.removal_tid.isNonTransactional())
         return true;
 
@@ -247,13 +306,14 @@ bool VersionMetadata::canBeRemoved() const
     auto fresh_creation_csn = current_info.creation_csn;
     if (!current_info.creation_csn)
     {
-        /// Cannot remove part if its creation not committed yet
-        fresh_creation_csn = TransactionLog::getCSN(current_info.creation_tid);
+        /// Keep the part unless creation is committed. `getCSN`, not `tryGetCSN`: inferring rollback
+        /// from a missing CSN is safe only with `csn_log_retention`, which this branch lacks.
+        fresh_creation_csn = TransactionManager::getCSN(current_info.creation_tid);
         if (!fresh_creation_csn)
             return false;
     }
 
-    auto oldest_snapshot_version = TransactionLog::instance().getOldestSnapshot();
+    auto oldest_snapshot_version = TransactionManager::instance().getOldestSnapshot();
 
     /// Part is probably visible for some transactions (part is too new or the oldest snapshot is too old)
     if (oldest_snapshot_version < fresh_creation_csn)
@@ -265,8 +325,10 @@ bool VersionMetadata::canBeRemoved() const
     auto fresh_removal_csn = current_info.removal_csn;
     if (!current_info.removal_csn && !current_info.removal_tid.isEmpty())
     {
-        /// Part removal is not committed yet
-        fresh_removal_csn = TransactionLog::getCSN(current_info.removal_tid);
+        /// Removal not committed yet. A `RolledBackCSN` result here means the part is
+        /// still alive — the `<=` check at the return falls through to false, so no
+        /// explicit branch.
+        fresh_removal_csn = TransactionManager::getCSN(current_info.removal_tid);
         if (!fresh_removal_csn)
             return false;
     }
@@ -281,7 +343,7 @@ VersionInfo VersionMetadata::getInfo() const
     return version_info;
 }
 
-void VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::function<bool(VersionInfo & current_info)> update_info_func)
+bool VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::function<bool(VersionInfo & current_info)> update_info_func)
 {
     for (size_t attempt = 1; attempt <= MAX_RETRIES; ++attempt)
     {
@@ -293,7 +355,7 @@ void VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::func
             /// `update_info_func` had nothing to update.
             if (attempt > 1)
                 setInfo(new_info);
-            return;
+            return false;
         }
 
         auto update_result = updateCSNIfNeeded(new_info);
@@ -309,7 +371,7 @@ void VersionMetadata::updateInfoWithRefreshDataThenStoreAndSetMetadata(std::func
         {
             new_info.storing_version = *store_result;
             setInfo(new_info);
-            return;
+            return true;
         }
 
         /// `TOO_OLD_VERSION`: the stored version changed since we read it — reload and retry.
@@ -346,7 +408,7 @@ void VersionMetadata::setInfo(const VersionInfo & new_info)
 
 String VersionMetadata::getObjectName() const
 {
-    return merge_tree_data_part->storage.getStorageID().getNameForLogs() + "|" + merge_tree_data_part->name;
+    return storage->getStorageID().getNameForLogs() + "|" + part_name;
 }
 
 std::optional<bool> VersionMetadata::updateCSNIfNeeded(VersionInfo & current_info)
@@ -433,21 +495,31 @@ std::optional<bool> VersionMetadata::updateCSNIfNeeded(VersionInfo & current_inf
     return info_updated;
 }
 
-CSN VersionMetadata::tryGetCSN(TransactionID tid)
+CSN VersionMetadata::tryGetCSN(TransactionID tid) const
 {
-    auto csn = TransactionLog::getCSN(tid);
-    if (!csn && TransactionLog::instance().tryGetRunningTransaction(tid.getHash()) == nullptr)
+    auto csn = TransactionManager::getCSN(tid);
+    if (csn)
     {
-        /// CSN might be updated during the gap between TransactionLog::getCSN and TransactionLog::instance().tryGetRunningTransaction
-        csn = TransactionLog::getCSN(tid);
-
-        /// The transaction is not running, and has no CSN -> it is rolled back
-        if (!csn)
-        {
-            LOG_TRACE(log, "Object {}, tid {} is rolled back", getObjectName(), tid);
-            return Tx::RolledBackCSN;
-        }
+        LOG_TRACE(log, "Object {}, tid {}, try get csn {}", getObjectName(), tid, csn);
+        return csn;
     }
+
+    /// No CSN yet. Treat as rolled back only once `isTIDInvalid` says the writer session is dead
+    /// (single-replica: the TID is no longer in the running list — see the NOTE on `isTIDInvalid`).
+    if (!TransactionManager::instance().isTIDInvalid(tid, Tx::MainJobId))
+    {
+        LOG_TRACE(log, "Object {}, tid {} not invalid yet, CSN unknown", getObjectName(), tid);
+        return Tx::UnknownCSN;
+    }
+
+    /// Re-check CSN in case the transaction committed concurrently just before isTIDInvalid.
+    csn = TransactionManager::getCSN(tid);
+    if (!csn)
+    {
+        LOG_TRACE(log, "Object {}, tid {} is rolled back", getObjectName(), tid);
+        return Tx::RolledBackCSN;
+    }
+
     LOG_TRACE(log, "Object {}, tid {}, try get csn {}", getObjectName(), tid, csn);
     return csn;
 }
@@ -481,7 +553,7 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
 
     MergeTreeTransactionPtr creating_txn{nullptr};
     if (!info.creation_tid.isNonTransactional())
-        creating_txn = TransactionLog::instance().tryGetRunningTransaction(info.creation_tid.getHash());
+        creating_txn = TransactionManager::instance().tryGetRunningTransaction(info.creation_tid.getHash());
 
     if (creating_txn != nullptr)
     {
@@ -592,7 +664,27 @@ void VersionMetadata::loadAndUpdateMetadata()
 bool VersionMetadata::hasValidMetadata()
 {
     auto current_info = getInfo();
+    try
+    {
+        return validateAgainstPersistedMetadata(current_info);
+    }
+    catch (const Exception &)
+    {
+        /// Let `DB::Exception` (e.g. `CORRUPTED_DATA` from the in-memory vs persisted
+        /// comparison) propagate. The part destructor's outer try/catch logs and swallows it;
+        /// returning `false` here would instead fire `chassert(assertHasValidVersionMetadata())`
+        /// in `removeIfNeeded`. `VersionMetadataOnDisk` overrides to catch `CANNOT_OPEN_FILE` first.
+        throw;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Object {}, current_info: {}", getObjectName(), current_info.toString(/*one_line=*/true)));
+        return false;
+    }
+}
 
+bool VersionMetadata::validateAgainstPersistedMetadata(const VersionInfo & current_info)
+{
     /// Rolled-back parts produced by `VersionMetadataOnDisk::loadMetadata` case 2 exist only
     /// in-memory: there is no `txn_version.txt` on disk (the previous write was interrupted
     /// before the atomic rename and `loadMetadata` has since removed the `.tmp` file), so
@@ -605,80 +697,52 @@ bool VersionMetadata::hasValidMetadata()
         && current_info.removal_csn == Tx::UnknownCSN)
         return true;
 
-    VersionInfo persisted_info;
-    try
-    {
-        persisted_info = readMetadata();
-        if (current_info.creation_tid != persisted_info.creation_tid)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid version metadata, creation_tid mismatched {} and {}",
-                current_info.creation_tid,
-                persisted_info.creation_tid);
+    VersionInfo persisted_info = readMetadata();
 
-        if (current_info.removal_tid != persisted_info.removal_tid && current_info.removal_tid != Tx::NonTransactionalTID)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid version metadata, removal_tid mismatched {} and {}",
-                current_info.removal_tid,
-                persisted_info.removal_tid);
+    if (current_info.creation_tid != persisted_info.creation_tid)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Invalid version metadata, creation_tid mismatched {} and {}",
+            current_info.creation_tid,
+            persisted_info.creation_tid);
 
-        /// In-memory creation_csn can be learned from TransactionLog after commit while
-        /// the on-disk file still carries Tx::UnknownCSN — that is a valid transient state.
-        /// Similarly, RolledBackCSN is only ever written to the in-memory state, never to disk.
-        if (current_info.creation_csn != persisted_info.creation_csn
-            && current_info.creation_csn != Tx::RolledBackCSN
-            && persisted_info.creation_csn != Tx::UnknownCSN)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid version metadata, creation_csn mismatched {} and {}",
-                current_info.creation_csn,
-                persisted_info.creation_csn);
+    if (current_info.removal_tid != persisted_info.removal_tid && !current_info.removal_tid.isNonTransactional())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Invalid version metadata, removal_tid mismatched {} and {}",
+            current_info.removal_tid,
+            persisted_info.removal_tid);
 
-        /// Same reasoning as creation_csn above: in-memory removal_csn can be learned from
-        /// TransactionLog before the metadata file is rewritten with the final CSN.
-        /// NonTransactionalCSN is set in-memory immediately but may not yet be on disk.
-        if (current_info.removal_csn != persisted_info.removal_csn
-            && current_info.removal_csn != Tx::NonTransactionalCSN
-            && persisted_info.removal_csn != Tx::UnknownCSN)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid version metadata, removal_csn mismatched {} and {}",
-                current_info.removal_csn,
-                persisted_info.removal_csn);
+    /// In-memory creation_csn can be learned from TransactionManager after commit while
+    /// the on-disk file still carries Tx::UnknownCSN — that is a valid transient state.
+    /// Similarly, RolledBackCSN is only ever written to the in-memory state, never to disk.
+    if (current_info.creation_csn != persisted_info.creation_csn && current_info.creation_csn != Tx::RolledBackCSN
+        && persisted_info.creation_csn != Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Invalid version metadata, creation_csn mismatched {} and {}",
+            current_info.creation_csn,
+            persisted_info.creation_csn);
 
-        if (persisted_info.removal_csn != 0 && persisted_info.removal_tid.isEmpty())
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Invalid removal_tid, removal_csn {}, removal_tid {}",
-                persisted_info.removal_csn,
-                persisted_info.removal_tid);
+    /// Same reasoning as creation_csn above: in-memory removal_csn can be learned from
+    /// TransactionManager before the metadata file is rewritten with the final CSN.
+    /// NonTransactionalCSN is set in-memory immediately but may not yet be on disk.
+    if (current_info.removal_csn != persisted_info.removal_csn && current_info.removal_csn != Tx::NonTransactionalCSN
+        && persisted_info.removal_csn != Tx::UnknownCSN)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Invalid version metadata, removal_csn mismatched {} and {}",
+            current_info.removal_csn,
+            persisted_info.removal_csn);
 
+    if (persisted_info.removal_csn != 0 && persisted_info.removal_tid.isEmpty())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Invalid removal_tid, removal_csn {}, removal_tid {}",
+            persisted_info.removal_csn,
+            persisted_info.removal_tid);
 
-        return true;
-    }
-    catch (const Exception & e)
-    {
-        /// The part directory may have been removed externally (e.g., between
-        /// DETACH and ATTACH in an Ordinary database). If the directory is gone,
-        /// there is nothing to validate.
-        /// Refer: https://github.com/ClickHouse/ClickHouse/pull/99399
-        if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && !merge_tree_data_part->getDataPartStorage().exists())
-            return true;
-
-        throw;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(
-            merge_tree_data_part->storage.log,
-            fmt::format(
-                "Object {}, persisted_info: {}, current_info: {}",
-                getObjectName(),
-                persisted_info.toString(/*one_line*/ true),
-                current_info.toString(/*one_line=*/true)));
-        return false;
-    }
+    return true;
 }
 
 void VersionMetadata::writeToBuffer(WriteBuffer & buf, bool one_line) const
@@ -692,6 +756,7 @@ DataTypePtr getTransactionIDDataType()
     types.push_back(std::make_shared<DataTypeUInt64>());
     types.push_back(std::make_shared<DataTypeUInt64>());
     types.push_back(std::make_shared<DataTypeUUID>());
+    types.push_back(std::make_shared<DataTypeInt64>());
     return std::make_shared<DataTypeTuple>(std::move(types));
 }
 }

@@ -155,7 +155,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -1133,7 +1133,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionLog::shutdownIfAny();
+        TransactionManager::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
