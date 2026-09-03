@@ -79,7 +79,8 @@ public:
         std::optional<String> new_uuid,
         Int32 metadata_version,
         const String & metadata_file_path,
-        const std::optional<MetadataFileIdentity> & identity)
+        const std::optional<MetadataFileIdentity> & identity,
+        std::optional<UInt64> content_token)
     {
         std::lock_guard lock(mutex);
         bool changed = uuid != new_uuid;
@@ -96,7 +97,7 @@ public:
         uuid = std::move(new_uuid);
         if (changed)
             ++incarnation;
-        last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
+        last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity, content_token};
         return changed;
     }
 
@@ -153,10 +154,28 @@ public:
 
     /// Record the metadata file whose own `table-uuid` is trusted, because it was just read from
     /// that file or because it is the unchanged file that was validated before.
+    ///
+    /// The content token of an unchanged file is the token that was recorded for it, so recording
+    /// the same file again keeps it: the caller that took this path did not read the content and
+    /// has no token to offer.
     void markValidated(Int32 metadata_version, const String & metadata_file_path, const std::optional<MetadataFileIdentity> & identity)
     {
         std::lock_guard lock(mutex);
-        last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity};
+        std::optional<UInt64> content_token;
+        if (last_validated.has_value() && last_validated->path == metadata_file_path && last_validated->identity == identity)
+            content_token = last_validated->content_token;
+        last_validated = ValidatedMetadataFile{metadata_version, metadata_file_path, identity, content_token};
+    }
+
+    /// The metadata file that was validated last and the fingerprint of the content it carried,
+    /// so that a path proving what is in storage right now can tell whether that very file is
+    /// still the file it validated. See `checkStorageStillHoldsValidatedTable`.
+    std::optional<std::pair<String, UInt64>> getValidatedFileWithToken() const
+    {
+        SharedLockGuard lock(mutex);
+        if (!last_validated.has_value() || !last_validated->content_token.has_value())
+            return std::nullopt;
+        return std::pair{last_validated->path, *last_validated->content_token};
     }
 
 private:
@@ -165,6 +184,8 @@ private:
         Int32 version;
         String path;
         std::optional<MetadataFileIdentity> identity;
+        /// See `computeMetadataContentToken`. Absent for a file whose content was never read here.
+        std::optional<UInt64> content_token;
     };
 
     mutable SharedMutex mutex;

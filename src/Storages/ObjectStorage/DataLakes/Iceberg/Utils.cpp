@@ -1715,6 +1715,40 @@ void checkStorageStillHoldsValidatedTable(
             operation,
             current_metadata_path,
             current_version);
+
+    /// The check above only sees a replacement that did not get past the validated version yet.
+    /// A table recreated at this root and committed a few times of its own answers with a higher
+    /// version, so the listing alone cannot tell it from the validated table moving on. The file
+    /// the statement validated is the witness: an Iceberg metadata file is immutable, so that path
+    /// still answering with the content it was validated with means the incarnation behind it is
+    /// still the one in storage, and anything else - other content, or no file at all - means the
+    /// path was taken over.
+    if (!persistent_table_components.getTableUuid().has_value())
+    {
+        if (auto validated_file = persistent_table_components.trusted_table_uuid->getValidatedFileWithToken();
+            validated_file.has_value() && validated_file->first != current_metadata_path)
+        {
+            const auto & [validated_path, validated_token] = *validated_file;
+            auto validated_metadata_object = getMetadataJSONObject(
+                validated_path,
+                object_storage,
+                persistent_table_components.metadata_cache,
+                context,
+                log,
+                getCompressionMethodFromMetadataFile(validated_path),
+                /* table_uuid */ std::nullopt);
+
+            if (computeMetadataContentToken(validated_metadata_object) != validated_token)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated "
+                    "against, no longer carries the content it was validated with, and the table carries no `table-uuid` to tell the "
+                    "two tables apart. Retry the statement.",
+                    persistent_table_components.table_path,
+                    operation,
+                    validated_path);
+        }
+    }
 }
 
 }

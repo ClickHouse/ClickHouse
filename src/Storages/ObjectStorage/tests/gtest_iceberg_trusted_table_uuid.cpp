@@ -117,7 +117,7 @@ TEST(IcebergTrustedTableUuid, PinnedFileIsCacheKeyedOnlyWithinItsOwnIncarnation)
     /// A concurrent query detects an in-place replacement and moves the shared cell. The
     /// replacement reuses the very same metadata file path, so the path proves nothing - only the
     /// incarnation does, and the pinned query must stop keying the cache by the moved UUID.
-    ASSERT_TRUE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-new-v1")));
+    ASSERT_TRUE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-new-v1"), /*content_token=*/1));
     EXPECT_EQ(uuid.getForPinnedIncarnation(pinned), std::nullopt);
 
     /// A query that pins after the replacement keys the cache by the new UUID again.
@@ -131,7 +131,7 @@ TEST(IcebergTrustedTableUuid, ConfirmingTheSameUuidKeepsThePinsValid)
     TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
     const auto pinned = uuid.getIncarnation();
 
-    ASSERT_FALSE(uuid.commitValidated("11111111-1111-1111-1111-111111111111", 2, "metadata/v2.metadata.json", identity("etag-v2")));
+    ASSERT_FALSE(uuid.commitValidated("11111111-1111-1111-1111-111111111111", 2, "metadata/v2.metadata.json", identity("etag-v2"), /*content_token=*/1));
     EXPECT_EQ(uuid.getForPinnedIncarnation(pinned), std::optional<String>("11111111-1111-1111-1111-111111111111"));
 }
 
@@ -150,12 +150,12 @@ TEST(IcebergTrustedTableUuid, PublishesTheRefreshedUuid)
     TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
     EXPECT_EQ(uuid.get(), std::optional<String>("11111111-1111-1111-1111-111111111111"));
 
-    EXPECT_TRUE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1")));
+    EXPECT_TRUE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/1));
     EXPECT_EQ(uuid.get(), std::optional<String>("22222222-2222-2222-2222-222222222222"));
 
     /// Committing the same value again is not a change, so callers can tell a genuine
     /// replacement from an ordinary revalidation that confirmed the current value.
-    EXPECT_FALSE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1")));
+    EXPECT_FALSE(uuid.commitValidated("22222222-2222-2222-2222-222222222222", 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/1));
 }
 
 /// A format-version 1 table that omits `table-uuid` has no identity to compare, so its
@@ -190,3 +190,24 @@ TEST(IcebergTrustedTableUuid, DoesNotGuessAReplacementWithoutEvidence)
 }
 
 #endif
+
+/// The file token a statement validated against is published for the pre-publish reread, which is
+/// the only witness a table without `table-uuid` has once its replacement has committed past the
+/// validated version.
+TEST(IcebergTrustedTableUuid, PublishesTheValidatedFileToken)
+{
+    TrustedTableUuid uuid(std::nullopt);
+    EXPECT_EQ(uuid.getValidatedFileWithToken(), std::nullopt);
+
+    ASSERT_FALSE(uuid.commitValidated(std::nullopt, 1, "metadata/v1.metadata.json", identity("etag-v1"), /*content_token=*/42));
+    EXPECT_EQ(uuid.getValidatedFileWithToken(), (std::optional<std::pair<String, UInt64>>({"metadata/v1.metadata.json", 42})));
+
+    /// Recording the very same unchanged file again does not read its content, so the token that
+    /// was recorded for it stays.
+    uuid.markValidated(1, "metadata/v1.metadata.json", identity("etag-v1"));
+    EXPECT_EQ(uuid.getValidatedFileWithToken(), (std::optional<std::pair<String, UInt64>>({"metadata/v1.metadata.json", 42})));
+
+    /// A different file has no token until its content is read.
+    uuid.markValidated(2, "metadata/v2.metadata.json", identity("etag-v2"));
+    EXPECT_EQ(uuid.getValidatedFileWithToken(), std::nullopt);
+}

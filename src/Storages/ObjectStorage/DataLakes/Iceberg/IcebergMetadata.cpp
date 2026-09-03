@@ -309,7 +309,12 @@ void IcebergMetadata::update(const ContextPtr & local_context)
         actual_table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
 
     auto previous_table_uuid = trusted_table_uuid.get();
-    if (trusted_table_uuid.commitValidated(actual_table_uuid, metadata_version, metadata_file_path, metadata_file_identity))
+    if (trusted_table_uuid.commitValidated(
+            actual_table_uuid,
+            metadata_version,
+            metadata_file_path,
+            metadata_file_identity,
+            computeMetadataContentToken(metadata_object)))
     {
         LOG_INFO(
             log,
