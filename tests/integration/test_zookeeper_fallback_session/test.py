@@ -167,6 +167,36 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
         assert target_zxid is not None, "zoo3 is not serving requests"
         wait_zk_node_caught_up(started_cluster, "zoo1", target_zxid)
 
+        # A session is established by walking the host list in order and stopping at
+        # the first Keeper that answers, so with several reachable the outcome depends
+        # on where a walk already is. Shutting zoo2 and zoo3 leaves only zoo1.
+        for node in [node1, node2, node3]:
+            for zk in ["zoo2", "zoo3"]:
+                pm.add_rule(
+                    {
+                        "instance": node,
+                        "source": node.ip_address,
+                        "destination": cluster.get_instance_ip(zk),
+                        "action": "REJECT --reject-with tcp-reset",
+                        "protocol": "tcp",
+                    }
+                )
+
+        for node in [node1, node2, node3]:
+            pm.restore_instance_zk_connections(
+                node, action="REJECT --reject-with tcp-reset"
+            )
+
+        for node in [node1, node2, node3]:
+            # Synchronisation, not the assertion: zoo1 is the only Keeper reachable.
+            assert_uses_zk_node(node, "zoo1")
+
+    # Every Keeper is reachable again, and every zxid these nodes have seen came from
+    # zoo1, so none of them is ahead of what zoo1 has applied and zoo1 cannot refuse
+    # their new sessions. `in_order` alone decides the host they land on.
+    for node in [node1, node2, node3]:
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+
     for node in [node1, node2, node3]:
         assert_uses_zk_node(node, "zoo1")
 
