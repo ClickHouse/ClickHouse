@@ -131,7 +131,7 @@ clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
 
 ## Other file formats {#other-file-formats}
 
-The same pattern works for any [input format](/reference/formats/index) ClickHouse supports — including all the formats the console's upload wizard accepts, such as `CSV`, `JSONEachRow`, and `TabSeparatedWithNames`. Only the format name in the `INSERT` changes:
+The same pattern works for any [input format](/reference/formats/index) ClickHouse supports — including all the formats the console's upload wizard accepts, such as `CSV`, `JSONEachRow`, and `TabSeparatedWithNames`. For another format, change the format name consistently in both the `DESCRIBE format(...)` schema-inference step and the `INSERT ... FORMAT` statement, and use a sample file that matches that format (a TSV sample for `TabSeparatedWithNames`, a JSON-lines sample for `JSONEachRow`, and so on). For example, the upload step for a TSV file becomes:
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
