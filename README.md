@@ -52,8 +52,8 @@ Upcoming meetups
 * [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
 * [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
 * [DET New York](https://luma.com/xf3wghdh?tk=S0INUD) - September 17th, 2026
-* [Agentic Data Stack Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
-* [Agentic Data Stack Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
+* [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
+* [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
 * [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
 * [PyData Seattle Meetup](https://luma.com/clickh-ttgg) - September 24th, 2026
 * [Mountain view Meetup](https://luma.com/clickh-5ms6) - September 24th, 2026
