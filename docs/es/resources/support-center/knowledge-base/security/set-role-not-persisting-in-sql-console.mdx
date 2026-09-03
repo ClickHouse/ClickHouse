@@ -12,6 +12,10 @@ keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Control de acceso']
 
 Al ejecutar `SET ROLE` en la SQL Console de ClickHouse Cloud, el rol puede parecer que cambia para una consulta y luego vuelve al anterior en la siguiente. Use un rol de SQL Console por usuario si necesita que los permisos se mantengan entre consultas y sesiones.
 
+<Tip>
+  Prefiera los [roles de base de datos administrados por Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gestionar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 <div id="symptoms">
   ## Síntomas
 </div>
