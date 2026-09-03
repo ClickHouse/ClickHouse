@@ -77,6 +77,7 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -225,6 +226,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsBool send_profile_events;
+    extern const SettingsUInt64 session_query_ids_history_size;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -2265,6 +2267,16 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
+
+    /// Remember the query id in the session history exposed through `system.session_query_ids`.
+    /// Recorded at query start deliberately, so that queries that later fail are captured too.
+    /// Secondary queries of distributed queries are excluded: they arrive over pooled
+    /// inter-server connections whose sessions are shared between initiators.
+    if (!internal && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->hasSessionContext())
+    {
+        if (UInt64 history_size = settings[Setting::session_query_ids_history_size])
+            context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
+    }
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.

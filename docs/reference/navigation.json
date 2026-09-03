@@ -1135,6 +1135,7 @@
         "reference/system-tables/schema_inference_cache",
         "reference/system-tables/server_settings",
         "reference/system-tables/session_log",
+        "reference/system-tables/session_query_ids",
         "reference/system-tables/settings",
         "reference/system-tables/settings_changes",
         "reference/system-tables/settings_profile_elements",

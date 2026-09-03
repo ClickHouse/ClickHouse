@@ -75,6 +75,7 @@
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
+#include <Storages/System/StorageSystemSessionQueryIds.h>
 #include <Storages/System/StorageSystemWarnings.h>
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
 #include <Storages/System/StorageSystemLicenses.h>
@@ -265,6 +266,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemPrivileges>(context, system_database, "privileges", "Contains a list of all available privileges that could be granted to a user or role.");
     attach<StorageSystemErrors>(context, system_database, "errors", "Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.");
     attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.");
+    attach<StorageSystemSessionQueryIds>(context, system_database, "session_query_ids", "Contains the query ids of non-internal queries executed in the current session, in the order of execution. The contents are scoped to the session of the query reading the table.");
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attachNoDescription<StorageSystemProjections>(context, system_database, "projections", "Contains all the information about all the projections in tables, similar to system.data_skipping_indices.");
     attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", "Contains all the information about all the constraints in tables, similar to system.data_skipping_indices.");
