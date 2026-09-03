@@ -216,7 +216,7 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
 
         String column_name;
         readStringBinary(column_name, ctx.in);
-        auto dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+        auto dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
         return std::make_pair(std::move(dag), std::move(column_name));
     };
 
