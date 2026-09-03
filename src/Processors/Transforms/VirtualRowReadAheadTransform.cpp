@@ -352,6 +352,10 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
 {
     Lane & lane = lanes[lane_num];
 
+    /// A warm-up grant is one block. A source never pushes a fully filtered block, only the
+    /// virtual row after it, so the next chunk of either kind is that block.
+    lane.warmup_credit = false;
+
     if (isVirtualRow(chunk))
     {
         bool filtered_stretch = lane.announced && lane.rows_since_announcement == 0;
@@ -373,9 +377,6 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
             grantWarmup(lane_num);
         return;
     }
-
-    /// One block was pulled under the warm-up grant, with or without survivors.
-    lane.warmup_credit = false;
 
     if (!chunk.hasRows())
         return;
