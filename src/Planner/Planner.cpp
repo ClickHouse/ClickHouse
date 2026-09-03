@@ -132,6 +132,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_each_block_no_merge;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -692,7 +693,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::group_by_each_block_no_merge]);
 
     return aggregator_params;
 }
@@ -779,6 +781,11 @@ void applyTopKPushdownToPartialAggregation(
     if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
         return;
 
+    /// See the matching gate in `tryOptimizeGroupByTopK`: the per-block streaming flush is incompatible
+    /// with a top-K heap over the whole aggregation.
+    if (params.group_by_each_block_no_merge)
+        return;
+
     if (aggregating_step.inOrder())
         return;
 
@@ -854,6 +861,16 @@ void addAggregationStep(QueryPlan & query_plan,
         group_by_sort_description = getSortDescriptionFromNames(aggregation_analysis_result.aggregation_keys);
         sort_description_for_merging = group_by_sort_description;
     }
+
+    /// The per-block streaming flush pushes the chunks produced by `Aggregator::convertToChunks` directly,
+    /// bypassing the bucket-ordering protocol that `GroupingAggregatedTransform` relies on for the
+    /// memory-efficient distributed merge and for memory-bound merging. The old interpreter rejects the same
+    /// combination in `InterpreterSelectQuery::executeAggregation`.
+    if (aggregator_params.group_by_each_block_no_merge
+        && query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `group_by_each_block_no_merge` is not supported with bucket-ordered aggregation results");
 
     const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);

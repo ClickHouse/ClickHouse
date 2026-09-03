@@ -41,6 +41,12 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (params.keys.empty())
         return nullptr;
 
+    /// The streaming per-block flush finalizes and emits the groups of every block on its own, so a
+    /// top-K heap over the aggregation as a whole is meaningless there: it would prune groups that the
+    /// per-block results must still contain, and the partial rows a `LIMIT` consumes would never appear.
+    if (params.group_by_each_block_no_merge)
+        return nullptr;
+
     return aggregating_step;
 }
 

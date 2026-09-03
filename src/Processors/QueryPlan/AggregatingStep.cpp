@@ -67,6 +67,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool group_by_each_block_no_merge;
 }
 
 namespace ErrorCodes
@@ -1032,6 +1033,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
             || ((params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
                 && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
+    settings[QueryPlanSerializationSetting::group_by_each_block_no_merge] = params.group_by_each_block_no_merge;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1194,7 +1196,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
+        ctx.settings[QueryPlanSerializationSetting::group_by_each_block_no_merge]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

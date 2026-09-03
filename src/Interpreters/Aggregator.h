@@ -125,6 +125,9 @@ public:
         const size_t max_rows_to_group_by = 0;
         const OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
+        /// If enabled, aggregation is performed, finalized and flushed for every block separately, without merging.
+        bool group_by_each_block_no_merge = false;
+
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,
         /// two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
@@ -234,7 +237,8 @@ public:
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
-            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+            bool group_by_each_block_no_merge_ = false);
 
         /// Only parameters that matter during merge.
         Params(
@@ -253,6 +257,12 @@ public:
             new_params.keys = keys_;
             new_params.keys_size = keys_.size();
             new_params.only_merge = only_merge_;
+            /// Reapply the `!keys.empty()` invariant from the constructor: a clone may receive an empty key list
+            /// (e.g. `AggregatingStep` clones the params for every grouping set, and `GROUP BY GROUPING SETS ((k), ())`
+            /// produces a `()` set with no keys). Keyless aggregation has a single group, so the per-block flush must
+            /// stay disabled there; otherwise the empty set would emit one grand-total row per block instead of the
+            /// single fully merged keyless aggregate row.
+            new_params.group_by_each_block_no_merge = new_params.group_by_each_block_no_merge && !new_params.keys.empty();
             return new_params;
         }
 
@@ -482,6 +492,7 @@ private:
     friend class ConvertingAggregatedToChunksByPartitionMergingSource;
     friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
+    friend class AggregatingTransform;
 
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
