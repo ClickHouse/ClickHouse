@@ -197,7 +197,7 @@ How ClickHouse management services reach the Kubernetes API server, and what res
 - **Azure (AKS)**: the API server is reached over its public FQDN and authorized by Microsoft Entra ID together with Azure RBAC. API-server authorized IP ranges are not applied by default; contact ClickHouse if your policy requires them.
 
 <Note>
-Only Kubernetes API and troubleshooting traffic can be moved onto a private path. Cloud provider API calls always originate from ClickHouse Cloud's network — see [Cloud provider APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api).
+Only Kubernetes API and troubleshooting traffic can be moved onto a private path. The management calls to your cloud provider's APIs originate from ClickHouse Cloud's network and cannot be routed through it — see [Cloud provider APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api), which also covers the provider API calls made by controllers inside your own cluster.
 </Note>
 
 ### Troubleshooting access {#troubleshooting-access}
