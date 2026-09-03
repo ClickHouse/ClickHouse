@@ -276,9 +276,12 @@ ObjectMetadata BorrowFromCacheObjectStorage::getObjectMetadata(const std::string
     ObjectMetadata metadata;
     auto time = fs::last_write_time(cache_path);
     metadata.size_bytes = fs::file_size(cache_path);
-    metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    /// `fs::last_write_time` returns `file_time_type`, whose epoch is implementation-defined,
+    /// so convert it to `system_clock` before deriving Unix-epoch based values.
+    auto sys_time = std::chrono::file_clock::to_sys(time);
+    metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(sys_time.time_since_epoch()).count());
     metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::seconds>(sys_time.time_since_epoch()).count());
     return metadata;
 }
 
@@ -308,9 +311,12 @@ std::optional<ObjectMetadata> BorrowFromCacheObjectStorage::tryGetObjectMetadata
 
     ObjectMetadata metadata;
     metadata.size_bytes = fs::file_size(cache_path);
-    metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    /// `fs::last_write_time` returns `file_time_type`, whose epoch is implementation-defined,
+    /// so convert it to `system_clock` before deriving Unix-epoch based values.
+    auto sys_time = std::chrono::file_clock::to_sys(time);
+    metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(sys_time.time_since_epoch()).count());
     metadata.last_modified = Poco::Timestamp::fromEpochTime(
-        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::seconds>(sys_time.time_since_epoch()).count());
     return metadata;
 }
 
