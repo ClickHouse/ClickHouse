@@ -906,7 +906,18 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
                         if (name_and_type.name.starts_with(nested_table_name + "."))
+                        {
                             nested_columns.push_back(name_and_type);
+                            continue;
+                        }
+                        if (!case_insensitive)
+                            continue;
+                        /// Siblings of one root may each spell it differently. `Nested::collect` groups
+                        /// by the literal root name, so give them all this root's spelling.
+                        const String root = Nested::extractTableName(name_and_type.name);
+                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested)
+                            nested_columns.emplace_back(
+                                nested_table_name + name_and_type.name.substr(root.size()), name_and_type.type);
                     }
 
                     auto & src = decoded[nested_it->second];

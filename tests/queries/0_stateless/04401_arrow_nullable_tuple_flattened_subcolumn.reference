@@ -103,6 +103,16 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04401_map.arrowstream', 'ArrowS
 SELECT `m.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream');
 ['a','b']	[1,2]
 SELECT `m.keys` FROM file(currentDatabase() || '_04401_map.arrowstream', 'ArrowStream', '`m.keys` Array(String)'); -- { serverError TYPE_MISMATCH }
+-- Sibling subcolumns whose requested root spellings differ are the same root under case-insensitive
+-- matching, so the reshaped type has to cover all of them, not just the first spelling.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_cisib.arrow', 'Arrow')
+SELECT CAST([(1, 'a'), (2, 'b')], 'Array(Tuple(x UInt32, y String))') AS c0;
+SELECT `C0.x`, `c0.y` FROM file(currentDatabase() || '_04401_cisib.arrow', 'Arrow', '`C0.x` Array(UInt32), `c0.y` Array(String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+[1,2]	['a','b']
+SELECT `C0.x`, `c0.y` FROM file(currentDatabase() || '_04401_cisib.arrow', 'Arrow', '`C0.x` Array(UInt32), `c0.y` Array(String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 0;
+[]	['a','b']
+SELECT `M.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrow', 'Arrow', '`M.keys` Array(String), `m.values` Array(UInt32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+['a','b']	[1,2]
 -- A tuple element name may itself contain a dot, so `c0.a.b` is both the element `a.b` and the path
 -- from `a` to `b`. The extractor always cuts at the first dot and takes the path, so the declared
 -- type used as the nullability arbiter has to be resolved the same way; a full-path subcolumn lookup
