@@ -8,9 +8,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -49,119 +46,6 @@ namespace DB::ErrorCodes
 
 namespace DB::QueryPlanOptimizations
 {
-
-/// True if comparing a value of this type cannot throw. Decimal (other than DateTime64, see below),
-/// Variant/Dynamic and containers can, so only unwrapped scalars qualify.
-static bool typeIsTotallyComparable(const DataTypePtr & type)
-{
-    WhichDataType which(removeNullable(removeLowCardinality(type)));
-    return which.isInteger() || which.isFloat() || which.isEnum()
-        || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()
-        || which.isString() || which.isFixedString() || which.isUUID()
-        || which.isIPv4() || which.isIPv6() || which.isNothing();
-}
-
-/// True if comparing these argument types cannot throw. A mixed pair is converted first, which is
-/// safe only between integers and floats. DateTime64 therefore requires identical types, since
-/// `equals` compares the scale and equal scales need no overflow-checked multiplication.
-static bool comparisonIsTotal(const DataTypes & argument_types)
-{
-    for (const auto & type : argument_types)
-        if (!typeIsTotallyComparable(type))
-            return false;
-
-    auto is_number = [](const DataTypePtr & t)
-    {
-        WhichDataType which(removeNullable(removeLowCardinality(t)));
-        return which.isInteger() || which.isFloat();
-    };
-
-    auto first = removeNullable(removeLowCardinality(argument_types.front()));
-    for (const auto & type : argument_types)
-    {
-        auto inner = removeNullable(removeLowCardinality(type));
-        if (!inner->equals(*first) && !(is_number(inner) && is_number(first)))
-            return false;
-    }
-    return true;
-}
-
-/// True if the logical functions accept these argument types. They take native numbers only, and a
-/// Variant/Dynamic argument is resolved per row, so it throws only for some values.
-static bool nativeNumberArguments(const DataTypes & argument_types)
-{
-    for (const auto & type : argument_types)
-    {
-        WhichDataType which(removeNullable(removeLowCardinality(type)));
-        if (!which.isNativeNumber() && !which.isNothing())
-            return false;
-    }
-    return true;
-}
-
-/// There is no sound per-function "cannot throw" oracle: IExecutableFunction::canThrow defaults to true
-/// and its only override forwards to isSuitableForShortCircuitArgumentsExecution, which misses
-/// value-dependent throwers such as decimal-arithmetic overflow. So whitelist operations that are total
-/// for every input value instead, and check the argument types of the comparisons separately.
-static bool functionIsProvenTotal(const std::string & name)
-{
-    static const NameSet total_functions
-    {
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        "and", "or", "not", "xor",
-        "isNull", "isNotNull", "isZeroOrNull",
-    };
-    return total_functions.contains(name);
-}
-
-static bool isComparison(const std::string & name)
-{
-    static const NameSet comparisons
-    {
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-    };
-    return comparisons.contains(name);
-}
-
-static bool isLogical(const std::string & name)
-{
-    static const NameSet logical{"and", "or", "not", "xor"};
-    return logical.contains(name);
-}
-
-static bool filterMayThrow(const FilterStep & filter)
-{
-    for (const auto & node : filter.getExpression().getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-            continue;
-
-        const auto & name = node.function_base->getName();
-        if (!functionIsProvenTotal(name))
-            return true;
-
-        /// Only the arguments of functions that inspect a value's type are checked. A column merely
-        /// projected to the output is never evaluated before the set operation, so it must not block
-        /// the pushdown.
-        const bool comparison = isComparison(name);
-        if (!comparison && !isLogical(name))
-            continue;
-
-        DataTypes argument_types;
-        for (const auto & child : node.children)
-        {
-            if (!child->result_type)
-                return true;
-            argument_types.push_back(child->result_type);
-        }
-
-        if (argument_types.empty())
-            return true;
-        if (comparison ? !comparisonIsTotal(argument_types) : !nativeNumberArguments(argument_types))
-            return true;
-    }
-    return false;
-}
 
 /// The branch input column this DAG output carries through, renamed through alias nodes only, or null
 /// if the output is a computed value rather than an input.
@@ -1536,11 +1420,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// IntersectOrExcept does not change the header and its branches are positionally aligned,
         /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
         ///
-        /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so a pushed-down filter also runs on
-        /// branch rows the set operation removes. A predicate that throws on some values would then
-        /// surface an error the unoptimized plan never produces.
-        if (filterMayThrow(*filter))
-            return 0;
+        /// TODO(#117559): unlike `UNION ALL`, `INTERSECT`/`EXCEPT` eliminate rows, so a pushed-down
+        /// filter also runs on branch rows the set operation removes, and a predicate that throws on
+        /// some values then surfaces an error the unoptimized plan does not. `JOIN` has the same gap.
 
         /// A pushed-down filter can leave a branch main port constant-folded while its totals port
         /// stays full, and a downstream Main-only transform then aborts on the mismatch.
