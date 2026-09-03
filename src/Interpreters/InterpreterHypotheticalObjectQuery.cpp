@@ -32,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -48,28 +49,6 @@ namespace Setting
 
 namespace
 {
-
-/// drive the real `ALTER TABLE ... ADD PROJECTION` validation, which covers the merging-mode,
-/// UNIQUE KEY and projection-property checks (commit_order, block number/offset columns)
-void checkProjectionIsAddable(
-    const MergeTreeData & merge_tree, const StorageMetadataPtr & metadata,
-    const ASTHypotheticalObjectQuery & query, const ContextPtr & context)
-{
-    auto command_ast = make_intrusive<ASTAlterCommand>();
-    command_ast->type = ASTAlterCommand::ADD_PROJECTION;
-    command_ast->set(command_ast->projection_decl, query.projection_decl->clone());
-    command_ast->if_not_exists = query.if_not_exists;
-
-    auto command = AlterCommand::parse(command_ast.get());
-    if (!command)
-        return;
-
-    AlterCommands commands;
-    commands.push_back(std::move(*command));
-    /// the eligibility check applies the commands, which requires prepare first
-    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
-    merge_tree.checkAlterEligibility(commands, context);
-}
 
 /// Mirrors `ALTER TABLE ... ADD PROJECTION`: the descriptor is built and validated the same way,
 /// so EXPLAIN WHATIF can never report a benefit for a projection the user could not materialize
@@ -101,7 +80,7 @@ BlockIO createHypotheticalProjection(
 
     /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
     /// definition that could not be materialized is rejected here too
-    checkProjectionIsAddable(merge_tree, metadata, query, context);
+    checkHypotheticalProjectionIsAddable(merge_tree, metadata, query.projection_decl, query.if_not_exists, context);
 
     store.addProjection(table_id, projection_desc, query.if_not_exists);
     return {};
@@ -198,6 +177,31 @@ BlockIO createHypotheticalIndex(
     return {};
 }
 
+}
+
+/// covers the merging-mode, UNIQUE KEY and projection-property checks (commit_order, block
+/// number/offset columns) by driving the engine's own ADD PROJECTION validation
+void checkHypotheticalProjectionIsAddable(
+    const MergeTreeData & merge_tree,
+    const StorageMetadataPtr & metadata,
+    const ASTPtr & projection_decl,
+    bool if_not_exists,
+    const ContextPtr & context)
+{
+    auto command_ast = make_intrusive<ASTAlterCommand>();
+    command_ast->type = ASTAlterCommand::ADD_PROJECTION;
+    command_ast->set(command_ast->projection_decl, projection_decl->clone());
+    command_ast->if_not_exists = if_not_exists;
+
+    auto command = AlterCommand::parse(command_ast.get());
+    if (!command)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD PROJECTION command was not parsed back into an alter command");
+
+    AlterCommands commands;
+    commands.push_back(std::move(*command));
+    /// the eligibility check applies the commands, which requires prepare first
+    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
+    merge_tree.checkAlterEligibility(commands, context);
 }
 
 BlockIO InterpreterHypotheticalObjectQuery::execute()

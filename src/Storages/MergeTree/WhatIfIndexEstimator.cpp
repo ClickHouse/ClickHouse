@@ -18,7 +18,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Storages/AlterCommands.h>
+#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
@@ -40,11 +40,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -102,18 +97,7 @@ void appendProjectionCandidates(
         /// later MODIFY SETTING that disables the projection's features surface as drift
         try
         {
-            auto command_ast = make_intrusive<ASTAlterCommand>();
-            command_ast->type = ASTAlterCommand::ADD_PROJECTION;
-            command_ast->set(command_ast->projection_decl, projection.definition_ast->clone());
-
-            if (auto command = AlterCommand::parse(command_ast.get()))
-            {
-                AlterCommands commands;
-                commands.push_back(std::move(*command));
-                /// the eligibility check applies the commands, which requires prepare first
-                commands.prepare(*metadata, (*data.getSettings())[MergeTreeSetting::share_nested_offsets]);
-                data.checkAlterEligibility(commands, context);
-            }
+            checkHypotheticalProjectionIsAddable(data, metadata, projection.definition_ast, /*if_not_exists=*/false, context);
         }
         catch (const Exception &)
         {

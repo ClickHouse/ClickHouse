@@ -1,8 +1,5 @@
 #include <Parsers/ASTHypotheticalObjectQuery.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionDeclaration.h>
-#include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -24,22 +21,11 @@ ASTPtr ASTHypotheticalObjectQuery::clone() const
     res->children.clear();
 
     if (object_name)
-    {
-        res->object_name = object_name->clone();
-        res->children.push_back(res->object_name);
-    }
-
+        res->set(res->object_name, object_name->clone());
     if (index_decl)
-    {
-        res->index_decl = index_decl->clone();
-        res->children.push_back(res->index_decl);
-    }
-
+        res->set(res->index_decl, index_decl->clone());
     if (projection_decl)
-    {
-        res->projection_decl = projection_decl->clone();
-        res->children.push_back(res->projection_decl);
-    }
+        res->set(res->projection_decl, projection_decl->clone());
 
     cloneTableOptions(*res);
 
@@ -89,36 +75,7 @@ void ASTHypotheticalObjectQuery::formatQueryImpl(
     {
         /// the name is already printed, so print only the body, not the whole declaration
         chassert(projection_decl);
-        const auto & declaration = projection_decl->as<const ASTProjectionDeclaration &>();
-
-        if (declaration.query)
-        {
-            std::string nl_or_nothing = settings.one_line ? "" : "\n";
-            ostr << settings.nl_or_ws << indent_str << "(" << nl_or_nothing;
-            FormatStateStacked frame_nested = frame;
-            ++frame_nested.indent;
-            declaration.query->format(ostr, settings, state, frame_nested);
-            ostr << nl_or_nothing << indent_str << ")";
-        }
-
-        if (declaration.index)
-        {
-            ostr << " INDEX ";
-            declaration.index->format(ostr, settings, state, frame);
-        }
-
-        if (declaration.type)
-        {
-            ostr << " TYPE ";
-            declaration.type->format(ostr, settings, state, frame);
-        }
-
-        if (declaration.with_settings)
-        {
-            ostr << " WITH SETTINGS (";
-            declaration.with_settings->format(ostr, settings, state, frame);
-            ostr << ")";
-        }
+        projection_decl->as<const ASTProjectionDeclaration &>().formatBody(ostr, settings, state, frame);
         return;
     }
 

@@ -15,7 +15,7 @@ echo "--- create, introspect, drop ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
     CREATE HYPOTHETICAL PROJECTION p_agg ON t_hypo_proj_ddl (SELECT b, sum(a) GROUP BY b);
-    SELECT name, type FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' ORDER BY name;
+    SELECT name, type, sorting_key FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' ORDER BY name;
     DROP HYPOTHETICAL PROJECTION p_agg ON t_hypo_proj_ddl;
     SELECT 'after drop:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
 "

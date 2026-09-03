@@ -19,7 +19,8 @@ The current `(database, table)` are resolved by UUID at query time, so they refl
 - `database` ([String](/reference/data-types/string)) — Database name
 - `table` ([String](/reference/data-types/string)) — Table name
 - `name` ([String](/reference/data-types/string)) — Projection name
-- `type` ([String](/reference/data-types/string)) — Projection type (normal or aggregate)
+- `type` ([Enum8('Normal' = 0, 'Aggregate' = 1)](/reference/data-types/enum)) — Projection type
+- `sorting_key` ([Array(String)](/reference/data-types/array)) — Projection sorting key
 - `query` ([String](/reference/data-types/string)) — Projection SELECT query, empty for the INDEX ... TYPE ... form
 - `definition` ([String](/reference/data-types/string)) — Full projection declaration as written
 - `settings` ([Map(String, String)](/reference/data-types/map)) — Projection settings from WITH SETTINGS
@@ -29,13 +30,13 @@ The current `(database, table)` are resolved by UUID at query time, so they refl
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
-SELECT name, type FROM system.hypothetical_projections;
+SELECT name, type, sorting_key FROM system.hypothetical_projections;
 ```
 
 ```text
-┌─name───┬─type───┐
-│ p_by_b │ normal │
-└────────┴────────┘
+┌─name───┬─type───┬─sorting_key─┐
+│ p_by_b │ Normal │ ['b']       │
+└────────┴────────┴─────────────┘
 ```
 
 ## See also {#see-also}

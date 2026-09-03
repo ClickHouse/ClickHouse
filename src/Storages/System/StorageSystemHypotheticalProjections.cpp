@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
@@ -16,12 +18,20 @@ namespace DB
 
 ColumnsDescription StorageSystemHypotheticalProjections::getColumnsDescription()
 {
+    auto projection_type_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Normal",    static_cast<UInt8>(ProjectionDescription::Type::Normal)},
+            {"Aggregate", static_cast<UInt8>(ProjectionDescription::Type::Aggregate)}
+        });
+
     return ColumnsDescription
     {
         {"database", std::make_shared<DataTypeString>(), "Database name"},
         {"table",    std::make_shared<DataTypeString>(), "Table name"},
         {"name",     std::make_shared<DataTypeString>(), "Projection name"},
-        {"type",     std::make_shared<DataTypeString>(), "Projection type (normal or aggregate)"},
+        {"type",     std::move(projection_type_datatype), "Projection type"},
+        {"sorting_key", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Projection sorting key"},
         {"query",    std::make_shared<DataTypeString>(), "Projection SELECT query, empty for the INDEX ... TYPE ... form"},
         {"definition", std::make_shared<DataTypeString>(), "Full projection declaration as written"},
         {"settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
@@ -53,8 +63,12 @@ void StorageSystemHypotheticalProjections::fillData(
         res_columns[col++]->insert(database_name);
         res_columns[col++]->insert(table_name);
         res_columns[col++]->insert(entry.projection.name);
-        res_columns[col++]->insert(
-            entry.projection.type == ProjectionDescription::Type::Aggregate ? "aggregate" : "normal");
+        res_columns[col++]->insert(entry.projection.type);
+
+        Array sorting_key;
+        for (const auto & column : entry.projection.metadata->getSortingKeyColumns())
+            sorting_key.push_back(column);
+        res_columns[col++]->insert(sorting_key);
 
         const auto * declaration = entry.projection.definition_ast
             ? entry.projection.definition_ast->as<ASTProjectionDeclaration>()
