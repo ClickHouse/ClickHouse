@@ -2092,38 +2092,29 @@ static bool applyDeterministicDagToColumn(
             out_column = input_column;
             out_type = input_type;
 
-            /// The round-trip through dag.input_type that this fast path skips is only a harmless
-            /// detour when it cannot change the value (e.g. String -> Dynamic -> String). For
-            /// same-family types that differ only in scale (e.g. DateTime64(6) vs DateTime64(3)),
-            /// that intermediate cast is a real, value-changing rounding step -- exactly the
-            /// rounding that stored key values already went through -- so skipping it renders the
-            /// constant at the wrong precision. Decline the fast path here and let the normal
-            /// (slower) path perform the intermediate cast, so the constant is rounded the same
-            /// way the key space was built.
-            if (const auto * lhs_dt64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
-            {
-                if (const auto * rhs_dt64 = typeid_cast<const DataTypeDateTime64 *>(dag.input_type.get()))
-                {
-                    if (lhs_dt64->getScale() != rhs_dt64->getScale())
-                        return false;
-                }
-            }
-
             if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
                 return false;
 
             return finalize_output_column_and_type(out_column, out_type);
         };
-
-        if (try_apply_direct_cast_fast_path())
-            return true;
-
+        /// Prefer casting the constant through dag.input_type first: this mirrors the
+        /// normalization (rounding, timezone conversion, widening, etc.) that every stored
+        /// key value already went through, so it's the only path guaranteed to render the
+        /// constant consistently with the key space. Only when this intermediate cast cannot
+        /// be performed safely at all do we fall back to the direct-CAST fast path above,
+        /// which handles round-trips that are a no-op for the value but not expressible as a
+        /// safe cast through dag.input_type (e.g. String -> Dynamic -> String).
         if (!cast_without_nulls(input_column, input_type, dag.input_type))
-            return false;
-    }
+        {
+            if (!try_apply_direct_cast_fast_path())
+                return false;
 
+            return true;
+        }
+    }
     Block block;
     block.insert({input_column, input_type, input_name});
+
 
     /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
     /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;

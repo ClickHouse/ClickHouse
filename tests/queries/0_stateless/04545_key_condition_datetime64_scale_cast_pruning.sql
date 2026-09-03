@@ -49,3 +49,31 @@ CREATE TABLE t_dt64_scale_control_tostring (d DateTime64(3, 'UTC')) ENGINE = Mer
 INSERT INTO t_dt64_scale_control_tostring VALUES (toDateTime64(1675252800, 3, 'UTC'));
 SELECT count() FROM t_dt64_scale_control_tostring WHERE d = toDateTime64(1675252800, 6, 'UTC');
 DROP TABLE t_dt64_scale_control_tostring;
+
+-- DateTime constant compared against a DateTime64 key column through the same CAST fast path.
+DROP TABLE IF EXISTS t_dt64_vs_dt;
+CREATE TABLE t_dt64_vs_dt (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY d::String;
+INSERT INTO t_dt64_vs_dt VALUES (toDateTime64(1675252800, 3, 'UTC'));
+SELECT count() FROM t_dt64_vs_dt WHERE d = toDateTime(1675252800, 'UTC');
+DROP TABLE t_dt64_vs_dt;
+
+-- Date constant compared against a DateTime64 key column through the same CAST fast path.
+DROP TABLE IF EXISTS t_dt64_vs_date;
+CREATE TABLE t_dt64_vs_date (d DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY d::String;
+INSERT INTO t_dt64_vs_date VALUES (toDateTime64(1675209600, 3, 'UTC'));
+SELECT count() FROM t_dt64_vs_date WHERE d = toDate('2023-02-01');
+DROP TABLE t_dt64_vs_date;
+
+-- Same scale-mismatch mechanism also affects Time64.
+DROP TABLE IF EXISTS t_time64_scale;
+CREATE TABLE t_time64_scale (d Time64(3)) ENGINE = MergeTree ORDER BY d::String;
+INSERT INTO t_time64_scale VALUES (toTime64('12:00:00', 3));
+SELECT count() FROM t_time64_scale WHERE d = toTime64('12:00:00', 6);
+DROP TABLE t_time64_scale;
+
+-- Control: the String -> Dynamic -> String round-trip this fast path exists for must still work.
+DROP TABLE IF EXISTS t_dynamic_control;
+CREATE TABLE t_dynamic_control (d Dynamic) ENGINE = MergeTree ORDER BY d::String;
+INSERT INTO t_dynamic_control VALUES ('hello');
+SELECT count() FROM t_dynamic_control WHERE d::String = 'hello';
+DROP TABLE t_dynamic_control;
