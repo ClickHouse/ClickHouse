@@ -1,7 +1,8 @@
 #include <Common/Arena.h>
-#include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/RowRefs.h>
+
+#include <base/defines.h>
 
 #include <gtest/gtest.h>
 
@@ -221,7 +222,7 @@ TEST(RowRefList, RangeIterationIsNotTruncatedTo32Bits)
     EXPECT_TRUE(it.ok());
 }
 
-TEST(RowRefList, RangeMustEndInTheBlockItStartsIn)
+TEST(RowRefList, RangeWithinOneBlockIsAccepted)
 {
     Arena pool;
 
@@ -230,8 +231,24 @@ TEST(RowRefList, RangeMustEndInTheBlockItStartsIn)
     RowRefList fits;
     fits.setRange(RowRef(/*block_no=*/1, last_row - 1).encode(), /*rows_=*/2, pool);
     EXPECT_EQ(fits.rows(), 2u);
+}
+
+/// `LOGICAL_ERROR` aborts instead of unwinding in debug and sanitizer builds, and those are the only
+/// builds CI runs unit tests in. So the rejection is a death test, not an `EXPECT_THROW`.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+TEST(RowRefListDeathTest, RangeLeavingItsBlockIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    Arena pool;
+
+    static constexpr size_t last_row = std::numeric_limits<UInt32>::max();
 
     RowRefList overruns;
-    EXPECT_THROW(
-        overruns.setRange(RowRef(/*block_no=*/1, last_row - 1).encode(), /*rows_=*/3, pool), Exception);
+    EXPECT_DEATH(
+        overruns.setRange(RowRef(/*block_no=*/1, last_row - 1).encode(), /*rows_=*/3, pool),
+        "does not end in the same block");
 }
+
+#endif
