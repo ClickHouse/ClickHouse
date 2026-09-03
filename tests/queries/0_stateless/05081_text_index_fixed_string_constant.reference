@@ -8,6 +8,19 @@ text ngrams
 text splitByNonAlpha
 2
 2
+text array on a String column
+2
+2
+2
+2
+text array on a FixedString column
+2
+2
+2
+2
+ngrams on a FixedString column
+2
+2
 ngrambf_v1
 2
 2
