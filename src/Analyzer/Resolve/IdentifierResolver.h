@@ -24,6 +24,34 @@ using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
 
+/// Checks whether access to a specific side of a SEMI/ANTI JOIN is allowed.
+/// Used both during identifier resolution and qualified matcher resolution.
+struct SemiAntiJoinSideChecker
+{
+    bool is_semi = false;
+    bool is_anti = false;
+    bool skip_left = false;
+    bool skip_right = false;
+
+    SemiAntiJoinSideChecker() = default;
+
+    SemiAntiJoinSideChecker(
+        const JoinNode & join_node,
+        JoinStrictness strictness,
+        JoinKind kind,
+        const ContextPtr & context,
+        const IQueryTreeNode * resolving_join_on_expression);
+
+    bool shouldSkipSide(JoinTableSide side) const;
+
+    /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
+    /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).
+    void throwIfTableAccessDenied(
+        JoinTableSide side,
+        const IQueryTreeNode & node_for_error_message,
+        const IQueryTreeNode & scope_node) const;
+};
+
 class IdentifierResolver
 {
 public:

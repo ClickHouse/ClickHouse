@@ -46,6 +46,8 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool semi_join_compatibility;
+    extern const SettingsBool anti_join_compatibility;
 }
 
 namespace ErrorCodes
@@ -57,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -1298,6 +1301,93 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+/// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
+static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNode * target)
+{
+    if (!root)
+        return false;
+
+    if (root == target)
+        return true;
+
+    if (const auto * join = root->as<JoinNode>())
+        return joinSubtreeContains(join->getLeftTableExpressionNode().get(), target)
+            || joinSubtreeContains(join->getRightTableExpressionNode().get(), target);
+
+    if (const auto * cross_join = root->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join->getTableExpressions())
+            if (joinSubtreeContains(table_expression.get(), target))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join = root->as<ArrayJoinNode>())
+        return joinSubtreeContains(array_join->getTableExpressionNode().get(), target);
+
+    return false;
+}
+
+SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
+    const JoinNode & join_node,
+    JoinStrictness strictness,
+    JoinKind kind,
+    const ContextPtr & context,
+    const IQueryTreeNode * resolving_join_on_expression)
+{
+    is_semi = strictness == JoinStrictness::Semi;
+    is_anti = strictness == JoinStrictness::Anti;
+    if (!is_semi && !is_anti)
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    const bool skip_non_preserved_side = (is_semi && settings[Setting::semi_join_compatibility])
+        || (is_anti && settings[Setting::anti_join_compatibility]);
+    skip_left = skip_non_preserved_side && isRight(kind);
+    skip_right = skip_non_preserved_side && isLeft(kind);
+
+    /// An inner JOIN's ON expression needs both sides of that inner join. An ancestor may only
+    /// relax the restriction for the ancestor side which contains that inner JOIN; relaxing the
+    /// other side would expose a sibling table outside the current ON expression.
+    if (resolving_join_on_expression)
+    {
+        if (resolving_join_on_expression == &join_node)
+        {
+            skip_left = false;
+            skip_right = false;
+            return;
+        }
+
+        if (skip_left && joinSubtreeContains(join_node.getLeftTableExpressionNode().get(), resolving_join_on_expression))
+            skip_left = false;
+        if (skip_right && joinSubtreeContains(join_node.getRightTableExpressionNode().get(), resolving_join_on_expression))
+            skip_right = false;
+    }
+}
+
+bool SemiAntiJoinSideChecker::shouldSkipSide(JoinTableSide side) const
+{
+    return (skip_left && side == JoinTableSide::Left) || (skip_right && side == JoinTableSide::Right);
+}
+
+void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
+    JoinTableSide side,
+    const IQueryTreeNode & node_for_error_message,
+    const IQueryTreeNode & scope_node) const
+{
+    if (!shouldSkipSide(side))
+        return;
+
+    const char * join_type_str = is_semi ? "SEMI" : "ANTI";
+    const char * side_str = side == JoinTableSide::Left ? "left" : "right";
+    throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
+        "Cannot access columns from the {} side of {} JOIN in this context. Expression {} is not available. In scope {}",
+        side_str,
+        join_type_str,
+        node_for_error_message.formatASTForErrorMessage(),
+        scope_node.formatASTForErrorMessage());
+}
+
 /// With `database_qualified = false`, the qualifier is the first identifier part matched against
 /// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
 /// matched against the database and table names of the leaf table expressions (`db.table.column`);
@@ -1374,6 +1464,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
     JoinKind join_kind = from_join_node.getKind();
+    JoinStrictness join_strictness = from_join_node.getStrictness();
 
     bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
@@ -1388,8 +1479,27 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
-    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
+    SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
+    std::optional<JoinTableSide> denied_qualified_access;
+
+    auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
     {
+        if (side_checker.shouldSkipSide(side))
+        {
+            const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
+            const bool is_qualified_expr = identifier_lookup.isExpressionLookup()
+                && identifier_lookup.identifier.getPartsSize() > 1;
+            /// A fully qualified `db.table.column` reference names the skipped table just as well as
+            /// an alias or a bare table name does, so it must be attributed to the skipped side too.
+            /// Otherwise the reference degrades to `UNKNOWN_IDENTIFIER`, which a statically-dead
+            /// `if(false, ...)` branch silently folds away instead of reporting the access violation.
+            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
+                || (identifier_lookup.identifier.getPartsSize() > 2
+                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
+            if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
+                denied_qualified_access = side;
+            return QueryTreeNodePtr{};
+        }
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
         /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
         /// statically-dead if/multiIf branch is caught and swallowed during resolution, and a
@@ -1433,9 +1543,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     QueryTreeNodePtr left_resolved_identifier = nullptr;
     QueryTreeNodePtr right_resolved_identifier = nullptr;
     if (binds_left || !binds_right)
-        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
     if (!binds_left || binds_right)
-        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
 
     /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
       * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
@@ -1447,9 +1557,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
     {
         if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right, JoinTableSide::Right);
         else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
-            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right, JoinTableSide::Left);
+    }
+
+    /// Report the access violation only after every remaining preserved-side interpretation has
+    /// failed: a skipped-side alias or table name equal to the database part of a fully qualified
+    /// `db.table.column` reference must not deny the reference while the database-qualified
+    /// fallback above can still resolve it from the preserved side.
+    if (!left_resolved_identifier && !right_resolved_identifier && denied_qualified_access)
+    {
+        side_checker.throwIfTableAccessDenied(*denied_qualified_access, *table_expression_node, *scope.scope_node);
     }
 
     if (!identifier_lookup.isExpressionLookup())
