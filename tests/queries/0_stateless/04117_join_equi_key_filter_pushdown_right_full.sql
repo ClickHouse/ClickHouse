@@ -354,3 +354,17 @@ WHERE NOT has(JSONDynamicPaths(l.a), 'x') ORDER BY 1;
 
 DROP TABLE inner_json_shared;
 DROP TABLE inner_json_dyn;
+
+-- A substituted key must not feed a predicate that reads representation rather than value: `isConstant`
+-- answers differently for the same value depending on constness, and the narrower key here is constant
+-- while the wider key it replaces is not, so pushing the predicate would drop the matching row.
+
+DROP TABLE IF EXISTS inner_ic_wide;
+CREATE TABLE inner_ic_wide (a Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO inner_ic_wide VALUES (0);
+
+SELECT 'INNER JOIN ON, cross-type equi-key under a predicate reading constness: result';
+SELECT l.a FROM inner_ic_wide AS l INNER JOIN (SELECT toInt32(0) AS b) AS r ON l.a = r.b
+WHERE isConstant(l.a) = 0 ORDER BY 1;
+
+DROP TABLE inner_ic_wide;

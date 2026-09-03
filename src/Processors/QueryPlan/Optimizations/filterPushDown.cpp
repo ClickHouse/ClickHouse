@@ -873,6 +873,34 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
     }
 
+    /// A name substituted for the opposite side's key must not feed a function that reads more than the
+    /// value: `isConstant` and `toColumnTypeName` return different results for the same value depending
+    /// on constness, and a substituted key can be constant where the replaced one is not.
+    std::unordered_set<std::string_view> representation_sensitive_inputs;
+    for (const auto & node : filter->getExpression().getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->isDeterministic())
+            continue;
+
+        std::vector<const ActionsDAG::Node *> to_visit{&node};
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        while (!to_visit.empty())
+        {
+            const auto * current = to_visit.back();
+            to_visit.pop_back();
+            if (!visited.insert(current).second)
+                continue;
+            if (current->type == ActionsDAG::ActionType::INPUT)
+                representation_sensitive_inputs.insert(current->result_name);
+            for (const auto * argument : current->children)
+                to_visit.push_back(argument);
+        }
+    }
+
+    if (!representation_sensitive_inputs.empty())
+        std::erase_if(equivalent_columns_to_push_down,
+            [&](const String & name) { return representation_sensitive_inputs.contains(name); });
+
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
 
     /// Capture the original constant column value before push-down modifies the expression DAG.
