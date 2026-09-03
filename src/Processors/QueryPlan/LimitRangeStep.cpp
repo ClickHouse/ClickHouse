@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitRangeTransform.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -16,6 +17,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -165,6 +167,13 @@ void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void LimitRangeStep::serialize(Serialization & ctx) const
 {
+    /// A peer below this version does not know the `LimitRange` step and would fail on its name, so fail
+    /// closed here rather than write bytes it cannot understand.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a LimitRangeStep requires query plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP);
+
     UInt8 flags = 0;
     if (start_condition)
         flags |= 1;
@@ -197,6 +206,12 @@ void LimitRangeStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
 {
+    /// Mirrors the guard in `serialize`: a peer that old cannot have written this step.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Deserializing a LimitRangeStep requires query plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP);
+
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep must have one input stream");
 
