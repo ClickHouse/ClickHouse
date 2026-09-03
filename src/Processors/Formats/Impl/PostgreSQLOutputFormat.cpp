@@ -1,8 +1,6 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 
@@ -10,11 +8,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-}
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -33,7 +26,7 @@ void PostgreSQLOutputFormat::writePrefix()
 
     if (header.columns())
     {
-        VectorWithMemoryTracking<PostgreSQLProtocol::Messaging::FieldDescription> columns;
+        std::vector<PostgreSQLProtocol::Messaging::FieldDescription> columns;
         columns.reserve(header.columns());
 
         for (size_t i = 0; i < header.columns(); ++i)
@@ -48,20 +41,10 @@ void PostgreSQLOutputFormat::writePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
-    LOG_TEST(getLogger("PostgreSQLOutputFormat"), "Consume a chunk");
-
-    /// Check for cancellation at the beginning of the loop, use throw instead of return.
-    if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
-        /// Check for cancellation periodically, use throw instead of return.
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
         const Columns & columns = chunk.getColumns();
-        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
+        std::vector<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
 
         for (size_t j = 0; j != chunk.getNumColumns(); ++j)
@@ -85,7 +68,6 @@ void PostgreSQLOutputFormat::flushImpl()
     message_transport.flush();
 }
 
-void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -96,15 +78,6 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
     factory.setContentType("PostgreSQLWire", "application/octet-stream");
-
-    factory.setDocumentation("PostgreSQLWire", Documentation{
-        .description = R"DOCS_MD(
-## Description {#description}
-
-## Example usage {#example-usage}
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
 }

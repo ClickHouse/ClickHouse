@@ -5,6 +5,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 
