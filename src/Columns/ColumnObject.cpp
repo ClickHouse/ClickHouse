@@ -460,6 +460,23 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     return num_rows - num_non_default;
 }
 
+bool ColumnObject::hasOnlyTypeDefaults() const
+{
+    for (const auto & [path, column] : typed_paths)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!column->hasOnlyTypeDefaults())
+            return false;
+    }
+
+    return shared_data->hasOnlyTypeDefaults();
+}
+
 std::string_view ColumnObject::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -1236,28 +1253,6 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     {
         if (column->size() == current_size)
             column->insertDefault();
-    }
-}
-
-void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
-{
-    /// First, skip all values of typed paths;
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->skipSerializedInArena(in);
-
-    /// Second, skip all other paths and values.
-    size_t num_paths = 0;
-    readBinaryLittleEndian<size_t>(num_paths, in);
-
-    for (size_t i = 0; i != num_paths; ++i)
-    {
-        size_t path_size = 0;
-        readBinaryLittleEndian<size_t>(path_size, in);
-        in.ignore(path_size);
-
-        size_t value_size = 0;
-        readBinaryLittleEndian<size_t>(value_size, in);
-        in.ignore(value_size);
     }
 }
 
