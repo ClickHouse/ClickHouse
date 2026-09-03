@@ -525,7 +525,19 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
+                {
+                    /// Bytes with no usable value in the column's type mean a malformed manifest, not a
+                    /// file that carries no statistics. Both end up without min/max pruning here, so only
+                    /// this warning tells them apart.
+                    LOG_WARNING(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a bound with no usable value in the column type for "
+                        "column id {} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
                     continue;
+                }
 
                 /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
                 /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
