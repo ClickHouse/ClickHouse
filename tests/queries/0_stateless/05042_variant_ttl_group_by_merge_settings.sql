@@ -21,25 +21,27 @@ CREATE TABLE t_variant_ttl_group_by
 ENGINE = MergeTree
 ORDER BY (k, d)
 TTL d + INTERVAL 1 SECOND GROUP BY k SET v = any(v)
-SETTINGS merge_with_ttl_timeout = 100000;
+-- `max_number_of_merges_with_ttl_in_pool = 0` disables background TTL merges for the table: otherwise the
+-- background pool could apply the TTL (with its own default settings) before `OPTIMIZE` gets a chance to, and
+-- the result would depend on that race. `merge_with_ttl_timeout` alone is not enough, because it only spaces
+-- out TTL merges after the first one. `OPTIMIZE` does not go through the merge selector, so it is unaffected.
+SETTINGS merge_with_ttl_timeout = 100000, max_number_of_merges_with_ttl_in_pool = 0;
 
 SET aggregate_functions_skip_variant_nulls = 1;
 
--- Two parts, so that OPTIMIZE has something to merge. `d` is part of the sorting key and the NULL row has the
--- smaller value, so the merged stream always presents it first and `any` picks it up unless the NULL-skipping is
--- in effect. (Sharing a single sorting key value between the two rows would leave the order of the merge up to
--- the tie-breaking of the merging algorithm, which is not stable.) `u` is aggregated by the implicit
--- uncovered-column `any`.
-INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL);
-INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:01', 'x', 'y');
+-- A single INSERT, so that the two rows land in one part and no ordinary background merge can consume them
+-- ahead of `OPTIMIZE` either. `d` is part of the sorting key and the NULL row has the smaller value, so the
+-- stream always presents it first and `any` picks it up unless the NULL-skipping is in effect. (Sharing a
+-- single sorting key value between the two rows would leave the order up to the tie-breaking of the merging
+-- algorithm, which is not stable.) `u` is aggregated by the implicit uncovered-column `any`.
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL), (1, '2020-01-01 00:00:01', 'x', 'y');
 
 -- The session setting (skip = 1) applies to the OPTIMIZE query, overriding the CREATE-time value.
 OPTIMIZE TABLE t_variant_ttl_group_by FINAL;
 SELECT 'skip nulls', v, u FROM t_variant_ttl_group_by;
 
 TRUNCATE TABLE t_variant_ttl_group_by;
-INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL);
-INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:01', 'x', 'y');
+INSERT INTO t_variant_ttl_group_by VALUES (1, '2020-01-01 00:00:00', NULL, NULL), (1, '2020-01-01 00:00:01', 'x', 'y');
 
 -- And the explicit per-query value takes precedence over the session one.
 OPTIMIZE TABLE t_variant_ttl_group_by FINAL SETTINGS aggregate_functions_skip_variant_nulls = 0;
