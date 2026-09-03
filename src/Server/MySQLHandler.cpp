@@ -589,7 +589,10 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         /// An empty user name means the default session user: the `default_session_user`
