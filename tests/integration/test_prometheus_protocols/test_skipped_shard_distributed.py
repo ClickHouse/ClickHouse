@@ -200,6 +200,26 @@ def test_a_write_over_an_unreachable_shard_is_refused_not_queued():
     assert node2.query("SELECT count() FROM mt_queue").strip() == "0"
 
 
+def test_a_skip_asked_for_by_the_request_does_not_cover_a_write():
+    with PartitionManager() as pm:
+        pm.partition_instances(
+            node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
+        )
+        # The URL is where `skip_unavailable_shards` reaches the sink, which would drop node2 from
+        # the write and answer 204: forced off on this path, so the write is refused like any other.
+        response = write("asked_to_skip", "/queue/write?skip_unavailable_shards=1")
+        assert response.status_code >= 500, response.text
+        assert "ALL_CONNECTION_TRIES_FAILED" in response.text
+        pending = node1.query(
+            "SELECT sum(data_files) FROM system.distribution_queue WHERE table = 'prom_queue'"
+        )
+        assert pending.strip() == "0", pending
+
+    node1.query("SYSTEM FLUSH DISTRIBUTED prom_queue")
+    assert node1.query(series_count("asked_to_skip", "ts_queue")).strip() == "0"
+    assert node2.query(series_count("asked_to_skip", "ts_queue")).strip() == "0"
+
+
 def test_every_replica_is_checked_not_one_per_shard():
     # node2's replica of the shard is a MergeTree table, node1's a TimeSeries table: a cluster()
     # probe would have asked only one of them.
