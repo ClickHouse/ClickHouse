@@ -3397,6 +3397,10 @@ For example, if set to `0.6`, `DISTINCT` will allow using 60% of the available m
 (to server/user/merges) at the beginning of the execution, after that, it will
 start spilling to disk.
 
+The available memory is what remains, when the query starts, under the strictest memory limit that
+applies to the query (the server or the user memory limit). When no memory limit is configured at all,
+this setting has no effect and only `max_bytes_before_external_distinct` applies.
+
 If both `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 :::note
