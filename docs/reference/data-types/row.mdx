@@ -1,0 +1,137 @@
+---
+description: 'Documentation for the Row(...) data type, a single-stream column bundle used to reduce read amplification.'
+sidebarTitle: 'Row(name1 T1, name2 T2, ...)'
+slug: /sql-reference/data-types/row
+title: 'Row(name1 T1, name2 T2, ...)'
+doc_type: 'reference'
+---
+
+## Overview {#overview}
+
+:::note
+The `Row` data type is experimental. To create a column of this type, set
+[`allow_experimental_row_type = 1`](#allow-experimental-row-type).
+:::
+
+`Row(name1 T1, name2 T2, …)` is a named, ordered bundle of typed fields that
+is stored as a SINGLE physical column on disk — one length-prefixed binary
+blob per row — in contrast to `Tuple`, which produces one physical column
+file per element.
+
+The intent is to **bundle columns that are frequently read together** so that
+the storage layer pays one `open`/`seek` per row group instead of one per
+column. This is useful for low-latency, narrow-`SELECT` workloads such as
+recent-logs or single-trace lookups.
+
+`Row` columns are typically declared with a `MATERIALIZED` expression that
+mirrors the field list, so the wrapper is populated automatically on insert
+and stays in sync with its source columns:
+
+```sql
+CREATE TABLE logs
+(
+    ts        DateTime,
+    level     LowCardinality(String),
+    msg       String,
+    host      String,
+    trace_id  String,
+    combined  Row(level LowCardinality(String), msg String, host String, trace_id String)
+        MATERIALIZED (level, msg, host, trace_id)
+        CODEC(ZSTD(3))
+)
+ENGINE = MergeTree ORDER BY ts;
+```
+
+When you `SELECT level, msg, host, trace_id FROM logs ORDER BY ts DESC LIMIT
+500`, the query optimizer detects that the `combined` wrapper covers all
+four columns and reads from that single column file instead of four
+separate ones — see the
+[`query_plan_use_row_wrappers`](#query-plan-use-row-wrappers) setting below.
+
+## Field naming {#field-naming}
+
+All fields in a `Row` must be named (positional fields, allowed in `Tuple`,
+are not allowed here — naming is mandatory because the field names are the
+contract between the wrapper and its source columns). Field names must be
+unique within the `Row`.
+
+## Wrapper recognition rules {#wrapper-recognition-rules}
+
+A `Row`-typed column is recognised as a **wrapper** of its source columns
+if and only if:
+
+1. The column is declared `MATERIALIZED`.
+2. The materialised expression is a `tuple(...)` call whose arguments are
+   bare identifiers.
+3. The identifier list matches the `Row(...)` field list 1-for-1 in **order
+   and name**.
+
+4. Every `Row` field type is identical to the type of the column it names,
+   including nullability and decimal scale. A wrapper mirrors its source
+   columns exactly, so `combined Row(a String) MATERIALIZED tuple(a)` against
+   `a UInt64` is not a wrapper.
+5. No named source column is `EPHEMERAL`. A `MATERIALIZED` column reading an
+   `EPHEMERAL` one is never recalculated by a mutation, so an
+   `ALTER TABLE ... UPDATE` of another source column would leave the stored
+   wrapper holding the pre-mutation values.
+
+Any column not meeting all five conditions remains a normal `Row` column
+without the I/O optimization (it still works as a regular typed column).
+
+Each source column may be wrapped by at most one `Row` wrapper. Declaring
+two wrappers that share a source column is an error.
+
+Columns of the sorting key are always read directly, even when a wrapper
+covers them: reading them through the wrapper would cost the read-in-order
+optimization, which is worth more than the saved file open.
+
+## Settings {#settings}
+
+### `allow_experimental_row_type` {#allow-experimental-row-type}
+
+Default: `0` (disabled).
+
+Allows creation of `Row` columns in tables. Until the on-disk format and the
+optimizer rule have matured, every statement that would persist a `Row` column
+is rejected unless this setting is enabled: `CREATE TABLE`, a full-definition
+`ATTACH TABLE`, `ALTER TABLE ... ADD/MODIFY COLUMN`, a table function structure,
+and a `CREATE MATERIALIZED VIEW` that creates its own inner table. Re-attaching a
+definition already stored on this server does not need the setting, and neither
+does a materialized view writing into an existing target table, since that table
+was gated when it was created.
+
+### `query_plan_use_row_wrappers` {#query-plan-use-row-wrappers}
+
+Default: `1` (enabled).
+
+Toggles the optimizer rule that routes column reads through a `Row(...)`
+wrapper. The rule only fires when the wrapper would cover **at least two**
+of the requested columns, to avoid trading a plain column read for the
+per-row unpacking overhead of the wrapper. Set to `0` to compare baseline
+vs. wrapper performance; the performance test
+`tests/performance/row_wrapper_scattered_reads.xml` runs the scattered-lookup
+workload both ways.
+
+## Profile events {#profile-events}
+
+- `RowWrapperReads` — incremented once per `ReadFromMergeTree` step that
+  uses at least one wrapper.
+- `RowWrapperReadFields` — incremented by the number of column reads
+  avoided in that step.
+
+## Known limitations {#known-limitations}
+
+Per-field subcolumn access (`combined.level`) through the standard subcolumn
+machinery is not wired up: a `Row` column exposes no subcolumns, so fields can
+only be reached by reading the whole wrapper. The optimizer rule does this on
+its own; there is no supported way to spell it in a query.
+
+In every text format a `Row` reads and writes exactly like the named `Tuple` it
+mirrors: a tuple literal such as `('alpha', 10, 'x')` in `TSV` and `Values`, and
+an object such as `{"a":"alpha","b":10,"c":"x"}` in `JSON`. Only the binary
+storage layout differs. Comparison follows `Tuple` as well: a `Row` is comparable
+(lexicographically, field by field) when all of its fields are comparable, so it
+can be used in `ORDER BY` and with comparison operators. When a `Row` column is
+part of a `MergeTree` sorting key, the index analyzes predicates on it (`=`,
+range comparisons, `IN`) like predicates on the equivalent named `Tuple`, so
+granule pruning works the same way.

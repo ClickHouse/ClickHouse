@@ -1673,6 +1673,9 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(RowWrapperReads, "Number of ReadFromMergeTree steps where a Row(...) wrapper column was used to satisfy required column reads.", ValueType::Number) \
+    M(RowWrapperReadFields, "Number of column reads avoided by routing through a Row(...) wrapper column.", ValueType::Number) \
+    \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \

@@ -1,0 +1,10 @@
+Row(x UInt64, y String)	(0,'z')
+Row(x UInt64, y String)	(1,'a')
+Row(x UInt64, y String)	(1,'b')
+1	0	0	1	1
+2	1	1	1	1
+3	0	1	0	1
+3
+0
+(0,'z')
+(1,'a')

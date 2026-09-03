@@ -234,6 +234,13 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Route reads of columns covered by a `Row(...)` wrapper through the wrapper
+/// column instead of the individual column streams. See optimizeUseRowWrappers.cpp.
+/// Not part of `getOptimizations`: the rewrite drops the wrapped columns from
+/// `ReadFromMergeTree::all_column_names`, which is what projection matching feeds on, so it
+/// must run after projection selection in the second pass.
+size_t tryOptimizeUseRowWrappers(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 23> optimizations = {{

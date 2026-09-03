@@ -251,6 +251,7 @@
           "pages": [
             "reference/data-types/array",
             "reference/data-types/tuple",
+            "reference/data-types/row",
             "reference/data-types/map",
             "reference/data-types/nested-data-structures/index"
           ]

@@ -35,6 +35,7 @@
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
@@ -2375,6 +2376,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
+
+        /// The IN rewrites and set building below recognize only Tuple, so a left-hand side
+        /// containing Row anywhere is lowered to its named Tuple equivalent, like in comparisons.
+        if (in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
+        {
+            const auto & left_type = in_first_argument->getResultType();
+            if (auto lowered_type = lowerRowTypesToTuples(left_type); lowered_type.get() != left_type.get())
+                in_first_argument = castNodeToType(in_first_argument, lowered_type, scope);
         }
 
         auto * table_node = in_second_argument->as<TableNode>();

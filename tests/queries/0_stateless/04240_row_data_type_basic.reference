@@ -1,0 +1,9 @@
+1	alpha	10	x
+2	beta	20	y
+3	gamma	30	z
+1	('alpha',10,'x')
+2	('beta',20,'y')
+3	('gamma',30,'z')
+1	alpha	10	x
+2	beta	20	y
+3	gamma	30	z

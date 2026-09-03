@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2091,7 +2092,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
             continue;
 
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(key_node.result_name).type;
+        out_key_column_type = lowerRowTypesToTuples(sample_block.getByName(key_node.result_name).type);
 
         out.actions = std::make_shared<ExpressionActions>(std::move(sub));
         out.output_name = key_node.result_name;
@@ -3049,7 +3050,28 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             arguments.push_back({ nullptr, key_column_type, "" });
         auto func = func_builder->build(arguments);
 
-        if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+        if (!func)
+            return false;
+
+        /// A CAST that only relabels the type without changing values - such as the Row to
+        /// named-Tuple-equivalent cast the analyzers insert for `row_column IN ...` - is
+        /// transparent for index analysis: drop it from the chain instead of requiring
+        /// monotonicity support from FunctionCast. `key_column_type` is already Row-lowered,
+        /// so a value-preserving relabel makes both sides equal, including tuple names
+        /// (a cast between differently-named Tuples maps elements by name, not by position,
+        /// hence the name-sensitive `equals`).
+        const auto & function_name = function.getFunctionName();
+        if (function_name == "CAST" || function_name == "_CAST")
+        {
+            auto lowered_result_type = lowerRowTypesToTuples(removeLowCardinality(func->getResultType()));
+            if (key_column_type->equals(*lowered_result_type))
+            {
+                key_column_type = lowered_result_type;
+                continue;
+            }
+        }
+
+        if (!func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
         if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
@@ -3087,7 +3109,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(name).type;
+        /// A Row key column is analyzed as its named Tuple equivalent: the index holds a
+        /// ColumnTuple either way, and all downstream helpers (supertype, safe-cast checks,
+        /// set packing) understand only Tuple.
+        out_key_column_type = lowerRowTypesToTuples(sample_block.getByName(name).type);
         return true;
     }
 
@@ -3111,7 +3136,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
-                    out_key_column_type = sample_block.getByName(name).type;
+                    out_key_column_type = lowerRowTypesToTuples(sample_block.getByName(name).type);
                     return true;
                 }
             }
@@ -3353,7 +3378,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                 }
 
                 out_key_column_num = it->second;
-                out_key_column_type = sample_block.getByName(it->first).type;
+                out_key_column_type = lowerRowTypesToTuples(sample_block.getByName(it->first).type);
                 out_chain_is_positive = chain_is_positive;
                 return true;
             }
@@ -4112,6 +4137,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         if (!common_type)
                             return false;
 
+                        /// Tuple element names carry no data: the Field representation and the ordering
+                        /// of values are identical with and without them. A named-Tuple (or Row) key
+                        /// against an unnamed-Tuple supertype therefore needs neither a cast nor a
+                        /// relaxed condition, while a name-sensitive comparison would add a cast that
+                        /// FunctionCast has no monotonicity information for, declining index analysis.
+                        const bool key_expr_type_matches_common_type
+                            = key_expr_type_not_null->getNormalizedType()->equals(*common_type->getNormalizedType());
+
                         if (!const_type->equals(*common_type))
                         {
                             // Replace direct call that throws exception with try version
@@ -4122,10 +4155,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             const_value = converted;
 
                             /// Need to set condition_is_relaxed unless we're doing exact conversion
-                            if (!key_expr_type_not_null->equals(*common_type))
+                            if (!key_expr_type_matches_common_type)
                                 condition_is_relaxed = true;
                         }
-                        if (!key_expr_type_not_null->equals(*common_type))
+                        if (!key_expr_type_matches_common_type)
                         {
                             auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                                 ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))

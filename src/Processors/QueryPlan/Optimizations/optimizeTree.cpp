@@ -513,6 +513,20 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
+    /// After projection selection: the rewrite replaces the wrapped columns in
+    /// `ReadFromMergeTree::all_column_names` with the wrapper column, and projection matching
+    /// requires every name in that list to exist in the projection part. Running it earlier would
+    /// reject projections that do cover the user-visible columns.
+    if (optimization_settings.use_row_wrappers)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                while (tryOptimizeUseRowWrappers(&frame_node, nodes, optimization_settings))
+                    continue;
+            });
+    }
+
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {

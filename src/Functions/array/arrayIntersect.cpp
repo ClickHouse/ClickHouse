@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -510,7 +511,9 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
         else
         {
             column = removeNullable(assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType())->createColumn();
-            result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column), mode), result_type);
+            /// Row reuses ColumnTuple, so the cast walks the equivalent Tuple type.
+            result_column = castRemoveNullable(
+                execute<StringMap, IColumn, false>(arrays, std::move(column), mode), lowerRowTypesToTuples(result_type));
         }
     }
 

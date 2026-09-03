@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -1782,8 +1783,9 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     if (tuple_size == 0)
         return ColumnTuple::create(input_rows_count);
 
-    const DataTypes & tuple_types
-        = typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType()).getElements();
+    /// Row reuses ColumnTuple, so an Array(Row) is taken apart like the equivalent Array(Tuple).
+    const DataTypePtr tuple_type = lowerRowTypesToTuples(typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType());
+    const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*tuple_type).getElements();
 
     /** We will calculate the function for the tuple of the internals of the array.
       * To do this, create a temporary columns.
@@ -3099,7 +3101,9 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ArrayImpl::NullMapBuilder<mode> builder;
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
-        if (builder && res->canBeInsideNullable())
+        /// The element type decides, not the column: a Row reuses ColumnTuple, which can be
+        /// inside Nullable, while the Row type cannot and yields the default value instead.
+        if (builder && removeNullable(result_type)->canBeInsideNullable())
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
 
         return res;
@@ -3414,7 +3418,7 @@ The first argument may also be a [QBit](/sql-reference/data-types/qbit): the n-t
 Gets the element of the provided array with index `n` where `n` can be any integer type.
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value,
 as long as the result type can be nullable. For element types that are not already nullable and cannot be
-put inside `Nullable` (such as `Array`, `Map`), the default value of the element type is returned instead.
+put inside `Nullable` (such as `Array`, `Map`, `Row`), the default value of the element type is returned instead.
 
 When `n` is an array of integers, returns an array of the elements at the specified positions.
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
