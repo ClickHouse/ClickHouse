@@ -15,6 +15,7 @@
 7 hidden killed=0
 7 hidden exception=0
 7 hidden alive=1
+7 hidden used_policy=1
 7 admitted killed=1
 7 admitted alive=0
 8 killed=0
@@ -43,3 +44,12 @@
 18 own=1 foreign=6
 18 killed=1
 18 exception=0
+18 charge_in_band=1
+19 progress_in_band=1
+19 alive=0
+19 selected_rows_in_band=1
+20 shifted killed=0
+20 shifted exception=0
+20 shifted alive=1
+20 control killed=1
+20 control alive=0

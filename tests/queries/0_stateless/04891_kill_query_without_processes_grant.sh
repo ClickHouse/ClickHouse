@@ -12,9 +12,10 @@ Q1="q1_${CLICKHOUSE_DATABASE}"
 SUFFIX="_${CLICKHOUSE_DATABASE}"
 # The marker keeps the victims out of reach of other tests that kill by query text.
 LONG="SELECT sleep(1) FROM numbers(10000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
-# One row every 3 seconds instead of every second, for the arm that bounds how many rows a victim may
-# read before its own quota stops it.
-SLOW="SELECT sleep(3) FROM numbers(10000) WHERE ignore('$CLICKHOUSE_DATABASE') = 0 SETTINGS max_block_size = 1, max_rows_to_read = 0"
+# Two settings nothing else in the test sets, and one that only the caller's own victim sets. None of
+# them is randomized by the test runner, so the two key sets differ in both directions on every run.
+WIDE="$LONG, totals_auto_threshold = 0.123, insert_quorum_timeout = 600001"
+NARROW="$LONG, distributed_connections_pool_size = 1023"
 VICTIMS=""
 
 $CLICKHOUSE_CLIENT -q "
@@ -62,6 +63,12 @@ gone() {
 killed() { grep -c -F "$(printf '\t%s\t' "$1")" | sed 's/^[1-9][0-9]*$/1/'; }
 
 matched() { grep -c -F "$1" | sed 's/^[1-9][0-9]*$/1/'; }
+
+# Rows the caller's quota has been charged for so far. An interval row only exists once something has
+# been charged, so an absent one reads as 0 rather than as an empty result.
+quota_read_rows() {
+    $CLICKHOUSE_CLIENT -q "SELECT toUInt64(ifNull(max(read_rows), 0)) FROM system.quotas_usage WHERE quota_name = '$Q1'"
+}
 
 reset_arm() {
     for pid in $VICTIMS; do kill -9 "$pid" 2> /dev/null; done
@@ -139,13 +146,19 @@ gone "own6b$SUFFIX"
 echo "6 own=$(( $(alive "own6a$SUFFIX") + $(alive "own6b$SUFFIX") )) foreign=$(alive "foreign6$SUFFIX")"
 reset_arm
 
-# 7: the caller's row policy on system.processes decides which of their queries they can see.
+# 7: the caller's row policy on system.processes decides which of their queries they can see, and the
+# policies that decided it are named in the caller's own system.query_log row.
 policy_on_u1 "query_id != 'own7$SUFFIX'"
 start_victim "$U1" "own7$SUFFIX"
-out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1)
+out=$($CLICKHOUSE_CLIENT --user "$U1" --query_id "kill7$SUFFIX" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1)
 echo "7 hidden killed=$(printf '%s\n' "$out" | killed "own7$SUFFIX")"
 echo "7 hidden exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
 echo "7 hidden alive=$(alive "own7$SUFFIX")"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+echo "7 hidden used_policy=$($CLICKHOUSE_CLIENT -q "
+    SELECT toUInt8(ifNull(max(has(used_row_policies, '$P_U1 ON system.processes')), 0))
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill7$SUFFIX'")"
 $CLICKHOUSE_CLIENT -q "DROP ROW POLICY $P_U1 ON system.processes"
 echo -n "7 admitted killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own7$SUFFIX' SYNC" 2>&1 | killed "own7$SUFFIX"
@@ -237,17 +250,55 @@ reset_arm
 
 # 18: the caller's quota is charged for one logical read once. The statement returns the caller's own
 # row plus their KILL statement, so two rows; the read behind it scans every user's row, so charging
-# that one too would cost nine here and more on a busier server. The bound sits between the two.
-# The foreign queries inflate only the second count, because $U2 is not subject to $U1's quota. The
-# caller's own victim reads a row every three seconds and is started last, so it cannot consume the
-# budget the statement is measured against.
-$CLICKHOUSE_CLIENT -q "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 8 TO $U1"
+# that one too would cost at least nine more here and more on a busier server. The bound is set high
+# enough that nothing in the arm can trip it, and the charge is measured as a delta over the statement,
+# so neither a slow run nor the caller's own victim reading a row per second can fail the arm.
+$CLICKHOUSE_CLIENT -q "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 1000000 TO $U1"
 for n in 1 2 3 4 5 6; do start_victim "$U2" "foreign18$n$SUFFIX"; done
-start_victim "$U1" "own18$SUFFIX" "$SLOW"
+start_victim "$U1" "own18$SUFFIX"
 echo "18 own=$(alive "own18$SUFFIX") foreign=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'foreign18%\\$SUFFIX'")"
+before=$(quota_read_rows)
 out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" 2>&1)
+after=$(quota_read_rows)
 echo "18 killed=$(printf '%s\n' "$out" | killed "own18$SUFFIX")"
 echo "18 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "18 charge_in_band=$(( after - before >= 1 && after - before <= 6 ? 1 : 0 ))"
+reset_arm
+
+# 19: the read behind the statement scans every user's row, so what it read is neither reported to the
+# caller nor charged to their profile events. Both channels are bounded by what the caller's own rows
+# cost: the progress their statement reports back, and the SelectedRows its own query_log row carries.
+start_victim "$U2" "foreign19$SUFFIX"
+start_victim "$U1" "own19$SUFFIX"
+progress_rows=$(${CLICKHOUSE_CURL} -sS -D - -o /dev/null \
+    "${CLICKHOUSE_URL}&user=$U1&query_id=kill19$SUFFIX&http_wait_end_of_query=1" \
+    --data-binary "KILL QUERY WHERE query_id = 'own19$SUFFIX' SYNC" \
+    | grep -a -i -m1 '^X-ClickHouse-Summary' | grep -o -m1 '"read_rows":"[0-9]*"' | tr -dc 0-9)
+echo "19 progress_in_band=$(( ${progress_rows:-0} >= 1 && ${progress_rows:-0} <= 6 ? 1 : 0 ))"
+gone "own19$SUFFIX"; echo "19 alive=$(alive "own19$SUFFIX")"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+echo "19 selected_rows_in_band=$($CLICKHOUSE_CLIENT -q "
+    SELECT toUInt8(ifNull(max(ProfileEvents['SelectedRows']), 0) BETWEEN 1 AND 6)
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill19$SUFFIX'")"
+reset_arm
+
+# 20: an index into a LowCardinality dictionary nested in a Map must not depend on a row the caller
+# cannot see. The foreign victim starts first and the two victims set settings the other does not, so a
+# dictionary built over the wider block gives the caller's own row an index above its own key count,
+# while one built over the caller's own rows alone cannot.
+start_victim "$U2" "foreign20$SUFFIX" "$WIDE"
+start_victim "$U1" "own20$SUFFIX" "$NARROW"
+out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own20$SUFFIX'
+    AND lowCardinalityIndices(arrayJoin(Settings.keys)) > length(Settings.keys) SYNC" 2>&1)
+echo "20 shifted killed=$(printf '%s\n' "$out" | killed "own20$SUFFIX")"
+echo "20 shifted exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
+echo "20 shifted alive=$(alive "own20$SUFFIX")"
+# The same reader with a bound every index satisfies, so the arm above cannot pass by not evaluating.
+echo -n "20 control killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own20$SUFFIX'
+    AND lowCardinalityIndices(arrayJoin(Settings.keys)) >= 1 SYNC" 2>&1 | killed "own20$SUFFIX"
+gone "own20$SUFFIX"; echo "20 control alive=$(alive "own20$SUFFIX")"
 reset_arm
 
 $CLICKHOUSE_CLIENT -q "DROP USER $U1, $U2"
