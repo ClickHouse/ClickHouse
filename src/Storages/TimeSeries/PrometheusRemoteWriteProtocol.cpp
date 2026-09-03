@@ -303,11 +303,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
 {
     /// Grant before existence: a probe without the right must not learn whether the name exists.
     context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
-    /// Written through the wrapper's own sink, which would accept shard targets no prometheus read
-    /// surface can answer from, and a caller's own shard choice: both are refused before it runs.
-    checkPrometheusQueryDistributedWrite(*time_series_storage, context_);
-    /// Delivered to the shards by this INSERT: a batch queued on the initiator, by the sink or the async
-    /// insert queue, would be flushed after that check, into whatever answers to the shard-local name by then.
+    /// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the
+    /// async insert queue, would be flushed after the check in write(), into whatever answers by then.
     if (resolvePrometheusQueryTarget(*time_series_storage))
     {
         context_->setSetting("distributed_foreground_insert", true);
@@ -329,6 +326,10 @@ void PrometheusRemoteWriteProtocol::write(
         storage_id.getNameForLogs(),
         time_series.size(),
         metrics_metadata.size());
+
+    /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
+    /// own shard choice; checked here, not on construction, with no request body read in between.
+    checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());

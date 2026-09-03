@@ -154,7 +154,8 @@ def test_remote_write_over_distributed_ignores_async_insert():
         node.ip_address, 9093, "/dist/write?async_insert=1", protobuf
     )
 
-    # On the shards already, without a flush or a retry, and no asynchronous insert ran at all.
+    # The samples are on the shards, and no asynchronous insert ran: the batch never waited in
+    # the queue for a busy timeout before reaching them.
     on_the_shards = int(
         node.query(
             "SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_local) WHERE metric_name = 'async_dist_metric')"
