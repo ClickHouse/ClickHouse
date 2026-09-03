@@ -219,6 +219,11 @@ private:
     /// undergoes value decoding occupies at least one bit in some buffer, so a count above the body's
     /// total bits is forged and must not drive an allocation (e.g. of an invisible-rows mask).
     bool rowCountExceedsBodyBits(size_t rows) const { return rows > total_buffer_bytes * 8; }
+    /// Rejects a declared row count the message body cannot physically hold (see `rowCountExceedsBodyBits`)
+    /// BEFORE the field is decoded: a buffer-less field declared ahead of its buffered siblings would
+    /// otherwise allocate for the forged count before any of their buffer-size checks fires. `what` names
+    /// the field in the error, e.g. "list child".
+    void checkRowCountWithinBody(size_t rows, const String & what) const;
 
     /// The invisible-rows mask for the child of a List/LargeList/Map field, sized to the child's declared
     /// row count. A child row is invisible when only invisible slots reference it, or when no slot

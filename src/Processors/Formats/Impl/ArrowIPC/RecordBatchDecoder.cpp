@@ -289,6 +289,14 @@ void RecordBatchDecoder::expectNextNodeLength(size_t expected, const String & wh
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC {} declares {} rows, expected {}", what, declared, expected);
 }
 
+void RecordBatchDecoder::checkRowCountWithinBody(size_t rows, const String & what) const
+{
+    if (rowCountExceedsBodyBits(rows))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC {} declares {} rows, more than the {}-byte message body can hold", what, rows, total_buffer_bytes);
+}
+
 size_t RecordBatchDecoder::peekNodeRows() const
 {
     return static_cast<size_t>(std::max<Int64>(peekNextNodeLength(), 0));
@@ -455,7 +463,6 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
 
 void RecordBatchDecoder::checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const
 {
-    const Int64 child_len = peekNextNodeLength();
     if (isBufferlessSubtree(child))
     {
         /// Only child rows up to the last referenced offset can carry data, and a buffer-less child carries
@@ -463,23 +470,18 @@ void RecordBatchDecoder::checkOffsetsChildDeclaredLength(const ArrowField & chil
         /// one — a forgery, or a sliced file written without truncating the unreferenced tail — is rejected
         /// the same way a non-empty child under an all-empty parent is; a shorter one cannot cover the
         /// referenced range.
+        const Int64 child_len = peekNextNodeLength();
         if (child_len != prev)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC {} references {} child rows but its buffer-less child declares {}", what, prev, child_len);
     }
-    else if (rowCountExceedsBodyBits(static_cast<size_t>(std::max<Int64>(child_len, 0))))
+    else
     {
         /// A buffered child may legitimately be longer than the referenced range (a sliced Arrow file
         /// keeps the full child), but its length is still physically bounded: every decodable layout
-        /// costs at least one bit per row in some buffer. A length past the whole body's bit count can
-        /// only be forged; rejecting it here keeps a buffer-less field nested deeper (e.g. a struct's
-        /// `null` field declared before its buffered siblings) from allocating before any sibling's
-        /// buffer-size check fires.
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow IPC {} child declares {} rows, more than the {}-byte message body can hold",
-            what, child_len, total_buffer_bytes);
+        /// costs at least one bit per row in some buffer.
+        checkRowCountWithinBody(peekNodeRows(), fmt::format("{} child", what));
     }
 }
 
@@ -1001,6 +1003,16 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             const size_t list_size = static_cast<size_t>(type.list_size);
             expectNextNodeLength(expected_child, "fixed-size-list child");
             const ArrowField & child_field = type.children.at(0);
+
+            /// A child that is not determined by its size alone costs at least one bit per element, in its
+            /// value buffers or its validity bitmap, so `expected_child` — and with it `rows` — is physically
+            /// bounded by the body. `list_size` multiplies the row count, so this bound is what keeps a
+            /// forged one from sizing the offsets below, the mask, or a buffer-less field declared ahead of
+            /// the child's buffered ones, before those buffers are checked.
+            const bool size_determined_child = isSizeDeterminedSubtree(child_field);
+            if (!size_determined_child)
+                checkRowCountWithinBody(expected_child, "fixed-size-list child");
+
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
             for (size_t i = 0; i < rows; ++i)
@@ -1009,7 +1021,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// A child determined by its size alone is built for the visible slots only: the elements of
             /// invisible slots are never materialized, however large `list_size` makes them (see
             /// `buildSizeDeterminedColumn`).
-            if (isSizeDeterminedSubtree(child_field))
+            if (size_determined_child)
             {
                 const size_t kept = emptyInvisibleSlotRanges(offs, invisible_rows);
                 ColumnPtr child = buildSizeDeterminedColumn(child_field, kept, arrayElementHint(effective_hint), path, list_depth + 1);
@@ -1017,11 +1029,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             }
 
             /// Every child row belongs to the slot at `j / list_size`; a child row of an invisible slot is
-            /// itself invisible. The declared child count is untrusted and must not size the mask allocation
-            /// past the physical bound of the body (see `rowCountExceedsBodyBits`).
+            /// itself invisible.
             const std::optional<InvisibleRowsMask> child_invisible = [&]() -> std::optional<InvisibleRowsMask>
             {
-                if (!invisible_rows || rowCountExceedsBodyBits(expected_child))
+                if (!invisible_rows)
                     return std::nullopt;
                 InvisibleRowsMask mask;
                 mask.resize(expected_child);
@@ -1411,20 +1422,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         /// Bound the child's declared length BEFORE decodeField, so forged metadata cannot drive an
         /// oversized allocation in a buffer-less child subtree (e.g. a struct of `null` fields, whose
         /// null maps are sized by the FieldNode length alone). A sparse child holds exactly `rows`
-        /// values (the per-row child access below indexes it by row). A dense child's length is only
-        /// lower-bounded by the referenced offsets, but it is still physically bounded: every decodable
-        /// layout costs at least one bit per row in some buffer, so a length past the whole body's bit
-        /// count can only be forged.
-        const Int64 child_len = peekNextNodeLength();
-        if (!dense && child_len != static_cast<Int64>(rows))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC sparse union child '{}' declares {} rows, expected {}", child.name, child_len, rows);
-        if (dense && rowCountExceedsBodyBits(static_cast<size_t>(std::max<Int64>(child_len, 0))))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC dense union child '{}' declares {} rows, more than the {}-byte message body can hold",
-                child.name, child_len, total_buffer_bytes);
+        /// values (the per-row child access below indexes it by row); a dense child's length is only
+        /// lower-bounded by the referenced offsets, but still by what the body can physically hold.
+        if (dense)
+            checkRowCountWithinBody(peekNodeRows(), fmt::format("dense union child '{}'", child.name));
+        else
+            expectNextNodeLength(rows, fmt::format("sparse union child '{}'", child.name));
 
         /// Visibility of this child's rows: a child slot holds a meaningful value only when its row's
         /// type id selects this child — non-selected slots hold undefined bytes per the Arrow spec, even
