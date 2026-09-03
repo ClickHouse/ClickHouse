@@ -66,6 +66,8 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
+    /// 'treat_local_port_as_remote' - never treat a replica as local, even when its address points to
+    /// this host. Set for clickhouse-local, which listens on no port of its own.
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,

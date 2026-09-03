@@ -131,7 +131,6 @@ Cluster::Address::Address(
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
 
-    const bool has_explicit_port = config.has(config_prefix + ".port");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
@@ -149,9 +148,14 @@ Cluster::Address::Address(
     stateless_worker_port = read_optional_port(".stateless_worker_port");
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
-    is_local = !treat_local_port_as_remote || !has_explicit_port
-        ? isLocal(static_cast<UInt16>(config.getInt(port_type, 0)))
-        : false;
+    /// In clickhouse-local, an address of a configured cluster is always a genuinely remote server:
+    /// the tool starts no TCP listener unless `SYSTEM START LISTEN` is used, yet it fills `tcp_port`
+    /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
+    /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
+    /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
+    is_local = treat_local_port_as_remote
+        ? false
+        : isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.

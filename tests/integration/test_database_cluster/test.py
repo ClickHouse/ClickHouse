@@ -124,24 +124,28 @@ def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
     node1.query("CREATE TABLE local_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
     node1.query("INSERT INTO local_src.t VALUES (1), (2), (3)")
 
-    # The local tool does not listen on TCP port 9000. An explicitly configured loopback address
-    # must therefore be a remote replica, rather than resolving its database in the local tool.
+    # The local tool does not listen on TCP port 9000. A configured loopback address must therefore
+    # be a remote replica, rather than resolving its database in the local tool. This holds both for
+    # a replica that spells out `<port>` and for one that inherits it from the top-level `tcp_port`
+    # (the shape of the built-in `default` cluster): the tool fills `tcp_port` in with the default
+    # value even though it listens on no port, so the inherited value says nothing about it.
     # The configuration of the server is used, because it is the one that declares both the
     # cluster and `tcp_port`; a separate working directory keeps the tool away from the data
     # directory of the running server.
-    assert (
-        node1.exec_in_container(
-            [
-                "clickhouse",
-                "local",
-                "--config-file=/etc/clickhouse-server/config.xml",
-                "--path=/var/lib/clickhouse-local-cluster-test",
-                "--multiquery",
-                "--query=CREATE DATABASE proxy ENGINE = Cluster('loopback', 'local_src'); SELECT count() FROM proxy.t",
-            ]
+    for cluster_name in ("loopback", "loopback_default_port"):
+        assert (
+            node1.exec_in_container(
+                [
+                    "clickhouse",
+                    "local",
+                    "--config-file=/etc/clickhouse-server/config.xml",
+                    "--path=/var/lib/clickhouse-local-cluster-test",
+                    "--multiquery",
+                    f"--query=CREATE DATABASE proxy ENGINE = Cluster('{cluster_name}', 'local_src'); SELECT count() FROM proxy.t",
+                ]
+            )
+            == "3\n"
         )
-        == "3\n"
-    )
 
     node1.query("DROP DATABASE local_src")
 
