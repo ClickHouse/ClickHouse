@@ -760,6 +760,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+
+            /// Same as for a set over a plain column above: the set keeps its own element type, and
+            /// `castColumn` of a `FixedString` element to the map's `String` value type strips the
+            /// trailing zeros the comparison honours, so the hash would match no granule.
+            if (!bloomFilterHashDomainMatches(type, array_nested_type))
+                return false;
+
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }

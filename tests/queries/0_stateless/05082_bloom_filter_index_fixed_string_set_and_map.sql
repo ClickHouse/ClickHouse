@@ -42,5 +42,30 @@ SELECT count() FROM t_bf_map WHERE m['k'] = 'xyz' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_bf_map WHERE m['k'] = 'nos';
 SELECT count() FROM t_bf_map WHERE m['k'] = 'nos' SETTINGS use_skip_indexes = 0;
 
+SELECT 'map value from a subquery set';
+-- The `mapValues` arm of the set path casts the set column to the map's value type the same way, so a
+-- `FixedString` element over a `String` value type hashes the stripped bytes and prunes every granule.
+DROP TABLE IF EXISTS t_bf_map_str;
+CREATE TABLE t_bf_map_str (m Map(String, String), INDEX bf mapValues(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_str VALUES (map('k', 'V0')), (map('k', 'V0\0')), (map('k', 'xx'));
+OPTIMIZE TABLE t_bf_map_str FINAL;
+
+SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'V0'::FixedString(3));
+SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'V0'::FixedString(3)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE IF EXISTS t_bf_map_set_source;
+CREATE TABLE t_bf_map_set_source (v FixedString(3)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_bf_map_set_source VALUES ('V0');
+
+SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT v FROM t_bf_map_set_source);
+SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT v FROM t_bf_map_set_source) SETTINGS use_skip_indexes = 0;
+
+SELECT 'same-type subquery set over a map still prunes';
+SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'nosuch');
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'nosuch')) WHERE explain LIKE '%Granules: 0/%';
+
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;
+DROP TABLE t_bf_map_str;
+DROP TABLE t_bf_map_set_source;

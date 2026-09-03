@@ -18,3 +18,11 @@ map value
 1
 0
 0
+map value from a subquery set
+2
+2
+2
+2
+same-type subquery set over a map still prunes
+0
+1
