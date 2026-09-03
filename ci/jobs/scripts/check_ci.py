@@ -927,15 +927,14 @@ def main():
     if is_master_commit:
         sys.exit(0)
 
-    # Process sync PR failures if sync CI failed with test failures
+    # Process the sync PR result regardless of the "CH Inc sync" commit status as stress test failures are ignored by it.
     sync_known_failures = []
     sync_unknown_failures = []
-    if (
-        sync_status
-        and sync_status.state == Result.GHStatus.FAILURE
-        and sync_status.description == "tests failed"
-    ):
-        print("\n=== Processing Sync PR (CH Inc sync) failures ===")
+    if sync_status:
+        print(
+            f"\n=== Processing Sync PR ({CheckStatuses.CH_INC_SYNC}: "
+            f"{sync_status.state} - {sync_status.description}) ==="
+        )
 
         # Check proxy connectivity before proceeding
         process_sync = False
@@ -998,15 +997,22 @@ def main():
                 print("WARNING: Could not find sync PR - skipping")
 
     question = "CI status:\n"
-    if unknown_failures or issues_created > 0 or pre_existing_issues_count > 0:
+    if (
+        unknown_failures
+        or issues_created > 0
+        or pre_existing_issues_count > 0
+        or sync_known_failures
+        or sync_unknown_failures
+    ):
         if not_finished_jobs:
             question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
         if unknown_failures:
             question += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
         if known_failures:
             question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
-        question += " - all other checks passed\n"
-        question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        question += " - all other public checks passed\n"
+        if sync_status:
+            question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
         if sync_known_failures or sync_unknown_failures:
             question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
@@ -1034,6 +1040,8 @@ def main():
         except Exception as e:
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
+    else:
+        print(f"\n{question}")
 
     if not UserPrompt.confirm(
         f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
