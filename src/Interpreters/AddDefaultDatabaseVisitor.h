@@ -420,9 +420,6 @@ private:
         if (!query.table || query.database || only_replace_current_database_function)
             return;
 
-        if (query.getTable().contains('.'))
-            return;
-
         query.setDatabase(database_name);
     }
 

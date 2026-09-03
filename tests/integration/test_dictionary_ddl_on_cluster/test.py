@@ -34,13 +34,17 @@ coordinator = cluster.add_instance(
 
 DICTIONARY_DB = "issue_114322"
 DICTIONARY_NAME = "issue_114322_dict"
+DOTTED_DICTIONARY_NAME = "issue_114322_dict.with.dot"
 XML_ONLY_DICTIONARY_NAME = "issue_114322_xml_only"
-DICTIONARY_STATUS_QUERY = """
+
+
+def get_issue_114322_dictionary_status_query(name=DICTIONARY_NAME):
+    return """
     SELECT database, status
     FROM system.dictionaries
     WHERE name = '{name}' AND database IN ('default', '{database}')
     ORDER BY database
-""".format(name=DICTIONARY_NAME, database=DICTIONARY_DB)
+""".format(name=name, database=DICTIONARY_DB)
 
 
 @pytest.fixture(scope="module")
@@ -131,6 +135,7 @@ def test_dictionary_ddl_on_cluster(started_cluster):
 def drop_issue_114322_dictionaries():
     for node in (ch1, coordinator):
         node.query(f"DROP DICTIONARY IF EXISTS default.{DICTIONARY_NAME}")
+        node.query(f"DROP DICTIONARY IF EXISTS default.`{DOTTED_DICTIONARY_NAME}`")
         node.query(f"DROP DATABASE IF EXISTS {DICTIONARY_DB} SYNC")
 
 
@@ -139,10 +144,10 @@ def create_issue_114322_database():
     coordinator.query(f"CREATE DATABASE IF NOT EXISTS {DICTIONARY_DB}")
 
 
-def create_issue_114322_dictionary(node, database):
+def create_issue_114322_dictionary(node, database, name=DICTIONARY_NAME):
     node.query(
         f"""
-        CREATE DICTIONARY {database}.{DICTIONARY_NAME} (k UInt64, v String)
+        CREATE DICTIONARY {database}.`{name}` (k UInt64, v String)
         PRIMARY KEY k
         SOURCE(NULL())
         LAYOUT(FLAT())
@@ -171,8 +176,10 @@ def prepare_issue_114322_dictionaries(include_default=True):
         create_issue_114322_dictionary(ch1, "default")
 
 
-def assert_issue_114322_dictionary_statuses(expected):
-    assert_eq_with_retry(ch1, DICTIONARY_STATUS_QUERY, expected)
+def assert_issue_114322_dictionary_statuses(expected, name=DICTIONARY_NAME):
+    assert_eq_with_retry(
+        ch1, get_issue_114322_dictionary_status_query(name), expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -251,6 +258,36 @@ def test_reload_dictionary_on_cluster_uses_initiator_database_without_default_de
         )
 
         assert_issue_114322_dictionary_statuses(f"{DICTIONARY_DB}\tLOADED\n")
+    finally:
+        drop_issue_114322_dictionaries()
+
+
+def test_reload_dictionary_on_cluster_uses_initiator_database_for_quoted_dotted_name(
+    started_cluster,
+):
+    try:
+        drop_issue_114322_dictionaries()
+        create_issue_114322_database()
+        create_issue_114322_dictionary(ch1, DICTIONARY_DB, DOTTED_DICTIONARY_NAME)
+        create_issue_114322_dictionary(ch1, "default", DOTTED_DICTIONARY_NAME)
+        ch1.query(
+            f"SYSTEM UNLOAD DICTIONARY {DICTIONARY_DB}.`{DOTTED_DICTIONARY_NAME}`"
+        )
+        ch1.query(f"SYSTEM UNLOAD DICTIONARY default.`{DOTTED_DICTIONARY_NAME}`")
+        assert_issue_114322_dictionary_statuses(
+            f"default\tNOT_LOADED\n{DICTIONARY_DB}\tNOT_LOADED\n",
+            DOTTED_DICTIONARY_NAME,
+        )
+
+        coordinator.query(
+            f"SYSTEM RELOAD DICTIONARY `{DOTTED_DICTIONARY_NAME}` ON CLUSTER 'workers_only'",
+            database=DICTIONARY_DB,
+        )
+
+        assert_issue_114322_dictionary_statuses(
+            f"default\tNOT_LOADED\n{DICTIONARY_DB}\tLOADED\n",
+            DOTTED_DICTIONARY_NAME,
+        )
     finally:
         drop_issue_114322_dictionaries()
 
