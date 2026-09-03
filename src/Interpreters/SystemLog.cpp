@@ -168,7 +168,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.queue_settings.database = default_database_name;
     }
 
-    registerSystemTableDocumentationSource(log_settings.queue_settings.table, documentation_source);
+    registerSystemTableDocumentationSource(log_settings.queue_settings.table, documentation_source, comment);
 
     if (config.has(config_prefix + ".engine"))
     {
@@ -372,13 +372,21 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 {
 /// Register default names even for disabled logs whose old tables may still be attached.
 #define REGISTER_DOCUMENTATION_SOURCE(log_type, member, descr) \
-    registerSystemTableDocumentationSource(#member, SYSTEM_LOG_DOCUMENTATION_SOURCE); \
+    registerSystemTableDocumentationSource(#member, SYSTEM_LOG_DOCUMENTATION_SOURCE, descr); \
 
     LIST_OF_ALL_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
     #if CLICKHOUSE_CLOUD
         LIST_OF_CLOUD_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
     #endif
 #undef REGISTER_DOCUMENTATION_SOURCE
+
+    /// These schema variants are configured under the canonical `metric_log` name, so register their complete
+    /// comments even when another schema is active. This lets rotated tables retain the source of the schema they
+    /// actually contain instead of inheriting the source of the new live schema.
+    registerSystemTableDocumentationSource(
+        "transposed_metric_log", TransposedMetricLog::DOCUMENTATION_SOURCE, TransposedMetricLog::DOCUMENTATION);
+    registerSystemTableDocumentationSource(
+        "bucketed_metric_log", BucketedMetricLog::DOCUMENTATION_SOURCE, BucketedMetricLog::DOCUMENTATION);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
@@ -958,6 +966,11 @@ void SystemLog<LogElement>::prepareTable()
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
+            const String rotated_table_name = table_id.table_name + "_" + toString(suffix);
+            const auto old_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+            const char * rotated_documentation_source
+                = getSystemTableDocumentationSourceFromComment(old_metadata_snapshot->comment);
+
             ASTRenameQuery::Element elem
             {
                 ASTRenameQuery::Table
@@ -968,7 +981,7 @@ void SystemLog<LogElement>::prepareTable()
                 ASTRenameQuery::Table
                 {
                     table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
-                    make_intrusive<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                    make_intrusive<ASTIdentifier>(rotated_table_name)
                 }
             };
 
@@ -992,6 +1005,9 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
+            if (rotated_documentation_source)
+                registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
+
             /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
             /// This prevents the old table from wasting CPU on background operations.
             ///
@@ -1014,7 +1030,7 @@ void SystemLog<LogElement>::prepareTable()
             /// the current batch of log entries.
             try
             {
-                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                StorageID old_table_id(table_id.database_name, rotated_table_name);
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
 
                 bool old_table_has_ttl = false;

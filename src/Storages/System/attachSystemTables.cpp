@@ -3893,7 +3893,8 @@ void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, As
 {
     attachNoDescription<StorageSystemAsynchronousMetrics>(
         context, system_database, "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION, async_metrics);
-    registerSystemTableDocumentationSource("asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE);
+    registerSystemTableDocumentationSource(
+        "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE, ASYNCHRONOUS_METRICS_DOCUMENTATION);
 }
 
 }

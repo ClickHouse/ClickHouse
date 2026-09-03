@@ -50,7 +50,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     storage->setInMemoryMetadataComment(String(comment));
 
     system_database.attachTable(context, table_name, storage, path);
-    registerSystemTableDocumentationSource(table_name, ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE);
+    registerSystemTableDocumentationSource(table_name, ATTACHED_SYSTEM_TABLE_DOCUMENTATION_SOURCE, comment);
 }
 
 

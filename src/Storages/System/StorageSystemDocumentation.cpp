@@ -1353,12 +1353,15 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 if (metadata_snapshot)
                 {
                     has_asynchronous_metrics |= table_name == "asynchronous_metrics";
+                    const char * documentation_source = getSystemTableDocumentationSource(table_name);
+                    if (!documentation_source)
+                        documentation_source = getSystemTableDocumentationSourceFromComment(metadata_snapshot->comment);
                     addRow(
                         res_columns,
                         EntityType::SystemTable,
                         table_name,
                         renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns()),
-                        makeRepoRelative(getSystemTableDocumentationSource(table_name)));
+                        makeRepoRelative(documentation_source));
                 }
             }
         }

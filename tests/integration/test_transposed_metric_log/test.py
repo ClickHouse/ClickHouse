@@ -91,9 +91,26 @@ def test_table_rotation(start_cluster):
     in_old_metric_log = int(node1.query("select count() from system.metric_log_0").strip())
 
     assert in_old_metric_log > 0
+    assert (
+        node1.query(
+            "SELECT source FROM system.documentation"
+            " WHERE type = 'System Table' AND name = 'metric_log_0'"
+        )
+        == "src/Interpreters/SystemLog.h\n"
+    )
 
     node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
     node1.restart_clickhouse()
+
+    assert node1.query(
+        "SELECT name, source FROM system.documentation"
+        " WHERE type = 'System Table' AND name IN ('metric_log', 'metric_log_0', 'metric_log_1')"
+        " ORDER BY name"
+    ) == (
+        "metric_log\tsrc/Interpreters/SystemLog.h\n"
+        "metric_log_0\tsrc/Interpreters/SystemLog.h\n"
+        "metric_log_1\tsrc/Interpreters/TransposedMetricLog.h\n"
+    )
 
 
 def test_bucketed_schema(start_cluster):

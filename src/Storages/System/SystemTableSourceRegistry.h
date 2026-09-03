@@ -23,8 +23,15 @@ const char * getSystemTableSource(const std::type_info & type);
 /// Register and retrieve the source file which owns a system table's documentation comment. The table-name mapping
 /// is separate from the storage-type mapping because system-log tables share storage implementations while their
 /// documentation is defined together in `SystemLog.h`.
-void registerSystemTableDocumentationSource(std::string_view table_name, const char * source_file);
+void registerSystemTableDocumentationSource(
+    std::string_view table_name,
+    const char * source_file,
+    std::string_view documentation = {});
 const char * getSystemTableDocumentationSource(std::string_view table_name);
+
+/// Resolve a documentation owner from the beginning of a persisted table comment. System-log comments can append
+/// configured text, so the longest registered documentation prefix is used instead of requiring an exact match.
+const char * getSystemTableDocumentationSourceFromComment(std::string_view comment);
 
 }
 

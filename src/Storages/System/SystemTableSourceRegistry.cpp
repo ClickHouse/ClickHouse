@@ -1,5 +1,6 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <mutex>
 #include <string>
 #include <typeindex>
 #include <unordered_map>
@@ -17,9 +18,16 @@ namespace
         return registry;
     }
 
-    std::unordered_map<std::string, const char *> & documentationSourceRegistry()
+    struct DocumentationSourceRegistry
     {
-        static std::unordered_map<std::string, const char *> registry;
+        std::mutex mutex;
+        std::unordered_map<std::string, const char *> by_table_name;
+        std::unordered_map<std::string, const char *> by_comment;
+    };
+
+    DocumentationSourceRegistry & documentationSourceRegistry()
+    {
+        static DocumentationSourceRegistry registry;
         return registry;
     }
 }
@@ -37,17 +45,43 @@ const char * getSystemTableSource(const std::type_info & type)
     return nullptr;
 }
 
-void registerSystemTableDocumentationSource(std::string_view table_name, const char * source_file)
+void registerSystemTableDocumentationSource(
+    std::string_view table_name,
+    const char * source_file,
+    std::string_view documentation)
 {
-    documentationSourceRegistry()[std::string(table_name)] = source_file;
+    auto & registry = documentationSourceRegistry();
+    std::lock_guard lock(registry.mutex);
+    registry.by_table_name[std::string(table_name)] = source_file;
+    if (!documentation.empty())
+        registry.by_comment[std::string(documentation)] = source_file;
 }
 
 const char * getSystemTableDocumentationSource(std::string_view table_name)
 {
-    const auto & registry = documentationSourceRegistry();
-    if (auto it = registry.find(std::string(table_name)); it != registry.end())
+    auto & registry = documentationSourceRegistry();
+    std::lock_guard lock(registry.mutex);
+    if (auto it = registry.by_table_name.find(std::string(table_name)); it != registry.by_table_name.end())
         return it->second;
     return nullptr;
+}
+
+const char * getSystemTableDocumentationSourceFromComment(std::string_view comment)
+{
+    auto & registry = documentationSourceRegistry();
+    std::lock_guard lock(registry.mutex);
+
+    const char * source = nullptr;
+    size_t longest_match = 0;
+    for (const auto & [documentation, documentation_source] : registry.by_comment)
+    {
+        if (documentation.size() > longest_match && comment.starts_with(documentation))
+        {
+            source = documentation_source;
+            longest_match = documentation.size();
+        }
+    }
+    return source;
 }
 
 }
