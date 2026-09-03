@@ -1729,8 +1729,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
                 variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type);
             /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
             /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
-            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
-            /// `Variant` branch of `ConstantNode::toASTImpl`, which the exact path bypasses. The wrapping is
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. The wrapping is
             /// skipped for a scalar decimal member, which already casts itself to its own type.
             member_ast = makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
             /// Name the `Variant` type too: naming the member only lets the receiver resolve a conversion
