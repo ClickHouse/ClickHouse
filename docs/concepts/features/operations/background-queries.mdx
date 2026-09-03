@@ -15,6 +15,9 @@ Background queries are mainly intended for long-running operations such as `INSE
 `CREATE TABLE ... AS SELECT`, or `CREATE MATERIALIZED VIEW ... POPULATE` that must not stop if the
 client connection drops.
 
+Not every query can be detached from its connection. See [Unsupported query forms](#unsupported-query-forms)
+for the requests that are rejected instead.
+
 :::important
 The result of a background query is discarded. It cannot be retrieved or attached to later.
 Use the query's `query_id` to monitor it in `system.processes` while it is running and in `system.query_log` after it finishes.
@@ -22,6 +25,46 @@ Use the query's `query_id` to monitor it in `system.processes` while it is runni
 
 A background query does not survive a server restart. Server shutdown behavior is controlled by
 `shutdown_wait_unfinished_queries` and `shutdown_wait_unfinished`.
+
+## Unsupported query forms {#unsupported-query-forms}
+
+A background query outlives the connection that submitted it, so the server must already have everything it needs
+to run the query at the moment it accepts it. Requests that do not satisfy this are rejected synchronously, on the
+submitting connection, and the query never starts.
+
+### Data that streams over the connection {#data-that-streams-over-the-connection}
+
+The data of an `INSERT` must travel with the query itself. An `INSERT` whose data arrives after the query text, or
+which reads its data through `input`, is rejected with
+`A query whose data streams over the connection cannot be run in the background`:
+
+```sql
+-- Rejected: the data does not travel with the query
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client` sends the data of an `INSERT ... FORMAT ...` in separate packets, so that form can never run in
+the background over the native protocol. Over HTTP the query text is read from the request body, so an `INSERT`
+whose data fits within `max_query_size` is accepted, while a larger body keeps streaming past the query text and is
+rejected. Do not rely on that size boundary: use `INSERT ... SELECT`, or a table function such as `url` or `s3`,
+for data that must be loaded in the background.
+
+### Other rejected requests {#other-rejected-requests}
+
+| Request | Error |
+|---|---|
+| `SET run_query_in_background = 1` | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| A query inside an explicit transaction, or with `implicit_transaction = 1` | `Background queries inside transactions are not supported` |
+| A secondary query, requested for example with `clickhouse-client --query_kind secondary_query` | `run_query_in_background cannot be used for a secondary query` |
+| A query processing stage other than `Complete`, requested for example with `clickhouse-client --stage with_mergeable_state` | `run_query_in_background cannot be used with the WithMergeableState query processing stage` |
+| The `SETTINGS` clause of a `CREATE` or `ATTACH` that carries a storage definition, because the client sends that clause to the server unresolved | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query` |
+
+The setting is never propagated to the secondary queries of a distributed query: a background distributed `INSERT`
+runs its per-shard queries in the foreground, within the background initial query.
 
 ## Submit a background query {#submit-a-background-query}
 
@@ -66,6 +109,15 @@ The response includes the generated query ID in the `X-ClickHouse-Query-Id` head
 
 ```response
 X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+That header only reaches a client that reads the response. When you need a handle on the query that does not
+depend on the response arriving, send your own `query_id` as a URL parameter instead. The client then knows the ID
+before it makes the request, and can monitor or `KILL` the query even if it never sees the response:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
 ```
 
 Unlike the native protocol, HTTP cannot enable background execution through an inline SQL `SETTINGS` clause:
