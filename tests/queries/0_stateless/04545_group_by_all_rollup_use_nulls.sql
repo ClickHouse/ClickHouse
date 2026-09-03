@@ -1,12 +1,12 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/110915
 --
--- A scalar subquery aggregates over a derived table that uses GROUP BY ALL WITH ROLLUP
--- under group_by_use_nulls = 1. GROUP BY ALL is expanded only at the end of query
+-- An aggregate reads a derived table that uses GROUP BY ALL WITH ROLLUP under
+-- group_by_use_nulls = 1. GROUP BY ALL is expanded into the key list only at the end of query
 -- resolution, so its keys were never registered as nullable_group_by_keys and the inner
--- projection kept its non-Nullable type while WITH ROLLUP execution produced Nullable.
--- The outer aggregate was then built for the non-Nullable argument (no Null adapter) and
--- raised a "Bad cast from type ColumnNullable to ColumnVector<...>" exception at run time.
--- Spelling the key explicitly (GROUP BY val) already worked; this test covers GROUP BY ALL.
+-- projection kept its non-Nullable type while WITH ROLLUP execution produced Nullable. The
+-- aggregate was then built for the non-Nullable argument, without the Null combinator adapter,
+-- and raised "Bad cast from type ColumnNullable to ColumnVector<...>" at run time. Spelling the
+-- key explicitly (GROUP BY val) already worked; this test covers GROUP BY ALL.
 
 SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
@@ -25,6 +25,17 @@ SELECT (SELECT maxOrNull(val)    FROM (SELECT materialize(2::UInt64) AS val FROM
 -- Deterministic-key variant that used to fail during analysis with NOT_AN_AGGREGATE.
 SELECT '-- deterministic key --';
 SELECT (SELECT avgOrDefault(val) FROM (SELECT sipHash64(number) AS val FROM numbers(10) GROUP BY ALL WITH ROLLUP)) FORMAT Null;
+
+-- The aggregate does not have to be in a scalar subquery, and the argument type is not limited
+-- to integers. https://github.com/ClickHouse/ClickHouse/issues/113078
+SELECT '-- top-level aggregate over the derived table --';
+SELECT max(x) FROM (SELECT materialize(1.5) AS x GROUP BY ALL WITH ROLLUP);
+SELECT sum(x) FROM (SELECT materialize(7::UInt64) AS x GROUP BY ALL WITH CUBE);
+
+-- isNull is folded against the declared type, so without the promotion the super-aggregate row
+-- is reported as not NULL and the query returns a wrong result instead of raising anything.
+SELECT '-- isNull on the super-aggregate row --';
+SELECT x, isNull(x) FROM (SELECT materialize(1.5) AS x GROUP BY ALL WITH ROLLUP) ORDER BY x NULLS LAST;
 
 -- GROUP BY ALL WITH ROLLUP must match explicit GROUP BY, including the Nullable super-aggregate row.
 SELECT '-- group by all matches explicit key --';

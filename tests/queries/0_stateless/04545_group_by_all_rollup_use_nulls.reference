@@ -6,6 +6,12 @@ Nullable(UInt64)
 2
 2
 -- deterministic key --
+-- top-level aggregate over the derived table --
+1.5
+7
+-- isNull on the super-aggregate row --
+1.5	0
+\N	1
 -- group by all matches explicit key --
 0	9
 1	12
