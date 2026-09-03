@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/SettingsEnums.h>
@@ -115,5 +116,10 @@ void DistributedSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints
     /// compiled defaults.
     fillEngineSettingsColumnsFromImpl(params, *context->getDistributedSettings().impl);
 }
+TableSettings DistributedSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }
 

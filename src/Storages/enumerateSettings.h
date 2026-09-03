@@ -14,6 +14,8 @@ namespace DB
 template <typename SettingsImplType>
 TableSettings enumerateSettingsFromImpl(const SettingsImplType & impl)
 {
+    const auto & settings_to_aliases = SettingsImplType::Traits::settingsToAliases();
+
     TableSettings result;
     for (const auto & setting : impl.all())
     {
@@ -25,6 +27,8 @@ TableSettings enumerateSettingsFromImpl(const SettingsImplType & impl)
         described.description = setting.getDescription();
         described.tier = setting.getTier();
         described.origin = setting.isValueChanged() ? TableSettingOrigin::Other : TableSettingOrigin::Default;
+        if (const auto it = settings_to_aliases.find(described.name); it != settings_to_aliases.end())
+            described.aliases.assign(it->second.begin(), it->second.end());
         result.push_back(std::move(described));
     }
     return result;

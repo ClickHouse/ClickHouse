@@ -41,6 +41,9 @@ struct TableSetting
     String default_value;
     std::string_view type;
     std::string_view description;
+    /// Other names this setting may be stated under. A definition may use any of them, so
+    /// attribution has to match on all of them, not just `name`.
+    std::vector<std::string_view> aliases;
     TableSettingOrigin origin = TableSettingOrigin::Other;
     SettingsTierType tier = SettingsTierType::PRODUCTION;
     /// Whether the engine permits `ALTER TABLE ... MODIFY SETTING` for this setting. The user's

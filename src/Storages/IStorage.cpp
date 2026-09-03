@@ -275,8 +275,16 @@ TableSettings IStorage::attributeSettingsStatedInDefinition(TableSettings settin
 {
     const auto stated_in_definition = getSettingNamesStatedInDefinition(context);
     for (auto & setting : settings)
-        if (stated_in_definition.contains(setting.name))
+    {
+        /// A definition may name a setting by any of its aliases - `monitor_batch_inserts` for
+        /// `background_insert_batch`, say - so matching only the canonical name would miss it and
+        /// report the value as coming from somewhere unknown.
+        const bool stated = stated_in_definition.contains(setting.name)
+            || std::any_of(setting.aliases.begin(), setting.aliases.end(),
+                           [&](std::string_view alias) { return stated_in_definition.contains(String{alias}); });
+        if (stated)
             setting.origin = TableSettingOrigin::Definition;
+    }
     return settings;
 }
 

@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Storages/Hive/HiveSettings.h>
 
 #if USE_HIVE
@@ -100,5 +101,10 @@ void HiveSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & para
 {
     fillEngineSettingsColumnsFromImpl<HiveSettingsImpl>(params);
 }
+TableSettings HiveSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }
 #endif

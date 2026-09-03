@@ -1573,5 +1573,12 @@ day:         2021-09-18
         });
 }
 
+TableSettings StorageHive::getTableSettings(ContextPtr query_context) const
+{
+    /// `HiveSettings::loadFromConfig` exists but nothing calls it, so despite the `hive` config
+    /// section a `Hive` table's settings can only come from its defaults or its definition.
+    return attributeSettingsStatedInDefinition(storage_settings->enumerateSettings(), query_context);
+}
+
 }
 #endif

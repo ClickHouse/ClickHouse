@@ -146,6 +146,8 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 

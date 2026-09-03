@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include "config.h"
 
 #if USE_HIVE
@@ -68,6 +70,8 @@ struct HiveSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
     static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:
