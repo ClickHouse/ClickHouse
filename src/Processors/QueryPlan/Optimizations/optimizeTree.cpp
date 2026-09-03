@@ -409,8 +409,17 @@ void optimizeTreeSecondPass(
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
+    applyParallelReplicas(query_plan, nodes, optimization_settings);
+
     traverseQueryPlan(stack, root,
-        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.read_in_order && !make_distributed_plan)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order && !make_distributed_plan)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
@@ -422,8 +431,6 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
-
-    applyParallelReplicas(query_plan, nodes, optimization_settings);
 
     /// Distributed joins now live inside fragments and are converted by each fragment's own
     /// re-optimization. Convert the joins left in the outer plan (non-distributed kinds, or all of them
