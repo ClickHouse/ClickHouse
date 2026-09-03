@@ -13,7 +13,7 @@ UInt128 hashOfPattern(const String & pattern)
     std::vector<OptimizedRegularExpression> patterns;
     patterns.emplace_back(pattern);
 
-    const TextSearchQuery query("like", TextSearchMode::Any, TextIndexDirectReadMode::None, {}, std::move(patterns));
+    const TextSearchQuery query("like", TextSearchMode::Any, TextIndexDirectReadMode::None, {}, false, std::move(patterns));
     return query.getHash();
 }
 
