@@ -1,13 +1,13 @@
 -- attach from a source table records per-part block ids in ZooKeeper
 30
 -- prepare a second source part and fill the database close to the limit
-95
+85
 -- partially duplicated attach charges only the non-duplicate remainder, which fits
 35
-100
+90
 -- fully duplicated attach is a no-op even at the limit
 35
-100
--- a non-duplicate attach into the full database still throws
+90
+-- a non-duplicate multi-part attach into the full database throws without attaching any part
 TOO_MANY_ROWS
 0

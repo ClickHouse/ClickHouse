@@ -28,10 +28,14 @@ SELECT count() FROM ${DA}.r;
 SELECT '-- prepare a second source part and fill the database close to the limit';
 INSERT INTO ${DA}.src SELECT number FROM numbers(5);
 CREATE TABLE ${DA}.s (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/s', 'r1') ORDER BY x;
-INSERT INTO ${DA}.s SELECT number FROM numbers(20);
+-- Two separate detached parts: the first one alone would still fit into the database, so a
+-- per-part check would commit it before the second part throws.
+SYSTEM STOP MERGES ${DA}.s;
+INSERT INTO ${DA}.s SELECT number FROM numbers(10);
+INSERT INTO ${DA}.s SELECT number + 10 FROM numbers(10);
 ALTER TABLE ${DA}.s DETACH PARTITION ALL;
 CREATE TABLE ${DA}.filler (x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO ${DA}.filler SELECT number FROM numbers(30);
+INSERT INTO ${DA}.filler SELECT number FROM numbers(20);
 SELECT rows FROM system.databases WHERE name = '${DA}';
 SELECT '-- partially duplicated attach charges only the non-duplicate remainder, which fits';
 ALTER TABLE ${DA}.r ATTACH PARTITION ID 'all' FROM ${DA}.src;
@@ -43,7 +47,7 @@ SELECT count() FROM ${DA}.r;
 SELECT rows FROM system.databases WHERE name = '${DA}';
 "
 
-echo "-- a non-duplicate attach into the full database still throws"
+echo "-- a non-duplicate multi-part attach into the full database throws without attaching any part"
 $CH -q "ALTER TABLE ${DA}.s ATTACH PARTITION ALL" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
-# the failed attach must not have added rows
+# the failed attach must not have added rows, not even the first part that would have fit
 $CH -q "SELECT count() FROM ${DA}.s; DROP DATABASE ${DA}"

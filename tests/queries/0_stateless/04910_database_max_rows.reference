@@ -27,6 +27,12 @@ rejected
 0
 TOO_MANY_ROWS
 60
+-- 9a. ATTACH PARTITION on a local MergeTree table is all-or-nothing
+90
+TOO_MANY_ROWS
+0
+20
+20
 -- 10. max_rows and lazy_load_tables cannot be combined
 BAD_ARGUMENTS
 BAD_ARGUMENTS

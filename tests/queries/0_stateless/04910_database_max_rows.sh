@@ -95,6 +95,28 @@ $CH -q "
 DROP TABLE ${DA}.filler;
 ATTACH TABLE ${DA}.t;
 SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT '-- 9a. ATTACH PARTITION on a local MergeTree table is all-or-nothing';
+DROP TABLE ${DA}.t;
+CREATE TABLE ${DA}.m (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- Two separate parts in the detached directory: the first one alone would still fit into the
+-- database, so a per-part check would make it visible before the second part throws.
+SYSTEM STOP MERGES ${DA}.m;
+INSERT INTO ${DA}.m SELECT number FROM numbers(10);
+INSERT INTO ${DA}.m SELECT number + 10 FROM numbers(10);
+ALTER TABLE ${DA}.m DETACH PARTITION ALL;
+CREATE TABLE ${DA}.filler (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.filler SELECT number FROM numbers(90);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+"
+# 20 detached rows do not fit into the remaining 10, and no part may become visible
+$CH -q "ALTER TABLE ${DA}.m ATTACH PARTITION ALL" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
+$CH -q "SELECT count() FROM ${DA}.m"
+$CH -q "
+DROP TABLE ${DA}.filler;
+ALTER TABLE ${DA}.m ATTACH PARTITION ALL;
+SELECT count() FROM ${DA}.m;
+SELECT rows FROM system.databases WHERE name = '${DA}';
+DROP TABLE ${DA}.m;
 SELECT '-- 10. max_rows and lazy_load_tables cannot be combined';
 "
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 5, lazy_load_tables = 1" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
