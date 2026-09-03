@@ -2,10 +2,10 @@ import base64
 import hashlib
 import hmac
 import os
-import random
 import re
 import struct
 import time
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -13,24 +13,15 @@ from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def random_secret():
-    return base64.b32encode(random.randbytes(random.randint(3, 64))).decode()
-
-
-TOTP_SECRET = random_secret()
+USERS_CONFIG = os.path.join(SCRIPT_DIR, "config/users.xml")
 
 # The server accepts each code at most once and rejects codes for time steps at or before
 # the last accepted one (RFC 6238, Section 5.2). Therefore every test uses dedicated users,
 # with at most two logins per user: first with the code for the current time step, then with
 # the code for the next time step, which is within the server time tolerance.
-INTERACTIVE_USERS = {f"totuser_interactive_{i}": random_secret() for i in range(3)}
-NO_PASSWORD_USERS = {f"totuser_no_password_{i}": random_secret() for i in range(2)}
-EMPTY_PASSWORD_USERS = {
-    f"totuser_empty_password_{i}": random_secret() for i in range(2)
-}
-SINGLE_USE_SECRET = random_secret()
+INTERACTIVE_USERS = [f"totuser_interactive_{i}" for i in range(3)]
+NO_PASSWORD_USERS = [f"totuser_no_password_{i}" for i in range(2)]
+EMPTY_PASSWORD_USERS = [f"totuser_empty_password_{i}" for i in range(2)]
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -43,7 +34,6 @@ node = cluster.add_instance(
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        create_config(TOTP_SECRET)
         cluster.start()
         yield cluster
     finally:
@@ -53,7 +43,7 @@ def started_cluster():
 @pytest.fixture(autouse=True)
 def fresh_server(started_cluster):
     # The server keeps the used codes in memory to enforce their single use, so a repeated
-    # run of a test (e.g. the flaky check with --count) would see its codes already consumed.
+    # run of a test (e.g. with --count) would see its codes already consumed.
     # Restart the server to reset that state.
     node.restart_clickhouse()
 
@@ -71,84 +61,19 @@ def get_one_time_password(
     return f"{otp:0{digits}d}"
 
 
-def create_config(totp_secret):
-    custom_otp_params = """
-                <period>60</period>
-                <digits>9</digits>
-                <algorithm>SHA256</algorithm>"""
-
-    extra_users = ""
-    for name, secret in INTERACTIVE_USERS.items():
-        extra_users += f"""
-        <{name}>
-            <password>aa+bb</password>
-            <time_based_one_time_password>
-                <secret>{secret}</secret>{custom_otp_params}
-            </time_based_one_time_password>
-        </{name}>"""
-
-    for name, secret in NO_PASSWORD_USERS.items():
-        extra_users += f"""
-        <{name}>
-            <no_password></no_password>
-            <time_based_one_time_password>
-                <secret>{secret}</secret>
-            </time_based_one_time_password>
-        </{name}>"""
-
-    for name, secret in EMPTY_PASSWORD_USERS.items():
-        extra_users += f"""
-        <{name}>
-            <password></password>
-            <time_based_one_time_password>
-                <secret>{secret}</secret>
-            </time_based_one_time_password>
-        </{name}>"""
-
-    extra_users += f"""
-        <totuser_single_use>
-            <password>pw</password>
-            <time_based_one_time_password>
-                <secret>{SINGLE_USE_SECRET}</secret>
-            </time_based_one_time_password>
-        </totuser_single_use>"""
-
-    config = f"""
-<clickhouse>
-    <profiles>
-        <default>
-        </default>
-    </profiles>
-    <users>
-        <totuser>
-            <password>aa+bb</password>
-            <time_based_one_time_password>
-                <secret>{totp_secret}</secret>{custom_otp_params}
-            </time_based_one_time_password>
-
-            <access_management>1</access_management>
-            <networks replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </totuser>
-{extra_users}
-    </users>
-</clickhouse>
-""".lstrip()
-
-    with open(os.path.join(SCRIPT_DIR, "config/users.xml"), "w") as f:
-        f.write(config)
-
-
-def get_totp_for_config(secret=None, offset_steps=0):
+def get_otp(user, offset_steps=0):
+    """The code of the user for the current time step shifted by `offset_steps`,
+    computed with the TOTP parameters of the user from the users config."""
+    params = ET.parse(USERS_CONFIG).find(f"./users/{user}/time_based_one_time_password")
+    period = int(params.findtext("period", default="30"))
     return get_one_time_password(
-        secret=secret or TOTP_SECRET,
-        interval=60,
-        digits=9,
-        sha_version=hashlib.sha256,
-        timepoint=time.time() + offset_steps * 60,
+        secret=params.findtext("secret"),
+        interval=period,
+        digits=int(params.findtext("digits", default="6")),
+        sha_version=getattr(
+            hashlib, params.findtext("algorithm", default="SHA1").lower()
+        ),
+        timepoint=time.time() + offset_steps * period,
     )
 
 
@@ -161,7 +86,7 @@ def client_command(user):
 def test_one_time_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
 
-    old_password = get_totp_for_config(offset_steps=-3)
+    old_password = get_otp("totuser", offset_steps=-3)
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user="totuser", password=f"aa+bb+{old_password}"
     )
@@ -171,7 +96,7 @@ def test_one_time_password(started_cluster):
     )
 
     assert "totuser42\n" == node.query(
-        query_text, user="totuser", password=f"aa+bb+{get_totp_for_config()}"
+        query_text, user="totuser", password=f"aa+bb+{get_otp('totuser')}"
     )
 
     resp = node.query(
@@ -186,7 +111,7 @@ def test_one_time_password(started_cluster):
             FROM system.users WHERE name = 'totuser'
         """,
         user="totuser",
-        password=f"aa+bb+{get_totp_for_config(offset_steps=1)}",
+        password=f"aa+bb+{get_otp('totuser', offset_steps=1)}",
     )
     assert "totuser\tplaintext_password\tone_time_password\tSHA256\t9\t60" in resp
 
@@ -194,11 +119,6 @@ def test_one_time_password(started_cluster):
 def test_interactive_totp_authentication(started_cluster):
     """Test TOTP authentication in interactive client mode."""
     user0, user1, user2 = INTERACTIVE_USERS
-
-    def get_otp(user, offset_steps=0):
-        return get_totp_for_config(
-            secret=INTERACTIVE_USERS[user], offset_steps=offset_steps
-        )
 
     # Password and TOTP provided in command line arguments
     with client(
@@ -288,11 +208,6 @@ def test_one_time_only_no_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user0, user1 = NO_PASSWORD_USERS
 
-    def get_otp(user, offset_steps=0):
-        return get_one_time_password(
-            secret=NO_PASSWORD_USERS[user], timepoint=time.time() + offset_steps * 30
-        )
-
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user0, password="000000"
     )
@@ -326,11 +241,6 @@ def test_empty_password_with_otp_cli_option(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user0, user1 = EMPTY_PASSWORD_USERS
 
-    def get_otp(user, offset_steps=0):
-        return get_one_time_password(
-            secret=EMPTY_PASSWORD_USERS[user], timepoint=time.time() + offset_steps * 30
-        )
-
     assert f"{user0}42\n" == node.query(
         query_text, user=user0, password=f"+{get_otp(user0)}"
     )
@@ -356,13 +266,8 @@ def test_code_single_use(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user = "totuser_single_use"
 
-    def get_otp(offset_steps=0):
-        return get_one_time_password(
-            secret=SINGLE_USE_SECRET, timepoint=time.time() + offset_steps * 30
-        )
-
     # A failed attempt (wrong password with a valid code) does not consume the code
-    code = get_otp()
+    code = get_otp(user)
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"wrongpwd+{code}"
     )
@@ -378,11 +283,11 @@ def test_code_single_use(started_cluster):
 
     # A code for an earlier time step than the last accepted one is rejected even if it was never used
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-        query_text, user=user, password=f"pw+{get_otp(offset_steps=-1)}"
+        query_text, user=user, password=f"pw+{get_otp(user, offset_steps=-1)}"
     )
 
     # The code for the next time step is within the server time tolerance: accepted once, then rejected
-    next_code = get_otp(offset_steps=1)
+    next_code = get_otp(user, offset_steps=1)
     assert f"{user}42\n" == node.query(
         query_text, user=user, password=f"pw+{next_code}"
     )
