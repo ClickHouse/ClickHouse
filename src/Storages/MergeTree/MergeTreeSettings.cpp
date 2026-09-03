@@ -5,6 +5,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -43,7 +44,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -691,6 +691,22 @@ namespace ErrorCodes
     Allow creating text indexes with the experimental `positions` argument which
     stores token positions to support exact phrase matching.
     )", BETA) \
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V1_WithCodec, R"(
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
+
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers, so that they keep writing the format that older servers can still read.
+
+Possible values:
+
+- `v0_initial` — The original format. Does not persist the posting list codec type.
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Persists token positions for indexes with `positions`.
+)", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
     Minimum time to wait before trying to select parts to merge again after no
     parts were selected. A lower setting will trigger selecting tasks in
@@ -2326,7 +2342,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2444,35 +2460,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool
     /// may be tuned below the default thresholds, and we do not want to fail table creation in
@@ -2604,22 +2593,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0
@@ -2703,6 +2694,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
@@ -2754,7 +2757,7 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
     std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
@@ -2806,9 +2809,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2934,6 +2937,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

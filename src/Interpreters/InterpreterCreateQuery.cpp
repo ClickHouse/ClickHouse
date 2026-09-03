@@ -11,6 +11,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
@@ -162,6 +163,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_table_num_to_throw;
     extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
+}
+
+namespace FailPoints
+{
+    extern const char create_or_replace_before_rename[];
 }
 
 namespace ErrorCodes
@@ -798,7 +804,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
+                auto projection = ProjectionDescription::getProjectionFromAST(
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
 
@@ -2250,10 +2257,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
+    auto make_drop_context = [&](bool bypass_size_guard) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
+        if (bypass_size_guard)
+        {
+            drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
         return drop_context;
     };
 
@@ -2375,7 +2388,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_before_rename);
+
+        /// The size check runs once inside the rename's `DDLGuard`s via `setPreSwapCheck`.
+        /// If it throws, no rename happens and the catch block below drops the temp.
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
+        interpreter_rename.setPreSwapCheck(
+            [&current_context](const StorageID & to_drop_id)
+            {
+                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                    to_drop->checkTableSizeBelowDropLimit(current_context);
+            });
         interpreter_rename.execute();
         renamed = true;
 
@@ -2386,8 +2409,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
 
-            /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context();
+            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
@@ -2404,10 +2428,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        /// Drop the temp table we just created if it was not renamed to the target name.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             try
             {
                 InterpreterDropQuery(ast_drop, drop_context).execute();

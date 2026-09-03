@@ -46,10 +46,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
 }
 
@@ -376,11 +372,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    /// Shared across every AI function call in the query
+    auto quota_tracker = getContext()->getAIQuotaTracker();
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -403,7 +396,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        if (quota.checkQuotas())
+        if (quota_tracker->checkQuotas())
         {
             result_col->insertDefault();
             ++rows_skipped;
@@ -416,10 +409,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Enforce the API-call quota before every provider request, including retries, so a flaky
-            /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
-            /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
-            if (quota.checkQuotas())
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+            if (!quota_tracker->recordApiCall())
                 break;
 
             try
@@ -433,13 +425,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
 
-                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
-                quota.recordAttempt();
 
                 auto ai_response = provider->call(ai_request, timeouts);
 
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 

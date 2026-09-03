@@ -355,6 +355,7 @@ struct AggregateFunctionSumKahanData
         T partial_compensations[unroll_count]{};
 
         ptr += start;
+        condition_map += start;
         size_t count = end - start;
 
         const auto * end_ptr = ptr + count;

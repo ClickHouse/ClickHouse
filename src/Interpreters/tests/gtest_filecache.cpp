@@ -8,6 +8,8 @@
 
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -44,7 +46,10 @@
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
@@ -2713,6 +2718,257 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
+}
+
+namespace
+{
+
+/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so
+/// `getRemoteReadBuffer` uses it as is, without wrapping) and reports the remote object's metadata.
+class FakeRemoteReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
+    {
+        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
+    }
+};
+
+/// The query scope required for reading through the cache (a query id and a query context bound to
+/// the current thread).
+struct TestQueryScope
+{
+    explicit TestQueryScope(const std::string & query_id = "query_id")
+    {
+        ServerUUID::setRandomForUnitTests();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        chassert(&DB::CurrentThread::get() == &thread_status);
+        query_scope = DB::QueryScope::create(query_context);
+    }
+
+    DB::ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    DB::QueryScope query_scope;
+};
+
+void writeSourceFile(const std::string & path, const std::string & data)
+{
+    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
+    wb.write(data.data(), data.size());
+    wb.next();
+    wb.finalize();
+}
+
+std::string makeSourceData(size_t size)
+{
+    std::string data(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = 'a' + i % 26;
+    return data;
+}
+
+}
+
+/// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
+/// prefetch in flight: the callers must not race on consuming it.
+TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(300);
+    std::string file_path = fs::current_path() / "test_concurrent_read_big_at";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 16;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("concurrent_read_big_at", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+
+    ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
+
+    constexpr size_t num_threads = 4;
+    constexpr size_t num_iterations = 100;
+    /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
+    constexpr size_t buffer_size = 64;
+
+    for (size_t iteration = 0; iteration < num_iterations; ++iteration)
+    {
+        auto cached_buffer = std::make_unique<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
+            read_settings.filesystem_cache_settings, buffer_size, buffer_size,
+            "test", data.size(), false, false, std::nullopt, nullptr);
+
+        AsynchronousBoundedReadBuffer read_buffer(
+            std::move(cached_buffer), remote_fs_reader, buffer_size,
+            /* min_bytes_for_seek */ 0, Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+        read_buffer.prefetch(Priority{0});
+
+        std::atomic<size_t> ready{0};
+        std::array<std::string, num_threads> errors;
+        std::vector<std::thread> threads;
+
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            threads.emplace_back([&, t]
+            {
+                /// Barrier, to maximize the chance that the readBigAt calls overlap.
+                ready.fetch_add(1);
+                while (ready.load() < num_threads)
+                    ;
+
+                try
+                {
+                    /// Threads read different, partially overlapping ranges.
+                    const size_t offset = (t < 2) ? 10 * (t + 1) : 50 * t;
+                    const size_t count = 150;
+                    std::string buf(count, 0);
+                    size_t total = 0;
+                    while (total < count)
+                    {
+                        size_t read = read_buffer.readBigAt(buf.data() + total, count - total, offset + total, nullptr);
+                        if (read == 0)
+                            break;
+                        total += read;
+                    }
+                    if (total != count)
+                        errors[t] = fmt::format("short read: {} instead of {}", total, count);
+                    else if (memcmp(buf.data(), data.data() + offset, count) != 0)
+                        errors[t] = "read data does not match file contents";
+                }
+                catch (...)
+                {
+                    errors[t] = getCurrentExceptionMessage(true);
+                }
+            });
+        }
+
+        for (auto & thread : threads)
+            thread.join();
+
+        for (size_t t = 0; t < num_threads; ++t)
+            ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
+    }
+}
+
+/// Concurrent readBigAt calls on a cached buffer constructed with unknown file size: they race
+/// on the lazy initialization of file_size (tryGetFileSize), which must be synchronized.
+TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
+{
+    TestQueryScope query_scope;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const std::string data = makeSourceData(300);
+    std::string file_path = fs::current_path() / "test_concurrent_read_big_at_unknown_size";
+    writeSourceFile(file_path, data);
+
+    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 16;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("concurrent_read_big_at_unknown_size", settings);
+    cache->initialize();
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
+
+    constexpr size_t num_threads = 4;
+    constexpr size_t num_iterations = 100;
+
+    for (size_t iteration = 0; iteration < num_iterations; ++iteration)
+    {
+        /// Zero size is treated as unknown: the first readBigAt calls resolve it lazily.
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
+            read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
+            "test", /* file_size */ 0, false, false, std::nullopt, nullptr);
+
+        std::atomic<size_t> ready{0};
+        std::array<std::string, num_threads> errors;
+        std::vector<std::thread> threads;
+
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            threads.emplace_back([&, t]
+            {
+                /// Barrier, to maximize the chance that the readBigAt calls overlap.
+                ready.fetch_add(1);
+                while (ready.load() < num_threads)
+                    ;
+
+                try
+                {
+                    const size_t offset = 50 * t;
+                    const size_t count = 150;
+                    std::string buf(count, 0);
+                    size_t total = 0;
+                    while (total < count)
+                    {
+                        size_t read = cached_buffer->readBigAt(buf.data() + total, count - total, offset + total, nullptr);
+                        if (read == 0)
+                            break;
+                        total += read;
+                    }
+                    if (total != count)
+                        errors[t] = fmt::format("short read: {} instead of {}", total, count);
+                    else if (memcmp(buf.data(), data.data() + offset, count) != 0)
+                        errors[t] = "read data does not match file contents";
+                }
+                catch (...)
+                {
+                    errors[t] = getCurrentExceptionMessage(true);
+                }
+            });
+        }
+
+        for (auto & thread : threads)
+            thread.join();
+
+        for (size_t t = 0; t < num_threads; ++t)
+            ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
+    }
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)

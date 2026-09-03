@@ -15,6 +15,7 @@
 #include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
@@ -2735,6 +2736,9 @@ Try using an index if there is a subquery or a table expression on the right sid
     DECLARE(UInt64, use_index_for_in_with_subqueries_max_values, 0, R"(
 The maximum size of the set in the right-hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to the preparation of additional data structures for large queries. Zero means no limit.
 )", 0) \
+    DECLARE(UInt64, statistics_max_set_size_for_exact_selectivity_estimation, 10000, R"(
+The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
+)", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
@@ -4568,7 +4572,7 @@ Possible values:
    - 1 — Optimization enabled.
 )", 0) \
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
-Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
+Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions, window functions or `arrayJoin` in the projection, no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
 
 The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by` (the optimization would be a no-op).
 
@@ -6596,6 +6600,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
+Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
+)", 0) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
@@ -7826,6 +7833,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(Bool, throw_on_hive_partitioning_resolution_failure, false, R"(
+Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
+)", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
@@ -8376,20 +8386,20 @@ Initial delay in milliseconds before the first retry of a failed AI function API
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
+Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
@@ -8535,6 +8545,15 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
 // clang-format on
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
+
+/// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
+/// have two names. Store it under the canonical one, so that a value written under either name is the value
+/// read under either name, instead of the two names holding two values of one setting.
+template <>
+std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
+{
+    return canonicalSettingName(name);
+}
 
 /** Settings of query execution.
   * These settings go to users.xml.
@@ -9029,6 +9048,11 @@ Field Settings::stringToValueUtil(std::string_view name, const String & str)
 bool Settings::hasBuiltin(std::string_view name)
 {
     return SettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return SettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view Settings::resolveName(std::string_view name)

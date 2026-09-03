@@ -37,6 +37,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1188,6 +1189,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
@@ -1491,8 +1496,13 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             if (!storage)
                 continue;
 
+            /// The `_table` and `_database` values of the rows are stamped by the table that
+            /// actually produces the rows. If the child table reads from other tables, its rows
+            /// carry those tables' names, not the child's own name, so pruning the child by its
+            /// name could incorrectly discard the rows the predicate selects. Such children are
+            /// always read, and the predicate is applied to the rows.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
@@ -1638,6 +1648,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
@@ -2053,7 +2066,7 @@ SELECT * FROM WatchLog;
 
 - `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
 
 - `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 

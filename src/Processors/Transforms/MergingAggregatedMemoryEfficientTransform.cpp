@@ -66,6 +66,17 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     output.push(std::move(chunk));
 }
 
+/// An input which has finished cannot send anything else, so it does not hold a bucket back. An input
+/// port reports itself finished only when it has no data left on it, so nothing of the bucket is lost.
+bool GroupingAggregatedTransform::everyLiveInputIsPastBucket(Int32 bucket)
+{
+    for (size_t input = 0; input < num_inputs; ++input)
+        if (last_bucket_number[input] <= bucket && !index_to_input[input]->isFinished())
+            return false;
+
+    return true;
+}
+
 bool GroupingAggregatedTransform::tryPushTwoLevelData()
 {
     auto try_push_by_iter = [&](auto batch_it)
@@ -99,7 +110,14 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
             /// The bucket is no longer delayed by any of the inputs.
             /// Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+            ///
+            /// Every input which can still send something has to be strictly past the bucket, not at it:
+            /// an input whose last chunk is of this bucket can send more chunks of the same bucket, they
+            /// would be merged and pushed a second time, and the keys of the bucket would be returned
+            /// twice. The in order push below relies on the same: it pushes the buckets before
+            /// `current_bucket`, and `current_bucket` only moves on when every input has read a bucket
+            /// after it.
+            if (inputs_delayed_that_bucket == 0 && everyLiveInputIsPastBucket(bucket))
             {
                 if (try_push_by_iter(chunks_map.find(bucket)))
                 {

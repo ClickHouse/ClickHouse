@@ -84,6 +84,7 @@ static struct InitFiu
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
@@ -197,6 +198,7 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    PAUSEABLE_ONCE(rmt_pause_before_commit_local_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -209,6 +211,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     REGULAR(datalake_get_tables_throw) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
@@ -220,7 +223,8 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(tcp_handler_fail_connection_setup) \
-    REGULAR(distributed_plan_status_check_reenqueue_fault)
+    REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    ONCE(zk_send_thread_request_window_throw)
 
 namespace FailPoints
 {

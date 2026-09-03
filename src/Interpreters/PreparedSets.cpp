@@ -99,6 +99,19 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 }
 
 
+SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
+{
+    /// Only `FutureSetFromSubquery` can be unbuilt at this point, and its `buildOrderedSetInplace`
+    /// returns straight away once `get` is non-null, so nothing is executed here. Its other early
+    /// exit - adopting the set of `external_table_set` - is deliberately not reproduced: on a set
+    /// that is not built yet, that branch is precisely what runs the `GLOBAL IN` subquery.
+    if (!get())
+        return nullptr;
+
+    return buildOrderedSetInplace(context);
+}
+
+
 FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
     : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }

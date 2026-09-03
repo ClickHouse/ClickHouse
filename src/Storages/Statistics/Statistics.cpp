@@ -297,6 +297,11 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
+bool ColumnStatistics::hasCardinality() const
+{
+    return stats.contains(StatisticsType::Uniq);
+}
+
 UInt64 ColumnStatistics::estimateCardinality() const
 {
     if (stats.contains(StatisticsType::Uniq))
