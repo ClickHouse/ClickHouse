@@ -262,7 +262,7 @@ out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SU
 after=$(quota_read_rows)
 echo "18 killed=$(printf '%s\n' "$out" | killed "own18$SUFFIX")"
 echo "18 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
-echo "18 charge_in_band=$(( after - before >= 1 && after - before <= 6 ? 1 : 0 ))"
+echo "18 charge_in_band=$(( after - before >= 2 && after - before <= 6 ? 1 : 0 ))"
 reset_arm
 
 # 19: the read behind the statement scans every user's row, so what it read is neither reported to the
