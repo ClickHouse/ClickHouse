@@ -838,7 +838,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Also handles LIMIT [n] AFTER / UNTIL after LIMIT BY.
     if (s_limit.ignore(pos, expected))
     {
-        if (!limit_by_length || limit_length)
+        if (!limit_by_length || limit_length || limit_after || limit_until)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
