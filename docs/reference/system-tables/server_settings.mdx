@@ -61,7 +61,7 @@ WHERE name LIKE '%thread_pool%'
 Using of `WHERE changed` can be useful, for example, when you want to check
 whether settings in configuration files are loaded correctly and are in use.
 
-{/* */}
+
 
 ```sql
 SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_size'

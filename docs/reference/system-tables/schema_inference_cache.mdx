@@ -37,13 +37,13 @@ Let's say we have a file `data.jsonl` with this content:
 {"id" :  4, "age" :  47, "name" :  "Brayan", "hobbies" :  ["movies", "skydiving"]}
 ```
 
-<Tip>
+
 Place `data.jsonl` in the `user_files_path` directory.  You can find this by looking
 in your ClickHouse configuration files. The default is:
 ```sql
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
-</Tip>
+
 
 Open `clickhouse-client` and run the `DESCRIBE` query:
 
@@ -79,4 +79,5 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 ```
 
 ## See Also {#see-also}
+
 - [Automatic schema inference from input data](/concepts/features/interfaces/schema-inference)
