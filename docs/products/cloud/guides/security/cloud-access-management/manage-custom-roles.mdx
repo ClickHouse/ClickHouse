@@ -90,9 +90,19 @@ Custom database roles on a service depend on [JWT authentication](/products/clou
 <Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="JWT authentication card with the SQL Console toggle enabled" size="lg" force/>
 
 <Steps>
-<Step title="Add data permissions to a role" id="add-data-permissions">
+<Step title="Open the role dialog" id="open-role-dialog">
 
-[Create a custom role](#create-custom-role) or edit an existing one. In the role dialog, click the `Allow permissions` button and select `Data`.
+[Create a custom role](#create-custom-role) or edit an existing one.
+</Step>
+<Step title="Add organization and service permissions" id="add-console-permissions">
+
+In the role dialog, click the `Allow permissions` button, select `Organization`, and enable `Access organization`. Click `Allow permissions` again, select `Service`, choose the services the role will grant data permissions to, and enable `View selected services`.
+
+Members of the role need both permissions to sign in to the console and open the service in the SQL console, where the data permissions apply.
+</Step>
+<Step title="Add data permissions to the role" id="add-data-permissions">
+
+Click `Allow permissions` again and select `Data`.
 </Step>
 <Step title="Select the service" id="select-data-permissions-service">
 
