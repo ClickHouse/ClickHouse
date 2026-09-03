@@ -26,9 +26,12 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsBool use_strict_insert_block_limits;
 }
 
 namespace ErrorCodes
@@ -215,7 +218,8 @@ private:
         ///
         /// The thresholds follow the same policy as a regular `INSERT` into the same storage: the
         /// intermediate table is a `Memory` table, which prefers smaller blocks for cache locality,
-        /// so squashing must not coalesce beyond `max_block_size` rows there.
+        /// so squashing must not coalesce beyond `max_block_size` rows there. The upper bounds are
+        /// enforced only with `use_strict_insert_block_limits`, as for `INSERT`.
         const bool prefers_large_blocks = intermediate_temporary_table_storage->prefersLargeBlocks();
         const size_t squashing_min_block_size_rows = prefers_large_blocks
             ? recursive_subquery_settings[Setting::min_insert_block_size_rows]
@@ -229,8 +233,13 @@ private:
         pipeline_builder.resize(1);
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {
-            return std::make_shared<SimpleSquashingChunksTransform>(
-                in_header, squashing_min_block_size_rows, squashing_min_block_size_bytes);
+            return std::make_shared<SquashingTransform>(
+                in_header,
+                squashing_min_block_size_rows,
+                squashing_min_block_size_bytes,
+                recursive_subquery_settings[Setting::max_insert_block_size],
+                recursive_subquery_settings[Setting::max_insert_block_size_bytes],
+                recursive_subquery_settings[Setting::use_strict_insert_block_limits]);
         });
 
         const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);

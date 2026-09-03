@@ -20,6 +20,20 @@ SELECT uniqExact(bs), max(bs) FROM t WHERE bs > 0;
 
 SET max_block_size = DEFAULT;
 
+-- The upper bounds follow the `INSERT` settings too: with strict limits a chunk larger than
+-- `max_insert_block_size` is split before it is written, here 20 rows into blocks of 8, 8 and 4.
+SET max_block_size = 8, max_insert_block_size = 8, use_strict_insert_block_limits = 1;
+
+WITH RECURSIVE t AS
+(
+    SELECT 0 AS step, toUInt64(0) AS bs FROM (SELECT 1) ARRAY JOIN range(20) AS i
+    UNION ALL
+    SELECT step + 1, blockSize() FROM t WHERE step = 0
+)
+SELECT max(bs), uniqExact(bs) FROM t WHERE step = 1;
+
+SET max_block_size = DEFAULT, max_insert_block_size = DEFAULT, use_strict_insert_block_limits = DEFAULT;
+
 -- The third step reads the 400 rows produced by the second one as a single block.
 WITH RECURSIVE t AS
 (
