@@ -908,8 +908,49 @@ void SystemLog<LogElement>::prepareTable()
 
         if (old_create_query != create_query)
         {
-            /// TODO: Handle altering comment, because otherwise all table will be renamed.
+            auto old_create_query_ast = getCreateTableQueryClean(table_id, getContext());
+            auto expected_create_query_ast = getCreateTableQuery();
 
+            auto & expected_create = expected_create_query_ast->as<ASTCreateQuery &>();
+            const String expected_comment
+                = expected_create.comment ? expected_create.comment->as<ASTLiteral &>().value.safeGet<String>() : String{};
+
+            auto format_without_comment = [](ASTPtr query_ast)
+            {
+                auto & create = query_ast->as<ASTCreateQuery &>();
+                create.reset(create.comment);
+                return query_ast->formatWithSecretsOneLine();
+            };
+
+            if (format_without_comment(old_create_query_ast) == format_without_comment(expected_create_query_ast))
+            {
+                LOG_DEBUG(log, "Updating the comment of existing system log table {}", description);
+
+                auto alter_context = Context::createCopy(context);
+                alter_context->makeQueryContext();
+                addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                auto alter_command = make_intrusive<ASTAlterCommand>();
+                alter_command->type = ASTAlterCommand::MODIFY_COMMENT;
+                alter_command->set(alter_command->comment, make_intrusive<ASTLiteral>(expected_comment));
+
+                auto alter_commands = make_intrusive<ASTExpressionList>();
+                alter_commands->children.push_back(alter_command);
+
+                auto alter_query = make_intrusive<ASTAlterQuery>();
+                alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                alter_query->setDatabase(table_id.database_name);
+                alter_query->setTable(table_id.table_name);
+                alter_query->command_list = alter_commands.get();
+                alter_query->children.push_back(alter_commands);
+
+                InterpreterAlterQuery(alter_query, alter_context).execute();
+                old_create_query = create_query;
+            }
+        }
+
+        if (old_create_query != create_query)
+        {
             /// Rename the existing table.
             int suffix = 0;
             while (DatabaseCatalog::instance().isTableExist(
