@@ -1,0 +1,864 @@
+#include <Common/Arena.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <Core/Block.h>
+#include <Core/Names.h>
+#include <Core/Settings.h>
+#include <Core/Types.h>
+
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+
+#include <Dictionaries/DictionarySource.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+#include <Functions/IFunction.h>
+
+#include <Interpreters/Cache/ReverseLookupCache.h>
+#include <Interpreters/Context.h>
+
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISink.h>
+#include <Processors/Port.h>
+#include <Processors/Sinks/NullSink.h>
+
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+
+namespace DB
+{
+
+namespace Setting
+{
+extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsBool use_concurrency_control;
+}
+
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
+{
+    SipHash h;
+    column.updateHashWithValue(row_id, h);
+    return h.get128();
+}
+
+/// True for `Float32`/`Float64` attributes (optionally wrapped in `Nullable`). Only floating-point
+/// types need special hashing: IEEE signed zero makes the raw byte hash inconsistent with SQL
+/// `equals`, because `-0.0` and `+0.0` are equal but have different bit patterns.
+bool attributeHashNeedsFloatZeroNormalization(const DataTypePtr & type)
+{
+    const DataTypePtr & nested = type->isNullable() ? assert_cast<const DataTypeNullable &>(*type).getNestedType() : type;
+    WhichDataType which(nested);
+    return which.isFloat32() || which.isFloat64();
+}
+
+/// Hashes one row of a floating-point (possibly `Nullable`) column, normalizing `-0.0` to `+0.0` so
+/// that values which SQL `equals` considers equal always hash the same.
+void updateHashNormalizingFloatZero(SipHash & h, const IColumn & column, size_t row_id)
+{
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&column))
+    {
+        const UInt8 is_null = nullable->isNullAt(row_id);
+        h.update(is_null);
+        if (!is_null)
+            updateHashNormalizingFloatZero(h, nullable->getNestedColumn(), row_id);
+        return;
+    }
+
+    if (const auto * col_f32 = checkAndGetColumn<ColumnFloat32>(&column))
+    {
+        Float32 value = col_f32->getElement(row_id);
+        if (value == 0.0f)
+            value = 0.0f; /// Normalize -0.0f to +0.0f (the literal 0.0f has the positive-zero bit pattern).
+        h.update(value);
+        return;
+    }
+
+    if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&column))
+    {
+        Float64 value = col_f64->getElement(row_id);
+        if (value == 0.0)
+            value = 0.0; /// Normalize -0.0 to +0.0.
+        h.update(value);
+        return;
+    }
+
+    /// Not a floating-point column; use the default hashing.
+    column.updateHashWithValue(row_id, h);
+}
+
+/// `sipHash128AtRow`, but for floating-point attributes it normalizes signed zero so that the hash
+/// agrees with SQL `equals`. The vector path uses this hash only as a prefilter / cache key and then
+/// confirms every candidate with `equals`, so the hash must never separate two values that `equals`
+/// treats as equal. Otherwise the prefilter would silently drop a real match (e.g. a dictionary row
+/// storing `0.0` against a query value of `-0.0`) and the vector path would disagree with the
+/// constant path, which compares with `equals` directly.
+inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_t row_id, bool normalize_float_zero)
+{
+    if (!normalize_float_zero)
+        return sipHash128AtRow(column, row_id);
+
+    SipHash h;
+    updateHashNormalizingFloatZero(h, column, row_id);
+    return h.get128();
+}
+
+/// A consumed chunk that had at least one match: its sequential dictionary block number
+/// (used to restore the scan order at merge time) and the `num_keys` filtered key columns.
+struct DictGetKeysMatchedChunk
+{
+    size_t block_number = 0;
+    Columns keys;
+};
+
+/// Consumes one `dict->read()` output stream, filters rows by the constant attribute value and
+/// accumulates matching key columns for the constant-path implementation.
+class DictGetKeysMatchingRowsSink final : public ISink
+{
+public:
+    DictGetKeysMatchingRowsSink(
+        SharedHeader header, FunctionBasePtr equals_function_, ColumnPtr value_column_, DataTypePtr attr_type_, size_t num_keys_)
+        : ISink(std::move(header))
+        , equals_function(std::move(equals_function_))
+        , value_column(std::move(value_column_))
+        , attr_type(std::move(attr_type_))
+        , num_keys(num_keys_)
+    {
+    }
+
+    String getName() const override { return "DictGetKeysMatchingRowsSink"; }
+
+    /// One entry per consumed chunk that had matches; each entry holds `num_keys` filtered key columns.
+    const std::vector<DictGetKeysMatchedChunk> & getMatchedChunks() const { return matched_chunks; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t getMatchedRows() const { return matched_rows; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        if (chunk.getNumRows() == 0)
+            return;
+
+        chassert(chunk.getColumns().size() == num_keys + 1);
+
+        /// The multi-stream coordinator path (`DictionarySource`) tags every chunk with its sequential
+        /// block number, so the merge in `executeConstPath` can restore the original dictionary scan
+        /// order regardless of how blocks were distributed across reading streams (otherwise the
+        /// user-visible array order would be scheduler-dependent and could differ from the vector path).
+        /// Single-stream layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order
+        /// to the single sink and do not attach a block number, so it is optional here; the merge keeps
+        /// the insertion order in that case.
+        size_t block_number = 0;
+        if (auto block_info = chunk.getChunkInfos().get<DictionaryBlockNumber>())
+            block_number = block_info->number;
+
+        /// Chunk layout: key columns followed by the attribute column
+        auto chunk_columns = chunk.detachColumns();
+
+        ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
+        chassert(attr_col != nullptr);
+
+        const size_t rows_in_chunk = attr_col->size();
+
+        ColumnsWithTypeAndName equals_args
+            = {{attr_col, attr_type, "attr"}, {ColumnConst::create(value_column, rows_in_chunk), attr_type, "value"}};
+        ColumnPtr filter_column
+            = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)->convertToFullColumnIfConst();
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
+        {
+            auto materialized = ColumnUInt8::create(rows_in_chunk);
+            auto & out = materialized->getData();
+            const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+            const auto & nullmap = nullable->getNullMapData();
+            for (size_t i = 0; i < rows_in_chunk; ++i)
+                out[i] = data[i] & ~nullmap[i];
+            filter_column = std::move(materialized);
+        }
+
+        const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+        const size_t matched_in_chunk = countBytesInFilter(filter);
+        if (matched_in_chunk == 0)
+            return;
+
+        Columns filtered_keys(num_keys);
+        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+        {
+            ColumnPtr key_col = removeSpecialRepresentations(chunk_columns[key_pos]);
+            chassert(key_col != nullptr);
+            filtered_keys[key_pos] = key_col->filter(filter, matched_in_chunk);
+        }
+
+        matched_chunks.push_back({block_number, std::move(filtered_keys)});
+        matched_rows += matched_in_chunk;
+    }
+
+private:
+    FunctionBasePtr equals_function;
+    ColumnPtr value_column;
+    DataTypePtr attr_type;
+    size_t num_keys = 0;
+    std::vector<DictGetKeysMatchedChunk> matched_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t matched_rows = 0;
+};
+}
+
+class FunctionDictGetKeys final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetKeys";
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDictGetKeys>(context); }
+
+    explicit FunctionDictGetKeys(ContextPtr context_)
+        : helper(context_)
+    {
+    }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 3; }
+
+    bool isVariadic() const override { return false; }
+
+    bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForConstants() const final { return false; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        if (!dict_name_const_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected String.",
+                arguments[0].type->getName(),
+                getName());
+
+        const String dictionary_name = dict_name_const_col->getValue<String>();
+
+        const auto * attr_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!attr_name_const_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected String.",
+                arguments[1].type->getName(),
+                getName());
+
+        const String attribute_column_name = attr_name_const_col->getValue<String>();
+
+        auto dict_struct = helper.getDictionaryStructure(dictionary_name);
+        if (!dict_struct.hasAttribute(attribute_column_name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dictionary has no attribute '{}'", attribute_column_name);
+
+        const auto key_types = dict_struct.getKeyTypes();
+        if (key_types.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary has no keys");
+
+        if (key_types.size() == 1)
+            return std::make_shared<DataTypeArray>(key_types[0]);
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_types));
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        static_assert(sizeof(SerializedKeys::value_type) == 1, "SerializedKeys must store raw bytes");
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        const auto * attr_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+
+        chassert(dict_name_const_col);
+        chassert(attr_name_const_col);
+
+        const String dict_name = dict_name_const_col->getValue<String>();
+        const String attr_name = attr_name_const_col->getValue<String>();
+
+        if (isColumnConst(*arguments[2].column))
+        {
+            return executeConstPath(dict_name, attr_name, arguments[2], input_rows_count);
+        }
+
+        return executeVectorPath(dict_name, attr_name, arguments[2], input_rows_count);
+    }
+
+private:
+    mutable FunctionDictHelper helper;
+
+    using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
+
+    /// For constant path, it's simple algorithm:
+    ///  Step 1. Scan the dictionary and store the matching rows keys directly into the result column.
+    ///  Step 2. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
+    ColumnPtr executeConstPath(
+        const String & dict_name,
+        const String & attr_name,
+        const ColumnWithTypeAndName & argument_values_column,
+        size_t input_rows_count) const
+    {
+        auto dict = helper.getDictionary(dict_name);
+        chassert(dict != nullptr);
+
+        const auto & structure = dict->getStructure();
+        const auto & attribute_column_type = structure.getAttribute(attr_name).type;
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
+
+        if (const auto * values_const_col = checkAndGetColumn<ColumnConst>(values_column.get()))
+            values_column = values_const_col->getDataColumnPtr();
+
+        chassert(values_column != nullptr);
+        chassert(!values_column->empty());
+        chassert(values_column->size() == 1);
+
+        /// Step 1
+        const auto key_types = structure.getKeyTypes();
+        chassert(!key_types.empty());
+        const size_t num_keys = key_types.size();
+
+        Names column_names = structure.getKeysNames();
+        column_names.push_back(attr_name);
+
+        const auto & settings = helper.context->getSettingsRef();
+
+        const size_t max_threads = settings[Setting::max_threads];
+
+        /// Build the `equals` function once per query (shared across all sinks); each sink uses
+        /// it to compare the attribute column against the constant value.
+        auto equals_resolver = FunctionFactory::instance().get("equals", helper.context);
+        ColumnsWithTypeAndName equals_signature = {{nullptr, attribute_column_type, "attr"}, {nullptr, attribute_column_type, "value"}};
+        auto equals_function = equals_resolver->build(equals_signature);
+
+        /// Read the dictionary as a pipeline and attach sinks to collect matching keys per stream
+        auto pipe = dict->read(column_names, settings[Setting::max_block_size], max_threads);
+
+        const size_t num_threads = std::max<size_t>(1, std::min(max_threads, pipe.maxParallelStreams()));
+        const size_t num_streams = pipe.numOutputPorts();
+        auto processors = pipe.getProcessorsPtr();
+
+        VectorWithMemoryTracking<std::shared_ptr<DictGetKeysMatchingRowsSink>> sinks;
+        sinks.reserve(num_streams);
+
+        /// Attach one sink to each reading output stream
+        for (size_t stream = 0; stream < num_streams; ++stream)
+        {
+            auto sink = std::make_shared<DictGetKeysMatchingRowsSink>(
+                pipe.getOutputPort(stream)->getSharedHeader(), equals_function, values_column, attribute_column_type, num_keys);
+            connect(*pipe.getOutputPort(stream), sink->getPort());
+            processors->emplace_back(sink);
+            sinks.emplace_back(std::move(sink));
+        }
+
+        auto process_list_element = helper.context->getProcessListElement();
+        PipelineExecutor executor(processors, process_list_element);
+
+        auto read_progress_callback = std::make_unique<ReadProgressCallback>();
+        read_progress_callback->setProgressCallback(helper.context->getProgressCallback());
+        read_progress_callback->setQuota(helper.context->getQuota());
+        /// Carry the query hash so this dictionary scan's `read_rows`/`read_bytes` are accounted to the
+        /// query's own bucket under a `KEYED BY normalized_query_hash` quota, not the shared hash-0 one.
+        read_progress_callback->setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
+        read_progress_callback->setProcessListElement(process_list_element);
+        executor.setReadProgressCallback(std::move(read_progress_callback));
+
+        executor.execute(num_threads, settings[Setting::use_concurrency_control]);
+
+        size_t matched_rows = 0;
+        for (const auto & sink : sinks)
+            matched_rows += sink->getMatchedRows();
+
+        MutableColumns result_cols;
+        result_cols.reserve(num_keys);
+        for (const auto & key_type : key_types)
+        {
+            auto col = key_type->createColumn();
+            col->reserve(matched_rows);
+            result_cols.emplace_back(std::move(col));
+        }
+
+        /// Gather all matched chunks from the per-stream sinks.
+        VectorWithMemoryTracking<const DictGetKeysMatchedChunk *> ordered_chunks;
+        for (const auto & sink : sinks)
+            for (const auto & matched_chunk : sink->getMatchedChunks())
+                ordered_chunks.push_back(&matched_chunk);
+
+        /// Multi-stream reads come only from `DictionarySourceCoordinator`, which pulls blocks from a
+        /// shared counter (so each sink ends up with an arbitrary, scheduler-dependent subset) but tags
+        /// every chunk with its sequential block number. Sorting by it reproduces the single-stream scan
+        /// order, keeping the result deterministic and consistent with the vector path. Single-stream
+        /// layouts (`DIRECT`, `POLYGON`, `REGEXP_TREE`, ...) deliver their chunks in order to the single
+        /// sink and do not attach a block number, so we keep that sink's insertion order for them.
+        if (num_streams > 1)
+            std::sort(
+                ordered_chunks.begin(),
+                ordered_chunks.end(),
+                [](const DictGetKeysMatchedChunk * lhs, const DictGetKeysMatchedChunk * rhs)
+                { return lhs->block_number < rhs->block_number; });
+
+        for (const auto * matched_chunk : ordered_chunks)
+        {
+            const auto & chunk_keys = matched_chunk->keys;
+            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                result_cols[key_pos]->insertRangeFrom(*chunk_keys[key_pos], 0, chunk_keys[key_pos]->size());
+        }
+
+        auto offsets_col = ColumnArray::ColumnOffsets::create();
+        auto & offsets = offsets_col->getData();
+        offsets.resize(1);
+        offsets[0] = matched_rows;
+
+        /// Step 2
+        if (num_keys == 1)
+        {
+            auto array_column = ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
+            return ColumnConst::create(std::move(array_column), input_rows_count);
+        }
+
+        auto array_column = ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
+        return ColumnConst::create(std::move(array_column), input_rows_count);
+    }
+
+    /// Here's the algorithm:
+    ///   Step 1. Assign each unique element of the `values_column` to a unique `bucket`. If two elements belong to the same bucket,
+    ///           it implies they are the same (to be precise, their hash are the same).
+    ///   Step 2. Check which bucket results can already be found in the shared Cache and store their result locally in `bucket_cached_bytes`. Create an array
+    ///           bucket_ids which are not available in the Cache.
+    ///   Step 3. Scan the dictionary to get the result for the missing buckets, update the Cache and also update the local `bucket_cached_bytes`.
+    ///   Step 4. Unpack the `bucket_cached_bytes` to IColumn format column `results_cols`. Storing IColumn format per key in the Cache is
+    ///           is very expensive; so, we only store the raw bytes in the form of `SerializedKeysPtr`.
+    ///   Step 5. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
+    ColumnPtr executeVectorPath(
+        const String & dict_name,
+        const String & attr_name,
+        const ColumnWithTypeAndName & argument_values_column,
+        size_t input_rows_count) const
+    {
+        auto dict = helper.getDictionary(dict_name);
+        chassert(dict != nullptr);
+
+        const auto & structure = dict->getStructure();
+        const auto & attribute_column_type = structure.getAttribute(attr_name).type;
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+
+        chassert(values_column != nullptr);
+        chassert(values_column->size() == input_rows_count);
+
+        /// Floating-point attributes need signed zero normalized in the bucket / cache hash so that the
+        /// hash prefilter agrees with the `equals` confirmation (`-0.0` and `+0.0` are SQL-equal). The
+        /// same flag is applied to the dictionary side in `fillMissingBucketsFromDict`.
+        const bool normalize_float_zero = attributeHashNeedsFloatZeroNormalization(attribute_column_type);
+
+        /// Step 1
+        HashToBucket value_hash_to_bucket_id;
+        value_hash_to_bucket_id.reserve(input_rows_count);
+
+        SipHash sip;
+        sip.update(dict_name.data(), dict_name.size());
+        sip.update(attr_name.data(), attr_name.size());
+        const UInt128 domain_id = sip.get128();
+
+        VectorWithMemoryTracking<size_t> row_id_to_bucket_id(input_rows_count);
+
+        size_t num_buckets = 0;
+        VectorWithMemoryTracking<UInt128> bucket_value_hashes;
+        bucket_value_hashes.reserve(input_rows_count);
+
+        /// One representative value per bucket. The hash is only a prefilter and cache key; before appending
+        /// keys for a dictionary row we confirm the attribute value with `equals` against this representative
+        /// (see `fillMissingBucketsFromDict`). This keeps the vector path consistent with the constant path,
+        /// in particular for `NULL` and `NaN`, where `equals` is false even though the hashes are equal.
+        auto bucket_values = attribute_column_type->createColumn();
+        bucket_values->reserve(input_rows_count);
+
+        for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
+        {
+            const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*values_column, cur_row_id, normalize_float_zero);
+
+            auto * it = value_hash_to_bucket_id.find(value_hash);
+            if (it)
+            {
+                row_id_to_bucket_id[cur_row_id] = it->getMapped();
+            }
+            else
+            {
+                const size_t new_bucket_id = num_buckets++;
+                value_hash_to_bucket_id[value_hash] = new_bucket_id;
+                row_id_to_bucket_id[cur_row_id] = new_bucket_id;
+                bucket_value_hashes.push_back(value_hash);
+                bucket_values->insertFrom(*values_column, cur_row_id);
+            }
+        }
+
+        /// Step 2
+        auto & cache = helper.context->getQueryContext()->getReverseLookupCache();
+        VectorWithMemoryTracking<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
+        VectorWithMemoryTracking<size_t> missing_bucket_ids;
+        missing_bucket_ids.reserve(num_buckets);
+
+        chassert(bucket_value_hashes.size() == num_buckets);
+
+        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
+        {
+            chassert(bucket_id < bucket_value_hashes.size());
+            CacheKey key{domain_id, bucket_value_hashes[bucket_id]};
+            if (auto hit = cache.get(key))
+                bucket_cached_bytes[bucket_id] = hit;
+            else
+                missing_bucket_ids.push_back(bucket_id);
+        }
+
+        /// Step 3
+        const auto key_types = structure.getKeyTypes();
+        chassert(!key_types.empty());
+
+        if (!missing_bucket_ids.empty())
+        {
+            /// Build the `equals` function once (shared across all chunks); it confirms that a dictionary row
+            /// whose attribute hashes into a missing bucket actually equals that bucket's representative value.
+            auto equals_resolver = FunctionFactory::instance().get("equals", helper.context);
+            ColumnsWithTypeAndName equals_signature
+                = {{nullptr, attribute_column_type, "attr"}, {nullptr, attribute_column_type, "value"}};
+            auto equals_function = equals_resolver->build(equals_signature);
+
+            fillMissingBucketsFromDict(
+                dict,
+                attr_name,
+                key_types,
+                bucket_cached_bytes,
+                missing_bucket_ids,
+                value_hash_to_bucket_id,
+                *bucket_values,
+                equals_function,
+                attribute_column_type,
+                normalize_float_zero);
+
+            for (size_t bucket_id : missing_bucket_ids)
+            {
+                if (!bucket_cached_bytes[bucket_id])
+                    bucket_cached_bytes[bucket_id] = std::make_shared<SerializedKeys>();
+                CacheKey key{domain_id, bucket_value_hashes[bucket_id]};
+                if (!cache.contains(key))
+                {
+                    cache.set(key, bucket_cached_bytes[bucket_id]);
+                }
+            }
+        }
+
+        /// Step 4
+        const size_t num_keys = key_types.size();
+        MutableColumns result_cols;
+        result_cols.reserve(num_keys);
+        for (const auto & key_type : key_types)
+        {
+            auto col = key_type->createColumn();
+            col->reserve(input_rows_count);
+            result_cols.emplace_back(std::move(col));
+        }
+
+        auto offsets_col = ColumnArray::ColumnOffsets::create();
+        auto & offsets = offsets_col->getData();
+        offsets.resize(input_rows_count);
+
+        /// For each bucket, it's very expensive to repeatedly deserialize from cached_bytes and construct IColumn elements.
+        /// So, for each bucket, we only deserialize once and store the position of the deserialized slice in `result_cols`.
+        /// Then, for the next time this bucket is seen, we can directly copy from `result_cols` which is very efficient.
+        VectorWithMemoryTracking<size_t> bucket_start_offset(num_buckets, std::numeric_limits<size_t>::max());
+        VectorWithMemoryTracking<size_t> bucket_row_count(num_buckets, 0);
+
+        size_t out_offset = 0;
+        for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
+        {
+            const size_t bucket_id = row_id_to_bucket_id[row_id];
+            chassert(bucket_id < num_buckets);
+
+            /// No matching rows in the dictionary for this bucket
+            if (!bucket_cached_bytes[bucket_id])
+            {
+                offsets[row_id] = out_offset;
+                continue;
+            }
+
+            size_t start = bucket_start_offset[bucket_id];
+            size_t len = bucket_row_count[bucket_id];
+
+            /// This means we have already decoded this bucket before. We can directly copy from result_cols (faster
+            /// than deserializing again).
+            if (start != std::numeric_limits<size_t>::max())
+            {
+                if (len)
+                {
+                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                        result_cols[key_pos]->insertRangeFrom(*result_cols[key_pos], start, len);
+                    out_offset += len;
+                }
+                offsets[row_id] = out_offset;
+                continue;
+            }
+
+            /// Need to decode from cached bytes. This is slow but happens only once per bucket.
+            const auto & cached_bytes_ptr = bucket_cached_bytes[bucket_id];
+            chassert(cached_bytes_ptr != nullptr);
+
+            const auto & cached_bytes = *cached_bytes_ptr;
+            if (cached_bytes.empty())
+            {
+                bucket_start_offset[bucket_id] = out_offset;
+                bucket_row_count[bucket_id] = 0;
+                offsets[row_id] = out_offset;
+                continue;
+            }
+
+            const size_t before = out_offset;
+            DB::ReadBufferFromMemory in(reinterpret_cast<const char *>(cached_bytes.data()), cached_bytes.size());
+            while (!in.eof())
+            {
+                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                    result_cols[key_pos]->deserializeAndInsertFromArena(in, /*settings=*/nullptr);
+
+                ++out_offset;
+            }
+
+            chassert(in.count() == cached_bytes.size());
+
+            bucket_start_offset[bucket_id] = before;
+            bucket_row_count[bucket_id] = out_offset - before;
+            offsets[row_id] = out_offset;
+        }
+
+        /// Step 5
+        if (num_keys == 1)
+        {
+            return ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
+        }
+
+        return ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
+    }
+
+    /// This is similar to `executeConstPath`. If the dictionary row matches and is needed, then store its value.
+    template <class DictionaryPtr>
+    void fillMissingBucketsFromDict(
+        const DictionaryPtr & dict,
+        const String & attr_name,
+        const DataTypes & key_types,
+        VectorWithMemoryTracking<SerializedKeysPtr> & out,
+        const VectorWithMemoryTracking<size_t> & missing_bucket_ids,
+        const HashToBucket & value_hash_to_bucket_id,
+        const IColumn & bucket_values,
+        const FunctionBasePtr & equals_function,
+        const DataTypePtr & attr_type,
+        bool normalize_float_zero) const
+    {
+        VectorWithMemoryTracking<UInt8> is_missing(out.size(), 0);
+        for (size_t id : missing_bucket_ids)
+        {
+            chassert(id < out.size());
+            is_missing[id] = 1;
+        }
+
+        const size_t num_keys = key_types.size();
+
+        Names column_names = dict->getStructure().getKeysNames();
+        chassert(column_names.size() == num_keys);
+        column_names.push_back(attr_name);
+
+        auto pipe = dict->read(column_names, helper.context->getSettingsRef()[Setting::max_block_size], 1);
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+
+        auto progress_cb = helper.context->getProgressCallback();
+        if (progress_cb)
+            pipeline.setProgressCallback(progress_cb);
+
+        /// The arena will not own anything, just used for temporary allocations during serialization
+        /// of keys. Then rollback after use to free memory for next use.
+        Arena arena;
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            Columns columns = chunk.detachColumns();
+            chassert(columns.size() >= num_keys + 1);
+
+            ColumnPtr attr_col = removeSpecialRepresentations(columns[num_keys]);
+            const size_t rows_in_chunk = attr_col->size();
+
+            VectorWithMemoryTracking<ColumnPtr> key_columns(num_keys);
+            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+            {
+                key_columns[key_pos] = removeSpecialRepresentations(columns[key_pos]);
+                chassert(key_columns[key_pos]->size() == rows_in_chunk);
+            }
+
+            /// The hash only selects a candidate bucket per dictionary row. Before appending keys we confirm
+            /// the match with `equals` against the bucket's representative value, exactly like the constant
+            /// path. This is required for correct `NULL`/`NaN` semantics (and guards against hash collisions):
+            /// `equals(NULL, NULL)` and `equals(NaN, NaN)` are not true, so such rows must not match.
+            auto rhs_column = attr_type->createColumn();
+            rhs_column->reserve(rows_in_chunk);
+            VectorWithMemoryTracking<ssize_t> row_candidate_bucket(rows_in_chunk, -1);
+
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+            {
+                const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*attr_col, row_id, normalize_float_zero);
+
+                /// Not in user given `values_column`
+                const auto * it = value_hash_to_bucket_id.find(value_hash);
+                if (it == value_hash_to_bucket_id.end())
+                {
+                    rhs_column->insertDefault();
+                    continue;
+                }
+
+                const size_t bucket_id = it->getMapped();
+                chassert(bucket_id < out.size());
+
+                /// In user given `values_column` but not needed
+                if (!is_missing[bucket_id])
+                {
+                    rhs_column->insertDefault();
+                    continue;
+                }
+
+                row_candidate_bucket[row_id] = static_cast<ssize_t>(bucket_id);
+                rhs_column->insertFrom(bucket_values, bucket_id);
+            }
+
+            ColumnsWithTypeAndName equals_args
+                = {{attr_col, attr_type, "attr"}, {std::move(rhs_column), attr_type, "value"}};
+            ColumnPtr filter_column
+                = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)
+                      ->convertToFullColumnIfConst();
+
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
+            {
+                auto materialized = ColumnUInt8::create(rows_in_chunk);
+                auto & filter_data = materialized->getData();
+                const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                const auto & nullmap = nullable->getNullMapData();
+                for (size_t i = 0; i < rows_in_chunk; ++i)
+                    filter_data[i] = data[i] & ~nullmap[i];
+                filter_column = std::move(materialized);
+            }
+
+            const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+            {
+                if (row_candidate_bucket[row_id] < 0 || !filter[row_id])
+                    continue;
+
+                const size_t bucket_id = static_cast<size_t>(row_candidate_bucket[row_id]);
+
+                auto & mapped = out[bucket_id];
+                if (!mapped)
+                    mapped = std::make_shared<SerializedKeys>();
+
+                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                {
+                    const auto & key_col = key_columns[key_pos];
+                    const char * begin = nullptr;
+                    std::string_view ref = key_col->serializeValueIntoArena(row_id, arena, begin, nullptr);
+
+                    chassert(begin != nullptr);
+                    chassert(ref.data() >= begin);
+
+                    const size_t old_size = mapped->size();
+                    const size_t need = old_size + ref.size();
+
+                    /// PODArray has geometric growth with reserve. This is important.
+                    /// Otherwise, each repeated incremental `resize()` will cause
+                    /// repeated reallocations and copy which is very inefficient.
+                    mapped->reserve(need);
+                    mapped->resize_assume_reserved(need);
+
+                    std::memcpy(mapped->data() + old_size, ref.data(), ref.size());
+
+                    const size_t alloc = static_cast<size_t>((ref.data() - begin) + ref.size());
+
+                    /// This is important to rollback otherwise we will have double memory consumption.
+                    /// Additionally, just used memory is now hot in CPU cache which speeds up next serialization.
+                    [[maybe_unused]] void * rollback_ptr = arena.rollback(alloc);
+                    chassert(rollback_ptr == static_cast<const void *>(begin));
+                }
+            }
+        }
+    }
+};
+
+
+REGISTER_FUNCTION(DictGetKeys)
+{
+    FunctionDocumentation::Description description = R"(
+Returns the dictionary key(s) whose attribute equals the specified value. This is the inverse of the function `dictGet` on a single attribute.
+
+Use setting `max_reverse_dictionary_lookup_cache_size_bytes` to cap the size of the per-query reverse-lookup cache used by `dictGetKeys`.
+The cache stores serialized key tuples for each attribute value to avoid re-scanning the dictionary within the same query.
+The cache is not persistent across queries. When the limit is reached, entries are evicted with LRU.
+This is most effective with large dictionaries when the input has low cardinality and the working set fits in the cache. Set to `0` to disable caching.
+    )";
+    FunctionDocumentation::Syntax syntax = "dictGetKeys('dict_name', 'attr_name', value_expr)";
+    FunctionDocumentation::Arguments arguments
+        = {{"dict_name", "Name of the dictionary.", {"String"}},
+           {"attr_name", "Attribute to match.", {"String"}},
+           {"value_expr", "Value to match against the attribute.", {"Expression"}}};
+    FunctionDocumentation::ReturnedValue returned_value
+        = {"For single key dictionaries: an array of keys whose attribute equals `value_expr`. For multi key dictionaries: an array of "
+           "tuples of keys whose attribute equals `value_expr`. If there is no attribute corresponding to `value_expr` in the dictionary, "
+           "then an empty array is returned. ClickHouse throws an exception if it cannot parse the value of the attribute or the value "
+           "cannot be converted to the attribute data type.",
+           {}};
+    FunctionDocumentation::Examples examples
+        = {{"Sample usage",
+            R"(
+CREATE TABLE task_priority_source (task_id UInt64, priority_level String) ENGINE = Memory;
+INSERT INTO task_priority_source VALUES (1, 'low'), (2, 'high'), (3, 'medium'), (4, 'high');
+CREATE DICTIONARY task_id_to_priority_dictionary (task_id UInt64, priority_level String) PRIMARY KEY task_id SOURCE(CLICKHOUSE(TABLE 'task_priority_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+SELECT arraySort(dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high')) AS ids;
+    )",
+            R"(
+┌─ids───┐
+│ [2,4] │
+└───────┘
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
+    FunctionDocumentation docs{description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDictGetKeys>(docs);
+}
+}

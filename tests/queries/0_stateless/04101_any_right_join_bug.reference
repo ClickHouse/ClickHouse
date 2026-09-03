@@ -1,0 +1,6 @@
+with_swap
+L1	R1
+L1	R2
+without_swap
+L1	R1
+L1	R2

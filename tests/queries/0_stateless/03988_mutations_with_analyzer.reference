@@ -1,0 +1,14 @@
+1	a	10
+3	c	30
+5	e	50
+1	a	10
+3	updated	60
+5	updated	100
+3	updated	60
+1	default_val
+2	default_val
+3	default_val
+1	x
+3	z
+1	x
+3	modified

@@ -1,0 +1,17 @@
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <dynamic_clusters1>
+            <discovery>
+                <observer />
+                <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            </discovery>
+        </dynamic_clusters1>
+        <dynamic_clusters2>
+            <discovery>
+                <observer />
+                <multicluster_root_path>/clickhouse/discovery2</multicluster_root_path>
+            </discovery>
+        </dynamic_clusters2>
+    </remote_servers>
+</clickhouse>

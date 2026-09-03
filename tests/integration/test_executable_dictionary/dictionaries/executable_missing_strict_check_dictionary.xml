@@ -1,0 +1,29 @@
+<dictionaries>
+  <dictionary>
+    <name>executable_input_missing_executable</name>
+    <source>
+      <executable>
+        <!-- OOPS! executable not found -->
+        <command>executable_not_found</command>
+        <format>CSV</format>
+      </executable>
+    </source>
+    <lifetime>
+      <min>86400</min>
+      <max>90000</max>
+    </lifetime>
+    <layout>
+      <flat />
+    </layout>
+    <structure>
+        <id>
+            <name>input</name>
+        </id>
+        <attribute>
+            <name>result</name>
+            <type>String</type>
+            <null_value></null_value>
+        </attribute>
+    </structure>
+  </dictionary>
+</dictionaries>

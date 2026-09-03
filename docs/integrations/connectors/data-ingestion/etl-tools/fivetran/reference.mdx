@@ -1,0 +1,331 @@
+---
+sidebarTitle: 'Technical reference'
+slug: /integrations/fivetran/reference
+description: 'Type mappings, table engine details, metadata columns, and debugging queries for the Fivetran ClickHouse destination.'
+title: 'Technical reference'
+doc_type: 'guide'
+keywords: ['fivetran', 'clickhouse destination', 'technical reference']
+---
+
+## Setup details {#setup-details}
+
+### User and role management {#user-and-role-management}
+
+Consider not using the `default` user; instead, create a dedicated one to use it with this Fivetran
+destination only. The following commands, executed with the `default` user, will create a new `fivetran_user` with the
+required privileges.
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- use a secure password generator
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+Additionally, you can revoke access to certain databases from the `fivetran_user`.
+For example, by executing the following statement, we restrict access to the `default` database:
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+You can execute these statements in the ClickHouse SQL console.
+
+### Advanced configuration {#advanced-configuration}
+
+The ClickHouse Cloud destination supports an optional JSON configuration file for advanced use cases. This file allows you to fine-tune destination behavior by overriding the default settings that control batch sizes, parallelism, connection pools, and request timeouts.
+
+<Note>
+This configuration is entirely optional. If no file is uploaded, the destination uses sensible defaults that work well for most use cases. 
+</Note>
+
+The file must be valid JSON and conform to the schema described below.
+
+If you need to modify the configuration after the initial setup, you can edit the destination configurations in the Fivetran dashboard and upload an updated file.
+
+The configuration file has a top-level section:
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+Inside of it you can specify the following configurations that control the internal behavior of the ClickHouse destination connector itself.
+These configurations affect how the connector processes data before sending it to ClickHouse.
+
+| Setting | Type | Default | Allowed Range | Description |
+|---------|------|---------|---------------|-------------|
+| `write_batch_size` | integer | `100000` | 5,000 – 100,000 | Number of rows per batch for insert, update, and replace operations. |
+| `select_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for SELECT queries used during updates. |
+| `mutation_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for ALTER TABLE UPDATE mutations in history mode. Lower it if you are experiencing large SQL statements. |
+| `hard_delete_batch_size` | integer | `1500` | 200 – 1,500 | Number of rows per batch for hard delete operations in normal syncs and in history mode. Lower it if you are experiencing large SQL statements. |
+
+All fields are optional. If a field is not specified, the default value is used.
+If a value is outside the allowed range, the destination will report an error during sync.
+Unknown fields are silently ignored (a warning is logged) and do not cause errors, which allows forward compatibility when new settings are added.
+
+Example:
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+## Type transformation mapping {#type-mapping}
+
+The Fivetran ClickHouse destination maps [Fivetran data types](https://fivetran.com/docs/destinations#datatypes) to ClickHouse types as follows:
+
+| Fivetran type | ClickHouse type                                              |
+|---------------|--------------------------------------------------------------|
+| BOOLEAN       | [Bool](/reference/data-types/boolean)                    |
+| SHORT         | [Int16](/reference/data-types/int-uint)                  |
+| INT           | [Int32](/reference/data-types/int-uint)                  |
+| LONG          | [Int64](/reference/data-types/int-uint)                  |
+| BIGDECIMAL    | [Decimal(P, S)](/reference/data-types/decimal)           |
+| FLOAT         | [Float32](/reference/data-types/float)                   |
+| DOUBLE        | [Float64](/reference/data-types/float)                   |
+| LOCALDATE     | [Date32](/reference/data-types/date32)                   |
+| LOCALDATETIME | [DateTime64(0, 'UTC')](/reference/data-types/datetime64) |
+| INSTANT       | [DateTime64(9, 'UTC')](/reference/data-types/datetime64) |
+| STRING        | [String](/reference/data-types/string)                   |
+| LOCALTIME     | [String](/reference/data-types/string) \* \*\*           |
+| BINARY        | [String](/reference/data-types/string) \*                |
+| XML           | [String](/reference/data-types/string) \*                |
+| JSON          | [String](/reference/data-types/string) \*                |
+
+<Note>
+\* BINARY, XML, LOCALTIME, and JSON are stored as [String](/reference/data-types/string) because ClickHouse's `String` type can represent an arbitrary set of bytes. The destination adds a column comment to indicate the original data type. The ClickHouse [JSON](/reference/data-types/newjson) data type is not used as it was marked as obsolete and never recommended for production usage.
+\*\* NOTE: Issue to track the support for LOCALTIME type: [clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15).
+</Note>
+
+### Date and time value ranges {#date-and-time-value-ranges}
+
+Fivetran sources can send date and time values in the range [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange).
+ClickHouse Cloud date types have narrower ranges, so values outside the supported range are silently clamped to the nearest boundary:
+
+| Fivetran type | ClickHouse Cloud type  | Min value                 | Max value                 |
+|---------------|------------------------|---------------------------|---------------------------|
+| LOCALDATE     | Date32                 | 1900-01-01                | 2299-12-31                |
+| LOCALDATETIME | DateTime64(0, 'UTC')   | 1900-01-01 00:00:00       | 2262-04-11 23:47:16       |
+| INSTANT       | DateTime64(9, 'UTC')   | 1900-01-01 00:00:00       | 2262-04-11 23:47:16       |
+
+- The INSTANT upper bound is 2262-04-11 23:47:16 because DateTime64(9) stores nanoseconds since epoch as int64, and 2^63 - 1 nanoseconds corresponds to this date.
+ClickHouse itself supports DateTime64 with precision \<= 9 up to 2299-12-31 23:59:59.
+- The LOCALDATETIME upper bound is also limited to 2262-04-11 23:47:16 due to a [known bug](https://github.com/ClickHouse/clickhouse-go/issues/1311) in the Go ClickHouse driver, where `time.Time.UnixNano()` is called for all DateTime64 precisions before scaling, causing int64 overflow for dates beyond 2262 even at precision 0.
+
+## Destination tables {#table-structure}
+
+The ClickHouse Cloud destination uses
+[Replacing](/reference/engines/table-engines/mergetree-family/replacingmergetree) engine type of
+[SharedMergeTree](/products/cloud/features/infrastructure/shared-merge-tree) family
+(specifically, `SharedReplacingMergeTree`), versioned by the `_fivetran_synced` column.
+
+Every column except primary (ordering) keys and Fivetran metadata columns is created
+as [Nullable(T)](/reference/data-types/nullable), where `T` is a
+ClickHouse Cloud type based on the [data types mapping](#type-mapping).
+
+The table structure varies depending on the Fivetran
+[sync mode](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling)
+configured for the connector: **soft delete** (default) or **history mode** (SCD Type 2).
+
+### Soft delete mode {#soft-delete-mode}
+
+In soft delete mode, every destination table includes the following metadata columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `_fivetran_synced` | `DateTime64(9, 'UTC')` | Timestamp when the record was synced by Fivetran. Used as the version column for `SharedReplacingMergeTree`. |
+| `_fivetran_deleted` | `Bool` | Soft delete marker. Set to `true` when the source record is deleted. |
+| `_fivetran_id` | `String` | Auto-generated unique identifier. Only present when the source table has no primary keys. |
+
+#### Single primary key in the source table {#single-pk}
+
+For example, source table `users` has a primary key column `id` (`INT`) and a regular column `name` (`STRING`).
+The destination table will be defined as follows:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+In this case, the `id` column is chosen as a table sorting key.
+
+#### Multiple primary keys in the source table {#multiple-pks}
+
+If the source table has multiple primary keys, they are used in order of their appearance in the Fivetran source table
+definition.
+
+For example, there is a source table `items` with primary key columns `id` (`INT`) and `name` (`STRING`), plus an
+additional regular column `description` (`STRING`). The destination table will be defined as follows:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+In this case, `id` and `name` columns are chosen as table sorting keys.
+
+#### No primary keys in the source table {#no-pks}
+
+If the source table has no primary keys, a unique identifier will be added by Fivetran as a `_fivetran_id` column.
+Consider an `events` table that only has the `event` (`STRING`) and `timestamp` (`LOCALDATETIME`) columns in the source.
+The destination table in that case is as follows:
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+Since `_fivetran_id` is unique and there are no other primary key options, it is used as a table sorting key.
+
+### History mode (SCD Type 2) {#history-mode}
+
+When [history mode](https://fivetran.com/docs/using-fivetran/features#historymode) is enabled,
+the destination preserves every version of each record rather than overwriting previous values.
+This implements [Slowly Changing Dimension Type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) (SCD Type 2),
+maintaining a complete audit trail of all changes.
+
+In history mode, every destination table includes the following metadata columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `_fivetran_synced` | `DateTime64(9, 'UTC')` | Timestamp when the record was synced by Fivetran. Used as the version column for `SharedReplacingMergeTree`. |
+| `_fivetran_start` | `DateTime64(9, 'UTC')` | Timestamp when this version of the record became active. Part of the table's sorting key. |
+| `_fivetran_end` | `Nullable(DateTime64(9, 'UTC'))` | Timestamp when this version was superseded. Set to `2262-04-11 23:47:16` for currently active records. |
+| `_fivetran_active` | `Nullable(Bool)` | Whether this is the currently active version of the record. |
+| `_fivetran_id` | `String` | Auto-generated unique identifier. Only present when the source table has no primary keys. |
+
+The `_fivetran_start` column is always included in the `ORDER BY` clause as the last element of the compound sorting key.
+This allows multiple versions of the same record (with different start times) to coexist in the table.
+
+When a record is updated:
+- The previous version's `_fivetran_end` is set to the new version's `_fivetran_start` minus one nanosecond, and `_fivetran_active` is set to `false`.
+- The new version is inserted with `_fivetran_active` set to `true` and `_fivetran_end` set to `2262-04-11 23:47:16.000000000` (the maximum `DateTime64(9)` value).
+
+#### Single primary key in the source table {#history-single-pk}
+
+For example, source table `users` has a primary key column `id` (`INT`) and regular columns `name` (`STRING`) and `status` (`STRING`).
+The destination table in history mode will be defined as follows:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+In this case, `id` and `_fivetran_start` form the compound sorting key.
+
+After a few syncs, the table might contain the following data:
+
+| id | name    | status | \_fivetran\_start                | \_fivetran\_end                  | \_fivetran\_active |
+|----|---------|--------|----------------------------------|----------------------------------|--------------------|
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000    | 2025-11-11 20:56:59.999000000    | false              |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000    | 2262-04-11 23:47:16.000000000    | true               |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000    | 2262-04-11 23:47:16.000000000    | true               |
+
+Record `id=1` has two versions: the original (`name 1`, inactive) and the updated one (`name 11`, active).
+Record `id=2` has only one version, which is currently active.
+
+#### Multiple primary keys in the source table {#history-multiple-pks}
+
+If the source table has multiple primary keys, they are all included in the `ORDER BY` together with `_fivetran_start` as the last element.
+
+For example, there is a source table `items` with primary key columns `id` (`INT`) and `name` (`STRING`), plus an
+additional regular column `description` (`STRING`). The destination table in history mode will be defined as follows:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+In this case, `id`, `name`, and `_fivetran_start` form the compound sorting key.
+
+#### No primary keys in the source table {#history-no-pks}
+
+If the source table has no primary keys, a unique identifier will be added by Fivetran as a `_fivetran_id` column,
+and `_fivetran_start` is appended to the sorting key.
+Consider an `events` table that only has the `event` (`STRING`) and `timestamp` (`LOCALDATETIME`) columns in the source.
+The destination table in history mode is as follows:
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+Since `_fivetran_id` and `_fivetran_start` form the compound sorting key.
+
+### Selecting the latest version of the data without duplicates {#selecting-latest-version}
+
+`SharedReplacingMergeTree` performs background data deduplication
+[only during merges at an unknown time](/reference/engines/table-engines/mergetree-family/replacingmergetree).
+However, selecting the latest version of the data without duplicates ad-hoc is possible with the `FINAL` keyword:
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+Check out the [optimizing reading queries](/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)" section in the troubleshooting guide for query optimization tips.
+
+## Retries on network failures {#retries-on-network-failures}
+
+The ClickHouse Cloud destination retries transient network errors using the exponential backoff algorithm.
+This is safe even when the destination inserts the data, as any potential duplicates are handled by
+the `SharedReplacingMergeTree` table engine.

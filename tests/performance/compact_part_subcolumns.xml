@@ -1,0 +1,13 @@
+<test>
+    <create_query>CREATE TABLE t_json_1 (data JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=100000000000, write_marks_for_substreams_in_compact_parts=1</create_query>
+    <create_query>CREATE TABLE t_json_2 (data JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=100000000000, write_marks_for_substreams_in_compact_parts=1</create_query>
+
+    <fill_query>INSERT INTO t_json_1 SELECT toJSONString(map(number % 10, repeat('a', number % 100))) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO t_json_2 SELECT toJSONString(arrayMap(x -> tuple('a' || x, x > 0 ? repeat('a', 100) : 'a'), range(1000))::Map(String, String)) FROM numbers(200000)</fill_query>
+
+    <query>SELECT data.k0, data.k1, data.k2, data.k3, data.k4, data.k5, data.k6, data.k7, data.k8, data.k9 FROM t_json_1 FORMAT Null</query>
+    <query>SELECT data.a0 FROM t_json_2 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_2</drop_query>
+</test>

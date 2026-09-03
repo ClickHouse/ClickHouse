@@ -1,0 +1,10 @@
+str_0	Dynamic(max_types=3)	String
+1	Dynamic(max_types=3)	UInt64
+str_2	Dynamic(max_types=3)	String
+3	Dynamic(max_types=3)	UInt64
+[1,2,3]	Array(Int64)
+2020-01-01	Date
+str_1	String
+str_2	String
+42	UInt64
+43	UInt64

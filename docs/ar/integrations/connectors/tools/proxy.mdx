@@ -1,0 +1,49 @@
+---
+description: 'يصف حلول الوكيل التابعة لجهات خارجية المتاحة لـ ClickHouse'
+sidebarTitle: 'الوكلاء'
+slug: /interfaces/third-party/proxy
+title: 'خوادم وكيلة من تطوير جهات خارجية'
+doc_type: 'reference'
+---
+
+<div id="chproxy">
+  ## chproxy
+</div>
+
+‏[chproxy](https://github.com/Vertamedia/chproxy) هو وكيل HTTP وموازن حمل لقاعدة بيانات ClickHouse.
+
+الميزات:
+
+* التوجيه لكل مستخدم والتخزين المؤقت للاستجابات.
+* حدود مرنة.
+* التجديد التلقائي لشهادات SSL.
+
+مُنفَّذ بلغة Go.
+
+<div id="kittenhouse">
+  ## KittenHouse
+</div>
+
+صُمِّم [KittenHouse](https://github.com/VKCOM/kittenhouse) ليكون وكيلًا محليًا بين ClickHouse وخادم التطبيق عندما يكون تخزين بيانات `INSERT` مؤقتًا على جانب تطبيقك غير ممكن أو غير عملي.
+
+الميزات:
+
+* تخزين البيانات مؤقتًا في الذاكرة وعلى القرص.
+* توجيه على مستوى كل جدول.
+* موازنة التحميل وفحوصات الحالة.
+
+مكتوب بلغة Go.
+
+<div id="clickhouse-bulk">
+  ## ClickHouse-Bulk
+</div>
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) أداة بسيطة لتجميع عمليات insert في ClickHouse.
+
+الميزات:
+
+* تجميع الطلبات وإرسالها عند بلوغ العتبة أو وفقًا للفاصل الزمني.
+* دعم عدة خوادم بعيدة.
+* المصادقة الأساسية.
+
+مُنفَّذ بلغة Go.

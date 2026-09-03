@@ -1,0 +1,18 @@
+<clickhouse>
+    <remote_servers>
+        <secure>
+            <secret>foo</secret>
+            <node>
+                <host>node1</host>
+                <port>9000</port>
+                <default_database>r0</default_database>
+            </node>
+            <node>
+                <host>node2</host>
+                <port>9000</port>
+                <default_database>r1</default_database>
+            </node>
+        </secure>
+    </remote_servers>
+</clickhouse>
+

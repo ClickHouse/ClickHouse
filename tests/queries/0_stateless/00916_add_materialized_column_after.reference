@@ -1,0 +1,3 @@
+x	UInt32					
+y	String	MATERIALIZED	toString(x)			
+z	UInt64					

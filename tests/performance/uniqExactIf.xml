@@ -1,0 +1,7 @@
+<test>
+    <query>SELECT uniqExactIf(number, 1) FROM numbers_mt(1e7)</query>
+    <query>SELECT uniqExactState(number) FROM numbers_mt(1e7) Format Null</query>
+    <query>SELECT uniqExactArray([number]) FROM numbers_mt(1e7) Format Null</query>
+    <query>with (SELECT uniqExactState(number) FROM numbers_mt(1e7)) as a select uniqExactMerge(a)</query>
+    <query>SELECT uniqExactOrNull(number) FROM numbers_mt(1e7)</query>
+</test>

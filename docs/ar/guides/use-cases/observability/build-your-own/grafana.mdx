@@ -1,0 +1,220 @@
+---
+title: 'استخدام Grafana وClickHouse في Observability'
+description: 'استخدام Grafana وClickHouse في Observability'
+slug: /observability/grafana
+keywords: ['Observability', 'السجلات', 'التتبعات', 'المقاييس', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تمثل Grafana أداة التصور المفضلة لبيانات Observability في ClickHouse. ويتحقق ذلك باستخدام إضافة ClickHouse الرسمية لـ Grafana. يمكنك اتباع تعليمات التثبيت الموجودة [هنا](/ar/integrations/connectors/data-visualization/grafana/index).
+
+يجعل الإصدار V4 من الإضافة السجلات والتتبعات جزءًا أساسيًا من تجربة جديدة في منشئ الاستعلامات. وهذا يقلل من حاجة مهندسي موثوقية الموقع (SREs) إلى كتابة استعلامات SQL، ويبسّط Observability المعتمدة على SQL، ويدفع هذا النهج الناشئ إلى الأمام.
+ويتمثل جزء من ذلك في وضع OpenTelemetry (OTel) في صميم الإضافة، لأننا نعتقد أن هذا سيكون أساس Observability المعتمدة على SQL خلال السنوات القادمة، والطريقة التي ستُجمع بها البيانات.
+
+<div id="open-telemetry-integration">
+  ## تكامل OpenTelemetry
+</div>
+
+عند تهيئة مصدر بيانات ClickHouse في Grafana، تتيح الإضافة للمستخدم تحديد قاعدة بيانات وجدول افتراضيين لكل من السجلات والتتبعات، وما إذا كانت هذه الجداول تتوافق مع مخطط OTel. ويتيح ذلك للإضافة إرجاع الأعمدة المطلوبة لعرض السجلات والتتبعات بشكل صحيح في Grafana. وإذا كنت قد أجريت تغييرات على مخطط OTel الافتراضي وتفضّل استخدام أسماء الأعمدة الخاصة بك، فيمكنك تحديدها. ويعني استخدام أسماء أعمدة OTel الافتراضية لأعمدة مثل الوقت (`Timestamp`) أو مستوى السجل (`SeverityText`) أو متن الرسالة (`Body`) أنه لا حاجة إلى إجراء أي تغييرات.
+
+<Info>
+  **HTTP أو Native**
+
+  يمكنك توصيل Grafana بـ ClickHouse عبر بروتوكول HTTP أو البروتوكول Native. ويوفّر الأخير مزايا طفيفة في الأداء، ومن غير المرجّح أن تكون ملحوظة في استعلامات التجميع التي يجريها مستخدمو Grafana. في المقابل، يكون بروتوكول HTTP عادةً أبسط من حيث استخدام proxy وفحصه.
+</Info>
+
+يتطلب إعداد السجلات عمودًا للوقت وعمودًا لمستوى السجل وعمودًا للرسالة كي تُعرض السجلات بشكل صحيح.
+
+أما إعداد التتبعات فهو أكثر تعقيدًا قليلًا (القائمة الكاملة [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). فالأعمدة المطلوبة هنا ضرورية لكي يمكن تجريد الاستعلامات اللاحقة التي تُنشئ ملف تتبّع كاملًا. وتفترض هذه الاستعلامات أن البيانات منظَّمة بطريقة مشابهة لـ OTel، لذا سيحتاج المستخدمون الذين ينحرفون كثيرًا عن المخطط القياسي إلى استخدام views للاستفادة من هذه الميزة.
+
+<Image img="/images/use-cases/observability/observability-15.webp" alt="إعدادات الموصل" size="sm" />
+
+بمجرد اكتمال التهيئة، يمكنك الانتقال إلى [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) وبدء البحث في السجلات والتتبعات.
+
+<div id="logs">
+  ## السجلات
+</div>
+
+إذا كنت تلتزم بمتطلبات Grafana الخاصة بالسجلات، يمكنك اختيار `Query Type: Log` في منشئ الاستعلامات ثم النقر على `Run Query`. سيُنشئ منشئ الاستعلامات استعلامًا لسرد السجلات والتأكد من عرضها بشكل صحيح، على سبيل المثال.
+
+```sql
+SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-16.webp" alt="إعدادات سجلات الموصّل" size="lg" border />
+
+يوفّر منشئ الاستعلامات طريقة بسيطة لتعديل الاستعلام من دون الحاجة إلى كتابة SQL. كما يمكن إجراء التصفية، بما في ذلك العثور على السجلات التي تحتوي على كلمات مفتاحية، من خلال منشئ الاستعلامات. ويمكن للمستخدمين الذين يرغبون في كتابة استعلامات أكثر تعقيدًا التبديل إلى محرر SQL. وإذا أُعيدت الأعمدة المناسبة وتم اختيار `logs` بوصفه نوع الاستعلام، فستُعرض النتائج على هيئة سجلات. الأعمدة المطلوبة لعرض السجلات مُدرجة [هنا](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
+
+<div id="logs-to-traces">
+  ### من السجلات إلى التتبعات
+</div>
+
+إذا كانت السجلات تتضمن معرّفات تتبّع، يمكنك الاستفادة من إمكانية الانتقال من سطر سجل معيّن إلى التتبّع المرتبط به.
+
+<Image img="/images/use-cases/observability/observability-17.webp" alt="من السجلات إلى التتبعات" size="lg" border />
+
+<div id="traces">
+  ## التتبعات
+</div>
+
+على غرار تجربة السجلات المذكورة أعلاه، إذا كانت الأعمدة التي يحتاجها Grafana لعرض التتبعات مستوفاة (على سبيل المثال، باستخدام مخطط OTel)، فسيتمكن منشئ الاستعلامات من تكوين الاستعلامات اللازمة تلقائيًا. عند تحديد `Query Type: Traces` ثم النقر على `Run Query`، سيُنشأ استعلام مشابه لما يلي ويُنفَّذ (بحسب الأعمدة التي أعددتها، ويفترض المثال التالي استخدام OTel):
+
+```sql
+SELECT "TraceId" as traceID,
+  "ServiceName" as serviceName,
+  "SpanName" as operationName,
+  "Timestamp" as startTime,
+  multiply("Duration", 0.000001) as duration
+FROM "default"."otel_traces"
+WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
+  AND ( ParentSpanId = '' )
+  AND ( Duration > 0 )
+  ORDER BY Timestamp DESC, Duration DESC LIMIT 1000
+```
+
+يعرض هذا الاستعلام أسماء الأعمدة التي يتوقعها Grafana، مما ينتج عنه جدول للتتبعات كما هو موضح أدناه. ويمكن التصفية حسب المدة أو الأعمدة الأخرى دون الحاجة إلى كتابة SQL.
+
+<Image img="/images/use-cases/observability/observability-18.webp" alt="التتبعات" size="lg" border />
+
+يمكن للمستخدمين الذين يرغبون في كتابة استعلامات أكثر تعقيدًا التبديل إلى `SQL Editor`.
+
+<div id="view-trace-details">
+  ### عرض تفاصيل التتبّع
+</div>
+
+كما هو موضح أعلاه، تُعرَض معرّفات التتبّع كروابط قابلة للنقر. عند النقر على معرّف تتبّع، يمكن للمستخدم اختيار عرض الـ spans المرتبطة عبر الرابط `View Trace`. وينفّذ ذلك الاستعلام التالي (بافتراض وجود أعمدة OTel) لاسترجاع الـ spans بالبنية المطلوبة، مع عرض النتائج في مخطط شلالي.
+
+```sql
+WITH '<trace_id>' AS trace_id,
+  (SELECT min(Start) FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_start,
+  (SELECT max(End) + 1 FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_end
+SELECT "TraceId" AS traceID,
+  "SpanId" AS spanID,
+  "ParentSpanId" AS parentSpanID,
+  "ServiceName" AS serviceName,
+  "SpanName" AS operationName,
+  "Timestamp" AS startTime,
+  multiply("Duration", 0.000001) AS duration,
+  arrayMap(key -> map('key', key, 'value',"SpanAttributes"[key]),
+  mapKeys("SpanAttributes")) AS tags,
+  arrayMap(key -> map('key', key, 'value',"ResourceAttributes"[key]),
+  mapKeys("ResourceAttributes")) AS serviceTags
+FROM "default"."otel_traces"
+WHERE traceID = trace_id
+  AND startTime >= trace_start
+  AND startTime <= trace_end
+LIMIT 1000
+```
+
+<Note>
+  لاحظ أن الاستعلام أعلاه يستخدم العرض المادي `otel_traces_trace_id_ts` لإجراء بحث عن معرّف التتبّع. راجع [تسريع الاستعلامات - استخدام العروض المادية لعمليات البحث](/ar/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) لمزيد من التفاصيل.
+</Note>
+
+<Image img="/images/use-cases/observability/observability-19.webp" alt="تفاصيل التتبّع" size="lg" border />
+
+<div id="traces-to-logs">
+  ### من التتبّعات إلى السجلات
+</div>
+
+إذا كانت السجلات تتضمن معرّفات تتبّع، يمكنك الانتقال من تتبّع إلى السجلات المرتبطة به. لعرض السجلات، انقر على معرّف التتبّع ثم اختر `View Logs`. يؤدي ذلك إلى تنفيذ الاستعلام التالي، بافتراض استخدام أعمدة OTel الافتراضية.
+
+```sql
+SELECT Timestamp AS "timestamp",
+  Body AS "body", SeverityText AS "level",
+  TraceId AS "traceID" FROM "default"."otel_logs"
+WHERE ( traceID = '<trace_id>' )
+ORDER BY timestamp ASC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-20.webp" alt="من التتبعات إلى السجلات" size="lg" border />
+
+<div id="dashboards">
+  ## لوحات المعلومات
+</div>
+
+يمكنك إنشاء لوحات المعلومات في Grafana باستخدام مصدر بيانات ClickHouse. نوصي بالرجوع إلى [توثيق مصدر البيانات](https://github.com/grafana/clickhouse-datasource) لكلٍ من Grafana وClickHouse لمزيد من التفاصيل، وخاصة [مفهوم وحدات الماكرو](https://github.com/grafana/clickhouse-datasource?tab=readme-ov-file#macros) و[المتغيرات](https://grafana.com/docs/grafana/latest/dashboards/variables/).
+
+توفّر الإضافة عدة لوحات معلومات جاهزة، بما في ذلك لوحة معلومات نموذجية بعنوان &quot;Simple ClickHouse OTel dashboarding&quot; لبيانات التسجيل والتتبّع المتوافقة مع مواصفة OTel. ويتطلب ذلك من المستخدمين الالتزام بأسماء الأعمدة الافتراضية الخاصة بـ OTel، ويمكن تثبيت هذه اللوحة من إعدادات مصدر البيانات.
+
+<Image img="/images/use-cases/observability/observability-21.webp" alt="لوحات المعلومات" size="lg" border />
+
+نقدّم أدناه بعض النصائح البسيطة لإنشاء التصورات.
+
+<div id="time-series">
+  ### السلاسل الزمنية
+</div>
+
+إلى جانب الإحصاءات، تُعد المخططات الخطية أكثر أشكال التصور شيوعًا في حالات استخدام observability. وستعرض إضافة ClickHouse تلقائيًا مخططًا خطيًا إذا أعاد استعلامٌ عمودًا من نوع `datetime` باسم `time` وعمودًا رقميًا. على سبيل المثال:
+
+```sql
+SELECT
+ $__timeInterval(Timestamp) as time,
+ quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE
+ $__timeFilter(Timestamp)
+ AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-22.webp" alt="السلاسل الزمنية" size="lg" border />
+
+<div id="multi-line-charts">
+  ### المخططات متعددة الخطوط
+</div>
+
+سيتم عرض المخططات متعددة الخطوط تلقائيًا للاستعلام، بشرط استيفاء الشروط التالية:
+
+* الحقل 1: حقل datetime باسم مستعار هو time
+* الحقل 2: القيمة المطلوب التجميع حسبها. يجب أن تكون من النوع String.
+* الحقل 3+: قيم المقاييس
+
+على سبيل المثال:
+
+```sql
+SELECT
+  $__timeInterval(Timestamp) as time,
+  ServiceName,
+  quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY ServiceName, time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-23.webp" alt="رسوم بيانية متعددة الخطوط" size="lg" border />
+
+<div id="visualizing-geo-data">
+  ### تصور البيانات الجغرافية
+</div>
+
+استعرضنا في أقسام سابقة كيفية إثراء بيانات observability بإحداثيات جغرافية باستخدام قواميس IP. وبافتراض أن لديك العمودين `latitude` و`longitude`، يمكن تصور بيانات observability باستخدام الدالة `geohashEncode`. وينتج عن ذلك قيم geohash متوافقة مع مخطط Grafana Geo Map. ويظهر أدناه استعلام مثال وتصور له:
+
+```sql
+WITH coords AS
+        (
+        SELECT
+                Latitude,
+                Longitude,
+                geohashEncode(Longitude, Latitude, 4) AS hash
+        FROM otel_logs_v2
+        WHERE (Longitude != 0) AND (Latitude != 0)
+        )
+SELECT
+        hash,
+        count() AS heat,
+        round(log10(heat), 2) AS adj_heat
+FROM coords
+GROUP BY hash
+```
+
+<Image img="/images/use-cases/observability/observability-24.webp" alt="عرض البيانات الجغرافية بصريًا" size="lg" border />

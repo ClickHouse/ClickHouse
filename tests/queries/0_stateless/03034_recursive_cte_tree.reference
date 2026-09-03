@@ -1,0 +1,9 @@
+0	\N	ROOT
+1	0	Child_1
+2	0	Child_2
+3	1	Child_1_1
+--
+0	\N	ROOT	[0]
+1	0	Child_1	[0,1]
+2	0	Child_2	[0,2]
+3	1	Child_1_1	[0,1,3]

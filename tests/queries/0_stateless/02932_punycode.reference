@@ -1,0 +1,55 @@
+-- Negative tests
+-- Regular cases
+a	a-	a	a
+A	A-	A	A
+--	---	--	--
+London	London-	London	London
+Lloyd-Atkinson	Lloyd-Atkinson-	Lloyd-Atkinson	Lloyd-Atkinson
+This has spaces	This has spaces-	This has spaces	This has spaces
+-> $1.00 <-	-> $1.00 <--	-> $1.00 <-	-> $1.00 <-
+а	80a	а	а
+ü	tda	ü	ü
+α	mxa	α	α
+例	fsq	例	例
+😉	n28h	😉	😉
+αβγ	mxacd	αβγ	αβγ
+München	Mnchen-3ya	München	München
+Mnchen-3ya	Mnchen-3ya-	Mnchen-3ya	Mnchen-3ya
+München-Ost	Mnchen-Ost-9db	München-Ost	München-Ost
+Bahnhof München-Ost	Bahnhof Mnchen-Ost-u6b	Bahnhof München-Ost	Bahnhof München-Ost
+abæcdöef	abcdef-qua4k	abæcdöef	abæcdöef
+правда	80aafi6cg	правда	правда
+ยจฆฟคฏข	22cdfh1b8fsa	ยจฆฟคฏข	ยจฆฟคฏข
+ドメイン名例	eckwd4c7cu47r2wf	ドメイン名例	ドメイン名例
+MajiでKoiする5秒前	MajiKoi5-783gue6qz075azm5e	MajiでKoiする5秒前	MajiでKoiする5秒前
+「bücher」	bcher-kva8445foa	「bücher」	「bücher」
+团淄	3bs854c	团淄	团淄
+-- Special cases
+---- Empty input
+
+
+
+---- NULL input
+\N
+\N
+\N
+---- Garbage Punycode-encoded input
+
+---- Long input
+Row 1:
+──────
+str:          Wenn Sie ... vom Hauptbahnhof in München ... mit zehn Minuten, ohne, dass Sie am Flughafen noch einchecken müssen, dann starten Sie im Grunde genommen am Flughafen ... am ... am Hauptbahnhof in München starten Sie Ihren Flug. Zehn Minuten. Schauen Sie sich mal die großen Flughäfen an, wenn Sie in Heathrow in London oder sonst wo, meine se ... Charles de Gaulle äh in Frankreich oder in ...äh... in ... in...äh...in Rom. Wenn Sie sich mal die Entfernungen ansehen, wenn Sie Frankfurt sich ansehen, dann werden Sie feststellen, dass zehn Minuten... Sie jederzeit locker in Frankfurt brauchen, um ihr Gate zu finden. Wenn Sie vom Flug ... vom ... vom Hauptbahnhof starten - Sie steigen in den Hauptbahnhof ein, Sie fahren mit dem Transrapid in zehn Minuten an den Flughafen in ... an den Flughafen Franz Josef Strauß. Dann starten Sie praktisch hier am Hauptbahnhof in München. Das bedeutet natürlich, dass der Hauptbahnhof im Grunde genommen näher an Bayern ... an die bayerischen Städte heranwächst, weil das ja klar ist, weil auf dem Hauptbahnhof viele Linien aus Bayern zusammenlaufen.
+puny:         Wenn Sie ... vom Hauptbahnhof in Mnchen ... mit zehn Minuten, ohne, dass Sie am Flughafen noch einchecken mssen, dann starten Sie im Grunde genommen am Flughafen ... am ... am Hauptbahnhof in Mnchen starten Sie Ihren Flug. Zehn Minuten. Schauen Sie sich mal die groen Flughfen an, wenn Sie in Heathrow in London oder sonst wo, meine se ... Charles de Gaulle h in Frankreich oder in ...h... in ... in...h...in Rom. Wenn Sie sich mal die Entfernungen ansehen, wenn Sie Frankfurt sich ansehen, dann werden Sie feststellen, dass zehn Minuten... Sie jederzeit locker in Frankfurt brauchen, um ihr Gate zu finden. Wenn Sie vom Flug ... vom ... vom Hauptbahnhof starten - Sie steigen in den Hauptbahnhof ein, Sie fahren mit dem Transrapid in zehn Minuten an den Flughafen in ... an den Flughafen Franz Josef Strau. Dann starten Sie praktisch hier am Hauptbahnhof in Mnchen. Das bedeutet natrlich, dass der Hauptbahnhof im Grunde genommen nher an Bayern ... an die bayerischen Stdte heranwchst, weil das ja klar ist, weil auf dem Hauptbahnhof viele Linien aus Bayern zusammenlaufen.-pu7fjtp0npc1ar54cibk471wdc9d18axa
+original:     Wenn Sie ... vom Hauptbahnhof in München ... mit zehn Minuten, ohne, dass Sie am Flughafen noch einchecken müssen, dann starten Sie im Grunde genommen am Flughafen ... am ... am Hauptbahnhof in München starten Sie Ihren Flug. Zehn Minuten. Schauen Sie sich mal die großen Flughäfen an, wenn Sie in Heathrow in London oder sonst wo, meine se ... Charles de Gaulle äh in Frankreich oder in ...äh... in ... in...äh...in Rom. Wenn Sie sich mal die Entfernungen ansehen, wenn Sie Frankfurt sich ansehen, dann werden Sie feststellen, dass zehn Minuten... Sie jederzeit locker in Frankfurt brauchen, um ihr Gate zu finden. Wenn Sie vom Flug ... vom ... vom Hauptbahnhof starten - Sie steigen in den Hauptbahnhof ein, Sie fahren mit dem Transrapid in zehn Minuten an den Flughafen in ... an den Flughafen Franz Josef Strauß. Dann starten Sie praktisch hier am Hauptbahnhof in München. Das bedeutet natürlich, dass der Hauptbahnhof im Grunde genommen näher an Bayern ... an die bayerischen Städte heranwächst, weil das ja klar ist, weil auf dem Hauptbahnhof viele Linien aus Bayern zusammenlaufen.
+original_try: Wenn Sie ... vom Hauptbahnhof in München ... mit zehn Minuten, ohne, dass Sie am Flughafen noch einchecken müssen, dann starten Sie im Grunde genommen am Flughafen ... am ... am Hauptbahnhof in München starten Sie Ihren Flug. Zehn Minuten. Schauen Sie sich mal die großen Flughäfen an, wenn Sie in Heathrow in London oder sonst wo, meine se ... Charles de Gaulle äh in Frankreich oder in ...äh... in ... in...äh...in Rom. Wenn Sie sich mal die Entfernungen ansehen, wenn Sie Frankfurt sich ansehen, dann werden Sie feststellen, dass zehn Minuten... Sie jederzeit locker in Frankfurt brauchen, um ihr Gate zu finden. Wenn Sie vom Flug ... vom ... vom Hauptbahnhof starten - Sie steigen in den Hauptbahnhof ein, Sie fahren mit dem Transrapid in zehn Minuten an den Flughafen in ... an den Flughafen Franz Josef Strauß. Dann starten Sie praktisch hier am Hauptbahnhof in München. Das bedeutet natürlich, dass der Hauptbahnhof im Grunde genommen näher an Bayern ... an die bayerischen Städte heranwächst, weil das ja klar ist, weil auf dem Hauptbahnhof viele Linien aus Bayern zusammenlaufen.
+---- Non-const values
+München	Mnchen-3ya	München	München
+abc	abc-	abc	abc
+aäoöuü	aou-qla5gqb	aäoöuü	aäoöuü
+---- Non-const values with invalid values sprinkled in
+Also no punycode	
+London-	London
+Mnchen-3ya	München
+No punycode	
+Rtting-3ya	Rütting
+XYZ no punycode	

@@ -1,0 +1,254 @@
+---
+slug: /whats-new/cloud/2022
+sidebarTitle: '2022'
+title: 'Cloud 更新日志 - 2022'
+description: '2022 年 ClickHouse Cloud 更新日志'
+doc_type: 'changelog'
+keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更', '2022']
+---
+
+<div id="december-20-2022">
+  ## 2022年12月20日
+</div>
+
+此版本为管理员提供了 SQL 控制台无缝登录，提升了冷读性能，并改进了适用于 ClickHouse Cloud 的 Metabase 连接器。
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* 为管理员用户启用了对 SQL 控制台的无缝访问
+* 将新邀请用户的默认角色更改为“管理员”
+* 新增入门引导问卷
+
+<div id="reliability-and-performance-3">
+  ### 可靠性和性能
+</div>
+
+* 为长时间运行的插入查询增加了重试逻辑，以便在发生网络故障时自动恢复
+* 提升了冷读取的读取性能
+
+<div id="integrations-changes-26">
+  ### 集成变更
+</div>
+
+* [Metabase 插件](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse) 迎来了期待已久的 v0.9.1 重大更新。现在，它已兼容最新版本的 Metabase，并且已在 ClickHouse Cloud 上经过全面测试。
+
+<div id="december-6-2022---general-availability">
+  ## 2022年12月6日 - 正式可用
+</div>
+
+ClickHouse Cloud 现已具备生产就绪能力，提供 SOC2 Type II 合规性、面向生产工作负载的运行时间 SLA，以及公开的状态页面。本次发布包含多项重要新功能，例如 AWS Marketplace 集成、SQL 控制台 (供 ClickHouse 用户进行数据探索的工作台) ，以及 ClickHouse Academy (ClickHouse Cloud 中的自助学习平台) 。更多信息请参阅这篇[博客](https://clickhouse.com/blog/clickhouse-cloud-generally-available)。
+
+<div id="production-ready">
+  ### 可用于生产环境
+</div>
+
+* 符合 SOC2 Type II 合规要求 (详见[博客](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant)和 [Trust Center](https://trust.clickhouse.com/))
+* 提供 ClickHouse Cloud 的公开[状态页面](https://status.clickhouse.com/)
+* 为生产用例提供运行时间 SLA
+* 可在 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jettukeanwrfc) 上获取
+
+<div id="major-new-capabilities">
+  ### 主要新能力
+</div>
+
+* 推出 SQL 控制台，为 ClickHouse 用户提供数据探索工作台
+* 发布 [ClickHouse Academy](https://learn.clickhouse.com/visitor_class_catalog)，可在 ClickHouse Cloud 中按自己的节奏学习
+
+<div id="pricing-and-metering-changes">
+  ### 定价和计量变更
+</div>
+
+* 试用期延长至 30 天
+* 推出固定容量、低月费的 Development 服务，非常适合入门项目以及开发/暂存环境
+* 推出新的 Production 服务优惠价格，同时我们也在持续改进 ClickHouse Cloud 的运行和扩展能力
+* 提升了计算资源计量的粒度和精确度
+
+<div id="integrations-changes-26">
+  ### 集成变更
+</div>
+
+* 已支持 ClickHouse Postgres / MySQL 集成引擎
+* 新增对 SQL 用户自定义函数 (UDFs) 的支持
+* Kafka Connect Sink 进入 Beta 状态
+* 通过引入有关版本、更新状态等的丰富元数据，改进了 Integrations UI
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* Cloud 控制台现已支持多因素身份验证
+* 改进了 Cloud 控制台在移动设备上的导航体验
+
+<div id="documentation-changes">
+  ### 文档变更
+</div>
+
+* 为 ClickHouse Cloud 新增了专门的[文档](/zh/products/cloud/getting-started/intro)版块
+
+<div id="bug-fixes-5">
+  ### 缺陷修复
+</div>
+
+* 修复了一个已知问题：由于依赖项解析的原因，从备份中恢复有时无法正常工作
+
+<div id="november-29-2022">
+  ## 2022 年 11 月 29 日
+</div>
+
+此版本实现了 SOC2 Type II 合规，将 ClickHouse 版本升级至 22.11，并改进了多个 ClickHouse 客户端和集成。
+
+<div id="general-changes-4">
+  ### 常规变更
+</div>
+
+* 已达到 SOC2 Type II 合规标准 (详见[博客](https://clickhouse.com/blog/clickhouse-cloud-is-now-soc-2-type-ii-compliant)和 [Trust Center](https://trust.clickhouse.com))
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* 新增“Idle”状态指示，用于表明某个服务已被自动暂停
+
+<div id="clickhouse-2211-version-upgrade">
+  ### ClickHouse 22.11 版本升级
+</div>
+
+* 新增对 Hudi 和 DeltaLake 表引擎及表函数的支持
+* 改进了 S3 的递归目录遍历能力
+* 新增对复合时间间隔语法的支持
+* 通过在插入时进行重试，提高了插入的可靠性
+* 完整变更列表请参阅[22.11 详细更新日志](#clickhouse-2211-version-upgrade)
+
+<div id="integrations-1">
+  ### 集成
+</div>
+
+* Python 客户端：支持 v3.11，提升插入性能
+* Go 客户端：修复对 DateTime 和 Int64 的支持问题
+* JavaScript 客户端：支持双向 SSL 身份验证
+* dbt-clickhouse：支持 DBT v1.3
+
+<div id="bug-fixes-5">
+  ### 缺陷修复
+</div>
+
+* 修复了一个缺陷：升级后仍会显示旧版 ClickHouse 版本
+* 更改 &quot;default&quot; 账户的授权后，不再会中断会话
+* 新创建的非 Admin 账户默认不再具有访问系统表的权限
+
+<div id="known-issues-in-this-release">
+  ### 此版本中的已知问题
+</div>
+
+* 由于依赖关系解析问题，从备份中恢复可能无法正常进行
+
+<div id="november-17-2022">
+  ## 2022年11月17日
+</div>
+
+此版本支持基于本地 ClickHouse 表和 HTTP 来源的字典，新增了对 Mumbai 区域的支持，并改进了 Cloud 控制台 的用户体验。
+
+<div id="general-changes-4">
+  ### 常规变更
+</div>
+
+* 新增支持来自本地 ClickHouse 表和 HTTP 源的[字典](/zh/reference/statements/create/dictionary)
+* 新增对 Mumbai [区域](/zh/products/cloud/reference/supported-regions)的支持
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* 优化了账单发票的格式
+* 简化了付款方式录入的用户界面
+* 为备份添加了更细粒度的活动日志
+* 改进了文件上传时的错误处理
+
+<div id="bug-fixes-5">
+  ### 缺陷修复
+</div>
+
+* 修复了一个缺陷：如果某些 parts 中存在单个较大的文件，可能会导致备份失败
+* 修复了一个缺陷：如果同时应用了访问列表变更，则无法从备份成功恢复
+
+<div id="known-issues">
+  ### 已知问题
+</div>
+
+* 由于依赖项解析问题，从备份中恢复可能无法正常进行
+
+<div id="november-3-2022">
+  ## 2022 年 11 月 3 日
+</div>
+
+此次发布取消了定价中的读写单位 (详情请参见[定价页面](https://clickhouse.com/pricing)) ，将 ClickHouse 版本更新至 22.10，为自助服务客户提供了更高的垂直扩缩容支持，并通过更合理的默认设置提升了可靠性。
+
+<div id="general-changes-4">
+  ### 常规变更
+</div>
+
+* 定价模式中已移除读/写单元
+
+<div id="configuration-changes-2">
+  ### 配置变更
+</div>
+
+* 出于稳定性考虑，设置 `allow_suspicious_low_cardinality_types`、`allow_suspicious_fixed_string_types` 和 `allow_suspicious_codecs` (默认为 false) 现已不再允许用户更改。
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* 将付费客户可自助进行垂直扩缩容的内存上限提升至 720GB
+* 改进了从备份中恢复的流程，可设置 IP Access List 规则和密码
+* 在服务创建对话框中为 GCP 和 Azure 增加了候补名单
+* 改进了文件上传期间的错误处理
+* 改进了计费管理流程
+
+<div id="clickhouse-2210-version-upgrade">
+  ### ClickHouse 22.10 版本升级
+</div>
+
+* 在存在大量大型 parts (至少 10 GiB) 时，通过放宽“parts 过多”阈值，改进了对象存储上的 merge 操作。这使得单个表的单个分区最多可容纳 PB 级数据。
+* 通过 `min_age_to_force_merge_seconds` 设置增强了对 merge 的控制，可在达到特定时间阈值后执行 merge。
+* 新增了用于重置设置的 MySQL 兼容语法 `SET setting_name = DEFAULT`。
+* 新增了用于 Morton 曲线编码、Java 整数哈希和随机数生成的函数。
+* 完整变更列表请参阅[22.10 详细更新日志](#clickhouse-2210-version-upgrade)。
+
+<div id="october-25-2022">
+  ## 2022年10月25日
+</div>
+
+此版本显著降低了小型工作负载的计算资源消耗和计算资源价格 (详情请参见 [pricing](https://clickhouse.com/pricing) 页面) ，通过更合理的默认设置提升了稳定性，并增强了 ClickHouse Cloud 控制台中的 Billing 和 Usage 视图。
+
+<div id="general-changes-4">
+  ### 常规变更
+</div>
+
+* 将服务的最小内存配置下调至 24G
+* 将服务空闲超时时间从 30 分钟缩短至 5 分钟
+
+<div id="configuration-changes-2">
+  ### 配置变更
+</div>
+
+* 将 max&#95;parts&#95;in&#95;total 从 100k 下调至 10k。MergeTree 表的 `max_parts_in_total` 设置默认值已从 100,000 下调至 10,000。之所以做出这一调整，是因为我们观察到，大量数据分区片段很可能会导致 Cloud 中服务启动变慢。大量 parts 通常意味着分区键设置得过细，而这往往是无意造成的，应当避免。此次默认值调整将有助于更早发现这类情况。
+
+<div id="console-changes-27">
+  ### 控制台变更
+</div>
+
+* 为试用用户增强了 “Billing” 视图中的额度使用详情
+* 改进了工具提示和帮助文本，并在 “Usage” 视图中新增了定价页面链接
+* 优化了切换 IP 过滤选项时的流程
+* 在Cloud 控制台中新增了重新发送电子邮件确认的按钮
+
+<div id="october-4-2022---beta">
+  ## 2022 年 10 月 4 日 - Beta
+</div>
+
+ClickHouse Cloud 于 2022 年 10 月 4 日开始进入 Public Beta 阶段。更多信息请参阅这篇[博客](https://clickhouse.com/blog/clickhouse-cloud-public-beta)。
+
+ClickHouse Cloud 版本基于 ClickHouse core v22.10。有关兼容功能的列表，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 指南。

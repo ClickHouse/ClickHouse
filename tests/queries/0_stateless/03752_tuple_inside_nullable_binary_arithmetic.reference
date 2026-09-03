@@ -1,0 +1,134 @@
+-- { echoOn }
+
+SET allow_experimental_nullable_tuple_type = 1;
+SELECT toNullable(tuple(1, 2)) * toNullable(tuple(1, 2));
+5
+SELECT (SELECT 1, 2) / (SELECT 3);
+(0.3333333333333333,0.6666666666666666)
+SELECT (SELECT 1, 2) % (SELECT 3);
+(1,2)
+SELECT (SELECT 1, 2) * (SELECT 3);
+(3,6)
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32)))
+     + CAST(tuple(3, 4) AS Nullable(Tuple(Int32, Int32)));
+(4,6)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     + CAST(tuple(3, 4) AS Nullable(Tuple(Int32, Int32)));
+\N
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32)))
+     + CAST(NULL AS Nullable(Tuple(Int32, Int32)));
+\N
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32))) + tuple(3, 4);
+(4,6)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) + tuple(3, 4);
+\N
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32))) + 5; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) + 5; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tuple(1, 2) + CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tuple(1, 2) + CAST(NULL AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32)))
+     + CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(1, 2) AS Nullable(Tuple(Int32, Int32)))
+     + CAST(NULL AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     + CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     - CAST(tuple(3, 4) AS Nullable(Tuple(Int32, Int32)));
+(7,16)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     - CAST(tuple(3, 4) AS Nullable(Tuple(Int32, Int32)));
+\N
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     - CAST(NULL AS Nullable(Tuple(Int32, Int32)));
+\N
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32))) - tuple(3, 4);
+(7,16)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) - tuple(3, 4);
+\N
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32))) - 5; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) - 5; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tuple(10, 20) - CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tuple(10, 20) - CAST(NULL AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     - CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     - CAST(NULL AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     - CAST(5 AS Nullable(Int32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(2, 3) AS Nullable(Tuple(Int32, Int32))) * tuple(4, 5);
+23
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) * tuple(4, 5);
+\N
+SELECT CAST(tuple(2, 3) AS Nullable(Tuple(Int32, Int32))) * 5;
+(10,15)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) * 5;
+\N
+SELECT tuple(2, 3) * CAST(5 AS Nullable(Int32));
+(10,15)
+SELECT tuple(2, 3) * CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(tuple(2, 3) AS Nullable(Tuple(Int32, Int32)))
+     * CAST(5 AS Nullable(Int32));
+(10,15)
+SELECT CAST(tuple(2, 3) AS Nullable(Tuple(Int32, Int32)))
+     * CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     * CAST(5 AS Nullable(Int32));
+\N
+SELECT (SELECT 2, 3) * (SELECT 4, 5);
+23
+SELECT CAST(tuple(2, 3) AS Nullable(Tuple(Int32, Int32)))
+     * (SELECT 4, 5);
+23
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     * (SELECT 4, 5);
+\N
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     / CAST(tuple(2, 4) AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     / CAST(tuple(2, 4) AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     / CAST(NULL AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32))) / tuple(2, 4); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32))) / 2;
+(5,10)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) / 2;
+\N
+SELECT tuple(10, 20) / CAST(2 AS Nullable(Int32));
+(5,10)
+SELECT tuple(10, 20) / CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     / CAST(2 AS Nullable(Int32));
+(5,10)
+SELECT CAST(tuple(10, 20) AS Nullable(Tuple(Int32, Int32)))
+     / CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     / CAST(2 AS Nullable(Int32));
+\N
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32)))
+     % CAST(tuple(3, 2) AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     % CAST(tuple(3, 2) AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32)))
+     % CAST(NULL AS Nullable(Tuple(Int32, Int32))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32))) % tuple(3, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32))) % 3;
+(1,0)
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32))) % 3;
+\N
+SELECT tuple(10, 9) % CAST(3 AS Nullable(Int32));
+(1,0)
+SELECT tuple(10, 9) % CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32)))
+     % CAST(3 AS Nullable(Int32));
+(1,0)
+SELECT CAST(tuple(10, 9) AS Nullable(Tuple(Int32, Int32)))
+     % CAST(NULL AS Nullable(Int32));
+\N
+SELECT CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+     % CAST(3 AS Nullable(Int32));
+\N

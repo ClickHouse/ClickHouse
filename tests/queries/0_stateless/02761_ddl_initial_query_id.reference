@@ -1,0 +1,5 @@
+distributed_ddl_entry_format_version=OPENTELEMETRY_ENABLED_VERSION (older then PRESERVE_INITIAL_QUERY_ID_VERSION)
+DROP TABLE IF EXISTS foo ON CLUSTER test_shard_localhost
+distributed_ddl_entry_format_version=PRESERVE_INITIAL_QUERY_ID_VERSION
+DROP TABLE IF EXISTS default.foo
+DROP TABLE IF EXISTS foo ON CLUSTER test_shard_localhost

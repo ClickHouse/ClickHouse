@@ -1,0 +1,35 @@
+-- Custom settings from system.settings
+custom_f1	Bool_0	Custom
+custom_f2	Bool_0	Custom
+custom_f3	Bool_0	Custom
+custom_n0	UInt64_0	Custom
+custom_n1	UInt64_1	Custom
+custom_t1	Bool_1	Custom
+custom_t2	Bool_1	Custom
+custom_t3	Bool_1	Custom
+-- Custom settings via getSetting()
+custom_f1	false	Bool
+custom_f2	false	Bool
+custom_f3	false	Bool
+custom_n0	0	UInt8
+custom_n1	1	UInt8
+custom_t1	true	Bool
+custom_t2	true	Bool
+custom_t3	true	Bool
+-- Built-in settings
+async_insert	0	Bool
+async_insert	false	Bool
+async_insert	0	Bool
+async_insert	false	Bool
+async_insert	0	Bool
+async_insert	false	Bool
+async_insert	0	Bool
+async_insert	false	Bool
+async_insert	1	Bool
+async_insert	true	Bool
+async_insert	1	Bool
+async_insert	true	Bool
+async_insert	1	Bool
+async_insert	true	Bool
+async_insert	1	Bool
+async_insert	true	Bool

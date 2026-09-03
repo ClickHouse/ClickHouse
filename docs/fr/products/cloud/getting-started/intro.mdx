@@ -1,0 +1,55 @@
+---
+slug: /cloud/overview
+title: 'Introduction'
+description: 'Découvrez ce qu''est ClickHouse Cloud, ses avantages par rapport à l''open-source et les principales fonctionnalités de la plateforme d''analyse entièrement gérée'
+keywords: ['clickhouse cloud', 'qu''est-ce que clickhouse cloud', 'présentation de clickhouse cloud', 'fonctionnalités de clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+<div id="what-is-clickhouse-cloud">
+  ## Qu’est-ce que ClickHouse Cloud ?
+</div>
+
+ClickHouse Cloud est un service cloud entièrement géré créé par les créateurs
+de ClickHouse, la base de données analytique en ligne open source orientée colonnes
+la plus rapide et la plus populaire.
+
+Avec Cloud, l’infrastructure, la maintenance, la mise à l’échelle et l’exploitation sont prises en charge
+pour vous, afin que vous puissiez vous concentrer sur l’essentiel : créer plus rapidement de la valeur
+pour votre organisation et vos clients.
+
+<div id="benefits-of-clickhouse-cloud">
+  ## Avantages de ClickHouse Cloud
+</div>
+
+ClickHouse Cloud offre plusieurs avantages majeurs par rapport à la version open-source :
+
+* **Mise en œuvre rapide** : commencez immédiatement à créer, sans avoir à dimensionner ni à faire évoluer votre cluster.
+* **Mise à l’échelle sans effort** : la mise à l’échelle automatique s’adapte aux charges de travail variables, afin que vous n’ayez pas à surdimensionner pour les pics d’utilisation.
+* **Opérations serverless** : laissez-nous nous charger du dimensionnement, de la mise à l’échelle, de la sécurité, de la fiabilité et des mises à niveau.
+* **Tarification transparente** : ne payez que ce que vous utilisez, avec des réservations de ressources et des contrôles de mise à l’échelle.
+* **Coût total de possession** : le meilleur rapport prix/performances et une faible charge administrative.
+* **Large écosystème** : retrouvez vos connecteurs de données, outils de visualisation, clients SQL et clients pour vos langages préférés.
+
+<div id="oss-vs-clickhouse-cloud">
+  ## Comparaison entre ClickHouse autogéré et ClickHouse Cloud
+</div>
+
+| Feature                                  | Benefits                                                                                                                                                                                                                                                                                                                                                                                                              | OSS ClickHouse | ClickHouse Cloud |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------- |
+| **Modes de déploiement**                 | ClickHouse offre la flexibilité d&#39;être autogéré en open-source ou déployé dans le cloud. Utilisez ClickHouse local pour des fichiers locaux sans serveur, ou chDB pour intégrer ClickHouse directement dans votre application.                                                                                                                                                                                    | ✅              | ✅                |
+| **Stockage**                             | En tant que produit open-source et hébergé dans le cloud, ClickHouse peut être déployé dans des architectures à disque partagé comme dans des architectures shared-nothing.                                                                                                                                                                                                                                           | ✅              | ✅                |
+| **Surveillance et alertes**              | La surveillance et les alertes sur l&#39;état de vos services sont essentielles pour garantir des performances optimales et adopter une approche proactive afin de détecter et de traiter les problèmes potentiels.                                                                                                                                                                                                   | ✅              | ✅                |
+| **ClickPipes**                           | ClickPipes est le pipeline d&#39;ingestion géré de ClickHouse qui vous permet de connecter en toute fluidité vos sources de données externes, comme des bases de données, des API et des services de streaming, à ClickHouse Cloud, sans avoir à gérer des pipelines, des jobs personnalisés ou des processus ETL. Il prend en charge des charges de travail de toutes tailles.                                       | ❌              | ✅                |
+| **Intégrations prêtes à l&#39;emploi**   | ClickHouse fournit des intégrations prêtes à l&#39;emploi qui connectent ClickHouse à des outils et services populaires tels que les data lakes, les clients SQL et pour différents langages, les bibliothèques de visualisation, et bien plus encore.                                                                                                                                                                | ❌              | ✅                |
+| **Console SQL**                          | La console SQL offre un moyen rapide et intuitif de se connecter aux bases de données ClickHouse, de les explorer et de les interroger, avec une interface soignée, une interface de requête, des outils d&#39;importation de données, des visualisations, des fonctionnalités de collaboration et une assistance SQL alimentée par GenAI.                                                                            | ❌              | ✅                |
+| **ClickHouse CLI**                       | Le ClickHouse CLI (`clickhousectl`) vous permet d&#39;installer et de gérer des versions locales de ClickHouse, de lancer des serveurs, d&#39;exécuter des requêtes et de gérer des services et des ressources ClickHouse Cloud.                                                                                                                                                                                      | ✅              | ✅                |
+| **Conformité**                           | La conformité de ClickHouse Cloud inclut CCPA, EU-US DPF, GDPR, HIPAA, ISO 27001, ISO 27001 SoA, PCI DSS et SOC2. Les processus de sécurité, de disponibilité, d&#39;intégrité du traitement et de confidentialité de ClickHouse Cloud sont tous audités de manière indépendante. Détails : trust.clickhouse.com.                                                                                                     | ❌              | ✅                |
+| **Sécurité de niveau entreprise**        | Prise en charge de fonctionnalités de sécurité avancées telles que le SSO, l&#39;authentification multifacteur, le contrôle d&#39;accès basé sur les rôles (RBAC), des connexions privées et sécurisées avec prise en charge de Private Link et Private Service Connect, le filtrage IP, les clés de chiffrement gérées par le client (CMEK), et plus encore.                                                         | ❌              | ✅                |
+| **Mise à l&#39;échelle et optimisation** | S&#39;adapte facilement à la hausse ou à la baisse en fonction de la charge de travail, avec prise en charge de la mise à l&#39;échelle horizontale et verticale. Grâce aux sauvegardes automatisées, à la réplication et à la haute disponibilité, ClickHouse Cloud offre aux utilisateurs une allocation optimale des ressources.                                                                                   | ❌              | ✅                |
+| **Services de support**                  | Nos services de support de premier ordre et les ressources de la communauté open-source offrent une couverture, quel que soit le mode de déploiement que vous choisissez.                                                                                                                                                                                                                                             | ❌              | ✅                |
+| **Mises à niveau de la base de données** | Des mises à niveau régulières de la base de données sont essentielles pour maintenir une posture de sécurité solide et accéder aux dernières fonctionnalités ainsi qu&#39;aux améliorations de performances les plus récentes.                                                                                                                                                                                        | ❌              | ✅                |
+| **Sauvegardes**                          | Les fonctionnalités de sauvegarde et de restauration garantissent la durabilité des données et permettent une reprise maîtrisée en cas de panne ou d&#39;autres perturbations.                                                                                                                                                                                                                                        | ❌              | ✅                |
+| **Compute-compute separation**           | Vous pouvez mettre à l&#39;échelle les ressources de calcul indépendamment du stockage, afin que les équipes et les charges de travail puissent partager le même stockage tout en conservant des ressources de calcul dédiées. Cela garantit que les performances d&#39;une charge de travail n&#39;interfèrent pas avec celles d&#39;une autre, améliorant ainsi la flexibilité, les performances et la rentabilité. | ❌              | ✅                |
+| **Services gérés**                       | Avec un service géré dans le cloud, les équipes peuvent se concentrer sur les résultats métier et accélérer la mise sur le marché sans avoir à se soucier de la charge opérationnelle liée au dimensionnement, à la configuration et à la maintenance de ClickHouse.                                                                                                                                                  | ❌              | ✅                |

@@ -1,0 +1,136 @@
+select json limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+{}
+select json.b limit 3
+7
+8
+\N
+select json.b, json.c limit 3
+7	8
+8	9
+\N	\N
+select json.arr[].arr1 limit 3
+[9]
+[10]
+[]
+select json.arr[].arr1, json.arr[].arr2 limit 3
+[9]	[10]
+[10]	[11]
+[]	[]
+select json.arr[].arr2, json.arr[].arr1 limit 3
+[10]	[9]
+[11]	[10]
+[]	[]
+select json.arr[].arr1, json.arr[].arr4 limit 3
+[9]	[12]
+[10]	[13]
+[]	[]
+select json.arr[].arr4, json.arr[].arr1 limit 3
+[12]	[9]
+[13]	[10]
+[]	[]
+select json.arr[].arr1, json.arr[].arr99 limit 3
+[9]	[NULL]
+[10]	[NULL]
+[]	[]
+select json.arr[].arr99, json.arr[].arr1 limit 3
+[NULL]	[9]
+[NULL]	[10]
+[]	[]
+select json.arr, json.arr[].arr1 limit 3
+['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	[9]
+['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	[10]
+\N	[]
+select json.arr[].arr1, json.arr limit 3
+[9]	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']
+[10]	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']
+[]	\N
+select json, json.b, json.c limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	7	8
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	8	9
+{}	\N	\N
+select json.b, json.c, json limit 3
+7	8	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+8	9	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	\N	{}
+select json, json.b, json.c, json.arr[].arr1 limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	7	8	[9]
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	8	9	[10]
+{}	\N	\N	[]
+select json.b, json.c, json.arr[].arr1, json limit 3
+7	8	[9]	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+8	9	[10]	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	\N	[]	{}
+select json, json.b, json.c, json.arr, json.arr[].arr1 limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	7	8	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	[9]
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	8	9	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	[10]
+{}	\N	\N	\N	[]
+select json.b, json.c, json.arr[].arr1, json.arr, json limit 3
+7	8	[9]	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+8	9	[10]	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	\N	[]	\N	{}
+select json.^a limit 3
+{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+{}
+select json, json.^a limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+{}	{}
+select json.^a, json.a.a1 limit 3
+{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1
+{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2
+{}	\N
+select json.a.a1, json.^a limit 3
+1	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+2	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+\N	{}
+select json.^a, json.a.a1, json.a.arr[].arr1 limit 3
+{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1	[3]
+{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2	[4]
+{}	\N	[]
+select json.a.a1, json.a.arr[].arr1, json.^a limit 3
+1	[3]	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+2	[4]	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+\N	[]	{}
+select json, json.a.a1, json.a.arr[].arr1, json.^a limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	1	[3]	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	2	[4]	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+{}	\N	[]	{}
+select json.a.a1, json.a.arr[].arr1, json.^a, json limit 3
+1	[3]	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+2	[4]	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	[]	{}	{}
+select json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr limit 3
+{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']
+{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']
+{}	\N	[]	\N	\N
+select json.a.a1, json.a.arr[].arr1, json.b, json.arr, json.^a limit 3
+1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}
+2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}
+\N	[]	\N	\N	{}
+select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']
+{}	{}	\N	[]	\N	\N
+select json.a.a1, json.a.arr[].arr1, json.b, json.arr, json.^a, json limit 3
+1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	[]	\N	\N	{}	{}
+select json.arr[].arr1, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr limit 3
+[9]	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']
+[10]	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']
+[]	{}	\N	[]	\N	\N
+select json.a.a1, json.a.arr[].arr1, json.b, json.arr, json.^a, json.arr[].arr1 limit 3
+1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	[9]
+2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	[10]
+\N	[]	\N	\N	{}	[]
+select json, json.arr[].arr1, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr limit 3
+{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}	[9]	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']
+{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}	[10]	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']
+{}	[]	{}	\N	[]	\N	\N
+select json.a.a1, json.a.arr[].arr1, json.b, json.arr, json.^a, json.arr[].arr1, json limit 3
+1	[3]	7	['{"arr1":9,"arr2":10,"arr3":11,"arr4":12}']	{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]}	[9]	{"?1":1,"?2":1,"?3":1,"?4":1,"?5":1,"?6":1,"?7":1,"?8":1,"a":{"a1":1,"a2":2,"arr":[{"arr1":3,"arr2":4,"arr3":5,"arr4":6}]},"arr":[{"arr1":9,"arr2":10,"arr3":11,"arr4":12}],"b":7,"c":8}
+2	[4]	8	['{"arr1":10,"arr2":11,"arr3":12,"arr4":13}']	{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]}	[10]	{"a":{"a1":2,"a2":3,"arr":[{"arr1":4,"arr2":5,"arr3":6,"arr4":7}]},"arr":[{"arr1":10,"arr2":11,"arr3":12,"arr4":13}],"b":8,"c":9}
+\N	[]	\N	\N	{}	[]	{}

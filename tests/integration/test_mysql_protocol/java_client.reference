@@ -1,0 +1,133 @@
+### testSimpleDataTypes
+Row #1
+i8 type is TINYINT, value: -128, wasNull: false
+i16 type is SMALLINT, value: -32768, wasNull: false
+i32 type is INT, value: -2147483648, wasNull: false
+i64 type is BIGINT, value: -9223372036854775808, wasNull: false
+i128 type is CHAR, value: -170141183460469231731687303715884105728, wasNull: false
+i256 type is CHAR, value: -57896044618658097711785492504343953926634992332820282019728792003956564819968, wasNull: false
+ui8 type is TINYINT, value: 120, wasNull: false
+ui16 type is SMALLINT, value: 1234, wasNull: false
+ui32 type is INT, value: 51234, wasNull: false
+ui64 type is BIGINT, value: 421342, wasNull: false
+ui128 type is CHAR, value: 15324355, wasNull: false
+ui256 type is CHAR, value: 41345135123432, wasNull: false
+f32 type is FLOAT, value: -0.796896, wasNull: false
+f64 type is DOUBLE, value: -0.113259, wasNull: false
+b type is TINYINT, value: true, wasNull: false
+Row #2
+i8 type is TINYINT, value: 127, wasNull: false
+i16 type is SMALLINT, value: 32767, wasNull: false
+i32 type is INT, value: 2147483647, wasNull: false
+i64 type is BIGINT, value: 9223372036854775807, wasNull: false
+i128 type is CHAR, value: 170141183460469231731687303715884105727, wasNull: false
+i256 type is CHAR, value: 57896044618658097711785492504343953926634992332820282019728792003956564819967, wasNull: false
+ui8 type is TINYINT, value: 255, wasNull: false
+ui16 type is SMALLINT, value: 65535, wasNull: false
+ui32 type is INT, value: 4294967295, wasNull: false
+ui64 type is BIGINT, value: 18446744073709551615, wasNull: false
+ui128 type is CHAR, value: 340282366920938463463374607431768211455, wasNull: false
+ui256 type is CHAR, value: 115792089237316195423570985008687907853269984665640564039457584007913129639935, wasNull: false
+f32 type is FLOAT, value: 1.234000, wasNull: false
+f64 type is DOUBLE, value: 3.352451, wasNull: false
+b type is TINYINT, value: false, wasNull: false
+
+### testStringTypes
+Row #1
+s type is CHAR, value: 42, wasNull: false
+sn type is CHAR, value: null, wasNull: true
+lc type is CHAR, value: test, wasNull: false
+nlc type is CHAR, value: null, wasNull: true
+Row #2
+s type is CHAR, value: foo, wasNull: false
+sn type is CHAR, value: bar, wasNull: false
+lc type is CHAR, value: qaz, wasNull: false
+nlc type is CHAR, value: qux, wasNull: false
+
+### testLowCardinalityAndNullableTypes
+Row #1
+ilc type is INT, value: -54, wasNull: false
+dlc type is DATE, value: 1970-01-01, wasNull: false
+ni type is INT, value: 144, wasNull: false
+Row #2
+ilc type is INT, value: 42, wasNull: false
+dlc type is DATE, value: 2011-02-05, wasNull: false
+ni type is INT, value: 0, wasNull: true
+
+### testDecimalTypes
+Row #1
+d32 type is DECIMAL, value: -1.55, wasNull: false
+d64 type is DECIMAL, value: 6.03, wasNull: false
+d128_native type is DECIMAL, value: 5, wasNull: false
+d128_text type is CHAR, value: -1224124.23423, wasNull: false
+d256 type is CHAR, value: -54342.3, wasNull: false
+Row #2
+d32 type is DECIMAL, value: 1234567.89, wasNull: false
+d64 type is DECIMAL, value: 123456789123456.789, wasNull: false
+d128_native type is DECIMAL, value: 12345678912345678912.1234567891, wasNull: false
+d128_text type is CHAR, value: 1234567.8912345678912345678911234567891, wasNull: false
+d256 type is CHAR, value: 12345678912345678912345678911234567891234567891234567891.12345678911234567891, wasNull: false
+
+### testMiscTypes
+Row #1
+a type is CHAR, value: ['foo','bar'], wasNull: false
+u type is CHAR, value: 5da5038d-788f-48c6-b510-babb41c538d3, wasNull: false
+t type is CHAR, value: (42,'qaz'), wasNull: false
+m type is CHAR, value: {'qux':144,'text':255}, wasNull: false
+
+### testDateTypes
+Row #1
+d type is DATE, value: 1970-01-01, wasNull: false
+d32 type is DATE, value: 1900-01-01, wasNull: false
+dt type is TIMESTAMP, value: 1970-01-01 00:00:00.0, wasNull: false
+dt64_3 type is TIMESTAMP, value: 1900-01-01 00:00:00.001, wasNull: false
+dt64_6 type is TIMESTAMP, value: 1900-01-01 00:00:00.000001, wasNull: false
+dt64_9 type is TIMESTAMP, value: 1900-01-01 00:00:00.0, wasNull: false
+Row #2
+d type is DATE, value: 2149-06-06, wasNull: false
+d32 type is DATE, value: 2178-04-16, wasNull: false
+dt type is TIMESTAMP, value: 2106-02-07 06:28:15.0, wasNull: false
+dt64_3 type is TIMESTAMP, value: 2106-02-07 06:28:15.123, wasNull: false
+dt64_6 type is TIMESTAMP, value: 2106-02-07 06:28:15.123456, wasNull: false
+dt64_9 type is TIMESTAMP, value: 2106-02-07 06:28:15.123456, wasNull: false
+
+### testUnusualDateTime64Scales
+Row #1
+dt64_0 type is TIMESTAMP, value: 2022-04-13 03:17:45.0, wasNull: false
+dt64_1 type is TIMESTAMP, value: 2022-04-13 03:17:45.1, wasNull: false
+dt64_2 type is TIMESTAMP, value: 2022-04-13 03:17:45.12, wasNull: false
+dt64_4 type is TIMESTAMP, value: 2022-04-13 03:17:45.1234, wasNull: false
+dt64_5 type is TIMESTAMP, value: 2022-04-13 03:17:45.12345, wasNull: false
+dt64_7 type is TIMESTAMP, value: 2022-04-13 03:17:45.123456, wasNull: false
+dt64_8 type is TIMESTAMP, value: 2022-04-13 03:17:45.123456, wasNull: false
+Row #2
+dt64_0 type is TIMESTAMP, value: 2022-04-13 03:17:45.0, wasNull: false
+dt64_1 type is TIMESTAMP, value: 2022-04-13 03:17:45.1, wasNull: false
+dt64_2 type is TIMESTAMP, value: 2022-04-13 03:17:45.01, wasNull: false
+dt64_4 type is TIMESTAMP, value: 2022-04-13 03:17:45.0001, wasNull: false
+dt64_5 type is TIMESTAMP, value: 2022-04-13 03:17:45.00001, wasNull: false
+dt64_7 type is TIMESTAMP, value: 2022-04-13 03:17:45.0, wasNull: false
+dt64_8 type is TIMESTAMP, value: 2022-04-13 03:17:45.0, wasNull: false
+
+### testDateTimeTimezones
+Row #1
+dt type is TIMESTAMP, value: 1970-01-01 01:00:00.0, wasNull: false
+dt64_3 type is TIMESTAMP, value: 1969-12-31 16:00:00.0, wasNull: false
+Row #2
+dt type is TIMESTAMP, value: 2022-09-04 20:31:05.0, wasNull: false
+dt64_3 type is TIMESTAMP, value: 2022-09-04 20:31:05.022, wasNull: false
+
+### testSuspiciousNullableLowCardinalityTypes
+Row #1
+f type is FLOAT, value: 1.0, wasNull: false
+d type is DATE, value: 2022-04-15, wasNull: false
+dt type is TIMESTAMP, value: 2021-06-04 13:55:11.0, wasNull: false
+Row #2
+f type is FLOAT, value: 3.14, wasNull: false
+d type is DATE, value: 1970-01-01, wasNull: false
+dt type is TIMESTAMP, value: 1970-01-01 00:00:00.0, wasNull: false
+Row #3
+f type is FLOAT, value: 0.0, wasNull: true
+d type is DATE, value: null, wasNull: true
+dt type is TIMESTAMP, value: null, wasNull: true
+

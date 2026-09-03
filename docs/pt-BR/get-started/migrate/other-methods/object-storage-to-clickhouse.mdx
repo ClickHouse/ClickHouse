@@ -1,0 +1,28 @@
+---
+title: Mover dados do armazenamento de objetos em Cloud para o ClickHouse Cloud
+description: 'Mover dados do armazenamento de objetos para o ClickHouse Cloud'
+keywords: ['armazenamento de objetos', 's3', 'azure blob', 'gcs', 'migração']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="Migrando o ClickHouse autogerenciado" />
+
+Se você usa um armazenamento de objetos em Cloud como lago de dados e deseja importar esses dados para o ClickHouse Cloud,
+ou se o seu sistema de banco de dados atual consegue descarregar dados diretamente em um armazenamento de objetos em Cloud, então você pode usar uma das
+funções de tabela para migrar dados armazenados em armazenamento de objetos em Cloud para uma tabela do ClickHouse Cloud:
+
+* [s3](/pt-BR/reference/functions/table-functions/s3) ou [s3Cluster](/pt-BR/reference/functions/table-functions/s3Cluster)
+* [gcs](/pt-BR/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/pt-BR/reference/functions/table-functions/azureBlobStorage)
+
+Se o seu sistema de banco de dados atual não consegue descarregar dados diretamente em um armazenamento de objetos em Cloud, você pode usar uma [ferramenta ETL/ELT de terceiros](/pt-BR/get-started/migrate/other-methods/etl-tool-to-clickhouse) ou [clickhouse-local](/pt-BR/get-started/migrate/other-methods/clickhouse-local-etl) para mover dados
+do seu sistema de banco de dados atual para o armazenamento de objetos em Cloud, a fim de migrar esses dados, em uma segunda etapa, para uma tabela do ClickHouse Cloud.
+
+Embora esse seja um processo de duas etapas (descarregar os dados em um armazenamento de objetos em Cloud e depois carregá-los no ClickHouse), a vantagem é que isso
+escala para petabytes graças ao [forte suporte do ClickHouse Cloud](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) a leituras altamente paralelas a partir do armazenamento de objetos em Cloud.
+Além disso, você pode aproveitar formatos sofisticados e compactados, como [Parquet](/pt-BR/reference/formats/Parquet/Parquet).
+
+Há um [artigo no blog](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) com exemplos práticos de código mostrando como inserir dados no ClickHouse Cloud usando S3.

@@ -1,0 +1,5 @@
+Resize 20 → 20
+Resize × 20 20 → 1
+Resize 20 → 20
+Same query with max_threads = 300
+Resize 300 → 300

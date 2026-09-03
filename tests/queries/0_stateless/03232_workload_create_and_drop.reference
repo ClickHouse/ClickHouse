@@ -1,0 +1,5 @@
+all		CREATE WORKLOAD `all`
+all		CREATE WORKLOAD `all`
+development	all	CREATE WORKLOAD development IN `all`
+production	all	CREATE WORKLOAD production IN `all`
+all		CREATE WORKLOAD `all`

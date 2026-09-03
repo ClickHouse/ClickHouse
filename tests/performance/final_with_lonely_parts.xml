@@ -1,0 +1,77 @@
+<test>
+    <settings>
+        <do_not_merge_across_partitions_select_final>1</do_not_merge_across_partitions_select_final>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE with_lonely
+        (
+        `id` UInt64,
+        `dt` Date,
+        `val` UInt64,
+        `version` UInt64
+        )
+        ENGINE = ReplacingMergeTree(version)
+        PARTITION BY dt
+        ORDER BY (id);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO with_lonely SELECT number, '2022-10-28', number*10, 0 FROM numbers(3000000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+500000, '2022-10-28', number*10, 1 FROM
+        numbers(3000000);
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE with_lonely PARTITION '2022-10-28' FINAL;</fill_query>
+
+    <fill_query>
+        INSERT INTO with_lonely SELECT number, '2022-10-29', number*10, 0 FROM numbers(3000000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+500000, '2022-10-29', number*10, 1 FROM
+        numbers(3000000);
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE with_lonely PARTITION '2022-10-29' FINAL;</fill_query>
+
+    <fill_query>
+        INSERT INTO with_lonely SELECT number, '2022-10-30', number*10, 0 FROM numbers(3000000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+500000, '2022-10-30', number*10, 1 FROM
+        numbers(3000000);
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE with_lonely PARTITION '2022-10-30' FINAL;</fill_query>
+
+    <fill_query>
+        INSERT INTO with_lonely SELECT number, '2022-10-31', number*10, 0 FROM numbers(3000000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+500000, '2022-10-31', number*10, 1 FROM
+        numbers(3000000);
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE with_lonely PARTITION '2022-10-31' FINAL;</fill_query>
+
+    <fill_query>
+        INSERT INTO with_lonely SELECT number, '2022-11-01', number*10, 0 FROM numbers(500000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+50000, '2022-11-01', number*10, 1 FROM
+        numbers(500000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+60000, '2022-11-01', number*10, 2 FROM
+        numbers(500000);
+    </fill_query>
+    <fill_query>
+        INSERT INTO with_lonely SELECT number+70000, '2022-11-01', number*10, 3 FROM
+        numbers(500000);
+    </fill_query>
+
+
+    <query>SELECT max(val), count(*) FROM with_lonely FINAL;</query>
+    <query>SELECT max(val), count(*) FROM with_lonely FINAL WHERE dt != '2022-11-01';</query>
+
+    <drop_query>DROP TABLE IF EXISTS with_lonely;</drop_query>
+</test>

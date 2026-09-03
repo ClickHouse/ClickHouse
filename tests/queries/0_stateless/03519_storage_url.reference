@@ -1,0 +1,42 @@
+dst_remote	2	1
+dst_remote	4	1
+dst_remote	100	1
+dst_remote	200	1
+dst_remote	300	1
+dst_remote	400	1
+Row 1:
+──────
+query:           insert into dst_remote format TSV
+
+written_rows:    2
+HTTPRequests:    0
+HTTPConnections: 0
+
+Row 2:
+──────
+query:           insert into dst_remote format TSV
+
+written_rows:    4
+HTTPRequests:    0
+HTTPConnections: 0
+
+Row 3:
+──────
+query:           insert into src values 
+written_rows:    4
+HTTPRequests:    0
+HTTPConnections: 0
+
+Row 4:
+──────
+query:           insert into src values 
+written_rows:    6
+HTTPRequests:    1
+HTTPConnections: 1
+
+Row 5:
+──────
+query:           insert into src values 
+written_rows:    8
+HTTPRequests:    1
+HTTPConnections: 1

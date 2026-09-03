@@ -1,0 +1,13 @@
+== Only last version remains after OPTIMIZE W/ CLEANUP ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	1	0
+d5	1	0
+d6	3	0
+== OPTIMIZE W/ CLEANUP (remove d6) ==
+d1	5	0
+d2	1	0
+d3	1	0
+d4	1	0
+d5	1	0

@@ -1,0 +1,148 @@
+---
+slug: /cloud/data-resiliency
+sidebarTitle: 'Résilience des données'
+title: 'Résilience des données'
+description: 'Ce guide présente la reprise après sinistre.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'résilience des données', 'reprise après sinistre']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Cette page présente les recommandations de reprise après sinistre pour ClickHouse Cloud, ainsi que des conseils destinés aux clients pour rétablir leur service après une interruption.
+ClickHouse Cloud ne prend actuellement pas en charge le basculement automatique ni la synchronisation automatique entre plusieurs régions géographiques.
+
+<Tip>
+  Les clients doivent effectuer régulièrement des tests de restauration à partir de sauvegardes afin de comprendre le RTO propre à la taille et à la configuration de leur service.
+</Tip>
+
+<div id="definitions">
+  ## Définitions
+</div>
+
+Il est utile de commencer par quelques définitions.
+
+**RPO (objectif de point de reprise)** : la perte de données maximale acceptable, mesurée en temps, à la suite d’un incident. Exemple : un RPO de 30 min signifie qu’en cas de défaillance, la DB doit pouvoir être restaurée à un état dont les données ne datent pas de plus de 30 min. Cela dépend bien sûr de la fréquence des sauvegardes.
+
+**RTO (objectif de temps de reprise)** : la durée d’indisponibilité maximale acceptable avant le rétablissement des opérations normales après une interruption de service. Exemple : un RTO de 30 min signifie qu’en cas de défaillance, l’équipe est en mesure de restaurer les données et les applications, et de rétablir le fonctionnement normal en 30 min.
+
+**Sauvegardes et snapshots de base de données** : les sauvegardes assurent un stockage durable à long terme grâce à une copie distincte des données. Les snapshots ne créent pas de copie supplémentaire des données, sont généralement plus rapides et offrent de meilleurs RPO.
+
+<div id="database-backups">
+  ## Sauvegardes de base de données
+</div>
+
+Disposer d&#39;une sauvegarde de votre service principal permet de restaurer efficacement les données en cas d&#39;indisponibilité du service principal.
+ClickHouse Cloud prend en charge les fonctionnalités de sauvegarde suivantes.
+
+1. **Sauvegardes par défaut**
+
+Par défaut, ClickHouse Cloud effectue une [sauvegarde](/fr/products/cloud/guides/backups/index) de votre service toutes les 24 heures.
+Ces sauvegardes se trouvent dans la même région que le service et sont stockées dans le bucket de stockage du CSP (cloud service provider) de ClickHouse.
+Si les données du service principal sont corrompues, la sauvegarde peut être utilisée pour restaurer les données dans un nouveau service.
+
+2. **Sauvegardes externes (dans le bucket de stockage du client)**
+
+Vous pouvez [exporter des sauvegardes](/fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) vers votre propre stockage d&#39;objets, dans votre compte, dans la même région ou dans une autre région.
+La prise en charge de l&#39;exportation de sauvegardes entre clouds sera bientôt disponible.
+Des frais de transfert de données s&#39;appliquent aux sauvegardes inter-régions et entre clouds.
+
+<Note>
+  Cette fonctionnalité n&#39;est actuellement pas disponible pour les services PCI/HIPAA
+</Note>
+
+3. **Sauvegardes configurables**
+
+Les clients peuvent [configurer les sauvegardes](/fr/products/cloud/guides/backups/configurable-backups) afin qu&#39;elles soient effectuées plus fréquemment, jusqu&#39;à toutes les 6 heures, afin d&#39;améliorer le RPO.
+Les clients peuvent également configurer une durée de rétention plus longue.
+
+Les sauvegardes actuellement disponibles pour le service sont répertoriées sur la page « backups » de la console ClickHouse Cloud.
+Cette section fournit également le statut de réussite ou d&#39;échec de chaque sauvegarde.
+
+<div id="restoring-from-a-backup">
+  ## Restauration à partir d’une sauvegarde
+</div>
+
+1. Les sauvegardes par défaut, stockées dans le bucket de stockage ClickHouse Cloud, peuvent être restaurées dans un nouveau service de la même région.
+2. Les sauvegardes externes (dans le stockage objet du client) peuvent être restaurées dans un nouveau service situé dans la même région ou dans une autre région.
+
+<div id="backup-and-restore-duration-guidance">
+  ## Conseils sur la durée des sauvegardes et des restaurations
+</div>
+
+La durée des sauvegardes et des restaurations dépend de plusieurs facteurs, notamment de la taille de la base de données, ainsi que du schéma et du nombre de tables qu’elle contient.
+
+Lors de nos tests, nous avons constaté que des sauvegardes plus petites, d’environ 1 To, peuvent nécessiter de 10 à 15 minutes, voire davantage.
+Les sauvegardes de moins de 20 To se terminent généralement en moins d’une heure, et la sauvegarde d’environ 50 To de données devrait prendre 2 à 3 heures.
+Les sauvegardes bénéficient d’économies d’échelle à plus grande taille, et nous avons constaté que des sauvegardes allant jusqu’à 1 Po pour certains services internes se terminent en moins de 10 heures.
+
+Nous vous recommandons d’effectuer des tests avec votre propre base de données ou avec des données d’exemple afin d’obtenir de meilleures estimations, car la durée réelle dépend de plusieurs facteurs, comme indiqué ci-dessus.
+
+Les durées de restauration sont comparables à celles des sauvegardes pour des tailles similaires.
+Comme indiqué ci-dessus, nous vous recommandons d’effectuer des tests avec votre propre base de données afin d’estimer le temps nécessaire pour restaurer une sauvegarde.
+
+<Note>
+  Il n’existe actuellement AUCUNE prise en charge du basculement automatique entre 2 instances ClickHouse Cloud, qu’elles se trouvent dans la même région ou dans des régions différentes.
+  Il n’existe actuellement AUCUNE synchronisation automatique des données entre différents services ClickHouse Cloud dans la même région ou dans des régions différentes, c.-à-d. une réplication active-active.
+</Note>
+
+<div id="recovery-process">
+  ## Procédure de récupération
+</div>
+
+Cette section présente les différentes options de récupération ainsi que la procédure à suivre dans chaque cas.
+
+<div id="primary-service-data-corruption">
+  ### Corruption des données du service principal
+</div>
+
+Dans ce cas, les données [peuvent être restaurées](/fr/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) depuis la sauvegarde vers un autre service de la même région.
+La sauvegarde peut dater de jusqu&#39;à 24 heures si vous utilisez la stratégie de sauvegarde par défaut, ou de jusqu&#39;à 6 heures (si vous utilisez des sauvegardes configurables avec une fréquence de 6 heures).
+
+<div id="restoration-steps">
+  #### Étapes de restauration
+</div>
+
+Pour restaurer à partir d’une sauvegarde existante
+
+1. Accédez à la section « Backups » de la console ClickHouse Cloud.
+2. Cliquez sur les trois points sous « Actions » pour la sauvegarde depuis laquelle vous souhaitez restaurer.
+3. Donnez un nom au nouveau service, puis restaurez-le à partir de cette sauvegarde
+
+<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurer à partir d’une sauvegarde" />
+
+<div id="primary-region-downtime">
+  ### Indisponibilité de la région principale
+</div>
+
+Vous pouvez [exporter des sauvegardes](/fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) vers un bucket de stockage chez votre propre fournisseur cloud.
+Si vous craignez des défaillances régionales, nous vous recommandons d&#39;exporter les sauvegardes vers une autre région.
+Gardez à l&#39;esprit que des frais de transfert de données inter-régions s&#39;appliqueront.
+
+Si la région principale devient indisponible, la sauvegarde située dans une autre région peut être restaurée sur un nouveau service dans une autre région.
+
+Une fois la sauvegarde restaurée sur un autre service, vous devrez vous assurer que toute configuration DNS, de load balancer ou de chaîne de connexion est mise à jour pour pointer vers le nouveau service.
+Cela peut impliquer :
+
+* La mise à jour des variables d&#39;environnement ou des secrets
+* Le redémarrage des services applicatifs pour établir de nouvelles connexions
+
+<Note>
+  La sauvegarde / restauration vers un bucket de stockage externe n&#39;est actuellement pas prise en charge pour les services utilisant [Transparent Data Encryption (TDE)](/fr/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+</Note>
+
+<div id="additional-options">
+  ## Options supplémentaires
+</div>
+
+Voici quelques options supplémentaires à envisager.
+
+1. **Écriture simultanée vers des clusters distincts**
+
+Avec cette option, vous pouvez configurer 2 clusters distincts dans différentes régions et écrire simultanément vers les deux.
+Cette option entraîne naturellement un coût plus élevé, car elle implique l’exécution de plusieurs services, mais elle offre une meilleure disponibilité si l’une des régions devient indisponible.
+
+2. **Utiliser la réplication du CSP**
+
+Avec cette option, vous utilisez la réplication native du stockage d’objet de votre fournisseur de services cloud pour copier les données.
+Par exemple, avec BYOB, vous pouvez exporter la sauvegarde vers un bucket de stockage dont vous êtes propriétaire dans la région principale, puis la répliquer vers une autre région à l’aide de la [réplication interrégionale AWS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html).

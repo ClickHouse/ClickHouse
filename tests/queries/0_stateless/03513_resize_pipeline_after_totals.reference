@@ -1,0 +1,13 @@
+(Expression)
+ExpressionTransform × 5
+  (TotalsHaving)
+  Resize 1 → 4
+    TotalsHavingTransform 1 → 2
+      Resize 4 → 1
+        (Aggregating)
+        Resize 1 → 4
+          AggregatingTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1

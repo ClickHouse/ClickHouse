@@ -1,0 +1,49 @@
+-- filter on status
+2934	12559530
+2934	12559530
+-- filter on timestamp range
+1000	1871000
+1000	1871000
+-- combined filter
+366	1391435
+366	1391435
+-- small row limit (fallback)
+2934	12559530
+-- small byte limit (fallback)
+2934	12559530
+-- prewhere
+732	2874310.5
+732	2874310.5
+-- row policy
+1893	8020974.5
+1893	8020974.5
+-- plan: optimization has InputSelector
+1
+-- plan: no optimization has no InputSelector
+0
+-- plan: no filter has no InputSelector
+0
+-- tiebreaker: same version
+third
+third
+-- signed version
+positive_last
+positive_last
+-- Int32 version
+positive_last
+positive_last
+-- UInt128 version
+second_last
+second_last
+-- Int128 version
+positive_last
+positive_last
+-- Date32 version
+post_epoch_last
+post_epoch_last
+-- DateTime64 version
+post_epoch_last
+post_epoch_last
+-- no version column
+second
+second

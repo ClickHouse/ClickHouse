@@ -1,0 +1,131 @@
+---
+description: 'Geohash에 대한 문서'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'Geohash를 다루는 함수'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash)는 지구 표면을 격자 형태의 버킷으로 나누고 각 셀을 문자와 숫자로 이루어진 짧은 문자열로 인코딩하는 지오코드 체계입니다. 계층적 데이터 구조이므로 Geohash 문자열이 길수록 지리적 위치를 더 정밀하게 나타낼 수 있습니다.
+
+지리 좌표를 Geohash 문자열로 수동 변환해야 하는 경우 [geohash.org](http://geohash.co/)를 사용할 수 있습니다.
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+위도와 경도를 [geohash](#geohash) 문자열로 변환합니다.
+
+**구문**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**입력 값**
+
+* `longitude` — 인코딩할 좌표의 경도 부분입니다. 범위는 `[-180°, 180°]`인 부동소수점 값입니다. [Float](/ko/reference/data-types/float).
+* `latitude` — 인코딩할 좌표의 위도 부분입니다. 범위는 `[-90°, 90°]`인 부동소수점 값입니다. [Float](/ko/reference/data-types/float).
+* `precision` (선택 사항) — 결과로 생성되는 인코딩 문자열의 길이입니다. 기본값은 `12`입니다. 범위는 `[1, 12]`인 정수입니다. [Int8](/ko/reference/data-types/int-uint).
+
+<Note>
+  - 모든 좌표 매개변수는 동일한 타입이어야 하며, `Float32` 또는 `Float64` 중 하나여야 합니다.
+  - `precision` 매개변수에서 `1`보다 작거나 `12`보다 큰 값은 별도 경고 없이 `12`로 변환됩니다.
+</Note>
+
+**반환 값**
+
+* 인코딩된 좌표의 영숫자 문자열입니다(수정된 base32 인코딩 알파벳을 사용함). [String](/ko/reference/data-types/string).
+
+**예시**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+[geohash](#geohash)로 인코딩된 문자열을 경도와 위도로 디코딩합니다.
+
+**구문**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**입력 값**
+
+* `hash_str` — Geohash로 인코딩된 문자열입니다.
+
+**반환 값**
+
+* 경도와 위도를 나타내는 `Float64` 값의 Tuple `(longitude, latitude)`입니다. [Tuple](/ko/reference/data-types/tuple)([Float64](/ko/reference/data-types/float))
+
+**예시**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+지정된 box의 경계 내부에 있으면서 경계와 교차하는, 지정된 precision의 [geohash](#geohash) 인코딩 문자열 배열을 반환합니다. 즉, 2D 그리드를 평탄화하여 배열로 표현한 것입니다.
+
+**구문**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**인수**
+
+* `longitude_min` — 최소 경도입니다. 범위: `[-180°, 180°]`. [Float](/ko/reference/data-types/float).
+* `latitude_min` — 최소 위도입니다. 범위: `[-90°, 90°]`. [Float](/ko/reference/data-types/float).
+* `longitude_max` — 최대 경도입니다. 범위: `[-180°, 180°]`. [Float](/ko/reference/data-types/float).
+* `latitude_max` — 최대 위도입니다. 범위: `[-90°, 90°]`. [Float](/ko/reference/data-types/float).
+* `precision` — Geohash 정밀도입니다. 범위: `[1, 12]`. [UInt8](/ko/reference/data-types/int-uint).
+
+<Note>
+  모든 좌표 매개변수는 동일한 타입이어야 하며, `Float32` 또는 `Float64` 중 하나여야 합니다.
+</Note>
+
+**반환 값**
+
+* 지정된 영역을 덮는 Geohash 박스의, 길이가 precision인 문자열로 구성된 배열입니다. 항목의 순서는 보장되지 않습니다. [Array](/ko/reference/data-types/array)([String](/ko/reference/data-types/string)).
+* 최소 위도 및 경도 값이 해당 최대값보다 작지 않으면 `[]`를 반환합니다. 즉, 빈 배열입니다.
+
+<Note>
+  결과 배열의 길이가 10&#39;000&#39;000개를 초과하면 함수가 예외를 발생시킵니다.
+</Note>
+
+**예시**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

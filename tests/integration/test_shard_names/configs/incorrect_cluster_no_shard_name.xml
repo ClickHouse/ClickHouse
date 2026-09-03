@@ -1,0 +1,15 @@
+<clickhouse>
+    <remote_servers>
+        <test_incorrect_cluster_no_shard_name>
+            <node>
+                <name>First</name>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+        </test_incorrect_cluster_no_shard_name>
+    </remote_servers>
+</clickhouse>

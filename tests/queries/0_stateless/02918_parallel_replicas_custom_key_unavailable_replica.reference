@@ -1,0 +1,29 @@
+-- { echoOn }
+SELECT y, count()
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
+GROUP BY y
+ORDER BY y
+SETTINGS max_parallel_replicas=3, enable_parallel_replicas=1, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_mode='custom_key_sampling';
+0	250
+1	250
+2	250
+3	250
+SELECT y, count()
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
+GROUP BY y
+ORDER BY y
+SETTINGS max_parallel_replicas=3, enable_parallel_replicas=1, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_mode='custom_key_range';
+0	250
+1	250
+2	250
+3	250
+SET use_hedged_requests=0;
+SELECT y, count()
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
+GROUP BY y
+ORDER BY y
+SETTINGS max_parallel_replicas=3, enable_parallel_replicas=1, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_mode='custom_key_sampling';
+0	250
+1	250
+2	250
+3	250

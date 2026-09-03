@@ -1,0 +1,21 @@
+services:
+  rest:
+    image: tabulario/iceberg-rest:1.6.0
+    ports:
+      - "${ICEBERG_REST_CATALOG_PORT}:8181"
+    environment:
+      - AWS_ACCESS_KEY_ID=minio
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://iceberg-data/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio1:9001
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8181"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 5s
+    cpus: 3

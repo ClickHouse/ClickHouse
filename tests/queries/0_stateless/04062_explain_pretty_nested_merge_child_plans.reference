@@ -1,0 +1,60 @@
+Output: x
+
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+│  Header: x UInt32
+└──ReadFromMerge
+   │  Header: x UInt32
+   ├──Expression
+   │  │  Header: x UInt32
+   │  └──ReadFromMerge
+   │     │  Header: x UInt32
+   │     ├──Expression
+   │     │  │  Header: x UInt32
+   │     │  └──ReadFromMemoryStorage
+   │     │        Header: x UInt32
+   │     └──Expression
+   │        │  Header: x UInt32
+   │        └──ReadFromMemoryStorage
+   │              Header: x UInt32
+   ├──Expression
+   │  │  Header: x UInt32
+   │  └──ReadFromMemoryStorage
+   │        Header: x UInt32
+   └──Expression
+      │  Header: x UInt32
+      └──ReadFromMemoryStorage
+            Header: x UInt32
+Output: x
+
+Union
+│  Header: x UInt32
+├──Expression ((Project names + (Projection + Change column names to column identifiers)))
+│  │  Header: x UInt32
+│  └──ReadFromMerge
+│     │  Header: x UInt32
+│     ├──Expression
+│     │  │  Header: x UInt32
+│     │  └──ReadFromMerge
+│     │     │  Header: x UInt32
+│     │     ├──Expression
+│     │     │  │  Header: x UInt32
+│     │     │  └──ReadFromMemoryStorage
+│     │     │        Header: x UInt32
+│     │     └──Expression
+│     │        │  Header: x UInt32
+│     │        └──ReadFromMemoryStorage
+│     │              Header: x UInt32
+│     ├──Expression
+│     │  │  Header: x UInt32
+│     │  └──ReadFromMemoryStorage
+│     │        Header: x UInt32
+│     └──Expression
+│        │  Header: x UInt32
+│        └──ReadFromMemoryStorage
+│              Header: x UInt32
+└──Expression ((Project names + Projection))
+   │  Header: x UInt32
+   └──Filter ((WHERE + Change column names to column identifiers))
+      │  Header: __table4.x UInt32
+      └──ReadFromMemoryStorage
+            Header: x UInt32

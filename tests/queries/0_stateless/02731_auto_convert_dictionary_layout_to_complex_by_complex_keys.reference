@@ -1,0 +1,5 @@
+dict_flat_simple	Flat
+dict_hashed_simple_Decimal128	Hashed
+dict_hashed_simple_Float32	Hashed
+dict_hashed_simple_String	ComplexKeyHashed
+dict_hashed_simple_auto_convert	ComplexKeyHashed

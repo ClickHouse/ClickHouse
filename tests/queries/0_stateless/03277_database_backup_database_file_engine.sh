@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Tags: no-encrypted-storage
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+BACKUP_DATABASE_NAME=${CLICKHOUSE_TEST_UNIQUE_NAME}_backup
+RESTORE_DATABASE_NAME=${CLICKHOUSE_TEST_UNIQUE_NAME}_restore
+
+$CLICKHOUSE_CLIENT -q """
+DROP DATABASE IF EXISTS $BACKUP_DATABASE_NAME;
+CREATE DATABASE $BACKUP_DATABASE_NAME;
+
+CREATE TABLE $BACKUP_DATABASE_NAME.test_table_1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO $BACKUP_DATABASE_NAME.test_table_1 SELECT number, number FROM numbers(15000);
+
+CREATE TABLE $BACKUP_DATABASE_NAME.test_table_2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO $BACKUP_DATABASE_NAME.test_table_2 SELECT number, number FROM numbers(15000);
+
+SELECT (id % 10) AS key, count() FROM $BACKUP_DATABASE_NAME.test_table_1 GROUP BY key ORDER BY key;
+
+SELECT '--';
+
+SELECT (id % 10) AS key, count() FROM $BACKUP_DATABASE_NAME.test_table_2 GROUP BY key ORDER BY key;
+
+BACKUP DATABASE $BACKUP_DATABASE_NAME TO Disk('backups', '$BACKUP_DATABASE_NAME') FORMAT Null;
+
+SELECT '--';
+
+DROP DATABASE IF EXISTS $RESTORE_DATABASE_NAME;
+CREATE DATABASE $RESTORE_DATABASE_NAME ENGINE = Backup('$BACKUP_DATABASE_NAME', Disk('backups', '$BACKUP_DATABASE_NAME'));
+
+SELECT name, total_rows FROM system.tables WHERE database = '$RESTORE_DATABASE_NAME' ORDER BY name;
+
+SELECT '--';
+
+SELECT (id % 10) AS key, count() FROM $RESTORE_DATABASE_NAME.test_table_1 GROUP BY key ORDER BY key;
+
+SELECT '--';
+
+SELECT (id % 10) AS key, count() FROM $RESTORE_DATABASE_NAME.test_table_2 GROUP BY key ORDER BY key;
+
+DROP DATABASE $RESTORE_DATABASE_NAME;
+
+DROP DATABASE $BACKUP_DATABASE_NAME;
+"""

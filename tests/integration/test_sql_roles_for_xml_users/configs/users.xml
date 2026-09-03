@@ -1,0 +1,8 @@
+<clickhouse>
+    <users>
+        <user1>
+            <password></password>
+            <grants></grants>
+        </user1>
+    </users>
+</clickhouse>

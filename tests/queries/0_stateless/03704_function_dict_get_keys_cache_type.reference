@@ -1,0 +1,12 @@
+Cache Persistence Only Within A Single Query
+[1]
+After INSERT and RELOAD
+[2]
+Cache invalidation after dictionary reload with DELETE
+catA	[1,2]
+catB	[5,3]
+catX	[]
+After DELETE mutation and RELOAD
+catA	[]
+catB	[5,3]
+catX	[]

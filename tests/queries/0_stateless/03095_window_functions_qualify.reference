@@ -1,0 +1,75 @@
+0	4
+3	4
+6	4
+9	4
+--
+0
+3
+6
+9
+--
+6
+7
+8
+9
+--
+0	5
+--
+0	5
+--
+0	4
+3	4
+6	4
+9	4
+--
+Expression (Project names)
+Header: number UInt64
+        partition_count UInt64
+Actions: INPUT : 0 -> __table1.number UInt64 : 0
+         INPUT : 1 -> count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64 : 1
+         ALIAS __table1.number :: 0 -> number UInt64 : 2
+         ALIAS count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) :: 1 -> partition_count UInt64 : 0
+Positions: 2 0
+  Sorting (Sorting for ORDER BY)
+  Header: __table1.number UInt64
+          count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64
+  Sort description: __table1.number ASC
+    Expression ((Before ORDER BY + Projection))
+    Header: __table1.number UInt64
+            count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64
+    Actions: INPUT :: 0 -> __table1.number UInt64 : 0
+             INPUT :: 1 -> count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64 : 1
+    Positions: 0 1
+      Filter (QUALIFY)
+      Header: __table1.number UInt64
+              count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64
+      Filter column: equals(count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)), 4_UInt8) (removed)
+      Actions: INPUT :: 0 -> __table1.number UInt64 : 0
+               INPUT :: 1 -> count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64 : 1
+               INPUT : 2 -> count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64 : 2
+               COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 3
+               INPUT :: 3 -> modulo(__table1.number, 3_UInt8) UInt8 : 4
+               FUNCTION equals(count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) :: 2, 4_UInt8 :: 3) -> equals(count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)), 4_UInt8) UInt8 : 5
+      Positions: 5 0 1
+        Window (Window step for window \'PARTITION BY modulo(__table1.number, 3_UInt8)\')
+        Header: modulo(__table1.number, 3_UInt8) UInt8
+                __table1.number UInt64
+                count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64
+                count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8)) UInt64
+        Window: (PARTITION BY modulo(__table1.number, 3_UInt8))
+        Functions: count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8))
+                   count() OVER (PARTITION BY modulo(__table1.number, 3_UInt8))
+          Sorting (Sorting for window \'PARTITION BY modulo(__table1.number, 3_UInt8)\')
+          Header: modulo(__table1.number, 3_UInt8) UInt8
+                  __table1.number UInt64
+          Sort description: modulo(__table1.number, 3_UInt8) ASC
+            Expression ((Before WINDOW + Change column names to column identifiers))
+            Header: modulo(__table1.number, 3_UInt8) UInt8
+                    __table1.number UInt64
+            Actions: INPUT : 0 -> number UInt64 : 0
+                     COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+                     ALIAS number :: 0 -> __table1.number UInt64 : 2
+                     FUNCTION modulo(__table1.number : 2, 3_UInt8 :: 1) -> modulo(__table1.number, 3_UInt8) UInt8 : 0
+            Positions: 0 2
+              ReadFromSystemNumbers
+              Header: number UInt64

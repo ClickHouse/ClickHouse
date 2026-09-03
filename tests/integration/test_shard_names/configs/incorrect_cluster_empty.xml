@@ -1,0 +1,11 @@
+<clickhouse>
+     <remote_servers>
+        <test_shard_names_incorrect_empty_name>
+            <node>
+                <name></name>
+                <host>localhost</host>
+                <port>9000</port>
+            </node>
+        </test_shard_names_incorrect_empty_name>
+     </remote_servers>
+ </clickhouse>

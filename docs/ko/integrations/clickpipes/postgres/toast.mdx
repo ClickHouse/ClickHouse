@@ -1,0 +1,78 @@
+---
+title: 'TOAST 컬럼 처리'
+description: 'PostgreSQL에서 ClickHouse로 데이터를 복제할 때 TOAST 컬럼을 처리하는 방법을 알아봅니다.'
+slug: /integrations/clickpipes/postgres/toast
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+PostgreSQL에서 ClickHouse로 데이터를 복제할 때는 TOAST(The Oversized-Attribute Storage Technique) 컬럼의 제한 사항과 주의해야 할 특수한 사항을 이해하는 것이 중요합니다. 이 가이드는 복제 과정에서 TOAST 컬럼을 식별하고 적절히 처리하는 방법을 안내합니다.
+
+<div id="what-are-toast-columns-in-postgresql">
+  ## PostgreSQL의 TOAST 컬럼이란 무엇입니까?
+</div>
+
+TOAST(The Oversized-Attribute Storage Technique)는 큰 필드 값을 처리하는 PostgreSQL 메커니즘입니다. 행이 최대 행 크기(일반적으로 2KB이지만 PostgreSQL 버전과 세부 설정에 따라 달라질 수 있음)를 초과하면, PostgreSQL은 큰 필드 값을 별도의 TOAST 테이블로 자동으로 이동시키고 기본 테이블에는 포인터만 저장합니다.
+
+중요한 점은 CDC(Change Data Capture) 중에는 변경되지 않은 TOAST 컬럼이 복제 스트림에 포함되지 않는다는 것입니다. 이를 적절히 처리하지 않으면 데이터가 완전하게 복제되지 않을 수 있습니다.
+
+초기 적재(snapshot) 중에는 TOAST 컬럼을 포함한 모든 컬럼 값이 크기와 관계없이 올바르게 복제됩니다. 이 가이드에서 설명하는 제한 사항은 주로 초기 적재 이후에 진행되는 지속적인 CDC 프로세스에 영향을 줍니다.
+
+TOAST와 PostgreSQL에서의 구현에 관한 자세한 내용은 다음 문서를 참조하십시오: https://www.postgresql.org/docs/current/storage-toast.html
+
+<div id="identifying-toast-columns-in-a-table">
+  ## 테이블의 TOAST 컬럼 식별하기
+</div>
+
+테이블에 TOAST 컬럼이 있는지 확인하려면 다음 SQL 쿼리를 사용할 수 있습니다.
+
+```sql
+SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+WHERE c.relname = 'your_table_name'
+  AND a.attlen = -1
+  AND a.attstorage != 'p'
+  AND a.attnum > 0;
+```
+
+이 쿼리는 TOAST될 가능성이 있는 컬럼의 이름과 데이터 타입을 반환합니다. 다만 이 쿼리는 데이터 타입과 저장 속성을 기준으로 TOAST 스토리지에 저장될 수 있는 컬럼만 식별한다는 점에 유의해야 합니다. 이러한 컬럼에 실제로 TOAST된 데이터가 들어 있는지 확인하려면 해당 컬럼의 값이 크기 한도를 초과하는지 살펴봐야 합니다. 데이터가 실제로 TOAST되는지는 해당 컬럼에 저장된 구체적인 내용에 따라 달라집니다.
+
+<div id="ensuring-proper-handling-of-toast-columns">
+  ## TOAST 컬럼이 올바르게 처리되도록 하기
+</div>
+
+복제 중 TOAST 컬럼이 올바르게 처리되도록 하려면 테이블의 `REPLICA IDENTITY`를 `FULL`로 설정해야 합니다. 이렇게 하면 PostgreSQL이 UPDATE 및 DELETE 작업 시 WAL에 이전 행 전체를 포함하므로, 모든 컬럼 값(TOAST 컬럼 포함)을 복제에 사용할 수 있습니다.
+
+다음 SQL 명령으로 `REPLICA IDENTITY`를 `FULL`로 설정할 수 있습니다:
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+`REPLICA IDENTITY FULL` 설정 시 성능 고려 사항은 [이 블로그 게시물](https://xata.io/blog/replica-identity-full-performance)을 참조하십시오.
+
+<div id="replication-behavior-when-replica-identity-full-is-not-set">
+  ## `REPLICA IDENTITY FULL`이 설정되지 않은 경우의 복제 동작
+</div>
+
+TOAST 컬럼이 있는 테이블에 `REPLICA IDENTITY FULL`이 설정되어 있지 않으면, ClickHouse로 복제할 때 다음과 같은 문제가 발생할 수 있습니다.
+
+1. INSERT 작업에서는 모든 컬럼(TOAST 컬럼 포함)이 올바르게 복제됩니다.
+
+2. UPDATE 작업에서는:
+   * TOAST 컬럼이 수정되지 않으면 해당 값이 ClickHouse에서 NULL 또는 빈 값으로 표시됩니다.
+   * TOAST 컬럼이 수정되면 올바르게 복제됩니다.
+
+3. DELETE 작업에서는 TOAST 컬럼 값이 ClickHouse에서 NULL 또는 빈 값으로 표시됩니다.
+
+이러한 동작으로 인해 PostgreSQL 소스와 ClickHouse 대상 사이에 데이터 불일치가 발생할 수 있습니다. 따라서 정확하고 완전한 데이터 복제를 보장하려면 TOAST 컬럼이 있는 테이블에 `REPLICA IDENTITY FULL`을 설정하는 것이 중요합니다.
+
+<div id="conclusion">
+  ## 결론
+</div>
+
+PostgreSQL에서 ClickHouse로 복제할 때 TOAST 컬럼을 적절히 처리하는 것은 데이터 무결성을 유지하는 데 매우 중요합니다. TOAST 컬럼을 식별하고 적절한 `REPLICA IDENTITY`를 설정하면 데이터가 정확하고 완전하게 복제되도록 보장할 수 있습니다.

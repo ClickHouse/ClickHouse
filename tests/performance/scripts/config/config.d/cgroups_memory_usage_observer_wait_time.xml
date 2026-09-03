@@ -1,0 +1,3 @@
+<clickhouse>
+    <cgroups_memory_usage_observer_wait_time>0</cgroups_memory_usage_observer_wait_time>
+</clickhouse>

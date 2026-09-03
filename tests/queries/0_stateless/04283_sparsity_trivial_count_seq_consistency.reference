@@ -1,0 +1,4 @@
+seq0_rewrite	8000
+seq0_scan	8000
+seq1_rewrite	4000
+seq1_scan	4000

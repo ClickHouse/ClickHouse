@@ -1,0 +1,116 @@
+---
+description: '常规函数文档'
+sidebarTitle: '概述'
+slug: /sql-reference/functions/overview
+title: '常规函数'
+doc_type: 'reference'
+---
+
+函数至少有*两种类型——常规函数 (通常简称为“函数”) 和聚合函数。这是两个完全不同的概念。常规函数的行为就像分别作用于每一行 (对于每一行，函数结果都不依赖其他行) 。聚合函数则会从多行中累积一组值 (即它们依赖于整组行) 。
+
+本节讨论常规函数。有关聚合函数，请参见“聚合函数”一节。
+
+<Note>
+  还有第三种函数类型，[&#39;arrayJoin&#39; 函数](/zh/reference/functions/regular-functions/array-join) 就属于这一类。此外，[表函数](/zh/reference/functions/table-functions/index) 也可以单独列出。
+</Note>
+
+<div id="strong-typing">
+  ## 强类型
+</div>
+
+与标准 SQL 不同，ClickHouse 采用强类型。换言之，它不会在不同类型之间进行隐式转换。每个函数仅适用于特定的一组类型。这意味着你有时需要使用类型转换函数。
+
+<div id="common-subexpression-elimination">
+  ## 公共子表达式消除
+</div>
+
+在查询中，所有具有相同 AST (即相同的记录或语法解析结果) 的表达式都被视为具有相同的值。此类表达式会被合并，只执行一次。相同的子查询也会通过这种方式被消除。
+
+<div id="types-of-results">
+  ## 结果类型
+</div>
+
+所有函数都只返回一个值作为结果 (不会返回多个值，也不会不返回值) 。结果类型通常只由参数类型决定，而不由值本身决定。例外情况是 tupleElement 函数 (`a.N` 运算符) 和 toFixedString 函数。
+
+<div id="constants">
+  ## 常量
+</div>
+
+为简化起见，某些函数的某些参数只能使用常量。例如，LIKE 运算符的右侧参数必须是常量。
+几乎所有函数在参数为常量时都会返回常量。例外是生成随机数的函数。
+&#39;now&#39; 函数对于在不同时间运行的查询会返回不同的值，但其结果仍被视为常量，因为不变性只在单个查询内才重要。
+常量表达式也被视为常量 (例如，LIKE 运算符的右半部分可以由多个常量构造而成) 。
+
+函数对于常量参数和非常量参数可以采用不同的实现方式 (即执行不同的代码) 。但对于常量，以及一个只包含相同值的实际列，二者的结果应当一致。
+
+<div id="null-processing">
+  ## NULL 处理
+</div>
+
+函数有以下行为：
+
+* 如果函数的至少一个参数为 `NULL`，则函数结果也为 `NULL`。
+* 各函数的描述中会单独说明其特殊行为。在 ClickHouse 源代码中，这些函数的 `UseDefaultImplementationForNulls=false`。
+
+<div id="constancy">
+  ## 不变性
+</div>
+
+函数不能修改其参数的值——任何修改都会作为结果返回。因此，单独计算各个函数时，其结果不取决于这些函数在查询中的书写顺序。
+
+<div id="higher-order-functions">
+  ## 高阶函数
+</div>
+
+<div id="arrow-operator-and-lambda">
+  ### `->` 操作符与 lambda(params, expr) 函数
+</div>
+
+高阶函数只能接受 lambda 函数作为函数参数。要向高阶函数传递 lambda 函数，请使用 `->` 操作符。箭头左侧是形式参数，可以是任意 ID；也可以是多个形式参数，即 Tuple 中的任意多个 ID。箭头右侧是一个表达式，它既可以使用这些形式参数，也可以使用表中的任意列。
+
+示例：
+
+```python
+x -> 2 * x
+str -> str != Referer
+```
+
+接受多个参数的 lambda function 也可以作为参数传递给高阶函数。在这种情况下，需要向高阶函数传递多个长度相同的数组，这些参数分别与这些数组的元素对应。
+
+对于某些函数，第一个参数 (即 lambda function) 可以省略。在这种情况下，默认假定为恒等映射。
+
+<div id="bare-function-names-as-lambdas">
+  ### 将函数名直接用作 lambda
+</div>
+
+你无需编写完整的 lambda 表达式，而是可以直接将函数名传递给高阶函数。该函数名会自动转换为等价的 lambda 表达式。
+
+例如，以下各对写法是等价的：
+
+```sql
+SELECT arrayMap(negate, [1, 2, 3]);            -- [-1, -2, -3]
+SELECT arrayMap(x -> negate(x), [1, 2, 3]);    -- [-1, -2, -3]
+
+SELECT arrayMap(plus, [1, 2, 3], [10, 20, 30]);            -- [11, 22, 33]
+SELECT arrayMap((x, y) -> plus(x, y), [1, 2, 3], [10, 20, 30]); -- [11, 22, 33]
+
+SELECT arrayFilter(isNotNull, [1, NULL, 3, NULL, 5]);            -- [1, 3, 5]
+SELECT arrayFilter(x -> isNotNull(x), [1, NULL, 3, NULL, 5]);    -- [1, 3, 5]
+
+SELECT arrayFold(plus, [1, 2, 3, 4, 5], toUInt64(0));                      -- 15
+SELECT arrayFold((acc, x) -> plus(acc, x), [1, 2, 3, 4, 5], toUInt64(0));  -- 15
+```
+
+这适用于内置函数、SQL UDF、可执行 UDF 和 WebAssembly UDF。存在歧义时，列名和别名的优先级高于函数名。
+
+lambda 的元数由内部函数决定。例如，`arrayMap(plus, ...)` 使用 2 元，因为 `plus` 接受两个参数，因此它也适用于元组输入，例如 `arrayMap(plus, [(1, 10), (2, 20)])`，其中元组元素会被解包为 lambda 的参数。
+
+对于可变参数的内部函数 (例如 `concat`，它接受任意数量的参数) ，lambda 的元数会退回到数组参数的数量。这对于 `arrayMap`、`arrayFilter` 和 `arrayFold` 这类高阶函数是正确的。对于除数组之外还接受固定非数组参数的高阶函数——例如 `arrayPartialSort(f, limit, arr)`——直接使用可变参数函数名可能会得到错误的元数，此时需要显式 lambda。
+
+可变参数的内部函数也不会自动解包元组输入。例如，`arrayMap(concat, [('a', 'b'), ('c', 'd')])` 会被重写为一元 lambda，因此并不等价于 `arrayMap((x, y) -> concat(x, y), [('a', 'b'), ('c', 'd')])`。如果希望将元组元素解构后传入可变参数调用，请使用显式 lambda。
+
+<div id="user-defined-functions-udfs">
+  ## 用户自定义函数 (UDFs)
+</div>
+
+ClickHouse 支持用户自定义函数。请参见 [UDFs](/zh/reference/functions/regular-functions/udf)。

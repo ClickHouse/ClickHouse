@@ -1,0 +1,9 @@
+<clickhouse>
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </blob_storage_log>
+</clickhouse>

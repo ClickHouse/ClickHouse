@@ -1,0 +1,28 @@
+<test>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%'</query>
+
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%'</query>
+
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%'</query>
+
+    <!-- From this query, optimize_or_like_chain should do well -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' OR URL LIKE 'http://3dnews%' OR URL LIKE 'http://news%' OR URL LIKE 'http://russia'</query>
+
+    <!-- No match, quick exit; below optimize_or_like_chain_min_patterns, kept as-is (no regression) -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%'</query>
+
+    <!-- Short substring chains: below optimize_or_like_chain_min_substrings, kept as-is (no regression) -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%'</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%'</query>
+
+    <!-- Substring chains at/above optimize_or_like_chain_min_substrings: multiSearchAny should win -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%bonprix%' OR URL LIKE '%produkt%' OR URL LIKE '%auto%' OR URL LIKE '%video%'</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%bonprix%' OR URL LIKE '%produkt%' OR URL LIKE '%auto%' OR URL LIKE '%video%' OR URL LIKE '%news%' OR URL LIKE '%forum%'</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%bonprix%' OR URL LIKE '%produkt%' OR URL LIKE '%auto%' OR URL LIKE '%video%' OR URL LIKE '%news%' OR URL LIKE '%forum%' OR URL LIKE '%sport%' OR URL LIKE '%money%'</query>
+
+    <!-- short string with multiSearchAny -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE '%love%' OR SearchPhrase LIKE '%dead%'</query>
+
+    <!-- short string with regex -->
+    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE 'love%' OR SearchPhrase LIKE 'dead%'</query>
+</test>

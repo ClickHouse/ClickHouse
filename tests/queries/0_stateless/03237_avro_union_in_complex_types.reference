@@ -1,0 +1,81 @@
+== DESCRIBE ==
+string_only	String					
+string_or_null	Nullable(String)					
+null_or_string	Nullable(String)					
+double_or_string	Variant(Float64, String)					
+string_or_double	Variant(Float64, String)					
+null_or_string_or_double	Variant(Float64, String)					
+string_or_double_or_null	Variant(Float64, String)					
+string_or_float_or_long	Variant(Float32, Int64, String)					
+long_or_string_or_float	Variant(Float32, Int64, String)					
+double_or_null_or_string_or_long	Variant(Float64, Int64, String)					
+double_or_long_or_string_in_array	Array(Variant(Float64, Int64, String))					
+double_or_string_or_long_or_null_in_map	Map(String, Variant(Float64, Int64, String))					
+
+== SELECT variantType ==
+String	0	1	Float64	String	String	Float64	String	Float32	Float64	['Float64','String','Int64']	['Float64','None']
+String	1	0	String	Float64	Float64	String	Float32	String	Int64	['Float64','Int64','String']	['String','Float64']
+String	0	1	Float64	String	None	None	Int64	Float32	String	['Float64','Int64','String']	['Float64','String']
+String	1	0	Float64	Float64	Float64	String	String	Float32	None	['Float64','String','Int64']	['String','Float64']
+String	0	0	Float64	String	None	Float64	Float32	String	Float64	['Float64','Int64','String']	['Int64','None']
+
+== SELECT * ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+
+== SELECT * WITH CustomSchema ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+
+== SELECT * WITH CustomSchema SwappedFirstLastVariant ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+
+== SELECT * WITH CustomSchema Float32 instead of Float64 ==
+2
+
+== SELECT * WITH CustomSchema more types than expected ==
+2
+
+== SELECT * WITH CustomSchema less types than expected ==
+2
+
+== CREATE TABLE avro_union_test_03237 ==
+
+== SELECT * FORMAT Avro | INSERT INTO avro_union_test_03237 FORMAT Avro ==
+
+== SELECT * FROM avro_union_test_03237 ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+
+== TRUNCATE TABLE avro_union_test_03237 ==
+
+== insert into table avro_union_test_03237 select * from file('union_in_complex_types.avro') ==
+
+== SELECT * FROM avro_union_test_03237 ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}
+
+== insert into table function file('union_in_complex_types_2.avro') select * from file('union_in_complex_types.avro') ==
+
+== SELECT * FROM file('union_in_complex_types_2.avro') ==
+alpha	bravo	\N	3.1415926535	charlie	delta	2.7182818284	echo	42	-3.1415926535	[1.4142135623,'foxtrot',-100]	{'key1':3.1415926535,'key2':NULL}
+golf	\N	hotel	india	1.6180339887	3.1415926535	juliet	7.38906	kilo	1000	[-1.6180339887,0,'lima']	{'key3':'mike','key4':1e-9}
+november	oscar	\N	10000000000	papa	\N	\N	-5000000	1.7320508	quebec	[2.7182818284,1729,'romeo']	{'key5':-2.7182818284,'key6':'sierra'}
+tango	\N	uniform	-1.4142135623	-1.6180339887	0.00001	victor	whiskey	-987654340	\N	[-3.1415926535,'xray',31415926535]	{'key7':'yankee','key8':-987.654}
+zulu	alpha1	bravo1	2.718281828	charlie1	\N	-1.7320508075	1000000	delta1	-1.6180339887	[-2.7182818284,123456789,'echo1']	{'key9':9223372036854775807,'key10':NULL}

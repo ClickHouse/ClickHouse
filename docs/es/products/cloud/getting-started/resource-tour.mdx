@@ -1,0 +1,58 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: 'Recorrido por los recursos'
+description: 'Resumen de los recursos de la documentación de ClickHouse Cloud sobre optimización de consultas, estrategias de escalado, monitorización y buenas prácticas'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/es/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/es/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/es/_security_table_of_contents.mdx';
+
+Este artículo tiene como objetivo ofrecerle una visión general de los recursos disponibles
+en la documentación para ayudarle a sacar el máximo partido de su implementación de ClickHouse Cloud.
+Explore los recursos organizados por los siguientes temas:
+
+* [Técnicas de optimización de consultas y ajuste del rendimiento](#query-optimization)
+* [Monitorización](#monitoring)
+* [Buenas prácticas de seguridad y funciones de cumplimiento normativo](#security)
+* [Optimización de costes y facturación](#cost-optimization)
+
+Antes de profundizar en temas más específicos, le recomendamos comenzar con nuestras guías generales
+de buenas prácticas de ClickHouse, que abarcan las prácticas generales que debe seguir al
+usar ClickHouse:
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## Técnicas de optimización de consultas y ajuste del rendimiento
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## Monitorización
+</div>
+
+| Page                                                                                       | Description                                                                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [Advanced dashboard](/es/products/cloud/features/monitoring/advanced-dashboard)               | Use el panel avanzado integrado para supervisar el estado y el rendimiento del servicio                     |
+| [Integración de Prometheus](/es/products/cloud/features/monitoring/prometheus)                | Use Prometheus para supervisar servicios de Cloud                                                           |
+| [Capacidades de monitorización de Cloud](/es/guides/use-cases/observability/cloud-monitoring) | Obtenga una visión general de las capacidades de monitorización integradas y de las opciones de integración |
+
+<div id="security">
+  ## Seguridad
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## optimización de coste y facturación
+</div>
+
+| Página                                                                            | Descripción                                                                                                            |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [Transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer) | Comprenda cómo ClickHouse Cloud contabiliza los datos transferidos de entrada y salida                                 |
+| [Notificaciones](/es/products/cloud/features/monitoring/notifications)               | Configure notificaciones para su servicio de ClickHouse Cloud. Por ejemplo, cuando el uso de créditos supera un umbral |

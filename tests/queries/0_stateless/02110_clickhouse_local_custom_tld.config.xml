@@ -1,0 +1,22 @@
+<clickhouse>
+    <profiles>
+        <default></default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+    <quotas>
+        <default></default>
+    </quotas>
+
+    <top_level_domains_lists>
+        <public_suffix_list>02110_clickhouse_local_custom_tld.tld.dat</public_suffix_list>
+    </top_level_domains_lists>
+</clickhouse>

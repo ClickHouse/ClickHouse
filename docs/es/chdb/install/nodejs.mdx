@@ -1,0 +1,205 @@
+---
+title: 'chDB para Node.js'
+sidebarTitle: 'Node.js'
+slug: /chdb/install/nodejs
+description: 'Cómo instalar y usar chDB con Node.js'
+keywords: ['chdb', 'nodejs', 'javascript', 'embedded', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-node proporciona bindings de Node.js para chDB, lo que te permite ejecutar consultas de ClickHouse directamente en tus aplicaciones de Node.js sin ninguna dependencia externa.
+
+<div id="installation">
+  ## Instalación
+</div>
+
+```bash
+npm install chdb
+```
+
+<div id="usage">
+  ## Uso
+</div>
+
+chDB-node admite dos modos de consulta: consultas independientes para operaciones sencillas y consultas basadas en sesión para mantener el estado de la base de datos.
+
+<div id="standalone-queries">
+  ### Consultas independientes
+</div>
+
+Para consultas simples e independientes que no requieren un estado persistente:
+
+```javascript
+const { query } = require("chdb");
+
+// Consulta básica
+const result = query("SELECT version()", "CSV");
+console.log("ClickHouse version:", result);
+
+// Consulta con múltiples columnas
+const multiResult = query("SELECT 'Hello' as greeting, 'chDB' as engine, 42 as answer", "CSV");
+console.log("Multi-column result:", multiResult);
+
+// Operaciones matemáticas
+const mathResult = query("SELECT 2 + 2 as sum, pi() as pi_value", "JSON");
+console.log("Math result:", mathResult);
+
+// Información del sistema
+const systemInfo = query("SELECT * FROM system.functions LIMIT 5", "Pretty");
+console.log("System functions:", systemInfo);
+```
+
+<div id="session-based-queries">
+  ### Consultas basadas en sesión
+</div>
+
+```javascript
+const { Session } = require("chdb");
+
+// Crear una sesión con almacenamiento persistente
+const session = new Session("./chdb-node-data");
+
+try {
+    // Crear base de datos y tabla
+    session.query(`
+        CREATE DATABASE IF NOT EXISTS myapp;
+        CREATE TABLE IF NOT EXISTS myapp.users (
+            id UInt32,
+            name String,
+            email String,
+            created_at DateTime DEFAULT now()
+        ) ENGINE = MergeTree() ORDER BY id
+    `);
+
+    // Insertar datos de muestra
+    session.query(`
+        INSERT INTO myapp.users (id, name, email) VALUES 
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    `);
+
+    // Consultar los datos con distintos formatos
+    const csvResult = session.query("SELECT * FROM myapp.users ORDER BY id", "CSV");
+    console.log("CSV Result:", csvResult);
+
+    const jsonResult = session.query("SELECT * FROM myapp.users ORDER BY id", "JSON");
+    console.log("JSON Result:", jsonResult);
+
+    // Consultas de agregación
+    const stats = session.query(`
+        SELECT 
+            COUNT(*) as total_users,
+            MAX(id) as max_id,
+            MIN(created_at) as earliest_signup
+        FROM myapp.users
+    `, "Pretty");
+    console.log("User Statistics:", stats);
+
+} finally {
+    // Limpiar siempre la sesión
+    session.cleanup(); // Esto elimina los archivos de la base de datos
+}
+```
+
+<div id="processing-external-data">
+  ### Procesamiento de datos externos
+</div>
+
+```javascript
+const { Session } = require("chdb");
+
+const session = new Session("./data-processing");
+
+try {
+    // Procesar datos CSV desde URL
+    const result = session.query(`
+        SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT "UserID") as unique_users
+        FROM url('https://datasets.clickhouse.com/hits/hits.csv', 'CSV') 
+        LIMIT 1000
+    `, "JSON");
+    
+    console.log("External data analysis:", result);
+
+    // Crear tabla a partir de datos externos
+    session.query(`
+        CREATE TABLE web_analytics AS
+        SELECT * FROM url('https://datasets.clickhouse.com/hits/hits.csv', 'CSV')
+        LIMIT 10000
+    `);
+
+    // Analizar los datos importados
+    const analysis = session.query(`
+        SELECT 
+            toDate("EventTime") as date,
+            COUNT(*) as events,
+            COUNT(DISTINCT "UserID") as unique_users
+        FROM web_analytics
+        GROUP BY date
+        ORDER BY date
+        LIMIT 10
+    `, "Pretty");
+    
+    console.log("Daily analytics:", analysis);
+
+} finally {
+    session.cleanup();
+}
+```
+
+<div id="error-handling">
+  ## Manejo de errores
+</div>
+
+Gestione siempre los errores de forma adecuada al trabajar con chDB:
+
+```javascript
+const { query, Session } = require("chdb");
+
+// Manejo de errores para consultas independientes
+function safeQuery(sql, format = "CSV") {
+    try {
+        const result = query(sql, format);
+        return { success: true, data: result };
+    } catch (error) {
+        console.error("Query error:", error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// Ejemplo de uso
+const result = safeQuery("SELECT invalid_syntax");
+if (result.success) {
+    console.log("Query result:", result.data);
+} else {
+    console.log("Query failed:", result.error);
+}
+
+// Manejo de errores para sesiones
+function safeSessionQuery() {
+    const session = new Session("./error-test");
+    
+    try {
+        // Esto generará un error debido a una sintaxis inválida
+        const result = session.query("CREATE TABLE invalid syntax", "CSV");
+        console.log("Unexpected success:", result);
+    } catch (error) {
+        console.error("Session query error:", error.message);
+    } finally {
+        // Limpiar siempre, incluso si ocurrió un error
+        session.cleanup();
+    }
+}
+
+safeSessionQuery();
+```
+
+<div id="github-repository">
+  ## Repositorio de GitHub
+</div>
+
+* **Repositorio de GitHub**: [chdb-io/chdb-node](https://github.com/chdb-io/chdb-node)
+* **Incidencias y soporte**: Reporta las incidencias en el [repositorio de GitHub](https://github.com/chdb-io/chdb-node/issues)
+* **Paquete de npm**: [chdb en npm](https://www.npmjs.com/package/chdb)

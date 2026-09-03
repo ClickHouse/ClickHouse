@@ -1,0 +1,22 @@
+Merge/State: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+If: window states merged in aggregate() (non-window consumes window states)
+0.5	0.5	1
+Array: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+Distinct: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+ForEach: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+ArgMin: window states merged in aggregate() (non-window consumes window states)
+0.001	0.001	1
+ArgMax: window states merged in aggregate() (non-window consumes window states)
+0.001	0.001	1
+OrNull: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+OrDefault: window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+Null (internal): window states merged in aggregate() (non-window consumes window states)
+0.4472	0.4472	1
+Resample: window states merged in aggregate() (non-window consumes window states)
+[0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473]	[0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473,0.4473]	1

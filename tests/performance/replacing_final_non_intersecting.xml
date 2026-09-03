@@ -1,0 +1,26 @@
+<test>
+    <!--
+        This test is intended to check the performance of merge.
+        Since it's hard to measure it let's run a query with FINAL and disabled optimizations of query plan.
+    -->
+    <settings>
+        <split_parts_ranges_into_intersecting_and_non_intersecting_final>0</split_parts_ranges_into_intersecting_and_non_intersecting_final>
+        <split_intersecting_parts_ranges_into_layers_final>0</split_intersecting_parts_ranges_into_layers_final>
+    </settings>
+
+    <create_query>
+        CREATE TABLE replacing_final_non_intersecting (d DateTime, c1 UInt64, c2 String, c3 LowCardinality(String))
+        ENGINE = ReplacingMergeTree()
+        ORDER BY d
+    </create_query>
+
+    <fill_query>INSERT INTO replacing_final_non_intersecting SELECT toDateTime('2020-10-10 00:00:00') - number, number, toString(number), toString(number % 1000) FROM numbers(0, 5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE replacing_final_non_intersecting FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES replacing_final_non_intersecting</fill_query>
+    <fill_query>INSERT INTO replacing_final_non_intersecting SELECT toDateTime('2020-10-10 00:00:00') - number, number, toString(number), toString(number % 1000) FROM numbers(5000000, 500000)</fill_query>
+
+    <query>SELECT * FROM replacing_final_non_intersecting FINAL FORMAT Null SETTINGS enable_vertical_final = 0</query>
+    <query>SELECT * FROM replacing_final_non_intersecting FINAL FORMAT Null SETTINGS enable_vertical_final = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS replacing_final_non_intersecting</drop_query>
+</test>

@@ -1,0 +1,1 @@
+SELECT extractAll('\0', '');

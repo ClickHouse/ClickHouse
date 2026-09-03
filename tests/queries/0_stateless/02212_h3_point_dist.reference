@@ -1,0 +1,42 @@
+-- select h3PointDistM(lat1, lon1,lat2, lon2) AS k from table1 order by k;
+111195.05
+111228.91
+111901.08
+111901.08
+111901.08
+157225.61
+157249.56
+222457.78
+223528.37
+223528.37
+400900.67
+2223901.04
+-- select h3PointDistKm(lat1, lon1,lat2, lon2) AS k from table1 order by k;
+111.2
+111.23
+111.9
+111.9
+111.9
+157.23
+157.25
+222.46
+223.53
+223.53
+400.9
+2223.9
+-- select h3PointDistRads(lat1, lon1,lat2, lon2) AS k from table1 order by k;
+0.01745
+0.01746
+0.01756
+0.01756
+0.01756
+0.02468
+0.02468
+0.03492
+0.03509
+0.03509
+0.06293
+0.34907
+-- test for non const cols
+0.34907
+0.34907

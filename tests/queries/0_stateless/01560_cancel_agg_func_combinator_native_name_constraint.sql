@@ -1,0 +1,5 @@
+SELECT Sum(1);
+SELECT SumOrNull(1);
+SELECT SUMOrNull(1);
+SELECT SUMOrNullIf(1, 1);
+SELECT SUMOrNullIf(1, 0);

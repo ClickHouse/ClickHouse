@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE sort_nearly_sorted (
+            key UInt64
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- ~5% of rows get a random perturbation -->
+    <fill_query>
+        INSERT INTO sort_nearly_sorted
+        SELECT number + if(rand() % 20 = 0, rand() % 1000000, 0) AS key
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT * FROM sort_nearly_sorted ORDER BY key FORMAT Null SETTINGS max_threads = {threads}</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_nearly_sorted</drop_query>
+</test>

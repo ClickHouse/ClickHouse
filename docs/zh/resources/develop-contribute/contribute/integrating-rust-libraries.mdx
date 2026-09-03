@@ -1,0 +1,84 @@
+---
+description: '将 Rust 库集成到 ClickHouse 的指南'
+sidebarTitle: 'Rust 库'
+slug: /development/integrating_rust_libraries
+title: '集成 Rust 库'
+doc_type: 'guide'
+---
+
+下面将以集成 BLAKE3 哈希函数为例，介绍如何集成 Rust 库。
+
+集成的第一步是将该库添加到 /rust 文件夹中。为此，你需要创建一个空的 Rust 项目，并在 Cargo.toml 中加入所需的库。还需要在 Cargo.toml 中添加 `crate-type = ["staticlib"]`，将新库配置为编译为静态库。
+
+接下来，你需要使用 Corrosion 库将该库链接到 CMake。第一步是在 /rust 文件夹内的 CMakeLists.txt 中添加该库所在的文件夹。之后，你应在该库目录中添加 CMakeLists.txt 文件。在该文件中，需要调用 Corrosion 的导入函数。导入 BLAKE3 时使用了以下几行代码：
+
+```CMake
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+因此，我们将使用 Corrosion 创建一个正确的 CMake target，然后将其重命名为一个更便于使用的名称。请注意，`_ch_rust_blake3` 这个名称来自 Cargo.toml，其中它被用作项目名称 (`name = "_ch_rust_blake3"`) 。
+
+由于 Rust 数据类型与 C/C++ 数据类型不兼容，我们将利用这个空库项目创建 shim 方法，用于转换从 C/C++ 接收的数据、调用库方法，以及将输出数据反向转换回来。例如，下面这个方法就是为 BLAKE3 编写的：
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+此方法接收兼容 C 的字符串、其大小以及输出字符串指针作为输入。然后，它会将兼容 C 的输入转换为实际库方法所使用的类型并调用这些方法。之后，还需要将库方法的输出转换回兼容 C 的类型。在这个特定场景中，库支持通过 `fill()` 方法直接写入指针，因此不需要进行这种转换。这里的主要建议是尽量少创建方法，这样一来，每次调用方法时需要做的类型转换就更少，也不会带来太多额外开销。
+
+值得注意的是，`#[no_mangle]` 属性和 `extern "C"` 对所有这类方法都是必需的。没有它们，就无法进行正确的 C/C++ 兼容编译。此外，它们对于集成的下一步也是必不可少的。
+
+编写完 shim 方法的代码后，我们需要为该库准备请求头。这可以手动完成，也可以使用 cbindgen 库自动生成。如果使用 cbindgen，你需要编写一个 build.rs 构建脚本，并将 cbindgen 作为构建依赖引入。
+
+可自动生成请求头的构建脚本示例：
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+此外，对于每个与 C 兼容的属性，都应使用 `#[no&#95;mangle]` 属性和 `extern "C"`。否则，库可能会被错误编译，且 cbindgen 无法自动生成请求头。
+
+完成上述所有步骤后，你可以在一个小型项目中测试你的库，以找出兼容性或请求头生成方面的各种问题。如果在生成请求头时出现任何问题，可以尝试通过 `cbindgen.toml` 文件进行配置 (你可以在这里找到一个模板：[https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)) 。
+
+还需要指出的是，在集成 BLAKE3 时曾遇到一个问题：
+MemorySanitizer 可能会导致误报，因为它无法判断 Rust 中某些变量是否已经初始化。这个问题最终通过编写一个对部分变量作出更明确声明的方法得到解决，不过这种方法的实现速度较慢，仅用于修复 MemorySanitizer 构建。

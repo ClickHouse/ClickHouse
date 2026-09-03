@@ -1,0 +1,21 @@
+MaterializingCTEs (Materialize CTEs before main query execution)
+  Expression ((Project names + Projection))
+    Aggregating
+      Expression
+        Join (JOIN FillRightFirst)
+          Expression (Left Pre Join Actions)
+            Filter
+              ReadFromMemoryStorage
+          Expression (Right Pre Join Actions)
+            BuildRuntimeFilter (Build runtime join filter on __table4.uid)
+              Expression (Change column names to column identifiers)
+                ReadFromMemoryStorage
+  MaterializingCTE (Materializing CTE: a)
+    Union
+      Expression ((Project names + Change column names))
+        Expression ((Projection + Change column names to column identifiers))
+          ReadFromMergeTree (default.users_04041)
+      Expression ((Project names + Change column names))
+        ReadFromRemoteParallelReplicas (Query: SELECT `__table1`.`uid` AS `uid`, `__table1`.`name` AS `name`, `__table1`.`age` AS `age` FROM `default`.`users_04041` AS `__table1` Replicas: 127.0.0.2:9000, 127.0.0.3:9000)
+3
+3

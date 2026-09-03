@@ -1,0 +1,15 @@
+services:
+  glue:
+    image: motoserver/moto:5.1.5
+    ports:
+      - "${GLUE_CATALOG_PORT}:3000"
+    environment:
+      - MOTO_PORT=3000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/3000"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 5s
+    cpus: 3

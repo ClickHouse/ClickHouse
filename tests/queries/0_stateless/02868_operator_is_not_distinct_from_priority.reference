@@ -1,0 +1,116 @@
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal Bool_0
+      Function in (children 1)
+       ExpressionList (children 2)
+        Literal Bool_1
+        Literal Tuple_(Bool_1, Bool_0)
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal UInt64_1
+      Function plus (children 1)
+       ExpressionList (children 2)
+        Literal UInt64_1
+        Literal UInt64_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal Bool_1
+      Function like (children 1)
+       ExpressionList (children 2)
+        Literal \'x\'
+        Literal \'a\'
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal \'x\'
+      Function concat (children 1)
+       ExpressionList (children 2)
+        Literal \'x\'
+        Literal \'a\'
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal UInt64_1
+      Function CAST (children 1)
+       ExpressionList (children 2)
+        Literal \'1\'
+        Literal \'integer\'
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function not (children 1)
+     ExpressionList (children 1)
+      Function isNotDistinctFrom (children 1)
+       ExpressionList (children 2)
+        Literal UInt64_1
+        Literal UInt64_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Literal Int64_-1
+      Literal UInt64_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function or (children 1)
+     ExpressionList (children 2)
+      Function isNotDistinctFrom (children 1)
+       ExpressionList (children 2)
+        Literal Bool_0
+        Literal Bool_1
+      Literal Bool_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Function isNull (children 1)
+       ExpressionList (children 1)
+        Literal NULL
+      Literal NULL
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function equals (children 1)
+     ExpressionList (children 2)
+      Function isNotDistinctFrom (children 1)
+       ExpressionList (children 2)
+        Literal UInt64_1
+        Literal UInt64_1
+      Literal UInt64_1
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Function isNotDistinctFrom (children 1)
+     ExpressionList (children 2)
+      Function equals (children 1)
+       ExpressionList (children 2)
+        Literal UInt64_1
+        Literal UInt64_1
+      Literal UInt64_1

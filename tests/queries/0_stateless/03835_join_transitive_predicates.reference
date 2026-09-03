@@ -1,0 +1,100 @@
+-- Case 1: dpsize chain WITH transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              ReadFromMergeTree (default.Fact_B)
+              Type: INNER
+              Clauses: [(__table1.a_key) = (__table3.c_key)]
+                    ReadFromMergeTree (default.Dim_A)
+                    ReadFromMergeTree (default.Dim_C)
+-- Case 1: dpsize chain WITHOUT transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table3.c_key)]
+              Type: INNER
+              Clauses: [(__table2.b_key) = (__table1.a_key)]
+                    ReadFromMergeTree (default.Fact_B)
+                    ReadFromMergeTree (default.Dim_A)
+              ReadFromMergeTree (default.Dim_C)
+-- Case 2: greedy chain WITH transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              ReadFromMergeTree (default.Fact_B)
+              Type: INNER
+              Clauses: [(__table1.a_key) = (__table3.c_key)]
+                    ReadFromMergeTree (default.Dim_A)
+                    ReadFromMergeTree (default.Dim_C)
+-- Case 2: greedy chain WITHOUT transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table3.c_key)]
+              Type: INNER
+              Clauses: [(__table2.b_key) = (__table1.a_key)]
+                    ReadFromMergeTree (default.Fact_B)
+                    ReadFromMergeTree (default.Dim_A)
+              ReadFromMergeTree (default.Dim_C)
+-- Case 3: diamond
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              ReadFromMergeTree (default.Fact_B)
+              Type: INNER
+              Clauses: [(__table1.a_key) = (__table3.c_key)]
+                    ReadFromMergeTree (default.Dim_A)
+                    ReadFromMergeTree (default.Dim_C)
+-- Case 4: 4-table chain WITH transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              ReadFromMergeTree (default.Fact_B)
+              Type: INNER
+              Clauses: [(__table3.c_key) = (__table4.d_key)]
+                    ReadFromMergeTree (default.Dim_C)
+                    Type: INNER
+                    Clauses: [(__table1.a_key) = (__table4.d_key)]
+                          ReadFromMergeTree (default.Dim_A)
+                          ReadFromMergeTree (default.Dim_D)
+-- Case 4: 4-table chain WITHOUT transitivity
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              Type: INNER
+              Clauses: [(__table2.b_key) = (__table3.c_key)]
+                    ReadFromMergeTree (default.Fact_B)
+                    Type: INNER
+                    Clauses: [(__table3.c_key) = (__table4.d_key)]
+                          ReadFromMergeTree (default.Dim_C)
+                          ReadFromMergeTree (default.Dim_D)
+              ReadFromMergeTree (default.Dim_A)
+-- Case 5: fan
+        Type: INNER
+        Clauses: [(__table2.b_key) = (__table1.a_key)]
+              ReadFromMergeTree (default.Fact_B)
+              Type: INNER
+              Clauses: [(__table1.a_key) = (__table3.c_key)]
+                    ReadFromMergeTree (default.Dim_A)
+                    ReadFromMergeTree (default.Dim_C)
+-- Correctness: 3-table chain
+10000
+10000
+-- Correctness: diamond
+10000
+-- Correctness: 4-table chain
+5000
+5000
+-- Correctness: value check
+A_1	C_1	1000
+A_10	C_10	1000
+A_2	C_2	1000
+A_3	C_3	1000
+A_4	C_4	1000
+A_1	C_1	1000
+A_10	C_10	1000
+A_2	C_2	1000
+A_3	C_3	1000
+A_4	C_4	1000
+-- Correctness: 4-table values
+A_1	C_1	D_1	1000
+A_2	C_2	D_2	1000
+A_3	C_3	D_3	1000
+A_4	C_4	D_4	1000
+A_5	C_5	D_5	1000
+A_1	C_1	D_1	1000
+A_2	C_2	D_2	1000
+A_3	C_3	D_3	1000
+A_4	C_4	D_4	1000
+A_5	C_5	D_5	1000

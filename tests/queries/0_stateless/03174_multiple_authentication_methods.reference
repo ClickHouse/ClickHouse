@@ -1,0 +1,66 @@
+localhost	9000	0		0	0
+localhost	9000	0		0	0
+Basic authentication after user creation
+1
+localhost	9000	0		0	0
+Changed password, old password should not work
+AUTHENTICATION_FAILED
+New password should work
+1
+localhost	9000	0		0	0
+Two new passwords were added, should both work
+1
+1
+localhost	9000	0		0	0
+Authenticating with ssh key
+1
+Altering credentials and keeping only bcrypt_password
+localhost	9000	0		0	0
+Asserting SSH does not work anymore
+AUTHENTICATION_FAILED
+Asserting bcrypt_password works
+1
+Adding new bcrypt_password
+localhost	9000	0		0	0
+Both current authentication methods should work
+1
+1
+Reset authentication methods to new
+localhost	9000	0		0	0
+Only the latest should work, below should fail
+AUTHENTICATION_FAILED
+Should work
+1
+Multiple identified with, not allowed
+Syntax error
+localhost	9000	0		0	0
+CREATE Multiple identified with, not allowed
+Syntax error
+localhost	9000	0		0	0
+Create user with no identification
+localhost	9000	0		0	0
+Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types
+BAD_ARGUMENTS
+Try to add no_password mixed with other authentication methods, should not be allowed
+SYNTAX_ERROR
+Adding no_password, should fail
+SYNTAX_ERROR
+Replacing existing authentication methods in favor of no_password, should succeed
+localhost	9000	0		0	0
+Trying to auth with no pwd, should succeed
+1
+localhost	9000	0		0	0
+Use WITH without providing authentication type, should fail
+Syntax error
+Create user with ADD identification, should fail, add is not allowed for create query
+SYNTAX_ERROR
+Trailing comma should result in syntax error
+SYNTAX_ERROR
+First auth method can't specify type if WITH keyword is not present
+SYNTAX_ERROR
+RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
+SYNTAX_ERROR
+ADD NOT IDENTIFIED should result in syntax error
+SYNTAX_ERROR
+RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
+SYNTAX_ERROR

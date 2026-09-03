@@ -1,0 +1,10 @@
+<clickhouse>
+    <zookeeper>
+        <password>foobar</password>
+        <identity>testuser:testpass</identity>
+        <node index="1">
+            <host>node1</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

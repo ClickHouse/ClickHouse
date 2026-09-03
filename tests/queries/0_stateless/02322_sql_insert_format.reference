@@ -1,0 +1,23 @@
+INSERT INTO table (`x`, `y`, `z`) VALUES (0, 0, 'Hello'), (1, 1, 'Hello'), (2, 2, 'Hello'), (3, 0, 'Hello'), (4, 1, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (0, 0, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (1, 1, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (2, 2, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (3, 0, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (4, 1, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (0, 0, 'Hello'), (1, 1, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (2, 2, 'Hello'), (3, 0, 'Hello');
+INSERT INTO table (`x`, `y`, `z`) VALUES (4, 1, 'Hello');
+INSERT INTO table VALUES (0, 0, 'Hello'), (1, 1, 'Hello'), (2, 2, 'Hello'), (3, 0, 'Hello'), (4, 1, 'Hello');
+REPLACE INTO table (`x`, `y`, `z`) VALUES (0, 0, 'Hello'), (1, 1, 'Hello'), (2, 2, 'Hello'), (3, 0, 'Hello'), (4, 1, 'Hello');
+INSERT INTO test (`x`, `y`, `z`) VALUES (0, 0, 'Hello'), (1, 1, 'Hello'), (2, 2, 'Hello'), (3, 0, 'Hello'), (4, 1, 'Hello');
+INSERT INTO test (x, y, z) VALUES (0, 0, 'Hello'), (1, 1, 'Hello'), (2, 2, 'Hello'), (3, 0, 'Hello'), (4, 1, 'Hello');
+0	0	Hello
+1	1	Hello
+2	2	Hello
+3	0	Hello
+4	1	Hello
+0	0	Hello
+1	1	Hello
+2	2	Hello
+3	0	Hello
+4	1	Hello

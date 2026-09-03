@@ -1,0 +1,12 @@
+1
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'abc\'	abc
+---
+1
+1
+SELECT 1 SETTINGS use_query_cache = true	
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = \'abc\'	abc
+---
+1
+1
+SELECT 1 SETTINGS use_query_cache = true	abc
+SELECT 1 SETTINGS use_query_cache = true	def

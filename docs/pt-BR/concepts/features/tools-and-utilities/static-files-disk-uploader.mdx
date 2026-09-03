@@ -1,0 +1,94 @@
+---
+slug: /operations/utilities/static-files-disk-uploader
+title: 'clickhouse-static-files-disk-uploader'
+keywords: ['clickhouse-static-files-disk-uploader', 'utility', 'disk', 'uploader']
+description: 'Fornece uma descrição do utilitário clickhouse-static-files-disk-uploader'
+doc_type: 'guide'
+---
+
+Gera um diretório de dados contendo metadados de uma tabela específica do ClickHouse. Esses metadados podem ser usados para criar uma tabela do ClickHouse em outro servidor contendo um conjunto de dados em modo somente leitura com suporte de um disco `web`.
+
+Não use esta ferramenta para migrar dados. Em vez disso, use os comandos [`BACKUP` e `RESTORE`](/pt-BR/concepts/features/backup-restore/overview).
+
+<div id="usage">
+  ## Uso
+</div>
+
+```bash
+$ clickhouse static-files-disk-uploader [args]
+```
+
+<div id="commands">
+  ## Comandos
+</div>
+
+| Comando                  | Descrição                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `-h`, `--help`           | Exibe informações de ajuda                                                                            |
+| `--metadata-path [path]` | O caminho que contém os metadados da tabela especificada                                              |
+| `--test-mode`            | Habilita o modo `test`, que envia uma requisição PUT para a URL informada com os metadados da tabela |
+| `--link`                 | Cria links simbólicos em vez de copiar os arquivos para o diretório de saída                          |
+| `--url [url]`            | URL do servidor web para o modo `test`                                                                |
+| `--output-dir [dir]`     | Diretório em que os arquivos serão gerados no modo `non-test`                                         |
+
+<div id="retrieve-metadata-path-for-the-specified-table">
+  ## Recupere o caminho de metadados da tabela especificada
+</div>
+
+Ao usar `clickhouse-static-files-disk-uploader`, você deve obter o caminho de metadados da tabela desejada.
+
+1. Execute a seguinte consulta, especificando sua tabela de destino e o banco de dados:
+
+<br />
+
+```sql
+SELECT data_paths
+  FROM system.tables
+  WHERE name = 'mytable' AND database = 'default';
+```
+
+2. Isso deve retornar o caminho do diretório de dados da tabela especificada:
+
+<br />
+
+```response
+┌─data_paths────────────────────────────────────────────┐
+│ ['./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/'] │
+└───────────────────────────────────────────────────────┘
+```
+
+<div id="output-table-metadata-directory-to-the-local-filesystem">
+  ## Exportar o diretório de metadados da tabela para o sistema de arquivos local
+</div>
+
+Usando o diretório de saída de destino `output` e um caminho de metadados especificado, execute o seguinte comando:
+
+```bash
+$ clickhouse static-files-disk-uploader --output-dir output --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+Se tudo der certo, você deverá ver a seguinte mensagem, e o diretório `output` deverá conter os metadados da tabela especificada:
+
+```repsonse
+Data path: "/Users/john/store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee", destination path: "output"
+```
+
+<div id="output-table-metadata-directory-to-an-external-url">
+  ## Enviar o diretório de metadados da tabela para uma URL externa
+</div>
+
+Este passo é semelhante a enviar o diretório de dados para o sistema de arquivos local, mas com a adição da flag `--test-mode`. Em vez de especificar um diretório de saída, você deve informar uma URL de destino por meio da flag `--url`.
+
+Com o modo `test` habilitado, o diretório de metadados da tabela é enviado para a URL especificada por meio de uma requisição PUT.
+
+```bash
+$ clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+<div id="using-the-table-metadata-directory-to-create-a-clickhouse-table">
+  ## Usando o diretório de metadados da tabela para criar uma tabela do ClickHouse
+</div>
+
+Depois de obter o diretório de metadados da tabela, você pode usá-lo para criar uma tabela do ClickHouse em outro servidor.
+
+Consulte [este repositório no GitHub](https://github.com/ClickHouse/web-tables-demo), que mostra uma demo. No exemplo, criamos uma tabela usando um disco `web`, o que nos permite associá-la a um conjunto de dados em outro servidor.

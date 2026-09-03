@@ -1,0 +1,106 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-26
+title: '데모 데이 - 2026-06-26'
+sidebarTitle: '2026-06-26'
+sidebar_label: '2026-06-26'
+sidebar_position: 626
+description: '2026-06-26 ClickStack 데모 데이'
+doc_type: 'guide'
+keywords: ['ClickStack', '데모 데이']
+---
+
+<div id="anomaly-detection-for-alerting-continues-with-bar-charts">
+  ## 알림용 이상 감지, 바 차트 지원도 계속 개선 중입니다
+</div>
+
+*[@fleon](https://github.com/fleon)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AeibhN5dGQY" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+아직은 실험 단계입니다. 이상을 강조하는 데 사용되는 정규분포 밴드는 라인 차트에서는 잘 작동하지만 바 차트에서는 표현하기가 훨씬 어렵습니다. Himanshu는 밴드를 더 눈에 띄게 표시하기 위해 오류 밴드와 속이 빈 바 차트도 실험해 보았지만, 결과는 여전히 복잡해 보입니다. 단색 막대 위에 밴드를 선으로 겹쳐 표시하는 방식도 같은 문제가 있습니다. 막대가 시각적으로 너무 두드러져 밴드를 구분하기 어렵습니다.
+
+당분간은 이상 밴드를 확인하려는 사용자가 라인 차트를 사용하도록 안내하고, 바 차트 디자인은 나중에 다시 검토할 예정입니다. Himanshu는 이 기능이 출시되기 전에 가장 적절한 접근 방식에 대한 피드백을 받고 있습니다.
+
+<div id="external-onclick-actions-for-tables">
+  ## 테이블의 외부 onclick 작업
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8CV7ZEbFqhk" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew는 대시보드 테이블에 추가된 작지만 유용한 기능, 즉 행을 외부 도구에 직접 연결하는 기능을 시연했습니다.
+
+테이블 행은 이미 검색 또는 다른 대시보드로 드릴다운할 수 있습니다. 이번에 세 번째 옵션인 &quot;외부&quot;가 추가되었으며, 선택한 행의 값을 사용해 URL을 구성한 후 엽니다. 데모에서는 제품 카탈로그의 행을 클릭하면 제품 이름이 Google 검색 URL에 삽입되는 방식으로 개념을 설명합니다. 그러나 동일한 메커니즘을 사용하면 Grafana, 내부 런북, 티켓 시스템 또는 URL 매개변수를 허용하는 다른 도구로도 연결할 수 있습니다.
+
+간단하지만 중요한 기능입니다. ClickStack은 단순한 대상이 아니라 더 넓은 관측성 워크플로의 일부가 되며, 대시보드에서 조사를 계속하는 데 필요한 도구로 바로 이동할 수 있습니다.
+
+**관련 PR:** [#2523](https://github.com/hyperdxio/hyperdx/pull/2523) feat: 대시보드 테이블 onclick 동작을 통한 외부 링크 지원
+
+<div id="otel-profiling">
+  ## OTel 프로파일링
+</div>
+
+*[@SpencerTorres](https://github.com/SpencerTorres)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-yAP8lXA2D8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+프로파일링은 아직 초기 단계이지만 ClickStack에 도입되기 시작했습니다. Spencer는 flame graph를 생성하고 pprof 같은 도구에서 사용하는 데이터인 OpenTelemetry 프로파일링 샘플을 수집하는 초기 프로토타입을 시연했습니다. ClickHouse를 기반으로 하는 Grafana 대시보드에서 데이터 정렬을 반복하는 작은 프로그램을 시각화하고, 새 프로파일링 샘플이 유입될 때 개별 호출 스택 블록을 자세히 살펴보았습니다.
+
+구현은 아직 다소 거칠며, 쿼리에도 이러한 점이 반영되어 있습니다. 각 행은 로그와 트레이스의 요소를 결합하고, flame graph의 스팬 또는 슬라이스를 나타내는 함수 이름과 주소로 구성된 긴 배열을 저장합니다. Grafana가 기대하는 포맷을 재구성하려면 이러한 배열을 조인하고 집계해야 하며, exporter는 원시 프로파일링 프레임을 풀어낸 후 ClickHouse에 기록해야 합니다. 스키마는 여전히 블룸 필터를 사용하며, 여기에 전문 검색도 추가되면서 호환성에 대한 논의가 이어졌습니다. ClickHouse Cloud는 이미 전문 검색을 지원하므로, 팀은 이를 지원하지 않는 오픈 소스 경로를 얼마나 더 유지해야 할지 논의했습니다.
+
+이 작업은 현재 공개 PR에서 검토 중입니다. ClickStack에 통합하기 전에 먼저 핵심 기능을 오픈 소스에 반영할 계획입니다.
+
+<div id="autocomplete-for-otel-metric-sources">
+  ## OTel 메트릭 소스 자동 완성
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lvcv7IV2Bs8" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Brandon은 메트릭 온보딩의 사용성을 개선하는 작은 기능을 시연했습니다. 이제 OpenTelemetry Metrics 소스를 생성할 때 각 메트릭 테이블 필드를 수동으로 선택하지 않아도, 선택한 데이터베이스의 테이블 이름을 기준으로 자동 완성됩니다. 또한 메트릭도 로그 및 트레이스에서 이미 제공하는 온보딩 환경과 일관되게 사용할 수 있습니다.
+
+**관련 PR:** [#2524](https://github.com/hyperdxio/hyperdx/pull/2524) feat(app): Create Source 양식에서 메트릭 테이블 드롭다운 자동 채우기
+
+<div id="eval-framework-for-dashboards">
+  ## 대시보드용 Eval 프레임워크
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cg2pYb5rsKU" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+AI로 생성된 대시보드는 개선되고 있지만, 시각적으로만 진행 상황을 판단하는 데는 한계가 있습니다. Brandon은 대시보드 생성 기능이 실제로 개선되고 있는지, 그리고 아직 어떤 부분이 부족한지를 측정하기 위한 평가 프레임워크를 구축하고 있습니다.
+
+이 평가에서는 모델이 접을 수 있는 섹션, tabs, heatmaps, 파이 차트, source 기반 tiles와 Raw SQL, service 수준 filters, 대시보드 간 drill-down links 등 최대한 많은 기능을 의도적으로 활용하는 대시보드를 생성하도록 합니다.
+
+이후 채점 단계에서 모든 항목이 예상대로 렌더링되고 동작하는지 검증합니다. 이 과정에서 항상 너무 짧게 렌더링되는 Markdown tiles를 비롯한 실제 문제도 이미 발견했습니다. 또한 Drew의 새로운 onclick 기능으로 활성화된 drill-down links를 따라가 두 번째 AI 생성 대시보드로의 탐색이 올바르게 작동하는지도 확인합니다. 새로운 대시보드 기능이 추가되면 평가에 포함해 수동 Testing에 의존하지 않고 회귀를 자동으로 감지합니다. Brandon은 곧 이 프레임워크에 대한 PR을 열 계획입니다.
+
+**관련 PR:** [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): dashboard-build 평가 시나리오 추가 (진행 중)
+
+<div id="connecting-to-prometheus">
+  ## Prometheus에 연결하기
+</div>
+
+*[@knudtty](https://github.com/knudtty)의 데모*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qvM8-6A4two" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron은 ClickStack과 Prometheus를 연결하는 초기 브리지를 시연했습니다. 소스의 고급 설정에 새로 추가된 &quot;Prometheus 호환&quot; 옵션을 사용하면 ClickStack은 구성된 호스트를 ClickHouse 인스턴스가 아니라 데모에서 사용한 Thanos와 같은 Prometheus API endpoint로 처리합니다. 이 옵션을 활성화하면 대시보드 tile에서 해당 endpoint에 대해 PromQL을 직접 실행할 수 있습니다. Aaron은 ClickHouse를 거쳐 변환하지 않고 쿼리를 Prometheus로 직접 전송하여 파드별 CPU 사용량을 그룹화한 차트를 통해 이를 시연했습니다. 데모 자체는 비교적 간단했지만, 사용자 경험에 관한 폭넓은 논의로 이어졌습니다.
+
+장기적으로는 ClickStack에서 Prometheus를 네이티브로 지원하는 것이 목표입니다. 이 기능은 실용적인 첫 단계로, 이미 Prometheus에 의존하고 있는 팀이 처음부터 모든 것을 ClickHouse를 통해 처리하도록 강제하지 않고 ClickStack을 도입하면서도 Prometheus를 계속 사용할 수 있게 합니다. 이와 병행하여 ClickHouse에서 PromQL을 네이티브로 지원하는 작업도 계속하고 있습니다.
+
+**관련 PR:** [#2518](https://github.com/hyperdxio/hyperdx/pull/2518) feat: 외부 prometheus datastore에 연결하는 기능 추가

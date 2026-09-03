@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-10
+title: 'Demo days - 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: 'Demo days do ClickStack de 2026-04-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="pinnable-datasource-filters">
+  ## Filtros de fonte de dados fixáveis
+</div>
+
+*Demonstração por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Agora, as equipes podem fixar filtros de fonte de dados e compartilhá-los com toda a equipe. Ao clicar no ícone de fixar em qualquer filtro, você pode optar por fixá-lo só para você ou compartilhá-lo com todos. Os filtros compartilhados aparecem em uma seção própria no topo da lista de filtros, o que facilita para todos os membros da equipe encontrá-los e aplicá-los sem precisar saber o nome exato do filtro.
+
+Este tem sido um dos recursos mais solicitados pela comunidade. Isso significa que as equipes não precisam mais comunicar configurações de filtro por fora da plataforma. Os filtros compartilhados ficam visíveis para todos os usuários assim que são fixados, e também é possível compartilhar valores específicos de filtro, não apenas as chaves, para que todo o contexto acompanhe o filtro.
+
+**PRs relacionadas:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] introduz Filtros Compartilhados para visibilidade e descoberta de filtros em toda a equipe
+
+<div id="waking-service-from-clickstack-cloud">
+  ## Reativando um serviço no ClickStack Cloud
+</div>
+
+*Demonstração de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Agora, os usuários do ClickStack Cloud podem reativar um serviço em suspensão diretamente no app. Antes, se o seu serviço tivesse sido suspenso, você veria a opção &quot;tentar novamente&quot;, mas o app não reativaria o serviço para você. Era preciso ir até o ClickStack Cloud, reativá-lo manualmente e depois voltar para clicar em &quot;tentar novamente&quot;.
+
+Agora o app cuida de tudo do início ao fim. Quando um serviço está em suspensão, a opção exibida é &quot;ativar serviço&quot;, e o app faz todo o processo sem que você precise sair da tela em que está. É uma pequena melhoria de usabilidade que elimina uma interrupção frustrante de várias etapas no seu fluxo de trabalho, especialmente se você estiver acessando o ClickStack após um período de inatividade e quiser ir direto aos seus dados.
+
+<div id="consistent-enabling-of-ai-features">
+  ## Habilitação consistente dos recursos de IA
+</div>
+
+*Demonstração de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Os recursos de IA no ClickStack agora são ativados exclusivamente pelo plano de controle do ClickHouse Cloud, que passa a ser a fonte única de verdade. Antes, havia duas caixas de seleção desconectadas: uma no plano de controle do ClickStack e outra dentro do próprio aplicativo. Ativar uma não garantia que a outra estivesse sincronizada, o que gerava confusão sobre se a IA estava realmente ativa.
+
+Agora, a caixa de seleção dentro do ClickStack leva ao ClickHouse Cloud e, fora isso, permanece desabilitada. Se você ativar a opção no ClickHouse Cloud, o recurso ficará disponível no ClickStack automaticamente. Isso torna a ativação da IA consistente e previsível, além de eliminar a dúvida sobre qual configuração realmente controla o comportamento.
+
+<div id="raw-sql-alerting">
+  ## Alertas com SQL puro
+</div>
+
+*Demonstração de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Agora é possível configurar alertas para gráficos de linha com SQL puro, expandindo a experiência existente de gráficos com SQL puro para incluir notificações baseadas em limites. Se você tiver um gráfico de linha baseado em uma consulta SQL personalizada, poderá associar um alerta a ele e configurá-lo como qualquer outro alerta de gráfico. No momento, isso está disponível para gráficos de linha e de barras, já que os parâmetros de intervalo e faixa de datas são necessários para que a comparação de limite funcione.
+
+Isso abre casos de uso realmente poderosos. A demonstração mostra uma consulta que conta erros no intervalo atual e compara esse valor com os 30 intervalos anteriores, sinalizando quando ele fica mais de dois desvios padrão acima da norma histórica. Esse tipo de detecção estatística de anomalias agora se resume a escrever o SQL certo e definir um limite. A configuração do alerta fica dentro do editor de gráficos, em uma seção recolhível, mantendo a UI limpa até que você realmente precise dela.
+
+**PRs relacionadas:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implementar alertas para tiles de dashboard baseados em SQL puro, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Criar o componente TileAlertEditor
+
+<div id="hyperdx-tui-improvements">
+  ## Melhorias na TUI do HyperDX
+</div>
+
+*Demonstração por [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+A interface de terminal do HyperDX está cada vez mais fácil de começar a usar. Agora você pode instalá-la globalmente com `npm install -g @hyperdx/cli` e depois executar `hdx` para iniciá-la. Use a flag `--tui` para abrir diretamente a interface interativa no terminal. O binário também está disponível via `npm` como `hdx`, então não há uma etapa de instalação separada depois que o pacote estiver instalado.
+
+Dois recursos importantes foram lançados esta semana junto com as melhorias na instalação. As mensagens de erro agora são renderizadas com destaque adequado e exibição estruturada no terminal, seguindo os padrões de formatação do frontend web, para que você tenha o mesmo nível de detalhe tanto no navegador quanto na TUI. Também há uma nova prévia de SQL para que você possa ver a consulta executada nos bastidores. Além disso, uma nova página de alertas pode ser acessada via `Shift+A` a partir do visualizador de eventos, oferecendo uma visão geral de todos os alertas configurados e do histórico recente de acionamentos, sem sair do terminal.
+
+**PRs relacionadas:** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] Melhorar a renderização de mensagens de erro na TUI e adicionar prévia de SQL, [#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] Adicionar página de alertas (Shift+A) com visão geral e histórico recente, [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] Adicionar pacote @hyperdx/cli, [#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI: migrar de apiUrl para appUrl com fluxo de login interativo

@@ -1,0 +1,11 @@
+{
+    "type": "record",
+    "name": "row",
+    "fields": [
+        {"name": "id", "type": "long"},
+        {"name": "blockNo", "type": "int"},
+        {"name": "val1", "type": "string"},
+        {"name": "val2", "type": "float"},
+        {"name": "val3", "type": "int"}
+    ]
+  }

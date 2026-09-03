@@ -1,0 +1,272 @@
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10;
+Dynamic paths
+10	a
+9	b
+8	c
+7	d
+6	e
+Shared data paths
+Dynamic paths
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+1	g
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+10	a
+9	b
+4	c
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+12	c
+10	a
+Shared data paths
+9	b
+7	d
+6	e
+1	g
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10;
+Dynamic paths
+10	a
+9	b
+8	c
+7	d
+6	e
+Shared data paths
+Dynamic paths
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+1	g
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+10	a
+9	b
+4	c
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+12	c
+10	a
+Shared data paths
+9	b
+7	d
+6	e
+1	g
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=1;
+Dynamic paths
+10	a
+9	b
+8	c
+7	d
+6	e
+Shared data paths
+Dynamic paths
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+1	g
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+10	a
+9	b
+4	c
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+12	c
+10	a
+Shared data paths
+9	b
+7	d
+6	e
+1	g
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1;
+Dynamic paths
+10	a
+9	b
+8	c
+7	d
+6	e
+Shared data paths
+Dynamic paths
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+8	c
+Shared data paths
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+1	g
+Shared data paths
+8	c
+7	d
+6	e
+Dynamic paths
+20	f
+10	a
+9	b
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+10	a
+9	b
+4	c
+Shared data paths
+8	c
+7	d
+6	e
+1	g
+Dynamic paths
+20	f
+12	c
+10	a
+Shared data paths
+9	b
+7	d
+6	e
+1	g

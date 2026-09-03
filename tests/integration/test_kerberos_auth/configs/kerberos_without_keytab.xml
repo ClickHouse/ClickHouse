@@ -1,0 +1,5 @@
+<clickhouse>
+    <kerberos>
+        <realm>TEST.CLICKHOUSE.TECH</realm>
+    </kerberos>
+</clickhouse>

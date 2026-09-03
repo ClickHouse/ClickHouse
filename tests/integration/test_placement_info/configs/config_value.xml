@@ -1,0 +1,6 @@
+<clickhouse>
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>ci-test-1b</availability_zone>
+    </placement>
+</clickhouse>

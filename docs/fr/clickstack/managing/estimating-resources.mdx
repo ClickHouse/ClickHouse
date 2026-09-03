@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/estimating-resources
+title: 'Dimensionnement des ressources'
+sidebarTitle: 'Dimensionnement des ressources'
+description: 'Guide de dimensionnement des ressources pour les déploiements Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'ressources', 'dimensionnement', 'capacité de calcul', 'production', 'planification des capacités']
+---
+
+import ResourceEstimation from '/snippets/fr/_resource_estimation.mdx';
+
+<ResourceEstimation />
+
+<div id="refining-sizing-assumptions">
+  ## Affiner les hypothèses de dimensionnement pour votre environnement
+</div>
+
+Le modèle suppose une moyenne soutenue de 1 QPS depuis ClickStack, tous types de requêtes confondus, y compris la recherche, les dashboards et les alertes.
+
+Pour des volumes de requêtes plus élevés, faites évoluer les besoins en CPU de manière linéaire en multipliant les besoins en CPU par le QPS cible. Par exemple, un déploiement ingérant 100 MB/s avec un objectif de 9 QPS nécessiterait 90 CPU pour les requêtes (10 × 9) au lieu des 10 de référence, soit un total révisé de 100 CPU (10 pour l’ingestion + 90 pour les requêtes).
+
+Les estimations de stockage supposent un taux de compression prudent de 10x. En pratique, les logs, les traces et les métriques obtiennent souvent une compression plus élevée. Nous recommandons d’effectuer des tests sur un échantillon de données afin de déterminer à l’avance votre taux de compression et vos besoins de stockage avant la mise en production. Pour calculer le stockage nécessaire pour une durée de rétention plus longue, multipliez le stockage mensuel par le nombre de mois de rétention requis.
+
+Cela suppose une répartition des requêtes relativement équilibrée. Les charges de travail davantage orientées vers des requêtes historiques ou d’archivage plus lourdes peuvent avoir des besoins en calcul sensiblement différents et doivent être validées par des tests de charge. Nous prévoyons d’introduire un modèle de dimensionnement plus flexible, permettant d’extrapoler les ressources de calcul des requêtes selon différents profils de répartition des requêtes.
+
+<div id="worked-example">
+  ### Exemple pratique
+</div>
+
+**Exigences :** ingestion de 1,5 PB/mois, 5 QPS, rétention de 3 mois.
+
+**Conversion en MB/s**
+
+Le modèle de dimensionnement est exprimé en MB/s. Conversion de 1,5 PB/mois (1 500 TB) en débit constant :
+
+* 1 500 TB = 1 500 000 000 MB
+* Secondes par mois (30 jours) : 30 × 24 × 60 × 60 = 2 592 000
+* MB/s = 1 500 000 000 ÷ 2 592 000 ≈ **579 MB/s**
+
+**Calcul pour l’ingestion**
+
+Avec 1 vCPU pour 10 MB/s d’ingestion constante :
+
+579 ÷ 10 = **~58 vCPUs** pour l’ingestion
+
+**Calcul pour les requêtes**
+
+La capacité de calcul pour les requêtes dépend à la fois du débit d’ingestion et du QPS. À 5 QPS :
+
+(579 ÷ 10) × 5 = 58 × 5 = **290 vCPUs** pour les requêtes
+
+**Stockage**
+
+Avec 579 MB/s constants sur 30 jours, l’ingestion brute représente 1 500 TB/mois. En appliquant le ratio de compression supposé de 10x :
+
+* Compressé par mois : 1 500 TB ÷ 10 = **150 TB/mois**
+* Pour une rétention de 3 mois : 150 TB × 3 = **450 TB au total**
+
+**Résumé**
+
+| Ressource                             | Valeur    |
+| ------------------------------------- | --------- |
+| Calcul pour l’ingestion               | 58 vCPUs  |
+| Calcul pour les requêtes              | 290 vCPUs |
+| Calcul total                          | 348 vCPUs |
+| Stockage par mois (compressé)         | 150 TB    |
+| Stockage pour une rétention de 3 mois | 450 TB    |
+
+<div id="isolating-workloads">
+  ## Isolation des charges de travail d’observabilité
+</div>
+
+Si vous ajoutez ClickStack à un **service ClickHouse Cloud existant** qui prend déjà en charge d’autres charges de travail, comme l’analytique applicative en temps réel, il est fortement recommandé d’isoler le trafic d’observabilité.
+
+Utilisez [**Managed Warehouses**](/fr/products/cloud/features/infrastructure/warehouses) pour créer un **service enfant** dédié à ClickStack. Cela vous permet de :
+
+* Isoler la charge liée à l’ingestion et aux requêtes des applications existantes
+* Faire évoluer indépendamment les charges de travail d’observabilité
+* Empêcher les requêtes d’observabilité d’affecter l’analytique en production
+* Partager, si nécessaire, les mêmes jeux de données sous-jacents entre les services
+
+Cette approche garantit que vos charges de travail existantes restent inchangées, tout en permettant à ClickStack de monter en charge de manière indépendante à mesure que les données d’observabilité augmentent.
+
+Pour les déploiements de plus grande envergure ou pour des conseils personnalisés en matière de dimensionnement, veuillez contacter le support afin d’obtenir une estimation plus précise.

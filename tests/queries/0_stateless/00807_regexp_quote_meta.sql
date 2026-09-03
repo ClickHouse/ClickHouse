@@ -1,0 +1,12 @@
+SELECT regexpQuoteMeta('hello');
+SELECT regexpQuoteMeta('hel\\lo');
+SELECT regexpQuoteMeta('h{ell}o');
+SELECT regexpQuoteMeta('(h{ell}o)');
+SELECT regexpQuoteMeta('');
+SELECT regexpQuoteMeta('(');
+SELECT regexpQuoteMeta('Hello(');
+SELECT regexpQuoteMeta('(Hello');
+SELECT regexpQuoteMeta('(((((((((');
+SELECT regexpQuoteMeta('\\');
+SELECT regexpQuoteMeta('\0\\|()^$.[?*+{');
+SELECT DISTINCT regexpQuoteMeta(toString(number)) = toString(number) FROM numbers(100000);

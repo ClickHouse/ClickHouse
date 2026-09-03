@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_drop_detached>1</allow_drop_detached>
+            <allow_experimental_alter_materialized_view_structure>1</allow_experimental_alter_materialized_view_structure>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

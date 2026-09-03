@@ -1,0 +1,6 @@
+c1	Nullable(String)					
+c2	Nullable(Int64)					
+c3	Array(Nullable(String))					
+c4	Map(String, Nullable(Int64))					
+c5	Tuple(Nullable(String), Nullable(Int64), Map(String, Nullable(Int64)))					
+20240305	1	['s','d']	{'a':2}	('222',33,{'abc':5})

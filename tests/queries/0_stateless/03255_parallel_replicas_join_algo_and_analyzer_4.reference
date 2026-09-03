@@ -1,0 +1,116 @@
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1` GROUP BY `__table1`.`item_id`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1`
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1` GROUP BY `__table1`.`item_id`
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+SELECT sum(`__table1`.`item_id`) AS `sum(item_id)` FROM (SELECT `__table2`.`item_id` AS `item_id`, `__table2`.`price_sold` AS `price_sold` FROM `default`.`t` AS `__table2`) AS `__table1` ALL LEFT JOIN (SELECT `__table4`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table4`) AS `__table3` ON `__table1`.`item_id` = `__table3`.`item_id` GROUP BY `__table1`.`price_sold` ORDER BY `__table1`.`price_sold` ASC
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1` GROUP BY `__table1`.`item_id`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1`
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1` GROUP BY `__table1`.`item_id`
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+SELECT sum(`__table1`.`item_id`) AS `sum(item_id)` FROM (SELECT `__table2`.`item_id` AS `item_id`, `__table2`.`price_sold` AS `price_sold` FROM `default`.`t` AS `__table2`) AS `__table1` ALL LEFT JOIN (SELECT `__table4`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table4`) AS `__table3` ON `__table1`.`item_id` = `__table3`.`item_id` GROUP BY `__table1`.`price_sold` ORDER BY `__table1`.`price_sold` ASC
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1` GROUP BY `__table1`.`item_id`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1`
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1` GROUP BY `__table1`.`item_id`
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+SELECT sum(`__table1`.`item_id`) AS `sum(item_id)` FROM (SELECT `__table2`.`item_id` AS `item_id`, `__table2`.`price_sold` AS `price_sold` FROM `default`.`t` AS `__table2`) AS `__table1` GLOBAL ALL LEFT JOIN `_data_x_y_` AS `__table3` ON `__table1`.`item_id` = `__table3`.`item_id` GROUP BY `__table1`.`price_sold` ORDER BY `__table1`.`price_sold` ASC
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1` GROUP BY `__table1`.`item_id`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1`
+4999950000
+4999950000
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t` AS `__table1`
+SELECT `__table1`.`item_id` AS `item_id` FROM `default`.`t1` AS `__table1` GROUP BY `__table1`.`item_id`
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+499950000
+499960000
+499970000
+499980000
+499990000
+500000000
+500010000
+500020000
+500030000
+500040000
+SELECT sum(`__table1`.`item_id`) AS `sum(item_id)` FROM (SELECT `__table2`.`item_id` AS `item_id`, `__table2`.`price_sold` AS `price_sold` FROM `default`.`t` AS `__table2`) AS `__table1` GLOBAL ALL LEFT JOIN `_data_x_y_` AS `__table3` ON `__table1`.`item_id` = `__table3`.`item_id` GROUP BY `__table1`.`price_sold` ORDER BY `__table1`.`price_sold` ASC

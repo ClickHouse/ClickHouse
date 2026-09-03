@@ -1,0 +1,3 @@
+BLOCK_SIZE is a negative value.
+BLOCK_SIZE is zero.
+WRITE_BUFFER_SIZE is zero.

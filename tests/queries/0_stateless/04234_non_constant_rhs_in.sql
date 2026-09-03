@@ -1,0 +1,45 @@
+-- { echoOn }
+
+SET enable_analyzer = 1;
+
+SELECT 1 IN (tuple(tuple(1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
+SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
+SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;
+SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+-- Signed zeros. A constant right-hand side is evaluated as a Set keyed on raw float bits, so `-0.0 IN (0.0)` is 0.
+-- A row-dependent right-hand side lowers to row-wise comparisons that use ordinary float equality, so there `-0.0`
+-- matches `0.0`. This divergence is pre-existing behavior: the row-wise results below are exactly what these
+-- queries already return on default settings in master, and changing either side would be an incompatibility.
+SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
+SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
+SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number;
+-- An array-valued left argument. A non-constant array on the right of `IN` is the set of its elements only
+-- when it is exactly one dimension deeper than the left argument; an equal-depth array is a single set value,
+-- so its type has to match the left argument. Both analyzers agree on all of these.
+SELECT number, [number] IN ([[number], [7]]), [number] NOT IN ([[number], [7]]) FROM numbers(3) ORDER BY number;
+SELECT number, [number] IN ([[7], [8]]) FROM numbers(2) ORDER BY number;
+SELECT number, [number] IN (arrayMap(y -> [y], [number, 7])) FROM numbers(2) ORDER BY number;
+SELECT number, [number] IN ([number, 7]) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
+SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
+SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
+SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 0, allow_experimental_nullable_tuple_type = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 1, allow_experimental_nullable_tuple_type = 1;
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
+SETTINGS transform_null_in = 1;
+
+SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 0;
+SELECT number IN (number, number + 1) FROM numbers(1) FORMAT TabSeparatedWithNames;

@@ -1,0 +1,8 @@
+
+SELECT firstNonDefault(
+    {% for i in range(1023) %} number as num_{{ i }}, {% endfor %} number
+) FROM numbers(3);
+
+SELECT firstNonDefault(
+    {% for i in range(1024) %} number as num_{{ i }}, {% endfor %} number
+) FROM numbers(3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

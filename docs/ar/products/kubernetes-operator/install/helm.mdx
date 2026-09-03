@@ -1,0 +1,85 @@
+---
+slug: /clickhouse-operator/install/helm
+title: 'تثبيت ClickHouse Operator باستخدام مخططات Helm'
+keywords: ['kubernetes']
+description: 'يتناول هذا الدليل تثبيت ClickHouse Operator باستخدام مخططات Helm.'
+doc_type: 'guide'
+sidebarTitle: 'Helm'
+---
+
+يتناول هذا الدليل تثبيت ClickHouse Operator باستخدام مخططات Helm.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* عنقود Kubernetes بالإصدار 1.28.0 أو أحدث
+* Helm بالإصدار 3.0 أو أحدث
+* أن يكون kubectl مُعَدًّا للتواصل مع عنقودك
+
+<div id="install-helm">
+  ## تثبيت Helm
+</div>
+
+إذا لم يكن Helm مُثبّتًا لديك:
+
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+تحقّق من التثبيت:
+
+```bash
+helm version
+```
+
+<div id="install-the-operator">
+  ## تثبيت ClickHouse Operator
+</div>
+
+<Note>
+  ينشر مخطط Helm، افتراضيًا، ClickHouse Operator مع تفعيل webhooks، ويتطلب تثبيت cert-manager.
+</Note>
+
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
+```
+
+<div id="from-oci-helm-repository">
+  ### من مستودع Helm من نوع OCI
+</div>
+
+ثبّت أحدث إصدار
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system
+```
+
+ثبّت إصدارًا محددًا من الـOperator
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set manager.image.tag=<operator version>
+```
+
+<div id="from-local-chart">
+  ### من الـ مخطط المحلي
+</div>
+
+استنسخ المستودع وثبّت باستخدام الـ مخطط المحلي:
+
+```bash
+git clone https://github.com/ClickHouse/clickhouse-operator.git
+cd clickhouse-operator
+helm install clickhouse-operator ./dist/chart
+```
+
+<div id="configuration-options">
+  ### خيارات التهيئة المتقدمة
+</div>
+
+للاطلاع على خيارات التهيئة المتقدمة، راجع ملف [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) في مخطط Helm

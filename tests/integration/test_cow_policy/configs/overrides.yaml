@@ -1,0 +1,20 @@
+storage_configuration:
+  disks:
+    web:
+      type: web
+      endpoint: https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/
+  policies:
+    cow_policy_multi_disk:
+      volumes:
+        disks:
+          disk:
+          - web
+          - default
+    cow_policy_multi_volume:
+      volumes:
+        disks_web:
+          disk:
+          - web
+        disks_local:
+          disk:
+          - default

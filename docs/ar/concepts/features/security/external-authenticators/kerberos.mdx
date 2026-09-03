@@ -1,0 +1,141 @@
+---
+description: 'يمكن مصادقة مستخدمي ClickHouse الحاليين والمُعَدّين على نحو صحيح
+  عبر بروتوكول مصادقة Kerberos.'
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+يمكن مصادقة مستخدمي ClickHouse الحاليين والمُهيَّئين بشكل صحيح عبر بروتوكول مصادقة Kerberos.
+
+حاليًا، لا يمكن استخدام Kerberos إلا كمُصادِق خارجي للمستخدمين الحاليين المُعرَّفين في `users.xml` أو في مسارات التحكم في الوصول المحلية. ولا يمكن لهؤلاء المستخدمين استخدام سوى طلبات HTTP، ويجب أن يكونوا قادرين على المصادقة باستخدام آلية GSS-SPNEGO.
+
+في هذا النهج، يجب تهيئة Kerberos على النظام ويجب تمكينه في إعدادات ClickHouse.
+
+<div id="enabling-kerberos-in-clickhouse">
+  ## تمكين Kerberos في ClickHouse
+</div>
+
+لتمكين Kerberos، يجب تضمين قسم `kerberos` في ملف `config.xml`. وقد يحتوي هذا القسم على معلمات إضافية.
+
+<div id="parameters">
+  #### المعلمات
+</div>
+
+* `principal` - اسم الخدمة الأساسي المعياري الذي سيُكتسب ويُستخدم عند قبول سياقات الأمان.
+  * هذا المعامل اختياري. إذا أُهمِل، فسيُستخدم الاسم الأساسي الافتراضي.
+
+* `realm` - قيمة `realm` التي ستُستخدم لقصر الاستيثاق على الطلبات التي تتطابق معها قيمة `realm` الخاصة بالمُبادِر فقط.
+  * هذا المعامل اختياري. إذا أُهمِل، فلن يُطبَّق أي ترشيح إضافي حسب `realm`.
+
+* `keytab` - المسار إلى ملف `keytab` الخاص بالخدمة.
+  * هذا المعامل اختياري. إذا أُهمِل، فيجب ضبط المسار إلى ملف `keytab` الخاص بالخدمة في متغير البيئة `KRB5_KTNAME`.
+
+مثال (يوضع في `config.xml`):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos />
+</clickhouse>
+```
+
+مع تحديد الاسم الأساسي:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+    </kerberos>
+</clickhouse>
+```
+
+مع التصفية حسب النطاق:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</clickhouse>
+```
+
+<Note>
+  يمكنك تعريف قسم `kerberos` واحد فقط. وسيؤدي وجود عدة أقسام `kerberos` إلى تعطيل ClickHouse لمصادقة Kerberos.
+</Note>
+
+<Note>
+  لا يمكن تحديد القسمين `principal` و`realm` في الوقت نفسه. وسيؤدي وجود كلٍّ من القسمين `principal` و`realm` إلى تعطيل ClickHouse لمصادقة Kerberos.
+</Note>
+
+<div id="kerberos-as-an-external-authenticator-for-existing-users">
+  ## Kerberos كمصادِق خارجي للمستخدمين الحاليين
+</div>
+
+يمكن استخدام Kerberos كوسيلة للتحقق من هوية المستخدمين المعرَّفين محليًا (المعرَّفين في `users.xml` أو في مسارات التحكم بالوصول المحلية). حاليًا، لا يمكن استخدام Kerberos إلا مع الطلبات الواردة عبر واجهة HTTP (من خلال آلية GSS-SPNEGO).
+
+عادةً ما يتبع تنسيق الاسم الأساسي في Kerberos هذا النمط:
+
+* *primary/instance@REALM*
+
+قد يظهر الجزء */instance* صفر مرة أو أكثر. **يُتوقَّع أن يتطابق جزء *primary* من الاسم المعياري للاسم الأساسي الخاص بالمبادر مع اسم المستخدم المستخدَم مع Kerberos لكي تنجح المصادقة**.
+
+<div id="enabling-kerberos-in-users-xml">
+  ### تمكين Kerberos في `users.xml`
+</div>
+
+لتمكين المصادقة عبر Kerberos للمستخدم، حدِّد القسم `kerberos` بدلًا من `password` أو الأقسام المشابهة في تعريف المستخدم.
+
+المعلمات:
+
+* `realm` - `realm` سيُستخدم لقصر المصادقة على الطلبات التي يتطابق فيها `realm` الخاص بالعقدة البادئة معه فقط.
+  * هذا المعلَم اختياري، وإذا تم حذفه، فلن تُطبَّق أي تصفية إضافية حسب `realm`.
+
+مثال (يوضع في `users.xml`):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <!- ... -->
+        <my_user>
+            <!- ... -->
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+        </my_user>
+    </users>
+</clickhouse>
+```
+
+<Note>
+  لاحظ أنه لا يمكن استخدام مصادقة Kerberos جنبًا إلى جنب مع أي آلية مصادقة أخرى. إن وجود أي أقسام أخرى مثل `password` إلى جانب `kerberos` سيؤدي إلى إيقاف ClickHouse.
+</Note>
+
+<Info>
+  **تذكير**
+
+  لاحظ أنه الآن، بمجرد أن يستخدم المستخدم `my_user` ‏`kerberos`، يجب تمكين Kerberos في ملف `config.xml` الرئيسي كما هو موضح سابقًا.
+</Info>
+
+<div id="enabling-kerberos-using-sql">
+  ### تفعيل Kerberos باستخدام SQL
+</div>
+
+عند تفعيل [التحكم في الوصول وإدارة الحسابات المعتمدين على SQL](/ar/concepts/features/security/access-rights#access-control-usage) في ClickHouse، يمكن أيضًا إنشاء مستخدمين يحدّدهم Kerberos باستخدام عبارات SQL.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
+```
+
+...أو، بدون التصفية حسب نطاق Kerberos:
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos
+```

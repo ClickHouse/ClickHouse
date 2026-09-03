@@ -1,0 +1,19 @@
+File(Buffers) simple sum
+45
+original	45
+clone   	45
+File(Buffers) two-cols aggregate
+10	45	9
+EPHEMERAL + MATERIALIZED with Buffers / TSV / Native
+Hello 12 world
+Hello 123 world
+Hello 34 world
+Hello 56 world
+Hello 78 world
+Hello 90 world
+AggregateFunction(Buffers) round-trip
+cb8d17b6f30745202d691c22818cd786
+cb8d17b6f30745202d691c22818cd786
+0	[0,3,6,9]
+1	[1,4,7]
+2	[2,5,8]

@@ -1,0 +1,1 @@
+SELECT formatQuery('SYSTEM SYNC REPLICA db.table LIGHTWEIGHT');

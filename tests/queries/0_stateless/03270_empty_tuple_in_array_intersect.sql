@@ -1,0 +1,1 @@
+SELECT arrayIntersect([tuple()]);

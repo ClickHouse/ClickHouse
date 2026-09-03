@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <max_untracked_memory>1Mi</max_untracked_memory>
+            <memory_profiler_step>1Mi</memory_profiler_step>
+        </default>
+    </profiles>
+</clickhouse>

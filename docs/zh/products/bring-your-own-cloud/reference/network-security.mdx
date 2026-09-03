@@ -1,0 +1,211 @@
+---
+title: 'BYOC 网络安全'
+slug: /cloud/reference/byoc/reference/network_security
+sidebarTitle: '网络安全'
+keywords: ['BYOC', '云', '自备 Cloud', '网络安全']
+description: '在您自有的云基础设施中部署 ClickHouse'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="connection-between-clickhouse-and-byoc">
+  ## ClickHouse 控制平面与您的 BYOC VPC 之间的连接
+</div>
+
+ClickHouse Cloud 控制平面会维护多种类型的连接，以运行和支持您的 BYOC 部署：
+
+| 目的                            | 连接类型                                                    | 说明                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **日常运维 — Kubernetes API 服务器** | 通过 IP 过滤的公网 (默认)，或通过 Tailscale 或 AWS VPC Lattice 实现私网访问 | 管理服务通过公网与 Kubernetes (EKS/GKE/AKS) API 服务器通信，并受 IP 允许列表限制。初始部署完成后，您也可以选择切换到通过 Tailscale 或在 AWS 上通过 VPC Lattice 实现私网访问。 |
+| **日常运维 — 云提供商 API**           | ClickHouse VPC → 云提供商                                   | 管理服务从 ClickHouse Cloud 自有环境调用您的云提供商 API (例如 AWS 上的 EKS 和 EC2、GCP 上的 GKE、Azure 上的 AKS)。这不涉及您的 VPC/VNet 或 Tailscale。     |
+| **故障排查 — ClickHouse 服务**      | Tailscale                                               | ClickHouse 工程师通过 Tailscale 访问 ClickHouse 服务 (例如系统表) 进行诊断。                                                              |
+| **故障排查 — Kubernetes API 服务器** | Tailscale                                               | ClickHouse 工程师通过 Tailscale 访问 Kubernetes API 服务器以进行集群诊断。                                                               |
+
+<div id="cloud-api-vs-kubernetes-api">
+  ## 云提供商 API 与 Kubernetes API
+</div>
+
+两条不同的控制路径很容易混淆。它们在流量来源、身份验证方式以及是否适用于 Tailscale 方面存在差异：
+
+|                   | 云提供商 API                                                                                                                                         | Kubernetes API 服务器                                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **管理对象**          | 云资源：Kubernetes 集群本身、节点组、负载均衡器、存储桶、DNS                                                                                                            | 集群内的工作负载：ClickHouse Pod (容器组) 、operator 及其配置                                                                                                                                      |
+| **流量目标**          | 云提供商的公网 API 端点 (例如 `eks.amazonaws.com`、`ec2.amazonaws.com`) — 此流量不会进入您的 VPC/VNet                                                                 | 您账户中集群的 API 端点                                                                                                                                                                    |
+| **身份验证**          | AWS：通过跨账户 `sts:AssumeRole` 以 `ClickHouseManagementRole` 及各基础设施管理角色的身份执行操作，并通过外部 ID 进行保护。GCP：服务账号模拟 (无密钥) 。Azure：为 ClickHouse 服务主体使用联合身份 (不交换凭据)  | 通过云提供商 API 签发的短期 Kubernetes 凭据 (例如，使用所假定角色调用 `eks:GetToken`)                                                                                                                      |
+| **Tailscale 适用性** | **不适用。**这些调用从 ClickHouse Cloud 的网络直接发送至云提供商，无法经由 Tailscale 或您的网络路由                                                                               | 默认情况下，公网端点仅允许来自 ClickHouse 出站 IP 的访问；可通过 Tailscale 切换为私网访问，或在 AWS 上使用 VPC Lattice                                                                                                 |
+| **您的审计记录**        | 您账户中的 AWS CloudTrail (或 GCP/Azure 中的等效服务) 会以所假定的身份记录每次调用                                                                                         | 在 AWS 上，EKS 控制平面日志 (包括审计日志) 会传送至您账户中的 CloudWatch 日志组 (请参阅[计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services)) ；在 GCP 和 Azure 上，请联系支持团队以确认或为您的集群启用控制平面审计日志 |
+
+简而言之：只有 Kubernetes API 流量和故障排查流量可以使用 Tailscale。云提供商 API 调用始终源自 ClickHouse Cloud 的网络，并终止于提供商端点 — 无法通过 Tailscale 路由这些调用，因为它们从一开始就不会进入您的网络。
+
+<div id="network-origin-permission-boundaries">
+  ### 基于网络来源的权限边界
+</div>
+
+如果您的组织根据网络来源限制 IAM role 承担或 Cloud API 调用 (例如，使用 `aws:SourceIp` 或 `aws:SourceVpc` 的 AWS SCP 或角色信任条件) ，这些条件会阻止 ClickHouse 的自动化操作：这些调用实际来自 ClickHouse Cloud 的网络，而非您的网络。请将 ClickHouse 创建的角色排除在此类条件之外；或者，如果必须按来源设置允许列表，请联系 ClickHouse 获取当前的出站 IP 范围。
+
+以下部分介绍如何使用 **Tailscale** 私有网络进行故障排查和可选的管理访问。
+
+<div id="tailscale-private-network">
+  ## Tailscale 私有网络
+</div>
+
+Tailscale 在 ClickHouse Cloud 的管理服务与你的 BYOC 部署之间提供零信任的私有网络连接。借助这一安全通道，ClickHouse 工程师无需入站公网访问或复杂的 VPN 配置，即可执行故障排查和管理操作；agent 本身仅发起出站连接，并且需要出站互联网访问权限才能连接到 Tailscale 协调服务。
+
+<div id="tailscale-overview">
+  ### 概述
+</div>
+
+Tailscale 会在 ClickHouse 控制平面 (位于 ClickHouse 的 VPC 中) 与您的 BYOC 数据平面 (位于您的 VPC 中) 之间建立一条加密的私有网络隧道。此连接仅用于：
+
+* **管理操作**：ClickHouse 管理服务与您的 BYOC 基础设施进行协同
+* **故障排查访问**：ClickHouse 工程师访问 Kubernetes API 服务器和 ClickHouse 系统表以进行诊断
+* **指标访问**：ClickHouse 的集中式监控仪表盘会访问部署在您的 BYOC VPC 内的 Prometheus 栈中的指标，使 ClickHouse 工程师能够了解该环境的可观测性状态。
+
+<Warning>
+  Tailscale **仅用于管理和故障排查操作**。它**绝不会用于查询流量**或访问客户数据。所有客户数据都保留在您的 VPC 内，绝不会通过 Tailscale 连接传输。
+</Warning>
+
+<div id="how-tailscale-works">
+  ### BYOC 中 Tailscale 的工作原理
+</div>
+
+<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+
+对于每个需要通过 Tailscale 访问的服务或端点，ClickHouse BYOC 会部署：
+
+1. **Tailnet 地址注册**：每个端点都会注册一个唯一的 tailnet 地址 (例如，Kubernetes API 服务器的 `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`)
+
+2. **Tailscale agent 容器**：一个 Tailscale agent 容器会在你的 Kubernetes 集群中运行，负责：
+   * 连接到 Tailscale 协调服务器
+   * 注册服务，使其可被发现
+   * 与 Nginx pod (容器组) 协调网络设置
+
+3. **Nginx pod (容器组)&#x20;**：一个 Nginx pod (容器组) ，用于：
+   * 终止来自 Tailscale 的 TLS 流量
+   * 将流量路由到 Kubernetes 集群内相应的 IP 地址
+
+<div id="tailscale-connection-process">
+  ### 网络连接过程
+</div>
+
+Tailscale 建立连接的过程如下：
+
+1. **初始连接**：
+   * 两端的 agent (ClickHouse 工程师的环境和你的 BYOC Kubernetes 集群) 都会连接到 Tailscale 协调服务器
+   * 集群中的 agent 会注册 Kubernetes 服务，使其可被发现
+   * ClickHouse 工程师必须先在内部申请相应权限，才能看到该服务
+
+2. **连接模式**：
+   * **直连模式**：agent 会尝试通过 NAT 穿透隧道建立直接连接
+   * **中继模式**：如果直连模式失败，通信会回退到通过 Tailscale DERP (分布式加密中继协议) 服务器中继
+
+3. **加密**：
+   * 所有通信都会进行端到端加密
+   * 每个 agent 都会生成自己的公钥/私钥密钥对 (类似于 PKI)
+   * 无论使用直连模式还是中继模式，流量都会保持加密
+
+<div id="tailscale-security">
+  ### 安全功能
+</div>
+
+**仅出站连接**：
+
+* Kubernetes 集群中的 Tailscale agent 会向 Tailscale 协调/中继服务器发起出站连接
+* **无需入站连接**——无需在安全组规则中允许流量入站到 Tailscale agent
+* 这可减少攻击面，并简化网络安全配置
+
+**访问控制**：
+
+* 在 Tailscale 将工程师路由到客户端点之前，工程师必须先通过内部审批流程申请访问权限
+* 访问具有时效性，并会自动过期
+* 所有访问都会经过审计并记录日志
+
+有关完整的数据访问策略——包括工程师可以查看的内容、证书式身份验证以及客户侧审计——请参阅 [ClickHouse data access](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
+
+<div id="management-services-access">
+  ### 管理服务访问
+</div>
+
+默认情况下，ClickHouse 管理服务通过 API 服务器的公网 IP 地址访问您的 BYOC Kubernetes 集群，并且该地址仅允许来自 ClickHouse NAT gateway IP 地址的访问。
+
+**可选的专用终结点配置**：
+
+* 您可以将 Kubernetes API 服务器配置为仅使用专用终结点
+* 在这种情况下，管理服务将通过 Tailscale 访问 API 服务器 (类似于人工进行的故障排查访问) ，或者在 AWS 上通过 VPC Lattice 访问 (参见 [Kubernetes API Private Connection](/zh/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
+* 默认情况下，会保留仅限 ClickHouse NAT IP 地址访问的公网端点，作为紧急调查和支持需求的备用机制；在验证私网访问后，可与 ClickHouse 协调将其完全禁用
+
+<div id="tailscale-traffic-flow">
+  ### 网络流量流向
+</div>
+
+**Tailscale 连接流程**：
+
+1. 您的 Kubernetes 集群中的 Tailscale agent → Tailscale 协调服务器 (出站)
+2. 工程师机器上的 Tailscale agent → Tailscale 协调服务器 (出站)
+3. 在 agent 之间建立直连或中继连接
+4. 加密流量通过已建立的隧道传输
+5. EKS 中的 Nginx pod (容器组) 终止 TLS 并将流量路由到内部服务
+
+**不传输客户数据**：
+
+* Tailscale 连接仅用于管理和故障排查
+* 查询流量和客户数据绝不会经过 Tailscale
+* 所有客户数据始终保留在您的 VPC 内
+
+有关 Tailscale 在 BYOC 中如何实现的更多技术细节，请参阅 [Building ClickHouse BYOC on AWS blog post](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection)。如需了解 ClickHouse 工程师在连接后可以读取哪些内容，以及 ClickHouse 如何审计此类访问，请参阅 [ClickHouse data access](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
+
+<div id="network-boundaries">
+  ## 网络边界
+</div>
+
+本节介绍客户 BYOC VPC 的不同网络流量边界：
+
+* **入站**：进入客户 BYOC VPC 的流量。
+* **出站**：源自客户 BYOC VPC 并发送到外部目标端的流量。
+* **公网**：可通过公共互联网访问的网络端点。
+* **私网**：只能通过私有连接访问的网络端点，例如 VPC peering、VPC Private Link 或 Tailscale。
+
+**Istio 入口部署在 AWS NLB 后方，用于接收 ClickHouse 客户端流量。**
+
+*入站，公网或私网*
+
+Istio 入口网关负责终止 TLS。由 CertManager 使用 Let&#39;s Encrypt 签发的证书以 Secret 的形式存储在 EKS 集群中。由于 Istio 和 ClickHouse 位于同一 VPC 中，它们之间的流量由 [AWS 加密](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types)。
+
+默认情况下，入口可通过公网访问，并使用 IP allow list 进行过滤。客户可以配置 VPC peering 使其变为私网，并禁用公网连接。我们强烈建议设置 [IP 过滤器](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 以限制访问。
+
+<div id="troubleshooting-access">
+  ### 故障排查访问
+</div>
+
+*入站、私网*
+
+ClickHouse Cloud 工程师需要通过 Tailscale 获取故障排查访问权限。在 BYOC 部署中，他们通过按需授予的证书式身份验证进行访问。有关完整的访问策略，请参阅 [ClickHouse data access](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
+
+<div id="billing-scraper">
+  ### 计费抓取器
+</div>
+
+*出站、私网*
+
+计费抓取器从 ClickHouse 收集计费数据，并将其发送到由 ClickHouse Cloud 拥有的 S3 存储桶。
+
+它以 sidecar 的形式与 ClickHouse server 容器一同运行，定期抓取 CPU 和内存指标。同一区域内的请求会通过 VPC 网关服务端点进行路由。
+
+<div id="alerts">
+  ### 告警
+</div>
+
+*出站，公网*
+
+AlertManager 已配置为在客户的 ClickHouse 集群处于不健康状态时，向 ClickHouse Cloud 发送告警。
+
+指标和日志都存储在客户的 BYOC VPC 内。日志当前本地存储在 EBS 中。后续更新中，它们将存储在 LogHouse 中；LogHouse 是 BYOC VPC 内的一项 ClickHouse 服务。指标使用 Prometheus 和 Thanos 技术栈，并存储在 BYOC VPC 本地。
+
+<div id="service-state">
+  ### 服务状态
+</div>
+
+*出站，公网*
+
+状态导出器会将 ClickHouse 服务和备份状态信息 (运行状态事件，而非备份内容) 发送到 ClickHouse Cloud 所拥有的 SQS 队列。

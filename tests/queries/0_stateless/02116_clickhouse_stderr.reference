@@ -1,0 +1,3 @@
+Ensure that not existing file still write an error to stderr
+File /no/such/file (logger.stderr) is not writable
+Ensure that the file will be created

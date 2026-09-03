@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_inner>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3_inner>
+            <cached_s3>
+                <type>cache</type>
+                <disk>s3_inner</disk>
+                <path>/cached_s3/</path>
+                <max_size>1000000000</max_size>
+            </cached_s3>
+        </disks>
+        <policies>
+            <cached_s3>
+                <volumes>
+                    <main>
+                        <disk>cached_s3</disk>
+                    </main>
+                </volumes>
+            </cached_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>

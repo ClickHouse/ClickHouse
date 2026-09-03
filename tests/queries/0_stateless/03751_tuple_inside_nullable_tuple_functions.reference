@@ -1,0 +1,332 @@
+-- { echoOn }
+
+SET allow_experimental_nullable_tuple_type = 1;
+-- Value of type Nullable(Tuple(...))
+SELECT
+    CAST(tuple(1, 'a') AS Nullable(Tuple(Int32, String))) AS t,
+    toTypeName(t),
+    isNull(t);
+(1,'a')	Nullable(Tuple(Int32, String))	0
+-- tuple() taking Nullable(Tuple(...)) as an argument
+SELECT
+    tuple(
+        CAST((1, 'a') AS Nullable(Tuple(Int32, String)))
+    ) AS outer_t,
+    toTypeName(outer_t);
+((1,'a'))	Tuple(Nullable(Tuple(Int32, String)))
+-- Both sides non-null Nullable(Tuple)
+SELECT
+    tupleConcat(
+        CAST((1, 2) AS Nullable(Tuple(Int32, Int32))),
+        CAST((3,) AS Nullable(Tuple(Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(1,2,3)	Nullable(Tuple(Int32, Int32, Int32))	0
+-- Left side NULL
+SELECT
+    tupleConcat(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((3,) AS Nullable(Tuple(Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32, Int32))	1
+-- Both sides non-null
+SELECT
+    tupleDivide(
+        CAST((10, 20) AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 4) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(5,5)	Nullable(Tuple(Float64, Float64))	0
+-- Left side NULL
+SELECT
+    tupleDivide(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 4) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Float64, Float64))	1
+-- Non-null Nullable(Tuple), non-null number
+SELECT
+    tupleDivideByNumber(
+        CAST((10, 20) AS Nullable(Tuple(Int32, Int32))),
+        2
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(5,10)	Nullable(Tuple(Float64, Float64))	0
+-- NULL tuple
+SELECT
+    tupleDivideByNumber(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        2
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Float64, Float64))	1
+-- Index access on non-null Nullable(Tuple)
+SELECT
+    tupleElement(
+        CAST((1, 'a') AS Nullable(Tuple(Int32, String))),
+        2
+    ) AS v,
+    toTypeName(v),
+    isNull(v);
+a	Nullable(String)	0
+-- Index access on NULL tuple
+SELECT
+    tupleElement(
+        CAST(NULL AS Nullable(Tuple(Int32, String))),
+        2
+    ) AS v_null,
+    toTypeName(v_null),
+    isNull(v_null);
+\N	Nullable(String)	1
+-- Name access on Nullable(named Tuple)
+SELECT
+    tupleElement(
+        CAST(
+            tuple(1 AS id, 'a' AS name)
+            AS Nullable(Tuple(id Int32, name String))
+        ),
+        'name'
+    ) AS v_name,
+    toTypeName(v_name),
+    isNull(v_name);
+a	Nullable(String)	0
+SELECT
+    t.2 AS v,
+    toTypeName(v),
+    isNull(v)
+FROM
+(
+    SELECT CAST((1, 'a') AS Nullable(Tuple(Int32, String))) AS t
+);
+a	Nullable(String)	0
+-- Both non-null
+SELECT
+    tupleHammingDistance(
+        CAST((1, 2, 3) AS Nullable(Tuple(Int32, Int32, Int32))),
+        CAST((1, 2, 4) AS Nullable(Tuple(Int32, Int32, Int32)))
+    ) AS d,
+    toTypeName(d),
+    isNull(d);
+1	Nullable(UInt32)	0
+-- One side NULL
+SELECT
+    tupleHammingDistance(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32, Int32))),
+        CAST((1, 2, 4) AS Nullable(Tuple(Int32, Int32, Int32)))
+    ) AS d_null,
+    toTypeName(d_null),
+    isNull(d_null);
+\N	Nullable(UInt32)	1
+-- Non-null
+SELECT
+    tupleIntDiv(
+        CAST((10, 9) AS Nullable(Tuple(Int32, Int32))),
+        CAST((3, 2) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(3,4)	Nullable(Tuple(Int32, Int32))	0
+-- Left side NULL
+SELECT
+    tupleIntDiv(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((3, 2) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32))	1
+-- Non-null
+SELECT
+    tupleIntDivByNumber(
+        CAST((10, 9) AS Nullable(Tuple(Int32, Int32))),
+        3
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(3,3)	Nullable(Tuple(Int32, Int32))	0
+-- NULL tuple
+SELECT
+    tupleIntDivByNumber(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        3
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32))	1
+-- Non-null tuples, some zero divisors
+SELECT
+    tupleIntDivOrZero(
+        CAST((10, 9) AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 0) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(5,0)	Nullable(Tuple(Int32, Int32))	0
+-- NULL numerator tuple
+SELECT
+    tupleIntDivOrZero(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 3) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32))	1
+-- Non-null tuple, non-zero divisor
+SELECT
+    tupleIntDivOrZeroByNumber(
+        CAST((10, 9) AS Nullable(Tuple(Int32, Int32))),
+        3
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(3,3)	Nullable(Tuple(Int32, Int32))	0
+-- Non-null tuple, zero divisor
+SELECT
+    tupleIntDivOrZeroByNumber(
+        CAST((10, 9) AS Nullable(Tuple(Int32, Int32))),
+        0
+    ) AS res_zero,
+    toTypeName(res_zero),
+    isNull(res_zero);
+(0,0)	Nullable(Tuple(Int32, Int32))	0
+-- NULL tuple
+SELECT
+    tupleIntDivOrZeroByNumber(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        3
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32))	1
+-- Both non-null
+SELECT
+    tupleMinus(
+        CAST((5, 4) AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 1) AS Nullable(Tuple(Int32, Int32)))
+    ) AS diff,
+    toTypeName(diff),
+    isNull(diff);
+(3,3)	Nullable(Tuple(Int64, Int64))	0
+-- One side NULL
+SELECT
+    tupleMinus(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 1) AS Nullable(Tuple(Int32, Int32)))
+    ) AS diff_null,
+    toTypeName(diff_null),
+    isNull(diff_null);
+\N	Nullable(Tuple(Int64, Int64))	1
+-- Both non-null
+SELECT
+    tupleModulo(
+        CAST((15, 10, 5) AS Nullable(Tuple(Int32, Int32, Int32))),
+        CAST((5, 3, 2) AS Nullable(Tuple(Int32, Int32, Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(0,1,1)	Nullable(Tuple(Int64, Int64, Int64))	0
+-- One side NULL
+SELECT
+    tupleModulo(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32, Int32))),
+        CAST((5, 3, 2) AS Nullable(Tuple(Int32, Int32, Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int64, Int64, Int64))	1
+-- Non-null
+SELECT
+    tupleModuloByNumber(
+        CAST((15, 10, 5) AS Nullable(Tuple(Int32, Int32, Int32))),
+        2
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(1,0,1)	Nullable(Tuple(Int16, Int16, Int16))	0
+-- NULL tuple
+SELECT
+    tupleModuloByNumber(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32, Int32))),
+        2
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int16, Int16, Int16))	1
+-- Non-null
+SELECT
+    tupleMultiply(
+        CAST((1, 2) AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 3) AS Nullable(Tuple(Int32, Int32)))
+    ) AS prod,
+    toTypeName(prod),
+    isNull(prod);
+(2,6)	Nullable(Tuple(Int64, Int64))	0
+-- One side NULL
+SELECT
+    tupleMultiply(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((2, 3) AS Nullable(Tuple(Int32, Int32)))
+    ) AS prod_null,
+    toTypeName(prod_null),
+    isNull(prod_null);
+\N	Nullable(Tuple(Int64, Int64))	1
+-- Non-null
+SELECT
+    tupleMultiplyByNumber(
+        CAST((1, 2) AS Nullable(Tuple(Int32, Int32))),
+        -2.1
+    ) AS prod,
+    toTypeName(prod),
+    isNull(prod);
+(-2.1,-4.2)	Nullable(Tuple(Float64, Float64))	0
+-- NULL tuple
+SELECT
+    tupleMultiplyByNumber(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        -2.1
+    ) AS prod_null,
+    toTypeName(prod_null),
+    isNull(prod_null);
+\N	Nullable(Tuple(Float64, Float64))	1
+-- Non-null
+SELECT
+    tupleNegate(
+        CAST((1, -2) AS Nullable(Tuple(Int32, Int32)))
+    ) AS res,
+    toTypeName(res),
+    isNull(res);
+(-1,2)	Nullable(Tuple(Int32, Int32))	0
+-- NULL tuple
+SELECT
+    tupleNegate(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32)))
+    ) AS res_null,
+    toTypeName(res_null),
+    isNull(res_null);
+\N	Nullable(Tuple(Int32, Int32))	1
+-- Both non-null
+SELECT
+    tuplePlus(
+        CAST((1, 2) AS Nullable(Tuple(Int32, Int32))),
+        CAST((10, 20) AS Nullable(Tuple(Int32, Int32)))
+    ) AS sum_nn,
+    toTypeName(sum_nn),
+    isNull(sum_nn);
+(11,22)	Nullable(Tuple(Int64, Int64))	0
+-- One side NULL
+SELECT
+    tuplePlus(
+        CAST(NULL AS Nullable(Tuple(Int32, Int32))),
+        CAST((10, 20) AS Nullable(Tuple(Int32, Int32)))
+    ) AS sum_null,
+    toTypeName(sum_null),
+    isNull(sum_null);
+\N	Nullable(Tuple(Int64, Int64))	1

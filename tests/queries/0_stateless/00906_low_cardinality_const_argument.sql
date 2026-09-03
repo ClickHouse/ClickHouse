@@ -1,0 +1,2 @@
+select materialize(toLowCardinality('a'));
+

@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Avro, Arrow et ORC'
+slug: /integrations/data-formats/arrow-avro-orc
+title: 'Travailler avec des données Avro, Arrow et ORC dans ClickHouse'
+description: 'Page décrivant comment travailler avec des données Avro, Arrow et ORC dans ClickHouse'
+keywords: ['Apache Avro', 'Apache Arrow', 'format ORC', 'formats colonnaires', 'formats big data']
+doc_type: 'guide'
+---
+
+Apache a publié plusieurs formats de données largement utilisés dans les environnements analytiques, notamment les populaires [Avro](https://avro.apache.org/), [Arrow](https://arrow.apache.org/) et [Orc](https://orc.apache.org/). ClickHouse prend en charge l’importation et l’exportation de données à l’aide de n’importe lequel de ces formats.
+
+<div id="importing-and-exporting-in-avro-format">
+  ## Import et export au format Avro
+</div>
+
+ClickHouse prend en charge la lecture et l’écriture de fichiers de données [Apache Avro](https://avro.apache.org/), largement utilisés dans les systèmes Hadoop.
+
+Pour importer à partir d’un [fichier Avro](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.avro), il faut utiliser le format [Avro](/fr/reference/formats/Avro/Avro) dans l’instruction `INSERT` :
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.avro'
+FORMAT Avro
+```
+
+Avec la fonction [file()](/fr/reference/functions/regular-functions/files#file), nous pouvons également examiner des fichiers Avro avant d’importer réellement des données :
+
+```sql
+SELECT path, hits
+FROM file('data.avro', Avro)
+ORDER BY hits DESC
+LIMIT 5;
+```
+
+```response
+┌─path────────────┬──hits─┐
+│ Amy_Poehler     │ 62732 │
+│ Adam_Goldberg   │ 42338 │
+│ Aaron_Spelling  │ 25128 │
+│ Absence_seizure │ 18152 │
+│ Ammon_Bundy     │ 11890 │
+└─────────────────┴───────┘
+```
+
+Pour exporter dans un fichier Avro :
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.avro'
+FORMAT Avro;
+```
+
+<div id="avro-and-clickhouse-data-types">
+  ### Avro et les types de données de ClickHouse
+</div>
+
+Tenez compte de la [correspondance des types de données](/fr/reference/formats/Avro/Avro#data-type-mapping) lors de l’importation ou de l’exportation de fichiers Avro. Utilisez un transtypage explicite pour convertir les données lors du chargement de fichiers Avro :
+
+```sql
+SELECT
+    date,
+    toDate(date)
+FROM file('data.avro', Avro)
+LIMIT 3;
+```
+
+```response
+┌──date─┬─toDate(date)─┐
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+└───────┴──────────────┘
+```
+
+<div id="avro-messages-in-kafka">
+  ### Messages Avro dans Kafka
+</div>
+
+Lorsque les messages Kafka utilisent le format Avro, ClickHouse peut lire ces flux à l’aide du format [AvroConfluent](/fr/reference/formats/Avro/AvroConfluent) et du moteur [Kafka](/fr/reference/engines/table-engines/integrations/kafka) :
+
+```sql
+CREATE TABLE some_topic_stream
+(
+    field1 UInt32,
+    field2 String
+)
+ENGINE = Kafka() SETTINGS
+kafka_broker_list = 'localhost',
+kafka_topic_list = 'some_topic',
+kafka_group_name = 'some_group',
+kafka_format = 'AvroConfluent';
+```
+
+<div id="working-with-arrow-format">
+  ## Utiliser le format Arrow
+</div>
+
+Un autre format colonnaire est [Apache Arrow](https://arrow.apache.org/), également pris en charge par ClickHouse pour l’importation et l’exportation. Pour importer des données à partir d’un [fichier Arrow](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.arrow), nous utilisons le format [Arrow](/fr/reference/formats/Arrow/Arrow) :
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.arrow'
+FORMAT Arrow
+```
+
+L’exportation vers un fichier Arrow s’effectue de la même manière :
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.arrow'
+FORMAT Arrow
+```
+
+Consultez également [la correspondance des types de données](/fr/reference/formats/Arrow/Arrow#data-types-matching) pour voir si certains doivent être convertis manuellement.
+
+<div id="arrow-data-streaming">
+  ### Flux de données Arrow
+</div>
+
+Le format [ArrowStream](/fr/reference/formats/Arrow/ArrowStream) permet de travailler avec des flux Arrow (utilisés pour le traitement en mémoire). ClickHouse peut lire et écrire des flux Arrow.
+
+Pour montrer comment ClickHouse peut transmettre des données Arrow en flux, envoyons-les au script Python suivant (il lit le flux d’entrée au format flux Arrow et affiche le résultat sous forme de tableau Pandas) :
+
+```python
+import sys, pyarrow as pa
+
+with pa.ipc.open_stream(sys.stdin.buffer) as reader:
+  print(reader.read_pandas())
+```
+
+Nous pouvons maintenant récupérer les données de ClickHouse en redirigeant sa sortie vers le script :
+
+```bash
+clickhouse-client -q "SELECT path, hits FROM some_data LIMIT 3 FORMAT ArrowStream" | python3 arrow.py
+```
+
+```response
+                           path  hits
+0       b'Akiba_Hebrew_Academy'   241
+1           b'Aegithina_tiphia'    34
+2  b'1971-72_Utah_Stars_season'     1
+```
+
+ClickHouse peut aussi lire des flux Arrow en utilisant le même format ArrowStream :
+
+```sql
+arrow-stream | clickhouse-client -q "INSERT INTO sometable FORMAT ArrowStream"
+```
+
+Nous avons utilisé `arrow-stream` comme source possible de données en flux Arrow au format Arrow.
+
+<div id="importing-and-exporting-orc-data">
+  ## Importation et exportation de données ORC
+</div>
+
+Le [format Apache ORC](https://orc.apache.org/) est un format de stockage en colonnes généralement utilisé avec Hadoop. ClickHouse prend en charge l’importation comme l’exportation de [données ORC](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.orc) à l’aide du [format ORC](/fr/reference/formats/ORC) :
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'data.orc'
+FORMAT ORC;
+
+INSERT INTO sometable
+FROM INFILE 'data.orc'
+FORMAT ORC;
+```
+
+Consultez également [la correspondance des types de données](/fr/reference/formats/ORC) ainsi que [les paramètres supplémentaires](/fr/reference/formats/Parquet/Parquet#format-settings) pour affiner l’exportation et l’importation.
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+ClickHouse prend en charge de nombreux formats, textuels comme binaires, afin de répondre à divers scénarios et plateformes. Découvrez d&#39;autres formats et différentes façons de les utiliser dans les articles suivants :
+
+* [Formats CSV et TSV](/fr/guides/clickhouse/data-formats/csv-tsv)
+* [Formats JSON](/fr/guides/clickhouse/data-formats/json/intro)
+* [Regex et templates](/fr/guides/clickhouse/data-formats/templates-regex)
+* [Formats Native et binaires](/fr/guides/clickhouse/data-formats/binary)
+* [Formats SQL](/fr/guides/clickhouse/data-formats/sql)
+
+Consultez également [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - un outil portable riche en fonctionnalités pour travailler avec des fichiers locaux ou distants sans avoir besoin d&#39;un serveur ClickHouse.

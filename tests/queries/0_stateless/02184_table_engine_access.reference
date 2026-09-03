@@ -1,0 +1,2 @@
+ACCESS_DENIED
+CREATE TABLE default.t\n(\n    `line` String\n)\nENGINE = URL(\'https://clickhouse.com\', \'LineAsString\')

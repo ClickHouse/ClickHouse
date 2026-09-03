@@ -1,0 +1,32 @@
+--- uniq -State -> -Merge across partitions ---
+150
+--- quantile(0.5) -State -> -Merge ---
+49.5
+--- avg / sum / count -State -> -Merge ---
+4.5	45	10
+--- groupArray -State -> -Merge (array state column) ---
+[0,1,2,3,4,100,101,102]
+--- AggregatingMergeTree: insert states, merge at read ---
+--- before OPTIMIZE: merged at query time ---
+g1	100	74.5	74.5
+g2	50	49	49
+--- after OPTIMIZE FINAL: merged by engine ---
+g1	100	74.5	74.5
+g2	50	49	49
+--- SELECT FINAL returns merged-final state ---
+g1	100
+g2	50
+--- sumMapState / sumMapMerge: Map-typed aggregate ---
+(['a','b','c'],[1,12,20])
+--- argMinState / argMaxState -> -Merge ---
+b	c
+--- topK -State -> -Merge ---
+[1,2,3]
+--- -If combinator with state ---
+50
+--- finalizeAggregation on state column ---
+100
+--- initializeAggregation ---
+1
+--- state in subquery: nested expressions ---
+3

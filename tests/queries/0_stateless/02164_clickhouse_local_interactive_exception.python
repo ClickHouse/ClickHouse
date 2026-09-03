@@ -1,0 +1,95 @@
+import multiprocessing
+import os
+import pty
+import shlex
+import time
+
+COMPLETION_TIMEOUT_SECONDS = 30
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+STATE_MAP = {
+    -1: "process did not start",
+    0: "all good",
+    1: "process started and said ':)'",
+    2: "prompt search was started",
+    3: "prompt is missing",
+}
+
+
+def run_with_timeout(func, args, timeout):
+    for _ in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=func, args=args, kwargs={"state": state}
+        )
+        process.start()
+        process.join(timeout)
+
+        if state.value in (0, 3):
+            return
+
+        if process.is_alive():
+            process.terminate()
+
+            if state.value == -1:
+                continue
+
+            print(f"Timeout, state: {STATE_MAP[state.value]}")
+            return
+
+
+def expect(text, master, debug_log_fd, output=""):
+    while not text in output:
+        output_b = os.read(master, 4096)
+        output += output_b.decode()
+        debug_log_fd.write(repr(output_b) + "\n")
+        debug_log_fd.flush()
+
+    return output
+
+
+def test_completion(program, argv, prompt, state=None):
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.execv(program, argv)
+    else:
+        try:
+            debug_log_fd = open(DEBUG_LOG, "a")
+
+            expect(":)", master, debug_log_fd)
+
+            state.value = 1
+            os.write(master, bytes(prompt.encode()))
+            expect(prompt[:-10], master, debug_log_fd)
+
+            time.sleep(0.01)
+            os.write(master, b"\r")
+            state.value = 2
+
+            output = expect("CANNOT_PARSE_INPUT_ASSERTION_FAILED", master, debug_log_fd)
+            expect(":)", master, debug_log_fd, output)
+
+            print("OK")
+            state.value = 0
+        finally:
+            os.close(master)
+            debug_log_fd.close()
+
+
+if __name__ == "__main__":
+    clickhouse_local = os.environ["CLICKHOUSE_LOCAL"]
+    args = shlex.split(clickhouse_local)
+    args.append("--disable_suggestion")
+    args.append("--highlight=0")
+    run_with_timeout(
+        test_completion,
+        [
+            args[0],
+            args,
+            "insert into table function null() format TSV some trash here 123 \n 456",
+        ],
+        COMPLETION_TIMEOUT_SECONDS,
+    )

@@ -1,0 +1,28 @@
+ReplacingMergeTree
+0	2
+1	2
+2	2
+0	2
+1	2
+2	2
+CollapsingMergeTree
+0	2
+1	2
+2	2
+0	2
+1	2
+2	2
+VersionedCollapsingMergeTree
+0	2
+1	2
+2	2
+0	2
+1	2
+2	2
+DEDUPLICATE ON MergeTree
+0	1
+1	1
+2	1
+0	1
+1	1
+2	1

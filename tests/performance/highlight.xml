@@ -1,0 +1,9 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query><![CDATA[SELECT count() FROM (SELECT highlight(toString(number) || ' the quick brown fox jumps', ['quick', 'brown', 'fox']) FROM numbers(100000))]]></query>
+
+    <query><![CDATA[SELECT count() FROM (SELECT highlight(toString(number) || ' hello world', ['hello']) FROM numbers(100000))]]></query>
+</test>

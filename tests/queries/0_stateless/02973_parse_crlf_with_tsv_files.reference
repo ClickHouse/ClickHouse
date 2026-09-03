@@ -1,0 +1,11 @@
+<-- Read UNIX endings -->
+
+Akiba_Hebrew_Academy	2017-08-01	241
+Aegithina_tiphia	2018-02-01	34
+1971-72_Utah_Stars_season	2016-10-01	1
+
+<-- Read DOS endings with setting input_format_tsv_crlf_end_of_line=1 -->
+
+Akiba_Hebrew_Academy	2017-08-01	241
+Aegithina_tiphia	2018-02-01	34
+1971-72_Utah_Stars_season	2016-10-01	1

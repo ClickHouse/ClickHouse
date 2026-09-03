@@ -1,0 +1,15 @@
+-- { echoOn }
+SELECT arrayReduce('sum', []::Array(UInt8)) as a, toTypeName(a);
+0	UInt64
+SELECT arrayReduce('sumOrNull', []::Array(UInt8)) as a, toTypeName(a);
+\N	Nullable(UInt64)
+SELECT arrayReduce('sum', [NULL]::Array(Nullable(UInt8))) as a, toTypeName(a);
+\N	Nullable(UInt64)
+SELECT arrayReduce('sum', [NULL, 10]::Array(Nullable(UInt8))) as a, toTypeName(a);
+10	Nullable(UInt64)
+SELECT arrayReduce('any_respect_nulls', [NULL, 10]::Array(Nullable(UInt8))) as a, toTypeName(a);
+\N	Nullable(UInt8)
+SELECT arrayReduce('any_respect_nulls', [10, NULL]::Array(Nullable(UInt8))) as a, toTypeName(a);
+10	Nullable(UInt8)
+SELECT arrayReduce('median', [toLowCardinality(toNullable(8))]) as t, toTypeName(t);
+8	Nullable(Float64)

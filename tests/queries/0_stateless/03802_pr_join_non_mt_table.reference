@@ -1,0 +1,16 @@
+-- t0 count()
+10
+-- t1 count()
+1
+-- inner join t0, t1
+0
+-- inner join t1, t0
+0
+-- left join t0, t1
+10
+-- left join t1, t0
+1
+-- right join t0, t1
+1
+-- right join t1, t0
+10

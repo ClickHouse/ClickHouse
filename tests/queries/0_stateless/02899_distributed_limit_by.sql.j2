@@ -1,0 +1,26 @@
+{#
+Randomize settings:
+- prefer_localhost_replica
+- distributed_group_by_no_merge (0 = WithMergeableState, 1 = Complete, 2 = WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit)
+- distributed_push_down_limit (0/1 = dis/allows WithMergeableStateAfterAggregationAndLimit
+#}
+{% for settings in product(
+    [
+        'prefer_localhost_replica=0',
+        'prefer_localhost_replica=1',
+    ],
+    [
+        'distributed_group_by_no_merge=0',
+        'distributed_group_by_no_merge=1',
+        'distributed_group_by_no_merge=2',
+    ],
+    [
+        'distributed_push_down_limit=1',
+        'distributed_push_down_limit=0',
+    ],
+) %}
+{% set settings = settings | join(',') %}
+select 'Used settings: {{ settings }}';
+select dummy from remote('127.{1,1}', system.one) where dummy + dummy >= 0 limit 1 by dummy + dummy + 0 as l settings {{ settings }};
+select dummy from (select dummy + dummy + 0 as l, dummy from remote('127.{1,1}', system.one) where dummy + dummy >= 0 limit 1 by l) settings {{ settings }};
+{% endfor %}

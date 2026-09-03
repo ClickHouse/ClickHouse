@@ -1,0 +1,20 @@
+AggregateFunction(topKArray(10), Array(String))
+AggregateFunction(topKDistinct(10), String)
+AggregateFunction(topKForEach(10), Array(String))
+AggregateFunction(topKIf(10), String, UInt8)
+AggregateFunction(topK(10), String)
+AggregateFunction(topKOrNull(10), String)
+AggregateFunction(topKOrDefault(10), String)
+AggregateFunction(topKResample(10, 1, 2, 42), String, UInt64)
+AggregateFunction(topK(10), String)
+AggregateFunction(topKArrayResampleOrDefaultIf(10, 1, 2, 42), Array(String), UInt64, UInt8)
+10
+10
+[10]
+11
+10
+10
+10
+[1]
+10
+[1]

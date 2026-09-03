@@ -1,0 +1,31 @@
+SELECT 'bitPositionsToArray';
+SELECT bitPositionsToArray(toUInt128(37));
+SELECT bitPositionsToArray(bitShiftLeft(toUInt128(1), 127));
+SELECT bitPositionsToArray(bitShiftLeft(toUInt256(1), 255));
+SELECT bitPositionsToArray(bitShiftLeft(toInt128(1), 127));
+SELECT bitPositionsToArray(bitShiftLeft(toInt256(1), 255));
+SELECT bitPositionsToArray(toInt128(-1)) = range(toUInt64(128));
+SELECT bitPositionsToArray(toInt256(-1)) = range(toUInt64(256));
+SELECT bitPositionsToArray(materialize(bitShiftLeft(toUInt256(1), 200) + 37));
+
+SELECT 'bitmaskToArray';
+SELECT bitmaskToArray(toUInt128(50));
+SELECT bitmaskToArray(toUInt256(50));
+SELECT bitmaskToArray(toInt128(50));
+SELECT bitmaskToArray(toInt256(50));
+SELECT toTypeName(bitmaskToArray(toUInt128(50)));
+SELECT toTypeName(bitmaskToArray(toInt256(50)));
+SELECT bitmaskToArray(bitShiftLeft(toUInt128(1), 127));
+SELECT bitmaskToArray(bitShiftLeft(toUInt256(1), 255));
+SELECT bitmaskToArray(bitShiftLeft(toInt128(1), 127));
+SELECT bitmaskToArray(materialize(toUInt128(50)));
+
+SELECT 'bitmaskToList';
+SELECT bitmaskToList(toUInt128(50));
+SELECT bitmaskToList(toUInt256(50));
+SELECT bitmaskToList(toInt128(50));
+SELECT bitmaskToList(toInt256(50));
+SELECT bitmaskToList(bitShiftLeft(toUInt128(1), 127));
+SELECT bitmaskToList(bitShiftLeft(toUInt256(1), 255));
+SELECT bitmaskToList(bitShiftLeft(toInt128(1), 127));
+SELECT bitmaskToList(materialize(toUInt256(50)));

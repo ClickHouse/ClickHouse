@@ -1,0 +1,232 @@
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: مقدمة عن ClickHouse Operator
+keywords: ['kubernetes']
+description: 'يقدّم هذا المستند نظرة عامة على المفاهيم الأساسية وأنماط استخدام ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+يقدّم هذا المستند نظرة عامة على المفاهيم الأساسية وأنماط استخدام ClickHouse Operator.
+
+<div id="what-is-the-clickhouse-operator">
+  ## ما هو ClickHouse Operator
+</div>
+
+ClickHouse Operator هو مُشغِّل لـ Kubernetes يعمل على أتمتة نشر عناقيد ClickHouse وإدارتها على Kubernetes. وقد بُني وفق نمط المشغّل، ويُوسِّع واجهة برمجة تطبيقات Kubernetes من خلال الموارد المخصّصة التي تمثّل عناقيد ClickHouse وتبعياتها.
+
+يتولى المشغّل ما يلي:
+
+* إدارة دورة حياة العنقود (الإنشاء، والتحديثات، والتوسّع، والحذف)
+* تنسيق عنقود ClickHouse Keeper
+* التوليد التلقائي للإعدادات
+* مزامنة مخطط قاعدة البيانات
+* التحديثات المتدرجة والترقيات
+* توفير التخزين
+
+<div id="custom-resources">
+  ## الموارد المخصّصة
+</div>
+
+يوفّر المشغّل تعريفين رئيسيين للموارد المخصّصة (CRDs):
+
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
+
+يمثل عنقودًا لقاعدة بيانات ClickHouse يمكن تهيئة النسخ المتماثلة والشظايا فيه.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  shards: 2
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
+
+يمثل عنقود ClickHouse Keeper للتنسيق الموزع (كبديل لـ ZooKeeper).
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="coordination">
+  ## التنسيق
+</div>
+
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper مطلوب
+</div>
+
+يتطلب كل ClickHouseCluster عنقود ClickHouse Keeper للتنسيق الموزع.
+يجب الإشارة إلى عنقود Keeper في مواصفة ClickHouseCluster باستخدام `keeperClusterRef`. افتراضيًا، يبحث المشغّل في مساحة الاسم الخاصة بـ ClickHouseCluster، ولكن يمكنك أيضًا تعيين `keeperClusterRef.namespace` للإشارة إلى KeeperCluster في مساحة اسم أخرى خاضعة للمراقبة.
+
+<div id="one-to-one-keeper-relationship">
+  ### علاقة Keeper واحد إلى واحد
+</div>
+
+يجب أن يكون لكل ClickHouseCluster عنصر KeeperCluster مخصص له. ولا يمكن مشاركة KeeperCluster واحد بين عدة ClickHouseClusters.
+
+**لماذا؟** ينشئ المشغّل تلقائيًا مفتاح مصادقة فريدًا لكل ClickHouseCluster للوصول إلى Keeper الخاص به. ويُخزَّن هذا المفتاح في Secret ولا يمكن مشاركته.
+
+**النتائج المترتبة**:
+
+* لا يمكن لعدة ClickHouseClusters الإشارة إلى KeeperCluster نفسه
+* تستلزم إعادة إنشاء ClickHouseCluster إعادة إنشاء KeeperCluster الخاص به
+
+<Note>
+  لا تُحذف وحدات التخزين الدائمة تلقائيًا عند حذف موارد ClickHouseCluster أو KeeperCluster.
+</Note>
+
+عند إعادة إنشاء عنقود:
+
+1. احذف مورد ClickHouseCluster
+2. احذف مورد KeeperCluster
+3. انتظر حتى تتوقف جميع الكبسولات
+4. احذف PersistentVolumeClaims اختياريًا إذا كنت تريد البدء من جديد
+5. أعد إنشاء كلٍّ من KeeperCluster وClickHouseCluster معًا
+
+لتجنّب أخطاء المصادقة، احذف وحدات التخزين الدائمة يدويًا أو أعد إنشاء كلا العنقودين معًا باستخدام تخزين جديد.
+
+<div id="schema-replication">
+  ## تكرار المخطط
+</div>
+
+يُكرِّر ClickHouse Operator تلقائيًا تعريفات قاعدة البيانات على جميع النسخ المتماثلة في العنقود.
+
+<div id="what-gets-replicated">
+  ### ما الذي تجري مزامنته
+</div>
+
+يقوم المشغّل بمزامنة:
+
+* تعريفات قواعد البيانات [Replicated](/ar/reference/engines/database-engines/replicated)
+* محركات قواعد بيانات التكامل (PostgreSQL وMySQL وغيرها)
+
+المشغّل **لا** يزامن:
+
+* قواعد البيانات غير المُكرّرة (Atomic وOrdinary وغيرها)
+* الجداول المحلية في قواعد البيانات غير المُكرّرة
+* بيانات الجداول (يتولى ClickHouse replication مزامنتها)
+
+<div id="recommended-use-replicated-database-engine">
+  ### يُوصى به: استخدم محرك قاعدة البيانات Replicated
+</div>
+
+<Tip>
+  **أفضل الممارسات**
+
+  استخدم دائمًا محرك قاعدة البيانات [Replicated](/ar/reference/engines/database-engines/replicated) لعمليات النشر في بيئة الإنتاج.
+</Tip>
+
+الفوائد:
+
+* تكرار المخطط تلقائيًا عبر جميع العقد
+* تبسيط إدارة الجداول
+* يمكن للمشغّل المزامنة مع النسخ المتماثلة الجديدة
+* مخطط متسق عبر العنقود
+
+أنشئ قواعد البيانات باستخدام DDL الموزّع:
+
+```sql
+CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
+```
+
+<div id="avoid-non-replicated-engines">
+  ### تجنب المحركات غير Replicated
+</div>
+
+تتطلب محركات قواعد البيانات غير المكررة (Atomic وLazy وSQLite وOrdinary) إدارة المخطط يدويًا:
+
+* يجب إنشاء الجداول بشكل منفصل على كل نسخة متماثلة
+* قد يحدث انجراف في المخطط بين العُقد
+* لا يمكن للمشغّل مزامنة النسخ المتماثلة الجديدة تلقائيًا
+
+<div id="disable-schema-replication">
+  ### تعطيل تكرار المخطط
+</div>
+
+لتعطيل تكرار المخطط تلقائيًا، اضبط `spec.settings.enableDatabaseSync` على `false` في مورد ClickHouseCluster.
+
+<div id="storage-management">
+  ## إدارة التخزين
+</div>
+
+يتولى المشغّل إدارة التخزين عبر Kubernetes PersistentVolumeClaims ‏(PVCs).
+
+<div id="data-volume-configuration">
+  ### إعداد حجم تخزين البيانات
+</div>
+
+حدّد متطلبات التخزين في `dataVolumeClaimSpec`:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 500Gi
+```
+
+<div id="storage-lifecycle">
+  ### دورة حياة التخزين
+</div>
+
+* **الإنشاء**: يتم إنشاء PVCs تلقائيًا مع العنقود
+* **التوسعة**: تكون مدعومة إذا كانت StorageClass تسمح بتوسعة وحدة التخزين
+* **الاحتفاظ**: لا يتم حذف PVCs **تلقائيًا** عند حذف العنقود
+* **إعادة الاستخدام**: يمكن إعادة استخدام PVCs الحالية إذا أُعيد إنشاء العنقود بالاسم نفسه
+
+لإزالة التخزين بالكامل:
+
+```bash
+# Delete cluster
+kubectl delete clickhousecluster my-cluster
+
+# Wait for pods to terminate
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
+
+# Delete PVCs
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
+```
+
+<div id="default-configuration-highlights">
+  ## أبرز إعدادات التكوين الافتراضية
+</div>
+
+* **عنقود مُعدّ مسبقًا:** عنقود باسم &#39;default&#39; يضم جميع عُقد ClickHouse.
+* **وحدات الماكرو الافتراضية:** بعض وحدات الماكرو المفيدة مُعرّفة مسبقًا:
+  * `{cluster}`: اسم العنقود (`default`)
+  * `{shard}`: رقم الجزء
+  * `{replica}`: رقم النسخة المتماثلة
+* **تخزين مُكرَّر لكيانات التحكم بالوصول المستند إلى الأدوار (RBAC)**
+* **تخزين مُكرَّر للدوال المعرّفة من قبل المستخدم (UDF)**
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل الإعداد](/ar/products/kubernetes-operator/guides/configuration) - خيارات إعداد مفصلة
+* [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference) - الوثائق الكاملة لواجهة برمجة التطبيقات

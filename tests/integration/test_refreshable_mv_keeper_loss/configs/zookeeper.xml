@@ -1,0 +1,21 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+        <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+        </node>
+        <!-- Short session timeout so the test's keeper-restart window expires
+             sessions quickly. The test sleeps just over this value while
+             keeper is down. -->
+        <session_timeout_ms>5000</session_timeout_ms>
+        <operation_timeout_ms>5000</operation_timeout_ms>
+    </zookeeper>
+</clickhouse>

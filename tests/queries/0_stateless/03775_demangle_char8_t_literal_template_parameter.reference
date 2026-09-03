@@ -1,0 +1,4 @@
+int f<(char8_t)99>()
+int f<(char16_t)99>()
+int f<(char32_t)99>()
+DB::IAggregateFunctionHelper<DB::AggregateFunctionUniqCombined<DB::IPv4, (char8_t)12, unsigned int>>::createAndDeserializeBatch(DB::PODArray<char*, 4096ul, Allocator<false, false>, 63ul, 64ul>&, char*, unsigned long, unsigned long, DB::ReadBuffer&, std::__1::optional<unsigned long>, DB::Arena*) const

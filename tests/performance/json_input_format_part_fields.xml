@@ -1,0 +1,30 @@
+<test>
+    <create_query>
+    create table t(
+        f1 Nullable(String),
+        f2 Nullable(Int32),
+        f3 Nullable(String),
+        f4 Nullable(Int32),
+        f5 Nullable(UInt64),
+        f6 Nullable(UInt64),
+        f7 Nullable(String),
+        f8 Nullable(String)
+    ) ENGINE = File(JSONEachRow)</create_query>
+    <fill_query>
+    insert into t 
+    select 
+        '3014660362662815',
+        123,
+        'xxsdfsdfs',
+        22,
+        240321215532916041,
+        1711036533457,
+        'xxxxx',
+        'sdsfsdfsddf'
+    from numbers_mt(1000000)
+    </fill_query>
+
+    <query>select count(f1) from t settings max_threads=2</query>
+
+    <drop_query>drop table t</drop_query>
+</test>

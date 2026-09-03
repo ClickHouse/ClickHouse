@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: '概要'
+title: 'クエリ最適化'
+description: '低速な ClickHouse クエリを診断し、ボトルネックを特定して、的を絞った最適化を選択する方法を学びます'
+doc_type: 'guide'
+keywords: ['クエリ最適化', 'パフォーマンス', 'ベストプラクティス', 'クエリチューニング', '効率性', 'クエリログ', 'EXPLAIN']
+---
+
+このガイドでは、ClickHouse で低速なクエリを調査・改善するためのワークフローを紹介します。繰り返し発生する低速クエリを特定し、ボトルネックを切り分け、的を絞った最適化を選択して、再現可能なベースラインと結果を比較します。
+
+<div id="choose-where-to-start">
+  ## 開始する場所を選ぶ
+</div>
+
+最初の 3 つのガイドはエンドツーエンドのワークフローを構成していますが、すでに把握している内容に応じて、適切な段階から始めることもできます。
+
+<CardGroup cols={1}>
+  <Card title="低速クエリを診断する" icon="magnifying-glass" href="/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    繰り返し発生する低速クエリのパターンを特定する必要がある場合は、ここから始めてください。ローカルまたはクラスター全体のクエリ履歴から代表的な実行を選び、リソース使用量を調査して、初期仮説を立てます。
+  </Card>
+
+  <Card title="クエリのボトルネックを切り分ける" icon="layer-group" href="/ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    低速クエリはあるものの、どの操作がパフォーマンスに最も影響しているかまだわからない場合は、ここから始めてください。条件を制御しながら、段階的に単純化したクエリを比較します。
+  </Card>
+
+  <Card title="最適化アプローチを選択する" icon="sliders" href="/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    ボトルネックに関する根拠があり、的を絞った変更を選択する必要がある場合は、ここから始めてください。読み取るデータ量の削減、データレイアウトとクエリの整合、繰り返し行う処理の事前計算に向けたアプローチを比較します。
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## 例
+</div>
+
+<Card title="最適化の実例" icon="flask" href="/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  まず NYC Taxi dataset に対してワークロードクエリを実行し、次にスキーマとソートキーを変更します。各段階で、同じベースラインを基準に測定します。
+</Card>

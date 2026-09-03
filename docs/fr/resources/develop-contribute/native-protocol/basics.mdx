@@ -1,0 +1,150 @@
+---
+slug: /native-protocol/basics
+title: 'Notions de base'
+description: 'Notions de base du protocole natif'
+keywords: ['protocole natif', 'protocole TCP', 'notions de base du protocole', 'protocole binaire', 'communication client-serveur']
+doc_type: 'guide'
+---
+
+<Note>
+  La référence du protocole client est en cours.
+
+  La plupart des exemples sont uniquement en Go.
+</Note>
+
+Ce document décrit le protocole binaire pour les clients TCP de ClickHouse.
+
+<div id="varint">
+  ## Varint
+</div>
+
+Pour les longueurs, les codes de paquets et dans d&#39;autres cas, l&#39;encodage *varint non signé* est utilisé.
+Utilisez [binary.PutUvarint](https://pkg.go.dev/encoding/binary#PutUvarint) et [binary.ReadUvarint](https://pkg.go.dev/encoding/binary#ReadUvarint).
+
+<Note>
+  Le varint *signé* n&#39;est pas utilisé.
+</Note>
+
+<div id="string">
+  ## String
+</div>
+
+Les chaînes de longueur variable sont encodées sous la forme *(length, value)*, où *length* est un [varint](#varint) et *value* une chaîne UTF-8.
+
+<Warning>
+  Vérifiez la longueur pour éviter une OOM :
+
+  `0 ≤ len < MAX`
+</Warning>
+
+<Tabs>
+  <Tab title="Encodage">
+    ```go
+    s := "Hello, world!"
+
+    // Écriture de la longueur de la chaîne en uvarint.
+    buf := make([]byte, binary.MaxVarintLen64)
+    n := binary.PutUvarint(buf, uint64(len(s)))
+    buf = buf[:n]
+
+    // Écriture de la valeur de la chaîne.
+    buf = append(buf, s...)
+    ```
+  </Tab>
+
+  <Tab title="Décodage">
+    ```go
+    r := bytes.NewReader([]byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    })
+
+    // Lecture de la longueur.
+    n, err := binary.ReadUvarint(r)
+    if err != nil {
+            panic(err)
+    }
+
+    // Vérifiez n pour éviter une OOM ou une exception d'exécution dans make().
+    const maxSize = 1024 * 1024 * 10 // 10 MB
+    if n > maxSize || n < 0 {
+        panic("invalid n")
+    }
+
+    buf := make([]byte, n)
+    if _, err := io.ReadFull(r, buf); err != nil {
+            panic(err)
+    }
+
+    fmt.Println(string(buf))
+    // Hello, world!
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="Dump hexadécimal">
+    ```hexdump
+    00000000  0d 48 65 6c 6c 6f 2c 20  77 6f 72 6c 64 21        |.Hello, world!|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    DUhlbGxvLCB3b3JsZCE
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```go
+    data := []byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="integers">
+  ## Entiers
+</div>
+
+<Tip>
+  ClickHouse utilise **Little Endian** pour les entiers à taille fixe.
+</Tip>
+
+<div id="int32">
+  ### Int32
+</div>
+
+```go
+v := int32(1000)
+
+// Encode.
+buf := make([]byte, 8)
+binary.LittleEndian.PutUint32(buf, uint32(v))
+
+// Decode.
+d := int32(binary.LittleEndian.Uint32(buf))
+fmt.Println(d) // 1000
+```
+
+<Tabs>
+  <Tab title="Dump hexadécimal">
+    ```hexdump
+    00000000  e8 03 00 00 00 00 00 00                           |........|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    6AMAAAAAAAA
+    ```
+  </Tab>
+</Tabs>
+
+<div id="boolean">
+  ## Booléen
+</div>
+
+Les booléens sont représentés par un octet unique : `1` correspond à `true` et `0` à `false`.

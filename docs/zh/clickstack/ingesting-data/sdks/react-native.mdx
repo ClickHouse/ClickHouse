@@ -1,0 +1,141 @@
+---
+slug: /use-cases/observability/clickstack/sdks/react-native
+description: '用于 ClickStack 的 React Native SDK - ClickHouse 可观测性栈'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
+---
+
+ClickStack React Native SDK 让你能够为 React Native
+应用添加埋点，并将事件发送到 ClickStack。这样，你就可以在同一时间线中
+查看移动端网络请求、异常以及后端事件。
+
+本指南集成了：
+
+* **XHR/Fetch 请求**
+
+<div id="getting-started">
+  ## 入门
+</div>
+
+<div id="install-via-npm">
+  ### 通过 NPM 安装
+</div>
+
+使用以下命令安装 [ClickStack React Native 软件包](https://www.npmjs.com/package/@hyperdx/otel-react-native)。
+
+```shell
+npm install @hyperdx/otel-react-native
+```
+
+<div id="initialize-clickstack">
+  ### 初始化 ClickStack
+</div>
+
+尽早在应用生命周期内初始化该库：
+
+```javascript
+import { HyperDXRum } from '@hyperdx/otel-react-native';
+
+HyperDXRum.init({
+  url: 'http://your-otel-collector:4318',
+  service: 'my-rn-app',
+  apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略此项
+  tracePropagationTargets: [/api.myapp.domain/i], // 设置此项以将链路追踪从前端关联到后端请求
+});
+```
+
+<div id="attach-user-information-metadata">
+  ### 附加用户信息或元数据 (可选)
+</div>
+
+附加用户信息后，您就可以在 HyperDX 中搜索/过滤会话和事件。
+这可以在客户端会话期间的任何时间点调用。当前客户端会话以及调用后发送的所有事件，
+都会与该用户信息相关联。
+
+`userEmail`、`userName` 和 `teamName` 会在会话 UI 中显示对应的值，
+但也可以省略。您还可以指定任何其他附加值，并用它们来搜索事件。
+
+```javascript
+HyperDXRum.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // 其他自定义属性...
+});
+```
+
+<div id="instrument-lower-versions">
+  ### 为低版本埋点
+</div>
+
+要为运行在 0.68 以下版本 React Native 上的应用埋点，
+请编辑你的 `metro.config.js` 文件，强制 metro 使用浏览器专用
+包。例如：
+
+```javascript
+const defaultResolver = require('metro-resolver');
+
+module.exports = {
+  resolver: {
+    resolveRequest: (context, realModuleName, platform, moduleName) => {
+      const resolved = defaultResolver.resolve(
+        {
+          ...context,
+          resolveRequest: null,
+        },
+        moduleName,
+        platform,
+      );
+
+      if (
+        resolved.type === 'sourceFile' &&
+        resolved.filePath.includes('@opentelemetry')
+      ) {
+        resolved.filePath = resolved.filePath.replace(
+          'platform\\node',
+          'platform\\browser',
+        );
+        return resolved;
+      }
+
+      return resolved;
+    },
+  },
+  transformer: {
+    getTransformOptions: async () => ({
+      transform: {
+        experimentalImportSupport: false,
+        inlineRequires: true,
+      },
+    }),
+  },
+};
+```
+
+<div id="view-navigation">
+  ## 视图导航
+</div>
+
+支持 [react-navigation](https://github.com/react-navigation/react-navigation) 5 和 6 版本。
+
+以下示例展示了如何对导航进行埋点：
+
+```javascript
+import { startNavigationTracking } from '@hyperdx/otel-react-native';
+
+export default function App() {
+  const navigationRef = useNavigationContainerRef();
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        startNavigationTracking(navigationRef);
+      }}
+    >
+      <Stack.Navigator>...</Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```

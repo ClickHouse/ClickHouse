@@ -1,0 +1,17 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster_mixed>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>current</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>backward</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_mixed>
+    </remote_servers>
+</clickhouse>

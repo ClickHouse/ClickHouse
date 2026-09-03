@@ -1,0 +1,1 @@
+CREATE TABLE default.replicated_ttl_00933\n(\n    `a` Int32 TTL now() + toIntervalDay(1),\n    `d` DateTime\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/test_ttl_00933\', \'r1\')\nORDER BY d\nSETTINGS index_granularity = 8192

@@ -1,0 +1,74 @@
+-- { echo }
+
+-- Positive and negative offset without length
+SELECT digits(1234567890, 3), digits(1234567890, -3);
+34567890	890
+-- Positive offset and positive length
+SELECT digits(1234567890, 3, 2), digits(1234567890, 9, 1);
+34	9
+-- Positive offset and negative length
+SELECT digits(1234567890, 3, -2), digits(1234567890, 9, -1);
+345678	9
+-- Negative offset and positive length
+SELECT digits(1234567890, -3, 2), digits(1234567890, -9, 1), digits(1234567890, -9223372036854775808, 1);
+89	2	0
+-- Negative offset and negative length
+SELECT digits(1234567890, -3, -2), digits(1234567890, -9, -1);
+8	23456789
+-- Offset exceeds the boundary
+SELECT digits(1234567890, 11);
+0
+-- Zero length returns nothing
+SELECT digits(1234567890, 3, 0);
+0
+-- Leading zeros are not preserved (return type is UInt64)
+SELECT digits(1000, 2, 2), digits(1000, 2);
+0	0
+-- Full 20-digit UInt64 (exercises the count >= 20 branch)
+SELECT digits(18446744073709551615, 1), digits(18446744073709551615, 5, 3);
+18446744073709551615	674
+-- Signed and negative inputs use the magnitude, including INT64_MIN
+SELECT digits(-123, 1), digits(toInt64(-9223372036854775808), 1);
+123	9223372036854775808
+-- Narrow integer types
+SELECT digits(toUInt8(255), 2), digits(toInt8(-128), 1);
+55	128
+-- Nullable offset: NULL rows return NULL instead of throwing
+SELECT digits(123, arrayJoin([NULL, 1]::Array(Nullable(Int8))));
+\N
+123
+-- LowCardinality offset
+SELECT digits(123, toLowCardinality(number + 1)) FROM numbers(2);
+123
+23
+-- Nullable value inside a constant column (Const(Nullable)) returns NULL
+SELECT digits(123, CAST(NULL, 'Nullable(Int8)'));
+\N
+-- Large UInt64 offset beyond INT64_MAX is past the end and returns 0 (not reinterpreted as negative)
+SELECT digits(1234567890, toUInt64(9223372036854775808));
+0
+-- Large UInt64 length beyond INT64_MAX keeps all digits (not reinterpreted as -1)
+SELECT digits(1234567891, 1, toUInt64(18446744073709551615));
+1234567891
+-- server errors
+SELECT digits(1234567890, 0); -- {serverError ZERO_ARRAY_OR_TUPLE_INDEX}
+SELECT digits(toString(1234567890), 1); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT digits(1234567890); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+SELECT digits(1234567890, 1, 2, 3); -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+-- NULL
+SELECT digits(123, NULL);
+\N
+SELECT digits(NULL, 1);
+\N
+SELECT digits(arrayJoin([NULL, 123]::Array(Nullable(Int8))), 1);
+\N
+123
+SELECT digits(123, toLowCardinality(arrayJoin([NULL, 1]::Array(Nullable(Int8)))));
+\N
+123
+SELECT digits(123, 1, NULL);
+\N
+SELECT digits(1234567890, toInt64(-9223372036854775808), toUInt64(9223372036854775808));
+1234567890
+SELECT digits(1234567891, 1, toUInt64(18446744073709551615));
+1234567891

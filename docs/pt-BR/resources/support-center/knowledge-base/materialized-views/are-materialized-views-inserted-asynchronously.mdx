@@ -1,0 +1,24 @@
+---
+title: As visões materializadas são inseridas de forma síncrona?
+description: Este artigo da base de conhecimento analisa se as visões materializadas são inseridas de forma síncrona
+date: 2023-03-01
+tags: ['Modelagem de Dados']
+keywords: ['visão materializada']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## As inserções em visões materializadas são síncronas?
+</div>
+
+**Pergunta:** Quando novas linhas são inseridas em uma tabela de origem, essas linhas também são enviadas para todas as visões materializadas dessa tabela. As inserções em visões materializadas são executadas de forma síncrona, ou seja, quando a inserção é confirmada com sucesso pelo servidor ao cliente, isso significa que todas as visões materializadas já foram totalmente atualizadas e estão disponíveis para consultas?
+
+**Resposta:**
+
+1. Quando um `INSERT` é bem-sucedido, os dados são inseridos tanto na tabela quanto em todas as visões materializadas.
+2. A inserção não é atômica em relação às visões materializadas. No momento em que o `INSERT` está em andamento, clientes concorrentes podem ver um estado intermediário, no qual os dados já foram inseridos na tabela principal, mas ainda não nas visões materializadas, ou vice-versa.
+3. Se você estiver usando [async inserts](/pt-BR/concepts/features/operations/insert/asyncinserts), eles acumulam os dados e executam internamente uma inserção regular, retornando ao cliente o mesmo tipo de resposta das inserções regulares. Se o cliente recebeu uma confirmação de sucesso de um async insert com a opção `wait_for_async_insert` (como ocorre por padrão), os dados são inseridos tanto na tabela quanto em todas as suas visões materializadas.
+
+**Pergunta:** E no caso de visões materializadas encadeadas/em cascata?
+
+**Resposta:**
+As mesmas regras se aplicam: um `INSERT` com resposta bem-sucedida significa que os dados foram inseridos em todas as visões materializadas da cadeia. A inserção não é atômica.

@@ -1,0 +1,6 @@
+-- 1 shard, 3 replicas
+100	0	99	49.5
+200	0	99	49.5
+-- 2 shards, 3 replicas each
+200	0	99	49.5
+400	0	99	49.5

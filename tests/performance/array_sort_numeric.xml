@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>UInt8</value>
+                <value>UInt16</value>
+                <value>UInt32</value>
+                <value>UInt64</value>
+                <value>Int32</value>
+                <value>Int128</value>
+                <value>UInt256</value>
+                <value>BFloat16</value>
+                <value>Float32</value>
+                <value>Float64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT arraySort(arrayMap(x -> to{type}(cityHash64(number, x)), range(32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayReverseSort(arrayMap(x -> to{type}(cityHash64(number, x)), range(32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arraySort(arrayMap(x -> toDecimal64(toInt64(cityHash64(number, x) % 1000000000000), 4), range(32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayReverseSort(arrayMap(x -> toDecimal64(toInt64(cityHash64(number, x) % 1000000000000), 4), range(32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arraySort(arrayMap(x -> toDecimal128(toInt64(cityHash64(number, x)), 4), range(32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arraySort(arrayMap(x -> toUInt8(cityHash64(number, x)), range(6))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT arraySort(arrayMap(x -> toUInt32(cityHash64(number, x)), range(2000))) FROM numbers(20000) FORMAT Null</query>
+    <query>SELECT arraySort(arrayMap(x -> toUInt8(cityHash64(number, x)), range(2000))) FROM numbers(20000) FORMAT Null</query>
+</test>

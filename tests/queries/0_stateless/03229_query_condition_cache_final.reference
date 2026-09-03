@@ -1,0 +1,6 @@
+--- with move to PREWHERE
+Query conditions with FINAL keyword must not be cached.
+0
+--- without move to PREWHERE
+Query conditions with FINAL keyword must not be cached.
+0

@@ -1,0 +1,28 @@
+<dictionaries>
+    <dictionary>
+        <name>test_dictionary_1</name>
+
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+            <attribute>
+                <name>value_1</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+
+        <source>
+            <clickhouse>
+                <table>dictionary_values</table>
+            </clickhouse>
+        </source>
+
+        <layout>
+            <direct/>
+        </layout>
+
+    </dictionary>
+</dictionaries>

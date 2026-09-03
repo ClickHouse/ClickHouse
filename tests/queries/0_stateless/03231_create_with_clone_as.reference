@@ -1,0 +1,42 @@
+CREATE TABLE default.foo_memory\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = Memory
+CREATE TABLE default.foo_file\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = File(\'TabSeparated\')
+CREATE TABLE default.foo_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+1	a
+2	b
+CREATE TABLE default.clone_as_foo_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_merge_tree
+1	a
+2	b
+from clone_as_foo_merge_tree
+1	a
+2	b
+from clone_as_foo_merge_tree_p_x
+1	a
+2	b
+CREATE TABLE default.foo_replacing_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+1	a
+2	b
+CREATE TABLE default.clone_as_foo_replacing_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_replacing_merge_tree
+1	a
+2	b
+from clone_as_foo_replacing_merge_tree
+1	a
+2	b
+from clone_as_foo_replacing_merge_tree_p_x
+1	a
+2	b
+CREATE TABLE default.foo_replicated_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/test_foo_replicated_merge_tree\', \'r1\')\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_replicated_merge_tree
+1	a
+2	b
+CREATE TABLE default.clone_as_foo_replicated_merge_tree_p_x\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/clone_as_foo_replicated_merge_tree_p_x\', \'r1\')\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from clone_as_foo_replicated_merge_tree_p_x
+1	a
+2	b
+s1	r1	OK	0	0
+CREATE TABLE default_1.foo_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_merge_tree
+1	a
+2	b
+s1	r1	OK	0	0

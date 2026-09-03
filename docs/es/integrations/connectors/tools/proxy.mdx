@@ -1,0 +1,49 @@
+---
+description: 'Describe las soluciones de proxy de terceros disponibles para ClickHouse'
+sidebarTitle: 'Proxies'
+slug: /interfaces/third-party/proxy
+title: 'Servidores proxy de terceros'
+doc_type: 'reference'
+---
+
+<div id="chproxy">
+  ## chproxy
+</div>
+
+[chproxy](https://github.com/Vertamedia/chproxy) es un proxy HTTP y balanceador de carga para la base de datos ClickHouse.
+
+Características:
+
+* Enrutamiento por usuario y almacenamiento en caché de respuestas.
+* Límites flexibles.
+* Renovación automática de certificados SSL.
+
+Implementado en Go.
+
+<div id="kittenhouse">
+  ## KittenHouse
+</div>
+
+[KittenHouse](https://github.com/VKCOM/kittenhouse) está diseñado para actuar como un proxy local entre ClickHouse y el servidor de aplicaciones cuando resulta imposible o poco práctico almacenar en búfer los datos de INSERT del lado de la aplicación.
+
+Características:
+
+* Almacenamiento en búfer de datos en memoria y en disco.
+* Enrutamiento por tabla.
+* Equilibrio de carga y comprobación del estado.
+
+Implementado en Go.
+
+<div id="clickhouse-bulk">
+  ## ClickHouse-Bulk
+</div>
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) es un recolector sencillo para inserciones en ClickHouse.
+
+Características:
+
+* Agrupa las solicitudes y las envía al alcanzar un umbral o en un intervalo.
+* Varios servidores remotos.
+* Autenticación básica.
+
+Implementado en Go.

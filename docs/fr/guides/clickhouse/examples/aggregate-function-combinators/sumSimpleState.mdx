@@ -1,0 +1,114 @@
+---
+slug: '/examples/aggregate-function-combinators/sumSimpleState'
+title: 'sumSimpleState'
+description: 'Exemple d’utilisation du combinateur sumSimpleState'
+keywords: ['sum', 'state', 'simple', 'combinateur', 'exemples', 'sumSimpleState']
+sidebarTitle: 'sumSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`SimpleState`](/fr/reference/functions/aggregate-functions/combinators#-simplestate) peut être appliqué à la fonction [`sum`](/fr/reference/functions/aggregate-functions/sum)
+pour renvoyer la somme de toutes les valeurs d’entrée. Il renvoie le résultat avec le
+type [`SimpleAggregateFunction`](/fr/reference/data-types/simpleaggregatefunction).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="tracking-post-votes">
+  ### Suivi des votes positifs et négatifs
+</div>
+
+Prenons un exemple concret avec une table qui suit les votes sur les posts.
+Pour chaque post, nous voulons conserver les totaux cumulés des votes positifs, des votes négatifs et d’un
+score global. L’utilisation du type `SimpleAggregateFunction` avec sum convient bien à
+ce cas d’usage, car nous avons seulement besoin de stocker les totaux cumulés, et non l’état complet
+de l’agrégation. Cela sera donc plus rapide et ne nécessitera pas la fusion
+d’états d’agrégat partiels.
+
+Nous créons d’abord une table pour les données brutes :
+
+```sql title="Query"
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+Ensuite, nous créons une table cible qui stockera les données agrégées :
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+Nous créons ensuite une vue matérialisée avec des colonnes de type `SimpleAggregateFunction` :
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- Initial value for sum state (1 if upvote, 0 otherwise)
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- Initial value for sum state (1 if downvote, 0 otherwise)
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- Initial value for sum state (1 for upvote, -1 for downvote)
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+Insérez des données d’exemple :
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+Interrogez la vue matérialisée avec le combinateur `SimpleState` :
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- Query the target table
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`sum`](/fr/reference/functions/aggregate-functions/sum)
+* [`combinateur SimpleState`](/fr/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`type SimpleAggregateFunction`](/fr/reference/data-types/simpleaggregatefunction)

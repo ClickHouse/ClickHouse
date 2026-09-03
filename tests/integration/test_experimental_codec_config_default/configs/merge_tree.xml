@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <default_compression_codec>ZXC</default_compression_codec>
+    </merge_tree>
+</clickhouse>

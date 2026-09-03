@@ -1,0 +1,274 @@
+---
+title: 'Производительность запросов — временные ряды'
+sidebarTitle: 'Производительность запросов'
+description: 'Повышение производительности запросов к временным рядам'
+slug: /use-cases/time-series/query-performance
+keywords: ['временные ряды', 'производительность запросов', 'оптимизация', 'индексирование', 'партиционирование', 'настройка запросов', 'производительность']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+После оптимизации хранения следующий шаг — повысить производительность запросов.
+В этом разделе рассматриваются два ключевых подхода: оптимизация ключей `ORDER BY` и использование materialized views.
+Мы увидим, как эти подходы позволяют сократить время выполнения запросов с секунд до миллисекунд.
+
+<div id="time-series-optimize-order-by">
+  ## Оптимизируйте ключи `ORDER BY`
+</div>
+
+Прежде чем переходить к другим оптимизациям, следует оптимизировать ключи сортировки, чтобы ClickHouse работал максимально быстро.
+Выбор подходящего ключа во многом зависит от того, какие запросы вы собираетесь выполнять. Предположим, что в большинстве наших запросов фильтрация идет по столбцам `project` и `subproject`.
+В этом случае их стоит добавить в ключ сортировки, а также столбец `time`, поскольку запросы выполняются и по времени.
+
+Давайте создадим ещё одну версию таблицы с теми же типами столбцов, что и у `wikistat`, но с сортировкой по `(project, subproject, time)`.
+
+```sql
+CREATE TABLE wikistat_project_subproject
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (project, subproject, time);
+```
+
+Давайте теперь сравним несколько запросов, чтобы понять, насколько выражение в ключе сортировки влияет на производительность. Обратите внимание: мы не применяли предыдущие оптимизации типов данных и кодеков, поэтому все различия в производительности запросов обусловлены только порядком сортировки.
+
+<table>
+  <thead>
+    <tr>
+      <th style={{ width: '36%' }}>Запрос</th>
+      <th style={{ textAlign: 'right', width: '32%' }}>`(time)`</th>
+      <th style={{ textAlign: 'right', width: '32%' }}>`(project, subproject, time)`</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>
+        ```sql
+        SELECT project, sum(hits) AS h
+        FROM wikistat
+        GROUP BY project
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.381 с</td>
+      <td style={{ textAlign: 'right' }}>1.660 с</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT subproject, sum(hits) AS h
+        FROM wikistat
+        WHERE project = 'it'
+        GROUP BY subproject
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.148 с</td>
+      <td style={{ textAlign: 'right' }}>0.058 с</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT toStartOfMonth(time) AS m, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY m
+        ORDER BY m DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.192 с</td>
+      <td style={{ textAlign: 'right' }}>0.012 с</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT path, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY path
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.968 с</td>
+      <td style={{ textAlign: 'right' }}>0.010 с</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="time-series-materialized-views">
+  ## Materialized views
+</div>
+
+Еще один вариант — использовать materialized views для агрегации и хранения результатов часто выполняемых запросов. Вместо исходной таблицы можно обращаться к этим результатам. Предположим, что в нашем случае следующий запрос выполняется довольно часто:
+
+```sql
+SELECT path, SUM(hits) AS v
+FROM wikistat
+WHERE toStartOfMonth(time) = '2015-05-01'
+GROUP BY path
+ORDER BY v DESC
+LIMIT 10
+```
+
+```text
+┌─path──────────────────┬────────v─┐
+│ -                     │ 89650862 │
+│ Angelsberg            │ 19165753 │
+│ Ana_Sayfa             │  6368793 │
+│ Academy_Awards        │  4901276 │
+│ Accueil_(homonymie)   │  3805097 │
+│ Adolf_Hitler          │  2549835 │
+│ 2015_in_spaceflight   │  2077164 │
+│ Albert_Einstein       │  1619320 │
+│ 19_Kids_and_Counting  │  1430968 │
+│ 2015_Nepal_earthquake │  1406422 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 2.285 sec. Processed 231.41 million rows, 9.22 GB (101.26 million rows/s., 4.03 GB/s.)
+Peak memory usage: 1.50 GiB.
+```
+
+<div id="time-series-create-materialized-view">
+  ### Создание materialized view
+</div>
+
+Можно создать следующую materialized view:
+
+```sql
+CREATE TABLE wikistat_top
+(
+    `path` String,
+    `month` Date,
+    hits UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY (month, hits);
+```
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+<div id="time-series-backfill-destination-table">
+  ### Дозагрузка целевой таблицы
+</div>
+
+Эта целевая таблица будет заполняться только при вставке новых записей в таблицу `wikistat`, поэтому нужно выполнить [дозагрузку](/ru/guides/clickhouse/data-modelling/backfilling).
+
+Проще всего сделать это с помощью оператора [`INSERT INTO SELECT`](/ru/reference/statements/insert-into#inserting-the-results-of-select): выполнить вставку напрямую в целевую таблицу materialized view, [используя](https://github.com/ClickHouse/examples/tree/main/ClickHouse_vs_ElasticSearch/DataAnalytics#variant-1---directly-inserting-into-the-target-table-by-using-the-materialized-views-transformation-query) запрос `SELECT` этого представления (преобразование):
+
+```sql
+INSERT INTO wikistat_top
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+В зависимости от мощности исходного набора данных (у нас 1 миллиард строк!) этот подход может требовать много памяти. В качестве альтернативы можно использовать вариант, требующий минимального объема памяти:
+
+* Создание временной таблицы с движком таблицы Null
+* Подключение копии обычно используемого materialized view к этой временной таблице
+* Использование запроса `INSERT INTO SELECT` для копирования всех данных из исходного набора данных в эту временную таблицу
+* Удаление временной таблицы и временного materialized view.
+
+При таком подходе строки из исходного набора данных поблочно копируются во временную таблицу (которая не хранит ни одну из них), и для каждого блока строк вычисляется частичное состояние и записывается в целевую таблицу, где эти состояния инкрементально объединяются в фоновом режиме.
+
+```sql
+CREATE TABLE wikistat_backfill
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = Null;
+```
+
+Далее создадим materialized view, которая будет читать из `wikistat_backfill` и записывать в `wikistat_top`
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_backfill_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat_backfill
+GROUP BY path, month;
+```
+
+И наконец, мы заполним `wikistat_backfill` данными из исходной таблицы `wikistat`:
+
+```sql
+INSERT INTO wikistat_backfill
+SELECT * 
+FROM wikistat;
+```
+
+После завершения этого запроса можно удалить таблицу дозагрузки и materialized view:
+
+```sql
+DROP VIEW wikistat_backfill_top_mv;
+DROP TABLE wikistat_backfill;
+```
+
+Теперь мы можем выполнять запросы к materialized view, а не к исходной таблице:
+
+```sql
+SELECT path, sum(hits) AS hits
+FROM wikistat_top
+WHERE month = '2015-05-01'
+GROUP BY ALL
+ORDER BY hits DESC
+LIMIT 10;
+```
+
+```text
+┌─path──────────────────┬─────hits─┐
+│ -                     │ 89543168 │
+│ Angelsberg            │  7047863 │
+│ Ana_Sayfa             │  5923985 │
+│ Academy_Awards        │  4497264 │
+│ Accueil_(homonymie)   │  2522074 │
+│ 2015_in_spaceflight   │  2050098 │
+│ Adolf_Hitler          │  1559520 │
+│ 19_Kids_and_Counting  │   813275 │
+│ Andrzej_Duda          │   796156 │
+│ 2015_Nepal_earthquake │   726327 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.004 sec.
+```
+
+Прирост производительности здесь впечатляющий.
+Раньше на вычисление ответа на этот запрос уходило чуть больше 2 секунд, а теперь — всего 4 миллисекунды.

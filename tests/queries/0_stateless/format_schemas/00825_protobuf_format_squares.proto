@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message NumberAndSquare {
+  uint32 number = 1;
+  uint64 square = 2;
+};

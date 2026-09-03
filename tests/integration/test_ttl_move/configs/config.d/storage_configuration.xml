@@ -1,0 +1,114 @@
+<clickhouse>
+
+<storage_configuration>
+    <disks>
+        <default>
+        </default>
+        <jbod1>
+            <path>/test_ttl_move_jbod1/</path>
+        </jbod1>
+        <jbod2>
+            <path>/test_ttl_move_jbod2/</path>
+        </jbod2>
+        <external>
+            <path>/test_ttl_move_external/</path>
+        </external>
+    </disks>
+
+    <policies>
+        <jbods_with_external>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                    <disk>jbod2</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </jbods_with_external>
+
+        <jbod1_then_jbod2_then_external>
+            <volumes>
+                <banana>
+                    <disk>jbod1</disk>
+                </banana>
+                <apple>
+                    <disk>jbod2</disk>
+                </apple>
+                <orange>
+                    <disk>external</disk>
+                </orange>
+            </volumes>
+        </jbod1_then_jbod2_then_external>
+
+
+        <default_with_small_jbod_with_external>
+            <volumes>
+                <default>
+                    <disk>default</disk>
+                </default>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </default_with_small_jbod_with_external>
+
+        <small_jbod_with_external>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </small_jbod_with_external>
+
+        <jbod1_with_jbod2>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>jbod2</disk>
+                </external>
+            </volumes>
+        </jbod1_with_jbod2>
+
+        <only_jbod1>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+            </volumes>
+        </only_jbod1>
+
+        <only_jbod2>
+            <volumes>
+                <main>
+                    <disk>jbod2</disk>
+                </main>
+            </volumes>
+        </only_jbod2>
+
+        <jbod_without_instant_ttl_move>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <perform_ttl_move_on_insert>false</perform_ttl_move_on_insert>
+                </external>
+            </volumes>
+        </jbod_without_instant_ttl_move>
+    </policies>
+
+</storage_configuration>
+
+<allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
+</clickhouse>

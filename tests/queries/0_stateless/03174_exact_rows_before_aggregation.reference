@@ -1,0 +1,548 @@
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9]
+	],
+
+	"rows": 10,
+
+	"rows_before_aggregation": 10
+}
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>i</name>
+				<type>Int32</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<i>0</i>
+		</row>
+		<row>
+			<i>1</i>
+		</row>
+		<row>
+			<i>2</i>
+		</row>
+		<row>
+			<i>3</i>
+		</row>
+		<row>
+			<i>4</i>
+		</row>
+		<row>
+			<i>5</i>
+		</row>
+		<row>
+			<i>6</i>
+		</row>
+		<row>
+			<i>7</i>
+		</row>
+		<row>
+			<i>8</i>
+		</row>
+		<row>
+			<i>9</i>
+		</row>
+	</data>
+	<rows>10</rows>
+	<rows_before_aggregation>10</rows_before_aggregation>
+</result>
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[10],
+		[11],
+		[12]
+	],
+
+	"rows": 3,
+
+	"rows_before_aggregation": 3
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19]
+	],
+
+	"rows": 20,
+
+	"rows_before_aggregation": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "max(i)",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[19]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1,
+
+	"rows_before_aggregation": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19],
+		[20],
+		[21],
+		[22],
+		[23],
+		[24],
+		[25],
+		[26],
+		[27],
+		[28],
+		[29]
+	],
+
+	"rows": 30,
+
+	"rows_before_limit_at_least": 60,
+
+	"rows_before_aggregation": 60
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19]
+	],
+
+	"rows": 20,
+
+	"rows_before_limit_at_least": 40,
+
+	"rows_before_aggregation": 40
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19],
+		[20],
+		[21],
+		[22],
+		[23],
+		[24],
+		[25],
+		[26],
+		[27],
+		[28],
+		[29]
+	],
+
+	"rows": 30,
+
+	"rows_before_limit_at_least": 30,
+
+	"rows_before_aggregation": 60
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19]
+	],
+
+	"rows": 20,
+
+	"rows_before_limit_at_least": 20,
+
+	"rows_before_aggregation": 40
+}
+{
+	"meta":
+	[
+		{
+			"name": "max(i)",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[19]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1,
+
+	"rows_before_aggregation": 40
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9]
+	],
+
+	"rows": 10,
+
+	"rows_before_limit_at_least": 10,
+
+	"rows_before_aggregation": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9]
+	],
+
+	"rows": 10,
+
+	"rows_before_limit_at_least": 10,
+
+	"rows_before_aggregation": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9]
+	],
+
+	"rows": 10,
+
+	"rows_before_aggregation": 10
+}
+{
+	"meta":
+	[
+		{
+			"name": "max(i)",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[19]
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1,
+
+	"rows_before_aggregation": 20
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19],
+		[20],
+		[21],
+		[22],
+		[23],
+		[24],
+		[25],
+		[26],
+		[27],
+		[28],
+		[29]
+	],
+
+	"rows": 30,
+
+	"rows_before_limit_at_least": 60,
+
+	"rows_before_aggregation": 60
+}
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "Int32"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4],
+		[5],
+		[6],
+		[7],
+		[8],
+		[9],
+		[10],
+		[11],
+		[12],
+		[13],
+		[14],
+		[15],
+		[16],
+		[17],
+		[18],
+		[19],
+		[20],
+		[21],
+		[22],
+		[23],
+		[24],
+		[25],
+		[26],
+		[27],
+		[28],
+		[29]
+	],
+
+	"rows": 30,
+
+	"rows_before_limit_at_least": 30,
+
+	"rows_before_aggregation": 60
+}

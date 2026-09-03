@@ -1,0 +1,12 @@
+Variant reference -> Nullable result, non-strided, optimization on
+Nullable(Float64)
+Nullable(Float64)
+Same call with the optimization off (original result type for reference)
+Nullable(Float64)
+Nullable(Float64)
+Variant reference -> Nullable result, strided 4-arg form, optimization on
+Nullable(Float64)
+A plain (non-Nullable) reference is unaffected: still Float64
+Float64
+Minimized fuzzer shape: optimization must not throw a logical error
+Nullable(Float64)

@@ -1,0 +1,45 @@
+1	1	11
+1	2	12
+Row 1:
+──────
+event_type:   MergePartsStart
+merge_reason: RegularMerge
+table:        test
+part_name:    1_1_2_1
+partition_id: 1
+partition:    1
+rows:         0
+merged_from:  ['1_1_1_0','1_2_2_0']
+
+Row 2:
+──────
+event_type:   MergeParts
+merge_reason: RegularMerge
+table:        test
+part_name:    1_1_2_1
+partition_id: 1
+partition:    1
+rows:         2
+merged_from:  ['1_1_1_0','1_2_2_0']
+
+Row 3:
+──────
+event_type:   MutatePartStart
+merge_reason: NotAMerge
+table:        test
+part_name:    1_1_2_1_4
+partition_id: 1
+partition:    1
+rows:         0
+merged_from:  ['1_1_2_1']
+
+Row 4:
+──────
+event_type:   MutatePart
+merge_reason: NotAMerge
+table:        test
+part_name:    1_1_2_1_4
+partition_id: 1
+partition:    1
+rows:         2
+merged_from:  ['1_1_2_1']

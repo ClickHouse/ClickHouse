@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<style>
+  .stroke { stroke: black; fill: none; }
+  .filled { fill: black; }
+  @media (prefers-color-scheme: dark) {
+    .stroke { stroke: white; }
+    .filled { fill: white; }
+  }
+</style>
+<rect width="256" height="256" fill="none"/>
+<circle class="stroke" cx="128" cy="128" r="96" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+<path class="stroke" d="M120,120a8,8,0,0,1,8,8v40a8,8,0,0,0,8,8" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+<circle class="filled" cx="124" cy="84" r="12"/>
+</svg>
