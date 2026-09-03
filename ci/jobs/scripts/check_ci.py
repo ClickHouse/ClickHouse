@@ -924,71 +924,70 @@ def main():
     # Process the sync PR result regardless of the "CH Inc sync" commit status as stress test failures are ignored by it.
     sync_known_failures = []
     sync_unknown_failures = []
-    if sync_status:
+    sync_status_text = (
+        f"{sync_status.state} - {sync_status.description}" if sync_status else "unknown"
+    )
+    print(
+        f"\n=== Processing Sync PR ({CheckStatuses.CH_INC_SYNC}: {sync_status_text}) ==="
+    )
+
+    # Check proxy connectivity before proceeding
+    process_sync = False
+    while True:
+        if Shell.check(
+            f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
+        ):
+            process_sync = True
+            break
         print(
-            f"\n=== Processing Sync PR ({CheckStatuses.CH_INC_SYNC}: "
-            f"{sync_status.state} - {sync_status.description}) ==="
+            f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
+            "Connect to VPN/Tailscale to access sync PR results."
         )
+        answer = UserPrompt.select_from_menu(
+            [
+                ("Skip sync PR processing", "skip"),
+                ("Retry (after connecting to VPN)", "retry"),
+            ],
+            question="S3 proxy is not available",
+        )
+        if answer[1] == "skip":
+            print("Skipping sync PR processing")
+            break
 
-        # Check proxy connectivity before proceeding
-        process_sync = False
-        while True:
-            if Shell.check(
-                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
-            ):
-                process_sync = True
-                break
-            print(
-                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
-                "Connect to VPN/Tailscale to access sync PR results."
+    if process_sync:
+        sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
+        if sync_pr_info:
+            sync_pr_num, sync_sha = sync_pr_info
+            print(f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})")
+            sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
+                sync_pr_num, sync_sha
             )
-            answer = UserPrompt.select_from_menu(
-                [
-                    ("Skip sync PR processing", "skip"),
-                    ("Retry (after connecting to VPN)", "retry"),
-                ],
-                question="S3 proxy is not available",
-            )
-            if answer[1] == "skip":
-                print("Skipping sync PR processing")
-                break
-
-        if process_sync:
-            sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
-            if sync_pr_info:
-                sync_pr_num, sync_sha = sync_pr_info
-                print(
-                    f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})"
+            if sync_workflow_result:
+                sync_workflow_result = (
+                    sync_workflow_result.to_failed_results_with_flat_leaves()
                 )
-                sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
-                    sync_pr_num, sync_sha
+                (
+                    sync_known_failures,
+                    sync_unknown_failures,
+                    sync_not_finished,
+                    _,
+                ) = process_workflow_failures(
+                    sync_workflow_result,
+                    SYNC_REPO,
+                    sync_pr_num,
+                    sync_sha,
+                    allow_infra_issues=create_infrastructure_issue,
                 )
-                if sync_workflow_result:
-                    sync_workflow_result = (
-                        sync_workflow_result.to_failed_results_with_flat_leaves()
-                    )
-                    (
-                        sync_known_failures,
-                        sync_unknown_failures,
-                        sync_not_finished,
-                        _,
-                    ) = process_workflow_failures(
-                        sync_workflow_result,
-                        SYNC_REPO,
-                        sync_pr_num,
-                        sync_sha,
-                        allow_infra_issues=create_infrastructure_issue,
-                    )
-                    print_failure_summary(
-                        sync_known_failures,
-                        sync_unknown_failures,
-                        sync_not_finished,
-                        label="Sync",
-                    )
-                else:
-                    print("WARNING: Could not fetch sync PR result - skipping")
+                print_failure_summary(
+                    sync_known_failures,
+                    sync_unknown_failures,
+                    sync_not_finished,
+                    label="Sync",
+                )
             else:
-                print("WARNING: Could not find sync PR - skipping")
+                print("WARNING: Could not fetch sync PR result - skipping")
+        else:
+            print("WARNING: Could not find sync PR - skipping")
 
     public_failed = known_failures or unknown_failures
     sync_failed = sync_known_failures or sync_unknown_failures
@@ -1001,8 +1000,7 @@ def main():
         if known_failures:
             summary += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
         summary += " - all other public checks passed\n"
-        if sync_status:
-            summary += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        summary += f" - Sync status: {sync_status_text}\n"
         if sync_failed:
             summary += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
