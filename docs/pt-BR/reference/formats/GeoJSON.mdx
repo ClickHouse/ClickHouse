@@ -34,7 +34,7 @@ Ler uma `FeatureCollection` produz uma linha por feature com o seguinte esquema 
 | `geometry`   | `Geometry`         | A geometria da feature, armazenada como um tipo variante `Geometry`.                                                                                                                    |
 | `properties` | `Nullable(JSON)`   | O objeto `properties` da feature, armazenado como uma coluna `JSON` semiestruturada. Um `"properties": null` explícito é preservado como `NULL`.                                        |
 
-Cada geometria é armazenada no tipo `Geometry` do ClickHouse (um `Variant`). Os tipos de geometria GeoJSON compatíveis são `Point`, `LineString`, `MultiLineString`, `Polygon` e `MultiPolygon`. Os outros dois tipos de geometria GeoJSON, `GeometryCollection` e `MultiPoint`, não podem ser representados pelo tipo `Geometry`; ler um deles na coluna `geometry` gera uma exceção por padrão, mas isso pode ser alterado para inserir `NULL` em vez disso — veja [Como lidar com tipos de geometria não compatíveis](#unsupported-geometry) abaixo. Por padrão, a coluna `geometry` é `NULL` apenas quando a geometria de uma feature é um `null` JSON explícito; com `input_format_geojson_unsupported_geometry_handling = 'null'`, ela também é `NULL` para um tipo de geometria não compatível.
+Cada geometria é armazenada no tipo `Geometry` do ClickHouse (um `Variant`). Os tipos de geometria GeoJSON suportados são `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon` e `MultiPolygon`. O tipo de geometria GeoJSON restante, `GeometryCollection`, não pode ser representado pelo tipo `Geometry`; ler uma delas na coluna `geometry` gera uma exceção por padrão, que pode ser alterada para inserir `NULL` em vez disso — veja [Como lidar com tipos de geometria não compatíveis](#unsupported-geometry) abaixo. Por padrão, a coluna `geometry` é `NULL` apenas quando a geometria de uma feature é um `null` JSON explícito; com `input_format_geojson_unsupported_geometry_handling = 'null'`, ela também é `NULL` para um tipo de geometria não compatível.
 
 A estrutura do documento é validada: o `type` de nível superior deve ser `FeatureCollection` e todo elemento de `features` deve ter `type` `Feature`. Por padrão, as coordenadas devem satisfazer os invariantes de forma do GeoJSON — um `LineString` (e cada linha de um `MultiLineString`) deve ter pelo menos dois pontos, e um anel de `Polygon` (e cada anel de um `MultiPolygon`) deve ser fechado e ter pelo menos quatro pontos (veja [Validação de geometria](#geometry-validation)). Documentos malformados são rejeitados em vez de serem carregados silenciosamente.
 
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-A extensão `.geojson` é detectada automaticamente, portanto o argumento `format` pode ser omitido:
+A extensão de arquivo `.geojson` é detectada automaticamente, portanto o argumento de formato pode ser omitido:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### Tratamento de tipos de geometria não compatíveis
 </div>
 
-Alguns tipos de geometria GeoJSON válidos — como `GeometryCollection` e `MultiPoint` — não podem ser representados pelo tipo `Geometry` do ClickHouse. Você pode controlar o que acontece quando uma dessas geometrias precisa ser armazenada na coluna `geometry` usando a configuração `input_format_geojson_unsupported_geometry_handling`. Os valores possíveis são:
+Alguns tipos de geometria GeoJSON válidos — como `GeometryCollection` — não podem ser representados pelo tipo `Geometry` do ClickHouse. Você pode controlar o que acontece quando uma dessas geometrias precisa ser armazenada na coluna `geometry` usando a configuração `input_format_geojson_unsupported_geometry_handling`. Os valores possíveis são:
 
 * `'throw'` — lançar uma exceção (padrão)
 * `'null'` — inserir um valor `NULL` na coluna `geometry` e continuar a análise
@@ -230,7 +230,7 @@ A leitura reflete apenas o que se encaixa no esquema fixo, portanto algumas info
 * A terceira coordenada (elevação) de uma posição, e quaisquer coordenadas além dela, são descartadas — as posições passam a ser `[longitude, latitude]`.
 * `bbox` e membros externos (como um `name` ou `crs` de nível superior, ou membros extras dentro de uma `Feature`) são ignorados.
 * Um `id` numérico é armazenado como texto, portanto a distinção entre string e número se perde; um `id` ausente ou `null` se torna `NULL`.
-* `GeometryCollection` e `MultiPoint` não podem ser representados — consulte [Tratamento de tipos de geometria não compatíveis](#unsupported-geometry).
+* `GeometryCollection` não pode ser representado — consulte [Tratamento de tipos de geometria não compatíveis](#unsupported-geometry).
 
 <div id="writing-data">
   ## Gravação de dados
@@ -252,6 +252,7 @@ A coluna do tipo geometria pode ser a variante `Geometry` ou um tipo geo especí
 | Tipo do ClickHouse | GeoJSON `"type"`                     |
 | ------------------ | ------------------------------------ |
 | `Point`            | `Point`                              |
+| `MultiPoint`       | `MultiPoint`                         |
 | `LineString`       | `LineString`                         |
 | `MultiLineString`  | `MultiLineString`                    |
 | `Polygon`          | `Polygon`                            |

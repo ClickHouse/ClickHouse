@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -617,7 +617,7 @@ export const IntegrationGrid = () => {
             </svg>
             <input
               type="text"
-              placeholder="インテグレーションで検索"
+              placeholder="Search by integration"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full text-sm border rounded-xl focus:outline-none bg-[#F6F7FA] dark:bg-[#282828] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-[#FAFF69]"

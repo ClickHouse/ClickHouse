@@ -594,6 +594,9 @@ When enabled, dots in JSON keys will be escaped during parsing.
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
+    DECLARE(UInt64, input_format_json_max_object_size, 512 * 1024 * 1024, R"(
+Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
+)", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
 When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
@@ -765,8 +768,8 @@ See also:
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
-Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
-corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
+multiple of three that keeps every significant digit: [0, 3, 6, 9]. An all-zero fraction is dropped.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
@@ -863,20 +866,20 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
     DECLARE(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
 )", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_connection_timeout, 1, R"(
-For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+    DECLARE(NonZeroUInt64, format_avro_schema_registry_connection_timeout, 1, R"(
+For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
 )", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_send_timeout, 1, R"(
-For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+    DECLARE(NonZeroUInt64, format_avro_schema_registry_send_timeout, 1, R"(
+For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
 )", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
-For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+    DECLARE(NonZeroUInt64, format_avro_schema_registry_receive_timeout, 1, R"(
+For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599.
 )", 0) \
     DECLARE(UInt64, format_avro_schema_registry_max_retries, 5, R"(
-For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. The maximum allowed value is 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
+For AvroConfluent format: maximum number of retries for transient failures when communicating with the Confluent Schema Registry (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429). Set to 0 to disable retries. A value above 20 is reduced to 20. Schema validation errors (HTTP 409, malformed Avro JSON) are not retried.
 )", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
-For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
+    DECLARE(NonZeroUInt64, format_avro_schema_registry_retry_initial_backoff_ms, 100, R"(
+For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0; a value above 60000 is reduced to 60000.
 )", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary input format.
@@ -1207,6 +1210,9 @@ Use Parquet String type instead of Binary for String columns.
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
+    DECLARE(Bool, output_format_parquet_wide_integer_as_decimal, false, R"(
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
+)", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
 )", 0) \
@@ -1358,9 +1364,10 @@ When `format_schema_source` is set to 'query', the following conditions apply:
 - The result of the query is treated as the schema content.
 - This result is cached locally in the `format_schemas` directory.
 - You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
-- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- Once cached, identical queries from the same user are not executed to fetch the schema again until the cache is explicitly cleared
 - In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
 - Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+- The query is executed on behalf of the user running it, so it is subject to that user's access rights, and its cached result is reused only for the same user. It cannot be executed where there is no user: in a background task, such as a streaming engine consumer, or when `INSERT` data is parsed on the client side. Use `format_schema_source` set to `file` or `string` there.
 )", 0) \
     DECLARE(String, format_schema, "", R"(
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.

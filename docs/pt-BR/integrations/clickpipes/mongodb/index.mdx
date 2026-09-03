@@ -68,7 +68,7 @@ Certifique-se de que você está conectado à sua conta do ClickHouse Cloud. Se 
 4. Preencha os detalhes da conexão com o banco de dados MongoDB de origem que você configurou na etapa de pré-requisitos.
 
 <Info>
-  Antes de começar a inserir os detalhes da conexão, certifique-se de que você adicionou os endereços IP do ClickPipes à lista de permissões nas regras do seu firewall. Na página a seguir, você encontra uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
+  Antes de começar a inserir os detalhes da conexão, certifique-se de que você adicionou os endereços IP do ClickPipes à lista de permissões nas regras do seu firewall. Na página a seguir, você encontra uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips).
   Para mais informações, consulte os guias de configuração do MongoDB de origem indicados [no topo desta página](#prerequisites).
 </Info>
 
@@ -97,7 +97,7 @@ Você pode especificar os detalhes do túnel SSH se o seu banco de dados MongoDB
 4. Clique em &quot;Verificar conexão&quot; para verificar a conexão.
 
 <Note>
-  Certifique-se de adicionar [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips) à lista de permissões nas regras do firewall do host bastion SSH, para que o ClickPipes possa estabelecer o túnel SSH.
+  Certifique-se de adicionar [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) à lista de permissões nas regras do firewall do host bastion SSH, para que o ClickPipes possa estabelecer o túnel SSH.
 </Note>
 
 Depois de preencher os detalhes da conexão, clique em `Next`.
@@ -145,4 +145,3 @@ Aqui estão algumas ressalvas a considerar ao usar este conector:
 * Exigimos o MongoDB na versão 5.1.0 ou superior.
 * Usamos a API nativa de Change Streams do MongoDB para CDC, que depende do oplog do MongoDB para capturar alterações em tempo real.
 * Os documentos do MongoDB são replicados no ClickHouse como JSON type por padrão. Isso permite um gerenciamento flexível do esquema e possibilita o uso do amplo conjunto de operadores JSON do ClickHouse para consultas e análises. Você pode saber mais sobre como consultar dados JSON [aqui](/pt-BR/reference/data-types/newjson).
-* A configuração de PrivateLink por autoatendimento não está disponível no momento. Se você usa AWS e precisa de PrivateLink, entre em contato com db-integrations-support@clickhouse.com ou crie um ticket de suporte — trabalharemos com você para habilitá-lo.

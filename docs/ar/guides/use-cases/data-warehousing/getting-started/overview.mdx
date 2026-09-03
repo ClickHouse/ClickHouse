@@ -1,6 +1,6 @@
 ---
 title: 'بدء الاستخدام مع بحيرات البيانات'
-sidebarTitle: 'بدء الاستخدام'
+sidebarTitle: 'نظرة عامة'
 slug: /use-cases/data-lake/getting-started
 description: 'مقدمة عملية حول الاستعلام عن البيانات وتسريعها وإعادة كتابتها ضمن تنسيقات الجداول المفتوحة باستخدام ClickHouse.'
 keywords: ['بحيرات البيانات', 'ليكهاوس', 'بدء الاستخدام', 'Iceberg', 'Delta Lake', 'hudi', 'paimon']
@@ -17,9 +17,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لقطات الشاشة في هذا الدليل مأخوذة من [ClickHouse Cloud](https://console.clickhouse.cloud) وحدة تحكم SQL. تعمل جميع الاستعلامات على كلٍّ من Cloud وعمليات النشر المُدارة ذاتيًا.
 
+يوفّر ClickHouse ثلاث طرق لقراءة تنسيقات الجداول المفتوحة: دوال الجداول، ومحركات الجداول، ومحرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake). **إذا كانت جداولك موجودة في Data Catalog** ‏(Glue وUnity Catalog وREST وغيرها)، فاتصل عبر `DataLakeCatalog` لتتمكن من الوصول إلى جميع جداول Iceberg/Delta لديك من خلال دالة واحدة. أمّا قسمَا دالة الجدول ومحرك الجدول أدناه فهما الأنسب للاستعلامات المخصّصة أو عندما تعرف `path` تخزينًا محددًا ولا تستخدم كتالوجًا.
+
 <Steps>
   <Step title="استعلم عن بيانات Iceberg مباشرة" id="query-directly">
-    أسرع طريقة للبدء هي استخدام دالة الجدول [`icebergS3()`](/ar/reference/functions/table-functions/iceberg) — وجّهها إلى جدول Iceberg في S3 ونفّذ استعلامًا فورًا، من دون أي إعداد.
+    أسرع طريقة للبدء — خاصةً للاستعلامات المخصّصة أو عندما لا تستخدم كتالوجًا — هي استخدام دالة الجدول [`icebergS3()`](/ar/reference/functions/table-functions/iceberg). وجّهها إلى جدول Iceberg في S3 ونفّذ استعلامًا فورًا، من دون أي إعداد.
 
     افحص المخطط:
 
@@ -47,7 +49,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="أنشئ جدولًا دائمًا باستخدام محرك جدول Iceberg" id="table-engine">
-    للوصول المتكرر، أنشئ جدولًا باستخدام محرك جدول Iceberg حتى لا تحتاج إلى تمرير المسار في كل مرة. تبقى البيانات في S3 — ولا تُنسخ أي بيانات:
+    عندما لا تستخدم كتالوجًا ولكنك ستنفّذ استعلامات على المسار نفسه بشكل متكرر، أنشئ جدولًا باستخدام محرك جدول Iceberg حتى لا تحتاج إلى تمرير المسار في كل مرة. تبقى البيانات في S3 — ولا تُنسخ أي بيانات:
 
     ```sql
     CREATE TABLE hits_iceberg
@@ -72,7 +74,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="الاتصال بكتالوج" id="connect-catalog">
-    تدير معظم المؤسسات جداول Iceberg عبر كتالوج بيانات لتجميع البيانات الوصفية للجداول واكتشاف البيانات في مكان مركزي. يدعم ClickHouse الاتصال بكتالوجك باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، مما يعرِض جميع جداول الكتالوج كقاعدة بيانات في ClickHouse. وهذا هو المسار الأكثر قابلية للتوسع، لذا عند إنشاء جداول Iceberg جديدة تظل متاحة دائمًا في ClickHouse دون أي عمل إضافي.
+    إذا كانت مؤسستك تستخدم كتالوج بيانات، فهذا هو مسار التكامل الذي نوصي به. تعمل الكتالوجات على تجميع البيانات الوصفية للجداول واكتشافها في مكان مركزي — وبدلًا من إدارة تعريف جدول لكل مسار تخزين، اتصل مرة واحدة باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake). يظهر كل جدول في الكتالوج كجدول ClickHouse، بما في ذلك الجداول التي أُضيفت upstream بعد إنشاء الاتصال.
+
+    <Warning>
+      **موصى به عند استخدام كتالوج**
+
+      استخدم `DataLakeCatalog` لأعباء العمل في production مع Glue وUnity Catalog وREST و[الكتالوجات المدعومة](/ar/guides/use-cases/data-warehousing/reference/index) الأخرى. تعمل دوال الجداول ومحركات الجداول عندما تعرف مسارًا محددًا، لكنها لا تظل متزامنة مع نمو الكتالوج لديك وتتطلب بيانات اعتماد أو مسارات منفصلة لكل جدول.
+    </Warning>
 
     إليك مثالاً على الاتصال بـ [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog):
 
@@ -106,7 +114,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="نفِّذ استعلامًا" id="issue-query">
-    بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو catalog — فإن ClickHouse SQL نفسه يعمل في جميعها:
+    بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو `DataLakeCatalog` — فإن ClickHouse SQL نفسه يعمل في جميعها. وفي بيئة الإنتاج عند استخدام كتالوج، نفِّذ الاستعلام عبر قاعدة البيانات `DataLakeCatalog`؛ وتظل الأمثلة الأخرى مفيدة للاختبارات السريعة والوصول المستند إلى path:
 
     ```sql
     -- Table function
@@ -229,8 +237,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 بعد أن اطّلعت الآن على سير العمل الكامل، تعمّق أكثر في كل جانب:
 
+* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — موصى به لأعباء العمل المعتمدة على الكتالوج؛ جولة كاملة في Unity Catalog مع Delta وIceberg
 * [الاستعلام عن البيانات مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — التنسيقات الأربعة جميعها، خيارات العناقيد، محركات الجداول، التخزين المؤقت
-* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — جولة كاملة في Unity Catalog مع Delta وIceberg
 * [تسريع التحليلات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحسين المخطط، الفهرسة، عرض توضيحي لزيادة السرعة بنحو 40x
 * [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) — كتابة خام، كتابة مُجمّعة، مواءمة الأنواع
 * [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات عبر التنسيقات وأنظمة التخزين الخلفية

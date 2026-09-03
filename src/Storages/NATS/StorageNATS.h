@@ -34,7 +34,8 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        LoadingStrictnessLevel mode);
+        LoadingStrictnessLevel mode,
+        bool authentication_determined_by_table_);
 
     ~StorageNATS() override;
 
