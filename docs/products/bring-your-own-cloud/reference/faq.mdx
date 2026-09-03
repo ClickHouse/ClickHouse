@@ -111,7 +111,7 @@ By default, the Kubernetes API endpoint is public, and what restricts access to 
 </Accordion>
 
 <Accordion title="How does network communication work between the BYOC network and object storage?">
-On AWS, traffic between your Customer BYOC VPC and S3 uses HTTPS (port 443) via the AWS S3 API for table data, backups, and logs. This traffic goes through an S3 gateway VPC endpoint, so it remains within the AWS network, doesn't traverse the public internet, and incurs no NAT gateway charges. On GCP, access to Google APIs similarly uses Private Google Access. On Azure, data is stored in Azure Blob Storage accounts within your subscription.
+On AWS, traffic between your Customer BYOC VPC and S3 uses HTTPS (port 443) via the AWS S3 API for table data and backups, and for long-term metric and log archives where you have those enabled. Live logs are written to the storage volumes attached to your ClickHouse nodes rather than to object storage — see [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections). This traffic goes through an S3 gateway VPC endpoint, so it remains within the AWS network, doesn't traverse the public internet, and incurs no NAT gateway charges. On GCP, access to Google APIs similarly uses Private Google Access. On Azure, data is stored in Azure Blob Storage accounts within your subscription.
 </Accordion>
 
 <Accordion title="The data is in our own bucket — can we read or modify it directly?">

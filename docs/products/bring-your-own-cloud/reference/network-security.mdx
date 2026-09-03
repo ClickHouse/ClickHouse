@@ -32,7 +32,9 @@ Two distinct control paths are easy to conflate. They differ in where the traffi
 | **Tailscale applicability** | **None.** These calls go from ClickHouse Cloud's network directly to the cloud provider and cannot be routed through Tailscale or through your network | Public endpoint by default — restricted to ClickHouse egress IPs on AWS, gated by cloud IAM on GCP and Azure (see [Kubernetes API server exposure](#kubernetes-api-server-exposure)); can be switched to private access via Tailscale or, on AWS, VPC Lattice |
 | **Your audit trail** | AWS CloudTrail (or the GCP/Azure equivalents) in your account records every call with the assumed identity | On AWS, EKS control-plane logs — including the audit log — are delivered to a CloudWatch log group in your account (see [billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services)); on GCP and Azure, contact support to confirm or enable control-plane audit logging for your cluster |
 
-In short: only Kubernetes API and troubleshooting traffic can use Tailscale. Cloud provider API calls always originate from ClickHouse Cloud's network and terminate at the provider's endpoints — routing them through Tailscale isn't possible, because they never enter your network in the first place.
+In short: only Kubernetes API and troubleshooting traffic can use Tailscale. The management calls described above always originate from ClickHouse Cloud's network and terminate at the provider's endpoints — routing them through Tailscale isn't possible, because they never enter your network in the first place.
+
+Cloud provider APIs are also called from the other direction, by controllers running inside your own cluster — the load balancer controller, CSI driver, autoscaler, DNS controller, and cert-manager. Those calls use in-cluster identities and leave through your own egress path, so they appear in your audit trail under a different identity and a different source address than the management calls. See [Outbound connections](#outbound-connections).
 
 ### Network-origin permission boundaries {#network-origin-permission-boundaries}
 
