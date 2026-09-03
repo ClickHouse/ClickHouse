@@ -1,10 +1,10 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -99,32 +99,9 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     /// value for all rows in a single query (`isDeterministicInScopeOfQuery() == true`), so
     /// the optimizer can soundly use their plan-time value and they should NOT block the
     /// JOIN-conversion rewrite.
-    for (const auto & node : dag.getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
-        {
-            if (!node.function_base->isDeterministicInScopeOfQuery())
-                return true;
-        }
-
-        /// A lambda that captures no columns has no arguments, so it is folded into a `COLUMN` node
-        /// holding a `ColumnFunction`, and the check above never sees its body. Ask the captured
-        /// function, which answers for its whole inner DAG.
-        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
-        {
-            const IColumn * column = node.column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
-
-            if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
-            {
-                const auto & function = column_function->getFunction();
-                if (function && !function->isDeterministicInScopeOfQuery())
-                    return true;
-            }
-        }
-    }
-    return false;
+    /// The walk also looks inside the lambdas of the DAG - a non-deterministic call that depends on a
+    /// lambda argument lives in the lambda's own `ActionsDAG`, not in this one.
+    return !dagFunctionsSatisfy(dag, [](const IFunctionBase & f) { return f.isDeterministicInScopeOfQuery(); });
 }
 
 FilterResult filterResultForNotMatchedRows(
