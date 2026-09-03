@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -195,6 +196,14 @@ void pruneNestedFunctionArguments(
     const ContextPtr & context,
     std::unordered_map<UInt64, UInt64> & index_remap)
 {
+    /// `resolveArrayJoin` already typed this array-join column using the effective per-query
+    /// `array_join_use_nulls`: for `LEFT ARRAY JOIN` with the setting enabled it is `Nullable(...)`
+    /// (empty arrays yield NULL). Re-resolving `nested()` below always yields a plain non-nullable
+    /// type, so remember whether the analyzer made the column nullable and re-apply that at the end.
+    /// Reading the column type (rather than the pass-manager settings) keeps pruning consistent even
+    /// when a subquery carries its own `SETTINGS array_join_use_nulls` that differs from the outer query.
+    const bool preserve_nullable = isNullableOrLowCardinalityNullable(column_node.getColumnType());
+
     auto & nested_args = function_node.getArguments().getNodes();
     const auto & subcolumn_names = expr_usage.nested_subcolumn_names;
     size_t num_subcolumns = subcolumn_names.size();
@@ -243,6 +252,13 @@ void pruneNestedFunctionArguments(
     /// Update the ARRAY JOIN column node's type to match the new result.
     auto new_result_type = function_node.getResultType();
     auto new_column_type = assert_cast<const DataTypeArray &>(*new_result_type).getNestedType();
+
+    /// Re-apply the analyzer's nullable decision captured above (see the note at the top of this
+    /// function): pruning must keep the `array_join_use_nulls` nullable contract instead of silently
+    /// dropping it.
+    if (preserve_nullable)
+        new_column_type = makeNullableOrLowCardinalityNullableSafe(new_column_type);
+
     column_node.setColumnType(std::move(new_column_type));
 }
 
@@ -339,7 +355,10 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     if (!top_query_node)
         return;
 
-    const auto & settings = context->getSettingsRef();
+    /// A query tree can contain a subquery with its own `SETTINGS`. The pass-manager context
+    /// belongs to the outer query, while this query node owns the ARRAY JOIN nodes inspected below.
+    /// Use the node context so an unaligned ARRAY JOIN is never pruned based on another query scope.
+    const auto & settings = top_query_node->getContext()->getSettingsRef();
     if (settings[Setting::enable_unaligned_array_join])
         return;
 

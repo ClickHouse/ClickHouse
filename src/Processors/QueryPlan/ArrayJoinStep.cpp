@@ -8,9 +8,15 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Core/ProtocolDefines.h>
 #include <Common/JSONBuilder.h>
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace QueryPlanSerializationSetting
 {
@@ -35,18 +41,23 @@ static ITransformingStep::Traits getTraits()
 ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_)
     : ITransformingStep(
         input_header_,
-        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
+        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns, array_join_.is_left && array_join_.array_join_use_nulls)),
         getTraits())
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
     , max_block_size(max_block_size_)
     , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
+    /// `array_join_use_nulls` changes semantics only for `LEFT ARRAY JOIN`; both construction paths pass
+    /// the raw setting. Normalize it here so that everything downstream - the output header, the
+    /// transform and, most importantly, the serialized flag and its version gate - sees the flag set
+    /// only when the new `NULL` semantics are actually in effect.
+    array_join.array_join_use_nulls = array_join.is_left && array_join.array_join_use_nulls;
 }
 
 void ArrayJoinStep::updateOutputHeader()
 {
-    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
+    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns, array_join.is_left && array_join.array_join_use_nulls));
 }
 
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
@@ -58,7 +69,7 @@ void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
+    auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication, array_join.array_join_use_nulls);
     if (element_filter)
     {
         array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
@@ -67,7 +78,7 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     /// A standalone FilterStep is a pass-through on the totals stream, so the fused filter must be too -
     /// run the totals stream through an action without the element filter.
     auto totals_actions = element_filter
-        ? std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication)
+        ? std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication, array_join.array_join_use_nulls)
         : array_join_actions;
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
@@ -151,6 +162,19 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         flags |= 8;
     if (serialize_filter && remove_element_filter_column)
         flags |= 16;
+    if (array_join.array_join_use_nulls)
+        flags |= 32;
+
+    /// The `array_join_use_nulls` flag exists only since query-plan serialization version
+    /// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS. An older peer would ignore
+    /// the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s on its fragment, silently
+    /// changing the result; throw a clear error rather than let it run with different semantics
+    /// (the deserialize side checks the same).
+    if (array_join.array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
+            "all nodes must run a version that supports it",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS);
 
     writeIntBinary(flags, ctx.out);
 
@@ -180,12 +204,23 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     bool enable_lazy_columns_replication = bool(flags & 4);
     bool has_element_filter = bool(flags & 8);
     bool remove_element_filter_column = bool(flags & 16);
+    bool array_join_use_nulls = bool(flags & 32);
+
+    /// A writer negotiated below DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS never
+    /// sets this bit (its serializer fails closed); fail closed at the version boundary here as well
+    /// instead of executing with mismatched semantics.
+    if (array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
+            "all nodes must run a version that supports it",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS);
 
     UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
 
     ArrayJoin array_join;
     array_join.is_left = is_left;
+    array_join.array_join_use_nulls = array_join_use_nulls;
     array_join.columns.resize(num_columns);
 
     for (auto & column : array_join.columns)
