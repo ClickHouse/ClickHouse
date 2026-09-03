@@ -11,7 +11,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -913,14 +912,6 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
 {
     progress_callback = callback;
-}
-
-PipelineExecutorPtr QueryPipelineBuilder::execute()
-{
-    if (!isCompleted())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute pipeline because it is not completed");
-
-    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
 Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)
