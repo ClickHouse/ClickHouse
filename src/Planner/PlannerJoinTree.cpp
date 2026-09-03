@@ -395,45 +395,6 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-/// Same restrictions as ordinary JOIN filter pushdown: `canPrefilterJoinSide`
-/// plus `isAnyInnerJoin` (do not prefilter either side of `ANY INNER`).
-bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
-{
-    std::vector<QueryTreeNodePtr> stack = {join_tree};
-    while (!stack.empty())
-    {
-        auto node = std::move(stack.back());
-        stack.pop_back();
-        if (!node)
-            continue;
-
-        if (const auto * join = node->as<JoinNode>())
-        {
-            const bool table_on_left = extractTableExpressionsSet(join->getLeftTableExpressionNodeTyped()).contains(table.get());
-            const bool table_on_right = extractTableExpressionsSet(join->getRightTableExpressionNodeTyped()).contains(table.get());
-
-            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
-                return false;
-            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
-                return false;
-            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
-                return false;
-            stack.push_back(join->getLeftTableExpressionNode());
-            stack.push_back(join->getRightTableExpressionNode());
-        }
-        else if (const auto * array_join = node->as<ArrayJoinNode>())
-        {
-            stack.push_back(array_join->getTableExpressionNode());
-        }
-        else if (const auto * cross_join = node->as<CrossJoinNode>())
-        {
-            for (const auto & expr : cross_join->getTableExpressions())
-                stack.push_back(expr);
-        }
-    }
-    return true;
-}
-
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();

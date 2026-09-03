@@ -1,5 +1,6 @@
 #include <Analyzer/Utils.h>
 
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -738,6 +739,50 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
     return result;
 }
 
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {join_tree};
+    while (!stack.empty())
+    {
+        auto node = std::move(stack.back());
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        if (const auto * join = node->as<JoinNode>())
+        {
+            const auto contains_table = [&](const TableExpressionNodePtr & side)
+            {
+                return std::ranges::any_of(
+                    extractTableExpressions(side),
+                    [&](const auto & expression) { return expression.get() == table.get(); });
+            };
+
+            const bool table_on_left = contains_table(join->getLeftTableExpressionNodeTyped());
+            const bool table_on_right = contains_table(join->getRightTableExpressionNodeTyped());
+
+            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
+                return false;
+            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
+                return false;
+            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
+                return false;
+            stack.push_back(join->getLeftTableExpressionNode());
+            stack.push_back(join->getRightTableExpressionNode());
+        }
+        else if (const auto * array_join = node->as<ArrayJoinNode>())
+        {
+            stack.push_back(array_join->getTableExpressionNode());
+        }
+        else if (const auto * cross_join = node->as<CrossJoinNode>())
+        {
+            for (const auto & expression : cross_join->getTableExpressions())
+                stack.push_back(expression);
+        }
+    }
+    return true;
+}
+
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node)
 {
     TableExpressionNodePtr result;
@@ -1347,21 +1392,6 @@ bool walkOrdinaryFunctions(const QueryTreeNodePtr & node, KeepFunction && keep_f
     return true;
 }
 
-bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
-{
-    return walkOrdinaryFunctions(
-        node,
-        [](const FunctionBasePtr & function_base)
-        {
-            return function_base->isDeterministic()
-                && function_base->isDeterministicInScopeOfQuery()
-                && !function_base->isStateful()
-                && !function_base->isServerConstant()
-                && !functionIsDictGet(function_base->getName())
-                && !functionIsJoinGet(function_base->getName());
-        });
-}
-
 void filterConjunctions(
     QueryTreeNodePtr & expression,
     const std::function<bool(const QueryTreeNodePtr &)> & keep,
@@ -1429,6 +1459,21 @@ void filterConjunctions(
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
 }
 
+}
+
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
+{
+    return walkOrdinaryFunctions(
+        node,
+        [](const FunctionBasePtr & function_base)
+        {
+            return function_base->isDeterministic()
+                && function_base->isDeterministicInScopeOfQuery()
+                && !function_base->isStateful()
+                && !function_base->isServerConstant()
+                && !functionIsDictGet(function_base->getName())
+                && !functionIsJoinGet(function_base->getName());
+        });
 }
 
 void removeExpressionsThatDoNotDependOnTableIdentifiers(

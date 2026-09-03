@@ -115,6 +115,10 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
+/// Return true when ordinary filter pushdown may prefilter `table` through every
+/// JOIN containing it without changing JOIN semantics.
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table);
+
 /// Extract left table expression from join tree.
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
 
@@ -258,6 +262,9 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
     const ContextPtr & context);
+
+/// Return true when the entire expression can be duplicated into another query tree.
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node);
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
