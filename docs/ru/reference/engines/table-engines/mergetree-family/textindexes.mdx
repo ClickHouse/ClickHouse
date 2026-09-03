@@ -83,6 +83,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,6 +163,9 @@ ALTER TABLE table DROP INDEX text_idx;
   Разделители можно задать с помощью необязательного параметра, например, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Обратите внимание, что каждая строка может состоять из нескольких символов (`', '` в примере).
   Список разделителей по умолчанию, если он не указан явно (например, `tokenizer = splitByString`), — это один пробел `[' ']`.
+* `splitByRegexp(re)` разбивает строки по заданному пользователем разделителю в виде регулярного выражения `re` (см. функцию [splitByRegexp](/ru/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  Аргумент `re` обязателен, например, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  В отличие от фиксированных строк-разделителей в `splitByString`, разделитель в виде регулярного выражения может сохранять токены со специальными символами (например, `C++` или `C#`), которые другие токенизаторы разделили бы на части.
 * `asciiCJK` разбивает строки на токены, используя правила границ слов Unicode (аналогично [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII-буквенно-цифровые символы и символы подчёркивания образуют токены с соединительными символами (ASCII `:` для букв, `.` и `'` для символов одного типа). Не-ASCII-символы Unicode, включая символы [CJK](https://en.wikipedia.org/wiki/CJK_characters), становятся односимвольными токенами.
 * `chinese[(granularity)]` сегментирует китайский текст на слова с помощью словаря и скрытой марковской модели (алгоритм следует [jieba](https://github.com/fxsjy/jieba); встроенные данные словаря и модели основаны на [cppjieba](https://github.com/yanyiwu/cppjieba)). В отличие от `asciiCJK`, который рассматривает каждый не-ASCII-символ как односимвольный токен, `chinese` объединяет последовательные китайские символы в слова (например, `北京大学` становится одним токеном `北京大学`, а не четырьмя односимвольными токенами). Это даёт более значимые токены для китайского текста и повышает качество поиска. Для общего или смешанного текста используйте `asciiCJK`, а для текста только на китайском — `chinese`. Необязательный аргумент `granularity` имеет значение `'coarse_grained'` (по умолчанию, если не указан) или `'fine_grained'`. В последнем случае дополнительно перечисляются перекрывающиеся подслова: например, для `北京邮电大学` также создаются `北京`, `邮电`, `大学`. Мелкозернистая токенизация повышает полноту за счёт увеличения размера индекса.
   Выполняйте поиск по текстовому индексу `chinese` с помощью [hasAnyTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens) (которые токенизируют искомую строку токенизатором `chinese`), а не `hasToken` (который разделяет только по ASCII-разделителям).
@@ -176,7 +181,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Если передан параметр `min_cutoff_length`, возвращаются только n-граммы длиной не меньше `min_cutoff_length`.
   По сравнению с `ngrams(N)`, токенизатор `sparseGrams` создаёт N-граммы переменной длины, что позволяет более гибко представлять исходный текст.
   Например, `tokenizer = sparseGrams(3, 5, 4)` внутренне генерирует из входной строки 3-, 4- и 5-граммы, но возвращаются только 4- и 5-граммы.
-* `array` не выполняет токенизацию, то есть каждое значение строки является токеном (см. функцию [array](/ru/reference/functions/regular-functions/array-functions#array)).
+* `array` не выполняет токенизацию, то есть каждое значение строки является токеном (см. функцию [array](/ru/reference/functions/regular-functions/array-functions#array)). Для совместимости с другими системами `keyword` доступен как псевдоним `array`.
 
 Все доступные токенизаторы перечислены в [system.tokenizers](/ru/reference/system-tables/tokenizers).
 
@@ -410,7 +415,7 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 
 Постпроцессор применяется к каждому сгенерированному токену при построении индекса (для токенизатора `array` каждый элемент массива является токеном). Во время выполнения запроса поведение зависит от функции:
 
-* Для `hasToken`, `hasAllTokens`, `hasAnyTokens` и `hasPhrase` (с любым поддерживаемым токенизатором): постпроцессор применяется как к токенам исходной строки, так и к искомой подстроке, обеспечивая полностью нормализованное сопоставление (например, регистронезависимый поиск). Для `hasPhrase` токены после постобработки располагаются плотно, поэтому токен, отброшенный постпроцессором, не оставляет позиционного промежутка, и фраза по-прежнему сопоставляется через него — например, с постпроцессором стоп-слов, отбрасывающим `the`, `hasPhrase(col, 'see cat')` сопоставляется с документом `see the cat`.
+* Для `hasToken`, `hasAllTokens`, `hasAnyTokens` и `hasPhrase` (с любым поддерживаемым токенизатором): постпроцессор применяется как к токенам исходной строки, так и к искомой подстроке, обеспечивая полностью нормализованное сопоставление (например, регистронезависимый поиск). Для `hasPhrase` токены после постобработки располагаются плотно, поэтому токен, отброшенный постпроцессором, не оставляет позиционного промежутка, и фраза по-прежнему сопоставляется через него — например, с постпроцессором стоп-слов, отбрасывающим `the`, `hasPhrase(col, 'see cat')` сопоставляется с документом `see the cat`. Единственное исключение — `hasPhrase` для индекса `splitByRegexp`, который не поддерживает постпроцессор (сочетание отклоняется с исключением).
 * Для всех остальных функций (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): для поиска с подсказкой индекса постобрабатывается только искомая подстрока; предикат на уровне строки по-прежнему сравнивает с исходными значениями столбца.
 
 Примеры:
@@ -518,31 +523,31 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 Для предикатов, использующих текстовый индекс, препроцессор и постпроцессор применяются к искомому значению перед проверкой на уровне гранулы, чтобы при обращении к индексу использовались те же токены, которые были сохранены при его построении.
 Для большинства функций (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) текстовый индекс используется только для пропуска нерелевантных блоков данных; ClickHouse по-прежнему проверяет каждую оставшуюся строку по исходному предикату на исходных данных столбца.
 Для функций поиска по токенам (`hasToken`, `hasAllTokens`, `hasAnyTokens`) текстовый индекс является основным способом вычисления: ClickHouse нормализует искомое значение с помощью того же препроцессора, токенизатора и постпроцессора, которые применялись при построении индекса, и использует эту нормализованную форму как для индексированных, так и для неиндексированных частей таблицы. Если задан постпроцессор, токены в haystack также нормализуются во время выполнения запроса (для любого токенизатора, а не только `array`), поэтому обе стороны сравнения преобразуются единообразно, и результат не зависит от того, читается ли индекс напрямую (настройка `query_plan_direct_read_from_text_index`) или у конкретной части есть материализованный индекс — например, это позволяет включить регистронезависимое сопоставление для `hasAllTokens(col, ['FOO'])` с постпроцессором `lower`.
-Без `support_phrase_search` функция `hasPhrase` использует индекс только как подсказку и проверяет каждую оставшуюся строку по исходному предикату; постпроцессор дополнительно одинаково нормализует и фразу, и токены в haystack, поэтому результат не зависит от способа чтения, а токены, которые постпроцессор отбрасывает, не нарушают смежность фразы. При `support_phrase_search = 1` функция `hasPhrase` использует точное прямое чтение (при этом постпроцессор, если он задан, всё равно применяется).
+Без `support_phrase_search` функция `hasPhrase` использует индекс только как подсказку и проверяет каждую оставшуюся строку по исходному предикату; постпроцессор дополнительно одинаково нормализует и фразу, и токены в haystack, поэтому результат не зависит от способа чтения, а токены, которые постпроцессор отбрасывает, не нарушают смежность фразы. При `support_phrase_search = 1` функция `hasPhrase` использует точное прямое чтение (при этом постпроцессор, если он задан, всё равно применяется). Поддержка постпроцессоров не распространяется на токенизатор `splitByRegexp`: вызов `hasPhrase` для индекса `splitByRegexp` в сочетании с постпроцессором отклоняется (см. сноску ³ ниже).
 Поисковые токены, которые постпроцессор преобразует в пустую строку, игнорируются, то есть считаются отсутствующими в поисковой фразе.
 
-| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                        | Поддерживает постпроцессор |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- | -------------------------- |
-| `=`                                                                                                     | да                                                           | все                                                             | да                         |
-| `IN`                                                                                                    | да                                                           | все                                                             | да                         |
-| [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken)                     | да                                                           | все (в первую очередь для `splitByNonAlpha`)                    | да                         |
-| [hasAnyTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | да                                                           | все                                                             | да                         |
-| [hasAllTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | да                                                           | все                                                             | да                         |
-| [hasAnyTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | нет (элементы массива используются как токены без изменений) | все                                                             | да                         |
-| [hasAllTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | нет (элементы массива используются как токены без изменений) | все                                                             | да                         |
-| [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | да                                                           | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | да                         |
-| [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith)                        | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
-| [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith)                            | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
-| [like](/ru/reference/functions/regular-functions/string-search-functions#like)                             | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | да¹                        |
-| [match](/ru/reference/functions/regular-functions/string-search-functions#match)                           | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | да¹                        |
-| [ilike](/ru/reference/functions/regular-functions/string-search-functions#like)                            | да² (`lower`/`upper` only)                                   | `splitByNonAlpha`, `array`²                                     | нет²                       |
-| [mapContainsKey](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | да                                                           | все                                                             | да                         |
-| [mapContainsValue](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | да                                                           | все                                                             | да                         |
-| [mapContainsKeyLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
-| [mapContainsValueLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
-| [has](/ru/reference/functions/regular-functions/array-functions#has)                                       | да                                                           | `array`                                                         | да                         |
-| [hasAny](/ru/reference/functions/regular-functions/array-functions#hasAny)                                 | да                                                           | `array`                                                         | да                         |
-| [hasAll](/ru/reference/functions/regular-functions/array-functions#hasAll)                                 | да                                                           | `array`                                                         | да                         |
+| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                                          | Поддерживает постпроцессор |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- | -------------------------- |
+| `=`                                                                                                     | да                                                           | все                                                                               | да                         |
+| `IN`                                                                                                    | да                                                           | все                                                                               | да                         |
+| [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken)                     | да                                                           | все (в первую очередь для `splitByNonAlpha`)                                      | да                         |
+| [hasAnyTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | да                                                           | все                                                                               | да                         |
+| [hasAllTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | да                                                           | все                                                                               | да                         |
+| [hasAnyTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | нет (элементы массива используются как токены без изменений) | все                                                                               | да                         |
+| [hasAllTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | нет (элементы массива используются как токены без изменений) | все                                                                               | да                         |
+| [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | да                                                           | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | да³                        |
+| [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith)                        | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | да                         |
+| [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith)                            | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | да                         |
+| [like](/ru/reference/functions/regular-functions/string-search-functions#like)                             | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | да¹                        |
+| [match](/ru/reference/functions/regular-functions/string-search-functions#match)                           | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | да¹                        |
+| [ilike](/ru/reference/functions/regular-functions/string-search-functions#like)                            | да² (`lower`/`upper` only)                                   | `splitByNonAlpha`, `array`²                                                       | нет²                       |
+| [mapContainsKey](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | да                                                           | все                                                                               | да                         |
+| [mapContainsValue](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | да                                                           | все                                                                               | да                         |
+| [mapContainsKeyLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | да                         |
+| [mapContainsValueLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | да                         |
+| [has](/ru/reference/functions/regular-functions/array-functions#has)                                       | да                                                           | `array`                                                                           | да                         |
+| [hasAny](/ru/reference/functions/regular-functions/array-functions#hasAny)                                 | да                                                           | `array`                                                                           | да                         |
+| [hasAll](/ru/reference/functions/regular-functions/array-functions#hasAll)                                 | да                                                           | `array`                                                                           | да                         |
 
 ¹ `LIKE` и `match` используют прямое чтение как подсказку для указанных токенизаторов; в остальных случаях используется полное сканирование.
 `LIKE` также поддерживает *прямое чтение (без подсказки)* (включается через `use_text_index_like_evaluation_by_dictionary_scan`) для токенизаторов `splitByNonAlpha` и `array` без препроцессора и постпроцессора.
@@ -550,6 +555,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ² `ILIKE` поддерживается только через прямое чтение (без подсказки) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, токенизатор `splitByNonAlpha` или `array`).
 Перехода к использованию индекса как подсказки нет: если настройка отключена или токенизатор не входит в поддерживаемый набор, индекс для `ILIKE` не используется.
 Препроцессор, если он задан, должен быть `lower` или `upper`; постпроцессоры не поддерживаются.
+
+³ `hasPhrase` для текстового индекса `splitByRegexp` **не** поддерживает постпроцессор: это сочетание приводит к исключению, поскольку переписывание на уровне строки в постпроцессоре предполагает токены в стиле `splitByNonAlpha`, разделённые пробелами. Без постпроцессора `splitByRegexp` полностью поддерживается функцией `hasPhrase`.
 
 **Экспериментально: аргумент для поддержки поиска по фразе (необязательный)**.
 
@@ -837,7 +844,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 В отличие от `hasAllTokens`, для которой достаточно, чтобы все токены присутствовали где угодно, `hasPhrase` требует, чтобы они образовывали непрерывную последовательность.
 Поисковая фраза токенизируется с помощью того же токенизатора, который настроен для индексного столбца.
 Если текстовый индекс использует постпроцессор, поисковая фраза также нормализуется перед поиском по индексу.
-Обратите внимание, что для функции требуется один из токенизаторов `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` или `icu`.
+Обратите внимание, что для функции требуется один из токенизаторов `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` или `icu`.
 
 Пример:
 
@@ -1271,12 +1278,12 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 
 соответствует любой строке, содержащей последовательность токенов `weather in Tokyo`, например `How is the weather in Tokyo?`?
 
-Текстовый индекс ускоряет поиск по фразам, пересекая списки вхождений для всех токенов во фразе, чтобы определить гранулы-кандидаты.
+Текстовый индекс ускоряет фразовый поиск, пересекая списки вхождений для всех токенов во фразе, чтобы определить гранулы-кандидаты.
 Затем в пределах этих гранул ClickHouse проверяет точное соседство токенов.
 Этот процесс относительно затратен и медленнее обычных запросов текстового поиска.
-Чтобы ускорить запросы поиска по фразам, включите сохранение позиций в текстовом индексе (см. `Optional parameters` выше).
+Чтобы ускорить запросы фразового поиска, включите сохранение позиций в текстовом индексе (см. `Optional parameters` выше).
 
-`hasPhrase` можно использовать вместе с токенизаторами `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` и `icu`.
+`hasPhrase` можно использовать вместе с токенизаторами `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` и `icu`.
 Указанная строка фразы токенизируется токенизатором индекса.
 Символы-разделители во фразе игнорируются: `hasPhrase(text, 'quick+brown')` эквивалентно `hasPhrase(text, 'quick brown')`, если в качестве токенизатора используется `splitByNonAlpha`.
 
@@ -1557,6 +1564,14 @@ Aggregating
 * Материализация текстовых индексов с большим количеством токенов (например, 10 миллиардов токенов) может потреблять значительный объём памяти. Материализация текстового
   индекса может происходить напрямую (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) или косвенно во время слияния частей.
 * Невозможно материализовать текстовые индексы для частей, содержащих более 4.294.967.296 (= 2^32 = около 4,2 миллиарда) строк. Без материализованного текстового индекса запросы переходят к медленному полному перебору внутри части. Для оценки наихудшего случая предположим, что часть содержит один столбец типа String и настройка MergeTree `max_bytes_to_merge_at_max_space_in_pool` (по умолчанию: 150 GB) не изменялась. В этом случае такая ситуация возникает, если в столбце в среднем содержится менее 29,5 символа на строку. На практике таблицы также содержат другие столбцы, и этот порог в несколько раз ниже (в зависимости от количества, типа и размера других столбцов).
+
+<div id="upgrade-notes">
+  ## Примечания по обновлению
+</div>
+
+Версия формата хранения текстовых индексов на диске задаётся настройкой уровня таблицы [`text_index_serialization_version`](/ru/reference/settings/merge-tree-settings/text-index) (по умолчанию: `v2_with_positions`).
+Эта настройка является предпочтительной, а не жёстким ограничением: если настроенная версия не может представить индекс, автоматически выбирается более новая версия, способная это сделать. Поэтому запись текстового индекса из-за этой настройки никогда не завершается ошибкой.
+При поэтапном обновлении зафиксируйте формат с помощью настройки [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) на уже обновлённых серверах: если для неё указана версия, предшествующая той, в которой был введён соответствующий формат, `text_index_serialization_version` автоматически возвращается к более старому значению, а новые серверы продолжают записывать формат, который старые серверы всё ещё могут читать.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## Текстовые индексы и индексы на основе фильтра Блума
