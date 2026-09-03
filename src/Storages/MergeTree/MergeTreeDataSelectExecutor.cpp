@@ -44,6 +44,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Common/SipHash.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -84,6 +85,7 @@ extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event TextIndexGenericExclusionSearchAlgorithm;
 extern const Event TextIndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event IndexBulkFilteringEvaluatedGranules;
 extern const Event QueryConditionCacheHits;
 extern const Event QueryConditionCacheMisses;
 }
@@ -2577,6 +2579,19 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// Whether we should use a more optimal filtering.
     bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
+    /// Minmax bulk filtering has its own setting and supports only lowerable conditions.
+    /// With partial disjunctions, this index must own no leaf below an OR.
+    if (typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get()))
+    {
+        const auto * minmax_condition = typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get());
+        bulk_filtering
+            = reader_settings.secondary_indices_enable_bulk_filtering
+            && reader_settings.use_minmax_index_bulk_filtering
+            && minmax_condition
+            && minmax_condition->hasBulkFastPath()
+            && (!use_skip_indexes_for_disjunctions || minmax_condition->bulkPreservesDisjunctionPrecision());
+    }
+
     auto skip_index_granularity = index_helper->index.granularity;
     const auto & index_granularity = part_info->getIndexGranularity();
     size_t marks_count = index_granularity.getMarksCountWithoutFinal();
@@ -2724,53 +2739,48 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
-        MergeTreeIndexBulkGranulesPtr granules;
-        size_t current_granule_num = 0;
+        /// Process granules in bounded chunks to avoid part-sized intermediate storage.
+        constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
+        /// Bulk evaluation does not write owned-leaf bits for partial-disjunction merging.
+        /// Do not bridge rejected gaps here: a later index would otherwise evaluate those marks
+        /// with this index's bits left at their `true` default and could retain a mark that scalar
+        /// evaluation rejects. Adjacent survivors still merge when the threshold is zero.
+        const size_t bulk_min_marks_for_seek = use_skip_indexes_for_disjunctions ? 0 : min_marks_for_seek;
+
+        /// `getPossibleGranules` returns chunk-local indices in ascending order.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            size_t chunk_begin = index_range.begin;
+            while (chunk_begin < index_range.end)
             {
-                reader.read(index_mark, current_granule_num, granules);
-                ++current_granule_num;
-            }
-        }
+                const size_t chunk_end = std::min(chunk_begin + chunk_size_index_granules, index_range.end);
 
-        IMergeTreeIndexCondition::FilteredGranules filtered_granules = condition->getPossibleGranules(granules);
-        if (filtered_granules.empty())
-            return {res, read_hints};
+                /// Fresh container per chunk so its columns' growth stays bounded by the
+                /// chunk size and the memory is released before the next chunk starts.
+                MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
+                reader.readRange(chunk_begin, chunk_end, *chunk_granules);
 
-        auto it = filtered_granules.begin();
-        current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
+                /// Observable signal that the vectorized bulk path was actually taken for this
+                /// part (as opposed to silently falling back to the per-granule scalar path).
+                ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (current_granule_num == *it)
+                for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
                 {
+                    const size_t index_mark = chunk_begin + local_idx;
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
 
-                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    if (res.empty() || data_range.begin - res.back().end > bulk_min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
-
-                    ++it;
-                    if (it == filtered_granules.end())
-                        break;
                 }
 
-                ++current_granule_num;
+                chunk_begin = chunk_end;
             }
-
-            if (it == filtered_granules.end())
-                break;
         }
     }
     else

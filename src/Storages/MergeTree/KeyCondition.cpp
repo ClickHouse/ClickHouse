@@ -39,6 +39,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -519,6 +520,37 @@ static std::string_view reverseComparisonOperator(std::string_view op)
     return {};
 }
 
+
+static std::optional<KeyCondition::RPNElement::DirectComparison::Operator> directComparisonOperator(
+    std::string_view comparison)
+{
+    using Operator = KeyCondition::RPNElement::DirectComparison::Operator;
+    if (comparison == "equals" || comparison == "isNotDistinctFrom") return Operator::Equals;
+    if (comparison == "notEquals") return Operator::NotEquals;
+    if (comparison == "less") return Operator::Less;
+    if (comparison == "lessOrEquals") return Operator::LessOrEquals;
+    if (comparison == "greater") return Operator::Greater;
+    if (comparison == "greaterOrEquals") return Operator::GreaterOrEquals;
+    return std::nullopt;
+}
+
+static void setDirectComparison(
+    KeyCondition::RPNElement & element,
+    std::string_view comparison,
+    const Field & value,
+    const DataTypePtr & type)
+{
+    const auto op = directComparisonOperator(comparison);
+    if (!op || !type)
+        return;
+
+    /// A non-NULL constant does not need Nullable or LowCardinality wrappers.
+    const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
+    element.direct_comparison = KeyCondition::RPNElement::DirectComparison{
+        *op,
+        std::make_shared<ConstantValue>(value, constant_type),
+    };
+}
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -1468,9 +1500,11 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    bool preserve_direct_comparisons_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
+    , preserve_direct_comparisons(preserve_direct_comparisons_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
@@ -1572,6 +1606,65 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
+}
+
+bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
+{
+    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf
+    /// owned by this condition. An owned leaf is any atom other than `FUNCTION_UNKNOWN` and the
+    /// `ALWAYS_TRUE` / `ALWAYS_FALSE` constants (those represent neither a per-granule predicate
+    /// this index evaluates nor a position it writes into the partial-disjunction bitset).
+    std::vector<bool> owns_leaf;
+    owns_leaf.reserve(rpn.size());
+
+    for (const auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::ALWAYS_TRUE:
+            case RPNElement::ALWAYS_FALSE:
+                owns_leaf.push_back(false);
+                break;
+
+            case RPNElement::FUNCTION_NOT:
+                /// Unary: ownership of the operand is unchanged.
+                if (owns_leaf.empty())
+                    return false;
+                break;
+
+            case RPNElement::FUNCTION_AND:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                owns_leaf.back() = a || b;
+                break;
+            }
+
+            case RPNElement::FUNCTION_OR:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                if (a || b)
+                    return false; /// A disjunction crosses an owned leaf.
+                owns_leaf.back() = false;
+                break;
+            }
+
+            default:
+                /// An owned atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.).
+                owns_leaf.push_back(true);
+                break;
+        }
+    }
+
+    return owns_leaf.size() == 1;
 }
 
 
@@ -4088,6 +4181,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
+                        const_type = key_expr_type_not_null;
                         /// No need to set condition_is_relaxed because we're doing exact conversion
                     }
                 }
@@ -4120,6 +4214,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
 
                             const_value = converted;
+                            const_type = common_type;
 
                             /// Need to set condition_is_relaxed unless we're doing exact conversion
                             if (!key_expr_type_not_null->equals(*common_type))
@@ -4181,7 +4276,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        const bool atom_created = atom_it->second(out, const_value);
+        if (atom_created && preserve_direct_comparisons)
+            setDirectComparison(out, func_name, const_value, const_type);
+        return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))
     {

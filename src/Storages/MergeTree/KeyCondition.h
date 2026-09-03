@@ -20,6 +20,7 @@ namespace DB
 {
 
 class ASTFunction;
+class ConstantValue;
 class Context;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
@@ -79,8 +80,9 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
-        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
+        bool skip_analysis_ = false, /// Toggled by `use_primary_key` and `use_partition_key`; useful for testing.
+        bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
+        bool preserve_direct_comparisons_ = false);
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -360,6 +362,24 @@ public:
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
 
+        /// The exact typed comparison from which this atom was built; absent for synthesized ranges.
+        struct DirectComparison
+        {
+            enum class Operator
+            {
+                Equals,
+                NotEquals,
+                Less,
+                LessOrEquals,
+                Greater,
+                GreaterOrEquals,
+            };
+
+            Operator op;
+            std::shared_ptr<const ConstantValue> constant;
+        };
+        std::optional<DirectComparison> direct_comparison;
+
         /// Which columns are involved. E.g.:
         ///  * if FUNCTION[_NOT]_IN_RANGE: exactly one element,
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
@@ -467,6 +487,9 @@ public:
 
     /// Does the filter condition have any ORs?
     bool hasOnlyConjunctions() const;
+
+    /// Whether no RPN disjunction contains an atom owned by this condition.
+    bool everyDisjunctionIsOverUnownedLeaves() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
@@ -680,6 +703,7 @@ private:
     /// transformed by any deterministic functions. It is used by
     /// PartitionPruner.
     bool single_point;
+    bool preserve_direct_comparisons = false;
 
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
