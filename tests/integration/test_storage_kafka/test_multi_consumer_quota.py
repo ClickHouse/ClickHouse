@@ -43,7 +43,7 @@ def kafka_setup_teardown():
 
 def create_kafka_with_mv(instance, table_name, topic_name, keeper_path,
                          replica_name, consumer_group=None, settings=None):
-    """Return SQL that creates a Kafka table + MergeTree destination + MV."""
+    """Return SQL that creates a Kafka table."""
     query = k.generate_new_create_table_query(
         table_name=table_name,
         columns_def="key UInt64, value UInt64",
