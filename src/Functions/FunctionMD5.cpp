@@ -472,9 +472,9 @@ DECLARE_MD5_TARGET_CODE(
     /// which bounds the wasted pass by the grouped work instead of by the column length.
     constexpr size_t MD5_GROUP_DECLINE_BUDGET = 8;
 
-    /// Cheap column-level screen: score whole windows the way the windowed path scores them, and admit
-    /// the column if any of them would group. Probes cannot see per-window heterogeneity elsewhere in
-    /// the column, so an admitted column may still have unprobed windows decline on their own rows.
+    /// Cheap column-level screen: score whole windows against the same lower bound the windowed path
+    /// tests first, and admit the column if any clears it. Clearing that bound is not a guarantee and
+    /// probes cannot see other windows, so an admitted column may still decline every one of them.
     template <typename Ops>
     static bool md5GroupingPays(const ColumnString::Offsets & offsets, size_t input_rows_count)
     {

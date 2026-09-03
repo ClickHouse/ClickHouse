@@ -1,8 +1,8 @@
 -- Tags: no-openssl-fips
--- Test that MD5 over a variable-length String column is unaffected by the order the rows are hashed in.
+-- Test that `MD5` over a variable-length `String` column is unaffected by the order the rows are hashed in.
 
--- Rows are grouped by MD5 block count inside a window before the kernel runs, so a digest must not
--- depend on which rows share a batch. cityHash64 pairs each digest with its own row, so a digest that
+-- Rows are grouped by `MD5` block count inside a window before the kernel runs, so a digest must not
+-- depend on which rows share a batch. `cityHash64` pairs each digest with its own row, so a digest that
 -- lands in the wrong row's slot changes the sum; an aggregate over the digests alone would not see it.
 SELECT sum(cityHash64(s, MD5(s))) FROM
 (
