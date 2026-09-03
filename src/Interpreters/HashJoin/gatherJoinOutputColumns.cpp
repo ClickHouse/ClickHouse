@@ -44,19 +44,19 @@ namespace ErrorCodes
 namespace
 {
 
-/// At a few nanoseconds of loop body per row, 32 rows of lead cover one source row's memory latency.
+/// 32 rows of lead cover one source row's memory latency.
 constexpr size_t look_ahead = 32;
 
 /// A `Nullable`'s null map byte for an unmatched row: `insertDefault` inserts NULL.
 constexpr char null_map_default = 1;
 
+/// What a string run expects next when none is open. A word is zero or carries the inline flag, so
+/// none equals 1 - including a default row's `word + 1`, which therefore closes its run for free.
+constexpr UInt64 no_open_run = 1;
+
 /// `STRIDE` is 0 when the width is only known at run time, which is what covers `FixedString(n)` for
 /// an arbitrary `n`; a compile-time width turns the copy into a single load and store.
 /// `default_pattern` is the `stride` bytes a zero ref word writes.
-///
-/// A run-time width stays a `memcpy` call. `memcpySmallAllowReadWriteOverflow15` is the obvious
-/// alternative and it is slower here: measured on `FixedString(40)`, its 16-bytes-at-a-time loop
-/// costs 4% to 8% more emit CPU than the call it saves.
 template <bool from_row_list, size_t STRIDE>
 void gatherFixedStride(
     IColumn & dst,
@@ -146,8 +146,8 @@ void gatherFixedDispatch(
     }
 }
 
-/// Remap one inline word's row through a replicated block's indexes: `row' = indexes[row]` addresses
-/// the nested column. An identity entry (a block that stores the column plainly) passes the word through.
+/// `row' = indexes[row]`, so the word addresses the replicated block's nested column. An identity
+/// entry - a block storing the column plainly - passes the word through.
 ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const GatherRowRemap * remap_by_block)
 {
     const GatherRowRemap & remap = remap_by_block[refWordBlockNo(word)];
@@ -167,9 +167,7 @@ ALWAYS_INLINE UInt64 remapFlatWord(UInt64 word, const GatherRowRemap * remap_by_
     return (word & 0xFFFFFFFF00000000ull) | static_cast<UInt32>(mapped);
 }
 
-/// Append a run to `ranges`, extending the last range when the run adjoins it: consecutive source
-/// rows of one block (a row-list batch, a rerange) then become a single copy, and consecutive
-/// unmatched rows a single run of defaults.
+/// Extends the last range when the run adjoins it, so adjoining runs become a single copy.
 void appendGatherRange(GatherRanges & ranges, UInt32 block_no, UInt64 begin, UInt64 length)
 {
     if (!ranges.empty() && ranges.back().block_no == block_no
@@ -179,10 +177,7 @@ void appendGatherRange(GatherRanges & ranges, UInt32 block_no, UInt64 begin, UIn
         ranges.push_back(GatherRange{.block_no = block_no, .begin = begin, .length = length});
 }
 
-/// The selection as one inline-or-zero word per output row, addressing the nested column of every
-/// replicated block. `RefWordShape::Flat` without a remap is already that and passes through; the
-/// list and range shapes are expanded once per emit call into the scratch, which every
-/// flat-consuming kernel of the call then shares.
+/// One inline-or-zero word per output row, expanded once per emit call for every kernel to share.
 const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRemap * remap_by_block, EmitScratch & scratch)
 {
     const UInt64 * flat = selection.begin;
@@ -215,9 +210,8 @@ const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRema
     return scratch.remapped.data();
 }
 
-/// The selection as runs of source rows, built once per emit call. A range word is either an inline
-/// ref - the rerange stores single-row keys that way - or a range node; a zero word is a run of one
-/// unmatched row.
+/// The selection as runs of source rows. A range word is an inline ref - the rerange stores
+/// single-row keys that way - or a range node; a zero word is a run of one unmatched row.
 const GatherRanges & rangesOf(const RefWordSelection & selection, EmitScratch & scratch)
 {
     if (!scratch.ranges_ready)
@@ -240,8 +234,8 @@ const GatherRanges & rangesOf(const RefWordSelection & selection, EmitScratch & 
     return scratch.ranges;
 }
 
-/// Rebase one range's source offsets onto the destination, whose last offset is `cursor`; returns the
-/// contiguous run of the nested plane (chars, array elements) that the range covers.
+/// Rebase a range's source offsets onto a destination ending at `cursor`; returns the run of the
+/// nested plane the range covers.
 GatherRange rebaseOffsets(const UInt64 * offsets, const GatherRange & range, UInt64 *& out_offsets, UInt64 cursor)
 {
     const UInt64 base = offsets[static_cast<ssize_t>(range.begin) - 1];
@@ -251,12 +245,9 @@ GatherRange rebaseOffsets(const UInt64 * offsets, const GatherRange & range, UIn
     return {.block_no = range.block_no, .begin = base, .length = offsets[range.begin + range.length - 1] - base};
 }
 
-/// One bulk copy per range from a per-block plane of `stride`-byte values into `dst`'s raw buffer; a
-/// run of unmatched rows writes `default_pattern` per row.
-///
-/// `STRIDE` is specialized for the same reason as in `gatherFixedStride`: the range copy is one call
-/// for a whole run and its size is long, but the default is written a row at a time, so a width known
-/// at compile time is what turns that row into a single load and store rather than a call.
+/// One bulk copy per range from a per-block plane of `stride`-byte values; a run of unmatched rows
+/// writes `default_pattern` per row. `STRIDE` is specialized for that per-row default write, which a
+/// compile-time width turns into a single store.
 template <size_t STRIDE>
 void gatherRawRangesStride(
     IColumn & dst,
@@ -315,8 +306,8 @@ void gatherRawRanges(
 void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count);
 void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows);
 
-/// The unmatched row of a `Kind::Rows` node: the output type's default, or the destination column's own
-/// below a `Nullable`, where the row is NULL and the enclosing `insertDefault` owns the nested value.
+/// The unmatched row of a `Kind::Rows` node. Below a `Nullable` the row is NULL and the enclosing
+/// `insertDefault` owns the nested value, so the destination column's own default applies.
 void insertRowsDefault(IColumn & dst, const GatherNode & node)
 {
     if (node.type)
@@ -327,10 +318,98 @@ void insertRowsDefault(IColumn & dst, const GatherNode & node)
 
 void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
-    /// A default row is NULL: a set null byte over the nested column's own default, which is what
-    /// `ColumnNullable::insertDefault` writes and what the nested node's pattern reproduces.
     gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, words, words + count, count, &null_map_default);
     gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
+}
+
+/// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block when
+/// `WITH_RUNS`. `row_no` is in the low bits of the encoding, so the next row of one block is exactly
+/// `word + 1`. Pass 1 picks the specialization, so a scattered selection pays only that compare.
+/// Only one key's rows ever form a run, and only if the build side stored them next to each other.
+template <bool WITH_RUNS>
+void gatherStringChars(
+    UInt8 * out_chars, [[maybe_unused]] const UInt8 * chars_end, const UInt64 * words, size_t count,
+    const void * const * offsets_by_block, const void * const * chars_by_block)
+{
+    [[maybe_unused]] const UInt64 * run_offsets = nullptr; /// non-null while a run is open
+    [[maybe_unused]] const UInt8 * run_chars = nullptr;
+    [[maybe_unused]] size_t run_first_row = 0;
+    [[maybe_unused]] size_t run_last_row = 0;
+    [[maybe_unused]] UInt64 expected_word = no_open_run;
+
+    /// A run of one row keeps the short-value copy idiom that the per-row loop below explains.
+    [[maybe_unused]] auto flush_run = [&]
+    {
+        const UInt64 from = run_offsets[static_cast<ssize_t>(run_first_row) - 1];
+        const UInt64 bytes = run_offsets[run_last_row] - from;
+        if (run_first_row == run_last_row)
+            memcpySmallAllowReadWriteOverflow15(out_chars, run_chars + from, bytes);
+        else if (bytes)
+            memcpy(out_chars, run_chars + from, bytes);
+        out_chars += bytes;
+    };
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (i + look_ahead < count)
+        {
+            const UInt64 ahead = words[i + look_ahead];
+            if (ahead)
+            {
+                const UInt32 ahead_block = refWordBlockNo(ahead);
+                const UInt64 * ahead_offsets = static_cast<const UInt64 *>(offsets_by_block[ahead_block]);
+                __builtin_prefetch(
+                    static_cast<const UInt8 *>(chars_by_block[ahead_block]) + ahead_offsets[static_cast<ssize_t>(refWordRowNo(ahead)) - 1]);
+            }
+        }
+        const UInt64 word = words[i];
+
+        if constexpr (WITH_RUNS)
+        {
+            if (word == expected_word)
+            {
+                ++run_last_row;
+                ++expected_word;
+                continue;
+            }
+            if (run_offsets)
+                flush_run();
+            /// A carry into `block_no` would span two blocks. `setRange` rejects a range leaving
+            /// its block, and no block holds 2^32 rows, so it cannot happen.
+            expected_word = word + 1;
+            if (!word)
+            {
+                /// An unmatched row is the empty string, and pass 1 already left its offset in place.
+                run_offsets = nullptr;
+                continue;
+            }
+            const UInt32 block_no = refWordBlockNo(word);
+            run_offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
+            run_chars = static_cast<const UInt8 *>(chars_by_block[block_no]);
+            run_first_row = refWordRowNo(word);
+            run_last_row = run_first_row;
+        }
+        else
+        {
+            if (!word)
+                continue;
+            const UInt32 block_no = refWordBlockNo(word);
+            const size_t row = refWordRowNo(word);
+            const UInt64 * offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
+            const UInt64 from = offsets[static_cast<ssize_t>(row) - 1];
+            const UInt64 bytes = offsets[row] - from;
+            /// Both chars arrays are padded, which is what lets short values use this copy.
+            memcpySmallAllowReadWriteOverflow15(out_chars, static_cast<const UInt8 *>(chars_by_block[block_no]) + from, bytes);
+            out_chars += bytes;
+        }
+    }
+
+    if constexpr (WITH_RUNS)
+    {
+        if (run_offsets)
+            flush_run();
+    }
+    chassert(out_chars == chars_end);
 }
 
 void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -347,7 +426,10 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     UInt64 cursor = dst_offsets[static_cast<ssize_t>(old_rows) - 1];
     chassert(cursor == dst_chars.size());
 
-    /// Pass 1: row lengths become destination offsets; a zero word is an empty string.
+    /// Pass 1: row lengths become destination offsets; a zero word is an empty string. One compare
+    /// per row also tells pass 2 whether it has any run to coalesce.
+    bool with_runs = false;
+    UInt64 expected_word = no_open_run;
     for (size_t i = 0; i < count; ++i)
     {
         if (i + look_ahead < count)
@@ -357,6 +439,8 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
                 __builtin_prefetch(static_cast<const UInt64 *>(offsets_by_block[refWordBlockNo(ahead)]) + refWordRowNo(ahead));
         }
         const UInt64 word = words[i];
+        with_runs |= (word == expected_word);
+        expected_word = word + 1;
         if (word)
         {
             const UInt64 * offsets = static_cast<const UInt64 *>(offsets_by_block[refWordBlockNo(word)]);
@@ -366,38 +450,15 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
         out_offsets[i] = cursor;
     }
 
-    /// Pass 2: copy the slices. The source offsets are cache-resident from pass 1, so the lead
-    /// prefetch targets the character data.
+    /// The offsets are cache-resident from pass 1, so the lead prefetch targets the characters.
     const size_t old_chars = dst_chars.size();
     dst_chars.resize(cursor);
-    UInt8 * out_chars = dst_chars.data() + old_chars;
-    for (size_t i = 0; i < count; ++i)
-    {
-        if (i + look_ahead < count)
-        {
-            const UInt64 ahead = words[i + look_ahead];
-            if (ahead)
-            {
-                const UInt32 ahead_block = refWordBlockNo(ahead);
-                const UInt64 * ahead_offsets = static_cast<const UInt64 *>(offsets_by_block[ahead_block]);
-                __builtin_prefetch(
-                    static_cast<const UInt8 *>(chars_by_block[ahead_block]) + ahead_offsets[static_cast<ssize_t>(refWordRowNo(ahead)) - 1]);
-            }
-        }
-        const UInt64 word = words[i];
-        if (!word)
-            continue;
-        const UInt32 block_no = refWordBlockNo(word);
-        const size_t row = refWordRowNo(word);
-        const UInt64 * offsets = static_cast<const UInt64 *>(offsets_by_block[block_no]);
-        const UInt64 from = offsets[static_cast<ssize_t>(row) - 1];
-        const UInt64 bytes = offsets[row] - from;
-        /// Both chars arrays are padded (the destination was just resized, so its right pad is
-        /// writable), which is the `ColumnString::insertFrom` copy idiom for short values.
-        memcpySmallAllowReadWriteOverflow15(out_chars, static_cast<const UInt8 *>(chars_by_block[block_no]) + from, bytes);
-        out_chars += bytes;
-    }
-    chassert(out_chars == dst_chars.data() + dst_chars.size());
+    UInt8 * const out_chars = dst_chars.data() + old_chars;
+    UInt8 * const out_chars_end = dst_chars.data() + dst_chars.size();
+    if (with_runs)
+        gatherStringChars<true>(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
+    else
+        gatherStringChars<false>(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
 }
 
 void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -452,8 +513,7 @@ void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt6
     const void * const * discriminators_by_block = node.data_by_block.data();
     const void * const * offsets_by_block = node.aux_by_block.data();
 
-    /// The destination's local discriminator per global one; the source side is remapped per block
-    /// through `local_to_global_by_block`, because local orders may differ between stored blocks.
+    /// Local discriminator orders may differ between stored blocks, hence the per-block remap.
     std::array<ColumnVariant::Discriminator, ColumnVariant::NULL_DISCRIMINATOR> dst_local_by_global{};
     for (size_t g = 0; g < num_variants; ++g)
         dst_local_by_global[g] = dst.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(g));
@@ -463,15 +523,14 @@ void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt6
     dst_discriminators.reserve(dst_discriminators.size() + count);
     dst_offsets.reserve(dst_offsets.size() + count);
 
-    /// The rows of one global variant are collected as (block, in-variant row) words and gathered
-    /// per child in a second step, reusing the flat encoding so the children stay oblivious.
+    /// One global variant's rows are collected as (block, in-variant row) words and gathered per
+    /// child in a second step, reusing the flat encoding so the children stay oblivious.
     std::vector<PaddedPODArray<UInt64>> child_words(num_variants);
     std::vector<UInt64> child_sizes(num_variants);
     for (size_t g = 0; g < num_variants; ++g)
         child_sizes[g] = dst.getVariantByGlobalDiscriminator(g).size();
 
-    /// Raw bases hoisted out of the loop: the hardened `std::vector` indexing otherwise reloads the
-    /// base and re-checks the bounds on every row.
+    /// Hoisted, because the hardened `std::vector` indexing re-checks bounds on every row.
     const UInt8 * local_to_global = node.local_to_global_by_block.data();
     PaddedPODArray<UInt64> * child_words_by_global = child_words.data();
     UInt64 * child_sizes_by_global = child_sizes.data();
@@ -517,14 +576,12 @@ void gatherVariantRows(ColumnVariant & dst, const GatherNode & node, const UInt6
             gatherNodeRows(dst.getVariantByGlobalDiscriminator(g), node.children[g], child_words[g].data(), child_words[g].size());
 }
 
-/// One `insertRangeFrom` per run of consecutive source rows in one block, instead of one `insertFrom`
-/// per row. A build side ordered by the join key stores a key's rows contiguously, so its refs form
-/// one long run; a scattered one degrades to runs of length one for the cost of one comparison per
-/// ref. Runs are tracked across the whole call, so a key-ordered build coalesces the whole selection.
+/// One `insertRangeFrom` per run of consecutive source rows in one block, instead of one
+/// `insertFrom` per row. A key whose rows were stored contiguously forms one run; a scattered build
+/// degrades to runs of one for the cost of one comparison per ref.
 void gatherRowsByRuns(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count)
 {
-    /// The plane kernels size their destination exactly through `insertRawUninitialized`; this one
-    /// appends run by run, so it is the one that has to say how much is coming.
+    /// This kernel appends run by run rather than sizing the destination up front.
     dst.reserve(dst.size() + count);
 
     const void * const * sources = node.data_by_block.data();
@@ -581,8 +638,7 @@ void gatherStringRanges(ColumnString & dst, const GatherNode & node, const Gathe
     UInt64 cursor = dst_offsets[static_cast<ssize_t>(old_rows) - 1];
     chassert(cursor == dst_chars.size());
 
-    /// Pass 1: per-row destination offsets; a range's characters are one contiguous source run, and an
-    /// unmatched row is the empty string, so its offset does not move.
+    /// Pass 1: per-row destination offsets. An unmatched row is the empty string.
     for (const GatherRange & range : ranges)
     {
         if (range.isDefault())
@@ -595,7 +651,6 @@ void gatherStringRanges(ColumnString & dst, const GatherNode & node, const Gathe
     }
     chassert(out_offsets == dst_offsets.data() + dst_offsets.size());
 
-    /// Pass 2: one chars copy per range.
     const size_t old_chars = dst_chars.size();
     dst_chars.resize(cursor);
     UInt8 * out_chars = dst_chars.data() + old_chars;
@@ -626,7 +681,6 @@ void gatherArrayRanges(ColumnArray & dst, const GatherNode & node, const GatherR
     size_t child_rows = 0;
     for (const GatherRange & range : ranges)
     {
-        /// An unmatched row is the empty array, so nothing of it reaches the nested plane.
         if (range.isDefault())
         {
             for (UInt64 i = 0; i < range.length; ++i)
@@ -653,8 +707,7 @@ void gatherTupleRanges(ColumnTuple & dst, const GatherNode & node, const GatherR
 
 void gatherVariantRanges(ColumnVariant & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
-    /// A variant dispatches per row anyway (per-row discriminator), so expanding the ranges to flat
-    /// row words loses nothing and reuses the row primitive.
+    /// A variant dispatches per row anyway, so expanding the ranges to flat words loses nothing.
     PaddedPODArray<UInt64> words;
     words.resize(total_rows);
     UInt64 * out = words.data();
@@ -671,7 +724,6 @@ void gatherVariantRanges(ColumnVariant & dst, const GatherNode & node, const Gat
     gatherVariantRows(dst, node, words.data(), total_rows);
 }
 
-/// A range already names a run, so it is one copy.
 void gatherRowsByRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows)
 {
     dst.reserve(dst.size() + total_rows);
@@ -725,9 +777,9 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
     }
 }
 
-/// Every encoding a stored right column can have is bound above, and `ColumnConst` and `ColumnSparse`
-/// are normalized away at the build boundary (`JoinCommon::materializeColumnsFromRightBlock`), so
-/// getting here means the plan disagrees with the stored data - not that a slower path is wanted.
+/// Every encoding a stored right column can have is bound above, and `ColumnConst` and
+/// `ColumnSparse` are normalized away at the build boundary, so getting here means the plan
+/// disagrees with the stored data - not that a slower path is wanted.
 [[noreturn]] void throwNoGatherKernel(const IDataType & type, const IColumn & column, std::string_view reason)
 {
     throw Exception(
@@ -738,17 +790,14 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
         reason);
 }
 
-/// The emitted type has to be the same shape as the stored column at every level. Both names are in
-/// the message, so there is nothing useful to add about how they differ.
+/// The emitted type has to be the same shape as the stored column at every level.
 [[noreturn]] void throwTypeDisagrees(const IDataType & type, const IColumn & column)
 {
     throwNoGatherKernel(type, column, "the emitted type and the stored column are different shapes");
 }
 
-/// The `Kind::Rows` copy for one concrete column class. A run of length one goes through `insertFrom`
-/// rather than `insertRangeFrom`: for `LowCardinality` the range form builds a used-keys mapping,
-/// which costs far more than a single key translation, and a randomly ordered build side is nearly
-/// all runs of length one.
+/// A run of one goes through `insertFrom`, because `LowCardinality`'s range form builds a used-keys
+/// mapping that costs far more than translating one key.
 template <typename Column>
 void copyRowsConcrete(IColumn & dst, const IColumn & src, size_t begin, size_t length)
 {
@@ -760,13 +809,9 @@ void copyRowsConcrete(IColumn & dst, const IColumn & src, size_t begin, size_t l
         typed_dst.insertRangeFrom(typed_src, begin, length);
 }
 
-/// One resolve step, holding what a `Kind::Rows` binding needs so that the encodings can be listed one
-/// per line. `tryBind` answers whether `column` is that class, binding it when so; the source is then
-/// the column itself rather than a plane of it, and an unmatched row comes from the output type.
-///
-/// Declared-type equality is the whole check these encodings need. Everything that varies between the
-/// stored blocks - a `LowCardinality` dictionary, a `JSON` path set - is what `insertRangeFrom` on the
-/// concrete class exists to reconcile.
+/// One resolve step, so that the `Kind::Rows` encodings can be listed one per line. Declared-type
+/// equality is the whole check they need: whatever varies between stored blocks, a `LowCardinality`
+/// dictionary or a `JSON` path set, is what `insertRangeFrom` exists to reconcile.
 struct RowsBinding
 {
     GatherNode & node;
@@ -791,7 +836,6 @@ struct RowsBinding
         node.data_by_block[block_no] = &column;
     }
 
-    /// Whether `column` is `Column`, in which case it is now bound.
     template <typename Column, typename Type>
     bool tryBind() const
     {
@@ -836,9 +880,8 @@ void resolveGatherNode(
             node.children.resize(1);
         }
         node.data_by_block[block_no] = nullable->getNullMapData().data();
-        /// An unmatched row is NULL here, and `ColumnNullable::insertDefault` leaves the nested planes
-        /// at the nested *column*'s default rather than the nested type's. The two differ for an `Enum`,
-        /// and `assumeNotNull` on such a row observes the difference.
+        /// `ColumnNullable::insertDefault` leaves the nested planes at the nested *column*'s
+        /// default, not the type's. They differ for an `Enum`, and `assumeNotNull` sees it.
         resolveGatherNode(node.children[0], nullable_type->getNestedType(), nullable->getNestedColumn(), block_no, num_blocks, false);
         return;
     }
@@ -880,8 +923,7 @@ void resolveGatherNode(
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
         if (!tuple_type || tuple_type->getElements().size() != tuple->tupleSize())
             throwTypeDisagrees(*type, column);
-        /// An element-less tuple has no columns to walk - it keeps an explicit row count - so copying a
-        /// row is a size bump, which is what its own `insertRangeFrom` does.
+        /// An element-less tuple keeps an explicit row count, so copying a row is a size bump.
         if (tuple->tupleSize() == 0)
         {
             rows.bind<ColumnTuple>();
@@ -906,9 +948,8 @@ void resolveGatherNode(
             throwTypeDisagrees(*type, column);
         if (num_variants == 0 || num_variants >= ColumnVariant::NULL_DISCRIMINATOR)
             throwNoGatherKernel(*type, column, "the local discriminator does not fit beside the NULL one");
-        /// `gatherVariantRows` names an in-variant position with a ref word, whose row field is 32 bits.
-        /// Below an `Array` that position is an element index, so `addBlockToJoin`'s per-block row limit
-        /// does not reach it; this is that same limit, counted in the elements the ref word will name.
+        /// A ref word's row field is 32 bits, and below an `Array` it names an element index, which
+        /// `addBlockToJoin`'s per-block row limit does not cover. This is that limit in elements.
         if (variant->size() > std::numeric_limits<UInt32>::max())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Too many Variant elements in right table block for HashJoin: {}", variant->size());
@@ -925,8 +966,7 @@ void resolveGatherNode(
         for (size_t local = 0; local < num_variants; ++local)
             node.local_to_global_by_block[block_no * num_variants + local]
                 = variant->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
-        /// `getVariants` is ordered by global discriminator, like `node.children`. An unmatched row is
-        /// the NULL discriminator, so no default reaches a variant.
+        /// `getVariants` is ordered by global discriminator, like `node.children`.
         for (size_t g = 0; g < num_variants; ++g)
             resolveGatherNode(
                 node.children[g],
@@ -948,21 +988,15 @@ void resolveGatherNode(
             node.kind = Map;
             node.children.resize(1);
         }
-        /// A `Map` is its nested `Array(Tuple(key, value))` and nothing besides, so it delegates. An
-        /// unmatched row is the empty map, which is the empty array the `Array` kernel already writes.
+        /// A `Map` is its nested `Array(Tuple(key, value))` and nothing besides.
         resolveGatherNode(node.children[0], map_type->getNestedType(), map->getNestedColumn(), block_no, num_blocks, false);
         return;
     }
 
     /// The plane-less encodings: their rows are not an array of values, so only their own
-    /// `insertRangeFrom` knows how to copy them - and that call is also the only thing that reconciles
-    /// what differs between two stored blocks, which is a dictionary for `LowCardinality`, a path set
-    /// for `JSON` and a variant list for `Dynamic`. `AggregateFunction` is here for ownership rather
-    /// than layout: a row is a pointer to a state owned by exactly one source column, so copying the
-    /// pointers across an output that spans many would leave them dangling or doubly freed, and that
-    /// call is what keeps every source arena alive behind the output. `QBit` keeps its dimension and
-    /// stride invariants inside the class, and `Nothing` has no values at all, so copying a row of it
-    /// is a size bump. Declared-type equality is the whole check any of them needs.
+    /// `insertRangeFrom` can copy them. `AggregateFunction` is here for ownership, not layout - a row
+    /// is a pointer to a state owned by one source column, and that call is what keeps every source
+    /// arena alive behind an output spanning many of them.
     if (rows.tryBind<ColumnLowCardinality, DataTypeLowCardinality>())
         return;
     if (rows.tryBind<ColumnObject, DataTypeObject>())
@@ -976,11 +1010,9 @@ void resolveGatherNode(
     if (rows.tryBind<ColumnNothing, DataTypeNothing>())
         return;
 
-    /// The fixed-width leaf, and the end of the line: anything that reaches it and is not a plain
-    /// array of values has no kernel. `isFixedAndContiguous` is what keeps `getRawData` from throwing,
-    /// and a `ColumnConst` must not pass even though it forwards that test to its one-element data
-    /// column - it hands back a one-element buffer, whose base would be read out of bounds above row
-    /// zero.
+    /// The fixed-width leaf, and the end of the line. `isFixedAndContiguous` keeps `getRawData`
+    /// from throwing; a `ColumnConst` forwards that test to its one-element data column, so it must
+    /// not pass - its buffer would be read out of bounds above row zero.
     if (first)
     {
         if (isColumnConst(column) || !column.isFixedAndContiguous())
@@ -989,9 +1021,7 @@ void resolveGatherNode(
         node.stride = column.sizeOfValueIfFixed();
         node.data_by_block.resize(num_blocks);
 
-        /// One default row of the destination, which doubles as the check that the type and the column
-        /// really are the same fixed-width shape: the destination is a `cloneEmpty` of what
-        /// `createColumn` builds, and `insertDefaultInto` writes what an unmatched row must get.
+        /// Doubles as the check that the type and the column are the same fixed-width shape.
         MutableColumnPtr default_row = type->createColumn();
         if (default_from_type)
             type->insertDefaultInto(*default_row);
@@ -1006,8 +1036,7 @@ void resolveGatherNode(
     if (column.sizeOfValueIfFixed() != node.stride)
         throwNoGatherKernel(*type, column, "the stored blocks hold it at different widths");
     const std::string_view raw_data = column.getRawData();
-    /// Any column that delegates `getRawData` hands back a buffer that does not hold its own rows,
-    /// so require the size to account for exactly this column's rows.
+    /// A column delegating `getRawData` hands back a buffer that does not hold its own rows.
     if (raw_data.size() != column.size() * node.stride)
         throwNoGatherKernel(*type, column, "its raw data does not hold exactly its own rows");
     node.data_by_block[block_no] = raw_data.data();
@@ -1018,16 +1047,14 @@ void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelectio
     chassert(src.node);
     const GatherNode & node = *src.node;
 
-    /// A sorted build side names runs of rows rather than single rows, and keeping them as runs is the
-    /// whole point of having reranged it: flattening would cost a word and a copy per row instead of
-    /// per run. A replicated source is the exception, because `row' = indexes[row]` breaks any run.
+    /// Keeping a sorted build side's runs as runs is the whole point of having reranged it. A
+    /// replicated source is the exception: `row' = indexes[row]` breaks any run.
     if (selection.shape == RefWordShape::Ranges && !src.remap_by_block)
     {
         gatherNodeRanges(dst, node, rangesOf(selection, scratch), selection.rows);
     }
-    /// The dominant case - a fixed-width column with no replicated block - reads the flat and list
-    /// shapes as they are; every other kernel needs one inline-or-zero word per output row, which
-    /// `flatWords` produces once per emit call for all of them to share.
+    /// The dominant case - fixed width, no replicated block - reads the flat and list shapes as
+    /// they are. Every other kernel needs the one word per row that `flatWords` produces.
     else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
     {
         if (selection.shape == RefWordShape::Flat)
