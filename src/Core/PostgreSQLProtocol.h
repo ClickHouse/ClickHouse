@@ -1330,7 +1330,7 @@ private:
     String value;
 
 public:
-    CommandComplete(Command cmd_, Int32 rows_count_)
+    CommandComplete(Command cmd_, UInt64 rows_count_)
     {
         value = enum_to_string[cmd_];
 
