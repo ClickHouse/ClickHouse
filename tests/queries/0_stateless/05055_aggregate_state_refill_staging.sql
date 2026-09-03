@@ -19,7 +19,7 @@ SETTINGS min_bytes_for_wide_part = 0,
 INSERT INTO t_deserialize_allocation_bomb_refill
 SELECT (SELECT groupUniqArrayState(s) FROM (SELECT repeat('x', 1000000) AS s UNION ALL SELECT repeat('y', 1000000) AS s));
 
-SELECT sum(length(x)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_refill);
+SELECT sum(length(x)), countIf(x = repeat('x', 1000000)) + countIf(x = repeat('y', 1000000)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_refill);
 
 DROP TABLE t_deserialize_allocation_bomb_refill;
 
@@ -40,7 +40,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_full_part_storage = 2,
 INSERT INTO t_deserialize_allocation_bomb_chunks
 SELECT (SELECT groupUniqArrayState(s) FROM (SELECT repeat('z', 1000000) AS s));
 
-SELECT sum(length(x)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_chunks) SETTINGS max_memory_usage = 8000000, use_uncompressed_cache = 0;
+SELECT sum(length(x)), countIf(x = repeat('z', 1000000)) FROM (SELECT arrayJoin(groupUniqArrayMerge(gua)) AS x FROM t_deserialize_allocation_bomb_chunks) SETTINGS max_memory_usage = 8000000, use_uncompressed_cache = 0;
 
 DROP TABLE t_deserialize_allocation_bomb_chunks;
 

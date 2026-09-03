@@ -106,3 +106,35 @@ INSERT INTO t_deserialize_allocation_bomb_gk SELECT quantileGKState(100)(number:
 SELECT quantileGKMerge(100, 0.5)(q) FROM t_deserialize_allocation_bomb_gk;
 
 DROP TABLE t_deserialize_allocation_bomb_gk;
+
+DROP TABLE IF EXISTS t_deserialize_allocation_bomb_map;
+CREATE TABLE t_deserialize_allocation_bomb_map
+(
+    m AggregateFunction(sumMap, Map(String, UInt64))
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0,
+    min_compress_block_size = 4, max_compress_block_size = 4;
+
+INSERT INTO t_deserialize_allocation_bomb_map SELECT sumMapState(map(repeat('k', 300), number::UInt64)) FROM numbers(4);
+
+-- The key is compared by content: one of the right length assembled from the wrong bytes must not pass.
+SELECT mapKeys(finalizeAggregation(m))[1] = repeat('k', 300), mapValues(finalizeAggregation(m))[1] FROM t_deserialize_allocation_bomb_map;
+
+DROP TABLE t_deserialize_allocation_bomb_map;
+
+DROP TABLE IF EXISTS t_deserialize_allocation_bomb_bitmap;
+CREATE TABLE t_deserialize_allocation_bomb_bitmap
+(
+    b AggregateFunction(groupBitmap, UInt64)
+)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0,
+    min_compress_block_size = 4, max_compress_block_size = 4;
+
+-- More than 32 values, so this is a `BitmapKind::Bitmap` state rather than the small set.
+INSERT INTO t_deserialize_allocation_bomb_bitmap SELECT groupBitmapState(number::UInt64) FROM numbers(1000);
+
+SELECT groupBitmapMerge(b), arraySum(bitmapToArray(groupBitmapStateMerge(b))) FROM t_deserialize_allocation_bomb_bitmap;
+
+DROP TABLE t_deserialize_allocation_bomb_bitmap;
