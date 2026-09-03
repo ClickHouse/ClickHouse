@@ -58,6 +58,7 @@ struct DictGetFunctionInfo
     ConstantNodePtr dict_name_node;
     ConstantNodePtr attr_col_name_node;
     QueryTreeNodePtr key_expr_node;
+    String function_name;
 
     /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc
     DataTypePtr return_type;
@@ -198,6 +199,18 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         if (!info)
             return std::nullopt;
 
+        try
+        {
+            const String dict_name = info->dict_name_node->getValue().safeGet<String>();
+            auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+            if (!context->getAccess()->isGranted(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
+                return std::nullopt;
+        }
+        catch (const Exception &)
+        {
+            return std::nullopt;
+        }
+
         const auto & projection_columns = column_definition->source_query_node->getProjectionColumns();
         const auto & projection_nodes = column_definition->source_query_node->getProjection().getNodes();
 
@@ -234,6 +247,7 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         return std::nullopt;
 
     func_info.key_expr_node = arguments[2];
+    func_info.function_name = function_node->getFunctionName();
     func_info.return_type = function_node->getResultType();
 
     return func_info;
@@ -422,20 +436,26 @@ public:
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info;
 
-        if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext()); info_lhs && arguments[1]->as<ConstantNode>())
+        if (arguments[1]->as<ConstantNode>())
         {
-            dict_side = Side::LHS;
-            dictget_function_info = std::move(*info_lhs);
+            if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext()))
+            {
+                dict_side = Side::LHS;
+                dictget_function_info = std::move(*info_lhs);
+            }
         }
-        else if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext()); info_rhs && arguments[0]->as<ConstantNode>())
+
+        if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>())
         {
-            dict_side = Side::RHS;
-            dictget_function_info = std::move(*info_rhs);
+            if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext()))
+            {
+                dict_side = Side::RHS;
+                dictget_function_info = std::move(*info_rhs);
+            }
         }
-        else
-        {
+
+        if (dict_side == Side::NONE)
             return;
-        }
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
@@ -512,8 +532,7 @@ public:
                 getContext()))
             return;
 
-        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
-                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+        const String dictget_function_name = dictget_function_info.function_name;
 
         const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
             attr_comparison_function_name,
