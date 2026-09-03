@@ -81,6 +81,9 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges;
+    /// Whether the LIKE selectivity guards (rows budget, exact-proof bypass) may run:
+    /// they need the pruning context of the index-analysis phase, not a whole-part count.
+    bool apply_pattern_selectivity_guards;
     bool skip_postings_deserialization;
 };
 

@@ -1395,14 +1395,23 @@ This ordering enables skipping even more data granules than the granules skipped
 
 When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
 
-When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
+When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Several guards bound that cost:
 
-The optimization is controlled by a setting:
-- [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
+1. If the alphanumeric needle of the pattern is shorter than [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length), the dictionary scan is skipped and the pattern is evaluated on the column as usual.
+2. During the dictionary scan, matched tokens are charged against two budgets: [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read) counts each large (non-embedded) posting list once, and [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_rows_to_read) sums their cardinalities in rows. A token that the rows surviving earlier pruning (for example, by the primary key) cannot reach costs nothing; a reachable token costs its full stored cardinality. The rows budget applies only where the scan runs with that pruning context. Exceeding a budget cuts the scan short, and LIKE evaluation falls back to reading the column.
+3. If the scan finishes within the budgets, but the row counts stored in the dictionary prove that the matched tokens match every row of the part, filtering by the posting lists cannot skip anything. With [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text#use_text_index_like_pattern_bypass) enabled, the posting lists are then not read at all, and the pattern is evaluated on the column directly. The proof is exact — an estimate is never used.
 
-The fallback mechanism is controlled by two settings:
-- [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
-- [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
+The optimization is controlled by the following settings:
+
+| Setting                                                                                                                                                | Default   | Description                                                                                                                                                      |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)   | `true`    | Enables evaluation of LIKE/ILIKE queries by scanning the text index dictionary.                                                                                  |
+| [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)                               | `4`       | Minimum length of the alphanumeric needle in the pattern. Shorter patterns match too many dictionary tokens and skip the dictionary scan.                        |
+| [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)                           | `50`      | Maximum number of large (non-embedded) posting lists to read. Each matched token with such a posting list counts once, regardless of its size.                   |
+| [text_index_like_max_postings_rows_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_rows_to_read)                 | `1000000` | Maximum total number of posting rows to read. Each matched token with a large posting list costs its cardinality in rows, so a single very common token can exhaust the budget. |
+| [use_text_index_like_pattern_bypass](/reference/settings/session-settings/use-text#use_text_index_like_pattern_bypass)                                 | `true`    | Allows skipping the posting lists of a pattern whose matched tokens provably match every row of the part.                                                   |
+
+`text_index_like_max_postings_rows_to_read` and `use_text_index_like_pattern_bypass` were introduced in version 26.9. Setting [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) to an older version restores the previous planning: the rows budget becomes unlimited and the bypass is disabled.
 
 This optimization supports only functions `like` and `ilike`.
 

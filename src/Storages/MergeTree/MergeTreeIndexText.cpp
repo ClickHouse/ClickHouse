@@ -60,6 +60,8 @@ namespace ProfileEvents
     extern const Event TextIndexTokensCacheNegativeHits;
     extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
+    extern const Event TextIndexPatternScannedTokens;
+    extern const Event TextIndexPatternMatchedTokens;
 }
 
 namespace DB
@@ -88,7 +90,9 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsUInt64 text_index_like_max_postings_rows_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool use_text_index_like_pattern_bypass;
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
@@ -530,10 +534,16 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
+
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+
+    /// Dictionary scan is complete; bypass pattern queries that cannot be selective before reading postings.
+    if (state.apply_pattern_selectivity_guards && settings[Setting::use_text_index_like_pattern_bypass])
+        analyzer->analyzeCardinalitiesAndBypassPatterns(state.part_info.getRowCount());
+
     if (!state.skip_postings_deserialization)
         analyzePostings(postings_serialization, *postings_stream, state);
 
-    const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part_info.getRowCount());
 
     /// Capture the codec after the analysis — for pre-WithCodec parts the
@@ -654,8 +664,10 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         return;
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const size_t max_postings_rows_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_rows_to_read];
 
     size_t postings_to_read = 0;
+    size_t postings_rows_to_read = 0;
     std::vector<size_t> matched_indices;
     for (size_t block_idx = 0; block_idx < sparse_index.size(); ++block_idx)
     {
@@ -677,6 +689,9 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 matched_indices.emplace_back(token_idx);
         }
 
+        ProfileEvents::increment(ProfileEvents::TextIndexPatternScannedTokens, num_tokens);
+        ProfileEvents::increment(ProfileEvents::TextIndexPatternMatchedTokens, matched_indices.size());
+
         if (matched_indices.empty())
             continue;
 
@@ -686,14 +701,23 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
-            postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
-            analyzer->addTokenInfo(token, infos[i]);
+            /// Charge after clipping: a token an earlier predicate ruled out is never read, so it
+            /// must not spend the budget that bounds the work remaining after that pruning.
+            const auto reachable_blocks = analyzer->addTokenInfo(token, infos[i]);
+            /// Charge the whole token whenever any block is still reachable: blocks group whole Roaring
+            /// containers and may exceed the target size, so a per-block average would not bound the read.
+            if (reachable_blocks && *reachable_blocks > 0
+                && !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings))
+            {
+                ++postings_to_read;
+                postings_rows_to_read += infos[i]->cardinality;
+            }
         }
 
-        if (postings_to_read > max_postings_to_read)
+        if (postings_to_read > max_postings_to_read
+            || (state.apply_pattern_selectivity_guards && postings_rows_to_read > max_postings_rows_to_read))
         {
-            /// Too many large-posting tokens matched.
-            /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
+            /// Scan cut short: matched-token set is incomplete, so bypass pattern queries and fall back.
             analyzer->bypassPatternQueries();
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
             return;

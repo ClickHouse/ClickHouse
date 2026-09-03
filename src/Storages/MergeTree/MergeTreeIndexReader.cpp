@@ -153,6 +153,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .part_info = *data_part_info,
             .index = *index,
             .readable_ranges = readable_ranges,
+            .apply_pattern_selectivity_guards = true,
             .skip_postings_deserialization = false,
         };
 

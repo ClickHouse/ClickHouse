@@ -3,12 +3,14 @@
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
     extern const Event TextIndexUsedEmbeddedPostings;
+    extern const Event TextIndexDiscardPatternQueryLowSelectivity;
 }
 
 namespace DB
@@ -23,6 +25,26 @@ namespace ErrorCodes
 TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
     : ranges(std::move(ranges_))
 {
+}
+
+size_t TextIndexAnalyzer::ReadableRows::countReachableBlocks(const TokenPostingsInfo & token_info) const
+{
+    if (token_info.ranges.empty())
+        return 0;
+
+    const RowsRange token_span(token_info.ranges.front().begin, token_info.ranges.back().end);
+    auto it = std::lower_bound(
+        ranges.begin(), ranges.end(), token_span.begin,
+        [](const RowsRange & range, size_t value) { return range.end < value; });
+
+    /// One block can be touched by two adjacent readable ranges, so the blocks are deduplicated -
+    /// this counts what `readPostingsBlocksForToken` reads, which asks per mark range.
+    std::set<size_t> blocks;
+    for (; it != ranges.end() && it->begin <= token_span.end; ++it)
+        for (size_t block : token_info.getBlocksToRead(*it))
+            blocks.insert(block);
+
+    return blocks.size();
 }
 
 std::optional<RowsRange> TextIndexAnalyzer::ReadableRows::clipRowsRange(const RowsRange & rows_range) const
@@ -197,7 +219,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
 
@@ -217,7 +239,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
             });
 
             queries_by_token.erase(token);
-            return;
+            return {};
         }
 
         token_rows_range = *clipped_range;
@@ -234,6 +256,8 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         addPostings(token, embedded);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
+
+    return readable_rows ? readable_rows->countReachableBlocks(*token_info) : token_info->ranges.size();
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
@@ -429,6 +453,52 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
 
             for (const auto & [query_token, _] : query_builder.tokens)
                 queries_by_token[query_token].erase(hash);
+        }
+    }
+}
+
+void TextIndexAnalyzer::analyzeCardinalitiesAndBypassPatterns(size_t total_rows)
+{
+    if (total_rows == 0)
+        return;
+
+    for (auto & [query_hash, query_builder] : query_builders)
+    {
+        if (query_builder.is_failed || query_builder.is_bypassed)
+            continue;
+
+        const auto & query = *query_builder.query;
+        if (query.getPatterns().empty() || !query.getTokens().empty())
+            continue;
+
+        /// Empty token set: scan was already cut short and the query bypassed by the budget.
+        if (query_builder.tokens.empty())
+            continue;
+
+        /// Every matched posting already read (embedded lists fold during the dictionary scan):
+        /// nothing left to save, and bypassing would trade a finished answer for a column scan.
+        if (!query_builder.needReadPostings())
+            continue;
+
+        /// Only a token present in every row proves the postings cannot prune, so the bypass needs
+        /// that exact fact rather than an estimate. The independence estimate is not a proof here:
+        /// correlated tokens that all match the same half of the table drive it to `total_rows`
+        /// while the real union still prunes half the part.
+        bool covers_every_row = query_builder.postings && query_builder.postings->cardinality() == total_rows;
+        for (const auto & [token, token_info] : query_builder.tokens)
+        {
+            if (covers_every_row)
+                break;
+            if (!hasReadPostings(token) && token_info->cardinality == total_rows)
+                covers_every_row = true;
+        }
+
+        if (covers_every_row)
+        {
+            /// Reading these postings cannot prune anything; bypass before reading them.
+            query_builder.markBypassed();
+            detachQueryFromTokens(query_hash, query_builder);
+            ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternQueryLowSelectivity);
         }
     }
 }
