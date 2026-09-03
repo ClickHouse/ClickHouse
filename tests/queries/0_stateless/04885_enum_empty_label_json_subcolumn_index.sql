@@ -18,6 +18,11 @@ INSERT INTO t_json_tokenbf VALUES (1, '{"alpha":"x"}'), (2, '{"beta":"y"}'), (3,
 SELECT arraySort(groupArray(id)) FROM t_json_bf      WHERE data.alpha::String = CAST('', 'Enum8('''' = 3)');
 SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = CAST('', 'Enum8('''' = 3)');
 
+-- A tuple comparison carries each element's own type, so a `Nullable` source reaches the same
+-- decision still wrapped. Only `WHERE` is split into per-element comparisons without the analyzer,
+-- so `PREWHERE` is where a tuple reaches index analysis whole.
+SELECT arraySort(groupArray(id)) FROM t_json_bf PREWHERE (data.alpha::String, id) = (CAST('', 'Nullable(Enum8('''' = 3))'), 2) SETTINGS enable_analyzer = 0;
+
 SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = '';
 
 -- A non-empty label differs from the default, so each index stays usable and keeps pruning;
