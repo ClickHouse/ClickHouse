@@ -905,6 +905,14 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     NamesAndTypesList nested_columns;
                     for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
+                        /// A dotted name that is a decoded field itself is read from that field, so it is
+                        /// no sibling of this root and must not shape the type the root is reshaped to.
+                        String lookup = name_and_type.name;
+                        if (case_insensitive)
+                            boost::to_lower(lookup);
+                        if (name_to_index.contains(lookup))
+                            continue;
+
                         if (name_and_type.name.starts_with(nested_table_name + "."))
                         {
                             nested_columns.push_back(name_and_type);
@@ -912,12 +920,11 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         }
                         if (!case_insensitive)
                             continue;
+
                         /// Siblings of one root may each spell it differently. `Nested::collect` groups
-                        /// by the literal root name, so give them all this root's spelling. A name that
-                        /// is a decoded field itself is read from that field, so it is not a sibling.
+                        /// by the literal root name, so give them all this root's spelling.
                         const String root = Nested::extractTableName(name_and_type.name);
-                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested
-                            && !name_to_index.contains(boost::to_lower_copy(name_and_type.name)))
+                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested)
                             nested_columns.emplace_back(
                                 nested_table_name + name_and_type.name.substr(root.size()), name_and_type.type);
                     }
