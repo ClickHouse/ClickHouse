@@ -13,6 +13,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INCORRECT_DATA;
 }
 
@@ -201,6 +203,14 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
+    /// Reject flag bits this version does not know before reading the rest of the payload, so that an
+    /// unknown extension fails closed instead of desynchronizing the stream.
+    if (flags & ~UInt8(31))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "LimitRangeStep: unsupported flags={} in this version", static_cast<size_t>(flags));
+
+    if ((flags & 8) && !(flags & 1))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: ALL requires a start condition");
+
     std::optional<UInt64> limit_value;
     if (flags & 4)
     {
@@ -217,6 +227,19 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         String column_name;
         readStringBinary(column_name, ctx.in);
         auto dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+
+        /// The plan may come from a client (`process_query_plan_packet`), so the condition is checked
+        /// the way the planner checks it for a query: a boolean result column, and no `ARRAY JOIN`, which
+        /// would misalign the condition rows with the rows of the chunk.
+        const auto * output = dag.tryFindInOutputs(column_name);
+        if (!output)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition column {} is not an output of its expression", column_name);
+        if (!output->result_type->canBeUsedInBooleanContext())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "LimitRangeStep: condition column {} must be boolean, got {}", column_name, output->result_type->getName());
+        if (dag.hasArrayJoin())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition expression must not contain ARRAY JOIN");
+
         return std::make_pair(std::move(dag), std::move(column_name));
     };
 
