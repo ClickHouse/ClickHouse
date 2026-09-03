@@ -884,12 +884,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->projections)
         {
-            /// Projections of a full-definition `ATTACH` must pass the same allow-list and sanity checks as
-            /// `CREATE` instead of the metadata-load sanitization (see `is_full_definition_attach` above).
-            const auto projection_mode = is_full_definition_attach ? LoadingStrictnessLevel::CREATE : mode;
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), projection_mode);
+                auto projection = ProjectionDescription::getProjectionFromAST(
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
         }
