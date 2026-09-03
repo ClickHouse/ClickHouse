@@ -6,18 +6,6 @@ title: 'Cluster'
 doc_type: 'reference'
 ---
 
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<ExperimentalBadge/>
-
-<Note>
-This database engine is experimental. Enable it with:
-
-```sql
-SET allow_experimental_database_cluster = 1;
-```
-</Note>
-
 The `Cluster` database engine provides real-time access to the tables of a database on a cluster from the server configuration. It is the named-cluster counterpart of the [`Remote`](/reference/engines/database-engines/remote) database engine, exactly as the [`cluster`](/reference/functions/table-functions/cluster) table function relates to the [`remote`](/reference/functions/table-functions/remote) table function.
 
 The list of tables and their structure are fetched from the cluster on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/reference/engines/table-engines/special/distributed) storage over the named cluster, which forwards `SELECT` and `INSERT` queries to it.

@@ -1,5 +1,3 @@
--- the experimental database engine must be enabled explicitly
-1
 -- database engine
 Cluster
 -- SHOW CREATE DATABASE prints the engine with the cluster name
@@ -47,7 +45,6 @@ s	String
 1
 0
 -- an explicit ATTACH DATABASE is a user query and is validated exactly like CREATE
-1
 1
 1
 0

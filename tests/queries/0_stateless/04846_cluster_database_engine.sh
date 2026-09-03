@@ -18,11 +18,8 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO ${CLICKHOUSE_DATABASE}.t VALUES (1, 'a'), (2, 'b'), (3, 'c');
 "
 
-echo '-- the experimental database engine must be enabled explicitly'
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB} ENGINE = Cluster(test_shard_localhost, '${CLICKHOUSE_DATABASE}')" 2>&1 | grep -c -m1 "SUPPORT_IS_DISABLED"
-
 # The cluster name is usually written as an identifier, like in the `Distributed` table engine.
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "
+${CLICKHOUSE_CLIENT} --query "
     CREATE DATABASE ${CLUSTER_DB} ENGINE = Cluster(test_shard_localhost, '${CLICKHOUSE_DATABASE}')
 "
 
@@ -56,7 +53,7 @@ echo '-- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurs
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLUSTER_DB}.no_such_table" 2>&1 | grep -c -m1 "UNKNOWN_TABLE"
 
 echo '-- the cluster name may come from a macro, like in the Distributed table engine'
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_macro ENGINE = Cluster('{default_cluster_macro}', '${CLICKHOUSE_DATABASE}')"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_macro ENGINE = Cluster('{default_cluster_macro}', '${CLICKHOUSE_DATABASE}')"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_DB}_macro.t"
 echo '-- SHOW CREATE TABLE cannot serialize a cluster name that is expanded on every access'
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_macro.t" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
@@ -66,7 +63,7 @@ echo '-- a multi-shard database reads from every shard and accepts INSERT querie
 # Both shards of `test_cluster_two_shards` point to this server, so a SELECT doubles the rows, and
 # an INSERT (distributed by the implicit rand() sharding key) lands in the same local table,
 # adding exactly one row wherever it goes.
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "
+${CLICKHOUSE_CLIENT} --query "
     CREATE DATABASE ${CLUSTER_DB}_sharded ENGINE = Cluster('test_cluster_two_shards', '${CLICKHOUSE_DATABASE}');
     SELECT count() FROM ${CLUSTER_DB}_sharded.t;
     INSERT INTO ${CLUSTER_DB}_sharded.t VALUES (5, 'e');
@@ -84,18 +81,18 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.m" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
 
 echo '-- an unknown cluster is rejected at CREATE (prints 1 if the expected error is raised)'
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_unknown ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_unknown ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
 
 echo '-- a wrong number of arguments is rejected (prints 1 if the expected error is raised)'
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_bad ENGINE = Cluster('test_shard_localhost')" 2>&1 | grep -c -m1 "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_bad ENGINE = Cluster('test_shard_localhost')" 2>&1 | grep -c -m1 "BAD_ARGUMENTS"
 
 echo '-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)'
 # A lazily-reported cycle would fail every whole-server scan (e.g. `system.tables`) for every user
 # while the database exists, so the chain is rejected when it is being created.
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_loop ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_loop')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_loop ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_loop')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
 
 echo '-- a CREATE that would complete a cycle through a Remote database is rejected (prints 1 if the expected error is raised)'
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_cycle_a ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_cycle_b')"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_cycle_a ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_cycle_b')"
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${CLUSTER_DB}_cycle_a', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
 # The half-open chain (its target database does not exist) must not affect whole-server scans, and
 # it lists no tables.
@@ -104,18 +101,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database =
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_cycle_a"
 
 echo '-- an explicit ATTACH DATABASE is a user query and is validated exactly like CREATE'
-# Only the internal metadata replay of server startup skips the checks, so neither the experimental
-# gate, nor the cluster-name validation, nor the cycle rejection can be bypassed by attaching.
-${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster(test_shard_localhost, '${CLICKHOUSE_DATABASE}')" 2>&1 | grep -c -m1 "SUPPORT_IS_DISABLED"
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster(test_shard_localhost, '${CLUSTER_DB}_attach')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+# Only the internal metadata replay of server startup skips the checks, so neither the
+# cluster-name validation nor the cycle rejection can be bypassed by attaching.
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster(test_shard_localhost, '${CLUSTER_DB}_attach')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${CLUSTER_DB}_attach'"
 
 echo '-- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard'
 # The first shard of `test_unavailable_shard` is this server, the second one points to a port that
 # is never listened on. The metadata comes from an arbitrary available shard (the local one), so the
 # listing works; reading goes to every shard and reports the connection error.
-${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_unavailable ENGINE = Cluster('test_unavailable_shard', '${CLICKHOUSE_DATABASE}')"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_unavailable ENGINE = Cluster('test_unavailable_shard', '${CLICKHOUSE_DATABASE}')"
 ${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${CLUSTER_DB}_unavailable LIKE 't'"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLUSTER_DB}_unavailable.t" 2>&1 | grep -c -m1 -E "NETWORK_ERROR|ALL_CONNECTION_TRIES_FAILED|CONNECTION_REFUSED"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_unavailable"

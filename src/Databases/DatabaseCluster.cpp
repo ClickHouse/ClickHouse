@@ -20,7 +20,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_database_cluster;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
 }
@@ -28,7 +27,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int THERE_IS_NO_QUERY;
     extern const int UNKNOWN_TABLE;
 }
@@ -198,11 +196,6 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         /// starting; every user query, including an explicit `ATTACH DATABASE`, is validated in full.
         const bool is_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
 
-        if (!is_metadata_replay && !args.context->getSettingsRef()[Setting::allow_experimental_database_cluster])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Database engine `Cluster` is experimental. To allow its usage, enable setting `allow_experimental_database_cluster`");
-
         if (!engine->arguments || engine->arguments->children.size() != 2)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires 2 arguments: 'cluster_name', 'database'", engine_name);
@@ -252,10 +245,6 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 The `Cluster` database engine provides real-time access to the tables of a database on a cluster from the server configuration. It is the named-cluster counterpart of the [`Remote`](/engines/database-engines/remote) database engine, exactly as the [`cluster`](/sql-reference/table-functions/cluster) table function relates to the [`remote`](/sql-reference/table-functions/remote) table function.
-
-:::note
-This database engine is experimental. To use it, set `allow_experimental_database_cluster` to 1 in your configuration files or by using the `SET` command.
-:::
 
 The list of tables and their structure are fetched from the cluster on demand, so the database always reflects its current state. Each table is exposed as a [`Distributed`](/engines/table-engines/special/distributed) storage over the named cluster, which forwards `SELECT` and `INSERT` queries to it. Connections use the per-replica settings of the cluster configuration (credentials, secure connections, compression, the inter-server secret), and the cluster definition is re-resolved on every access, so the database follows configuration reloads. When the cluster has several shards, an `INSERT` sends each row to a random shard (the proxy tables carry an implicit `rand()` sharding key, which only distributes the inserted rows and does not act as a shard-pruning key for reading); set `insert_shard_id` to pin the shard for a query.
 )DOCS_MD",

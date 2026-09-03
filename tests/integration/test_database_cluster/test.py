@@ -13,12 +13,6 @@ node2 = cluster.add_instance("node2", main_configs=["configs/clusters.xml"])
 RELOADABLE_CLUSTER_CONFIG_PATH = (
     "/etc/clickhouse-server/config.d/reloadable_cluster.xml"
 )
-CLUSTER_DATABASE_SETTINGS = {"allow_experimental_database_cluster": 1}
-
-
-def create_cluster_database(node, query):
-    node.query(query, settings=CLUSTER_DATABASE_SETTINGS)
-
 
 RELOADABLE_ONE_SHARD = """<clickhouse>
     <remote_servers>
@@ -104,9 +98,7 @@ def test_cluster_database(started_cluster):
         node.query("CREATE TABLE src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
         node.query(f"INSERT INTO src.t VALUES ({value})")
 
-    create_cluster_database(
-        node1, "CREATE DATABASE proxy ENGINE = Cluster('two_shards', 'src')"
-    )
+    node1.query("CREATE DATABASE proxy ENGINE = Cluster('two_shards', 'src')")
 
     assert node1.query("SHOW TABLES FROM proxy") == "t\n"
     assert node1.query("EXISTS TABLE proxy.t") == "1\n"
@@ -144,7 +136,6 @@ def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
                 "local",
                 "--config-file=/etc/clickhouse-server/config.xml",
                 "--path=/var/lib/clickhouse-local-cluster-test",
-                "--allow_experimental_database_cluster=1",
                 "--multiquery",
                 "--query=CREATE DATABASE proxy ENGINE = Cluster('loopback', 'local_src'); SELECT count() FROM proxy.t",
             ]
@@ -164,8 +155,7 @@ def test_replica_fallback(started_cluster):
     node2.query("CREATE TABLE fb_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
     node2.query("INSERT INTO fb_src.t VALUES (1), (2), (3)")
 
-    create_cluster_database(
-        node1,
+    node1.query(
         "CREATE DATABASE fb_proxy ENGINE = Cluster('one_shard_two_replicas', 'fb_src')"
     )
 
@@ -202,16 +192,14 @@ def test_nested_cluster_missing_from_config_uses_remote_replica(started_cluster)
         node.query("CREATE TABLE chain_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
         node.query(f"INSERT INTO chain_src.t VALUES ({value})")
 
-    create_cluster_database(
-        node1, "CREATE DATABASE chain_inner ENGINE = Cluster('reloadable', 'chain_src')"
+    node1.query(
+        "CREATE DATABASE chain_inner ENGINE = Cluster('reloadable', 'chain_src')"
     )
-    create_cluster_database(
-        node2,
-        "CREATE DATABASE chain_inner ENGINE = Cluster('one_shard_two_replicas', 'chain_src')",
+    node2.query(
+        "CREATE DATABASE chain_inner ENGINE = Cluster('one_shard_two_replicas', 'chain_src')"
     )
-    create_cluster_database(
-        node1,
-        "CREATE DATABASE chain_outer ENGINE = Cluster('one_shard_two_replicas', 'chain_inner')",
+    node1.query(
+        "CREATE DATABASE chain_outer ENGINE = Cluster('one_shard_two_replicas', 'chain_inner')"
     )
 
     try:
@@ -244,28 +232,21 @@ def test_nested_local_cycle_uses_remote_replica(started_cluster):
     node2.query("CREATE TABLE cycle_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
     node2.query("INSERT INTO cycle_src.t VALUES (42)")
 
-    create_cluster_database(
-        node1, "CREATE DATABASE cycle_a ENGINE = Cluster('reloadable', 'cycle_b')"
+    node1.query("CREATE DATABASE cycle_a ENGINE = Cluster('reloadable', 'cycle_b')")
+    node1.query(
+        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_a')"
     )
-    create_cluster_database(
-        node1,
-        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_a')",
+    node2.query(
+        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_src')"
     )
-    create_cluster_database(
-        node2,
-        "CREATE DATABASE cycle_inner ENGINE = Cluster('one_shard_two_replicas', 'cycle_src')",
-    )
-    create_cluster_database(
-        node1,
-        "CREATE DATABASE cycle_outer ENGINE = Cluster('one_shard_two_replicas', 'cycle_inner')",
+    node1.query(
+        "CREATE DATABASE cycle_outer ENGINE = Cluster('one_shard_two_replicas', 'cycle_inner')"
     )
 
     try:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_NODE2_ONLY)
         node1.query("SYSTEM RELOAD CONFIG")
-        create_cluster_database(
-            node1, "CREATE DATABASE cycle_b ENGINE = Cluster('reloadable', 'cycle_a')"
-        )
+        node1.query("CREATE DATABASE cycle_b ENGINE = Cluster('reloadable', 'cycle_a')")
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
         node1.query("SYSTEM RELOAD CONFIG")
 
@@ -292,8 +273,7 @@ def test_interserver_secret_cluster(started_cluster):
     node2.query("CREATE TABLE sec_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
     node2.query("INSERT INTO sec_src.t VALUES (5)")
 
-    create_cluster_database(
-        node1,
+    node1.query(
         "CREATE DATABASE sec_proxy ENGINE = Cluster('secret_two_replicas', 'sec_src')"
     )
 
@@ -312,9 +292,7 @@ def test_follows_config_reload(started_cluster):
         node.query("CREATE TABLE rel_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
         node.query(f"INSERT INTO rel_src.t VALUES ({value})")
 
-    create_cluster_database(
-        node1, "CREATE DATABASE rel_proxy ENGINE = Cluster('reloadable', 'rel_src')"
-    )
+    node1.query("CREATE DATABASE rel_proxy ENGINE = Cluster('reloadable', 'rel_src')")
     assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "1\n"
     # A definition created while this cluster has one shard would stop accepting INSERT after a
     # reload adds a shard, whereas the live proxy gains an implicit insert-only `rand()` key.
@@ -343,18 +321,14 @@ def test_cycle_formed_by_config_reload(started_cluster):
     # into a local one after the databases were created. Such a live cycle must not recurse and,
     # crucially, must not fail whole-server scans (`system.tables` and the like) for unrelated
     # queries; only resolution against the cyclic databases themselves reports the cycle.
-    create_cluster_database(
-        node1, "CREATE DATABASE cyc_a ENGINE = Cluster('reloadable', 'cyc_b')"
-    )
+    node1.query("CREATE DATABASE cyc_a ENGINE = Cluster('reloadable', 'cyc_b')")
     try:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_NODE2_ONLY)
         node1.query("SYSTEM RELOAD CONFIG")
 
         # No shard of `reloadable` is local now, so the chain does not pass through this server
         # and completing it is allowed.
-        create_cluster_database(
-            node1, "CREATE DATABASE cyc_b ENGINE = Cluster('reloadable', 'cyc_a')"
-        )
+        node1.query("CREATE DATABASE cyc_b ENGINE = Cluster('reloadable', 'cyc_a')")
 
         # The reload makes the shard local again: the cycle is now live.
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
@@ -370,8 +344,7 @@ def test_cycle_formed_by_config_reload(started_cluster):
 
         # Completing yet another chain into the cycle is rejected eagerly again.
         assert "INFINITE_LOOP" in node1.query_and_get_error(
-            "CREATE DATABASE cyc_c ENGINE = Cluster('reloadable', 'cyc_a')",
-            settings=CLUSTER_DATABASE_SETTINGS,
+            "CREATE DATABASE cyc_c ENGINE = Cluster('reloadable', 'cyc_a')"
         )
 
         node1.query("DROP DATABASE cyc_b")
@@ -397,12 +370,8 @@ def test_cycle_with_healthy_remote_replica_lists_no_tables(started_cluster):
         node1.query("SYSTEM RELOAD CONFIG")
 
         # No shard of `reloadable` is local now, so completing the chain is allowed.
-        create_cluster_database(
-            node1, "CREATE DATABASE leak_a ENGINE = Cluster('reloadable', 'leak_b')"
-        )
-        create_cluster_database(
-            node1, "CREATE DATABASE leak_b ENGINE = Cluster('reloadable', 'leak_a')"
-        )
+        node1.query("CREATE DATABASE leak_a ENGINE = Cluster('reloadable', 'leak_b')")
+        node1.query("CREATE DATABASE leak_b ENGINE = Cluster('reloadable', 'leak_a')")
 
         # The reload turns one replica of the shard local, making the cycle live, while node2
         # stays a healthy remote replica of the same shard that does serve both database names.
@@ -430,21 +399,15 @@ def test_cycle_with_healthy_remote_replica_lists_no_tables(started_cluster):
 
 def test_missing_cluster(started_cluster):
     # A mistyped cluster name fails the CREATE right away.
-    assert "SUPPORT_IS_DISABLED" in node1.query_and_get_error(
-        "CREATE DATABASE disabled_proxy ENGINE = Cluster('no_such_cluster', 'default')"
-    )
     assert "CLUSTER_DOESNT_EXIST" in node1.query_and_get_error(
-        "CREATE DATABASE no_proxy ENGINE = Cluster('no_such_cluster', 'default')",
-        settings=CLUSTER_DATABASE_SETTINGS,
+        "CREATE DATABASE no_proxy ENGINE = Cluster('no_such_cluster', 'default')"
     )
 
     # A database whose cluster has disappeared from the configuration must not prevent the server
     # from starting; its queries report the missing cluster until the configuration brings it back.
     node1.query("CREATE DATABASE m_src")
     node1.query("CREATE TABLE m_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
-    create_cluster_database(
-        node1, "CREATE DATABASE m_proxy ENGINE = Cluster('reloadable', 'm_src')"
-    )
+    node1.query("CREATE DATABASE m_proxy ENGINE = Cluster('reloadable', 'm_src')")
 
     try:
         node1.replace_config(
