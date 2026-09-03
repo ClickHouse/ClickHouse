@@ -2675,7 +2675,19 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION ? Block{} : *updated_header;
+    if (mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION)
+        return Block{};
+
+    /// `execute` is the only place that knows the final set of stages, so it is the only place that
+    /// assigns this. Reaching here before it is a caller ordering bug, and not one to paper over:
+    /// an empty header would make the mutation hardlink every column instead of writing the ones it
+    /// changed. Checked in every build rather than with `chassert`, which is a no-op outside a
+    /// debug build - the callers are background mutate tasks, where an exception fails and retries
+    /// one mutation while a null dereference takes the server down.
+    if (!updated_header)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getUpdatedHeader called before execute. It is a bug");
+
+    return *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
