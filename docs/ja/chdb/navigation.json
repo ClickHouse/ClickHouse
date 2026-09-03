@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめに",
+      "group": "Get started",
       "pages": [
         "ja/chdb/index",
         "ja/chdb/getting-started"
       ]
     },
     {
-      "group": "各言語向けインテグレーション",
+      "group": "Language integrations",
       "pages": [
         "ja/chdb/install/index",
         "ja/chdb/install/python",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "group": "設定",
+      "group": "Configuration",
       "pages": [
         "ja/chdb/configuration/index",
         "ja/chdb/configuration/execution-engine",
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "group": "デバッグ",
+      "group": "Debugging",
       "pages": [
         "ja/chdb/debugging/index",
         "ja/chdb/debugging/explain",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "開発者ガイド",
+      "group": "Developer guides",
       "pages": [
         "ja/chdb/guides/index",
         "ja/chdb/guides/jupysql",
@@ -73,7 +73,7 @@
       ]
     },
     {
-      "group": "技術リファレンス",
+      "group": "Technical reference",
       "pages": [
         "ja/chdb/reference/index",
         "ja/chdb/reference/data-formats",
