@@ -205,7 +205,8 @@ private:
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
             PreformattedMessage & out_disable_reason,
-            bool optimize_skip_merged_partitions = false);
+            bool optimize_skip_merged_partitions = false,
+            ContextPtr query_context = nullptr);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 

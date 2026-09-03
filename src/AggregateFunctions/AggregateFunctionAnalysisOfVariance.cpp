@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -103,9 +103,9 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
     assertBinary(name, arguments);
 
     if (!isNumber(arguments[0]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical argument types", name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} only supports numerical argument types", name);
     if (!WhichDataType(arguments[1]).isNativeUInt())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of aggregate function {} should be a native unsigned integer", name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of aggregate function {} should be a native unsigned integer", name);
 
     return std::make_shared<AggregateFunctionAnalysisOfVariance>(arguments, parameters);
 }
@@ -148,7 +148,7 @@ SELECT analysisOfVariance(number, number % 2) FROM numbers(1048575);
     FunctionDocumentation::Category category_analysisOfVariance = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_analysisOfVariance = {description_analysisOfVariance, syntax_analysisOfVariance, arguments_analysisOfVariance, {}, returned_value_analysisOfVariance, examples_analysisOfVariance, introduced_in_analysisOfVariance, category_analysisOfVariance};
 
-    AggregateFunctionProperties properties = { .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .is_order_dependent = false, .is_float_promoting = true };
     factory.registerFunction("analysisOfVariance", {createAggregateFunctionAnalysisOfVariance, documentation_analysisOfVariance, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     /// This is widely used term

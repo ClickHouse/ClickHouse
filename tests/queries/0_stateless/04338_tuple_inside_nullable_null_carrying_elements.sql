@@ -20,6 +20,8 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_fo
 INSERT INTO t_null_carrying_wide SELECT number % 2 ? NULL : tuple(number::Dynamic, number, toString(number)) FROM numbers(4);
 SELECT tup.a, tup.v, tup.s, isNull(tup.a), isNull(tup.v), isNull(tup.s) FROM t_null_carrying_wide;
 SELECT tup, tup.a, tup.v, tup.s FROM t_null_carrying_wide;
+-- `count` skips the NULL values of a `Variant`, so `count(tup.v)` counts only the rows where the outer
+-- tuple is not NULL, like `count(tup.s)` does. `count` over a `Dynamic` still counts its NULLs.
 SELECT count(tup.a), count(tup.v), count(tup.s) FROM t_null_carrying_wide;
 -- Element subcolumns of Variant and Dynamic are Nullable built from the discriminators; the outer null
 -- map must be combined into their null maps as well.

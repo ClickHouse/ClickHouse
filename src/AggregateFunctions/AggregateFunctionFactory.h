@@ -84,13 +84,26 @@ public:
     ///   - Aggregation: resolve the normal GROUP BY implementation.
     ///   - Window: prefer a window-specific implementation if registered (via `window_creator`),
     ///     falling back to the normal implementation if absent.
+    ///
+    /// `from_declared_state_type` tells the factory that the function is being reconstructed from an already
+    /// declared aggregate-function state type (`AggregateFunction(...)` / `SimpleAggregateFunction(...)`: a column
+    /// type, a `CAST` target, a binary-encoded type, or the nested function of a `-Merge`-like combinator over such
+    /// a state), rather than being resolved for a fresh aggregation over user data. Such a type has already been
+    /// validated when it was declared and its layout is fixed, so resolving it must not depend on the current value
+    /// of query settings - see `allow_lossy_numeric_supertype` in `tryGetVariantAdapter`.
+    ///
+    /// `settings` supplies the settings for a fresh aggregation when the caller has a context but no current query
+    /// context, as during TTL metadata construction or a background merge. It is ignored for declared state types.
     AggregateFunctionPtr
     get(const String & name,
         NullsAction action,
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
+        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation,
+        bool from_declared_state_type = false,
+        bool from_declared_simple_aggregate_function = false,
+        const Settings * settings = nullptr) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -100,6 +113,14 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// `allow_skipping_variant_nulls` controls whether the resolved function is allowed to skip the NULL rows of
+    /// a Variant argument (the AggregateFunctionVariantNull wrapper applied at the leaf of `getImpl`, or a
+    /// creator that implements the skipping itself, like `count`). The `-Distinct` combinator resolves its
+    /// nested function with it unset: the combinator replays its stored distinct-key history into the nested
+    /// function on merge and finalization, so the nested function's treatment of the NULL rows is part of the
+    /// meaning of an already written `...Distinct` state and must not depend on the current value of the
+    /// `aggregate_functions_skip_variant_nulls` setting. The NULL rows of newly aggregated data are skipped
+    /// before they enter the history instead (see the combinator branch of `getImpl`).
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
@@ -107,7 +128,63 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool apply_variant_adapter_to_nested,
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
+
+    /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
+    /// Variant fallback. `types_without_low_cardinality` must already have LowCardinality removed.
+    ///
+    /// `apply_variant_adapter_to_nested` controls what happens when a combinator reintroduces a Variant
+    /// argument in its nested types (most importantly `-Merge`, whose nested argument types come from a stored
+    /// `AggregateFunction(f, Variant(...))` state type): if set, the nested function is resolved through the
+    /// Variant adapter so such states round-trip; if not, the Variant is passed to the nested function as-is
+    /// (which keeps the adapter as the outermost wrapper on the forward path, where it is applied by `get`).
+    AggregateFunctionPtr getWithoutVariantAdapter(
+        const String & name,
+        NullsAction action,
+        const DataTypes & types_without_low_cardinality,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant,
+        bool apply_variant_adapter_to_nested,
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
+
+    /// Try to wrap the function in AggregateFunctionVariantAdapter so it can be applied to Variant arguments by
+    /// aggregating over the least common supertype of the variants. Returns nullptr if that is not possible.
+    AggregateFunctionPtr tryGetVariantAdapter(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant,
+        bool from_declared_state_type,
+        const Settings * settings) const;
+
+    /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the top-level argument list, if the function
+    /// has such a combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the
+    /// lossy Float64 fallback (see `tryGetVariantAdapter` and `AggregateFunctionProperties::is_float_promoting`). The
+    /// key is the last argument of the `-ArgMin` / `-ArgMax` call itself, which is not necessarily the last top-level
+    /// argument: an outer combinator may append its own trailing argument (e.g. `-If`, `-Resample`), so the position is
+    /// computed by replaying the wrapping combinators' argument transforms on `argument_types`.
+    std::optional<size_t> getArgMinArgMaxKeyArgument(const String & name, const DataTypes & argument_types) const;
+
+    /// Resolve the function over `types_without_low_cardinality` without the Variant adapter, returning nullptr
+    /// if the creator rejects them with an "unsupported argument type" error (any other error propagates). This
+    /// encapsulates the "does the function accept these argument types" probe, so callers can branch on native
+    /// acceptance without a raw try/catch. `types_without_low_cardinality` must already have LowCardinality removed.
+    AggregateFunctionPtr tryResolveNatively(
+        const String & name,
+        NullsAction action,
+        const DataTypes & types_without_low_cardinality,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant,
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;

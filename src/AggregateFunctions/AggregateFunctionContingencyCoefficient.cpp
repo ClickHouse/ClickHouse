@@ -109,6 +109,7 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
         },
         documentation,
@@ -117,6 +118,7 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyWindowData>>(argument_types);
         }
     });

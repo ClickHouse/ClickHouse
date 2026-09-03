@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
+            {"aggregate_functions_skip_variant_nulls", false, true, "From 26.9, the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) skip the rows where the `Variant` holds a NULL value, like they skip the NULL values of a `Nullable` argument. The `-SimpleState` combinator and declared `SimpleAggregateFunction(..., Variant(...))` columns are excluded and retain the previous behavior, where those rows were aggregated as ordinary values. Set this to `false` (or `SET compatibility = '26.8'`) to restore that previous behavior for other aggregate functions."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},

@@ -61,11 +61,11 @@ struct SummingSortedAlgorithm::AggregateDescription
 
     String sum_function_map_name;
 
-    void init(const char * function_name, const DataTypes & argument_types)
+    void init(const char * function_name, const DataTypes & argument_types, const Settings * settings)
     {
         AggregateFunctionProperties properties;
         auto action = NullsAction::EMPTY;
-        init(AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties));
+        init(AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties, AggregateFunctionStateVariant::Aggregation, false, false, settings));
     }
 
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
@@ -258,7 +258,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns,
-    bool allow_tuple_element_aggregation)
+    bool allow_tuple_element_aggregation,
+    const Settings * settings)
 {
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
@@ -340,7 +341,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    desc.init(sum_function_name.c_str(), {column.type}, settings);
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -463,7 +464,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    desc.init(sum_function_name.c_str(), {column.type}, settings);
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -548,7 +549,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (map_desc.key_col_nums.size() == 1)
         {
             // Create summation for all value columns in the map
-            desc.init(desc.sum_function_map_name.c_str(), argument_types);
+            desc.init(desc.sum_function_map_name.c_str(), argument_types, settings);
             def.columns_to_aggregate.emplace_back(std::move(desc));
         }
         else
@@ -962,10 +963,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns,
-    bool allow_tuple_element_aggregation_)
+    bool allow_tuple_element_aggregation_,
+    const Settings * settings)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns, allow_tuple_element_aggregation_, settings))
     , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
     columns_definition.origin_header = header_;

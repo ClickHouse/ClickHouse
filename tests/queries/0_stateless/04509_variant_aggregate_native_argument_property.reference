@@ -1,0 +1,19 @@
+any	Variant(Float64, UInt8)
+anyLast	Variant(Float64, UInt8)
+groupArray	Array(Variant(Float64, UInt8))
+groupUniqArray	Array(Variant(Float64, UInt8))
+topK	Array(Variant(Float64, UInt8))
+argMin arg keeps Variant	Variant(Float64, UInt8)
+argMax arg keeps Variant	Variant(Float64, UInt8)
+count	3
+uniq	3
+uniqExact	3
+uniqCombined	3
+sum adapted	Nullable(Float64)
+anyIf native	Variant(Float64, UInt8)
+sumIf adapted	Nullable(Float64)
+groupFormat keeps Variant schema	1
+groupFormatMerge keeps Variant schema	1
+estimateCompressionRatio keeps Variant	AggregateFunction(estimateCompressionRatio, Variant(Float64, UInt8))
+estimateCompressionRatio no-supertype Variant	1
+estimateCompressionRatio sees Variant NULLs	1

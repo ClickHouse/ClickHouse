@@ -1,0 +1,53 @@
+sum	7.5	Nullable(Float64)
+avg	1.25	Nullable(Float64)
+sumKahan	7.5
+sumIf	3
+sumState/Merge	7.5
+groupBy	0	4.5
+groupBy	1	3
+uint	3006	Nullable(UInt64)
+uint min/max	0	1002	Nullable(UInt32)
+i32f64 min/max	-3	7	Nullable(Float64)
+all null	\N	\N
+empty	\N
+native	3	Variant(String, UInt64)	3
+sumTuple	(6,10)
+merge empty	\N	\N
+merge types	Nullable(Float64)	Nullable(Float64)
+merge minmax	\N	\N	Nullable(UInt32)
+merge uint	Nullable(UInt64)
+cast to variant	6.5
+cast from variant	6.5
+unify	13
+argMax	b	Variant(String, UInt64)
+argMin	a	Variant(String, UInt64)
+argMax type	Variant(UInt64, UInt8)
+rankCorr	1
+analysisOfVariance	1
+varSampStable	1
+varPopStable	1
+stddevSampStable	1
+stddevPopStable	1
+covarSampStable	1
+covarPopStable	1
+corrStable	1
+covarSampMatrix	1
+covarPopMatrix	1
+corrMatrix	1
+studentTTest	1
+welchTTest	1
+studentTTestOneSample	1
+meanZTest	1
+analysisOfVariance	1
+rankCorr	1
+mannWhitneyUTest	1
+kolmogorovSmirnovTest	1
+simpleLinearRegression	1
+exponentialMovingAverage	1
+boundingRatio	1
+largestTriangleThreeBuckets	1
+sumCount	1
+stochasticLinearRegression	1
+stochasticLogisticRegression	1
+studentTTestIf	1
+varPopStableState	1

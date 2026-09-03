@@ -1,0 +1,18 @@
+count	3
+count all rows	5
+count is not null	3
+countIf	2
+countIf all false	0
+countDistinct	3
+count over Nullable	3
+countState	3
+countState type	AggregateFunction(count, Variant(Float64, Int64))
+countState merges with count()	8
+grouped	0	2
+grouped	2	1
+single alternative	5
+constant NULL	0
+constant value	5
+empty	0
+no supertype	2
+countArray	1

@@ -6,7 +6,7 @@
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -85,7 +85,7 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionTTest<StudentTTestData>>(argument_types, parameters);
 }
@@ -137,7 +137,7 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
     FunctionDocumentation::Category category_studentTTest = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_studentTTest = {description_studentTTest, syntax_studentTTest, arguments_studentTTest, parameters_studentTTest, returned_value_studentTTest, examples_studentTTest, introduced_in_studentTTest, category_studentTTest};
 
-    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, documentation_studentTTest});
+    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, documentation_studentTTest, {.is_float_promoting = true}});
 }
 
 }

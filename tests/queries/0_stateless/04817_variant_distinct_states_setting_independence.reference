@@ -1,0 +1,6 @@
+skip	2	['a',1]
+keep	3	['a',1,NULL]
+read with 1	written with 0	3	['a',1,NULL]
+read with 1	written with 1	2	['a',1]
+read with 0	written with 0	3	['a',1,NULL]
+read with 0	written with 1	2	['a',1]

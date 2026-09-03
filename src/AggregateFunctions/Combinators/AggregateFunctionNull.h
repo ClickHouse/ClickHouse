@@ -302,6 +302,22 @@ public:
         return nested_function->getDefaultVersion();
     }
 
+    /// Forward the ML prediction hooks (used by evalMLMethod via ColumnAggregateFunction::predictValues), so that
+    /// a model trained over Nullable arguments -- this wrapper is the function stored in the resulting state's
+    /// AggregateFunction(...) type -- can still be used to predict.
+    DataTypePtr getReturnTypeToPredict() const override { return nested_function->getReturnTypeToPredict(); }
+
+    void predictValues(
+        ConstAggregateDataPtr __restrict place,
+        IColumn & to,
+        const ColumnsWithTypeAndName & arguments,
+        size_t offset,
+        size_t limit,
+        ContextPtr context) const override
+    {
+        nested_function->predictValues(nestedPlace(place), to, arguments, offset, limit, context);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
 #if USE_EMBEDDED_COMPILER

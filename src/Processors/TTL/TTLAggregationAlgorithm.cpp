@@ -9,12 +9,14 @@
 
 #include <Core/Settings.h>
 
+#include <ranges>
 #include <unordered_set>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
@@ -48,7 +50,9 @@ std::pair<AggregateDescription, TTLAggregateDescription> prepareAnyAggregate(con
     aggregate.column_name = column.name;
     aggregate.argument_names = {column.name};
     AggregateFunctionProperties properties;
-    aggregate.function = AggregateFunctionFactory::instance().get("any", NullsAction::EMPTY, {column.type}, {}, properties);
+    aggregate.function = AggregateFunctionFactory::instance().get(
+        "any", NullsAction::EMPTY, {column.type}, {}, properties,
+        AggregateFunctionStateVariant::Aggregation, false, false, &context->getSettingsRef());
 
     TTLAggregateDescription set_part;
     set_part.column_name = column.name;
@@ -74,6 +78,53 @@ TTLDescription addImplicitlyAggregatedColumns(TTLDescription description, const 
     return description;
 }
 
+bool containsVariant(const IDataType & type)
+{
+    if (isVariant(type))
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child) { found = found || isVariant(child); });
+    return found;
+}
+
+/// The explicit `GROUP BY ... SET` aggregates are cached in the table metadata with the settings that were
+/// active when the metadata was built (`CREATE`/`ATTACH`), but the settings that define how new values are
+/// aggregated belong to the merge that executes them: `aggregate_functions_skip_variant_nulls` must be takeable
+/// from the merge context (which `OPTIMIZE` fills from the query settings), not frozen at `CREATE` time.
+/// Re-resolving by name is safe here: the Variant NULL-skipping wrapper changes neither the result type nor the
+/// state representation, so the cached post-aggregation expressions still apply. Only aggregates over a Variant
+/// argument are re-resolved -- for any other type the settings cannot affect the resolution.
+TTLDescription rebuildAggregatesForCurrentSettings(TTLDescription description, const ContextPtr & context)
+{
+    std::unique_ptr<Settings> settings;
+
+    for (auto & aggregate : description.aggregate_descriptions)
+    {
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+        if (std::ranges::none_of(argument_types, [](const auto & type) { return containsVariant(*type); }))
+            continue;
+
+        if (!settings)
+        {
+            settings = std::make_unique<Settings>(context->getSettingsRef());
+            /// The aggregate was validated when the TTL expression was declared, like a declared
+            /// AggregateFunction(...) state type: the *inference* of the aggregation type from the Variant
+            /// argument must reproduce the declared resolution instead of failing under the settings of the
+            /// current merge, so the lossy numeric promotion stays allowed (it is only reached when the
+            /// declaration used it -- a lossless supertype always takes precedence).
+            (*settings)[Setting::allow_lossy_numeric_supertype] = true;
+        }
+
+        AggregateFunctionProperties properties;
+        aggregate.function = AggregateFunctionFactory::instance().get(
+            aggregate.function->getName(), NullsAction::EMPTY, argument_types, aggregate.parameters, properties,
+            AggregateFunctionStateVariant::Aggregation, false, false, settings.get());
+    }
+
+    return description;
+}
+
 }
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
@@ -83,8 +134,11 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     time_t current_time_,
     bool force_,
     const Block & header_,
-    const MergeTreeData & storage_)
-    : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
+    const ContextPtr & context)
+    : ITTLAlgorithm(
+        ttl_expressions_,
+        addImplicitlyAggregatedColumns(rebuildAggregatesForCurrentSettings(description_, context), header_, context),
+        old_ttl_info_, current_time_, force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -95,7 +149,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     AggregateDescriptions aggregates = description.aggregate_descriptions;
 
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
-    const Settings & settings = storage_.getContext()->getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
     Aggregator::Params params(
         keys,
@@ -108,7 +162,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
-        storage_.getContext()->getTempDataOnDisk(),
+        context->getTempDataOnDisk(),
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],

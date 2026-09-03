@@ -301,7 +301,12 @@ AggregateFunctionPtr createAggregateFunctionGroupFormat(
 void registerAggregateFunctionGroupFormat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupFormat(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    /// groupFormat accepts an argument of any type and formats it using the original argument types it captures
+    /// at creation. It therefore resolves a Variant argument natively and must not be rerouted through
+    /// AggregateFunctionVariantAdapter, which would collapse the argument to Nullable(supertype) and change the
+    /// schema exposed by type-carrying formats (e.g. JSONCompactEachRowWithNamesAndTypes).
+    AggregateFunctionProperties properties
+        = {.returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true};
 
     FunctionDocumentation::Description description = R"(
 Formats the rows in each group using the specified output format and returns the result as a string.

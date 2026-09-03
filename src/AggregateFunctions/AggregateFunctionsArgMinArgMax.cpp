@@ -447,7 +447,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true};
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.

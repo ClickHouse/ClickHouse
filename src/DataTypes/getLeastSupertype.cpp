@@ -956,8 +956,6 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
-namespace
-{
 /// Opt-in lossy fallback used when there is no lossless common type for a set of
 /// numeric branches (e.g. Decimal + Float64, or Int64 + Float64). It promotes to
 /// Float64, matching binary arithmetic promotion, so the result can be aggregated
@@ -1003,7 +1001,6 @@ DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
     if (all_low_cardinality)
         result = std::make_shared<DataTypeLowCardinality>(result);
     return result;
-}
 }
 
 DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)

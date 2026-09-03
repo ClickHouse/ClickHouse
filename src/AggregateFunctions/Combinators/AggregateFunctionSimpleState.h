@@ -21,7 +21,7 @@ private:
 public:
     AggregateFunctionSimpleState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionSimpleState>(arguments_, params_, createResultType(nested_, params_))
-        , nested_func(nested_)
+        , nested_func(createNestedFunction(nested_, arguments_))
     {
     }
 
@@ -36,7 +36,9 @@ public:
         // Need to make a new function with promoted argument types because SimpleAggregates requires arg_type = return_type.
         AggregateFunctionProperties properties;
         auto function = AggregateFunctionFactory::instance().get(
-            nested_->getName(), NullsAction::EMPTY, {storage_type_out}, nested_->getParameters(), properties);
+            nested_->getName(), NullsAction::EMPTY, {storage_type_out}, nested_->getParameters(), properties,
+            AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true,
+            /*from_declared_simple_aggregate_function=*/ true);
 
         // Need to make a clone because it'll be customized.
         auto storage_type_arg = DataTypeFactory::instance().get(nested_->getResultType()->getName());
@@ -44,6 +46,18 @@ public:
             = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_->getResultType()}, params_);
         storage_type_arg->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
         return storage_type_arg;
+    }
+
+    static AggregateFunctionPtr createNestedFunction(const AggregateFunctionPtr & nested_, const DataTypes & arguments_)
+    {
+        /// A `SimpleAggregateFunction` stores raw values and merges them by applying its nested function again.
+        /// Resolve the producer with the same historical Variant NULL behavior as the declared storage type, so a
+        /// `...SimpleState` value does not skip a NULL that a later merge would preserve.
+        AggregateFunctionProperties properties;
+        return AggregateFunctionFactory::instance().get(
+            nested_->getName(), NullsAction::EMPTY, arguments_, nested_->getParameters(), properties,
+            AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true,
+            /*from_declared_simple_aggregate_function=*/ true);
     }
 
     bool isVersioned() const override

@@ -4,7 +4,7 @@ SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;
 SET max_threads = 1;
 SET remote_read_min_bytes_for_seek = 100000;
--- Will affect INSERT, but not merge
+-- Affects the INSERT, and — since the query settings are preserved for `OPTIMIZE` merges — the merge below too.
 SET s3_check_objects_after_upload=1;
 
 DROP TABLE IF EXISTS t_compact_bytes_s3;

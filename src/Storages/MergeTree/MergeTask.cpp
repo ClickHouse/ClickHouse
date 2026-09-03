@@ -2778,7 +2778,8 @@ public:
         bool blocks_are_granules_size_,
         SortingQueueStrategy sorting_queue_strategy_,
         bool cleanup_,
-        time_t time_of_merge_)
+        time_t time_of_merge_,
+        const Settings & settings_)
         : ITransformingStep(input_header_, input_header_, getTraits())
         , sort_description(sort_description_)
         , partition_and_sorting_required_columns(partition_and_sorting_required_columns_)
@@ -2792,6 +2793,7 @@ public:
         , sorting_queue_strategy(sorting_queue_strategy_)
         , cleanup(cleanup_)
         , time_of_merge(time_of_merge_)
+        , settings(settings_)
     {}
 
     String getName() const override { return "MergeParts"; }
@@ -2856,7 +2858,7 @@ public:
 
             case MergeTreeData::MergingParams::Coalescing:
                 merged_transform = std::make_shared<CoalescingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation, settings);
                 break;
 
             case MergeTreeData::MergingParams::Graphite:
@@ -2901,7 +2903,8 @@ public:
             blocks_are_granules_size,
             sorting_queue_strategy,
             cleanup,
-            time_of_merge
+            time_of_merge,
+            settings
         );
     }
 
@@ -2938,6 +2941,7 @@ private:
     const SortingQueueStrategy sorting_queue_strategy;
     const bool cleanup{false};
     const time_t time_of_merge{0};
+    const Settings settings;
 };
 
 /// Evaluates TTL delete expressions and adds a UInt8 filter column to the block.
@@ -3477,7 +3481,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             is_vertical_merge,
             sorting_queue_strategy,
             cleanup,
-            global_ctx->time_of_merge);
+            global_ctx->time_of_merge,
+            global_ctx->context->getSettingsRef());
 
         merge_step->setStepDescription("Merge sorted parts");
         merge_parts_query_plan.addStep(std::move(merge_step));

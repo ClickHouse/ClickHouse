@@ -341,7 +341,11 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
-    AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+    /// This is a declared state type (a column type, a CAST target, ...), so its resolution must not depend on the
+    /// current query settings - see `from_declared_state_type` in AggregateFunctionFactory.
+    AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(
+        function_name, action, argument_types, params_row, properties,
+        AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 

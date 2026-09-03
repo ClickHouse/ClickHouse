@@ -976,6 +976,68 @@ struct AggregateFunctionProperties
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    /** The function accepts a `Variant` argument natively, i.e. its creator resolves the function over a
+      * `Variant` argument type without the help of `AggregateFunctionVariantAdapter` (`count`, `any`, `uniq`,
+      * `groupArray`, and the returned "arg" of `argMin` / `argMax`, ...). This is a resolution-time property:
+      * the function may still reject the `Variant` later during execution, exactly as it did before.
+      *
+      * When this is false, `AggregateFunctionFactory::get()` sends a `Variant` argument straight to the
+      * adapter (which aggregates over the least common supertype of the variants) instead of first attempting
+      * native resolution and catching its failure. See `AggregateFunctionVariantAdapter`.
+      *
+      * Accepting the `Variant` natively does not exempt the function from the standard NULL-skipping contract:
+      * the factory wraps the natively-resolved function in `AggregateFunctionVariantNull`, which skips the rows
+      * where a `Variant` argument is NULL, like the `Null` combinator does for `Nullable` arguments (see
+      * `skips_variant_nulls` below for the functions that implement the contract themselves).
+      */
+    bool support_variant_argument = false;
+
+    /** The function's native implementation itself skips the NULL values of a `Variant` argument, i.e. it
+      * implements the standard NULL-skipping contract on its own, so `AggregateFunctionFactory::getImpl` must
+      * not wrap it in `AggregateFunctionVariantNull`. `count` is such a function: its creator returns a
+      * dedicated implementation for a `Variant` argument that counts only the not-NULL values (and keeps the
+      * plain `count` state representation).
+      */
+    bool skips_variant_nulls = false;
+
+    /** The function's result is a floating-point value computed by arithmetic or statistics over its numeric
+      * arguments, so it reads every numeric input as `Float64`: `sum` / `avg` accumulate arithmetically, the
+      * variance / covariance / correlation / higher-moment families return `Float64` moments, and the statistical
+      * tests, the regression / (value, time) and the machine-learning aggregates read their inputs via `getFloat64`.
+      *
+      * For such a function, casting a numeric-mix `Variant` argument that has no lossless common supertype to
+      * `Float64` is exactly what the function already does internally, so `AggregateFunctionVariantAdapter` is
+      * allowed to fall back to `Float64` for it when the user has opted into the lossy numeric supertype with the
+      * `allow_lossy_numeric_supertype` setting. Exact / order-based aggregates (`min` / `max` / `argMin` / `argMax`
+      * / `any` / `quantileExact` / `uniqExact` / `sumWithOverflow` / ...) must leave this false: a lossy `Float64`
+      * cast would silently return wrong results for them (two distinct integers above 2^53 collapse to the same
+      * `Float64`), so they keep reporting the original error when there is no lossless common supertype. The
+      * capability cannot be reliably derived from the return type -- e.g. `entropy` also returns `Float64` but keys
+      * on the exact input values, so it must stay off this list. See
+      * `AggregateFunctionFactory::tryGetVariantAdapter`.
+      */
+    bool is_float_promoting = false;
+
+    /** The function's result contract depends on which of its input values are distinct from each other:
+      * `singleValueOrNull` returns the value only when there is exactly one distinct non-NULL value (it also
+      * implements the `x = ALL (SELECT ...)` rewrite, see ExpressionListParsers.cpp). Two `Variant` values with
+      * different alternative types are distinct even when the underlying values compare equal after a cast to the
+      * common supertype (`1::UInt8` vs `1::UInt64` hash and compare as different `Variant` values, so
+      * `uniq` counts 2), and casting through `Nullable(supertype)` in `AggregateFunctionVariantAdapter` would
+      * silently collapse them and change the result (`singleValueOrNull` would return `1` where its contract
+      * requires `NULL`). Such a function is never routed through the adapter: a `Variant` argument reports the
+      * function's original error, unchanged from before the adapter existed. The `-Distinct` combinator makes any
+      * combined function distinctness-sensitive in the same way (`sumDistinct` must deduplicate the genuine
+      * `Variant` values, not their casts to the supertype), so `AggregateFunctionFactory::tryGetProperties` also
+      * propagates this flag from the stripped combinator suffixes
+      * (`IAggregateFunctionCombinator::isDistinctnessSensitive`). The Variant-native aggregates that
+      * key on distinctness (`uniq`, `uniqExact`, `topK`, `groupUniqArray`, ...) are unaffected: they declare
+      * `support_variant_argument` and hash the genuine `Variant` values of the not-NULL rows, discriminator
+      * included (the NULL rows are skipped by `AggregateFunctionVariantNull`, as they are for `Nullable`
+      * arguments).
+      */
+    bool is_distinctness_sensitive = false;
 };
 
 

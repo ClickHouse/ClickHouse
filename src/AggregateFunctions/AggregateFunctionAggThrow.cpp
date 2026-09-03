@@ -146,7 +146,7 @@ Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception succe
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
 
         return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
-    }, documentation_aggThrow});
+    }, documentation_aggThrow, {.support_variant_argument = true}});
 }
 
 }
