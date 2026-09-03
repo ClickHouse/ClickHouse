@@ -1277,12 +1277,22 @@ def test_priority_scheduling_io():
     for thread in threads:
         thread.start()
 
-    time.sleep(10) # let the priority scheduler arbitrate IO under the inflight limit
+    # Run under the inflight limit until enough reads have completed for a stable comparison, with a
+    # cap so a slow CI runner still terminates. Counting completions (rather than a fixed window)
+    # keeps the strict-priority signal out of the noise.
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        with counts_lock:
+            if counts["high"] + counts["low"] >= 20:
+                break
+        time.sleep(0.2)
+
     stop_event.set()
     for thread in threads:
         thread.join()
 
     # Under strict priority the higher-priority reads win the IO resource, so they complete more
     # often (guard on a minimum total so a slow CI runner is not asserted against).
-    if counts["high"] + counts["low"] > 4:
+    total = counts["high"] + counts["low"]
+    if total > 12:
         assert counts["high"] > counts["low"], f"IO priority did not favor higher priority: high={counts['high']} low={counts['low']}"

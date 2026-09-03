@@ -366,7 +366,7 @@ def test_priority_scheduling():
         while not stop_event.is_set():
             try:
                 node.query(
-                    f"select count(*) from numbers_mt(10000000) settings workload='all', priority={priority}, max_threads=2"
+                    f"select count(*) from numbers_mt(100000000) settings workload='all', priority={priority}, max_threads=2"
                 )
                 with counts_lock:
                     counts[label] += 1
@@ -384,13 +384,24 @@ def test_priority_scheduling():
     time.sleep(1) # ensure the competing queries are queued behind the busy period
     busy.release()
 
-    time.sleep(5) # let the priority scheduler serve queries under contention
+    # Run under contention until enough queries have completed for a stable comparison, with a cap
+    # so a slow CI runner still terminates. Counting completions (rather than a fixed time window)
+    # keeps the strict-priority signal out of the noise; the larger `numbers_mt` above keeps the CPU
+    # contended so higher-priority queries clearly win instead of both sets cycling freely.
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        with counts_lock:
+            if counts["high"] + counts["low"] >= 30:
+                break
+        time.sleep(0.2)
+
     stop_event.set()
     for thread in threads:
         thread.join()
 
-    # Under strict priority the higher-priority queries win the CPU first, so they complete more
-    # often than the lower-priority ones (guard on a minimum total so a slow CI runner is not
-    # asserted against).
-    if counts["high"] + counts["low"] > 8:
+    # Under strict priority the higher-priority queries win the CPU under contention, so they
+    # complete more often than the lower-priority ones (guard on a minimum total so a slow CI
+    # runner is not asserted against).
+    total = counts["high"] + counts["low"]
+    if total > 20:
         assert counts["high"] > counts["low"], f"priority did not favor higher priority: high={counts['high']} low={counts['low']}"
