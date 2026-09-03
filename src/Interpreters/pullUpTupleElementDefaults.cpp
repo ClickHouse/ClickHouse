@@ -153,15 +153,16 @@ void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
         pair.children.push_back(pair.type);
 }
 
-/// A type that already admits NULL and must not be wrapped again: `Nullable(...)` or
-/// `LowCardinality(Nullable(...))`.
+/// A type that already admits NULL and must not be wrapped again: `Nullable(...)`,
+/// `LowCardinality(Nullable(...))`, or a type that carries NULL as one of its own values and cannot
+/// be placed inside `Nullable` at all - `Variant(...)` and `Dynamic`.
 bool typeIsAlreadyNullable(const ASTPtr & type)
 {
     const auto * data_type = type->as<ASTDataType>();
     if (!data_type)
         return false;
 
-    if (data_type->name == "Nullable")
+    if (data_type->name == "Nullable" || data_type->name == "Variant" || data_type->name == "Dynamic")
         return true;
 
     if (data_type->name == "LowCardinality")
