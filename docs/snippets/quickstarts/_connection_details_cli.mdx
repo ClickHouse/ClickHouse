@@ -10,7 +10,7 @@ curl https://clickhouse.com/cli | sh
 
 You also need `jq`.
 
-The `reset-password` step below is a write operation, which requires [API key authentication](/products/cloud/features/admin-features/api/openapi); OAuth login is read-only:
+The write steps below require [API key authentication](/products/cloud/features/admin-features/api/openapi): `cloud service start` (only if your service is `stopped`) and `reset-password`. OAuth login is read-only and covers only the read steps (`service list`, `service get`):
 
 ```bash
 clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
@@ -97,7 +97,7 @@ CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r
 ```
 
 <Warning>
-`reset-password` invalidates the previous password for the `default` user immediately - any client still configured with the old password stops authenticating. Like the original, the new password is returned only once, so store it somewhere safe.
+`reset-password` invalidates the previous password for the `default` user immediately - any client still configured with the old password stops authenticating. If the service is part of a [warehouse](/products/cloud/features/infrastructure/warehouses), database users are shared across all services in that warehouse, so the reset rotates the password for every sibling service too. Like the original, the new password is returned only once, so store it somewhere safe.
 </Warning>
 
 ## Save your connection details for reuse {#save-your-connection-details-for-reuse}
