@@ -19,6 +19,8 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         /// Purely local: it identifies an incarnation counted by this server's own
         /// `TrustedTableUuid`, so it is deliberately not put on the wire.
         .trusted_uuid_incarnation = 42,
+        /// Purely local for the same reason: the receiving server reads the pinned file itself.
+        .metadata_content_token = 1234567890,
     },
     Iceberg::TableStateSnapshot{
         .metadata_file_path = "",
@@ -26,6 +28,7 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .schema_id = std::numeric_limits<Int32>::max(),
         .snapshot_id = std::nullopt,
         .trusted_uuid_incarnation = std::nullopt,
+        .metadata_content_token = std::nullopt,
     },
 };
 }

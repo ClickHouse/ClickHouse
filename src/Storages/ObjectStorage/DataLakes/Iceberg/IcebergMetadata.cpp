@@ -763,6 +763,7 @@ IcebergMetadata::getState(
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
+    table_state_snapshot.metadata_content_token = computeMetadataContentToken(metadata_object);
     return {data_snapshot, table_state_snapshot};
 }
 
@@ -1086,6 +1087,13 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     /// settles which table this snapshot really describes.
     persistent_components.checkMetadataBelongsToValidatedTable(
         metadata_object, table_state_snapshot.trusted_uuid_incarnation, "the query");
+
+    /// A format-version 1 table may carry no `table-uuid`, and then the check above has nothing to
+    /// compare. The pinned file's own content is what settles it for such a table: metadata files
+    /// are immutable, so this path answering with different content means another table took it
+    /// over between the analysis and this reopen.
+    persistent_components.checkMetadataMatchesPinnedState(
+        metadata_object, table_state_snapshot.metadata_content_token, "the query");
 
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
@@ -1792,6 +1800,8 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
     /// came back before its `schema_id` and `sort_order_id` are read as this table's.
     persistent_components.checkMetadataBelongsToValidatedTable(
         metadata_object, actual_table_state_snapshot.trusted_uuid_incarnation, "the query");
+    persistent_components.checkMetadataMatchesPinnedState(
+        metadata_object, actual_table_state_snapshot.metadata_content_token, "the query");
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(

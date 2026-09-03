@@ -81,6 +81,20 @@ struct PersistentTableComponents
         std::optional<UInt64> validated_incarnation,
         std::string_view operation) const;
 
+    /// Refuse to continue when the metadata file a statement pinned no longer carries the content
+    /// it carried when the statement was analysed.
+    ///
+    /// An Iceberg metadata file is immutable: a commit writes a new one, it never rewrites an
+    /// existing one. So the same path answering with different content is not a table that moved
+    /// on, it is a different table that took the path over. This is the only replacement token a
+    /// format-version 1 table that omits `table-uuid` has, and unlike the UUID check it needs no
+    /// listing, so the pinned reopens on the read path can afford it.
+    ///
+    /// A statement carrying no pinned token, such as one deserialized on another server, has
+    /// nothing to compare.
+    void checkMetadataMatchesPinnedState(
+        const Poco::JSON::Object::Ptr & metadata_object, std::optional<UInt64> pinned_token, std::string_view operation) const;
+
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).
     void invalidateMetadataCache() const
@@ -92,6 +106,10 @@ struct PersistentTableComponents
             metadata_cache->remove(*table_uuid);
     }
 };
+
+/// A fingerprint of the identifying, top-level content of a metadata file, taken when a statement
+/// pins the file and compared when the statement reopens it. See `checkMetadataMatchesPinnedState`.
+UInt64 computeMetadataContentToken(const Poco::JSON::Object::Ptr & metadata_object);
 
 }
 
