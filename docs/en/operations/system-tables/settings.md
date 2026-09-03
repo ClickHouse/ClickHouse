@@ -30,6 +30,7 @@ Columns:
   - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .
   - `'Beta'` — The feature is stable and safe. The outcome of using it together with other features is unknown and correctness is not guaranteed. Testing and reports are welcome.
   - `'Experimental'` — The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
+  - `'PrivatePreview'` — The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
   - `'Obsolete'` — No longer supported. Either it is already removed or it will be removed in future releases.
 
 **Example**

@@ -580,7 +580,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 bool SettingsConstraints::isAnyTierRestricted() const
 {
     return access_control
-        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowBetaTierSettings());
+        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowPrivatePreviewTierSettings()
+            || !access_control->getAllowBetaTierSettings());
 }
 
 /// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
@@ -602,6 +603,8 @@ std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(
 
     if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
         return refuse("EXPERIMENTAL");
+    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control->getAllowPrivatePreviewTierSettings())
+        return refuse("PRIVATE PREVIEW");
     if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
         return refuse("BETA");
     return {};

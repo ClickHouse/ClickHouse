@@ -1,9 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Core/BaseSettings.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace
 {
@@ -140,4 +146,37 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     EXPECT_NO_THROW(setting = String(", "));
     ASSERT_TRUE(setting.changed);
     ASSERT_EQ(std::vector<MySQLDataTypesSupport>{}, setting.value);
+}
+
+GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
+{
+    using Flags = BaseSettingsHelpers::Flags;
+
+    /// Every tier encoding survives the Flags::TIER mask. PRIVATE_PREVIEW needs the third bit:
+    /// with a two-bit mask it reads as PRODUCTION, which leaves such a setting ungated at every
+    /// allow_feature_tier level.
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRODUCTION), SettingsTierType::PRODUCTION);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::OBSOLETE), SettingsTierType::OBSOLETE);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::EXPERIMENTAL), SettingsTierType::EXPERIMENTAL);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::BETA), SettingsTierType::BETA);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRIVATE_PREVIEW), SettingsTierType::PRIVATE_PREVIEW);
+
+    /// 20, 24 and 28 are the only masked values the three tier bits can hold that name no tier.
+    for (UInt64 unknown_tier : {20, 24, 28})
+    {
+        try
+        {
+            BaseSettingsHelpers::getTier(unknown_tier);
+            FAIL() << "getTier accepted the unknown tier encoding " << unknown_tier;
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        }
+    }
+
+    /// Flags::TIER is disjoint from every other flag bit, so neighbours do not disturb the read.
+    constexpr UInt64 private_preview = static_cast<UInt64>(SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
 }
