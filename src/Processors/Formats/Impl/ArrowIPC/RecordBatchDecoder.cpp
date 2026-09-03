@@ -40,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -190,32 +191,44 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
 
 }
 
-void DictionaryRegistry::set(Int64 id, ColumnPtr column, DataTypePtr type, bool is_delta)
+String DictionaryRegistry::hintKey(const DataTypePtr & hint)
 {
-    auto it = dictionaries.find(id);
+    return hint ? hint->getName() : String();
+}
+
+void DictionaryRegistry::set(Int64 id, const DataTypePtr & hint, ColumnPtr column, DataTypePtr type, bool is_delta)
+{
     if (is_delta)
     {
         /// A delta dictionary batch appends to an existing dictionary; one whose id has no base
         /// dictionary yet is malformed — decoding indices against only the delta values would return
         /// wrong LowCardinality values. Reject it instead of treating the delta as a fresh dictionary.
+        auto it = dictionaries.find(id);
         if (it == dictionaries.end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
-        auto merged = IColumn::mutate(std::move(it->second.column));
+        Values & base = it->second.at(hintKey(hint));
+        auto merged = IColumn::mutate(std::move(base.column));
         merged->insertRangeFrom(*column, 0, column->size());
-        it->second.column = std::move(merged);
+        base.column = std::move(merged);
     }
     else
     {
-        dictionaries[id] = Values{std::move(column), std::move(type)};
+        dictionaries[id][hintKey(hint)] = Values{std::move(column), std::move(type)};
     }
 }
 
-const DictionaryRegistry::Values & DictionaryRegistry::get(Int64 id) const
+const DictionaryRegistry::Values & DictionaryRegistry::get(Int64 id, const DataTypePtr & hint) const
 {
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch references unknown dictionary id {}", id);
-    return it->second;
+    /// Every hint a field resolves was collected before its dictionary was decoded
+    /// (`RecordBatchDecoder::collectDictionaryValueHints`), so a missing decoding is a decoder inconsistency.
+    auto values_it = it->second.find(hintKey(hint));
+    if (values_it == it->second.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Arrow IPC dictionary {} was not decoded under the requested type '{}'", id, hintKey(hint));
+    return values_it->second;
 }
 
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null)
@@ -301,6 +314,31 @@ bool sameHint(const DataTypePtr & a, const DataTypePtr & b)
     if (!a || !b)
         return !a && !b;
     return a->equals(*b);
+}
+
+/// The requested type hint of a field at dotted name `path`, `list_depth` lists below the top level. A
+/// hint derived from the parent (Array element, Tuple element, Map key/value) wins: it already reflects
+/// this exact node. Otherwise the dotted name is looked up in `types` (null: nothing to look up), which
+/// resolves a `date32` addressed as a subcolumn (e.g. `t.d`). The looked-up type describes the flattened
+/// column, one Array layer per List/Map level crossed on the way here (`Nested(d Int32)` requests
+/// `n.d Array(Int32)` while this field's own type is the element); those layers are peeled so the hint
+/// matches this field, exactly as the parent-derived chain unwraps one Array per list. A type with fewer
+/// layers does not describe this field: no hint.
+DataTypePtr resolveHint(
+    const DataTypePtr & parent_hint, const String & path, size_t list_depth,
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+{
+    if (parent_hint)
+        return parent_hint;
+    if (!types)
+        return nullptr;
+    auto it = types->find(path);
+    if (it == types->end())
+        return nullptr;
+    DataTypePtr hint = it->second;
+    for (size_t i = 0; i < list_depth && hint; ++i)
+        hint = arrayElementHint(hint);
+    return hint;
 }
 
 /// Whether a field's decoded size derives from FieldNode lengths alone, with no buffer whose validated
@@ -1245,10 +1283,11 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
 }
 
 ColumnPtr RecordBatchDecoder::decodeDictionary(
-    const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows)
+    const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
+    const DataTypePtr & effective_hint)
 {
     const Slice indices_slice = nextBuffer();
-    const DictionaryRegistry::Values & dictionary = registry.get(field.dictionary->id);
+    const DictionaryRegistry::Values & dictionary = registry.get(field.dictionary->id, effective_hint);
     const ColumnPtr & values = dictionary.column;
     const size_t dict_size = values->size();
 
@@ -1619,13 +1658,16 @@ ColumnPtr RecordBatchDecoder::decodeField(
             assert_cast<const ColumnUInt8 &>(*own_null_map).getData(), invisible_rows, composed_invisible);
     }
 
-    /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.
-    /// The field's own nulls travel via `effective_invisible` (composed above from the same validity).
+    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
+
+    /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch,
+    /// decoded under this field's requested type. The field's own nulls travel via `effective_invisible`
+    /// (composed above from the same validity).
     if (field.dictionary)
-        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible);
+        return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, effective_hint);
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
-    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
+    if (wrapsInNullable(field, *inner, effective_hint))
     {
         ColumnPtr null_map = own_null_map ? own_null_map : buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -1866,7 +1908,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeTopLevelColumn(
     /// it decodes into a LowCardinality column of that value type.
     if (field.dictionary)
     {
-        decoded.type = registry.get(field.dictionary->id).type;
+        decoded.type = registry.get(field.dictionary->id, resolveTargetHint(target_hint, normalized_name, /*list_depth=*/0)).type;
         if (decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
     }
@@ -2219,61 +2261,46 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
 
 DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
-    /// A hint derived from the parent (Array element, Tuple element, Map key/value) wins; it already
-    /// reflects this exact node. Otherwise look the dotted column name up in the caller's requested types,
-    /// which resolves a `date32` addressed as a subcolumn (e.g. `t.d`).
-    if (parent_hint)
-        return parent_hint;
-    if (!target_types)
-        return nullptr;
-    auto it = target_types->find(path);
-    if (it == target_types->end())
-        return nullptr;
-    /// The looked-up type describes the flattened column, one Array layer per List/Map level crossed on
-    /// the way here (`Nested(d Int32)` requests `n.d Array(Int32)` while this field's own type is the
-    /// element); peel those layers so the hint matches this field, exactly as the parent-derived chain
-    /// unwraps one Array per list. A type with fewer layers does not describe this field: no hint.
-    DataTypePtr hint = it->second;
-    for (size_t i = 0; i < list_depth && hint; ++i)
-        hint = arrayElementHint(hint);
-    return hint;
+    return resolveHint(parent_hint, path, list_depth, target_types);
 }
 
-UnorderedMapWithMemoryTracking<Int64, DataTypePtr> RecordBatchDecoder::collectDictionaryValueHints(
+UnorderedMapWithMemoryTracking<Int64, DataTypes> RecordBatchDecoder::collectDictionaryValueHints(
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const
 {
-    target_types = target_types_;
-    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> hints;
-    UnorderedSetWithMemoryTracking<Int64> conflicting;
+    UnorderedMapWithMemoryTracking<Int64, DataTypes> hints;
     for (const ArrowField & field : schema.fields)
     {
-        /// The same kept-field test and starting path as `decodeBatch`.
+        /// The same kept-field test and starting position as `decodeBatch`.
         const String normalized_name = normalizedName(field.name);
         if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
             continue;
-        collectDictionaryValueHints(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, hints, conflicting);
+        collectDictionaryValueHints(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, target_types_, hints);
     }
-    target_types = nullptr;
-
-    for (Int64 id : conflicting)
-        hints.erase(id);
-    std::erase_if(hints, [](const auto & id_and_hint) { return !id_and_hint.second; });
     return hints;
 }
 
 void RecordBatchDecoder::collectDictionaryValueHints(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> & hints, UnorderedSetWithMemoryTracking<Int64> & conflicting) const
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+    UnorderedMapWithMemoryTracking<Int64, DataTypes> & hints) const
 {
-    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
+    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);
+
+    /// The position the children derive theirs from: this field's own, or — for a dictionary-encoded
+    /// field, whose value subtree `decodeDictionaryValues` decodes from the dictionary batch — the value
+    /// field's: under the recorded hint, from the field's own name, with no requested types to look up.
+    String children_path = path;
+    size_t children_list_depth = list_depth;
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * children_lookup_types = lookup_types;
     if (field.dictionary)
     {
-        const Int64 id = field.dictionary->id;
-        auto [it, inserted] = hints.emplace(id, effective_hint);
-        if (!inserted && !sameHint(it->second, effective_hint))
-            conflicting.insert(id);
-        return;
+        DataTypes & id_hints = hints[field.dictionary->id];
+        if (std::ranges::none_of(id_hints, [&](const DataTypePtr & hint) { return sameHint(hint, effective_hint); }))
+            id_hints.push_back(effective_hint);
+        children_path = normalizedName(field.name);
+        children_list_depth = 0;
+        children_lookup_types = nullptr;
     }
 
     const ArrowType & type = field.type;
@@ -2283,11 +2310,13 @@ void RecordBatchDecoder::collectDictionaryValueHints(
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
             collectDictionaryValueHints(
-                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, hints, conflicting);
+                type.children.at(0), arrayElementHint(effective_hint), children_path, children_list_depth + 1,
+                children_lookup_types, hints);
             break;
         case TypeKind::Map:
             collectDictionaryValueHints(
-                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, hints, conflicting);
+                type.children.at(0), mapEntriesHint(effective_hint), children_path, children_list_depth + 1,
+                children_lookup_types, hints);
             break;
         case TypeKind::Struct:
             for (size_t i = 0; i < type.children.size(); ++i)
@@ -2295,13 +2324,14 @@ void RecordBatchDecoder::collectDictionaryValueHints(
                 const ArrowField & child = type.children[i];
                 collectDictionaryValueHints(
                     child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, hints, conflicting);
+                    childPath(children_path, child.name), children_list_depth, children_lookup_types, hints);
             }
             break;
         case TypeKind::Union:
             /// `decodeUnion` decodes its children with no hint, path or list depth.
             for (const ArrowField & child : type.children)
-                collectDictionaryValueHints(child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, hints, conflicting);
+                collectDictionaryValueHints(
+                    child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, children_lookup_types, hints);
             break;
         default:
             break;

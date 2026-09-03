@@ -58,14 +58,10 @@ private:
     void prepareStreamReader();
     void prepareFileReader();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
-    /// Fills `reachable_dictionary_ids` with the Arrow dictionary ids referenced by the requested top-level
-    /// fields (per `requested_top_level_fields`), so the reader skips the DictionaryBatch bodies of
-    /// dictionaries used only by unrequested columns. Requires `arrow_schema` and the requested-fields set.
-    void computeReachableDictionaryIds();
     /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
-    /// under the batch's id, decoding them under the requested type hint of the field(s) encoding that
-    /// dictionary (`dictionary_value_hints`). `body_length` is the message's declared body length, already
-    /// validated by the caller.
+    /// under the batch's id, once under each requested type hint of the fields encoding that dictionary
+    /// (`dictionary_value_hints`). `body_length` is the message's declared body length, already validated
+    /// by the caller.
     void decodeDictionaryBatch(
         ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length);
     Chunk buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows);
@@ -99,16 +95,12 @@ private:
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
-    /// Arrow dictionary ids referenced by the requested top-level fields (computed by
-    /// `computeReachableDictionaryIds`). A DictionaryBatch whose id is not here belongs only to unrequested
-    /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —
-    /// an unrequested column's dictionary.
-    UnorderedSetWithMemoryTracking<Int64> reachable_dictionary_ids;
-    /// For each Arrow dictionary id, the requested type hint its values are decoded under — absent when no
-    /// requested type reaches the encoding field, or when several encoding fields resolve different hints
-    /// (see `RecordBatchDecoder::collectDictionaryValueHints`). Computed from the requested header before
-    /// any dictionary batch is decoded.
-    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> dictionary_value_hints;
+    /// For each Arrow dictionary id the requested columns reference, the distinct requested type hints its
+    /// values are decoded under (see `RecordBatchDecoder::collectDictionaryValueHints`), computed from the
+    /// requested header before any dictionary batch is decoded. A DictionaryBatch whose id is not here
+    /// belongs only to unrequested columns and its body is skipped rather than decoded, so a subset read
+    /// does not pay for — or fail on — an unrequested column's dictionary.
+    UnorderedMapWithMemoryTracking<Int64, DataTypes> dictionary_value_hints;
     bool prepared = false;
     PODArray<char> body_buffer;
 

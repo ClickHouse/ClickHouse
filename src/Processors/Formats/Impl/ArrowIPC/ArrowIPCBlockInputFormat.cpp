@@ -356,17 +356,6 @@ void checkDictionaryUnique(const ColumnPtr & values)
         }
     }
 }
-
-/// Collects every Arrow dictionary id used anywhere in `field`'s type subtree (the field itself or a
-/// dictionary nested inside its Array/Map/Tuple/Union children). Used to decide which DictionaryBatch
-/// bodies a subset read actually needs.
-void collectDictionaryIdsInSubtree(const ArrowIPC::ArrowField & field, UnorderedSetWithMemoryTracking<Int64> & out)
-{
-    if (field.dictionary)
-        out.insert(field.dictionary->id);
-    for (const auto & child : field.type.children)
-        collectDictionaryIdsInSubtree(child, out);
-}
 }
 
 void ArrowIPCBlockInputFormat::prepareReader()
@@ -422,32 +411,14 @@ void ArrowIPCBlockInputFormat::prepareReader()
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
-    /// Collect the dictionary ids the requested columns actually reference, so the stream reader can skip
-    /// the DictionaryBatch bodies of dictionaries used only by unrequested columns, and the requested type
-    /// hint each dictionary's values are decoded under. (The file reader has already computed and used
-    /// both above, before decoding its dictionaries up front; recomputing them here is cheap and keeps the
-    /// stream path — whose dictionaries are decoded lazily while reading — correct.)
-    computeReachableDictionaryIds();
+    /// Collect the dictionaries the requested columns reference and the requested type hints each one's
+    /// values are decoded under; the stream reader skips the DictionaryBatch bodies of dictionaries used
+    /// only by unrequested columns. (The file reader has already computed and used this above, before
+    /// decoding its dictionaries up front; recomputing it here is cheap and keeps the stream path — whose
+    /// dictionaries are decoded lazily while reading — correct.)
     dictionary_value_hints = decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
 
     prepared = true;
-}
-
-void ArrowIPCBlockInputFormat::computeReachableDictionaryIds()
-{
-    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    reachable_dictionary_ids.clear();
-    for (const auto & field : arrow_schema->fields)
-    {
-        String name = field.name;
-        if (case_insensitive)
-            boost::to_lower(name);
-        /// A top-level field is kept iff its normalized name is requested — the same condition
-        /// `decodeBatch` uses to decide whether to decode or skip it. Every dictionary in a kept field's
-        /// subtree is reachable; dictionaries referenced only by skipped fields are not.
-        if (requested_top_level_fields.contains(name))
-            collectDictionaryIdsInSubtree(field, reachable_dictionary_ids);
-    }
 }
 
 void ArrowIPCBlockInputFormat::prepareStreamReader()
@@ -525,7 +496,6 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         collectDictionaryFields(arrow_schema->fields);
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
-        computeReachableDictionaryIds();
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
         dictionary_value_hints = temp_decoder->collectDictionaryValueHints(&requested_top_level_fields, &requested_field_target_types);
         for (const auto & block : footer.dictionary_blocks)
@@ -546,7 +516,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
             /// iteration seeks to the following block, so the unread body is harmless. Check this before any
             /// body-length/data validation so a missing/corrupt unrequested dictionary cannot fail a
             /// projected read.
-            if (!reachable_dictionary_ids.contains(id))
+            if (!dictionary_value_hints.contains(id))
                 continue;
             /// The footer block fixes this message's body size; a message claiming a different (e.g. huge)
             /// body length is corrupt and would otherwise force reading past the footer-declared boundary.
@@ -579,27 +549,28 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values under the requested type hint of the field(s) encoding this dictionary, so they
-    /// get the same hint-driven decoding as inline values in a record batch. The registered type must
-    /// describe the registered column: the raw-byte rewrite the record-batch columns go through
+    /// Decode the values once under each requested type hint of the fields encoding this dictionary, so
+    /// every field gets the same hint-driven decoding as inline values in a record batch. The registered
+    /// type must describe the registered column: the raw-byte rewrite the record-batch columns go through
     /// reinterprets fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the
     /// decoder already converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from
     /// a consistent (values, type) pair.
-    const auto hint_it = dictionary_value_hints.find(id);
-    const DataTypePtr hint = hint_it == dictionary_value_hints.end() ? nullptr : hint_it->second;
-    auto decoded = batch_decoder.decodeDictionaryValues(*dict_batch.data(), body_buffer, value_field, hint);
-    ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
-    if (hint)
-        reinterpretRawByteColumns(values, hint);
+    for (const DataTypePtr & hint : dictionary_value_hints.at(id))
+    {
+        auto decoded = batch_decoder.decodeDictionaryValues(*dict_batch.data(), body_buffer, value_field, hint);
+        ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
+        if (hint)
+            reinterpretRawByteColumns(values, hint);
 
-    checkDictionaryUnique(values.column);
-    dictionaries.set(id, values.column, values.type, dict_batch.isDelta());
-    /// A delta batch merges into the existing dictionary; re-validate the merged values. The per-batch
-    /// check above only proves the delta is internally unique, but a unique delta can still repeat a value
-    /// already present in the base dictionary, which would violate the LowCardinality dictionary
-    /// uniqueness invariant the non-delta path enforces.
-    if (dict_batch.isDelta())
-        checkDictionaryUnique(dictionaries.get(id).column);
+        checkDictionaryUnique(values.column);
+        dictionaries.set(id, hint, values.column, values.type, dict_batch.isDelta());
+        /// A delta batch merges into the existing dictionary; re-validate the merged values. The per-batch
+        /// check above only proves the delta is internally unique, but a unique delta can still repeat a
+        /// value already present in the base dictionary, which would violate the LowCardinality dictionary
+        /// uniqueness invariant the non-delta path enforces.
+        if (dict_batch.isDelta())
+            checkDictionaryUnique(dictionaries.get(id, hint).column);
+    }
 }
 
 namespace
@@ -1116,7 +1087,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
                 /// never used, so skip its body instead of decoding (and possibly failing/allocating on) it.
                 /// Check this before validating `data` so a missing/corrupt unrequested dictionary cannot fail
                 /// a projected read.
-                if (!reachable_dictionary_ids.contains(id))
+                if (!dictionary_value_hints.contains(id))
                 {
                     message_reader->skipBody(msg.body_length);
                     continue;

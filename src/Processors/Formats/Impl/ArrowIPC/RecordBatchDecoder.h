@@ -21,31 +21,38 @@
 namespace DB::ArrowIPC
 {
 
-/// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id. Referenced
-/// by `RecordBatchDecoder` when materializing dictionary-encoded (LowCardinality) fields.
+/// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id and by the
+/// requested type hint they were decoded under. Referenced by `RecordBatchDecoder` when materializing
+/// dictionary-encoded (LowCardinality) fields.
 class DictionaryRegistry
 {
 public:
     /// A dictionary's values and the type describing them. The type is not always the value field's
-    /// natural type: the values are decoded under the requested type hint of the field(s) encoding them
+    /// natural type: the values are decoded under the requested type hint of the field encoding them
     /// (a `date32` under a numeric target holds raw day numbers, binary under an IPv6 / big-integer
     /// target is already reinterpreted), so the decoder builds `LowCardinality` columns from this pair
-    /// instead of re-deriving the type from the referencing field.
+    /// instead of re-deriving the type from the referencing field. Fields sharing a dictionary id may
+    /// request different types, so a dictionary is decoded once per distinct hint and stored per hint;
+    /// a null hint is the natural decoding (see `RecordBatchDecoder::collectDictionaryValueHints`).
     struct Values
     {
         ColumnPtr column;
         DataTypePtr type;
     };
 
-    /// Replaces (or, for delta batches, appends to) the values for a dictionary id. A delta batch is
-    /// decoded under the same hint as its base, so it carries the same type.
-    void set(Int64 id, ColumnPtr column, DataTypePtr type, bool is_delta);
-    const Values & get(Int64 id) const;
+    /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded under `hint`. A
+    /// delta batch is decoded under the same hints as its base, so it carries the same types.
+    void set(Int64 id, const DataTypePtr & hint, ColumnPtr column, DataTypePtr type, bool is_delta);
+    const Values & get(Int64 id, const DataTypePtr & hint) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
 private:
-    UnorderedMapWithMemoryTracking<Int64, Values> dictionaries;
+    /// The decodings of one dictionary, keyed by the name of the hint's type (empty: the natural decoding).
+    using ValuesByHint = UnorderedMapWithMemoryTracking<String, Values>;
+    static String hintKey(const DataTypePtr & hint);
+
+    UnorderedMapWithMemoryTracking<Int64, ValuesByHint> dictionaries;
 };
 
 /// Rows whose values are semantically absent: null at this or an ancestor level, in a list range no
@@ -176,19 +183,18 @@ public:
     /// is not read or decompressed only to be ignored. Throws `INCORRECT_DATA` on a mismatch.
     void validateBatchLayout(const flatbuf::RecordBatch & batch, const ArrowFields & fields);
 
-    /// The requested type hint that decoding a record batch would resolve at each dictionary-encoded field
-    /// of the kept top-level fields (all of them when `keep_top_level_fields` is null), keyed by dictionary
-    /// id. A dictionary batch is decoded before any record batch and carries no field position to derive a
-    /// hint from, so the caller passes the hint collected here when decoding the dictionary's values; they
-    /// then get the same hint-driven decoding as the same values inline in a record batch (a `date32` under
-    /// a numeric target read as the raw day number, raw binary under an IPv6 / big-integer target
-    /// reinterpreted). A dictionary id referenced by several fields gets a hint only when they all resolve
-    /// the same one: fields requesting different types cannot share one decoding of the values, so such a
-    /// dictionary is decoded to its natural type and each field casts from that. Ids without a hint are
-    /// absent from the result.
-    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> collectDictionaryValueHints(
+    /// For every dictionary id the kept top-level fields reference (all fields when `keep_top_level_fields`
+    /// is null; at any nesting, including dictionaries nested in another dictionary's values), the distinct
+    /// requested type hints that decoding a record batch would resolve at the fields encoding it — a null
+    /// entry standing for no requested type. A dictionary batch is decoded before any record batch and
+    /// carries no field position to derive a hint from, so the caller decodes the dictionary's values once
+    /// under each hint collected here (see `decodeDictionaryValues`); each field then finds the values
+    /// decoded for its own hint in the `DictionaryRegistry`, exactly as if they were inline in a record
+    /// batch (a `date32` under a numeric target read as the raw day number, raw binary under an IPv6 /
+    /// big-integer target reinterpreted). Ids absent from the result belong only to unrequested fields.
+    UnorderedMapWithMemoryTracking<Int64, DataTypes> collectDictionaryValueHints(
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const;
 
 private:
     Slice nextBuffer();
@@ -281,21 +287,23 @@ private:
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
-    /// The recursive walk of the public `collectDictionaryValueHints`: resolves this field's hint and derives
-    /// each child's hint, path and list depth exactly as `decodeInner` / `decodeUnion` do while decoding,
-    /// without consuming nodes or buffers. It stops at a dictionary-encoded field: its value subtree is
-    /// decoded from the dictionary batch (`decodeDictionaryValues`), where nested fields derive their hints
-    /// from the recorded one and no requested types are looked up, so a dictionary nested in another
-    /// dictionary's values keeps its natural type. `conflicting` collects the ids whose referencing fields
-    /// resolved different hints.
+    /// The recursive walk of the public `collectDictionaryValueHints`: resolves this field's hint from
+    /// `target_hint`, `path`, `list_depth` and `lookup_types` exactly as `decodeField` does while decoding,
+    /// records it for a dictionary-encoded field, and derives each child's position as `decodeInner` /
+    /// `decodeUnion` do, without consuming nodes or buffers. The value subtree of a dictionary-encoded
+    /// field is walked the way `decodeDictionaryValues` decodes it: under the recorded hint, from the
+    /// field's own name, with no requested types to look up.
     void collectDictionaryValueHints(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        UnorderedMapWithMemoryTracking<Int64, DataTypePtr> & hints, UnorderedSetWithMemoryTracking<Int64> & conflicting) const;
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+        UnorderedMapWithMemoryTracking<Int64, DataTypes> & hints) const;
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
-    /// validity buffer), so this function needs no separate null map for the indices.
+    /// validity buffer), so this function needs no separate null map for the indices. `effective_hint` is
+    /// the field's resolved requested type, which selects the dictionary values decoded for it.
     ColumnPtr decodeDictionary(
-        const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows);
+        const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows,
+        const DataTypePtr & effective_hint);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     /// Whether the decoded column of a nullable field gets a Nullable wrapper. Array/Map cannot be inside
     /// Nullable in ClickHouse, so (matching the Apache Arrow library reader) their outer validity is dropped.
@@ -308,13 +316,9 @@ private:
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
-    /// The requested ClickHouse type for a field, preferring the hint derived from its parent and otherwise
-    /// looking up `path` (the dotted column name) in `target_types`. A dotted name reached through
-    /// enclosing lists names the flattened column (`Nested(d Int32)` flattens to `n.d Array(Int32)`),
-    /// which wraps the element type in one Array per crossed List/Map level; `list_depth` of them are
-    /// peeled off the looked-up type so the hint matches this field's own type, the same way the
-    /// parent-derived chain unwraps one Array per list. Returns null when no hint is available or the
-    /// looked-up type has fewer Array layers than `list_depth`.
+    /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
+    /// decoded (`target_types`), preferring the hint derived from the parent and otherwise looking up `path`,
+    /// the dotted column name, `list_depth` lists below the top level.
     DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
