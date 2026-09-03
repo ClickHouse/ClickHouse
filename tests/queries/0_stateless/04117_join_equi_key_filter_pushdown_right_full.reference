@@ -72,3 +72,5 @@ INNER JOIN ON, cross-type equi-key with a nested float: result
 [0]	[-0]
 INNER JOIN ON, cross-type equi-key with a float inside a Dynamic: result
 0	-0
+INNER JOIN ON, cross-type equi-key with a JSON path in shared data on one side: result
+{"x":1}	{"x":1}

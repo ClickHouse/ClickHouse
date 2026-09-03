@@ -334,3 +334,23 @@ SETTINGS allow_dynamic_type_in_join_keys = 1, join_algorithm = 'full_sorting_mer
 
 DROP TABLE inner_dyn;
 DROP TABLE inner_dyn_f32;
+
+-- Which `JSON` paths get their own subcolumn is a property of the column, not of the type: two earlier
+-- rows fill both dynamic slots on the left, so its `x` lands in shared data while the right column keeps
+-- `x` dynamic. What disagrees between the sides is `JSONDynamicPaths`, which reads that placement rather
+-- than the value; the values themselves are equal under every join comparison, so unlike the float arms
+-- above this one needs no algorithm pinned.
+
+DROP TABLE IF EXISTS inner_json_shared;
+DROP TABLE IF EXISTS inner_json_dyn;
+CREATE TABLE inner_json_shared (a JSON(max_dynamic_paths = 2)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE inner_json_dyn    (x JSON(max_dynamic_paths = 1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO inner_json_shared VALUES ('{"p":1}'), ('{"q":1}'), ('{"x":1}');
+INSERT INTO inner_json_dyn VALUES ('{"x":1}');
+
+SELECT 'INNER JOIN ON, cross-type equi-key with a JSON path in shared data on one side: result';
+SELECT l.a, r.x FROM inner_json_shared AS l INNER JOIN inner_json_dyn AS r ON l.a = r.x
+WHERE NOT has(JSONDynamicPaths(l.a), 'x') ORDER BY 1;
+
+DROP TABLE inner_json_shared;
+DROP TABLE inner_json_dyn;
