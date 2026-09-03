@@ -7,7 +7,7 @@ IN (subquery)
 100
 GLOBAL IN (subquery over Distributed)
 100
-the child read of a Merge table is not distributed
+the plans of the underlying tables are not distributed
 0
 a plain table is still distributed
 1
@@ -15,7 +15,7 @@ same answers with parallel_replicas_local_plan = 1
 1
 100
 100
-the child read of a Merge table is not distributed with a local plan
+the plans of the underlying tables are not distributed with a local plan
 0
 a plain table is still distributed with a local plan
 1
