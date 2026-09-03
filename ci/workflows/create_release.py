@@ -52,17 +52,18 @@ def _dry_run_job(name: str, job_args: str) -> Job.Config:
     )
 
 
-# "new" cuts a fresh release branch from 30.12 (a branch whose prev tag matches
-# what prepare() expects). "patch" (--ref auto) creates a new patch from the
-# newest unreleased release-branch commit and, without --skip-repo, exercises the
-# artifact-download path (which tolerates absent artifacts on a dry run).
-# "recovery" re-publishes an already-tagged release (--ref recovery-auto resolves
-# to a published tag) with --skip-repo --skip-docker, the one mode where those
-# flags are valid.
+# "new" cuts a fresh release branch from master (release_job.py recreates a local
+# master from origin on the detached PR checkout), whose version file and
+# vX.Y.1.1-new tag are the state prepare() expects. "patch" (--ref auto) creates a
+# new patch from the newest unreleased release-branch commit and, without
+# --skip-repo, exercises the artifact-download path (which tolerates absent
+# artifacts on a dry run). "recovery" re-publishes an already-tagged release
+# (--ref recovery-auto resolves to a published tag) with --skip-repo --skip-docker,
+# the one mode where those flags are valid.
 _RELEASE_DRY_RUN_POSITIVE = [
     _dry_run_job(
         "Release Dry Run (new)",
-        "./ci/jobs/release_job.py --ref 30.12 --release-type new --dry-run",
+        "./ci/jobs/release_job.py --ref master --release-type new --dry-run",
     ),
     _dry_run_job(
         "Release Dry Run (patch)",
