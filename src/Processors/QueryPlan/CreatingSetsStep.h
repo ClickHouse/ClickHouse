@@ -75,7 +75,9 @@ public:
 
     String getName() const override { return "DelayedCreatingSets"; }
 
-    /// The step only holds shared pointers to future sets, so a shallow copy is a valid clone.
+    /// The step only holds shared pointers to future sets, so a shallow copy is a valid clone of the
+    /// step alone; cloning a whole plan that still holds sets is rejected, since both copies would
+    /// then claim the same single-use set source.
     QueryPlanStepPtr clone() const override
     {
         return std::make_unique<DelayedCreatingSetsStep>(getInputHeaders().front(), subqueries, network_transfer_limits, prepared_sets_cache);

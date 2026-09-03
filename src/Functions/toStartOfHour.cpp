@@ -30,9 +30,9 @@ toStartOfHour(datetime)
 SELECT
     toStartOfHour(toDateTime('2023-04-21 10:20:30'));
     )", R"(
-┌─────────────────res─┬─toTypeName(res)─┐
-│ 2023-04-21 10:00:00 │ DateTime        │
-└─────────────────────┴─────────────────┘
+┌─toStartOfHour(toDateTime('2023-04-21 10:20:30'))─┐
+│                              2023-04-21 10:00:00 │
+└──────────────────────────────────────────────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
