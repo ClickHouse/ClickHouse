@@ -29,6 +29,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 
+#include <limits>
 #include <unordered_map>
 
 namespace DB
@@ -316,7 +317,8 @@ private:
             buildStepExecutor();
 
             /// Collect the rows produced by the step. Several rows may be produced for the same key
-            /// within one step; the last produced one is the candidate for that key.
+            /// within one step; the last produced one is the candidate for that key. Rows identical
+            /// to the accumulated row for their key are not stored, only remembered as the last one.
             StepCandidates candidates(header->cloneEmptyColumns());
 
             Chunk chunk;
@@ -329,12 +331,12 @@ private:
 
             executor.reset();
 
-            /// Apply the candidates to the accumulated state. A candidate identical to the accumulated
-            /// row for its key does not change the state and is not propagated; the others replace the
-            /// accumulated row and form the next step's working table. Comparing the final candidate per
-            /// key against the state at the start of the step keeps the frontier consistent with the
-            /// accumulated state: a key that transiently changes and returns to its accumulated value
-            /// within one step is not propagated, so the recursion converges.
+            /// Apply the candidates to the accumulated state. A key whose last produced row is identical
+            /// to the accumulated row does not change the state and is not propagated; the other
+            /// candidates replace the accumulated row and form the next step's working table. Comparing
+            /// the final candidate per key against the state at the start of the step keeps the frontier
+            /// consistent with the accumulated state: a key that transiently changes and returns to its
+            /// accumulated value within one step is not propagated, so the recursion converges.
             MutableColumns delta_columns = header->cloneEmptyColumns();
             applyStepCandidates(candidates, delta_columns);
 
@@ -363,9 +365,13 @@ private:
         keyed_result_columns = buildAccumulatedBlock().getColumns();
     }
 
-    /// Rows produced by one recursive step, with the index of the last produced row per key.
+    /// Rows produced by one recursive step that differ from the accumulated row for their key,
+    /// with the index of the last produced row per key.
     struct StepCandidates
     {
+        /// The last produced row for the key is identical to the accumulated row, so it is not stored.
+        static constexpr size_t UNCHANGED = std::numeric_limits<size_t>::max();
+
         explicit StepCandidates(MutableColumns columns_) : columns(std::move(columns_)) {}
 
         MutableColumns columns;
@@ -386,6 +392,30 @@ private:
                 chunk_columns[key_column_index]->updateHashWithValue(row, key_hash);
             UInt128 key = key_hash.get128();
 
+            /// A row identical to the accumulated one does not change the state and is not propagated
+            /// to the next step's working table. This is what terminates cycles and refutes re-derived
+            /// rows without an explicit cycle guard. The accumulated state is not modified during the
+            /// step, so the comparison stays valid until the candidates are applied.
+            auto accumulated_it = accumulated_index.find(key);
+            if (accumulated_it != accumulated_index.end())
+            {
+                bool row_changed = false;
+                for (size_t i = 0; i < columns_size; ++i)
+                {
+                    if (accumulated_columns[i]->compareAt(accumulated_it->second, row, *chunk_columns[i], /*nan_direction_hint*/ 1) != 0)
+                    {
+                        row_changed = true;
+                        break;
+                    }
+                }
+
+                if (!row_changed)
+                {
+                    candidates.last_row_for_key[key] = StepCandidates::UNCHANGED;
+                    continue;
+                }
+            }
+
             size_t new_row_index = candidates.columns[0]->size();
             for (size_t i = 0; i < columns_size; ++i)
                 candidates.columns[i]->insertFrom(*chunk_columns[i], row);
@@ -403,31 +433,16 @@ private:
         {
             const UInt128 & key = candidates.row_hashes[row];
 
-            /// Superseded by a later row with the same key within this step.
+            /// Superseded by a later row with the same key within this step, possibly by a row identical
+            /// to the accumulated one.
             if (candidates.last_row_for_key.at(key) != row)
                 continue;
 
+            /// The stored candidates differ from the accumulated row for their key, so the row replaces it.
             auto it = accumulated_index.find(key);
             if (it != accumulated_index.end())
             {
                 size_t existing_row = it->second;
-
-                bool row_changed = false;
-                for (size_t i = 0; i < columns_size; ++i)
-                {
-                    if (accumulated_columns[i]->compareAt(existing_row, row, *candidates.columns[i], /*nan_direction_hint*/ 1) != 0)
-                    {
-                        row_changed = true;
-                        break;
-                    }
-                }
-
-                /// A row identical to the accumulated one does not change the state and is
-                /// not propagated to the next step's working table. This is what terminates
-                /// cycles and refutes re-derived rows without an explicit cycle guard.
-                if (!row_changed)
-                    continue;
-
                 if (accumulated_live[existing_row])
                 {
                     accumulated_live[existing_row] = static_cast<UInt8>(0);
