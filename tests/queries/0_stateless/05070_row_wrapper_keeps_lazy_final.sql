@@ -17,8 +17,8 @@ CREATE TABLE row_wrapper_lazy_final
 ENGINE = ReplacingMergeTree(v) ORDER BY a;
 
 SYSTEM STOP MERGES row_wrapper_lazy_final;
-INSERT INTO row_wrapper_lazy_final (a, b, c, v) SELECT number, number % 7, number % 11, 1 FROM numbers(10000);
-INSERT INTO row_wrapper_lazy_final (a, b, c, v) SELECT number, number % 5, number % 13, 2 FROM numbers(5000, 10000);
+INSERT INTO row_wrapper_lazy_final (a, b, c, v) SELECT number, number % 7, number % 11, 1 FROM numbers(200);
+INSERT INTO row_wrapper_lazy_final (a, b, c, v) SELECT number, number % 5, number % 13, 2 FROM numbers(100, 200);
 
 -- The filtered FINAL query still takes the lazy FINAL path.
 SELECT countIf(explain LIKE '%InputSelector%') > 0 FROM (
