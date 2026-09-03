@@ -3,7 +3,7 @@
 -- when such a column is nested inside a poolable parent serialization (e.g. a Variant assembled by a Merge
 -- table over sources with differing types), getHash() fires "Hash is not set for serialization".
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS qv_merge_a;
 DROP TABLE IF EXISTS qv_merge_b;

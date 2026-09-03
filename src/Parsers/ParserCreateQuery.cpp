@@ -921,7 +921,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
         }
 
         return true;
@@ -2966,7 +2966,7 @@ ENGINE = MergeTree ORDER BY x;
 The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 <Note>
-Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`. Other columns select between the default codec and `NONE`.
+Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE`.
 </Note>
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.

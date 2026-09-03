@@ -4,3 +4,4 @@ requests==2.32.4
 pandas==2.3.3
 scipy==1.16.1
 urllib3==1.26.20
+boto3==1.38.28
