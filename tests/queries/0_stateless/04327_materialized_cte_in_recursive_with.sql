@@ -168,6 +168,19 @@ walk AS
 )
 SELECT * FROM walk ORDER BY x;
 
+-- The same through the `IN` form of the reference.
+WITH RECURSIVE seq AS MATERIALIZED
+(
+    SELECT n FROM seq
+),
+walk AS
+(
+    SELECT toUInt64(1) AS x FROM seq WHERE n = 1
+    UNION ALL
+    SELECT x + 1 FROM walk WHERE x < 5 AND (x + 1) IN (seq)
+)
+SELECT * FROM walk ORDER BY x;
+
 DROP TABLE seq;
 
 -- Without `enable_materialized_cte`, MATERIALIZED is only a hint and the helper is an ordinary CTE.
