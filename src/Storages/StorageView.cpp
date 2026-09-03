@@ -410,7 +410,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
   * resolves positional arguments inside the view even on remote/secondary nodes
   * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextMutablePtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
@@ -699,12 +699,13 @@ void StorageView::readImpl(
     /// `additional_table_filters` are silently dropped and the rows they hide come back through
     /// the union into the invoker's plan, above the barrier. Fail closed: a view whose filtering
     /// must be trusted reads its inner query without parallel replicas.
+    ///
+    /// The setting is changed on the view context itself instead of on a copy of it: for a
+    /// `DEFINER`/`NONE` view that context is its own query context (`makeQueryContext`), and a copy
+    /// keeps a weak pointer to the original, so replacing the original with the copy destroys the
+    /// query context the inner query resolves against.
     if (hides_rows && view_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0)
-    {
-        auto no_parallel_replicas_context = Context::createCopy(view_context);
-        no_parallel_replicas_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
-        view_context = no_parallel_replicas_context;
-    }
+        view_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {

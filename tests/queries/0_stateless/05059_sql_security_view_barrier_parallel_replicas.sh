@@ -16,8 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # secondary query, which made the leak deterministic before the fix.
 
 db=${CLICKHOUSE_DATABASE}
-invoker="user05044_${CLICKHOUSE_DATABASE}_$RANDOM"
-definer="definer05044_${CLICKHOUSE_DATABASE}_$RANDOM"
+invoker="user05059_${CLICKHOUSE_DATABASE}_$RANDOM"
+definer="definer05059_${CLICKHOUSE_DATABASE}_$RANDOM"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.security_view_pr_secrets (owner String, secret String) ENGINE = MergeTree ORDER BY owner;

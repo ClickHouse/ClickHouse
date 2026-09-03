@@ -17,9 +17,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `Convert VIEW subquery result` expression, the filtered one does not.
 
 db=${CLICKHOUSE_DATABASE}
-invoker="user05045_${CLICKHOUSE_DATABASE}_$RANDOM"
-definer="definer05045_${CLICKHOUSE_DATABASE}_$RANDOM"
-definer_plain="definerplain05045_${CLICKHOUSE_DATABASE}_$RANDOM"
+invoker="user05060_${CLICKHOUSE_DATABASE}_$RANDOM"
+definer="definer05060_${CLICKHOUSE_DATABASE}_$RANDOM"
+definer_plain="definerplain05060_${CLICKHOUSE_DATABASE}_$RANDOM"
 
 ${CLICKHOUSE_CLIENT} <<EOF
 CREATE TABLE $db.security_view_obp_source (k UInt64, owner String) ENGINE = MergeTree ORDER BY k;
