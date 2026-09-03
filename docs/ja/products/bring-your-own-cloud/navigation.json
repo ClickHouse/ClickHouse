@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "概要",
+      "group": "Overview",
       "pages": [
         "ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ja/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "設定",
+      "group": "Configuration",
       "pages": [
         "ja/products/bring-your-own-cloud/configuration/configurations",
         "ja/products/bring-your-own-cloud/configuration/connect",
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "導入",
+      "group": "Onboarding",
       "pages": [
         "ja/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "カスタマイズ",
+          "group": "Customization",
           "pages": [
             "ja/products/bring-your-own-cloud/onboarding/customization-aws",
             "ja/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "ネットワーク",
+          "group": "Network",
           "pages": [
             "ja/products/bring-your-own-cloud/onboarding/network",
             "ja/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "コネクタ",
+      "group": "Connector",
       "pages": [
         "ja/products/bring-your-own-cloud/connector/overview",
         "ja/products/bring-your-own-cloud/connector/onboarding",
@@ -49,7 +49,7 @@
         "ja/products/bring-your-own-cloud/connector/configuration",
         "ja/products/bring-your-own-cloud/connector/operations",
         {
-          "group": "リファレンス",
+          "group": "Reference",
           "pages": [
             "ja/products/bring-your-own-cloud/connector/reference/cli",
             "ja/products/bring-your-own-cloud/connector/reference/configuration",
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "group": "リファレンス",
+      "group": "Reference",
       "pages": [
         "ja/products/bring-your-own-cloud/reference/network-security",
         "ja/products/bring-your-own-cloud/reference/privilege",
