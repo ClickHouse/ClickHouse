@@ -1,0 +1,18 @@
+-- Basic: the first run computes the result and writes it to disk, the second run reads it from disk
+0
+0
+-- User isolation: another user cannot read the (non-shared) entry and computes the result itself
+0
+-- Sharing: an entry written with query_cache_share_between_users = 1 is readable by another user
+0
+0
+-- On-disk cache hits and misses of the runs above (from system.query_log)
+user_a	0	1
+user_a	1	0
+user_b	0	1
+user_a	0	1
+user_b	1	0
+-- An unknown filesystem cache name is an error
+BAD_ARGUMENTS
+-- An invalid codec is an error
+UNKNOWN_CODEC

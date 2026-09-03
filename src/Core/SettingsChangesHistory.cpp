@@ -65,6 +65,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"query_cache_on_disk_cache_name", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."},
+            {"query_cache_on_disk_codec", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."},
+            {"enable_writes_to_query_cache_on_disk", true, true, "New setting to control whether query results are written to the query cache on disk."},
+            {"enable_reads_from_query_cache_on_disk", true, true, "New setting to control whether query results are read from the query cache on disk."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",

@@ -6064,6 +6064,33 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(String, query_cache_on_disk_cache_name, "", R"(
+The name of a filesystem cache (an entry of the `filesystem_caches` section of the server configuration) which stores entries of the [query cache](../query-cache.md) on disk. If a name is given (and [use_query_cache](#use_query_cache) is enabled), query results are additionally cached in (and served from) the specified filesystem cache. The on-disk query cache provides more space than the in-memory query cache, survives server restarts, and works independently of the in-memory query cache: settings [enable_reads_from_query_cache_on_disk](#enable_reads_from_query_cache_on_disk) and [enable_writes_to_query_cache_on_disk](#enable_writes_to_query_cache_on_disk) control it separately from the in-memory query cache. The entries in the filesystem cache are indistinguishable from other entries in the same filesystem cache: they are not held from deletion and they are evicted by the same rules, e.g. `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem cache.
+
+Possible values:
+
+- Empty string - The query cache on disk is disabled
+- The name of a preconfigured filesystem cache
+)", 0) \
+    DECLARE(String, query_cache_on_disk_codec, "ZSTD(3)", R"(
+The compression codec for entries of the [query cache](../query-cache.md) on disk (see [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name)). Only affects writing; reading is independent of this setting because the compressed data is self-describing.
+)", 0) \
+    DECLARE(Bool, enable_writes_to_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are stored in the [query cache](../query-cache.md) on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_reads_from_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are retrieved from the [query cache](../query-cache.md) on disk. If reads are enabled for both the in-memory and the on-disk query cache, the lookup is attempted first from memory and only on a miss from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, query_cache_for_subqueries, false, R"(
 If turned on, subquery results may be written to and read from the [query cache](/concepts/features/performance/caches/query-cache). This enables propagation of `use_query_cache` into all subqueries.
 
@@ -6091,14 +6118,18 @@ Possible values:
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 0, R"(
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
 - Positive integer >= 0.
 )", 0) \
     DECLARE(UInt64, query_cache_max_entries, 0, R"(
-The maximum number of query results the current user may store in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum number of query results the current user may store in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 

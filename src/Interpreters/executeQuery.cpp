@@ -21,6 +21,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -2981,6 +2982,11 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
+        QueryResultCacheOnDiskPtr query_result_cache_on_disk;
+        if (can_use_query_result_cache)
+            query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
@@ -3012,18 +3018,38 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache)
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                    const bool read_from_memory_cache = settings[Setting::enable_reads_from_query_cache];
+                    const bool read_from_on_disk_cache = query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled();
+                    if (!read_from_memory_cache && !read_from_on_disk_cache)
+                        return false;
 
-                    if (reader.hasCacheEntryForKey())
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+
+                    std::optional<QueryResultCacheReader> reader;
+                    if (read_from_memory_cache)
                     {
-                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
-                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+                        reader.emplace(query_result_cache->createReader(key));
+                        if (!reader->hasCacheEntryForKey())
+                            reader.reset();
+                    }
+                    /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted
+                    /// only on a miss in memory.
+                    if (!reader && read_from_on_disk_cache)
+                    {
+                        reader.emplace(query_result_cache_on_disk->createReader(key));
+                        if (!reader->hasCacheEntryForKey())
+                            reader.reset();
+                    }
+
+                    if (reader)
+                    {
+                        result_details.query_cache_entry_created_at = reader->entryCreatedAt();
+                        result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
 
                         QueryPipeline pipeline;
-                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
@@ -3135,7 +3161,7 @@ static BlockIO executeQueryImpl(
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context))
+                    if (checkCanWriteQueryResultCache(out_ast, context, query_result_cache_on_disk))
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
@@ -3149,6 +3175,10 @@ static BlockIO executeQueryImpl(
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
 
+                            const bool write_to_memory_cache = settings[Setting::enable_writes_to_query_cache];
+                            QueryResultCacheOnDiskPtr write_to_on_disk_cache
+                                = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
+
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                             {
@@ -3156,7 +3186,7 @@ static BlockIO executeQueryImpl(
                                     "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                     num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
-                            else
+                            else if (write_to_memory_cache || write_to_on_disk_cache)
                             {
                                 auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
                                      key,
@@ -3164,14 +3194,17 @@ static BlockIO executeQueryImpl(
                                      settings[Setting::query_cache_squash_partial_results],
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
+                                     settings[Setting::query_cache_max_entries],
+                                     write_to_memory_cache,
+                                     write_to_on_disk_cache));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
 
                             /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
-                            if (settings[Setting::enable_reads_from_query_cache])
+                            if (settings[Setting::enable_reads_from_query_cache]
+                                || (query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
                                 result_details.query_cache_entry_expires_at = expires_at;
                     }
                 }

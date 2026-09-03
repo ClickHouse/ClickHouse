@@ -56,6 +56,7 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -2533,12 +2534,32 @@ void Planner::buildPlanForQueryNode()
     if (local_can_use_cache)
         settings_copy = settings;
 
+    /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
+    QueryResultCacheOnDiskPtr query_result_cache_on_disk;
+    if (should_cache)
+        query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
+
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && settings[Setting::enable_reads_from_query_cache])
+    if (should_cache && (settings[Setting::enable_reads_from_query_cache] || (query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled())))
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
-        if (reader->hasCacheEntryForKey())
+
+        std::optional<QueryResultCacheReader> reader;
+        if (settings[Setting::enable_reads_from_query_cache])
+        {
+            reader.emplace(query_result_cache->createReader(key));
+            if (!reader->hasCacheEntryForKey())
+                reader.reset();
+        }
+        /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted only on a miss in memory.
+        if (!reader && query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled())
+        {
+            reader.emplace(query_result_cache_on_disk->createReader(key));
+            if (!reader->hasCacheEntryForKey())
+                reader.reset();
+        }
+
+        if (reader)
         {
             addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
             return;
@@ -3072,7 +3093,7 @@ void Planner::buildPlanForQueryNode()
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
     /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
     bool skip_context_check = should_cache && !can_use_query_result_cache;
-    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
+    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, query_result_cache_on_disk, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
         auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
@@ -3094,16 +3115,25 @@ void Planner::buildPlanForQueryNode()
         }
         else
         {
-            auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                key,
-                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                settings[Setting::query_cache_squash_partial_results],
-                                settings[Setting::max_block_size],
-                                settings[Setting::query_cache_max_size_in_bytes],
-                                settings[Setting::query_cache_max_entries]));
+            const bool write_to_memory_cache = settings[Setting::enable_writes_to_query_cache];
+            QueryResultCacheOnDiskPtr write_to_on_disk_cache
+                = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
 
-            auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
-            query_plan.addStep(std::move(stream_into_query_result_cache_step));
+            if (write_to_memory_cache || write_to_on_disk_cache)
+            {
+                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                    key,
+                                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                    settings[Setting::query_cache_squash_partial_results],
+                                    settings[Setting::max_block_size],
+                                    settings[Setting::query_cache_max_size_in_bytes],
+                                    settings[Setting::query_cache_max_entries],
+                                    write_to_memory_cache,
+                                    write_to_on_disk_cache));
+
+                auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
+                query_plan.addStep(std::move(stream_into_query_result_cache_step));
+            }
         }
     }
 

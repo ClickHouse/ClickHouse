@@ -107,7 +107,8 @@ records) can be configured using different [server configuration options](/refer
 
 It is also possible to limit the cache usage of individual users using [settings profiles](/concepts/features/configuration/settings/settings-profiles) and [settings
 constraints](/concepts/features/configuration/settings/constraints-on-settings). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
-allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
+allocate in the in-memory query cache and the maximum number of stored query results (these limits do not apply to the [query cache on
+disk](#query-cache-on-disk)). For that, first provide configurations
 [query_cache_max_size_in_bytes](/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) and
 [query_cache_max_entries](/reference/settings/session-settings/query-cache#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
@@ -242,6 +243,62 @@ Finally, entries in the query cache are not shared between users due to security
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](/reference/settings/session-settings/query-cache#query_cache_share_between_users).
+
+## Query cache on disk {#query-cache-on-disk}
+
+By default, the query cache keeps its entries in memory. Additionally, query results can be cached on disk, backed by a
+[filesystem cache](/concepts/features/configuration/server-config/storing-data#using-local-cache). Compared to the in-memory query cache, the query cache on
+disk provides more space, survives server restarts, and (when the filesystem cache is distributed) can be shared between servers.
+
+To use the query cache on disk, first configure a filesystem cache in the `filesystem_caches` section of the server configuration:
+
+```xml
+<filesystem_caches>
+    <query_results>
+        <path>query_results_cache/</path>
+        <max_size>10Gi</max_size>
+    </query_results>
+</filesystem_caches>
+```
+
+then specify its name in setting `query_cache_on_disk_cache_name`:
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results';
+```
+
+The query cache on disk works independently of the in-memory query cache and can separately be enabled for reads and/or writes using
+settings `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk` (both `true`
+by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
+are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
+`query_cache_on_disk_codec` (`ZSTD(3)` by default). All
+other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`) apply to the query cache on disk in the same way as
+to the in-memory query cache, with the two exceptions below.
+
+Settings `query_cache_max_size_in_bytes` and `query_cache_max_entries` are per-user limits of the in-memory query cache only. They are
+not enforced on the query cache on disk: entries on disk are bounded by the size of the configured filesystem cache and evicted by its
+rules (see below), so a user with a restrictive settings profile can still store more results on disk than these settings allow in
+memory. This is intentional - the filesystem cache is a shared, size-bounded resource which the query cache on disk does not reserve
+space in.
+
+Setting `query_cache_share_between_users` is another exception: it has the same meaning for both backends - an entry written with it is served
+to every user - but non-shared entries are isolated differently. The in-memory query cache keeps a single entry per query and rejects it
+on read if it belongs to another user, so a non-shared entry of user A shadows the writes of user B until the entry expires or is
+evicted. The query cache on disk instead makes the user and the set of the user's current roles part of the key of a non-shared entry, so
+user B misses on the entry of user A and stores its own copy of the result. The same holds for one user under different sets of current
+roles, e.g. after `SET ROLE`: the roles carry privileges and row policies, so results computed under different roles are cached
+separately.
+
+The entries of the query cache on disk are ordinary entries of the filesystem cache, indistinguishable from other data cached in the
+same filesystem cache: they are not held from deletion and they are evicted by the same rules (e.g. least-recently-used) when the
+filesystem cache runs out of space. There are no separate limits on their total size or number - only the limits of the filesystem
+cache itself apply. Statement `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem
+cache; `SYSTEM CLEAR QUERY CACHE` only clears the in-memory query cache. Likewise, system table
+[system.query_cache](/reference/system-tables/query_cache) shows only the entries of the in-memory query cache. The number of query
+cache hits and misses on disk are shown as events "QueryCacheOnDiskHits" and "QueryCacheOnDiskMisses" in system table
+[system.events](/reference/system-tables/events).
 
 ## Related content {#related-content}
 
