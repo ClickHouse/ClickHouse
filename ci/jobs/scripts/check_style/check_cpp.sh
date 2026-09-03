@@ -124,11 +124,11 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::ErrorCode
     ErrorCodes::getName
     ErrorCodes::increment
-    ErrorCodes::end
     ErrorCodes::extendedMessage
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
+    ErrorCodes::getCodes
     ErrorCodes::Value
 )
 # Check unused/undefined/duplicate ErrorCodes, ProfileEvents, CurrentMetrics declarations.
