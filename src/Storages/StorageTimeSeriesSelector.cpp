@@ -818,7 +818,6 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
-    /// The check is repeated here because the table could be re-created between the parse time and the read time.
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 

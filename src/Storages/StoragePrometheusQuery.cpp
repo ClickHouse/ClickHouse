@@ -188,6 +188,9 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();

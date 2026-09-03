@@ -304,8 +304,7 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
-    /// Fail close: a server must not write into a table created by a newer version of ClickHouse.
-    checkTimeSeriesVersionIsKnown(*time_series_storage);
+    checkTimeSeriesVersionIsWritable(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;

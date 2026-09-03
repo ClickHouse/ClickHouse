@@ -1,6 +1,0 @@
---- a table created before versioning was introduced (no version in the stored definition) ---
-0	1
---- RESET SETTING which removes the last override is persisted (the version gets pinned instead) ---
-1	0
---- the reset survives DETACH/ATTACH ---
-1	0

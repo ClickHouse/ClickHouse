@@ -82,19 +82,8 @@ namespace
 }
 
 
-std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
-    const ASTCreateQuery & create_query,
-    const StorageID & table_id,
-    const ContextPtr & local_context,
-    LoadingStrictnessLevel mode)
+std::vector<StorageTimeSeries::Target> StorageTimeSeries::findTargets(const ASTCreateQuery & create_query)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental TimeSeries table engine "
-                        "is not enabled (the setting 'allow_experimental_time_series_table')");
-    }
-
     std::vector<Target> targets;
     for (auto target_kind : getTargetKinds())
     {
@@ -117,29 +106,53 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
         else
         {
             /// An inner target table should be used.
-            auto inner_table_uuid = create_query.getTargetInnerUUID(target_kind);
-
-            target.table_id.uuid = inner_table_uuid;
+            target.table_id.uuid = create_query.getTargetInnerUUID(target_kind);
             target.is_inner_table = true;
-
-            if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
-            {
-                /// Create the inner target table using the pre-computed inner columns from the create query.
-                /// The normalization always sets them; a query with an inner UUID but no inner columns
-                /// can only come from hand-edited metadata.
-                auto * inner_columns = create_query.getTargetInnerColumns(target_kind);
-                if (!inner_columns)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} target of table {} has no inner columns",
-                        magic_enum::enum_name(target_kind), table_id.getNameForLogs());
-                auto inner_engine = boost::static_pointer_cast<ASTStorage>(
-                    create_query.getTargetInnerEngine(target_kind)
-                        ? create_query.getTargetInnerEngine(target_kind)->ptr()
-                        : ASTPtr{});
-                createTimeSeriesInnerTable(target_kind, inner_table_uuid, *inner_columns, inner_engine, table_id, local_context);
-            }
         }
 
         targets.emplace_back(std::move(target));
+    }
+
+    return targets;
+}
+
+
+std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
+    const ASTCreateQuery & create_query,
+    const StorageID & table_id,
+    const ContextPtr & local_context,
+    LoadingStrictnessLevel mode)
+{
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Experimental TimeSeries table engine "
+                        "is not enabled (the setting 'allow_experimental_time_series_table')");
+    }
+
+    auto targets = findTargets(create_query);
+
+    /// Inner target tables are created only for a new table, ATTACH expects them to exist already.
+    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+    {
+        for (const auto & target : targets)
+        {
+            if (!target.is_inner_table)
+                continue;
+
+            /// Create the inner target table using the pre-computed inner columns from the create query.
+            /// The normalization always sets them; a query with an inner UUID but no inner columns
+            /// can only come from hand-edited metadata.
+            auto * inner_columns = create_query.getTargetInnerColumns(target.kind);
+            if (!inner_columns)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} target of table {} has no inner columns",
+                    magic_enum::enum_name(target.kind), table_id.getNameForLogs());
+            auto inner_engine = boost::static_pointer_cast<ASTStorage>(
+                create_query.getTargetInnerEngine(target.kind)
+                    ? create_query.getTargetInnerEngine(target.kind)->ptr()
+                    : ASTPtr{});
+            createTimeSeriesInnerTable(target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, local_context);
+        }
     }
 
     return targets;
@@ -152,58 +165,57 @@ StorageTimeSeries::StorageTimeSeries(
     LoadingStrictnessLevel mode,
     bool is_restore_from_backup,
     const ASTCreateQuery & query,
-    const ColumnsDescription & /*columns*/,
+    const ColumnsDescription & columns,
     const String & comment)
     : StorageWithCommonVirtualColumns(table_id)
     , WithContext(local_context->getGlobalContext())
-    , normalized_create_query(makeNormalizedCreateQuery(query, local_context, mode, is_restore_from_backup))
-    , targets(buildTargets(*normalized_create_query, table_id, local_context, mode))
-    , has_inner_tables(std::ranges::any_of(targets, &Target::is_inner_table))
 {
-    /// Load TimeSeries settings from the `SETTINGS` clause.
-    auto settings = std::make_unique<TimeSeriesSettings>();
-    if (normalized_create_query->storage)
-        settings->loadFromQuery(*normalized_create_query->storage);
-    storage_settings.set(std::move(settings));
-
     StorageInMemoryMetadata storage_metadata;
+    auto settings = std::make_unique<TimeSeriesSettings>();
 
-    /// Keep the settings from the create query in the metadata: `alter` rebuilds the stored SETTINGS clause
-    /// from the metadata, so without this the settings not affected by an ALTER query (including the `version`
-    /// setting stamped at creation) would be dropped from the stored table definition.
-    if (normalized_create_query->storage && normalized_create_query->storage->settings
-        && !normalized_create_query->storage->settings->changes.empty())
+    /// The version is checked before the normalization: a definition of an unsupported version can't be normalized
+    /// because it may contain settings or columns unknown to this server.
+    UInt64 version = getTimeSeriesSettingVersion(query);
+
+    /// A table with an unsupported version can appear after a downgrade of ClickHouse. It's attached anyway,
+    /// so that it can be inspected with SHOW CREATE TABLE and dropped together with its inner tables,
+    /// while every operation over it is rejected (see TimeSeriesVersion.h).
+    /// A new table with an unsupported version is rejected by `checkTimeSeriesSettings` during the normalization below.
+    bool is_version_supported = isTimeSeriesVersionSupported(version);
+
+    /// An unsupported version is tolerated only for ATTACH.
+    if (!is_version_supported && (mode >= LoadingStrictnessLevel::ATTACH))
     {
-        auto settings_ast = boost::static_pointer_cast<ASTSetQuery>(normalized_create_query->storage->settings->clone());
+        /// Only the identifiers of the target tables are taken from the definition.
+        targets = findTargets(query);
+        (*settings)[TimeSeriesSetting::version] = version;
+        storage_metadata.setColumns(columns);
+    }
+    else
+    {
+        auto normalized_create_query = makeNormalizedCreateQuery(query, local_context, mode, is_restore_from_backup);
+        targets = buildTargets(*normalized_create_query, table_id, local_context, mode);
 
-        /// The stored SETTINGS clause may contain duplicate entries, and the last one wins when the settings
-        /// are applied. Keep only the winning entry for each name - otherwise ALTER, which updates the first
-        /// matching entry of the list, would resolve settings to a stale duplicate.
-        SettingsChanges deduplicated;
-        for (const auto & change : settings_ast->changes)
-        {
-            if (auto * existing_value = deduplicated.tryGet(change.name))
-                *existing_value = change.value;
-            else
-                deduplicated.push_back(change);
-        }
-        settings_ast->changes = std::move(deduplicated);
+        /// Load TimeSeries settings from the `SETTINGS` clause.
+        if (normalized_create_query->storage)
+            settings->loadFromQuery(*normalized_create_query->storage);
 
-        storage_metadata.setSettingsChanges(settings_ast);
+        /// Re-derive columns from the normalized AST rather than trusting the `columns` argument.
+        /// For CREATE / RESTORE the query arrives already normalized.
+        /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
+        /// so `columns` can contain prealpha outer columns which we should upgrade.
+        auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
+            *normalized_create_query->columns_list->columns, local_context, mode);
+        storage_metadata.setColumns(normalized_columns);
+
+        /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause
+        /// and the result replaces the one in the create query.
+        if (normalized_create_query->storage && normalized_create_query->storage->settings)
+            storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
     }
 
-    /// Re-derive columns from the normalized AST rather than trusting the `columns` argument.
-    /// For CREATE / RESTORE the query arrives already normalized.
-    /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
-    /// so `columns` can contain prealpha outer columns which we should upgrade.
-    auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
-        *normalized_create_query->columns_list->columns, local_context, mode);
-    storage_metadata.setColumns(normalized_columns);
-
-    /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause
-    /// and the result replaces the one in the create query.
-    if (normalized_create_query->storage && normalized_create_query->storage->settings)
-        storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
+    has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
+    storage_settings.set(std::move(settings));
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -394,6 +406,8 @@ void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) c
 
 void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    checkTimeSeriesVersionIsSupported(*this);
+
     if (!hasInnerTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
@@ -509,6 +523,8 @@ bool StorageTimeSeries::optimize(
     bool cleanup,
     ContextPtr local_context)
 {
+    checkTimeSeriesVersionIsSupported(*this);
+
     if (!hasInnerTables())
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
@@ -532,9 +548,9 @@ bool StorageTimeSeries::optimize(
 
 void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
 {
-    /// Fail close: a server must not alter the definition of a table created by a newer version of ClickHouse
-    /// (an older server would rewrite the stored definition according to its own, older schema).
-    checkTimeSeriesVersionIsKnown(*this);
+    /// A server must not alter the definition of a table with a version it doesn't support:
+    /// it would rewrite the stored definition according to its own schema.
+    checkTimeSeriesVersionIsSupported(*this);
 
     for (const auto & command : commands)
     {
@@ -575,18 +591,9 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         new_settings = std::make_unique<TimeSeriesSettings>();
         new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
-        auto settings_changes = new_settings->changes();
-
-        /// Here `settings_changes` can be empty if `RESET SETTING` removed the last override.
-        /// The stored SETTINGS clause of the table definition is replaced only when the new list is non-empty
-        /// (see applyMetadataChangesToCreateQuery), so pin the `version` setting to keep the list non-empty -
-        /// otherwise the reset would not be persisted and would silently revert after a server restart.
-        if (settings_changes.empty())
-            settings_changes.push_back(SettingChange{"version", Field{static_cast<UInt64>((*new_settings)[TimeSeriesSetting::version])}});
-
         auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
-        settings_ast->changes = std::move(settings_changes);
+        settings_ast->changes = new_settings->changes();
         new_metadata.settings_changes = settings_ast;
     }
 
@@ -651,6 +658,8 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
 
 void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
+    checkTimeSeriesVersionIsSupported(*this);
+
     if (!hasInnerTables())
         return;
 
@@ -669,6 +678,8 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
 
 void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
+    checkTimeSeriesVersionIsSupported(*this);
+
     if (!hasInnerTables())
         return;
 
@@ -707,6 +718,8 @@ void StorageTimeSeries::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    checkTimeSeriesVersionIsSupported(*this);
+
     /// Run the generated read query on a child context with a few settings pinned so its results
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
@@ -732,8 +745,7 @@ void StorageTimeSeries::readImpl(
 SinkToStoragePtr StorageTimeSeries::write(
     const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
-    /// Fail close: a server must not write into a table created by a newer version of ClickHouse.
-    checkTimeSeriesVersionIsKnown(*this);
+    checkTimeSeriesVersionIsWritable(*this);
 
     Names insert_columns;
     if (const auto * insert_query = query->as<ASTInsertQuery>())
@@ -1024,7 +1036,7 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 So the columns were generated automatically and also there are four inner target tables with their own column definitions
 stored in the `INNER COLUMNS` clauses. The `recent_samples_ttl_seconds` setting was written into the `SETTINGS` clause
 with its default value: the setting defines the TTL of the recent samples table, so its effective value is fixed at creation.
-Also the latest schema version was stamped into the `version` setting (see [Schema versioning](#schema-versioning)).
+Also the latest schema version was pinned into the `version` setting (see [Schema versioning](#schema-versioning)).
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
@@ -1242,7 +1254,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
 
 The other settings can't be changed with `ALTER ... MODIFY SETTING`: most of them are baked into the schema of the inner tables at `CREATE` time,
-and the `version` setting is stamped automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).
+and the `version` setting is pinned automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).
 
 ## Settings {#settings}
 
@@ -1261,31 +1273,28 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is stamped automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is stamped automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
-persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced resolve to version 1.
-Creating a table with an explicit `version` other than the latest one is not allowed: normally the setting should just be omitted in the `CREATE TABLE` query.
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
+persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
+Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
+An explicit `version` is accepted if the server supports that version; for example, `CREATE TABLE ... AS other_table` copies the version of another table.
 
-The PromQL execution layer - the [prometheusQuery](../../../sql-reference/table-functions/prometheusQuery.md),
-[prometheusQueryRange](../../../sql-reference/table-functions/prometheusQueryRange.md),
-and [timeSeriesSelector](../../../sql-reference/table-functions/timeSeriesSelector.md) table functions,
-the `promql` dialect, and the Prometheus HTTP query API (`/api/v1/query`, `/api/v1/query_range`) -
-targets only the latest schema instead of supporting all the historical ones, so it works with a limited range of versions:
+A server supports a range of versions, and the minimum version can differ for reading with `SELECT`, for writing with `INSERT`
+or the Prometheus remote-write protocol, and for evaluating PromQL (the [prometheusQuery](/reference/functions/table-functions/prometheusQuery),
+[prometheusQueryRange](/reference/functions/table-functions/prometheusQueryRange),
+and [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) table functions,
+the `promql` dialect, and the Prometheus HTTP query API):
 
-- If a `TimeSeries` table has a version which is too old for the PromQL layer (which is possible after a ClickHouse upgrade),
-  queries over it are rejected with an exception asking to re-create the table:
-  create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query from the old table into the new one,
-  and then replace the old table with the new one.
-- If a `TimeSeries` table has a version newer than the latest version known to the server (which is possible after a ClickHouse downgrade),
-  queries over it, as well as `INSERT` queries, the Prometheus remote-write protocol, and `ALTER` queries,
-  are rejected with an exception asking to upgrade ClickHouse: an older server must not modify data
-  which only a newer server understands. Such a table can still be attached, detached and dropped.
+- If the version of a `TimeSeries` table is too old for PromQL, PromQL queries over it are rejected. The exception suggests to re-create the table:
+  create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query, and replace the old table with the new one.
+- If the version is too old to write into, `INSERT` queries and the Prometheus remote-write protocol are rejected, while `SELECT` queries still work.
+- If the version is too old for the server at all, every query over the table (except `SHOW CREATE TABLE`, `DETACH` and `DROP`) is rejected.
 
 # Functions {#functions}
 

@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/StorageID.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -39,7 +38,6 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <base/EnumReflection.h>
 #include <unordered_set>
 
@@ -571,6 +569,13 @@ namespace
         storage.settings->changes.setSetting(name, value);
     }
 
+    /// Upgrades a create query written by a server which didn't support versioning yet:
+    /// such tables belong to version 0 (see TimeSeriesVersion.h).
+    void upgradeFromWithoutExplicitVersion(ASTCreateQuery & create_query)
+    {
+        setTimeSeriesSettingVersion(create_query, 0);
+    }
+
     /// Detects prealpha version by outer columns: prealpha had outer columns `id`, `timestamp`, `value`,
     /// and now we don't have them.
     bool isPrealpha(const ASTCreateQuery & create_query)
@@ -822,79 +827,6 @@ namespace
                     "of a TimeSeries table (supported values are MergeTree, ReplicatedMergeTree and SharedMergeTree); "
                     "specify the inner table's engine explicitly", magic_enum::enum_name(default_table_engine), target_kind);
         }
-    }
-
-    /// Stamps the latest schema version into the CREATE query of a new table, so that the version is persisted
-    /// in the table metadata, or validates the version if it's specified in the query already.
-    /// The version can be present in the query not only when the user specifies it explicitly:
-    /// the `AS other_table` clause copies the settings of another table, and CREATE queries prepared by
-    /// another server are replayed by a replica of a Replicated database (`SECONDARY_CREATE`) or by a host
-    /// executing an ON CLUSTER query (`is_ddl_or_on_cluster_internal`, with mode == CREATE).
-    void setOrCheckVersion(
-        ASTCreateQuery & create_query,
-        TimeSeriesSettings & time_series_settings,
-        LoadingStrictnessLevel mode,
-        const ContextPtr & context)
-    {
-        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
-        bool is_replay_of_prepared_query = (mode != LoadingStrictnessLevel::CREATE) || context->isDDLOrOnClusterInternal();
-
-        if (time_series_settings[TimeSeriesSetting::version].isChanged())
-        {
-            UInt64 version = time_series_settings[TimeSeriesSetting::version];
-
-            if (version < TimeSeriesVersion::INITIAL)
-                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                    "{}: Cannot create a TimeSeries table with version {}: TimeSeries versions start at {}",
-                    table_id.getNameForLogs(), version, TimeSeriesVersion::INITIAL);
-
-            if (version > TimeSeriesVersion::LATEST)
-                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                    "{}: Cannot create a TimeSeries table with version {} which is newer than the latest version {} "
-                    "known to this server. Please upgrade ClickHouse",
-                    table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
-
-            /// A replay of a query prepared by another server is allowed to keep an older version,
-            /// but a new table can be created with the latest version only.
-            if (!is_replay_of_prepared_query && (version != TimeSeriesVersion::LATEST))
-            {
-                /// The `AS other_table` clause copies the settings of another table, so the version can be
-                /// present in the query even though the user didn't write it.
-                if (!create_query.as_table.empty())
-                    throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                        "{}: Cannot create a TimeSeries table with version {} copied by the AS clause from table {}: "
-                        "this server creates TimeSeries tables with version {}. Create the new table with a plain "
-                        "CREATE TABLE query and copy the data with an INSERT-SELECT query",
-                        table_id.getNameForLogs(), version, backQuoteIfNeed(create_query.as_table), TimeSeriesVersion::LATEST);
-
-                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                    "{}: Cannot create a TimeSeries table with version {}: this server creates TimeSeries tables "
-                    "with version {}. The `version` setting is stamped automatically when a table is created, "
-                    "omit it in the CREATE query",
-                    table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
-            }
-
-            return;
-        }
-
-        /// A replay of a prepared query without a version in it means the query was prepared by a server which
-        /// didn't support versioning yet; keep the setting unset so that the table resolves to the default
-        /// (initial) version, the same as on the server which prepared the query.
-        if (is_replay_of_prepared_query)
-            return;
-
-        if (!create_query.storage)
-            create_query.set(create_query.storage, make_intrusive<ASTStorage>());
-
-        if (!create_query.storage->settings)
-        {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            create_query.storage->set(create_query.storage->settings, settings_ast);
-        }
-
-        create_query.storage->settings->changes.push_back(SettingChange{"version", Field{TimeSeriesVersion::LATEST}});
-        time_series_settings[TimeSeriesSetting::version] = TimeSeriesVersion::LATEST;
     }
 
     /// Makes the definition of the default engine for an inner table.
@@ -1337,19 +1269,31 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     /// The initial CREATE query is excluded: it must be written in the current form already.
     bool can_upgrade = (mode != LoadingStrictnessLevel::CREATE) || is_restore_from_backup;
 
-    /// Upgrade the create_query if it was created by the old versions.
-    /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
-    if (can_upgrade && isPrealpha(create_query))
+    /// Upgrade the create_query if it was created before the `version` setting was introduced.
+    if (can_upgrade && !hasExplicitTimeSeriesSettingVersion(create_query))
     {
-        upgradeFromPrealpha(create_query);
-        chassert(!isPrealpha(create_query));
+        upgradeFromWithoutExplicitVersion(create_query);
+        chassert(hasExplicitTimeSeriesSettingVersion(create_query));
     }
 
-    /// Upgrade the create_query if it was created before the recent samples table existed.
-    if (can_upgrade && isVersionWithNoRecentSamplesTTL(create_query))
+    /// The older forms of the definition below were written only by servers which didn't support versioning yet,
+    /// so they can be found only in tables of version 0.
+    if (can_upgrade && (getTimeSeriesSettingVersion(create_query) == 0))
     {
-        upgradeFromVersionWithNoRecentSamplesTTL(create_query);
-        chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        /// Upgrade the create_query if it was created by the old versions.
+        /// (A new query written in the prealpha form must be rejected, see readTypesFromOuterColumns.)
+        if (isPrealpha(create_query))
+        {
+            upgradeFromPrealpha(create_query);
+            chassert(!isPrealpha(create_query));
+        }
+
+        /// Upgrade the create_query if it was created before the recent samples table existed.
+        if (isVersionWithNoRecentSamplesTTL(create_query))
+        {
+            upgradeFromVersionWithNoRecentSamplesTTL(create_query);
+            chassert(!isVersionWithNoRecentSamplesTTL(create_query));
+        }
     }
 
     /// Whether the query itself declares a RECENT SAMPLES target. This is checked before applyASClause,
@@ -1361,6 +1305,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
 
     /// Apply the clause `AS <other_table>` if any.
+    /// This must happen before pinning the version below: the AS clause copies the SETTINGS clause
+    /// of the other table (with its `version`) only if the query has no SETTINGS clause yet.
     if (!create_query.as_table.empty())
         applyASClause(create_query, context);
 
@@ -1375,8 +1321,16 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
 
-        setOrCheckVersion(create_query, settings, mode, context);
+        /// This also checks that the version is in the range supported by this server.
         checkTimeSeriesSettings(settings);
+
+        /// Pin `version`, so that the table keeps its version if a future server bumps the latest one.
+        /// Upgraded queries have a version at this point (see above), so a missing version here means a fresh CREATE.
+        if (!settings[TimeSeriesSetting::version].isChanged() && create_query.storage)
+        {
+            setEngineSettings(*create_query.storage, "version",
+                Field(settings[TimeSeriesSetting::version].value));
+        }
 
         /// Pin `recent_samples_ttl_seconds`, so that the table keeps its TTL if a future version changes the default.
         if (!settings[TimeSeriesSetting::recent_samples_ttl_seconds].isChanged() && create_query.storage)
