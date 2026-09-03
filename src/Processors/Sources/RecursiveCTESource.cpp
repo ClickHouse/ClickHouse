@@ -223,6 +223,10 @@ private:
         const size_t squashing_min_block_size_bytes
             = prefers_large_blocks ? recursive_subquery_settings[Setting::min_insert_block_size_bytes] : 0;
 
+        /// The sink below is single-stream anyway (`addChain` resizes the pipeline to one stream), so
+        /// squash on a single stream too: otherwise each of the parallel streams reading the working
+        /// table would squash its own chunks and leave its own under-filled tail block behind.
+        pipeline_builder.resize(1);
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {
             return std::make_shared<SimpleSquashingChunksTransform>(
