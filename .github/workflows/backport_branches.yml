@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
