@@ -84,6 +84,11 @@ enum class ReplacementKind
     Has,
     /// `count(x)` -> `sum(not(x.null))`.
     SumNot,
+    /// The chained `Dynamic`/JSON-array access
+    /// `tupleElement(...tupleElement(arrayElement(x.p, i), 'f1')..., 'fN')`
+    /// -> `arrayElement(x.p.:`Array(JSON)`.f1...fN, i)`, mirroring `optimizeJSONArrayElement`
+    /// of `FunctionToSubcolumnsPass`.
+    ArrayElement,
 };
 
 /// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
@@ -193,7 +198,156 @@ struct CandidateMatch
     /// such functions into subcolumn reads under `FINAL`, and this pass must not allow the
     /// subquery form of the same expression to tunnel around that restriction.
     bool via_function_carrier = false;
+    /// The index argument of `arrayElement` kept by ReplacementKind::ArrayElement.
+    QueryTreeNodePtr array_index_node;
 };
+
+/// The subcolumn of a `Dynamic` value that holds an array of JSON objects, as used by
+/// `FunctionToSubcolumnsPass::optimizeJSONArrayElement`.
+constexpr std::string_view JSON_ARRAY_SUBCOLUMN = ":`Array(JSON)`";
+
+/// Match the chained `Dynamic`/JSON-array access `json.a[i].b1...bN`, where `json` is a column
+/// exported by a subquery: a chain of `tupleElement` over an `arrayElement` over a chain of
+/// `getSubcolumn`. For a column read directly from a table the equivalent expression is rewritten
+/// by `FunctionToSubcolumnsPass::optimizeJSONArrayElement` into `arrayElement` over the nested
+/// subcolumn `json.a.:`Array(JSON)`.b1...bN`; that pass only handles table sources, so without
+/// this the same rewrite would be lost as soon as the column comes from a subquery.
+std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & function_node)
+{
+    /// Field names of the `tupleElement` chain, from the outermost inwards.
+    std::vector<String> field_names;
+    auto push_field_name = [&](const FunctionNode & tuple_element_node)
+    {
+        const auto & arguments = tuple_element_node.getArguments().getNodes();
+        if (arguments.size() != 2)
+            return false;
+
+        const auto * constant_node = arguments[1]->as<ConstantNode>();
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
+            return false;
+
+        field_names.push_back(constant_node->getValue().safeGet<String>());
+        return true;
+    };
+
+    if (!push_field_name(function_node))
+        return {};
+
+    /// Descend through the intermediate `tupleElement` calls down to the `arrayElement`.
+    const FunctionNode * array_element_node = nullptr;
+    QueryTreeNodePtr current = function_node.getArguments().getNodes()[0];
+    while (const auto * inner_function_node = current->as<FunctionNode>())
+    {
+        const auto & inner_arguments = inner_function_node->getArguments().getNodes();
+        if (inner_arguments.empty())
+            return {};
+
+        if (inner_function_node->getFunctionName() == "arrayElement" && inner_arguments.size() == 2)
+        {
+            array_element_node = inner_function_node;
+            break;
+        }
+
+        if (inner_function_node->getFunctionName() != "tupleElement" || !push_field_name(*inner_function_node))
+            return {};
+
+        current = inner_arguments[0];
+    }
+
+    if (!array_element_node)
+        return {};
+
+    const auto & array_element_arguments = array_element_node->getArguments().getNodes();
+
+    /// Only an array stored inside a `Dynamic` value is indexed element-wise by this rewrite.
+    auto array_argument_type = array_element_arguments[0]->getResultType();
+    if (!array_argument_type || array_argument_type->getTypeId() != TypeIndex::Dynamic)
+        return {};
+
+    /// A Nullable or otherwise unusual index would change the result type of `arrayElement`
+    /// over the projected array compared to the original expression.
+    auto index_argument_type = array_element_arguments[1]->getResultType();
+    if (!index_argument_type || !isInteger(index_argument_type))
+        return {};
+
+    /// Descend through the `getSubcolumn` chain to the column exported by the subquery,
+    /// composing the path of the `Dynamic` value inside it.
+    std::vector<String> path_components;
+    QueryTreeNodePtr base_node = array_element_arguments[0];
+    while (const auto * inner_function_node = base_node->as<FunctionNode>())
+    {
+        if (inner_function_node->getFunctionName() != "getSubcolumn")
+            return {};
+
+        const auto & inner_arguments = inner_function_node->getArguments().getNodes();
+        if (inner_arguments.size() != 2)
+            return {};
+
+        const auto * constant_node = inner_arguments[1]->as<ConstantNode>();
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
+            return {};
+
+        path_components.push_back(constant_node->getValue().safeGet<String>());
+        base_node = inner_arguments[0];
+    }
+
+    std::ranges::reverse(path_components);
+    if (path_components.empty())
+        return {};
+
+    auto * column_node = base_node->as<ColumnNode>();
+    if (!column_node)
+        return {};
+
+    auto column_source = column_node->getColumnSourceOrNull();
+    if (!column_source || !isQueryOrUnionNode(column_source))
+        return {};
+
+    /// The `Dynamic` value must be a path of a JSON column: only then its array elements are
+    /// stored as `Array(JSON)` and the nested field is a real subcolumn of the parent column
+    /// (mirrors the JSON ancestor check of `optimizeJSONArrayElement`).
+    const auto & column_type = column_node->getColumnType();
+    bool found_json_ancestor = column_type->getTypeId() == TypeIndex::Object;
+    String subcolumn_path;
+    for (const auto & path_component : path_components)
+    {
+        if (!subcolumn_path.empty())
+        {
+            auto prefix_type = column_type->tryGetSubcolumnType(subcolumn_path);
+            found_json_ancestor = found_json_ancestor || (prefix_type && prefix_type->getTypeId() == TypeIndex::Object);
+        }
+
+        subcolumn_path = subcolumn_path.empty() ? path_component : subcolumn_path + "." + path_component;
+    }
+
+    if (!found_json_ancestor)
+        return {};
+
+    subcolumn_path += ".";
+    subcolumn_path += JSON_ARRAY_SUBCOLUMN;
+    for (auto it = field_names.rbegin(); it != field_names.rend(); ++it)
+        subcolumn_path += "." + *it;
+
+    auto subcolumn_type = column_type->tryGetSubcolumnType(subcolumn_path);
+    if (!subcolumn_type || subcolumn_type->getTypeId() != TypeIndex::Array)
+        return {};
+
+    /// `arrayElement` over the projected array produces the same `Dynamic` value as the original
+    /// chain, up to the `max_types` parameter, which the replacement casts away.
+    const auto & nested_type = assert_cast<const DataTypeArray &>(*subcolumn_type).getNestedType();
+    if (nested_type->getTypeId() != TypeIndex::Dynamic || function_node.getResultType()->getTypeId() != TypeIndex::Dynamic)
+        return {};
+
+    return CandidateMatch{
+        column_node,
+        std::move(column_source),
+        std::move(subcolumn_path),
+        std::move(subcolumn_type),
+        ReplacementKind::ArrayElement,
+        /*requires_tuple_element_guards=*/false,
+        /*via_function_carrier=*/true,
+        array_element_arguments[1]};
+}
 
 /// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
 std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
@@ -207,7 +361,13 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
     auto * column_node = function_arguments[0]->as<ColumnNode>();
     if (!column_node)
+    {
+        /// The chained `Dynamic`/JSON-array access reaches the column through intermediate
+        /// functions instead of taking it as its direct argument.
+        if (function_node.getFunctionName() == "tupleElement" && function_arguments.size() == 2)
+            return matchChainedJSONArrayElement(function_node);
         return {};
+    }
 
     /// Only query and union sources are rewritten. In particular, a materialized CTE that is
     /// referenced more than once stays a TableNode over its temporary table (single-use ones
@@ -466,7 +626,8 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         std::move(subcolumn_type),
         replacement_kind,
         requires_tuple_element_guards,
-        /*via_function_carrier=*/function_name != "getSubcolumn"};
+        /*via_function_carrier=*/function_name != "getSubcolumn",
+        /*array_index_node=*/nullptr};
 }
 
 bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
@@ -682,7 +843,12 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 
                     /// The column argument of the matched occurrence is visited below as a child
                     /// and counted in column_references; the occurrence counter compensates it.
-                    ++group->occurrences;
+                    /// A chained carrier does not take the column as its own argument: it reaches
+                    /// it through a nested `getSubcolumn` occurrence, which is matched on its own
+                    /// and already compensates that single reference. Counting it here as well
+                    /// would compensate the reference twice.
+                    if (match->replacement_kind != ReplacementKind::ArrayElement)
+                        ++group->occurrences;
 
                     /// A plain `getSubcolumn` synthesized for a carrier group at the previous
                     /// level carries the origin of that group.
@@ -1219,6 +1385,14 @@ QueryTreeNodePtr buildReplacementNode(const CandidateMatch & match, const Pushdo
             return make_function("not", {std::move(subcolumn_node)}, true);
         case ReplacementKind::Has:
             return make_function("has", {std::move(subcolumn_node), function_node.getArguments().getNodes()[1]}, false);
+        case ReplacementKind::ArrayElement:
+        {
+            auto element_node = make_function("arrayElement", {std::move(subcolumn_node), match.array_index_node}, false);
+            const auto & result_type = function_node.getResultType();
+            if (!element_node->getResultType()->equals(*result_type))
+                return buildCastFunction(element_node, result_type, group.context);
+            return element_node;
+        }
         case ReplacementKind::SumNot:
         {
             auto negated = make_function("not", {std::move(subcolumn_node)}, true);
