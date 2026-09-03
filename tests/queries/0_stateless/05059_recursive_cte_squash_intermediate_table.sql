@@ -65,14 +65,15 @@ WITH RECURSIVE t AS
 )
 SELECT count() FROM t;
 
--- The result of the recursion does not depend on the block layout.
+-- The result of the recursion does not depend on the block layout. Every recursive step re-plans and
+-- re-executes the member, which is slow in sanitizer builds, so keep the depth moderate.
 SET max_block_size = DEFAULT;
 
 WITH RECURSIVE t AS
 (
     SELECT 1 AS n
     UNION ALL
-    SELECT n + 1 FROM t WHERE n < 1000
+    SELECT n + 1 FROM t WHERE n < 100
 )
 SELECT count(), sum(n) FROM t;
 
@@ -82,6 +83,6 @@ WITH RECURSIVE t AS
 (
     SELECT 1 AS n
     UNION ALL
-    SELECT n + 1 FROM t WHERE n < 1000
+    SELECT n + 1 FROM t WHERE n < 100
 )
 SELECT count(), sum(n) FROM t;
