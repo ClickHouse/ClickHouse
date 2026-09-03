@@ -3,6 +3,11 @@
 04539_fwd_topk	1	1
 --- TopK still returns the planted row
 10000
+--- Forward, multi-conjunct: the TopK read reuses an entry primed by a two-conjunct WHERE
+04539_fwd_multi_prime	0	0
+04539_fwd_multi_topk	1	1
+--- Multi-conjunct TopK still returns the planted row
+10000
 --- Reverse: a TopK-salted entry must not be read by a plain WHERE
 04539_rev_plain	0	0
 --- Plain WHERE still returns the planted row
