@@ -35,6 +35,7 @@ public:
 
     String getName() const override { return "LimitRange"; }
 
+    Status prepare() override;
     void transform(Chunk & chunk) override;
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override
@@ -74,7 +75,7 @@ private:
     bool started = false;
     /// Total rows emitted so far (non-ALL mode).
     UInt64 rows_output = 0;
-    /// Total rows seen so far across all chunks (ALL mode, for absolute position tracking).
+    /// Total rows read so far; in ALL mode also the absolute position of the current chunk's first row.
     UInt64 rows_read = 0;
     /// Absolute row position up to which the current/latest window extends (ALL mode).
     UInt64 repeated_window_end = 0;

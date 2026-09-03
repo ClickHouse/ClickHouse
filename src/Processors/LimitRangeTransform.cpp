@@ -236,6 +236,29 @@ void LimitRangeTransform::setDone()
         stopReading();
 }
 
+IProcessor::Status LimitRangeTransform::prepare()
+{
+    /// A finished output normally closes the input at once, but `exact_rows_before_limit` promises the
+    /// count of all rows before the range, so keep pulling and counting until the input is exhausted, as
+    /// `LimitTransform` does. Nothing is pulled while no row was read yet: the sets of the query may not
+    /// be built at that point.
+    if (output.isFinished() && always_read_till_end && rows_read > 0 && !input.isFinished())
+    {
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
+
+        auto chunk = input.pull(true);
+        if (rows_before_limit_at_least)
+            rows_before_limit_at_least->add(chunk.getNumRows());
+
+        input.setNeeded();
+        return Status::NeedData;
+    }
+
+    return ISimpleTransform::prepare();
+}
+
 void LimitRangeTransform::transform(Chunk & chunk)
 {
     if (chunk.empty())
@@ -280,6 +303,8 @@ void LimitRangeTransform::transform(Chunk & chunk)
         transformAll(chunk, start_col, end_col);
         return;
     }
+
+    rows_read += num_rows;
 
     /// end_in_chunk caches the result of findFirstTrue(end_col) when it is computed
     /// inside the !started block, to avoid a redundant second scan below.
