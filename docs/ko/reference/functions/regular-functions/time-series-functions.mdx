@@ -22,9 +22,9 @@ doc_type: 'reference'
   ## seriesDecomposeSTL
 </div>
 
-도입된 버전: v24.1.0
+도입 버전: v24.1.0
 
-STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf)을 사용해 시계열 데이터를 계절성, 추세, 잔차 요소로 분해합니다.
+STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf)을 사용해 시계열 데이터를 계절성, 추세, 잔차 성분으로 분해합니다.
 
 **구문**
 
@@ -50,9 +50,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─print_0────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -89,12 +89,12 @@ SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4,
 ```
 
 ```response title=Response
-┌───────────print_0─────────────────┐
-│[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
-└───────────────────────────────────┘
+┌─print_0────────────────────────────┐
+│ [0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
+└────────────────────────────────────┘
 ```
 
-**사용자 지정 매개변수를 이용한 이상값 탐지**
+**사용자 지정 매개변수를 이용한 이상치 탐지**
 
 ```sql title=Query
 SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0
@@ -137,9 +137,9 @@ SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4,
 ```
 
 ```response title=Response
-┌───────────print_0──────┐
-│                      3 │
-└────────────────────────┘
+┌─print_0─┐
+│       3 │
+└─────────┘
 ```
 
 **복잡한 패턴을 사용한 주기 감지**
@@ -198,9 +198,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)────────────────────────┐
-│          1 │         2 │            3 │ [('__name__','http_codes'),('code','404'),('region','eu')] │
-└────────────┴───────────┴──────────────┴────────────────────────────────────────────────────────────┘
+┌─dest_group─┬─src_group─┬─result_group─┬─timeSeriesGroupToTags(result_group)───────────────────────┐
+│          1 │         2 │            3 │ [('__name__','http_codes'),('env','dev'),('region','eu')] │
+└────────────┴───────────┴──────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesCopyTags">
@@ -338,7 +338,7 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 ```
 
 ```response title=Response
-┌─────────────────────────────────────────────result─────────────────────────────────────────────┐
+┌─result─────────────────────────────────────────────────────────────────────────────────────────┐
 │ [('2025-06-01 00:00:00.000',10),('2025-06-01 00:00:30.000',20),('2025-06-01 00:01:30.000',30)] │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -383,7 +383,7 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 ```response title=Response
 ┌─group─┬─────────sampling_key─┐
-│     1 │ 12876543210987654321 │
+│     1 │ 15511321834549144507 │
 └───────┴──────────────────────┘
 ```
 
@@ -430,9 +430,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 ```
 
 ```response title=Response
-┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notE⋯up, group))─┐
-│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                        0 │
-└───────┴────────────────────────────────────────────────────────────────────┴────────────┴──────────────────────────┘
+┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notEquals(same_group, group))─┐
+│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                                     0 │
+└───────┴────────────────────────────────────────────────────────────────────┴────────────┴───────────────────────────────────────┘
 ```
 
 <div id="timeSeriesIdToGroup">
@@ -477,9 +477,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesIdToTags">
@@ -523,9 +523,9 @@ SELECT 8374283493092 AS id,
 ```
 
 ```response title=Response
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesJoinTags">
@@ -576,6 +576,42 @@ SELECT timeSeriesTagsToGroup([('__name__', 'up'), ('job', 'api-server'), ('src1'
 └───────┴──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="timeSeriesMetricTypeToSuffixes">
+  ## timeSeriesMetricTypeToSuffixes
+</div>
+
+도입 버전: v26.8.0
+
+지정된 Prometheus 유형의 메트릭 계열에 대한 메트릭 이름 접미사를 반환합니다.
+
+**구문**
+
+```sql
+timeSeriesMetricTypeToSuffixes(type)
+```
+
+**인수**
+
+* `type` — Prometheus 메트릭 유형(`counter`, `gauge`, `histogram`, `summary` 등). [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+해당 유형의 메트릭 계열에 대한 접미사를 반환합니다. [`Array(String)`](/ko/reference/data-types/array)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
+```
+
+```response title=Response
+┌─suffixes────────────────────┐
+│ ['_bucket','_count','_sum'] │
+└─────────────────────────────┘
+```
+
 <div id="timeSeriesRange">
   ## timeSeriesRange
 </div>
@@ -613,9 +649,9 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 ```
 
 ```response title=Response
-┌────────────────────────────────────result─────────────────────────────────────────┐
-│ ['2025-06-01 00:00:00.000', '2025-06-01 00:00:30.000', '2025-06-01 00:01:00.000'] │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRange(CAST('2025-06-01 00:00:00', 'DateTime64(3)'), CAST('2025-06-01 00:01:00', 'DateTime64(3)'), 30)─┐
+│ ['2025-06-01 00:00:00.000','2025-06-01 00:00:30.000','2025-06-01 00:01:00.000']                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="timeSeriesRemoveAllTagsExcept">
@@ -907,6 +943,46 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 └────────┴────────┴─────────────┴─────────────┴─────────────────────────────────────────┴────────────────────────────────┘
 ```
 
+<div id="timeSeriesTagsToMap">
+  ## timeSeriesTagsToMap
+</div>
+
+도입 버전: v26.8.0
+
+`(tag_name, tag_value)` 쌍으로 구성된 배열과 별도의 태그 이름/값 인수를 하나의 맵으로 결합합니다.
+결과는 태그 이름을 기준으로 정렬되며, 중복된 태그 이름 및 빈 값을 가진 태그는 제거됩니다.
+
+**구문**
+
+```sql
+timeSeriesTagsToMap(tags_array, tag_name_1, tag_value_1, tag_name_2, tag_value_2, ...)
+```
+
+**인수**
+
+* `tags_array` — (tag&#95;name, tag&#95;value) 쌍의 배열. [`Array(Tuple(String, String))`](/ko/reference/data-types/array) 또는 [`Map(String, String)`](/ko/reference/data-types/map) 또는 [`NULL`](/ko/reference/syntax#null)
+* `tag_name_i` — 태그 이름. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
+* `tag_value_i` — 태그 값. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`Nullable(String)`](/ko/reference/data-types/nullable)
+
+**반환 값**
+
+태그 이름을 기준으로 정렬된 태그 이름-값 맵을 반환합니다. 중복된 태그 이름과 비어 있는 태그 값은 제외됩니다.
+[`Map(String, String)`](/ko/reference/data-types/map)
+
+**예시**
+
+**예시**
+
+```sql title=Query
+SELECT timeSeriesTagsToMap([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS tags
+```
+
+```response title=Response
+┌─tags─────────────────────────────────────────────────────────┐
+│ {'__name__':'http_requests_count','env':'dev','region':'eu'} │
+└──────────────────────────────────────────────────────────────┘
+```
+
 <div id="timeSeriesThrowDuplicateSeriesIf">
   ## timeSeriesThrowDuplicateSeriesIf
 </div>
@@ -940,24 +1016,35 @@ timeSeriesThrowDuplicateSeriesIf(condition, group)
 
 **예시**
 
-**예시**
+**그룹당 하나의 시리즈**
 
 ```sql title=Query
 CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
+GROUP BY timeSeriesTagsToGroup(tags);
+```
 
+```response title=Response
+0
+```
+
+**동일한 태그를 가진 두 시리즈**
+
+```sql title=Query
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
+GROUP BY timeSeriesTagsToGroup(tags);
+```
+
+```response title=Response
+Received exception:
+Code: 768. DB::Exception: Multiple series have the same tags {'__name__': 'up'}, duplicate series in the same result set are not allowed. (DUPLICATE_TIME_SERIES)
 ```
 
 {/*AUTOGENERATED_END*/}
