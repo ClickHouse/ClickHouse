@@ -61,4 +61,40 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
 }
 
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
+{
+    /// A ':' in the name is not equal to any forbidden entry, but a peer still parses a
+    /// forbidden header from it, so the name must be rejected as a non-token character.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"Cookie:j=\"x", "y\";session=abc"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsNonTokenCharInName)
+{
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-Bad(Name)", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
+{
+    /// ':' is legal in a value (for example "Host: example.com:8080"); only names are tokens.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"Host", "example.com:8080"});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationAcceptsTokenSpecialCharsInName)
+{
+    /// The full RFC 9110 token set is allowed in a name, not just alphanumerics and '-'.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X-Cust0m!#$%&'*+-.^_`|~Header", "value"});
+    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+}
+
 }

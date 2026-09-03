@@ -15,6 +15,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// RFC 9110 (5.6.2) token characters. A valid HTTP field name is a token, so any
+/// character outside this set (for example ':') is not allowed in a header name.
+bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c)
+        || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' || c == '\''
+        || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_'
+        || c == '`' || c == '|' || c == '~';
+}
+
+}
+
 void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
@@ -34,6 +49,13 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 normalized_name.end(),
                 [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
             normalized_name.end());
+
+        /// A header name must be a valid token (RFC 9110 5.6.2). A non-token character such
+        /// as ':' is rejected here because it does not equal any <http_forbid_headers> entry,
+        /// yet a peer still parses a forbidden header from a name like "Cookie:x".
+        for (char c : normalized_name)
+            if (!isHTTPTokenChar(c))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character in name", entry.name);
 
         /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
         /// entries are stored lower-cased, so lower-case the name for that lookup.
