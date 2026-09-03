@@ -71,4 +71,18 @@ WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64))
    OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2::UInt64::Variant(UInt64))
 SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
 
+-- `count()` stays 1 if the rewrite declines and each equality keeps its own cast, so assert the rewritten
+-- predicate too: the `IN` and the leaf's numeric cast have to be there together.
+SELECT countIf(explain ILIKE '%in(__table1.x, tuple(tuple(_CAST(1698541800,%')
+FROM
+(
+    EXPLAIN SYNTAX run_query_tree_passes = 1
+    SELECT count()
+    FROM remote('127.0.0.1', currentDatabase(), t_variant_const_or_in)
+    WHERE x = (toDateTime(1698541800, 'Europe/Berlin'), 42::UInt64::Variant(UInt64))
+       OR x = (toDateTime(1000000000, 'Europe/Berlin'), 1::UInt64::Variant(UInt64))
+       OR x = (toDateTime(1100000000, 'Europe/Berlin'), 2::UInt64::Variant(UInt64))
+    SETTINGS prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3
+);
+
 DROP TABLE t_variant_const_or_in;

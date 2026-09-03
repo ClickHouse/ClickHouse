@@ -1658,8 +1658,7 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 }
 
 /// `date_time_as_numbers` renders a `DateTime` leaf as its raw Unix timestamp named by its own type. It is
-/// set by a consumer that re-applies the constant's declared type, and while descending into a named
-/// `Variant` member, whose own type name is asserted on the receiving side.
+/// also set while descending into a named `Variant` member, whose type name the receiving side asserts.
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
     /// Subtrees the default literal path already serializes exactly are left unchanged.
