@@ -293,6 +293,11 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & existing_prewhere_info = read_from_mergetree_step->getPrewhereInfo();
     if (existing_prewhere_info)
     {
+        /// Each read step filters the block the next one sees, and the split preserves the order of the
+        /// root's conjuncts, so a stateful condition would observe a different block than it does alone.
+        if (existing_prewhere_info->prewhere_actions.hasStatefulFunctions())
+            return;
+
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
         const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
 
@@ -329,7 +334,7 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             return;
 
         /// Keep the conjunction flat. `MergeTreeSplitPrewhereIntoReadSteps` splits on the direct
-        /// children of the root `and`, so nesting `and(and(a, b), __topKFilter)` would present two
+        /// children of the root `and`, so nesting `and(__topKFilter, and(a, b))` would present two
         /// children and collapse a multi-condition PREWHERE into a single read step.
         /// The order of the conjuncts is the order of the read steps, and the threshold filter is
         /// the cheapest condition here: it reads only the sort column.
@@ -357,7 +362,6 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         if (existing_prewhere_info->remove_prewhere_column)
             std::erase(outputs, existing_filter_node);
-        std::erase(outputs, filter_node);
         outputs.push_back(and_node);
 
         prewhere_info->prewhere_actions = std::move(combined);

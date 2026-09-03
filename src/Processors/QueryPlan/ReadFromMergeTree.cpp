@@ -155,9 +155,10 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
-/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
-/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
+/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic. Mirrors
+/// the copy in `updateQueryConditionCache.cpp`: both gates must agree, otherwise QCC writes and reads
+/// diverge on TopK plans. The filter is installed after the pass that builds the DAG inspected here,
+/// so that allowance covers shapes this path no longer produces.
 ///
 /// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
 /// as query-time constants `now()` / `today()`). Without that check, queries whose filter
@@ -3554,8 +3555,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
             /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
-            /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
-            /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
+            /// `isDeterministicAllowingTopKFilter` is equivalent to `VirtualColumnUtils::isDeterministic`
+            /// here: the threshold filter is merged into the PREWHERE after this DAG is built, so it
+            /// cannot appear in it for either kind of read.
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {

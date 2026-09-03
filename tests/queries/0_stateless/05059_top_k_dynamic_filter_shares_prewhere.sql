@@ -66,6 +66,26 @@ SETTINGS use_top_k_dynamic_filtering = 0;
 SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere WHERE pred = 3 AND tag = 't2' ORDER BY k LIMIT 20)
 SETTINGS use_top_k_dynamic_filtering = 1;
 
+-- A stateful condition keeps the read out of the conjunction: the read steps run in conjunct order
+-- and each filters the block the next one sees, so such a condition would observe a different block
+-- than it does as the only condition.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k FROM t_topk_prewhere PREWHERE rowNumberInBlock() < 1 ORDER BY k LIMIT 10)
+WHERE explain ILIKE '%FUNCTION \_\_topKFilter%';
+
+-- Sensitivity control for that pattern: the same comparison over a non-stateful operand installs it.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k FROM t_topk_prewhere PREWHERE pred < 1 ORDER BY k LIMIT 10)
+WHERE explain ILIKE '%FUNCTION \_\_topKFilter%';
+
+-- Same rows either way. Compared arm to arm instead of printed: which rows a `rowNumberInBlock()`
+-- condition keeps depends on the block size, and the test runner randomizes it.
+SELECT
+    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere PREWHERE rowNumberInBlock() < 1 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
+  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere PREWHERE rowNumberInBlock() < 1 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+
 DROP TABLE t_topk_prewhere;
 
 -- A stored column whose name is the name the threshold filter's own column gets must not be taken
