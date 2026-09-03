@@ -39,18 +39,21 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --write_full_path_in_iceberg_
 
 # A-D read the strings the two tables were stamped with. `location` and `manifest-list` sit in
 # the metadata document; `manifest_path` and `data_file.file_path` sit in the Avro files it
-# names, and all four derive from the one location, so each is asserted separately.
+# names, and all four derive from the one location, so each is asserted separately. Each names the
+# whole expected path and not just the scheme, because a table under the wrong root still reads
+# back: the resolver maps the shared metadata prefix onto the configured table root.
 python3 -c "
-import json, sys
+import json
+root = 'file://' + '${TEST_DIR}/t1/'
 loc = json.load(open('${TEST_DIR}/t0/metadata/v2.metadata.json'))['location']
 print('A default   ' + ('no-scheme' if '://' not in loc else 'UNEXPECTED ' + loc))
 m = json.load(open('${TEST_DIR}/t1/metadata/v2.metadata.json'))
 loc = m['location']
-print('B location  ' + ('file:///' if loc.startswith('file:///') else 'UNEXPECTED ' + loc))
+print('B location  ' + ('file:///+root' if loc == root else 'UNEXPECTED ' + loc))
 # An empty authority contributes no path segment, so an absolute path keeps exactly one root slash.
 print('C authority ' + ('one-slash' if loc.startswith('file:///') and not loc.startswith('file:////') else 'UNEXPECTED ' + loc))
 ml = m['snapshots'][-1]['manifest-list']
-print('D manifests ' + ('file:///' if ml.startswith('file:///') else 'UNEXPECTED ' + ml))
+print('D manifests ' + ('file:///+metadata' if ml.startswith(root + 'metadata/') else 'UNEXPECTED ' + ml))
 "
 
 # E-F reach the Avro files by their position on disk rather than by the path the document names,
@@ -59,20 +62,24 @@ SNAPSHOT_AVRO=$(ls "${TEST_DIR}"/t1/metadata/snap-*.avro)
 MANIFEST_AVRO=$(ls "${TEST_DIR}"/t1/metadata/*.avro | grep -v '/snap-')
 echo -n 'E manifest  '
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT if(startsWith(manifest_path, 'file:///'), 'file:///', 'UNEXPECTED ' || manifest_path)
+    SELECT if(startsWith(manifest_path, 'file://${TEST_DIR}/t1/metadata/'), 'file:///+metadata', 'UNEXPECTED ' || manifest_path)
     FROM file('${SNAPSHOT_AVRO}', 'Avro')"
 
 echo -n 'F datafile  '
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT if(startsWith(data_file.file_path, 'file:///'), 'file:///', 'UNEXPECTED ' || data_file.file_path)
+    SELECT if(startsWith(data_file.file_path, 'file://${TEST_DIR}/t1/data/'), 'file:///+data', 'UNEXPECTED ' || data_file.file_path)
     FROM file('${MANIFEST_AVRO}', 'Avro')"
 
 echo -n 'G readback  '
 ${CLICKHOUSE_CLIENT} $NC -q "SELECT count(), sum(v) FROM icebergLocal('${TEST_DIR}/t1/')"
 
-# H: a table whose metadata declares the retired `local://` spelling still reads. Tables written
-# before this changed carry it, so the resolver must keep accepting a location it would no longer
-# write; this arm passes on both sides of the change.
+# H: a metadata document that declares the retired `local://` spelling still reads, so the resolver
+# keeps accepting a location it would no longer write. Only `location` and `manifest-list` carry the
+# retired spelling here while the Avro files keep the new `file:///` paths, which reaches more of the
+# resolver than a uniformly retired document would: `manifest-list` matches the declared location and
+# takes its prefix-match branch, the Avro paths do not and take the fallbacks. A table whose four
+# carriers all hold the retired spelling is covered by the before/after measurement in the pull
+# request, not here. This arm passes on both sides of the change.
 python3 -c "
 import json
 p = '${TEST_DIR}/t1/metadata/v2.metadata.json'
@@ -82,5 +89,20 @@ for s in m.get('snapshots', []):
     s['manifest-list'] = s['manifest-list'].replace('file:///', 'local:////', 1)
 json.dump(m, open('${TEST_DIR}/t1/metadata/v3.metadata.json', 'w'))
 "
+# v2 leaves the candidate set, which is globbed by the `.metadata.json` suffix, so the planted v3 is
+# the only document that can be selected. v1 predates the INSERT, so a reader that fell back to it
+# would report a different row count instead of v2's identical one.
+mv "${TEST_DIR}/t1/metadata/v2.metadata.json" "${TEST_DIR}/t1/metadata/v2.metadata.json.bak"
 echo -n 'H oldform   '
 ${CLICKHOUSE_CLIENT} $NC -q "SELECT count(), sum(v) FROM icebergLocal('${TEST_DIR}/t1/')"
+
+# I: the setting is read when the table is created, so a second INSERT with it on must not restamp
+# t0. This arm pins pre-existing semantics and therefore holds on both sides of the change.
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --write_full_path_in_iceberg_metadata 1 -q "
+    INSERT INTO t0_05060 VALUES (3, 30);
+"
+python3 -c "
+import json
+loc = json.load(open('${TEST_DIR}/t0/metadata/v3.metadata.json'))['location']
+print('I setting-at-insert ' + ('no-scheme' if '://' not in loc else 'UNEXPECTED ' + loc))
+"

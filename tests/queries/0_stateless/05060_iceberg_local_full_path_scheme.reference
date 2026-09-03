@@ -1,8 +1,9 @@
 A default   no-scheme
-B location  file:///
+B location  file:///+root
 C authority one-slash
-D manifests file:///
-E manifest  file:///
-F datafile  file:///
+D manifests file:///+metadata
+E manifest  file:///+metadata
+F datafile  file:///+data
 G readback  2	30
 H oldform   2	30
+I setting-at-insert no-scheme

@@ -53,9 +53,10 @@ private:
     String raw_path;
 };
 
-/// The URI scheme an Iceberg reader resolves for a ClickHouse object storage backend.
-/// A local disk is spelled `file`: `local` is ClickHouse's storage type token, not a
-/// filesystem URI scheme, and no Iceberg implementation resolves it.
+/// The URI scheme to write for a ClickHouse object storage backend. A local disk is spelled
+/// `file`: `local` is ClickHouse's storage type token, not a filesystem URI scheme, and no
+/// Iceberg implementation resolves it. Every other backend keeps its token, which an external
+/// reader resolves only for `s3`.
 String toIcebergURIScheme(const String & storage_type_name);
 
 /// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
