@@ -102,7 +102,7 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
-        Names key_columns; /// WITH RECURSIVE name USING KEY (a, b) AS (...)
+        Names key_columns = {}; /// WITH RECURSIVE name USING KEY (a, b) AS (...)
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
