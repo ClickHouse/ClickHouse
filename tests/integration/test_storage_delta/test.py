@@ -174,8 +174,9 @@ def started_cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
-            # A released version that has Delta writes (>= 25.10) but not the 26.9 write-schema cast, so it
-            # can demonstrate the old "write the value as-is" behaviour before `restart_with_latest_version`.
+            # A released version old enough that this PR will certainly not be backported to it, so the
+            # comparison stays meaningful: it has Delta writes (>= 25.10) but no write-schema cast, so it
+            # demonstrates the old "write the value as-is" behaviour before `restart_with_latest_version`.
             # Uses only `users.xml` (not `enable_writes.xml`, which carries the 26.9-only
             # `allow_delta_lake_create_table` setting the old binary would reject at startup); write settings
             # are passed per query instead.
@@ -189,7 +190,7 @@ def started_cluster():
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="26.8",
+            tag="26.6",
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
