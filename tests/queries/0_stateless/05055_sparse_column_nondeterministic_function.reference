@@ -4,7 +4,7 @@ generators that never read their argument
 1000
 1
 1
-a generator that does read its argument
+a generator that keeps the default sparse handling
 1000
 deterministic functions keep the fast path
 10	5500

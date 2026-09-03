@@ -22,15 +22,13 @@ WHERE database = currentDatabase() AND table = 't_sparse_nondeterministic' AND c
 
 SELECT 'generators that never read their argument';
 -- These opt out of the sparse handling entirely, so the column is not materialized on their behalf.
--- `generateULID` is covered by the same opt-out but is left out here: ULID is not available in the
--- fast test build.
 SELECT uniqExact(generateUUIDv4(s)) FROM t_sparse_nondeterministic;
 SELECT uniqExact(rand(s)) > 900 FROM t_sparse_nondeterministic;
 SELECT count() BETWEEN 400 AND 600 FROM t_sparse_nondeterministic WHERE rand(s) % 2 = 0;
 
-SELECT 'a generator that does read its argument';
--- This one keeps the default sparse handling and relies on the guard in
--- `executeWithoutReplicatedColumns` instead, so it covers the other half of the fix.
+SELECT 'a generator that keeps the default sparse handling';
+-- This one does not opt out, so it relies on the guard in `executeWithoutReplicatedColumns`
+-- instead and covers the other half of the fix.
 SELECT uniqExact(generateSnowflakeID(s)) FROM t_sparse_nondeterministic;
 
 SELECT 'deterministic functions keep the fast path';
