@@ -358,6 +358,16 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+
+    /// For forward read-in-order with an OFFSET: drop the leading granules consumed by the offset from the
+    /// analyzed ranges and return the rows skipped (the caller must reduce the downstream offset by it).
+    /// `sort_description` is the order the offset counts rows in, taken from the `SortingStep` above.
+    size_t skipRowsForOffset(size_t offset, const SortDescription & sort_description);
+
+    /// Once leading granules are dropped, the analysis no longer describes the whole read, so it must not be
+    /// reused for a plan that still applies the original offset.
+    bool hasTrimmedRangesForOffset() const { return offset_rows_skipped.value_or(0) > 0; }
+
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
@@ -552,6 +562,9 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+
+    /// Rows dropped by `skipRowsForOffset`; `nullopt` until it has run, which keeps it idempotent.
+    std::optional<size_t> offset_rows_skipped;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 

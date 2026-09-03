@@ -31,6 +31,14 @@ std::optional<bool> deriveReverseOrder(const KeyDescription & primary_key, const
 /// intersecting (overlapping key ranges that need FINAL merge).
 SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger);
 
+/** For forward read-in-order with an OFFSET: drop the leading granules whose total row count does not exceed
+  * `offset` and that are strictly separated from the rest in the merge order. `prefix_size` is the number of
+  * leading sorting-key columns that define that merge order (`used_prefix_of_sorting_key_size`), on which the
+  * separation is tested. Mutates `ranges_in_data_parts` in place and returns the rows skipped; the caller must
+  * reduce the downstream offset by that amount. Returns 0 for reverse order, which is not supported yet.
+  */
+size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, size_t offset, size_t prefix_size, bool in_reverse_order, const LoggerPtr & logger);
+
 struct SplitPartsWithRangesByPrimaryKeyResult
 {
     RangesInDataParts non_intersecting_parts_ranges;

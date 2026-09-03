@@ -3796,6 +3796,78 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
+size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription & sort_description)
+{
+    if (offset == 0 || offset_rows_skipped.has_value())
+        return 0;
+
+    /// Only forward read-in-order is supported.
+    if (!query_info.input_order_info || query_info.input_order_info->direction != 1)
+        return 0;
+
+    /// Any per-row filtering or merging between reading and the offset would make the granule row counts not
+    /// match the rows the offset sees.
+    if (isQueryWithFinal() || query_info.prewhere_info || query_info.row_level_filter || isQueryWithSampling())
+        return 0;
+
+    if (is_parallel_reading_from_replicas || output_each_partition_through_separate_port)
+        return 0;
+
+    /// The reader drops rows after the granule row counts are known - lightweight-delete masks, on-the-fly
+    /// DELETE mutations, and patch-part deletes - so those counts would overstate what the offset consumes.
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()
+            || (reader_settings.apply_deleted_mask && mutations_snapshot->hasLightweightDeletedMask())))
+        return 0;
+
+    /// Need a safe, ascending primary key to reason about granule ordering.
+    const auto & metadata = storage_snapshot->metadata;
+    if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
+        return 0;
+
+    /// The cut point is proven on raw key values from the primary index, so the order the offset counts rows
+    /// in has to be the read's own key order. `optimizeReadInOrder` also keeps an in-order read for a
+    /// monotonic transformation of the key (e.g. `ORDER BY toDate(ts)` on a table sorted by `ts`), where
+    /// granules strictly separated on `ts` can still be tied in that order and dropping one changes which
+    /// tied rows survive; such a description names the expression instead and is rejected here.
+    const auto & read_order = getSortDescription();
+    const size_t prefix_size = sort_description.size();
+    if (prefix_size == 0 || prefix_size > read_order.size()
+        || prefix_size > query_info.input_order_info->used_prefix_of_sorting_key_size)
+        return 0;
+
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (sort_description[i].direction != 1 || read_order[i].direction != 1
+            || sort_description[i].column_name != read_order[i].column_name)
+            return 0;
+
+    auto & result = getAnalysisResult();
+    if (!result.split_parts.layers.empty())
+        return 0;
+
+    if (reader_settings.apply_deleted_mask)
+        for (const auto & part : result.parts_with_ranges)
+            if (part.data_part->hasLightweightDelete())
+                return 0;
+
+    const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, prefix_size, /*in_reverse_order=*/false, log);
+    offset_rows_skipped = skipped_rows;
+    if (skipped_rows == 0)
+        return 0;
+
+    /// Keep the reported statistics consistent with the trimmed ranges.
+    UInt64 selected_ranges = 0;
+    for (const auto & part : result.parts_with_ranges)
+        selected_ranges += part.ranges.size();
+
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = selected_ranges;
+    result.selected_marks = result.parts_with_ranges.getMarksCountAllParts();
+    result.selected_rows = result.parts_with_ranges.getRowsCountAllParts();
+
+    return skipped_rows;
+}
+
 bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
 {
     /// Disable virtual row for FINAL.
