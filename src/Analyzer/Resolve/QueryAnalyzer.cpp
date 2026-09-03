@@ -44,6 +44,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -4986,13 +4987,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// the query context, and switching to the QueryNode's own context copy could change
     /// non-settings state (e.g. isDistributed) and break table function execution
     /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    auto subquery_customizes_settings = [](const IQueryTreeNode & node) -> bool
+    {
+        if (const auto * query_node = node.as<QueryNode>())
+            return query_node->isSubquery() && query_node->hasSettingsChanges();
+        if (const auto * union_node = node.as<UnionNode>())
+            return union_node->isSubquery() && union_node->hasSettingsChanges();
+        return false;
+    };
+
     ContextPtr execution_context = scope_context->getQueryContext();
     {
         const IdentifierResolveScope * scope_to_check = &scope;
         while (scope_to_check != nullptr)
         {
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
-                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+            if (subquery_customizes_settings(*scope_to_check->scope_node))
             {
                 auto * nearest_query_scope = scope.getNearestQueryScope();
                 if (nearest_query_scope)

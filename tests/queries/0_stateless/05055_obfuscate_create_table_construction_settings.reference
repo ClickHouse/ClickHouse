@@ -1,0 +1,5 @@
+--- `CREATE TABLE ... AS obfuscate(...)` is rejected ---
+0
+--- an ordinary view over `obfuscate` keeps working ---
+10
+--- a view definition still rejects query-construction settings ---

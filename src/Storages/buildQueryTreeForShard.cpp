@@ -1015,6 +1015,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+    else if (auto * union_node = query_tree_to_modify->as<UnionNode>())
+        union_node->clearSettingsChanges();
 
     auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
     if (max_const_name_size >= 0)

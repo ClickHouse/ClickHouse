@@ -190,6 +190,80 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(
     return query_node;
 }
 
+/// Apply a (sub)query's own query-level `SETTINGS` clause to `updated_context` and append what was
+/// applied to `settings_changes` / `default_settings` / `query_parameters`, so that it can be
+/// persisted on the query tree node it belongs to (and therefore survive cloning and the conversion
+/// back to AST for distributed execution). Applying and recording are kept together here because
+/// both a `SELECT`'s clause and a `UNION`'s query-level clause must be handled identically.
+void applyQueryLevelSettings(
+    ASTSetQuery & set_query,
+    ContextMutablePtr & updated_context,
+    SettingsChanges & settings_changes,
+    std::vector<String> & default_settings,
+    NameToNameVector & query_parameters)
+{
+    /// The parser accepts `SETTINGS name` without a value for any setting - it does not know the
+    /// settings schema - so the shorthand has to be rejected here, against the schema, before
+    /// `limit` and `offset` are dropped below. For a nested subquery this is the first place the
+    /// inner `SETTINGS` clause is seen with the schema at hand, and the two are dropped without
+    /// being read, so without this a valueless `SETTINGS limit` would be silently accepted.
+    updated_context->getSettingsRef().checkShorthandChanges(set_query.changes);
+
+    /// `limit` / `offset` settings are materialized earlier by wrapping the query - including
+    /// subqueries that carry the setting in their own `SETTINGS` clause - as a derived table with an
+    /// outer `LIMIT` / `OFFSET` (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`
+    /// in `executeQuery` for directly executed queries; `wrapNestedConstructionSettings` again in
+    /// `TableFunctionEval` for a generated query that bypasses `executeQuery`). By the time the query
+    /// tree is built the settings are therefore already consumed; drop any that remain so they are not
+    /// re-applied to this (sub)query's context - the query tree's `LIMIT` / `OFFSET` come from the SQL
+    /// clauses.
+    set_query.changes.removeSetting("limit");
+    set_query.changes.removeSetting("offset");
+
+    /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
+    /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
+    /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
+    /// Clamp it instead of throwing, as done for other settings crossing execution contexts
+    /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
+    /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
+    /// reader's constraints keeps working. A top-level clause still throws
+    /// (`applySettingsFromQuery`). Clamp a copy: the node keeps the clause as written, so the tree's
+    /// AST and hash are unchanged, and every node executing the subquery clamps it against its own
+    /// constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
+    if (!set_query.changes.empty())
+    {
+        auto checked_changes = set_query.changes;
+        updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
+        updated_context->applySettingsChanges(checked_changes);
+        settings_changes.insert(settings_changes.end(), set_query.changes.begin(), set_query.changes.end());
+    }
+
+    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
+    /// to their default values in the subquery scope as well, so that the reset actually takes effect
+    /// for the subquery (e.g. a table function such as `obfuscate` reading the effective setting),
+    /// consistent with how `changes` are applied here and with how top-level query settings are
+    /// handled by `InterpreterSetQuery`.
+    if (!set_query.default_settings.empty())
+    {
+        default_settings.insert(default_settings.end(), set_query.default_settings.begin(), set_query.default_settings.end());
+        updated_context->resetSettingsToDefaultValue(set_query.default_settings);
+    }
+
+    if (!set_query.query_parameters.empty())
+    {
+        query_parameters.insert(query_parameters.end(), set_query.query_parameters.begin(), set_query.query_parameters.end());
+        /// `ParserSetQuery` appends one entry per occurrence, and `ReplaceQueryParameterVisitor`
+        /// substitutes with last-wins semantics (`insert_or_assign` over the same vector). Build the
+        /// map with the same last-wins rule - a range-constructed `NameToNameMap` would keep the FIRST
+        /// binding, so `SETTINGS param_x = '1', param_x = '2'` would substitute `{x:...}` as `2` in the
+        /// AST while `Context::getQueryParameters` still reported `1`.
+        NameToNameMap query_parameters_map;
+        for (const auto & [parameter_name, parameter_value] : set_query.query_parameters)
+            query_parameters_map.insert_or_assign(parameter_name, parameter_value);
+        updated_context->addQueryParameters(query_parameters_map);
+    }
+}
+
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     const ASTPtr & select_with_union_query,
     bool is_subquery,
@@ -203,19 +277,49 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     if (select_lists.children.size() == 1)
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_data, aliases, context);
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), select_with_union_query_typed.union_mode);
+    /// A `SETTINGS` clause of a UNION is query-level: it applies to the whole union, not to a single
+    /// arm. The grammar gives it two shapes - `ASTQueryWithOutput::settings_ast` for the top-level
+    /// query, and, for every other position (a subquery, a table function argument, a CTE), the last
+    /// arm's own `SETTINGS` clause, which is where `ParserSelectQuery` leaves a trailing clause. Both
+    /// are applied to the union's context, and that context is the one every arm is built from, so a
+    /// nested `(SELECT ... UNION ALL SELECT ... SETTINGS x = ...)` shapes ALL of its arms - the same
+    /// contract `InterpreterSetQuery::applySettingsFromQuery` implements for a directly executed
+    /// query. They are also persisted on the `UnionNode` so that the union keeps its settings through
+    /// cloning and query-tree comparison (see `UnionNode::toASTImpl` for the AST direction).
+    auto updated_context = Context::createCopy(context);
+    SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
+
+    auto apply_settings = [&](const ASTPtr & settings_ast)
+    {
+        if (auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr)
+            applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
+    };
+
+    apply_settings(select_with_union_query_typed.settings_ast);
+    if (auto * last_select = select_lists.children.back()->as<ASTSelectQuery>())
+        apply_settings(last_select->settings());
+
+    auto union_node = std::make_shared<UnionNode>(
+        std::move(updated_context),
+        select_with_union_query_typed.union_mode,
+        std::move(settings_changes),
+        std::move(default_settings),
+        std::move(query_parameters));
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
+    auto union_context = union_node->getContext();
     size_t select_lists_children_size = select_lists.children.size();
 
     for (size_t i = 0; i < select_lists_children_size; ++i)
     {
         auto & select_list_node = select_lists.children[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, union_context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -247,19 +351,42 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION type is not initialized");
 
-    auto union_node = std::make_shared<UnionNode>(Context::createCopy(context), union_mode);
+    /// Exactly as for a `UNION` (see `buildSelectWithUnionExpression`), a trailing `SETTINGS` clause
+    /// of a nested `INTERSECT` / `EXCEPT` is query-level: `ParserSelectQuery` leaves it on the last
+    /// operand's `ASTSelectQuery`, and it must shape the whole set operation. Apply it to the
+    /// context every operand is built from and persist it on the `UnionNode` so that it survives
+    /// cloning and query-tree comparison (the last operand's `QueryNode` keeps the clause for the
+    /// AST round-trip, so `UnionNode::toASTImpl` must not write it back).
+    auto updated_context = Context::createCopy(context);
+    SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
+
+    if (auto * last_select = select_lists.back()->as<ASTSelectQuery>())
+    {
+        if (auto * set_query = last_select->settings() ? last_select->settings()->as<ASTSetQuery>() : nullptr)
+            applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
+    }
+
+    auto union_node = std::make_shared<UnionNode>(
+        std::move(updated_context),
+        union_mode,
+        std::move(settings_changes),
+        std::move(default_settings),
+        std::move(query_parameters));
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
+    auto union_context = union_node->getContext();
     size_t select_lists_size = select_lists.size();
 
     for (size_t i = 0; i < select_lists_size; ++i)
     {
         auto & select_list_node = select_lists[i];
-        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, context);
+        QueryTreeNodePtr query_node = buildSelectOrUnionExpression(select_list_node, false /*is_subquery*/, {} /*cte_name*/, aliases, union_context);
         union_node->getQueries().getNodes().push_back(std::move(query_node));
     }
 
@@ -278,51 +405,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto updated_context = Context::createCopy(context);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
 
     if (select_settings)
-    {
-        auto & set_query = select_settings->as<ASTSetQuery &>();
-
-        /// The parser accepts `SETTINGS name` without a value for any setting - it does not know the
-        /// settings schema - so the shorthand has to be rejected here, against the schema, before
-        /// `limit` and `offset` are dropped below. For a nested subquery this is the first place the
-        /// inner `SETTINGS` clause is seen with the schema at hand, and the two are dropped without
-        /// being read, so without this a valueless `SETTINGS limit` would be silently accepted.
-        updated_context->getSettingsRef().checkShorthandChanges(set_query.changes);
-
-        /// `limit` / `offset` settings are materialized earlier by wrapping the query — including
-        /// subqueries that carry the setting in their own `SETTINGS` clause — as a derived table with an
-        /// outer `LIMIT` / `OFFSET` (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`
-        /// in `executeQuery` for directly executed queries; `wrapNestedConstructionSettings` again in
-        /// `TableFunctionEval` for a generated query that bypasses `executeQuery`). By the time the query
-        /// tree is built the settings are therefore already consumed; drop any that remain so they are not
-        /// re-applied to this (sub)query's context — the query tree's `LIMIT` / `OFFSET` come from the SQL
-        /// clauses below.
-        set_query.changes.removeSetting("limit");
-        set_query.changes.removeSetting("offset");
-
-        /// A nested `SETTINGS` clause (a subquery, a CTE, a view's inner query) used to be applied to
-        /// the per-node context unchecked, letting a user override `readonly`, `CONST` and `MIN`/`MAX`
-        /// constraints - e.g. `additional_table_filters`, which the Planner reads from this context.
-        /// Clamp it instead of throwing, as done for other settings crossing execution contexts
-        /// (`getSQLSecurityOverriddenContext`, secondary queries, DDL replay): violating changes are
-        /// dropped, out-of-bounds values are clamped, so a view whose inner clause violates the
-        /// reader's constraints keeps working. A top-level clause still throws
-        /// (`applySettingsFromQuery`). Clamp a copy: the `QueryNode` keeps the clause as written, so
-        /// the tree's AST and hash are unchanged, and every node executing the subquery clamps it
-        /// against its own constraints. `SETTINGS name = DEFAULT` stays ignored here - see #115415.
-        if (!set_query.changes.empty())
-        {
-            auto checked_changes = set_query.changes;
-            updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
-            updated_context->applySettingsChanges(checked_changes);
-            settings_changes = set_query.changes;
-        }
-    }
+        applyQueryLevelSettings(
+            select_settings->as<ASTSetQuery &>(), updated_context, settings_changes, default_settings, query_parameters);
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
 
-    auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
+    auto current_query_tree = std::make_shared<QueryNode>(
+        std::move(updated_context), std::move(settings_changes), std::move(default_settings), std::move(query_parameters));
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());

@@ -12,6 +12,8 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -66,8 +68,9 @@ using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 class QueryNode final : public ITableExpressionNode
 {
 public:
-    /// Construct query node with context and changed settings
-    explicit QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_);
+    /// Construct query node with context and changed or reset settings and query parameters.
+    explicit QueryNode(
+        ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_ = {}, NameToNameVector query_parameters_ = {});
 
     /// Construct query node with context
     explicit QueryNode(ContextMutablePtr context_);
@@ -90,10 +93,10 @@ public:
         return context;
     }
 
-    /// Returns true if query node has settings changes, false otherwise
+    /// Returns true if query node has settings changes, resets, or query parameters, false otherwise.
     bool hasSettingsChanges() const
     {
-        return !settings_changes.empty();
+        return !settings_changes.empty() || !default_settings.empty() || !query_parameters.empty();
     }
 
     /// Get query node settings changes
@@ -102,9 +105,23 @@ public:
         return settings_changes;
     }
 
+    /// Get query node settings that are reset to their default values
+    const std::vector<String> & getDefaultSettings() const
+    {
+        return default_settings;
+    }
+
+    /// Get query parameters set in the query SETTINGS clause.
+    const NameToNameVector & getQueryParameters() const
+    {
+        return query_parameters;
+    }
+
     void clearSettingsChanges()
     {
         settings_changes.clear();
+        default_settings.clear();
+        query_parameters.clear();
     }
 
     /// Returns true if query node is subquery, false otherwise
@@ -732,6 +749,8 @@ private:
     Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
+    std::vector<String> default_settings;
+    NameToNameVector query_parameters;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;

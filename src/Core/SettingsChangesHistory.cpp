@@ -65,6 +65,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"obfuscate_seed", "", "", "New setting: seed string for the obfuscate table function."},
+            {"obfuscate_markov_order", 5, 5, "New setting: maximum context-buffer size for the obfuscate table function's legacy Markov model."},
+            {"obfuscate_markov_frequency_cutoff", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_num_buckets_cutoff", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
