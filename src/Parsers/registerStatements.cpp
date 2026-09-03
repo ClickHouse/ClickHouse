@@ -16,6 +16,7 @@ void registerStatements()
     registerStatementColumnsTransformers(factory);
     registerStatementCreate(factory);
     registerStatementCreateFunction(factory);
+    registerStatementCreateHandler(factory);
     registerStatementDelete(factory);
     registerStatementDescribeTable(factory);
     registerStatementDrop(factory);
@@ -40,7 +41,6 @@ void registerStatements()
     registerStatementUnion(factory);
     registerStatementUpdate(factory);
     registerStatementUse(factory);
-    registerStatementWatch(factory);
     registerStatementWith(factory);
     registerStatementCheckGrant(factory);
     registerStatementExecuteAs(factory);
