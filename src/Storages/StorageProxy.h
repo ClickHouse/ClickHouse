@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <base/isSharedPtrUnique.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -15,6 +16,14 @@ public:
     explicit StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
 
     virtual StoragePtr getNested() const = 0;
+
+    /// Whether anything other than this proxy holds the wrapped storage. A reference taken through
+    /// `getNested` is invisible to a drop that only counts references to the proxy.
+    virtual bool isNestedInUse() const { return false; }
+
+    /// The wrapped storage if it already exists, or null. Never creates it, so an observer
+    /// iterating every table cannot trigger a load.
+    virtual StoragePtr tryGetNested() const { return nullptr; }
 
     String getName() const override { return "Proxy"; }
 
@@ -52,6 +61,7 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
+    IndexSizeByName getSecondaryIndexSizes() const override { return getNested()->getSecondaryIndexSizes(); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
@@ -153,7 +163,88 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
+    /// Without this the base implementation rejects every mutation before `mutate` is reached.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+
+    /// `UPDATE` and `DELETE FROM` ask the catalog pointer first, so the check must reach the nested storage.
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override
+    {
+        return getNested()->supportsLightweightUpdate();
+    }
+
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
+    }
+
+    /// Gates `SELECT ... FROM t STREAM`.
+    bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    bool supportsSparseSerialization() const override { return getNested()->supportsSparseSerialization(); }
+
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
+
+    /// `IStorage::backupData` is a no-op, so without this the backup is empty but reports success.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
+
+    /// The planner decides parallel replica eligibility from this, and the default of false
+    /// silently disables them.
+    bool isMergeTree() const override { return getNested()->isMergeTree(); }
+
+    /// A data lake reloads its schema here, and the callers do it right before reading the metadata,
+    /// so the answer has to come from the storage rather than from the stored definition.
+    void updateExternalDynamicMetadataIfExists(ContextPtr context) override
+    {
+        getNested()->updateExternalDynamicMetadataIfExists(context);
+    }
+
+    /// The planner reads this to skip a join on a column that holds only defaults.
+    std::optional<ColumnDefaultnessStats> getColumnDefaultnessStats(const String & column_name, ContextPtr context) const override
+    {
+        return getNested()->getColumnDefaultnessStats(column_name, context);
+    }
+
+    /// `INSERT` picks its block size and its parallel path from these.
+    bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
+    bool prefersLargeBlocks() const override { return getNested()->prefersLargeBlocks(); }
+    bool supportsPartitionBy() const override { return getNested()->supportsPartitionBy(); }
+
+    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override
+    {
+        return getNested()->executeCommand(command_name, args, context);
+    }
+
+    /// Gates the table-level `async_insert` setting, which is otherwise silently ignored.
+    bool areAsynchronousInsertsEnabled() const override { return getNested()->areAsynchronousInsertsEnabled(); }
+
+    /// The proxy's snapshot carries no engine-specific data, which the nested storage would
+    /// misread, so build one from the nested storage instead.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr query_context) const override
+    {
+        auto nested = getNested();
+        auto nested_metadata = nested->getInMemoryMetadataPtr(query_context, false);
+        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, query_context);
+        return nested->supportsTrivialCountOptimization(nested_snapshot, query_context);
+    }
 
     void startup() override { getNested()->startup(); }
     void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
@@ -178,11 +269,101 @@ public:
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
+    {
+        return getNested()->totalRowsByPartitionPredicate(filter, query_context);
+    }
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override
+    {
+        return getNested()->totalBytesUncompressed(settings);
+    }
+    /// Answering these from the proxy would give the default of a storage that has no data, rather
+    /// than the answer of the table being asked about.
+    bool hasProjection() const override { return getNested()->hasProjection(); }
+    bool supportsPinnedSnapshot() const override { return getNested()->supportsPinnedSnapshot(); }
+    SerializationInfoByName getSerializationHints() const override { return getNested()->getSerializationHints(); }
+    void checkTableCanBeRenamed(const StorageID & new_name) const override { getNested()->checkTableCanBeRenamed(new_name); }
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(
+        const RangesInDataParts & parts, const Names & names, ContextPtr query_context) const override
+    {
+        return getNested()->getConditionSelectivityEstimator(parts, names, query_context);
+    }
+    void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override
+    {
+        getNested()->waitForMutation(mutation_id, wait_for_another_mutation);
+    }
+    void setMutationCSN(const String & mutation_id, UInt64 csn) override { getNested()->setMutationCSN(mutation_id, csn); }
+    CancellationCode killPartMoveToShard(const UUID & task_uuid) override { return getNested()->killPartMoveToShard(task_uuid); }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 
 };
 
+/// Resolves a proxy to the storage it wraps, for callers that cast to a concrete engine type.
+/// Returns the proxy unchanged while the real storage does not exist, so the cast still fails.
+inline StoragePtr resolveStorageProxy(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+    {
+        if (auto nested = proxy->tryGetNested())
+            return nested;
+    }
+    return storage;
+}
+
+/// Same, but creates the wrapped storage when it does not exist yet. For operations that name a
+/// table explicitly, where loading it is the expected cost of the operation.
+inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return proxy->getNested();
+    return storage;
+}
+
+/// How a cast should treat a table that has not been loaded yet.
+enum class StorageResolution : uint8_t
+{
+    /// Create the wrapped storage if it does not exist. For an operation that names the table.
+    Load,
+    /// Leave a not-yet-loaded table unresolved, so the cast fails. For an observer that walks every
+    /// table and must not turn a listing into a load.
+    Peek,
+};
+
+/// The single way to cast a catalog pointer to a concrete engine type. A lazily loaded table is
+/// reached through `StorageTableProxy`, so a direct cast fails even once the table is loaded.
+template <typename T>
+std::shared_ptr<T> castStorage(const StoragePtr & storage, StorageResolution resolution)
+{
+    if (!storage)
+        return nullptr;
+    auto resolved = resolution == StorageResolution::Load ? resolveStorageProxyLoading(storage) : resolveStorageProxy(storage);
+    return std::dynamic_pointer_cast<T>(resolved);
+}
+
+/// Whether a table is held only by the catalog, and so can be dropped. A proxy is unused only when
+/// the storage it wraps is unused too.
+inline bool isTableUnused(const StoragePtr & storage)
+{
+    if (!isSharedPtrUnique(storage))
+        return false;
+    const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+    return !proxy || !proxy->isNestedInUse();
+}
+
+/// False only while a proxy has not created the storage it wraps, which is where a lazily loaded
+/// table sits before its first access.
+inline bool isStorageLoaded(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return proxy->tryGetNested() != nullptr;
+    return storage != nullptr;
+}
 
 }

@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -103,7 +104,7 @@ static std::string_view normalizePath(std::string_view path)
 void BlobStorageLog::prepareTable()
 {
     SystemLog<BlobStorageLogElement>::prepareTable();
-    if (auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(getStorage()))
+    if (auto merge_tree_table = castStorage<MergeTreeData>(getStorage(), StorageResolution::Peek))
     {
         std::unique_lock lock{prepare_mutex};
         const auto & relative_data_path = merge_tree_table->getRelativeDataPath();

@@ -1,3 +1,4 @@
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -300,7 +301,7 @@ StorageMergeTreeCodecBlockCounts::StorageMergeTreeCodecBlockCounts(
     : IStorage(table_id_)
     , source_table(std::move(source_table_))
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeCodecBlockCounts expected MergeTree table, got: {}", source_table->getName());

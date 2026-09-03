@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -834,7 +835,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     bool is_join_with_special_storage = false;
     if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
     {
-        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
+        is_join_with_special_storage = castStorage<StorageJoin>(right_table_node->getStorage(), StorageResolution::Load).get();
     }
 
     for (auto & join_clause : result.join_clauses)
@@ -1031,7 +1032,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     else if (auto * table_function = table_expression->as<TableFunctionNode>())
         storage = table_function->getStorage();
 
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    auto storage_join = castStorage<StorageJoin>(storage, StorageResolution::Load);
     if (storage_join)
     {
         table_join->setStorageJoin(storage_join);
@@ -1043,8 +1044,9 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 
     if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
         storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
+    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, StorageResolution::Load); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
 }
 

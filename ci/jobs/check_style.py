@@ -3,6 +3,7 @@ import json
 import math
 import multiprocessing
 import os
+import pathlib
 import re
 import shlex
 from concurrent.futures import ProcessPoolExecutor
@@ -878,6 +879,179 @@ def check_catch_all(files) -> str:
     return "\n".join(violations)
 
 
+# Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
+# taken from `DatabaseCatalog` may be the proxy rather than the engine. Keep in sync with the
+# engines registered with `supports_deferred_load`.
+DEFERRABLE_STORAGE_CLASSES = (
+    "MergeTreeData",
+    "StorageMergeTree",
+    "StorageReplicatedMergeTree",
+    "StorageSharedMergeTree",
+    "StorageSetOrJoinBase",
+    "StorageSet",
+    "StorageJoin",
+    "StorageEmbeddedRocksDB",
+    "IKeyValueEntity",
+    "IStorageURLBase",
+    "IBackgroundOperation",
+    "StorageWithCommonVirtualColumns",
+    "StorageLog",
+    "StorageStripeLog",
+    "StorageURL",
+    "StorageObjectStorage",
+    "StorageKeeperMap",
+    "StorageMySQL",
+    "StoragePostgreSQL",
+    "StorageMongoDB",
+    "StorageRedis",
+    "StorageSQLite",
+    "StorageXDBC",
+    "StorageHive",
+    "StorageArrowFlight",
+    "StorageYTsaurus",
+    "StorageBigQuery",
+)
+
+# Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
+_NOT_A_CATALOG_POINTER = re.compile(
+    r"^(?:\*?this\b"
+    r"|shared_from_this\(\)"
+    r"|&?\w*(?:snapshot|storage_snapshot)->storage\b"
+    r"|&?\w*reading->getMergeTreeData\(\)"
+    r")"
+)
+
+
+def _without_comments(text):
+    """Blanks out comments, keeping the line layout so offsets and line numbers still match."""
+    return re.sub(
+        r"//[^\n]*|/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S
+    )
+
+
+def _cast_operand(text, open_paren):
+    """The argument of a cast whose '(' is at `open_paren`, or None when unbalanced."""
+    depth = 0
+    for i in range(open_paren, min(open_paren + 2000, len(text))):
+        depth += (text[i] == "(") - (text[i] == ")")
+        if not depth:
+            return " ".join(text[open_paren + 1 : i].split())
+    return None
+
+
+def check_storage_casts(files) -> str:
+    """Require `castStorage` for casts to an engine that supports deferred loading.
+
+    Such a table lives behind `StorageTableProxy` until its first access and the catalog keeps
+    handing out that proxy afterwards, so a direct cast fails for the whole life of the table.
+    """
+    types = "|".join(DEFERRABLE_STORAGE_CLASSES)
+    cast_head = re.compile(
+        r"\b(?P<cast>dynamic_cast|typeid_cast|dynamic_pointer_cast|static_pointer_cast)\s*<\s*"
+        r"(?:const\s+)?(?:" + types + r")\s*[*&]?\s*>\s*\("
+    )
+    # `IStorage::as<T>()` is a `typeid_cast` on the receiver, so the operand is what precedes it.
+    as_cast = re.compile(
+        r"(?P<operand>[\w.\[\]()]+)(?:->|\.)as\s*<\s*(?:const\s+)?(?:" + types + r")\s*>\s*\(\s*\)"
+    )
+    resolvers = ("castStorage", "resolveStorageProxy", "resolveStorageProxyLoading")
+
+    violations = []
+    for path in files:
+        # The helpers and the proxy itself have to reach the nested storage directly.
+        if not path.endswith((".cpp", ".h")) or path.endswith(
+            ("StorageProxy.h", "StorageTableProxy.h", "StorageTableFunction.h")
+        ):
+            continue
+        try:
+            lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+
+        text = _without_comments("\n".join(lines))
+        casts = [(m, m.group("cast"), _cast_operand(text, m.end() - 1)) for m in cast_head.finditer(text)]
+        casts += [(m, "as", m.group("operand")) for m in as_cast.finditer(text)]
+
+        for match, cast, operand in casts:
+            if not operand or _NOT_A_CATALOG_POINTER.match(operand) or any(r in operand for r in resolvers):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            # The marker goes on the cast or, when the line is long, the one above it.
+            if any("NOLINT(storage-cast)" in lines[i] for i in (line - 1, line - 2) if i >= 0):
+                continue
+            violations.append(
+                f"{path}:{line}: {cast} to a deferrable storage engine on `{operand[:60]}`. Such a table "
+                "is reached through StorageTableProxy, so this cast fails for the whole life of the table "
+                "and whatever it guards is silently skipped. Use castStorage<T>(ptr, "
+                "StorageResolution::Load) when the query names this table, or StorageResolution::Peek "
+                "when this walks every table and must not load one. If the pointer cannot come from "
+                "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
+            )
+    return "\n".join(violations)
+
+
+def check_storage_proxy_forwards(files) -> str:
+    """`StorageProxy` must forward every virtual that a deferrable engine overrides.
+
+    A virtual that the proxy does not forward answers for the proxy rather than for the table it
+    wraps. That only matters where the engine overrides it, since otherwise both fall back to the
+    same `IStorage` default. The exemptions are explicit so that overriding a new virtual in the
+    MergeTree family forces a decision about the proxy.
+    """
+    proxy_path = "src/Storages/StorageProxy.h"
+    if not pathlib.Path(proxy_path).exists():
+        return ""
+
+    # Not forwarded on purpose, with the reason.
+    exempt = {
+        # The proxy answers from the CREATE query while the table is not loaded.
+        "getName",
+        # Loading is the proxy's own job, or the call is about the proxy itself.
+        "getNested", "tryGetNested", "isNestedInUse", "startup", "shutdown",
+        "flushAndPrepareForShutdown", "drop", "read", "write", "renameInMemory",
+        "getInMemoryMetadataPtr", "getStorageSnapshot", "getStorageSnapshotWithoutData",
+        "getStoragePolicy", "storesDataOnDisk", "isView",
+        # Answering must not turn an observer's listing into a load, so these report "unknown".
+        "getColumnSizes", "getSecondaryIndexSizes", "totalRows", "totalBytes",
+        "totalRowsByPartitionPredicate", "totalBytesUncompressed", "lifetimeRows", "lifetimeBytes",
+        # A config reload sweeps every table, and an unloaded one picks up new disks when it loads.
+        "initializeDiskOnConfigChange",
+        # Nothing is locked in a table that was never started.
+        "onActionLockRemove",
+        # Declared on the nested DataValidationTasksBase, not on IStorage itself.
+        "size",
+        # Called on the storage the factory just built, never on one from the catalog.
+        "addInferredEngineArgsToCreateQuery",
+        # A storage calls this on itself while reading, so it is already the nested one.
+        "parallelizeOutputAfterReading",
+    }
+
+    # The header of every deferrable engine, found by its declaration, so a class added to the cast
+    # check above joins this sweep as well.
+    declaration = re.compile(r"^\s*class\s+(" + "|".join(DEFERRABLE_STORAGE_CLASSES) + r")\b[^;]*$", re.M)
+    overrides = re.compile(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b")
+    overridden_by_engine = set()
+    for path in pathlib.Path("src").rglob("*.h"):
+        text = _without_comments(path.read_text(errors="replace"))
+        if declaration.search(text):
+            overridden_by_engine |= set(overrides.findall(text))
+
+    istorage = _without_comments(pathlib.Path("src/Storages/IStorage.h").read_text(errors="replace"))
+    istorage_virtuals = set(re.findall(r"\bvirtual\b[^;{]*?\b(\w+)\s*\(", istorage))
+
+    forwarded = set(overrides.findall(_without_comments(pathlib.Path(proxy_path).read_text(errors="replace"))))
+
+    missing = sorted((overridden_by_engine & istorage_virtuals) - forwarded - exempt)
+    if not missing:
+        return ""
+    return (
+        f"{proxy_path}: a deferrable engine overrides these, but StorageProxy does not forward them, "
+        f"so a table in a database with `lazy_load_tables` answers them from the proxy instead of "
+        f"from itself: {', '.join(missing)}. Forward each one to getNested(), or add it to `exempt` "
+        "above with a comment saying why the proxy's own answer is the right one."
+    )
+
+
 def check_file_names(files):
     files_set = set()
     for file in files:
@@ -1473,6 +1647,24 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_catch_all,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_casts"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_casts,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_proxy_forwards"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_proxy_forwards,
                 files=cpp_files,
             )
         )

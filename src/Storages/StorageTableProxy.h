@@ -2,7 +2,9 @@
 
 #include <functional>
 
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -16,9 +18,12 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(
+        const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns, String engine_name_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , engine_name(std::move(engine_name_))
+        , stores_data_on_disk(engineStoresDataOnDisk(engine_name))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -26,12 +31,14 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
+    /// The proxy is an implementation detail, so report the engine from the `CREATE` query until
+    /// the real storage can answer for itself.
     std::string getName() const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->getName();
-        return "TableProxy";
+        return engine_name;
     }
 
     /// Forward the metadata query to the nested storage once it has been materialized.
@@ -52,6 +59,18 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -68,9 +87,48 @@ public:
         return nested;
     }
 
-    bool storesDataOnDisk() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+    /// Answered from the engine while the storage does not exist, like `getName`.
+    bool storesDataOnDisk() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->storesDataOnDisk() : stores_data_on_disk;
+    }
+
     bool isView() const override { return false; }
+
+    /// The answers that exist only once the storage does. An observer that walks every table gets
+    /// the empty answer rather than loading one.
+    template <typename Ask>
+    auto answerIfLoaded(Ask && ask) const
+    {
+        std::lock_guard lock{nested_mutex};
+        using Answer = decltype(ask(*nested));
+        return nested ? ask(*nested) : Answer{};
+    }
+
+    /// `system.tables` reads these, so answering must not load the table. While the storage does not
+    /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getStoragePolicy() : nullptr;
+    }
+
+    Strings getDataPaths() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getDataPaths(); });
+    }
+
+    bool supportsReplication() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->supportsReplication();
+        /// The `Replicated` and `Shared` MergeTree engines are the replicating ones, so the answer
+        /// here matches what the storage itself would say once it exists.
+        return (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared"))
+            && engine_name.ends_with("MergeTree");
+    }
 
     /// Startup is deferred until first access via `getNested`.
     void startup() override { }
@@ -169,39 +227,70 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRows(query_context); });
+    }
+
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRowsByPartitionPredicate(filter, query_context); });
+    }
+
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytesUncompressed(settings); });
+    }
+
+    /// `system.data_skipping_indices` and `system.columns` ask every table for these, so answering
+    /// must not load one.
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getSecondaryIndexSizes(); });
+    }
+
+    ColumnSizeByName getColumnSizes() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getColumnSizes(); });
+    }
+
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.getColumnSizes(columns, calculate_subcolumn_sizes); });
+    }
+
+    SerializationInfoByName getSerializationHints() const override
+    {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            return nested->totalRows(query_context);
-        return std::nullopt;
+            return nested->getSerializationHints();
+        return SerializationInfoByName{{}};
     }
 
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalBytes(query_context);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytes(query_context); });
     }
 
     std::optional<UInt64> lifetimeRows() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeRows();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeRows(); });
     }
 
     std::optional<UInt64> lifetimeBytes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeBytes();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeBytes(); });
     }
 
 private:
+    static bool engineStoresDataOnDisk(const String & engine_name_)
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
+        return features && features->stores_data_on_disk;
+    }
+
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
+    const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };

@@ -1,0 +1,54 @@
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+
+    <rabbitmq>
+        <username>root</username>
+        <password>clickhouse</password>
+    </rabbitmq>
+
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+    </backups>
+
+    <remote_servers>
+        <parallel_replicas_cluster>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica><host>instance</host><port>9000</port></replica>
+                <replica><host>instance</host><port>9000</port></replica>
+                <replica><host>instance</host><port>9000</port></replica>
+            </shard>
+        </parallel_replicas_cluster>
+        <single_shard_cluster>
+            <shard>
+                <replica><host>instance</host><port>9000</port></replica>
+            </shard>
+        </single_shard_cluster>
+    </remote_servers>
+
+    <!-- Lets the tests write `ENGINE = ReplicatedMergeTree` with no arguments. -->
+    <default_replica_path>/clickhouse/test_lazy/{database}/{table}/{shard}</default_replica_path>
+
+    <graphite_rollup>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <retention>
+                <age>3600</age>
+                <precision>300</precision>
+            </retention>
+        </default>
+    </graphite_rollup>
+</clickhouse>

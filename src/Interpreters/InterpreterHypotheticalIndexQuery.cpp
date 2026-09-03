@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalObjectStore.h>
@@ -48,9 +49,9 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
-    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, context));
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

@@ -1,13 +1,13 @@
-t1	TableProxy
-v1	View
+t1	MergeTree	0
+v1	View	1
 1	hello
 2	world
-t1	MergeTree
-v1	View
-t2	TableProxy
+t1	MergeTree	1
+v1	View	1
+t2	MergeTree	0
 0
-mv	MaterializedView
-src	TableProxy
+mv	MaterializedView	1
+src	MergeTree	0
 dict
 t3_renamed	MergeTree
 value	String

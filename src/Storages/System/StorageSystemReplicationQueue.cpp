@@ -9,6 +9,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
@@ -89,10 +90,8 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
             if (!table)
-                continue;
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
@@ -141,6 +140,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
         String database = (*col_database_to_filter)[i].safeGet<String>();
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
+        /// NOLINT(storage-cast): `replicated_tables` is filled with already resolved storages.
         dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
 
         for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)

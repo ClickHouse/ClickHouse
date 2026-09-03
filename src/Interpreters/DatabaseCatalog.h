@@ -389,6 +389,11 @@ private:
 };
 
 
+/// Materializes a table that a database with `lazy_load_tables` has not loaded yet, if the user is
+/// allowed to see it. Commands that read the passive system tables need this to observe keys and indices.
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context);
+
+
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
 /// But such object may start using a directory in store/ since its creation.

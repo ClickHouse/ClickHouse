@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
@@ -418,6 +419,12 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        /// Keep last: the temporary-table branch below identifies this column by position.
+        {"is_loaded", std::make_shared<DataTypeUInt8>(),
+            "Whether the table engine exists in memory. With `lazy_load_tables` it is 0 until the first "
+            "access, and while it is the columns describing the table's structure, size and storage are "
+            "empty here and in `system.columns`, `system.data_skipping_indices` and `system.projections`."
+        },
     };
 
     description.setAliases({
@@ -646,8 +653,13 @@ protected:
 
                         while (src_index < columns_mask.size())
                         {
+                            // is_loaded: declared last, and a temporary table is never a proxy.
+                            if (src_index + 1 == columns_mask.size() && columns_mask[src_index])
+                            {
+                                res_columns[res_index++]->insert(1u);
+                            }
                             // total_rows
-                            if (src_index == 14 && columns_mask[src_index])
+                            else if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
@@ -999,7 +1011,7 @@ protected:
                     ++res_index;
                 }
 
-                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+                auto table_merge_tree = castStorage<MergeTreeData>(table, StorageResolution::Peek);
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
@@ -1156,6 +1168,10 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                // is_loaded
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(isStorageLoaded(table) ? 1u : 0u);
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();

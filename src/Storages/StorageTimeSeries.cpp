@@ -722,6 +722,8 @@ void registerStorageTimeSeries(StorageFactory & factory)
     }
     ,
     {
+        /// Deferring is not possible: a proxy would hide the type from the cross-database rename
+        /// guard in `DatabaseAtomic::renameTable`, orphaning the inner tables.
         .supports_settings = true,
         .supports_schema_inference = true,
         .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,

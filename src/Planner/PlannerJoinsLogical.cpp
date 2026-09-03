@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
 
@@ -596,18 +597,19 @@ PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expr
     const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
     result.column_mapping = table_expression_data.getColumnIdentifierToColumnName();
 
-    result.storage_join = std::dynamic_pointer_cast<StorageJoin>(storage);
+    result.storage_join = castStorage<StorageJoin>(storage, StorageResolution::Load);
     if (result.storage_join)
         return result;
 
     auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
     if (storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
     {
+        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
         result.storage_key_value = std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary());
         return result;
     }
 
-    result.storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+    result.storage_key_value = castStorage<IKeyValueEntity>(storage, StorageResolution::Load);
     if (result.storage_key_value)
         return result;
 

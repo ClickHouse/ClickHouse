@@ -2548,6 +2548,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
         if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
             resolved_format = file->getFormatName();
+        /// NOLINT(storage-cast): the delegate is created right here, it never comes from the catalog.
         else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
             resolved_format = object_storage->getFormatName();
         else
@@ -2662,6 +2663,7 @@ void registerStorageURL(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_deferred_load = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
         },
