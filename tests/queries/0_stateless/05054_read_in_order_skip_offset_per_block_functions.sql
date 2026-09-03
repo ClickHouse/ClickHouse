@@ -12,25 +12,28 @@ DROP TABLE IF EXISTS t_skip_offset_per_block;
 CREATE TABLE t_skip_offset_per_block (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO t_skip_offset_per_block SELECT number FROM numbers(10);
 
-SET optimize_read_in_order = 1, max_threads = 1, max_block_size = 1, log_queries = 1;
+SET optimize_read_in_order = 1, log_queries = 1;
+
+-- `max_block_size` is pinned per query rather than for the whole session on purpose: the `system.query_log` scan
+-- at the end of the test would otherwise also run with a block size of one row, which makes it take minutes.
 
 SELECT 'blockSize under LIMIT/OFFSET, disabled';
 SELECT k, blockSize() AS s FROM t_skip_offset_per_block ORDER BY k LIMIT 2 OFFSET 3 /* marker: block_size_disabled */
-SETTINGS query_plan_optimize_read_in_order_skip_offset = 0;
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 1;
 SELECT 'blockSize under LIMIT/OFFSET, enabled';
 SELECT k, blockSize() AS s FROM t_skip_offset_per_block ORDER BY k LIMIT 2 OFFSET 3 /* marker: block_size_enabled */
-SETTINGS query_plan_optimize_read_in_order_skip_offset = 1;
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 1;
 
 SELECT 'blockSize under a pure OFFSET, disabled';
 SELECT k, s FROM (SELECT k, blockSize() AS s FROM t_skip_offset_per_block ORDER BY k) OFFSET 3
-SETTINGS query_plan_optimize_read_in_order_skip_offset = 0;
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 1;
 SELECT 'blockSize under a pure OFFSET, enabled';
 SELECT k, s FROM (SELECT k, blockSize() AS s FROM t_skip_offset_per_block ORDER BY k) OFFSET 3
-SETTINGS query_plan_optimize_read_in_order_skip_offset = 1;
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 1;
 
 SELECT 'plain projection, enabled';
 SELECT k FROM t_skip_offset_per_block ORDER BY k LIMIT 2 OFFSET 3 /* marker: plain_enabled */
-SETTINGS query_plan_optimize_read_in_order_skip_offset = 1;
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
