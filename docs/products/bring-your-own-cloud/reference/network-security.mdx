@@ -256,7 +256,7 @@ Egress is unrestricted at the security group, firewall rule, and network securit
 Because the whole data plane runs in your own account, the flows on this page are observable with your own tooling. Some sources are on by default; others you enable yourself:
 
 - **Cloud audit trail** (CloudTrail, Cloud Audit Logs, or the Azure Activity log): every role assumption, service account impersonation, or service principal sign-in by ClickHouse automation, and every cloud API call made with it.
-- **Flow logs** (VPC Flow Logs, VPC flow logs, or NSG flow logs): every connection in the tables above, including the Tailscale channel and telemetry egress. Enable these yourself if you want them retained.
+- **Flow logs** (VPC Flow Logs, VPC flow logs, or NSG flow logs): the connections above that traverse your own network — client ingress, every outbound flow, and the Tailscale channel. Enable these yourself if you want them retained. Management access to the Kubernetes API server is the exception: while the public endpoint is in use it terminates at your provider's managed control-plane endpoint rather than inside your network, so it does not appear in your flow logs. Look for it in the Kubernetes audit logs and your cloud audit trail instead; it shows up in flow logs only once the API server is switched to a private endpoint.
 - **Kubernetes audit logs**: on AWS, EKS control-plane logs including the audit log are delivered to a CloudWatch log group in your account; on GCP and Azure, contact support to confirm or enable control-plane audit logging for your cluster.
 - **Object storage access logs** on your data and backup buckets.
 - **Your own `system.query_log`**: every statement run by ClickHouse automation or by an engineer, with the identity attached.
