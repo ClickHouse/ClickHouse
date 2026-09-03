@@ -5,8 +5,33 @@ The out-of-order and recovery-misuse dry-run PR checks assert that prepare()
 *rejects* an invalid dispatch, so here a zero exit (the run was not refused) is
 the failure, and the refusal message must match so an unrelated failure is not
 scored as a pass."""
+import json
 import subprocess
 import sys
+
+from ci.praktika._environment import _Environment
+from ci.praktika.result import Result
+
+
+def _mark_refusal_expected(expected: str) -> None:
+    # The child release_job.py ran under this job's JOB_NAME and, on the refusal
+    # we expect, wrote a FAIL result file that the outer runner reads as the job
+    # verdict. Rewrite that file so the expected refusal reads as XFAIL (scored
+    # OK) instead of a failure.
+    path = Result.file_name_static(_Environment.get().JOB_NAME)
+
+    def xfail(node):
+        if node.get("status") not in ("OK", "XFAIL", "XPASS", "SKIPPED"):
+            node["status"] = "XFAIL"
+        for child in node.get("results") or []:
+            xfail(child)
+
+    with open(path, "r", encoding="utf-8") as f:
+        result = json.load(f)
+    xfail(result)
+    result["info"] = f"Refused as expected with [{expected}]"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=4)
 
 
 def main() -> int:
@@ -30,6 +55,7 @@ def main() -> int:
         print(f"ERROR: the release job was refused, but not with the expected message [{expected}]")
         return 1
     print(f"Refused as expected with [{expected}]")
+    _mark_refusal_expected(expected)
     return 0
 
 
