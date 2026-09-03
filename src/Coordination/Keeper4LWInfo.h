@@ -26,7 +26,7 @@ struct Keeper4LWInfo
 
     /// Whether this node is waiting for replicas that cannot keep up. Only a
     /// leader ever holds the setting, so a follower always reports `false`:
-    /// ask the leader, which `server_state` identifies.
+    /// ask the leader, which `zk_server_state` in `mntr` identifies.
     bool is_slow_member_backpressure;
 
     uint64_t alive_connections_count;

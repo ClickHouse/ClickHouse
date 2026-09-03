@@ -678,8 +678,8 @@ String SlowMemberBackpressureOnCommand::run()
     /// stopped leading - so there is nothing to promise about writes yet.
     if (!keeper_dispatcher.isSlowMemberBackpressure())
         return "Sent slow member backpressure ON request to leader. Check "
-               "`slow_member_backpressure` in `mntr` on the leader, which "
-               "`server_state` identifies, to see whether it took effect.";
+               "`zk_slow_member_backpressure` in `mntr` on the leader, which "
+               "`zk_server_state` identifies, to see whether it took effect.";
 
     /// Both caveats matter to whoever just typed this and neither is visible
     /// from `mntr`: writes now go at the speed of the slowest replica, and the
