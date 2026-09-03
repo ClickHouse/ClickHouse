@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings
+-- The test asserts horizontal/vertical merge selection and physical column materialization.
 
 DROP TABLE IF EXISTS t_missing_marker_conflict;
 
