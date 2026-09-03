@@ -103,7 +103,7 @@ UInt32 generateCancelKey()
     if (random_fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open /dev/urandom");
 
-    SCOPE_EXIT({ ::close(random_fd); });
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(random_fd); });
 
     auto * position = reinterpret_cast<char *>(&secret_key);
     size_t bytes_remaining = sizeof(secret_key);
