@@ -457,7 +457,7 @@ enum class ColumnShape
 
 std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
 {
-    std::mt19937_64 rng(0x5eed5eed5eed5eedULL);
+    std::mt19937_64 rng(0x5eed5eed5eed5eedULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::vector<std::string> out;
     out.reserve(rows);
 
