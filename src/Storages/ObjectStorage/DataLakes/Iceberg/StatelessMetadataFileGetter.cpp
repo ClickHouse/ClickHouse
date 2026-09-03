@@ -136,6 +136,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         *persistent_table_components.schema_processor,
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
+        /// Stateless path passes `nullptr` as the filter, so the manifest prune cache is disabled
+        /// and `table_snapshot_id` is unused. `added_snapshot_id` is passed as a placeholder.
         cache_key.added_snapshot_id,
         cache_key.first_row_id,
         local_context,

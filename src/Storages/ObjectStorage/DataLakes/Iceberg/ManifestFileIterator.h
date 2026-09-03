@@ -168,6 +168,9 @@ private:
     /// accumulated while the manifest is scanned and published only after all
     /// rows finish successfully. On a hit, current_row_index addresses this
     /// compact vector instead of all manifest rows.
+    /// The cached vector holds partition survivors only; min-max pruning is re-evaluated
+    /// per query, so sharing one entry between data and delete iterators with the same
+    /// partition predicate is safe.
     String candidate_cache_key;
     std::shared_ptr<const std::vector<size_t>> cached_candidate_rows;
     std::shared_ptr<std::vector<size_t>> candidate_rows_being_built;
