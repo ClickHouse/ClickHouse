@@ -283,21 +283,23 @@ DROP TABLE inner_aj_narrow;
 -- predicate drop a matching row. A nested float is no different, and `Array` is used for the second shape
 -- because the wrapper-stripping predicates that cover `Nullable` do not look inside it. `join_algorithm` is
 -- pinned at query level because the hash algorithms hash the key bitwise and never match the pair at all.
+-- The flat shape uses `LEFT JOIN`, whose cross-type registration is older than the plain `INNER` one, so
+-- there a dropped right row surfaces as a defaulted `r.x`; the nested shape stays on `INNER`.
 
-DROP TABLE IF EXISTS inner_f64;
-DROP TABLE IF EXISTS inner_f32;
-CREATE TABLE inner_f64 (a Float64) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE inner_f32 (x Float32) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO inner_f64 VALUES (0.0), (3.5);
-INSERT INTO inner_f32 VALUES (-0.0), (3.5);
+DROP TABLE IF EXISTS left_f64;
+DROP TABLE IF EXISTS left_f32;
+CREATE TABLE left_f64 (a Float64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE left_f32 (x Float32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO left_f64 VALUES (0.0), (3.5);
+INSERT INTO left_f32 VALUES (-0.0), (3.5);
 
-SELECT 'INNER JOIN ON, cross-type float equi-key: result';
-SELECT l.a, r.x FROM inner_f64 AS l INNER JOIN inner_f32 AS r ON l.a = r.x
+SELECT 'LEFT JOIN ON, cross-type float equi-key: result';
+SELECT l.a, r.x FROM left_f64 AS l LEFT JOIN left_f32 AS r ON l.a = r.x
 WHERE reinterpretAsUInt64(l.a) = 0 ORDER BY 1
 SETTINGS join_algorithm = 'full_sorting_merge';
 
-DROP TABLE inner_f64;
-DROP TABLE inner_f32;
+DROP TABLE left_f64;
+DROP TABLE left_f32;
 
 DROP TABLE IF EXISTS inner_af64;
 DROP TABLE IF EXISTS inner_af32;
@@ -313,3 +315,4 @@ SETTINGS join_algorithm = 'full_sorting_merge';
 
 DROP TABLE inner_af64;
 DROP TABLE inner_af32;
+
