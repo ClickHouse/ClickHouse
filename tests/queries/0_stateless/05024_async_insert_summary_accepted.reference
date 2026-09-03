@@ -6,4 +6,6 @@ progress headers must not contain accepted fields:
 0
 progress headers must not be emitted empty by the accepted-only update:
 0
+empty fire-and-forget must not emit progress headers:
+0
 total_rows	12

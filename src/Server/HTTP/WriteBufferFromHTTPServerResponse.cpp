@@ -174,7 +174,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
 
-    if (progress.onlyHasAcceptedFields())
+    if (progress.empty())
         return;
 
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))

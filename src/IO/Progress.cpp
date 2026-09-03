@@ -32,7 +32,7 @@ bool Progress::empty() const
         && total_rows_to_read == 0
         && result_rows == 0
         && result_bytes == 0;
-    /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
+    /// Ignore values that should not trigger progress reporting on their own.
 }
 
 
@@ -164,16 +164,6 @@ void Progress::reset()
     elapsed_ns = 0;
 
     memory_usage = 0;
-}
-
-bool Progress::onlyHasAcceptedFields() const
-{
-    return (accepted_rows.load(std::memory_order_relaxed) || accepted_bytes.load(std::memory_order_relaxed))
-        && !read_rows.load(std::memory_order_relaxed) && !read_bytes.load(std::memory_order_relaxed)
-        && !total_rows_to_read.load(std::memory_order_relaxed) && !total_bytes_to_read.load(std::memory_order_relaxed)
-        && !written_rows.load(std::memory_order_relaxed) && !written_bytes.load(std::memory_order_relaxed)
-        && !result_rows.load(std::memory_order_relaxed) && !result_bytes.load(std::memory_order_relaxed)
-        && !elapsed_ns.load(std::memory_order_relaxed) && !memory_usage.load(std::memory_order_relaxed);
 }
 
 ProgressValues Progress::getValues() const

@@ -126,9 +126,6 @@ struct Progress
     explicit Progress(FileProgress file_progress)
         : read_bytes(file_progress.read_bytes), total_bytes_to_read(file_progress.total_bytes_to_read) {}
 
-    /// True when only accepted_* fields are set (would produce empty X-ClickHouse-Progress).
-    bool onlyHasAcceptedFields() const;
-
     void read(ReadBuffer & in, UInt64 server_revision);
 
     void write(WriteBuffer & out, UInt64 client_revision) const;

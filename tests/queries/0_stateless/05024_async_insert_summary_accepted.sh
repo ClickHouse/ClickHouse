@@ -31,6 +31,10 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=
     -d "INSERT INTO t_async_summary VALUES (11), (12)" 2>&1 \
     | grep "X-ClickHouse-Progress" | grep -c -E ':[[:space:]]*\{\}|:[[:space:]]*\{"memory_usage":"[0-9]+"\}' || true
 
+echo 'empty fire-and-forget must not emit progress headers:'
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&query=INSERT%20INTO%20t_async_summary%20FORMAT%20JSONEachRow" \
+    --data-binary '' 2>&1 | grep -c '^< X-ClickHouse-Progress:' || true
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE t_async_summary"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'total_rows', count() FROM t_async_summary"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_async_summary"
