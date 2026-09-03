@@ -64,6 +64,11 @@ MAIN_USERS = {
     "metrics_user": {"body": {}},
     # 200 with Content-Length: 0 - the "empty body means {}" contract with verifiable framing.
     "content_length_zero_user": {"body": ""},
+    # A duplicate JSON member: Poco would apply the last one; the directory must reject it.
+    "dup_roles_user": {"body": '{"roles": ["reader"], "roles": ["admin_role"]}'},
+    # Wrong password is answered with a 401 that carries a body (see _auth_against); the
+    # unread body must not poison the pooled connection for the next authentication.
+    "body401_user": {"body": {}},
     # Creates a SQL SECURITY DEFINER view; external_definer is prefix-delegated.
     "definer_user": {"body": {"roles": ["external_definer"]}},
     # Custom settings under the configured `SQL_` prefix keep their JSON scalar types; the
@@ -236,6 +241,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if user not in users:
             return self._reply(404)
         if password != GOOD_PASSWORD:
+            if user == "body401_user":
+                return self._reply(401, {"error": "wrong password"})
             return self._reply(401)
         entry = users[user]
         if user.startswith("barrier_user_"):

@@ -1453,3 +1453,86 @@ def test_reload_users_drops_materialized_users(started_cluster):
         == "local_directory"
     )
     admin3(f"DROP USER {held}")
+
+
+def test_error_response_with_body_does_not_poison_connection(started_cluster):
+    # A 401 body is never read; the pooled connection must be discarded, not reused with
+    # unread bytes, so the next authentication over the same helper works. Each response is
+    # final: exactly one helper request per attempt.
+    for _ in range(2):
+        before = helper_request_count(instance, "body401_user")
+        assert "Authentication failed" in instance.query_and_get_error(
+            "SELECT 1", user="body401_user", password="wrong_password"
+        )
+        assert helper_request_count(instance, "body401_user") - before == 1
+        before = helper_request_count(instance, "body401_user")
+        assert (
+            instance.query(
+                "SELECT currentUser()", user="body401_user", password=GOOD_PASSWORD
+            ).strip()
+            == "body401_user"
+        )
+        assert helper_request_count(instance, "body401_user") - before == 1
+
+
+def test_duplicate_json_members_rejected(started_cluster):
+    assert "Authentication failed" in instance.query_and_get_error(
+        "SELECT 1", user="dup_roles_user", password=GOOD_PASSWORD
+    )
+
+
+def test_refused_reattachment_leaves_session_intact(started_cluster):
+    # A reattachment refused by admission (USER_SESSION_LIMIT_EXCEEDED from the reattaching
+    # role's profile) must leave the named session as it was: its SET state survives and the
+    # next reattachment binds its own roles.
+    session = "sess_refused_reattach"
+    in_session = lambda sql, password: instance.http_query(
+        sql, user="limit_user", password=password, params={"session_id": session}
+    )
+    in_session(
+        "SELECT 1", "password_b"
+    )  # created under limit_role_b (no session limit)
+    in_session("SET max_block_size = 777", "password_b")
+
+    def blocker():
+        try:
+            instance.http_query(
+                "SELECT sleepEachRow(1) FROM numbers(60) SETTINGS max_block_size = 1",
+                user="limit_user",
+                password="password_b",
+                timeout=120,
+            )
+        except Exception:
+            pass  # killed below
+
+    thread = threading.Thread(target=blocker)
+    thread.start()
+    try:
+        wait_condition(
+            lambda: admin(
+                "SELECT count() FROM system.processes WHERE user = 'limit_user'"
+            ).strip(),
+            lambda value: value == "1",
+            max_attempts=300,
+            delay=0.1,
+        )
+        # Reattaching under limit_role_a (max_sessions_for_user = 1) is refused: the slot is
+        # taken by the blocker.
+        error = instance.http_query_and_get_error(
+            "SELECT 1",
+            user="limit_user",
+            password="password_a",
+            params={"session_id": session},
+        )
+        assert "USER_SESSION_LIMIT_EXCEEDED" in error, error
+    finally:
+        admin("KILL QUERY WHERE user = 'limit_user' SYNC")
+        thread.join()
+
+    assert (
+        in_session("SELECT getSetting('max_block_size')", "password_b").strip() == "777"
+    )
+    assert (
+        in_session("SELECT arrayJoin(currentRoles())", "password_b").strip()
+        == "limit_role_b"
+    )
