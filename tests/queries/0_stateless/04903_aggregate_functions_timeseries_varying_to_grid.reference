@@ -1,0 +1,14 @@
+-- timeSeries*VaryingToGrid: one parameter value per grid point
+[NULL,25,40]
+[10,15,30]
+[NULL,25,40]
+[10,15,30]
+-- timeSeries*VaryingToGrid: the 3rd argument accepts Float32 as well as Float64
+[NULL,25,40]
+[NULL,25,40]
+[10,15,30]
+-- timeSeries*VaryingToGrid: partial states carrying the same arrays merge
+[NULL,25,40]
+[10,15,30]
+-- timeSeries*VaryingToGrid: the 3rd argument must be the same in every row and in every merged state
+-- timeSeries*VaryingToGrid: invalid arguments

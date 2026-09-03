@@ -264,7 +264,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -274,6 +274,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: the scalar arguments of `quantile_over_time` and `predict_linear` have the same limitation: on a range vector with a fixed `@` timestamp, an expression that varies per step, such as `quantile_over_time(time(), m[5m] @ 1700000000)` or `predict_linear(m[5m] @ 1700000000, time())`, is rejected with a `NOT_IMPLEMENTED` exception. On a table whose value type is not `Float64`, a varying scalar argument may use `time()` only as a bare call (also inside `scalar()`/`vector()`), which is evaluated at native precision; arithmetic around it, such as `predict_linear(m[5m], time() - 60)`, would round the evaluation time to the value type first and is rejected with a `CANNOT_EXECUTE_PROMQL_QUERY` exception.
 
 ### Operators {#operators}
 
@@ -289,7 +291,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Example {#example}
 
@@ -339,7 +341,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -349,6 +351,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: the scalar arguments of `quantile_over_time` and `predict_linear` have the same limitation: on a range vector with a fixed `@` timestamp, an expression that varies per step, such as `quantile_over_time(time(), m[5m] @ 1700000000)` or `predict_linear(m[5m] @ 1700000000, time())`, is rejected with a `NOT_IMPLEMENTED` exception. On a table whose value type is not `Float64`, a varying scalar argument may use `time()` only as a bare call (also inside `scalar()`/`vector()`), which is evaluated at native precision; arithmetic around it, such as `predict_linear(m[5m], time() - 60)`, would round the evaluation time to the value type first and is rejected with a `CANNOT_EXECUTE_PROMQL_QUERY` exception.
 
 ### Operators {#operators}
 
@@ -364,7 +368,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
 ## Example {#example}
 

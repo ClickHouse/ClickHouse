@@ -1153,6 +1153,65 @@ def test_function_absent():
     )
 
 
+def test_phase3_functions_over_time():
+    # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
+    do_query_test(
+        "present_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "1"], [180, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time: the first sample is at 110, so only the first grid point (105) has an
+    # empty window (60, 105] and yields the synthetic 1.
+    do_query_test(
+        "absent_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',1)]",
+            ]
+        ],
+    )
+
+    # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
+    # at 165 it holds {3,4} -> 3.5.
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
+    # arithmetic carries float noise (12.000000000000002), hence the epsilon.
+    do_query_test(
+        "predict_linear(test[25s], 30)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "10"], [150, "8"], [210, "12"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
@@ -1772,6 +1831,169 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         )
     finally:
         node.query("DROP TABLE prometheus_f32 SYNC")
+
+
+# Regression test: `predict_linear` and `quantile_over_time` accept a scalar argument that varies with the
+# evaluation time (such as `time()` in a range query). Such a scalar is carried as an array of one value per
+# evaluation step, typed after the TimeSeries table's scalar (value) type, and passed to the underlying
+# timeSeries{PredictLinear,Quantile}VaryingToGrid aggregate functions. ClickHouse's TimeSeries engine explicitly
+# supports Float32-typed value columns, so on such a table these queries used to be rejected with
+# "Illegal type Array(Float32) of 3rd argument" - the aggregate functions accepted only Array(Float64).
+def test_range_functions_with_varying_scalar_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_range (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        # Series `m` rises by 1 per second: 10 at t=100, 20 at t=110, 30 at t=120.
+        # Series `q` carries the quantile level to use at each evaluation step: 0 at t=110 and 1 at t=120.
+        node.query(
+            "INSERT INTO prometheus_f32_range (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)]), "
+            "('q', map('host', 'h1'), [(toDateTime64(110, 3), 0), (toDateTime64(120, 3), 1)])"
+        )
+
+        # The prediction horizon is the evaluation time itself, so the predicted values are the fitted value at
+        # t=110 plus 110 seconds of growth (20 + 110) and the fitted value at t=120 plus 120 seconds (30 + 120).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'predict_linear(m[30], time())', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',130),('1970-01-01 00:02:00.000',150)]",
+                ]
+            ],
+        )
+
+        # The quantile level is 0 at the first evaluation step and 1 at the second one, so the results are the
+        # smallest value in the first window (10) and the greatest value in the second one (30).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'quantile_over_time(scalar(q), m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',30)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_range SYNC")
+
+
+# Regression test: a literal quantile level used to be cast to the TimeSeries table's scalar type before the
+# phi edge cases were applied, so on a Float32 table `quantile_over_time(1.00000003, ...)` rounded phi back
+# to 1.0 and returned the window maximum instead of +Inf as Prometheus specifies for phi > 1.
+def test_quantile_over_time_literal_phi_edge_case_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_phi (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_phi (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_phi, 'quantile_over_time(1.00000003, m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',inf),('1970-01-01 00:02:00.000',inf)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_phi SYNC")
+
+
+# Regression test: a varying scalar argument was carried as an array of the TimeSeries table's scalar (value)
+# type, so on a Float32 table a `time()` grid was rounded to ~128-second granularity before the function used
+# it - 1770582640 became 1770582656 - and the prediction horizon was off by tens of seconds on every step.
+# `time()` is now rebuilt at the timestamp column's own precision for this argument. Series `m` rises by 1 per
+# second, so at the first evaluation step the window holds (1770582580, 10) and (1770582640, 70), the fitted
+# value is 70, and the horizon is the evaluation time itself: 70 + 1770582640 is 1770582700 once rounded to
+# the table's Float32 value type, where rounding the horizon first used to give 1770582800.
+# An expression merely derived from `time()` cannot be rebuilt this way, so it is rejected instead of
+# silently returning a horizon rounded the same way.
+def test_predict_linear_with_time_horizon_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_epoch (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        node.query(
+            "INSERT INTO prometheus_f32_epoch (metric_name, tags, time_series) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(1770582580, 3), 10), (toDateTime64(1770582640, 3), 70), "
+            "(toDateTime64(1770582700, 3), 130)])"
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, 'predict_linear(m[120], time())', "
+                "1770582640, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('2026-02-08 20:30:40.000',1770582700),('2026-02-08 20:31:40.000',1770582800)]",
+                ]
+            ],
+        )
+
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, 'predict_linear(m[120], time() - 60)', "
+            "1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+
+        # A calendar component collapses the instant to a small exact integer (hour of 20:30:40 is 20),
+        # so it is not rejected: the horizon is 20 seconds and the prediction is fitted value + 20.
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+                "'predict_linear(m[120], scalar(hour(vector(time()))))', 1770582640, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('2026-02-08 20:30:40.000',90),('2026-02-08 20:31:40.000',150)]",
+                ]
+            ],
+        )
+
+        # A derived argument is computed on the lossy Float32 grid before the calendar component
+        # collapses it, so the exemption must not apply: minute(time() + 70) would silently be wrong.
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(minute(vector(time() + 70))))', 1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+
+        # A time()-derived single-row scalar (`scalar(sum(vector(time())))`, the SINGLE_SCALAR carrier) is
+        # materialized through the table's own value type by the generic translation below makeVaryingScalarPrecisionSafe -
+        # toVectorGrid() and the one-argument aggregation operator build it with context.scalar_data_type - so on
+        # Float32 it resolves to 1770582656 instead of 1770582640 and silently disagrees with the equivalent
+        # bare-time() horizon by 16 seconds. Like the derived grids above, reject it instead of returning wrong numbers.
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(sum(vector(time()))))', 1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQuery(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(sum(vector(time()))))', 1770582640)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
+    finally:
+        node.query("DROP TABLE prometheus_f32_epoch SYNC")
 
 
 def test_math_functions():

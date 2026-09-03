@@ -23,4 +23,13 @@ SQLQueryPiece makeTimeQueryPiece(const PrometheusQueryTree::Node * node, Convert
 /// arithmetic on.
 SQLQueryPiece makeTimeQueryPieceNative(const PrometheusQueryTree::Node * node, ConverterContext & context);
 
+/// Returns the `time()` call that `node` is after peeling off any nesting of `scalar(...)`/`vector(...)`/unary `+`/
+/// `@`/`offset` wrappers (all value-preserving), or nullptr if `node` isn't such a call.
+const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(const PrometheusQueryTree::Node * node);
+
+/// Rebuilds a varying (SCALAR_GRID) scalar argument so that a grid of evaluation instants keeps its precision: that
+/// grid is otherwise `Array(context.scalar_data_type)`, and Float32 resolves only ~128s at today's epoch magnitude.
+SQLQueryPiece makeVaryingScalarPrecisionSafe(
+    std::string_view function_name, const PrometheusQueryTree::Node * argument_node, SQLQueryPiece && argument, ConverterContext & context);
+
 }

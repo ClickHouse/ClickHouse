@@ -1,0 +1,37 @@
+-- present_over_time(up[3m]): 1 for every series with a sample in the range window.
+-- host1/host2/host3 have samples in (1699999820, 1700000000]; host4's only sample is older, so it is dropped.
+[('instance','host1')]	2023-11-14 22:13:20.000	1
+[('instance','host2')]	2023-11-14 22:13:20.000	1
+[('instance','host3')]	2023-11-14 22:13:20.000	1
+-- absent_over_time(up[3m]): the metric has samples in the range, so the result is empty.
+-- absent_over_time(nonexistent_metric[5m]): no samples anywhere, so a single synthetic series
+-- with value 1 is emitted (with the labels inferred from the selector: none here).
+[]	2023-11-14 22:13:20.000	1
+-- absent_over_time({__name__!="",instance="host1"}[3m]): host1 has both up and up2, and both have
+-- samples in the range; series differing only by __name__ must not clash inside the presence grid.
+-- absent_over_time(up{instance="nohost"}[5m]): no series matches, so the synthetic series
+-- carries the equality-matcher label instance="nohost".
+[('instance','nohost')]	2023-11-14 22:13:20.000	1
+-- quantile_over_time(0.5, up[3m]): median of the in-range samples.
+-- host1 = 20 (median of 10,20,30), host2 = 15 (median of 5,15,25), host3 = 100.
+[('instance','host1')]	2023-11-14 22:13:20.000	20
+[('instance','host2')]	2023-11-14 22:13:20.000	15
+[('instance','host3')]	2023-11-14 22:13:20.000	100
+-- quantile_over_time(0, up[3m]): minimum of the in-range samples.
+[('instance','host1')]	2023-11-14 22:13:20.000	10
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	100
+-- quantile_over_time(1, up[3m]): maximum of the in-range samples.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	25
+[('instance','host3')]	2023-11-14 22:13:20.000	100
+-- predict_linear(up[3m], 0): the fitted value at the evaluation time.
+-- host1 -> 30, host2 -> 25, host3 -> 100.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	25
+[('instance','host3')]	2023-11-14 22:13:20.000	100
+-- predict_linear(up[3m], 60): extrapolate 60s past the evaluation time.
+-- host1 -> 40 (30 + 60*1/6), host2 -> 35 (25 + 60*1/6), host3 -> 100 (flat).
+[('instance','host1')]	2023-11-14 22:13:20.000	40
+[('instance','host2')]	2023-11-14 22:13:20.000	35
+[('instance','host3')]	2023-11-14 22:13:20.000	100
