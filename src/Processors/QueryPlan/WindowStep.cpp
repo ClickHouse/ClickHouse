@@ -17,6 +17,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
+#include <algorithm>
+#include <limits>
+#include <optional>
+
 namespace DB
 {
 
@@ -63,11 +67,13 @@ WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    bool streams_fan_out_,
+    UInt64 min_frame_rows_for_aggregate_tree_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , min_frame_rows_for_aggregate_tree(min_frame_rows_for_aggregate_tree_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -90,7 +96,8 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         [&](const SharedHeader & /*header*/)
         {
             return std::make_shared<WindowTransform>(
-                input_headers.front(), output_header, window_description, window_functions);
+                input_headers.front(), output_header, window_description, window_functions,
+                min_frame_rows_for_aggregate_tree);
         });
 
     if (streams_fan_out)
@@ -321,6 +328,48 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+/// The largest number of rows a frame can span, when the frame bounds it: a ROWS frame with both
+/// ends at a fixed offset from the current row.
+static std::optional<UInt64> maxFrameRows(const WindowFrame & frame)
+{
+    if (frame.type != WindowFrame::FrameType::ROWS
+        || frame.begin_type == WindowFrame::BoundaryType::Unbounded
+        || frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        return std::nullopt;
+
+    auto position = [](WindowFrame::BoundaryType type, const Field & offset, bool preceding) -> Int64
+    {
+        if (type == WindowFrame::BoundaryType::Current)
+            return 0;
+        /// `WindowFrame::checkValid` guarantees a nonnegative 32-bit integer.
+        const Int64 rows = offset.safeGet<Int64>();
+        return preceding ? -rows : rows;
+    };
+    const Int64 begin = position(frame.begin_type, frame.begin_offset, frame.begin_preceding);
+    const Int64 end = position(frame.end_type, frame.end_offset, frame.end_preceding);
+    return end < begin ? 0 : static_cast<UInt64>(end - begin + 1);
+}
+
+/// Mirrors the activation conditions of `WindowTransform`: the frame aggregate tree serves a frame
+/// whose start moves, once the frame reaches the threshold, for a function whose merge is
+/// equivalent to adding the rows.
+static bool mayUseAggregateTree(
+    const WindowDescription & window_description,
+    const std::vector<WindowFunctionDescription> & window_functions,
+    UInt64 min_frame_rows_for_aggregate_tree)
+{
+    if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
+        return false;
+    if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        return false;
+    if (const auto max_rows = maxFrameRows(window_description.frame); max_rows && *max_rows < min_frame_rows_for_aggregate_tree)
+        return false;
+    return std::ranges::any_of(window_functions, [](const auto & function)
+    {
+        return WindowTransform::aggregateFunctionSupportsFrameTree(*function.aggregate_function);
+    });
+}
+
 void WindowStep::serialize(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
@@ -345,6 +394,21 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeWindowFrame(window_description.frame, ctx.out);
 
     serializeWindowFunctions(window_functions, ctx.out);
+
+    /// The threshold decides between two algorithms whose results are not bit-identical for floating-point
+    /// or tie-breaking aggregates, so a peer must apply the initiator's value rather than its own default.
+    /// A peer below this version has no aggregate tree at all and always takes the recompute path, so the
+    /// legacy layout without the field is exact whenever this step could not use the tree either. Otherwise
+    /// the result would depend on which peer version runs the fragment: fail closed instead.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        writeVarUInt(min_frame_rows_for_aggregate_tree, ctx.out);
+    else if (mayUseAggregateTree(window_description, window_functions, min_frame_rows_for_aggregate_tree))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing a WindowStep that may use the frame aggregate tree requires "
+            "query plan serialization version >= {}; all nodes must run the same version, or set "
+            "min_window_frame_rows_for_aggregate_tree to {} to keep the recompute path on every node",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD,
+            std::numeric_limits<UInt64>::max());
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
@@ -381,11 +445,19 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 
     window_description.window_functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
 
+    /// A stream written below this version comes from an initiator without the aggregate tree, or from
+    /// one that checked this step cannot use it (see `serialize`); either way the semantics are the
+    /// recompute path: keep it by disabling the tree for this step.
+    UInt64 min_frame_rows_for_aggregate_tree = std::numeric_limits<UInt64>::max();
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_AGGREGATE_TREE_THRESHOLD)
+        readVarUInt(min_frame_rows_for_aggregate_tree, ctx.in);
+
     return std::make_unique<WindowStep>(
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        min_frame_rows_for_aggregate_tree);
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

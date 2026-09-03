@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"min_window_frame_rows_for_aggregate_tree", std::numeric_limits<UInt64>::max(), 2048, "New setting: the minimum sliding window frame size (in rows) to switch from re-aggregating the whole frame for every row to the incremental algorithm based on a tree of partial aggregate states. previous_value is the maximum UInt64 so `compatibility` with versions before 26.9 effectively disables the incremental algorithm and keeps the pre-existing recompute path (whose floating-point regrouping and argMin/argMax tie choices differ)."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",

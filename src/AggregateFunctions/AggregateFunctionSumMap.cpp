@@ -176,6 +176,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     static auto getArgumentColumns(const IColumn ** columns)
     {
         if constexpr (tuple_argument)

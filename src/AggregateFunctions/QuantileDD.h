@@ -36,6 +36,8 @@ template <typename Value>
 class QuantileDD
 {
 public:
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
+
     using Weight = UInt64;
 
     QuantileDD() = default;

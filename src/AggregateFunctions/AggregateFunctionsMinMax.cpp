@@ -58,6 +58,10 @@ public:
             return "max";
     }
 
+    // Same strict comparison as row-by-row adds: ties keep the earlier value, NaN
+    // never replaces a non-NaN value, any value replaces a NaN-only state.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (isMin)

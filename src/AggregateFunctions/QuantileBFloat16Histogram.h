@@ -43,6 +43,7 @@ namespace DB
 template <typename Value>
 struct QuantileBFloat16Histogram
 {
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
     using BFloat16 = UInt16;
     using Weight = UInt64;
 

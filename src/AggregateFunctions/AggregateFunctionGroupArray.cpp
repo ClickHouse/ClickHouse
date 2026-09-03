@@ -379,6 +379,8 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return true; }
+
+    bool mergeIsEquivalentToAddingRows() const override { return Trait::sampler == Sampler::NONE; }
 };
 
 
@@ -736,6 +738,8 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return true; }
+
+    bool mergeIsEquivalentToAddingRows() const override { return Trait::sampler == Sampler::NONE; }
 };
 
 

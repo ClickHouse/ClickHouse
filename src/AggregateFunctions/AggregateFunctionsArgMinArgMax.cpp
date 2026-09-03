@@ -167,6 +167,12 @@ public:
         }
     }
 
+    // For ties of the comparison value the returned argument is documented as
+    // non-deterministic and already batch-layout-dependent (the SIMD extreme-index
+    // kernel does not pick the same duplicate as the row-by-row fold); merging partial
+    // states stays within that.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (isMin)

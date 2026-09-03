@@ -377,6 +377,8 @@ public:
 
     bool allocatesMemoryInArena() const override { return true; }
 
+    bool mergeIsEquivalentToAddingRows() const override { return nested_func->mergeIsEquivalentToAddingRows(); }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
