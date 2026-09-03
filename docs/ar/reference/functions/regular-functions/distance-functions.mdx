@@ -185,7 +185,7 @@ L2DistanceTransposed(vector1, vector2, p[, used_dims])
 
 **الأسماء البديلة**: `distanceL2Transposed`
 
-**المعاملات**
+**وسيط**
 
 * `vectors` — المتجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
@@ -194,7 +194,7 @@ L2DistanceTransposed(vector1, vector2, p[, used_dims])
 
 **القيمة المعادة**
 
-يعيد المسافة التقريبية لمعيار 2. ويُرجع دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
+يعيد مسافة معيار L2 التقريبية. ويُرجع دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 
@@ -207,9 +207,9 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.3922918381215914 │
-└──────────────────────────────────────────┘
+┌─L2DistanceTransposed(vec, [1, 2], 16)─┐
+│                    1.3922918381215914 │
+└───────────────────────────────────────┘
 ```
 
 <div id="L2DistanceTransposedQuantized">
@@ -235,7 +235,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 **القيمة المعادة**
 
-يعيد المسافة التقريبية لمعيار 2. ويُرجع دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
+يعيد مسافة معيار L2 التقريبية. ويُرجع دائمًا `Float64`. [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 
@@ -245,6 +245,12 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+```response title=Response
+┌─L2DistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                         0.004942022755037076 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="L2Norm">
@@ -327,11 +333,11 @@ SELECT L2Normalize((3, 4))
   ## L2SquaredDistance
 </div>
 
-قُدِّم في: v22.7.0
+أُضيف في: v22.7.0
 
 يحسب مجموع مربعات الفروق بين العناصر المناظرة في متجهين.
 
-**البنية**
+**صيغة**
 
 ```sql
 L2SquaredDistance(vector1, vector2)
@@ -346,7 +352,7 @@ L2SquaredDistance(vector1, vector2)
 
 **القيمة المعادة**
 
-تعيد مجموع مربعات الفروق بين العناصر المناظرة في متجهين. بالنسبة إلى مُدخلات `Array`، يكون نوع الإرجاع `Float32` إذا كان النوع الشامل المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فيكون `Float64`. أما بالنسبة إلى مُدخلات `Tuple`، فيتبع نوع الإرجاع نوع النتيجة الحسابية للعمليات على مستوى العناصر (مع الاحتفاظ بالأنواع الصحيحة). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+تعيد مجموع مربعات الفروق بين العناصر المناظرة في متجهين. بالنسبة إلى مُدخلات `Array`، يكون نوع الإرجاع `Float32` إذا كان النوع الفائق المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فيكون `Float64`. أما بالنسبة إلى مُدخلات `Tuple`، فيتبع نوع الإرجاع نوع النتيجة الحسابية للعمليات على مستوى العناصر (مع الاحتفاظ بالأنواع الصحيحة). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **أمثلة**
 
@@ -357,9 +363,9 @@ SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
 ```
 
 ```response title=Response
-┌─L2SquaredDis⋯ [0, 0, 0])─┐
-│                       14 │
-└──────────────────────────┘
+┌─L2SquaredDistance([1, 2, 3], [0, 0, 0])─┐
+│                                      14 │
+└─────────────────────────────────────────┘
 ```
 
 <div id="L2SquaredNorm">
@@ -694,7 +700,7 @@ cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 
 **الأسماء البديلة**: `distanceCosineTransposed`
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `vectors` — متجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
@@ -716,9 +722,9 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557280905788935 │
-└──────────────────────────────────────────────┘
+┌─cosineDistanceTransposed(vec, [1, 2], 16)─┐
+│                       0.10557280905788935 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="cosineDistanceTransposedQuantized">
@@ -727,7 +733,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 أُضيف في: v26.7.0
 
-يحسب [مسافة جيب التمام](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) التقريبية بين رموز `QBit(Int8)` التابعة لـ `quantizeBFloat16ToInt8` (التي يُفكّ تكميمها آنيًا) ومتجه مرجعي. وكلما صغرت القيمة المعادة، زاد تشابه المتجهات. يُقارَن متجه مرجعي (استعلام) من نوع `Float` مباشرةً بدقة `Float32` — وهي دقة إعادة بناء الرموز بعد فك التكميم — لذا يُحوَّل استعلام `Float64` إلى `Float32`، بينما يُوسَّع استعلام `BFloat16` إليه بدقة تامة (أي إن حساب المسافة غير متماثل)؛ أما المرجع `Array(Int8)` فيُعامَل هو نفسه على أنه رموز `quantizeBFloat16ToInt8` ويُفكّ تكميمه إلى مستويات إعادة البناء الخاصة به. لاحظ أن `p` يقتطع فقط رموز `QBit` المخزنة؛ أما المرجع `Array(Int8)` فهو استعلام كامل ويُعاد بناؤه دائمًا بدقة 8 بت كاملة، لذلك لا تكون هذه مسافة متماثلة بين قيم مكمّاة إلا عند `p = 8` (أما عند `p < 8` فلا يُقرأ إلا الجانب المخزن بدقة أقل). ويجب أن يكون في الفضاء نفسه الذي كانت فيه القيم قبل التكميم (أي بعد تطبيق التدوير العشوائي والتحجيم نفسيهما)، وهذا يقع على عاتق المستدعي. مسافة جيب التمام لا تتأثر بالتحجيم؛ أما الضرب النقطي ومسافة L2 فليسا كذلك.
+يحسب [مسافة جيب التمام](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) التقريبية بين رموز `QBit(Int8)` التابعة لـ `quantizeBFloat16ToInt8` (التي يُفكّ تكميمها آنيًا) ومتجه مرجعي. وكلما صغرت القيمة المعادة، زاد تشابه المتجهات. يُقارَن متجه مرجعي (استعلام) من نوع `Float` مباشرةً بدقة `Float32` — وهي دقة إعادة بناء الرموز بعد فك التكميم — لذا يُحوَّل استعلام `Float64` إلى `Float32`، بينما يُوسَّع استعلام `BFloat16` إليه بدقة تامة (أي إن حساب المسافة غير متماثل)؛ أما المرجع `Array(Int8)` فيُعامَل هو نفسه على أنه رموز `quantizeBFloat16ToInt8` ويُفكّ تكميمه إلى مستويات إعادة البناء الخاصة به. لاحظ أن `p` يقتطع فقط رموز `QBit` المخزنة؛ أما المرجع `Array(Int8)` فهو استعلام كامل ويُعاد بناؤه دائمًا بدقة 8 بت كاملة، لذلك لا تكون هذه مسافة متماثلة بين قيم مكمّاة إلا عند `p = 8` (أما عند `p < 8` فلا يُقرأ إلا الجانب المخزن بدقة أقل). ويجب أن يكون في الفضاء نفسه الذي كانت فيه القيم قبل التكميم (أي بعد تطبيق دوران عشوائي والتحجيم نفسيهما)، وهذا يقع على عاتق المستدعي. مسافة جيب التمام لا تتأثر بالتحجيم؛ أما الضرب النقطي ومسافة L2 فليسا كذلك.
 
 **الصيغة**
 
@@ -756,6 +762,12 @@ INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]
 SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
+```response title=Response
+┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.000027192636379513857 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
 <div id="dotProductTransposed">
   ## dotProductTransposed
 </div>
@@ -772,7 +784,7 @@ dotProductTransposed(vector1, vector2, p[, used_dims])
 
 **الأسماء البديلة**: `scalarProductTransposed`
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `vectors` — متجهات. [`QBit(T, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي. [`Array(T)`](/ar/reference/data-types/array)
@@ -794,9 +806,9 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 ```
 
 ```response title=Response
-┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
-│                                   2.0625 │
-└──────────────────────────────────────────┘
+┌─dotProductTransposed(vec, [1, 2], 16)─┐
+│                                2.0625 │
+└───────────────────────────────────────┘
 ```
 
 <div id="dotProductTransposedQuantized">
@@ -817,7 +829,7 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — متجهات من رموز `quantizeBFloat16ToInt8`. [`QBit(Int8, UInt64[, UInt64])`](/ar/reference/data-types/qbit)
 * `reference` — المتجه المرجعي (الاستعلام): مصفوفة `Float` (أي الاستعلام، ويُقارَن بدقة `Float32` -- ويُحوَّل الاستعلام من النوع `Float64` إلى `Float32`)، أو `Array(Int8)` من رموز `quantizeBFloat16ToInt8` يُفك تكميمها آنيًا. [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Int8)`](/ar/reference/data-types/array)
-* `p` — عدد البِتّات العليا من كل رمز `QBit` مخزنة التي ستُستخدم (من 1 إلى 8). يؤدي استخدام عدد أقل من البِتّات إلى إعادة بناء مُكمِّم مضمن أكثر خشونة باستخدام مراكز المتوسط الشرطي الغاوسي لفترات البادئة Lloyd-Max الحالية، لتسريع عمليات I/O مع انخفاض الدقة؛ وتمثل 8 بِتّات إعادة البناء كاملة الدقة. يقتطع `p` فقط قيمة `QBit` المخزنة؛ أما المرجع من النوع `Array(Int8)` فيُعاد بناؤه دائمًا بدقة كاملة تبلغ 8 بِتّات. [`UInt`](/ar/reference/data-types/int-uint)
+* `p` — عدد البِتّات العليا من كل رمز `QBit` مخزنة التي ستُستخدم (من 1 إلى 8). يؤدي استخدام عدد أقل من البِتّات إلى إعادة بناء مُكمِّم مضمن أكثر خشونة باستخدام مراكز المتوسط الشرطي الغاوسي لفاصل البادئة Lloyd-Max الحالي، لتسريع عمليات I/O مع انخفاض الدقة؛ وتمثل 8 بِتّات إعادة البناء كاملة الدقة. يقتطع `p` فقط قيمة `QBit` المخزنة؛ أما المرجع من النوع `Array(Int8)` فيُعاد بناؤه دائمًا بدقة كاملة تبلغ 8 بِتّات. [`UInt`](/ar/reference/data-types/int-uint)
 * `used_dims` — اختياري. عدد الأبعاد الأولى التي ستُقرأ لإجراء بحث منخفض الأبعاد (Matryoshka) على `QBit` ذي `stride`. يجب أن يكون مضاعفًا لـ `stride` الخاص بـ `QBit` وألا يتجاوز بُعده، ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (وأي عناصر إضافية لاحقة يتم تجاهلها). لا تُقرأ إلا مجموعات `stride` التي تغطي هذه الأبعاد. [`UInt`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
@@ -832,6 +844,12 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
 SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
+│                                                          0.25834959745407104 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
