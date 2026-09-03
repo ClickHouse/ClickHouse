@@ -16,6 +16,8 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnString.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -242,13 +244,14 @@ static Block runInternalSelect(const String & select_query, ContextMutablePtr qu
 }
 
 /// A `ColumnLowCardinality` produced by filtering keeps the dictionary of the column it was filtered
-/// from, so the index of a surviving row depends on which other rows the wider column held. Rebuilding
-/// against a fresh dictionary makes every index a function of the surviving rows alone.
+/// from, so the index of a surviving row depends on which other rows the wider column held. Every
+/// column is rebuilt, not only the ones that are low cardinality at the top level, because a dictionary
+/// nested in a `Map` or an `Array` carries the same dependency.
 static void rebuildLowCardinalityDictionaries(Block & block)
 {
     for (auto & elem : block)
     {
-        if (!elem.column || !elem.column->lowCardinality())
+        if (!elem.column)
             continue;
 
         auto rebuilt = elem.type->createColumn();
@@ -287,11 +290,16 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
     auto inner_context = Context::createCopy(context->getGlobalContext());
     inner_context->makeQueryContext();
     inner_context->setCurrentQueryId("");
-    inner_context->setProgressCallback(context->getProgressCallback());
 
-    /// No bound user also means no quota here. The caller is metered on the read that returns their
-    /// result rows instead, so one logical read is charged to them once.
-    Block res = runInternalSelect(select_query, std::move(inner_context));
+    Block res;
+    {
+        /// The scan sees every user's row before the filter above, so it runs in a thread group of its
+        /// own: its rows are neither charged to the caller's memory, quota and profile events nor
+        /// reported to them. The thread keeps its name, only the group it accounts to changes.
+        ThreadGroupSwitcher switcher(
+            ThreadGroup::createForQuery(inner_context), getThreadName(), /*allow_existing_group=*/ true);
+        res = runInternalSelect(select_query, std::move(inner_context));
+    }
     rebuildLowCardinalityDictionaries(res);
     return res;
 }
@@ -302,6 +310,14 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
     auto row_policy_filter = context->getRowPolicyFilter("system", "processes", RowPolicyFilterType::SELECT_FILTER);
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return;
+
+    /// `system.query_log.used_row_policies` is filled from the query context, so a policy that governed
+    /// the statement has to be registered there to appear in it.
+    if (context->hasQueryContext())
+    {
+        for (const auto & row_policy : row_policy_filter->policies)
+            context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+    }
 
     /// A policy commonly spells `user = currentUser()`, which resolves against the context it is
     /// compiled under, so it has to be the caller's and not the full-access one used for the read.
