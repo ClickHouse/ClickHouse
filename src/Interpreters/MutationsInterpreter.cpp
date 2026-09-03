@@ -2596,9 +2596,6 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     Block header = builder.getHeader();
 
-    /// The same pair of conditions `prepareMutationStages` uses to put every physical column into a
-    /// stage's `output_columns`. Subtracting from a header that was deliberately made complete there
-    /// would contradict it, so the two have to agree, whatever the caller then does with the result.
     const bool rewrites_whole_part = settings.return_all_columns
         || std::any_of(
             stages.begin(),
@@ -2607,29 +2604,23 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     if (!rewrites_whole_part)
     {
-        /// A readonly stage only reads unchanged columns, so that indices, projections and TTL
-        /// expressions can be recalculated; writing them would rewrite data the mutation does not
-        /// touch. A column another stage writes stays, or the mutation loses its own result.
-        NameSet written_by_stages;
-        NameSet readonly_stage_columns;
+        NameSet write_stage_columns;
         for (const auto & stage : stages)
         {
             if (stage.is_readonly)
-            {
-                for (const auto & [column_name, _] : stage.column_to_updated)
-                    readonly_stage_columns.insert(column_name);
-            }
-            else
-            {
-                for (const auto & [column_name, _] : stage.column_to_updated)
-                    written_by_stages.insert(column_name);
-            }
+                continue;
+
+            for (const auto & [column_name, _] : stage.column_to_updated)
+                write_stage_columns.insert(column_name);
         }
 
+        /// Keep only write stage columns to avoid rewriting readonly stage columns whose data the
+        /// mutation does not touch. A readonly stage only reads unchanged columns, so that indices,
+        /// projections and TTL expressions can be recalculated.
         Block kept;
         for (const auto & column : header)
         {
-            if (!readonly_stage_columns.contains(column.name) || written_by_stages.contains(column.name))
+            if (write_stage_columns.contains(column.name))
                 kept.insert(column);
         }
         header = std::move(kept);
