@@ -1,0 +1,11 @@
+42	42
+0	1
+1	2
+2	3
+42	42
+0	0
+1	1
+2	2
+SELECT plus(multiply(3, count(x)), sum(x))\nFROM t_sum_legacy
+250
+250

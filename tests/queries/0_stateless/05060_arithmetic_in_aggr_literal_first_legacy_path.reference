@@ -1,0 +1,16 @@
+SELECT multiply(2, sum(a))\nFROM t_arith_legacy
+-10
+SELECT plus(1, min(a))\nFROM t_arith_legacy
+-4
+SELECT minus(1, max(a))\nFROM t_arith_legacy
+-3
+SELECT multiply(-2, min(a))\nFROM t_arith_legacy
+10
+SELECT multiply(-3, max(a))\nFROM t_arith_legacy
+-12
+SELECT multiply(min(a), -2)\nFROM t_arith_legacy
+10
+SELECT multiply(-2, sum(a))\nFROM t_arith_legacy
+10
+SELECT min(divide(2, plus(a, 10)))\nFROM t_arith_legacy
+0.14285714285714285

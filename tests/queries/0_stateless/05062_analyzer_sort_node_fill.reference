@@ -1,0 +1,78 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_5, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION number
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_5, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, nulls_sort_direction: DESCENDING, with_fill: 0
+        EXPRESSION number
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_10, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 1
+        EXPRESSION number
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+        FILL FROM
+          CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+        FILL TO
+          CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
+        FILL STEP
+          CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    number UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_10, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 6, nodes: 1
+      SORT id: 7, sort_direction: ASCENDING, with_fill: 1
+        EXPRESSION number
+          COLUMN id: 2, column_name: number, result_type: UInt64, source_id: 3
+        FILL FROM
+          CONSTANT id: 8, constant_value: UInt64_0, constant_value_type: UInt8
+        FILL TO
+          CONSTANT id: 9, constant_value: UInt64_5, constant_value_type: UInt8
+        FILL STEP
+          CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+        FILL STALENESS
+          CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
