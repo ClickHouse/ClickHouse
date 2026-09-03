@@ -681,7 +681,8 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+void AlterCommand::apply(
+    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -843,8 +844,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, metadata.virtuals, context);
         }
 
+        /// An expression added to the sorting key may use only the columns (and their subcolumns) added by
+        /// the same ALTER - see `MergeTreeData::checkProperties` - so for a typo in it only those are
+        /// suggested: an existing column or a virtual one would pass the analysis and fail that check.
+        std::optional<Names> hint_columns;
+        if (columns_before_alter)
+        {
+            hint_columns.emplace();
+            for (const auto & column : metadata.columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+                if (!columns_before_alter->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                    hint_columns->push_back(column.name);
+        }
+
         /// Recalculate key with new order_by expression.
-        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context);
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context, hint_columns);
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
@@ -1747,7 +1760,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
