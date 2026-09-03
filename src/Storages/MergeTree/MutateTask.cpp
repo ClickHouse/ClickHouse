@@ -2948,6 +2948,15 @@ private:
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+        /// Create the inner `PipelineExecutor` now, before the cancellation hook (`setPipelineCancelHook`)
+        /// publishes this pipeline as externally cancellable. `PullingPipelineExecutor::pull` would
+        /// otherwise create it lazily on this same thread only at the first pull, racing with a concurrent
+        /// `KILL MUTATION` that calls `cancelMutatingExecutor` -> `PullingPipelineExecutor::cancel` from
+        /// another thread: that race is both UB on the `executor` member and can miss the only path that
+        /// propagates cancellation into `CheckSortedTransform`. Publishing it here happens-before the hook
+        /// is set (both lock `cancel_state->mutex`), and cancelling a not-yet-started `PipelineExecutor` is
+        /// explicitly allowed.
+        ctx->mutating_executor->ensureExecutor();
         ctx->setPipelineCancelHook();
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -3330,6 +3339,9 @@ private:
             /// Is calculated inside MergeProgressCallback.
             ctx->mutating_pipeline.disableProfileEventUpdate();
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+            /// See the comment at the analogous non-replicated site: create the inner `PipelineExecutor`
+            /// before the cancellation hook makes the pipeline externally cancellable.
+            ctx->mutating_executor->ensureExecutor();
             ctx->setPipelineCancelHook();
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
