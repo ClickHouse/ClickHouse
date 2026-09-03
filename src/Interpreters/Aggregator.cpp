@@ -4626,9 +4626,24 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     size_t remaining_src_sizes = 0;
     size_t dst_size_before = 0;
     size_t input_keys = 0;
+    size_t max_reservation = std::numeric_limits<size_t>::max();
     UInt64 seen_input_keys = 0;
     if constexpr (can_reserve)
     {
+        /// Under `throw` the group limit is enforced on the merged totals in
+        /// `ConvertingAggregatedToChunksWithMergingSource::generate`, so a bucket whose merged
+        /// result survives that check holds at most `max_rows_to_group_by` groups; reserving
+        /// beyond that only ever serves a bucket the query is about to abort on. Unlike the
+        /// single-level merge, this loop has no `checkLimits` of its own: the shared check runs
+        /// only after a whole bucket was merged and converted, and the resulting cancellation
+        /// reaches the sibling workers later still, so without the cap a worker can preallocate
+        /// close to its full bucket input while the limit has already been crossed elsewhere,
+        /// adding a large dead buffer and possibly turning the expected `TOO_MANY_ROWS` into
+        /// `MEMORY_LIMIT_EXCEEDED`. The dropping modes are deliberately not enforced during this
+        /// merge, so their buckets are merged whole and keep the full reservation.
+        if (params.max_rows_to_group_by && params.group_by_overflow_mode == OverflowMode::THROW)
+            max_reservation = params.max_rows_to_group_by;
+
         first_src_size = data.size() > 1 ? getDataVariant<Method>(*data[1]).data.impls[bucket].size() : 0;
         for (size_t result_num = 2, size = data.size(); result_num < size; ++result_num)
             remaining_src_sizes += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
@@ -4651,7 +4666,10 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
         seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
         if (seen_input_keys)
-            dst.reserve(std::min(input_keys, static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+            dst.reserve(std::min(
+                {input_keys,
+                 max_reservation,
+                 static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))}));
     }
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
@@ -4684,7 +4702,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
             {
                 if (is_cancelled.load(std::memory_order_seq_cst))
                     return;
-                dst.reserve(reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes));
+                dst.reserve(
+                    std::min(max_reservation, reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes)));
             }
         }
     }
