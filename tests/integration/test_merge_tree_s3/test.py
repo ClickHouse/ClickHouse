@@ -314,6 +314,10 @@ def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
 
+    # Check process-global histograms before SYSTEM FLUSH LOGS, because with a
+    # remote database disk the flush may perform unrelated S3 reads.
+    assert get_s3_read_histogram_counts(node) == histogram_counts_before
+
     node.query("SYSTEM FLUSH LOGS")
     assert (
         node.query(
@@ -323,8 +327,6 @@ def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
         ).strip()
         == "0\t0"
     )
-    assert get_s3_read_histogram_counts(node) == histogram_counts_before
-
     cluster.minio_client.remove_object(cluster.minio_bucket, object_name)
     wait_for_delete_s3_objects(cluster, 0, timeout=30)
 
