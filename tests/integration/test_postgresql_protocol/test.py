@@ -1881,9 +1881,11 @@ def test_cancel_request_does_not_cancel_foreign_query(started_cluster):
 
 def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
     """Once a PostgreSQL connection is gone, its query id is free for any client to pick on another
-    interface, and its `BackendKeyData` pair stops being a credential. A CancelRequest carrying that
-    once-valid pair must not cancel the later query: the cancel must be bound to the exact query
-    that was verified to run on the PostgreSQL interface, not to whatever currently holds the id."""
+    interface. A CancelRequest carrying that connection's once-valid pair must not cancel the later
+    query: the cancel is bound to a query that was verified to run on the PostgreSQL interface, not
+    to whatever currently holds the id. Two guards reach that outcome here, the interface check and
+    the pair leaving the registry at teardown, and this case does not tell them apart: isolating the
+    second would need a PostgreSQL connection id to be handed out twice."""
     node = started_cluster.instances["node"]
 
     # Obtain a server-assigned PostgreSQL query ID together with its credential, then free both.
