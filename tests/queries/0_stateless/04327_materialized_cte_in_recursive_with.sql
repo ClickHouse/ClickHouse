@@ -150,6 +150,26 @@ search AS
 )
 SELECT * FROM search ORDER BY x;
 
+-- Inside the body of a materialized helper its own name refers to a table of that name, at every
+-- reference site: here the anchor resolves the helper first and the recursive member second.
+DROP TABLE IF EXISTS seq;
+CREATE TABLE seq (n UInt64) ENGINE = Memory;
+INSERT INTO seq SELECT number FROM numbers(1, 5);
+
+WITH RECURSIVE seq AS MATERIALIZED
+(
+    SELECT n FROM seq
+),
+walk AS
+(
+    SELECT toUInt64(1) AS x FROM seq WHERE n = 1
+    UNION ALL
+    SELECT x + 1 FROM walk INNER JOIN seq ON seq.n = walk.x WHERE x < 5
+)
+SELECT * FROM walk ORDER BY x;
+
+DROP TABLE seq;
+
 -- Without `enable_materialized_cte`, MATERIALIZED is only a hint and the helper is an ordinary CTE.
 SET enable_materialized_cte = 0;
 
