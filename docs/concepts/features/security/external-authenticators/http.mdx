@@ -192,7 +192,8 @@ On HTTP `200`, the response body may be empty (equivalent to `{}`) or a JSON obj
   means no expiry; a past or malformed value fails the attempt.
 
 Unlike locally defined users with `IDENTIFIED WITH HTTP`, malformed response metadata
-fails the authentication attempt instead of being ignored. A `200` response must be
+fails the authentication attempt instead of being ignored; a JSON object with a duplicate
+member name is malformed. A `200` response must be
 length-delimited, with `Content-Length` (`Content-Length: 0` for an empty body) or chunked
 transfer encoding, so that an incomplete body is detected; a body delimited only by closing
 the connection fails the attempt even if it is valid, and so does a truncated body. The

@@ -159,6 +159,24 @@ TEST(HTTPUserDirectoryResponseParser, OversizedNotFoundBodyThrows)
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_NOT_FOUND, std::string(2 * 1024 * 1024, 'x')), Exception);
 }
 
+TEST(HTTPUserDirectoryResponseParser, DuplicateMembersRejected)
+{
+    /// Poco would silently apply the last occurrence; security metadata must not be ambiguous.
+    for (const std::string & body : {
+        R"({"roles": ["reader"], "roles": ["admin"]})",
+        R"({"settings": {"max_threads": "4", "max_threads": "8"}})",
+        R"({"valid_until": 4102444800, "valid_until": 1})",
+        R"({"settings": {"max_threads": "4"}, "settings": {"max_threads": "8"}})",
+        R"({"unknown": 1, "unknown": 2})",
+    })
+    {
+        EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_OK, body), Exception) << body;
+    }
+    /// The same member name in different objects is not a duplicate.
+    EXPECT_EQ(parseBody(Poco::Net::HTTPResponse::HTTP_OK, R"({"settings": {"max_threads": "4"}, "other": {"max_threads": "8"}})").status,
+        HTTPUserDirectoryResponseParser::Result::Status::Ok);
+}
+
 TEST(HTTPUserDirectoryResponseParser, RejectedAndErrorStatusesThrow)
 {
     EXPECT_THROW(parseBody(Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, ""), Exception);

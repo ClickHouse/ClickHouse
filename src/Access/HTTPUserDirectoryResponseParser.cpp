@@ -5,9 +5,13 @@
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/ParseHandler.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/String.h>
+
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -15,6 +19,40 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
+}
+
+namespace
+{
+
+/// Poco's default handler applies last-wins to a duplicate member (`Object::set` overwrites).
+/// For security metadata that is ambiguity, not tolerance: reject any duplicate member.
+class DuplicateMemberRejectingHandler : public Poco::JSON::ParseHandler
+{
+public:
+    void startObject() override
+    {
+        keys_per_object.emplace_back();
+        Poco::JSON::ParseHandler::startObject();
+    }
+
+    void endObject() override
+    {
+        keys_per_object.pop_back();
+        Poco::JSON::ParseHandler::endObject();
+    }
+
+    void key(const std::string & k) override
+    {
+        if (!keys_per_object.empty() && !keys_per_object.back().insert(k).second)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Duplicate member {} in the HTTP authentication server response", backQuote(k));
+        Poco::JSON::ParseHandler::key(k);
+    }
+
+private:
+    std::vector<std::unordered_set<std::string>> keys_per_object;
+};
+
 }
 
 /// Converts a JSON scalar into a `Field` that preserves its JSON type: strings stay strings,
@@ -120,8 +158,12 @@ HTTPUserDirectoryResponseParser::parse(const Poco::Net::HTTPResponse & response,
     Poco::JSON::Object::Ptr object;
     try
     {
-        Poco::JSON::Parser parser;
+        Poco::JSON::Parser parser(new DuplicateMemberRejectingHandler);
         object = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Exception &)
+    {
+        throw;
     }
     catch (...)
     {
