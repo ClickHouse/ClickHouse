@@ -923,6 +923,15 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// Reject the parser-impossible shape at the JSON boundary.
     if (limit_with_ties && !orderBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
+
+    /// `ALL` is a modifier of `LIMIT AFTER`; `formatImpl` only emits it after the `AFTER` expression.
+    if (limit_after_all && !limitAfter())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_after_all requires a LIMIT AFTER expression during AST JSON deserialization");
+
+    /// `ParserSelectQuery` never produces an offset without a length next to a range, and `formatImpl`
+    /// has no syntax for that shape.
+    if (limitOffset() && !limitLength() && (limitAfter() || limitUntil()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_offset requires a LIMIT length clause together with LIMIT AFTER/UNTIL during AST JSON deserialization");
 }
 
 }
