@@ -9,7 +9,7 @@ SET query_plan_optimize_join_order_limit = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET materialize_statistics_on_insert = 1;
-SET query_plan_max_selectivity_for_not_null_filters_execution = 0.5;
+SET query_plan_max_selectivity_for_not_null_filters_execution = 0.7;
 
 DROP TABLE IF EXISTS fact;
 DROP TABLE IF EXISTS mid_hi;
