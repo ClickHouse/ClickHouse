@@ -2004,6 +2004,19 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
     assert undisturbed.files_read > 0
     assert undisturbed.bytes_read > 0
 
+    def restore_jobs_scheduled():
+        return int(
+            instance.query(
+                "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
+            )
+        )
+
+    # A restore reports RESTORED from inside its own job, so the one above can still be counted
+    # here. The barrier below counts jobs, so let it drain first or the baseline would be too high.
+    wait_condition(
+        restore_jobs_scheduled, lambda scheduled: scheduled == 0, max_attempts=100
+    )
+
     try:
         instance.query(
             "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
@@ -2015,13 +2028,8 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
             "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE",
             timeout=60,
         )
-        # No data restore task is scheduled yet, so this is what the pool reports for the restore
-        # operation alone. One more than this means the operation plus a single task.
-        scheduled_without_tasks = int(
-            instance.query(
-                "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
-            )
-        )
+        # No data restore task is scheduled yet, so only this restore's own job is counted.
+        assert restore_jobs_scheduled() == 1
 
         # Arm the publish pauses only now that the earlier stages have joined, then let the data
         # restore tasks run: the first of them to publish is held with its own snapshot.
@@ -2043,13 +2051,7 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
         # releasing it makes its own snapshot the last published one instead of leaving a straggler
         # to publish after it. They restored the remaining parts, hence the full counts.
         wait_condition(
-            lambda: int(
-                instance.query(
-                    "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
-                )
-            ),
-            lambda scheduled: scheduled == scheduled_without_tasks + 1,
-            max_attempts=100,
+            restore_jobs_scheduled, lambda scheduled: scheduled == 2, max_attempts=100
         )
         assert (
             get_backup_info_from_system_backups(by_id=restore_id).files_read
