@@ -8738,7 +8738,7 @@ The derived filters are not executed unless `query_plan_allow_derived_not_null_f
     DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
 Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
 )", 0) \
-    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.5, R"(
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
 The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
 )", 0) \
     \
