@@ -1072,14 +1072,26 @@ class GH:
         """Merge PR #`pr`. With `admin`, merge right away with administrator
         privileges: required checks are not awaited and the merge queue on the
         base branch is bypassed. Only for automation that has already decided
-        the change must land immediately, such as reverting a broken merge."""
+        the change must land immediately, such as reverting a broken merge.
+
+        `admin` never asks `gh` to delete the branch, whatever `keep_branch`
+        says, because `gh` refuses the two together -- see the comment below."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         extra_args = ""
-        if not keep_branch:
+        # `gh` rejects `--delete-branch` outright whenever the base branch has a
+        # merge queue enabled -- "Cannot use `-d` or `--delete-branch` when merge
+        # queue enabled" -- and it rejects it even next to `--admin`, which is the
+        # flag that bypasses that very queue: the check looks at the branch setting
+        # and not at what the merge is about to do. Asking for both fails the merge
+        # itself, so an `admin` merge does not ask. Nothing is lost by that: the
+        # merge is immediate rather than queued, and GitHub removes the head branch
+        # on its own wherever the repository has `delete_branch_on_merge` set, which
+        # is where this is used.
+        if not keep_branch and not admin:
             extra_args += " --delete-branch"
         if squash:
             extra_args += " --squash"

@@ -149,6 +149,7 @@
       "group": "Guides",
       "pages": [
         {
+          "expanded": true,
           "group": "Ingestion de données",
           "pages": [
             "fr/clickstack/ingesting-data/index",
