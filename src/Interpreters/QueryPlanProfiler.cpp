@@ -67,14 +67,11 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
 
     /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard,
     /// after the client has already received the result. An exception here would fail a query that
-    /// had already succeeded, so diagnostics must not propagate. The memory blocker keeps the plan
-    /// text and the per-step statistics, both of which can be large, from being charged to the
-    /// query and tripping max_memory_usage, matching what SystemLogQueue::add does for the row
-    /// itself. Everything that allocates must stay inside the blocker and the try block.
+    /// had already succeeded, so diagnostics must not propagate.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
     try
     {
-        MemoryTrackerBlockerInThread block_memory_tracker;
-
         std::optional<AnalyzeStepsStats> stats;
         if (pipeline)
         {
@@ -106,7 +103,15 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        rendered_plan = "FAILED TO RENDER PLAN: " + getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+
+        try
+        {
+            rendered_plan = "FAILED TO RENDER PLAN: " + getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+        }
+        catch (...)
+        {
+            rendered_plan.emplace();
+        }
     }
 }
 }
