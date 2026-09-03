@@ -33,5 +33,17 @@ SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_righ
 WHERE (t_disj_left.a = 1 AND t_disj_left.k % 2 = 0) OR (t_disj_left.a = 2)
 SETTINGS use_join_disjunctions_push_down = 0;
 
+-- A stateful predicate must not be cloned below the join either: `tryPushDownFilter` returns early
+-- for a filter whose expression `hasStatefulFunctions`, so the predicate is never extracted and the
+-- plan mentions the stateful function exactly once, above the join.
+SELECT 'stateful';
+SELECT countSubstrings(arrayStringConcat(groupArray(explain), '\n'), 'timeSeriesTagsToGroup')
+FROM (
+    EXPLAIN indexes = 0
+    SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_right.k
+    WHERE (t_disj_left.a = 1 AND timeSeriesTagsToGroup([('x', 'y')]) = 0) OR (t_disj_left.a = 2)
+    SETTINGS use_join_disjunctions_push_down = 1
+);
+
 DROP TABLE t_disj_left;
 DROP TABLE t_disj_right;
