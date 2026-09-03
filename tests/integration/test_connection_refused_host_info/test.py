@@ -5,9 +5,10 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance("node")
-peer = cluster.add_instance("peer")
+node = cluster.add_instance("node", main_configs=["configs/remote_servers.xml"])
+peer = cluster.add_instance("peer", stay_alive=True)
 proxy_node = cluster.add_instance("proxy_node", main_configs=["configs/proxy.xml"])
+new_peer = cluster.add_instance("new_peer", stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -58,3 +59,42 @@ def test_connect_timeout_names_the_peer(started_cluster):
     assert (
         f"Timeout: {peer_ip}:9000" in error
     ), f"expected the peer address in: {error}"
+
+
+def test_reconnect_error_uses_latest_peer(started_cluster):
+    old_ip = cluster.get_instance_ip("peer")
+    new_ip = cluster.get_instance_ip("new_peer")
+    table = "test_reconnect_error_uses_latest_peer"
+
+    node.query(
+        f"CREATE TABLE {table} AS system.one "
+        "ENGINE = Distributed(stale_endpoint_cluster, system, one)"
+    )
+    assert node.query(f"SELECT count() FROM {table}") == "1\n"
+
+    try:
+        peer.stop_clickhouse()
+        new_peer.stop_clickhouse()
+        node.exec_in_container(
+            ["bash", "-c", f"echo '{new_ip} peer # stale-endpoint-test' >> /etc/hosts"]
+        )
+        node.query("SYSTEM DROP DNS CACHE")
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM {table} "
+            "SETTINGS connections_with_failover_max_tries = 1"
+        )
+        assert f"Connection refused: {new_ip}:9000" in error
+        assert error.count(f"{new_ip}:9000") == 1
+        assert old_ip not in error
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "sed '/# stale-endpoint-test$/d' /etc/hosts > /tmp/hosts.clean && cat /tmp/hosts.clean > /etc/hosts",
+            ]
+        )
+        peer.start_clickhouse()
+        new_peer.start_clickhouse()
+        node.query(f"DROP TABLE IF EXISTS {table}")
