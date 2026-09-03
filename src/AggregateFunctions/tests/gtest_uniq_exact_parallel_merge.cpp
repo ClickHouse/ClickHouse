@@ -54,6 +54,25 @@ TEST(UniqExactParallelMerge, WaveWorkersAreDistinct)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers] - wave_workers_before, 1);
 }
 
+TEST(UniqExactParallelMerge, IdleTasksDoNotCountAsWorkersOrCPUTime)
+{
+    UniqExactMergeWaveStats wave_stats(1, 2);
+    ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 1);
+
+    const auto waves_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves];
+    const auto wave_cpu_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveCPUTimeMicroseconds];
+    const auto wave_workers_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers];
+
+    pool.scheduleOrThrowOnError([&wave_stats] { wave_stats.recordTask(2'000, 0); });
+    pool.wait();
+    wave_stats.recordTask(1'000, 1);
+    wave_stats.report();
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves] - waves_before, 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveCPUTimeMicroseconds] - wave_cpu_before, 1);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveWorkers] - wave_workers_before, 1);
+}
+
 /// Test pairwise merge (the existing path) with thread pool.
 TEST(UniqExactParallelMerge, PairwiseMerge)
 {

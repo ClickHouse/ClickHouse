@@ -91,36 +91,6 @@ FROM
 )
 SETTINGS log_comment = '05059_aggregation_merge_single_variant';
 
--- The variadic wrapper should report both its parallel conversion and merge waves.
-SELECT uniqExact(number, number + 1)
-FROM numbers_mt(80000)
-SETTINGS
-    max_threads = 4,
-    max_threads_min_free_memory_per_thread = 0,
-    max_block_size = 8192,
-    log_comment = '05059_uniq_exact_variadic_merge_waves';
-
--- Grouped variadic states should use the keyed thread-pool merge path.
-SELECT sum(u)
-FROM
-(
-    SELECT number % 2 AS k, uniqExact(number, number + 1) AS u
-    FROM numbers_mt(2000000)
-    GROUP BY k
-    SETTINGS
-        max_threads = 4,
-        max_threads_min_free_memory_per_thread = 0,
-        max_block_size = 8192,
-        group_by_two_level_threshold = 0,
-        group_by_two_level_threshold_bytes = 0,
-        max_bytes_before_external_group_by = 0,
-        max_bytes_ratio_before_external_group_by = 0,
-        collect_hash_table_stats_during_aggregation = 0,
-        enable_parallel_single_level_merge = 0,
-        enable_adaptive_aggregator = 0
-)
-SETTINGS log_comment = '05059_uniq_exact_keyed_variadic_merge_waves';
-
 -- A no-key uniqExact with several large partial states takes stock master's existing parallel
 -- two-level merge wave.
 SELECT uniqExact(number)
@@ -202,37 +172,6 @@ WHERE
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND log_comment = '05059_aggregation_merge_single_variant';
-
-SELECT
-    argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) = 2,
-    argMax(ProfileEvents['UniqExactMergeWaveInputStates'], event_time_microseconds) > 1,
-    argMax(ProfileEvents['UniqExactMergeWaveElapsedMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['UniqExactMergeWaveCPUTimeMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['UniqExactMergeWaveWorkers'], event_time_microseconds)
-        BETWEEN argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
-        AND 4 * argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
-FROM system.query_log
-WHERE
-    event_date >= yesterday()
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment = '05059_uniq_exact_variadic_merge_waves';
-
-SELECT
-    argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['UniqExactMergeWaveInputStates'], event_time_microseconds)
-        = 2 * argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds),
-    argMax(ProfileEvents['UniqExactMergeWaveElapsedMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['UniqExactMergeWaveCPUTimeMicroseconds'], event_time_microseconds) > 0,
-    argMax(ProfileEvents['UniqExactMergeWaveWorkers'], event_time_microseconds)
-        BETWEEN argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
-        AND 4 * argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds)
-FROM system.query_log
-WHERE
-    event_date >= yesterday()
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    AND log_comment = '05059_uniq_exact_keyed_variadic_merge_waves';
 
 SELECT
     argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) > 0,

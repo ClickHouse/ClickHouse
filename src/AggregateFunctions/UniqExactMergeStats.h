@@ -37,6 +37,9 @@ public:
 
     void recordTask(UInt64 cpu_nanoseconds, size_t processed_items_) noexcept
     {
+        if (processed_items_ == 0)
+            return;
+
         cpu_time_nanoseconds.fetch_add(cpu_nanoseconds, std::memory_order_relaxed);
         processed_items.fetch_add(processed_items_, std::memory_order_relaxed);
         registerWorker(getThreadId());
