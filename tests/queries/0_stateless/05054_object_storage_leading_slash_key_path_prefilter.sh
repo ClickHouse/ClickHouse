@@ -61,6 +61,12 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${BRACE}) WHERE _f
 GLOB_SLASHED="'${AZURE_CONN}', '${AZURE_CONT}', '/*.csv', 'CSV', 'auto', 'x UInt64'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${GLOB_SLASHED}) WHERE _path = '${AZURE_CONT}/slashed1.csv';"
 
+# The extracted keys stand in for the listing, so a value that fits the glob but names no blob must
+# behave like a listing that does not contain it: no rows, no exception. A mixed predicate reads the
+# existing blob and silently drops the missing one.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM azureBlobStorage(${GLOB_SLASHED}) WHERE _path = '${AZURE_CONT}/missing.csv';"
+${CLICKHOUSE_CLIENT} -q "SELECT sum(x) FROM azureBlobStorage(${GLOB_SLASHED}) WHERE _path IN ('${AZURE_CONT}/slashed1.csv', '${AZURE_CONT}/missing.csv');"
+
 # When the glob accepts both spellings the extraction cannot pick one, so the listing must decide
 # instead of a guess reading the wrong (or a missing) blob.
 GLOB_ANY="'${AZURE_CONN}', '${AZURE_CONT}', '**.csv', 'CSV', 'auto', 'x UInt64'"

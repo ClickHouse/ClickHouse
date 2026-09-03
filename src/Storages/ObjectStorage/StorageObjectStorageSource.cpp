@@ -576,13 +576,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 file_progress_callback);
         else
         {
+            /// The validated keys stand in for a listing: a listing never yields a key that does not exist,
+            /// so a candidate that names no object must be skipped, not probed with an exception. Otherwise
+            /// `WHERE _path = '<something that matches the glob but is not there>'` would throw where the
+            /// glob alone returns no rows, and a mixed `IN` would throw instead of returning the existing part.
+            /// The metadata is fetched here for the same reason even when the caller would defer it (cluster
+            /// mode): the probe is what tells a missing candidate apart, and a listing would have carried the
+            /// metadata anyway.
             iterator = std::make_unique<KeysIterator>(
                 *validated_paths,
                 object_storage,
                 virtual_columns,
                 is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file,
-                skip_object_metadata,
+                /*ignore_non_existent_files=*/true,
+                /*skip_object_metadata=*/false,
                 with_tags,
                 file_progress_callback);
         }
