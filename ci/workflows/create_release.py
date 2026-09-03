@@ -37,6 +37,11 @@ _release_dry_run_digest = Job.CacheDigestConfig(
         "./ci/jobs/scripts/create_release.py",
         "./ci/jobs/scripts/clickhouse_version.py",
         "./ci/jobs/scripts/expect_release_refusal.py",
+        # Other release-pipeline entrypoints the patch dry run invokes directly;
+        # a change here must invalidate the cache or the guard would miss it.
+        "./tests/ci/changelog.py",
+        "./ci/jobs/scripts/artifactory.py",
+        "./ci/jobs/scripts/release_packages.py",
     ],
 )
 
