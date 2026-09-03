@@ -32,6 +32,7 @@ cluster.add_instance(
     "node",
     main_configs=[
         "configs/postgresql.xml",
+        "configs/postgresql_alt_protocol.xml",
         "configs/log.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
@@ -66,6 +67,8 @@ cluster.add_instance(
 )
 
 server_port = 5433
+# The second PostgreSQL endpoint from `configs/postgresql_alt_protocol.xml`, served by its own listener.
+alt_server_port = 5435
 
 
 @pytest.fixture(scope="module")
@@ -919,11 +922,11 @@ def test_bind_error_keeps_connection_alive(started_cluster):
     ch.close()
 
 
-def _pg_raw_extended_query_session(node, backend_key=None):
+def _pg_raw_extended_query_session(node, backend_key=None, port=None):
     # Minimal raw client for protocol messages hidden by libpq and psycopg.
     # `backend_key`, when given, receives the `BackendKeyData` pair as {"pid": .., "key": ..};
     # libpq keeps the cancellation secret private, so only a raw client can read it.
-    sock = socket.create_connection((node.ip_address, server_port), timeout=10)
+    sock = socket.create_connection((node.ip_address, port or server_port), timeout=10)
 
     def read_until_ready(timeout=10.0):
         # Read backend message types through `ReadyForQuery` (`Z`).
@@ -1881,6 +1884,24 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
     _assert_cancel_request_does_not_cancel_http_query(
         node, query_id, backend_key["pid"], backend_key["key"]
     )
+
+
+def test_connection_ids_are_unique_across_listeners(started_cluster):
+    """The connection id is the query id of every statement of its connection, and the id a
+    CancelRequest resolves to, so it has to be unique across the whole server. Each endpoint is
+    served by its own listener, so a counter held per listener would hand the same connection id,
+    and with it the same query id and cancellation slot, to two live connections."""
+    node = started_cluster.instances["node"]
+
+    main_key = {}
+    alt_key = {}
+    sock_main, _ = _pg_raw_extended_query_session(node, main_key)
+    with sock_main:
+        sock_alt, _ = _pg_raw_extended_query_session(node, alt_key, port=alt_server_port)
+        with sock_alt:
+            assert main_key and alt_key, "the server did not send BackendKeyData"
+            # The second connection is opened later, so a server-wide counter gives it a later id.
+            assert alt_key["pid"] > main_key["pid"], (main_key, alt_key)
 
 
 def test_cancel_request_with_wrong_secret_key_does_not_cancel(started_cluster):
