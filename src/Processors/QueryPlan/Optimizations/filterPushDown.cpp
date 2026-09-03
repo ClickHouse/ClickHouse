@@ -47,9 +47,8 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-/// Evaluating a predicate once per branch instead of once above a step that drops rows selects
-/// different rows in each branch unless the predicate is deterministic within the query. This is
-/// the criterion `splitFilter` applies to every row-dropping step.
+/// A predicate evaluated once per branch rather than once above a row-dropping step must be
+/// deterministic within the query, or each branch selects different rows.
 static bool filterIsDeterministicInScopeOfQuery(const FilterStep & filter)
 {
     for (const auto & node : filter.getExpression().getNodes())
@@ -1434,9 +1433,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// IntersectOrExcept does not change the header and its branches are positionally aligned,
         /// so a filter above it can be cloned into every branch, exactly as for UnionStep.
         ///
-        /// TODO(#117559): unlike `UNION ALL`, `INTERSECT`/`EXCEPT` eliminate rows, so a pushed-down
-        /// filter also runs on branch rows the set operation removes, and a predicate that throws on
-        /// some values then surfaces an error the unoptimized plan does not. `JOIN` has the same gap.
+        /// TODO(#117559): a pushed-down filter also runs on branch rows the set operation removes,
+        /// so a predicate that throws on some values raises there instead of returning rows.
         if (!filterIsDeterministicInScopeOfQuery(*filter))
             return 0;
 
