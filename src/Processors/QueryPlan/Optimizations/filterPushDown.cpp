@@ -507,21 +507,19 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::Unspecified;
-    const bool have_join_kind = table_join_ptr || logical_join;
     if (table_join_ptr)
     {
         kind = table_join_ptr->kind();
         strictness = table_join_ptr->strictness();
     }
-    else if (logical_join)
+    else
     {
         kind = logical_join->getJoinOperator().kind;
         strictness = logical_join->getJoinOperator().strictness;
     }
 
     /// `FULL` / `PASTE` cannot prefilter either side (`canPrefilterJoinSide`).
-    if (have_join_kind
-        && !canPrefilterJoinSide(kind, strictness, JoinTableSide::Left)
+    if (!canPrefilterJoinSide(kind, strictness, JoinTableSide::Left)
         && !canPrefilterJoinSide(kind, strictness, JoinTableSide::Right))
         return 0;
 
@@ -579,10 +577,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
-    NameSet filter_input_names;
-    for (const auto * input_node : filter->getExpression().getInputs())
-        filter_input_names.emplace(input_node->result_name);
-
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)
     {
         Names available_input_columns_for_filter;
@@ -603,12 +597,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
         for (const auto & name : input_header->getNames())
         {
-            const bool in_join_output = join_header->has(name);
-
-            /// JOIN output may drop a left-only column (unused-column removal after
-            /// `count()` of `SELECT * … JOIN … WHERE left.col …`) while the Filter DAG
-            /// still references it. That name is still valid on this stream.
-            if (!in_join_output && (require_stable_types || !filter_input_names.contains(name)))
+            if (!join_header->has(name))
                 continue;
 
             /// For the legacy JoinStep (not JoinStepLogical), there is no mechanism to adjust
@@ -619,8 +608,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             ///
             /// The disjunction (partial predicate) push-down path has no such type-fixup, so it
             /// passes require_stable_types to also exclude type-changing columns for JoinStepLogical.
-            if (in_join_output
-                && (!logical_join || require_stable_types)
+            if ((!logical_join || require_stable_types)
                 && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
@@ -638,7 +626,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                     continue;
 
                 const auto & output_name = output_action.getColumnName();
-                if (!join_header->has(output_name) && !filter_input_names.contains(output_name))
+                if (!join_header->has(output_name))
                     continue;
 
                 if (require_stable_types)
@@ -648,9 +636,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                         || !input_header->has(resolved.getColumnName()))
                         continue;
 
-                    const auto & output_type = join_header->has(output_name)
-                        ? join_header->getByName(output_name).type
-                        : output_action.getType();
+                    const auto & output_type = join_header->getByName(output_name).type;
                     if (!input_header->getByName(resolved.getColumnName()).type->equals(*output_type))
                         continue;
                 }
@@ -662,14 +648,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         return available_input_columns_for_filter;
     };
 
-    bool left_stream_filter_push_down_input_columns_available = true;
-    bool right_stream_filter_push_down_input_columns_available = true;
-
-    if (have_join_kind)
-    {
-        left_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Left);
-        right_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Right);
-    }
+    bool left_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Left);
+    bool right_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Right);
 
     /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
       * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
