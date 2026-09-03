@@ -1,0 +1,5 @@
+grace_hash,hash falls back to hash
+10
+grace_hash alone is still rejected
+legacy mode keeps grace_hash usable on its own
+10

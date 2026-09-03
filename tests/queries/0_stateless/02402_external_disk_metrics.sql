@@ -31,6 +31,8 @@ SETTINGS log_comment='02402_external_disk_mertrics/partial_merge_join'
 FORMAT Null;
 
 SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets=32, grace_hash_join_max_buckets=32;
+-- `max_bytes_in_join` is a hard cap, not a spill trigger: use the spill threshold to force temporary files.
+SET max_bytes_in_join = 0, max_bytes_before_external_join = '20M';
 
 SELECT n, j * 2097152 FROM
 (SELECT number * 200000 as n FROM numbers(5)) nums

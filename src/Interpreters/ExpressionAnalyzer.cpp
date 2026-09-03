@@ -1098,6 +1098,12 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
+        /// Without a spill threshold `grace_hash` cannot run, but `join_algorithm` is a preference list:
+        /// leave it to the next algorithm. Listed alone, the constructor says what to set.
+        if (!analyzed_join->legacyJoinSizeLimitsTriggerSpilling() && analyzed_join->maxBytesBeforeExternalJoin() == 0
+            && analyzed_join->getEnabledJoinAlgorithms().size() > 1)
+            return {};
+
         if (!context->getTempDataOnDisk())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -1106,10 +1112,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+            /// Same spill threshold as `hash` uses, `grace_hash` just starts partitioned right away.
+            /// Legacy mode gets 0, which is what standalone `grace_hash` was built with before the
+            /// threshold applied to it, so the size limits stay its only spill trigger.
             return std::make_shared<GraceHashJoin>(
                 context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
                 context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
-                analyzed_join, std::make_shared<const Block>(std::move(left_sample_block)), right_sample_block, context->getTempDataOnDisk());
+                analyzed_join,
+                std::make_shared<const Block>(std::move(left_sample_block)),
+                right_sample_block,
+                context->getTempDataOnDisk(),
+                /*any_take_last_row_=*/false,
+                analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin());
     }
 
     if (algorithm == JoinAlgorithm::AUTO)

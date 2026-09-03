@@ -2,10 +2,11 @@
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -282,7 +283,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
-    spillable = typeid_cast<GraceHashJoin *>(join.get());
+    spillable = join->canSpillToDisk();
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -397,28 +398,23 @@ void FillingRightJoinSideTransform::work()
 
 ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
 {
-    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
-    {
-        ProcessorMemoryStats res;
-        res.spillable_memory_bytes = grace_join->getTotalByteCount();
-        // in case the hash table will resize which requires more than 2x additional memory.
-        // we must reserve enough memory.
-        res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-        return res;
-    }
-    return {};
+    if (!spillable)
+        return {};
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
+    // in case the hash table will resize which requires more than 2x additional memory.
+    // we must reserve enough memory.
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
+    return res;
 }
 
 bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 {
-    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    if (spillable && join->getSpillableBytes() >= bytes)
     {
-        auto total_bytes = grace_join->getTotalByteCount();
-        if (total_bytes >= bytes)
-        {
-            grace_join->forceSpill();
-            return true;
-        }
+        join->requestSpill();
+        return true;
     }
     return false;
 }
