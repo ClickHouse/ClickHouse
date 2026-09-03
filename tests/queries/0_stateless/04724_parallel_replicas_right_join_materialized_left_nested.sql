@@ -34,8 +34,9 @@ SET enable_parallel_replicas = 1,
 -- read alone. That nested join is marked global too, so it must reach a temporary table: the
 -- collector decides which child to descend and has to skip the same side that is materialized,
 -- otherwise the nested global join keeps naming the raw table and every replica reads its own copy.
--- Paired again: the absence of a raw nested global join is also what a query that was never
--- offloaded would report, so one arm requires the outer JOIN to reach the replicas.
+-- The absence of a raw nested global join is also what a query that was never offloaded, and one
+-- whose nested join stayed local, would report, so it takes three arms: one requires the outer
+-- JOIN to reach the replicas, one the nested join to name a temporary table.
 
 SELECT '-- nested join in the offloaded right subtree: the outer JOIN is offloaded';
 SELECT count() > 0 FROM (
@@ -56,6 +57,16 @@ SELECT count() FROM (
     SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
              parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
 ) WHERE explain ILIKE '%GLOBAL ALL LEFT JOIN%' AND explain NOT ILIKE '%GLOBAL ALL LEFT JOIN `_data_%';
+
+SELECT '-- nested join in the offloaded right subtree: the temporary table is actually joined';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM (SELECT number AS key FROM numbers(10)) AS o
+    RIGHT JOIN (
+        SELECT a.key AS key FROM t_replicated_right AS a LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS i ON o.key = i.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL LEFT JOIN `_data_%';
 
 SELECT '-- nested join in the offloaded right subtree: results are correct';
 SELECT count() FROM (SELECT number AS key FROM numbers(10)) AS o

@@ -2,6 +2,8 @@
 1
 -- nested join in the offloaded right subtree: the inner side reaches a temporary table
 0
+-- nested join in the offloaded right subtree: the temporary table is actually joined
+1
 -- nested join in the offloaded right subtree: results are correct
 10
 -- explicit GLOBAL nested join on the materialized left: the local join is kept
