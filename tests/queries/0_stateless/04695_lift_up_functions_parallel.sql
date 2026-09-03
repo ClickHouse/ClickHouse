@@ -18,7 +18,21 @@ FROM (SELECT groupArray((-toInt32(k % 977), k, a)) AS g FROM (
 SELECT 'order preserved with limit', g = arraySort(g)
 FROM (SELECT groupArray((-toInt32(k % 977), k, a)) AS g FROM (
     SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
-    FROM numbers_mt(50000) ORDER BY k % 977 DESC, k LIMIT 1000));
+    FROM numbers_mt(50000) ORDER BY k % 977 DESC, k LIMIT 5000));
+
+-- A sort `LIMIT` of at most one block leaves the lifted expression a single chunk, which the
+-- scatter/gather pair cannot spread over more than one stream, so it is not added.
+SELECT 'small limit not parallelized', count() > 0
+FROM (EXPLAIN PIPELINE
+    SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
+    FROM numbers_mt(50000) ORDER BY k % 977 DESC, k LIMIT 1000)
+WHERE explain LIKE '%AddSequenceNumber%';
+
+SELECT 'large limit parallelized', count() > 0
+FROM (EXPLAIN PIPELINE
+    SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
+    FROM numbers_mt(50000) ORDER BY k % 977 DESC, k LIMIT 5000)
+WHERE explain LIKE '%AddSequenceNumber%';
 
 -- A stateful function keeps the lifted part on a single stream: the streams reach it in an arbitrary
 -- order, which the chunk sequence numbers cannot undo.
