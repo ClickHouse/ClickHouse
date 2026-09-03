@@ -97,6 +97,12 @@ private:
 
     off_t offset = 0;
     size_t total_size{};
+
+    /// The size of the whole object as advertised by the `Content-Range` of the last download
+    /// response. It is only used as a lower bound for an unbounded read: a response body that ends
+    /// before it is a premature end of the response rather than the end of the file.
+    size_t reported_object_size = 0;
+
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

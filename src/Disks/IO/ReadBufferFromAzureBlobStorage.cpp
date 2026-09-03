@@ -134,7 +134,17 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_read);
 
-            if (bytes_read != 0 || !read_until_position)
+            if (bytes_read != 0)
+                break;
+
+            /// The body of the current response is exhausted. That is the end of the file only if
+            /// the response delivered everything it was supposed to deliver. When
+            /// `read_until_position` is set, it is set locally by the caller and is authoritative.
+            /// For an unbounded read there is no local bound, and the size of the object advertised
+            /// by the same response (`Content-Range`) is the only statement about where the data
+            /// ends: an endpoint that caps an open-ended request to a shorter response would
+            /// otherwise silently truncate the file at the end of the first response body.
+            if (!read_until_position && static_cast<size_t>(offset) >= reported_object_size)
                 break;
 
             premature_end_of_response = true;
@@ -171,19 +181,22 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
         if (premature_end_of_response)
         {
-            /// The response ended before the right bound that was requested locally. The bound is
-            /// authoritative (`supportsRightBoundedReads`), so a shorter response must not be
-            /// reported to the caller as the end of the file: reopen the download at the current
-            /// offset, and if the endpoint keeps answering short, fail instead of returning
-            /// truncated data.
+            /// The response ended before the end of the data: before the right bound that was
+            /// requested locally, or - for an unbounded read - before the size of the object that
+            /// the same response advertised. Neither is a valid end of the file, so a shorter
+            /// response must not be reported to the caller as one: reopen the download at the
+            /// current offset, and if the endpoint keeps answering short, fail instead of
+            /// returning truncated data.
+            const size_t end_of_data = read_until_position ? static_cast<size_t>(read_until_position) : reported_object_size;
+
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
-                offset, read_until_position, path, i + 1, max_single_read_retries);
+                offset, end_of_data, path, i + 1, max_single_read_retries);
 
             if (i + 1 == max_single_read_retries)
                 throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
                     "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
-                    offset, read_until_position, path);
+                    offset, end_of_data, path);
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
@@ -298,6 +311,14 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
+            reported_object_size = static_cast<size_t>(download_response.Value.BlobSize);
+
+            /// A successful response is not a guarantee that there is a body to read: the body
+            /// stream is optional in the SDK, and everything below dereferences it. Check it here,
+            /// before the first dereference, rather than after the retry loop.
+            if (!data_stream)
+                throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA,
+                    "Null data stream obtained while downloading file {} from Blob Storage", path);
 
             if (blob_storage_log)
             {
@@ -455,6 +476,12 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
+            /// The body stream is optional in the SDK: a successful response from a broken or
+            /// hostile endpoint can carry none, and it must not be dereferenced blindly.
+            if (!body_stream)
+                throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA,
+                    "Null data stream obtained while downloading file {} from Blob Storage", path);
+
             bytes_copied = copyFromAzureBodyStream(*body_stream, to, n, azure_context);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
