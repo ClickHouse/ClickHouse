@@ -9,6 +9,8 @@ from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
+_COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
 _SETTINGS_HISTORY_ENTRY_RE = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
 _SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
 _SETTINGS_HISTORY_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -17,6 +19,14 @@ _SETTINGS_HISTORY_NAMESPACES = {
     "settings_changes_history": "Session",
     "merge_tree_settings_changes_history": "MergeTree",
 }
+
+
+def _is_commit_sha(value):
+    """Whether `value` is a full commit id.
+
+    `gh api -q` prints an absent field as an empty line and a present non-id field verbatim,
+    both at exit code 0, so a successful read is not by itself a revision."""
+    return bool(_COMMIT_SHA_RE.fullmatch(value or ""))
 
 
 # How many first-parent master commits to record in `master_track_commits_sha`,
@@ -497,15 +507,20 @@ if __name__ == "__main__":
     if info.pr_number > 0:
         # store merge base between master and current branch
         try:
-            # Get the merge base commit using git
-            merge_base_commit_sha = Shell.get_output(
+            # A stored merge base is a full commit id, or the key is absent.
+            merge_base_commit_sha = GH.get_output_with_retries(
                 f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
                 verbose=True,
+                strict=True,
             ).strip()
+            if not _is_commit_sha(merge_base_commit_sha):
+                raise RuntimeError(
+                    f"merge base is not a commit id: [{merge_base_commit_sha[:200]}]"
+                )
             info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
         except Exception as e:
-            print(f"Failed to get merge base via git: {e}")
+            print(f"Failed to get merge base via the GitHub API: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
