@@ -2015,6 +2015,13 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
             "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE",
             timeout=60,
         )
+        # No data restore task is scheduled yet, so this is what the pool reports for the restore
+        # operation alone. One more than this means the operation plus a single task.
+        scheduled_without_tasks = int(
+            instance.query(
+                "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
+            )
+        )
 
         # Arm the publish pauses only now that the earlier stages have joined, then let the data
         # restore tasks run: the first of them to publish is held with its own snapshot.
@@ -2032,11 +2039,21 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
             timeout=60,
         )
 
-        # The siblings of the held task restore the remaining parts and publish the full counts.
+        # Wait until the held task is the only one left: every sibling has published by then, so
+        # releasing it makes its own snapshot the last published one instead of leaving a straggler
+        # to publish after it. They restored the remaining parts, hence the full counts.
         wait_condition(
-            lambda: get_backup_info_from_system_backups(by_id=restore_id).files_read,
-            lambda files_read: files_read == undisturbed.files_read,
+            lambda: int(
+                instance.query(
+                    "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
+                )
+            ),
+            lambda scheduled: scheduled == scheduled_without_tasks + 1,
             max_attempts=100,
+        )
+        assert (
+            get_backup_info_from_system_backups(by_id=restore_id).files_read
+            == undisturbed.files_read
         )
 
         # Releasing the held task makes it publish its stale snapshot last. The restore then stops
