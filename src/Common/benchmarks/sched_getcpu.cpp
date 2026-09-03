@@ -32,7 +32,7 @@ namespace
 
 void BM_sched_getcpu_current(benchmark::State & state)
 {
-    for (auto _ [[maybe_unused]] : state)
+    for (auto _ : state)
         benchmark::DoNotOptimize(sched_getcpu());
 }
 BENCHMARK(BM_sched_getcpu_current);
@@ -49,7 +49,7 @@ void BM_sched_getcpu_vsyscall(benchmark::State & state)
         return;
     }
     unsigned cpu = 0;
-    for (auto _ [[maybe_unused]] : state)
+    for (auto _ : state)
     {
         fn(&cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);
@@ -60,7 +60,7 @@ BENCHMARK(BM_sched_getcpu_vsyscall);
 void BM_sched_getcpu_syscall(benchmark::State & state)
 {
     unsigned cpu = 0;
-    for (auto _ [[maybe_unused]] : state)
+    for (auto _ : state)
     {
         syscall(SYS_getcpu, &cpu, nullptr, nullptr);
         benchmark::DoNotOptimize(cpu);

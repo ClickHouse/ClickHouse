@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Introduction",
+      "group": "Introdução",
       "pages": [
         "pt-BR/resources/develop-contribute/introduction/developer-instruction",
         "pt-BR/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "Building",
+      "group": "Compilação",
       "pages": [
         "pt-BR/resources/develop-contribute/build/build",
         "pt-BR/resources/develop-contribute/build/build-osx",
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "group": "Native protocol",
+      "group": "Protocolo nativo",
       "pages": [
         "pt-BR/resources/develop-contribute/native-protocol/basics",
         "pt-BR/resources/develop-contribute/native-protocol/client",
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "Contributing",
+      "group": "Contribuindo",
       "pages": [
         "pt-BR/resources/develop-contribute/contribute/tests",
         "pt-BR/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "group": "Integration development",
+      "group": "Desenvolvimento de integrações",
       "pages": [
         "pt-BR/resources/develop-contribute/integrations/index",
         "pt-BR/resources/develop-contribute/integrations/building-integrations",
@@ -60,6 +60,6 @@
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Development & contributing",
+  "item": "Desenvolvimento e contribuição",
   "root": "pt-BR/resources/develop-contribute/index"
 }

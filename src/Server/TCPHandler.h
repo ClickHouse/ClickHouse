@@ -55,18 +55,6 @@ class NativeReader;
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
-/// TCPHandlerPocoChunkedWriter is used in TCPHandler
-/// and it uses `sync` api for explicit protocol delivery.
-/// Hide `next` api because it is used internally by the buffer.
-class TCPHandlerPocoChunkedWriter : public WriteBufferFromPocoSocketChunked
-{
-public:
-    using WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked;
-
-private:
-    using WriteBuffer::next;
-};
-
 /// State of query processing.
 struct QueryState
 {
@@ -143,15 +131,15 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    void finalizeOut(std::shared_ptr<TCPHandlerPocoChunkedWriter> & raw_out) const
+    void finalizeOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
     {
         if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->finalize();
         if (raw_out)
-            raw_out->sync();
+            raw_out->next();
     }
 
-    void cancelOut(std::shared_ptr<TCPHandlerPocoChunkedWriter> & raw_out) const
+    void cancelOut(std::shared_ptr<WriteBufferFromPocoSocketChunked> & raw_out) const
     {
         if (maybe_compressed_out && maybe_compressed_out.get() != raw_out.get())
             maybe_compressed_out->cancel();
@@ -242,7 +230,7 @@ private:
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<TCPHandlerPocoChunkedWriter> out;
+    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
@@ -299,8 +287,7 @@ private:
     bool receivePacketsExpectQuery(std::shared_ptr<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
-    /// `force` skips the interactive-delay rate limit, for callers that must know right now.
-    void receivePacketsExpectCancel(QueryState & state, bool force = false) TSA_REQUIRES(callback_mutex);
+    void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
@@ -335,15 +322,14 @@ private:
 
     void sendHello();
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
-    static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
+    static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     /// Send an exception when the connection buffers are not initialized yet
     /// (for example, when their allocation failed because the server memory limit is reached).
     void trySendExceptionWithoutConnectionBuffers(const Exception & e);
     void sendProgress(QueryState & state);
-    void sendInteractiveUpdates(QueryState & state) TSA_REQUIRES(callback_mutex);
-    static void sendLogs(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
+    static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendEndOfStream(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
@@ -358,11 +344,11 @@ private:
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
-    static void initMaybeCompressedOut(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out);
+    static void initMaybeCompressedOut(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out);
     void initMaybeCompressedOut(QueryState & state);
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);
-    static void initLogsBlockOutput(QueryState & state, const Block & block, std::shared_ptr<TCPHandlerPocoChunkedWriter> out, UInt32 client_tcp_protocol_version);
+    static void initLogsBlockOutput(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
     static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);
 

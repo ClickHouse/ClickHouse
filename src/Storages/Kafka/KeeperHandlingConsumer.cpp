@@ -5,7 +5,6 @@
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/randomSeed.h>
 
 namespace DB
@@ -97,7 +96,7 @@ KeeperHandlingConsumer::OffsetGuard::OffsetGuard(OffsetGuard && other) noexcept
 KeeperHandlingConsumer::OffsetGuard::~OffsetGuard()
 {
     if (consumer && needs_rollback)
-        consumer->rollbackToCommittedOffsetsNoThrow();
+        consumer->rollbackToCommittedOffsets();
 }
 
 void KeeperHandlingConsumer::OffsetGuard::commit()
@@ -202,33 +201,23 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
-    /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
-    /// assignment must be left either rewound to the committed offsets or empty.
-    try
     {
-        {
-            std::lock_guard lock(topic_partition_locks_mutex);
-            // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
-            updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
-            poll_count = 0;
+        std::lock_guard lock(topic_partition_locks_mutex);
+        // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
+        updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
+        lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
+        poll_count = 0;
 
-            assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
-            appendToAssignedTopicPartitions(permanent_locks);
-            appendToAssignedTopicPartitions(tmp_locks);
-        }
-        // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
-        // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
-        // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
-        // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
-        // the case, so the offset values in the lock infos are good enough.
-        rollbackToCommittedOffsets();
+        assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
+        appendToAssignedTopicPartitions(permanent_locks);
+        appendToAssignedTopicPartitions(tmp_locks);
     }
-    catch (...)
-    {
-        assigned_topic_partitions.clear();
-        throw;
-    }
+    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
+    // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
+    // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
+    // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
+    // the case, so the offset values in the lock infos are good enough.
+    rollbackToCommittedOffsets();
 
     if (assigned_topic_partitions.empty())
     {
@@ -509,24 +498,6 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
 }
 
-void KeeperHandlingConsumer::rollbackToCommittedOffsetsNoThrow() noexcept
-{
-    /// The rollback allocates, and it is also called from inside a catch handler, where the memory
-    /// tracker is still allowed to raise `MEMORY_LIMIT_EXCEEDED`.
-    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    try
-    {
-        rollbackToCommittedOffsets();
-    }
-    catch (...)
-    {
-        /// The consumer may still hold the messages of the aborted batch, and committing a later
-        /// batch would skip them. Drop the assignment so `prepareToPoll` rebuilds it and rewinds.
-        assigned_topic_partitions.clear();
-        tryLogCurrentException(log, "Failed to return the consumer to the committed offsets");
-    }
-}
-
 void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
 {
     // offset is used only for debugging purposes in tests, because it greatly helps understanding failures and it is
@@ -640,35 +611,24 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
     int64_t last_read_offset = 0;
-    try
+    while (true)
     {
-        while (true)
+        buf = kafka_consumer->consume(topic_partition, intent_size);
+        last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
+        if (buf)
         {
-            buf = kafka_consumer->consume(topic_partition, intent_size);
-            last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
-            if (buf)
-            {
-                ++consumed_messages;
-                last_read_offset = message_info.currentOffset();
-            }
-            /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-            if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
-            {
-                if (consumed_messages == 0)
-                    return std::nullopt;
-
-                saveIntentSize(topic_partition, committed_offset, consumed_messages);
-                return OffsetGuard(*this, last_read_offset + 1);
-            }
+            ++consumed_messages;
+            last_read_offset = message_info.currentOffset();
         }
-    }
-    catch (...)
-    {
-        /// Consuming a message advances the consumer past it, and only an `OffsetGuard` returns it to
-        /// the committed offsets. No guard exists yet here, so undo the advance: otherwise the next
-        /// batch would commit past messages that were never delivered.
-        rollbackToCommittedOffsetsNoThrow();
-        throw;
+        /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
+        if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
+        {
+            if (consumed_messages == 0)
+                return std::nullopt;
+
+            saveIntentSize(topic_partition, committed_offset, consumed_messages);
+            return OffsetGuard(*this, last_read_offset + 1);
+        }
     }
 }
 
