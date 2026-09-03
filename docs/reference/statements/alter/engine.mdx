@@ -18,7 +18,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ENGINE = new_engine
 
 Changes the engine of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)-family table, for example a plain `MergeTree` table into a [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree), [`SummingMergeTree`](/reference/engines/table-engines/mergetree-family/summingmergetree), [`AggregatingMergeTree`](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), [`CollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), [`CoalescingMergeTree`](/reference/engines/table-engines/mergetree-family/coalescingmergetree) or [`GraphiteMergeTree`](/reference/engines/table-engines/mergetree-family/graphitemergetree).
 
-Only the merge semantics change. The columns, `ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY` and table settings are kept. Existing data is not rewritten: existing parts are re-merged under the new engine's semantics by ordinary background merges and by `OPTIMIZE TABLE ... FINAL`.
+Only the merge semantics change. The columns, `ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY` and table settings are kept. Existing data is not rewritten.
+
+<Note>
+Existing parts keep their merge level, and `FINAL` and the merge algorithms treat a part above level zero as already merged by the current engine. Rows with equal sorting keys that an ordinary `MergeTree` merge had already placed in one such part are therefore not collapsed after the change, neither by a background merge nor by `OPTIMIZE TABLE ... FINAL`. This applies to `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `CollapsingMergeTree`. To collapse such rows, rewrite the data, for example with `INSERT INTO ... SELECT` into a table created with the new engine.
+</Note>
 
 ```sql
 -- Turn a MergeTree table into a ReplacingMergeTree
