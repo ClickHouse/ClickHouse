@@ -60,6 +60,7 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <cctype>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -2245,7 +2246,18 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 
     for (const auto & [header, value] : configuration.headers)
     {
-        if (header == "Range")
+        /// The name is normalized (whitespace/control stripped, per HTTPHeaderFilter) and matched
+        /// case-insensitively before it is sent, so ban "Range" on that normalized form: otherwise
+        /// a padded or mixed-case spelling such as "R ange" would slip past here, normalize to
+        /// "Range", and reach the wire — letting schema inference read a partial-content response.
+        std::string normalized_name = header;
+        normalized_name.erase(
+            std::remove_if(
+                normalized_name.begin(),
+                normalized_name.end(),
+                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
+            normalized_name.end());
+        if (boost::to_lower_copy(normalized_name) == "range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
     }
 
