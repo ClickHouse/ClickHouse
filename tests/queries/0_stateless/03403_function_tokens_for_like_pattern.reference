@@ -37,6 +37,15 @@ SELECT tokens('%ab_cd%', 'ngrams', 2), tokensForLikePattern('%ab_cd%', 'ngrams',
 ['%a','ab','b_','_c','cd','d%']	['ab','cd']
 SELECT tokens('%ab\_cd%', 'ngrams', 2), tokensForLikePattern('%ab\_cd%', 'ngrams', 2);
 ['%a','ab','b\\','\\_','_c','cd','d%']	['ab','b_','_c','cd']
+-- Nullable inputs
+SELECT 'nullable:';
+nullable:
+SELECT tokensForLikePattern(CAST(NULL AS Nullable(String)));
+[]
+SELECT tokensForLikePattern(materialize(toNullable('hello\_world')));
+['hello','world']
+SELECT tokensForLikePattern(nullIf(materialize('hello\_world'), materialize('hello\_world')));
+[]
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';
 unsupported tokenizers:

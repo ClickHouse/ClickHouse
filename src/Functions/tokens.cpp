@@ -1,26 +1,31 @@
 #include "config.h"
 
+#include <ranges>
+#include <string_view>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionTokens.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <ranges>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -47,11 +52,17 @@ struct LikePatternTokensTraits
     static constexpr TokensMode mode = TokensMode::LikePattern;
 };
 
+std::string_view getTokenizerNameOrDefault(const ColumnsWithTypeAndName & arguments)
+{
+    if (arguments.size() < 2)
+        return SplitByNonAlphaTokenizer::getExternalName();
+
+    return arguments[arg_tokenizer].column->getDataAt(0);
+}
+
 std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
 {
-    const auto tokenizer_str = arguments.size() < 2 || !arguments[arg_tokenizer].column
-        ? SplitByNonAlphaTokenizer::getExternalName()
-        : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer_str = getTokenizerNameOrDefault(arguments);
 
     if (arguments.size() <= 2)
         return TokenizerFactory::instance().get(tokenizer_str);
@@ -108,10 +119,24 @@ public:
 
     String getName() const override { return name; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_input = arguments[arg_value].column;
+        const NullMap * null_map = nullptr;
+
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col_input.get()))
+        {
+            if (checkColumn<ColumnString>(&col_nullable->getNestedColumn()))
+            {
+                col_input = col_nullable->getNestedColumnPtr();
+                null_map = &col_nullable->getNullMapData();
+            }
+            else
+                col_input = col_nullable->getNestedColumnWithDefaultOnNull();
+        }
+
         auto col_result = ColumnString::create();
         auto col_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -122,11 +147,11 @@ public:
         if (tokenizer->isStateful())
         {
             auto stateful_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, *col_result, null_map, input_rows_count);
         }
         else
         {
-            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            executeWithTokenizer(*tokenizer, std::move(col_input), *col_offsets, *col_result, null_map, input_rows_count);
         }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
@@ -137,13 +162,14 @@ private:
         const ITokenizer & tokenizer_,
         ColumnPtr col_input,
         ColumnArray::ColumnOffsets & col_offsets,
-        size_t input_rows_count,
-        ColumnString & col_result) const
+        ColumnString & col_result,
+        const NullMap * null_map,
+        size_t input_rows_count) const
     {
         if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(tokenizer_, *column_string, col_offsets, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_string, col_offsets, col_result, null_map, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(tokenizer_, *column_fixed_string, col_offsets, input_rows_count, col_result);
+            executeImpl(tokenizer_, *column_fixed_string, col_offsets, col_result, null_map, input_rows_count);
     }
 
     template <typename StringColumnType>
@@ -151,8 +177,9 @@ private:
         const ITokenizer & tokenizer_,
         const StringColumnType & column_input,
         ColumnArray::ColumnOffsets & column_offsets_input,
-        size_t input_rows_count,
-        ColumnString & column_result) const
+        ColumnString & column_result,
+        const NullMap * null_map,
+        size_t input_rows_count) const
     {
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
@@ -161,6 +188,8 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = column_input.getDataAt(i);
+            if (null_map && (*null_map)[i])
+                input.remove_prefix(input.size());
 
             if constexpr (TokensTraits::mode == TokensMode::LikePattern)
             {
@@ -177,12 +206,16 @@ private:
             }
             else
             {
-                forEachToken(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
-                {
-                    column_result.insertData(token_start, token_len);
-                    ++tokens_count;
-                    return false;
-                });
+                forEachToken(
+                    tokenizer_,
+                    input.data(),
+                    input.size(),
+                    [&](const char * token_start, size_t token_len)
+                    {
+                        column_result.insertData(token_start, token_len);
+                        ++tokens_count;
+                        return false;
+                    });
             }
 
             offsets_data[i] = tokens_count;
@@ -230,55 +263,67 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
-    static FunctionOverloadResolverPtr create(ContextPtr)
-    {
-        return std::make_unique<FunctionTokensOverloadResolver>();
-    }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTokensOverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+        auto is_string_or_fixed_string_nullable = [](const IDataType & type)
+        {
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+                return isStringOrFixedString(nullable_type->getNestedType());
+            return isStringOrFixedString(type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{{"value", is_string_or_fixed_string_nullable, nullptr, "String or FixedString"}};
 
         FunctionArgumentDescriptors optional_args;
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+            optional_args.emplace_back(
+                "tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)
             {
-                const std::string tokenizer{arguments[arg_tokenizer].column->getDataAt(0)};
+                const auto tokenizer_name = getTokenizerNameOrDefault(arguments);
 
-                if (tokenizer == NgramsTokenizer::getExternalName())
+                if (tokenizer_name == NgramsTokenizer::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitByStringTokenizer::getExternalName())
+                else if (tokenizer_name == SplitByStringTokenizer::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
-                else if (tokenizer == SplitByRegexpTokenizer::getExternalName())
+                else if (tokenizer_name == SplitByRegexpTokenizer::getExternalName())
                     optional_args.emplace_back("regexp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 #if USE_JIEBA
-                else if (tokenizer == ChineseTokenizer::getExternalName())
+                else if (tokenizer_name == ChineseTokenizer::getExternalName())
                     optional_args.emplace_back(
                         "granularity", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");
 #endif
 #if USE_ICU
-                else if (tokenizer == IcuTokenizer::getExternalName())
-                    optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+                else if (tokenizer_name == IcuTokenizer::getExternalName())
+                    optional_args.emplace_back(
+                        "locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 #endif
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
-                const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);
+                const auto tokenizer_name = getTokenizerNameOrDefault(arguments);
 
-                if (tokenizer == SparseGramsTokenizer::getExternalName())
+                if (tokenizer_name == SparseGramsTokenizer::getExternalName())
                 {
-                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back(
+                        "min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back(
+                        "max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                     if (arguments.size() == 5)
-                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                        optional_args.emplace_back(
+                            "min_cutoff_length",
+                            static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8),
+                            isColumnConst,
+                            "const UInt8");
                 }
             }
         }
@@ -357,25 +402,24 @@ tokens(value, 'array')
     /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (e.g. `japanese`), so its
     /// tokenizer list omits `japanese`.
     FunctionDocumentation::Arguments arguments_like = arguments;
-    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+    arguments_like[arg_tokenizer]
+        = {"tokenizer",
+           "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and "
+           "`array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.",
+           {"const String"}};
 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Default tokenizer",
-        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
-        R"(
+    FunctionDocumentation::Examples examples
+        = {{"Default tokenizer",
+            R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
+            R"(
 ['test1','test2','test3','test4']
-        )"
-    },
-    {
-        "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
-        R"(
+        )"},
+           {"Ngram tokenizer",
+            "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
+            R"(
 ['abc','bc ','c d',' de','def']
-        )"
-    }
-    };
+        )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -406,17 +450,15 @@ This function is primarily intended for debugging and testing purposes,
 and is used internally to analyze tokenization behavior for LIKE patterns.
 )";
         FunctionDocumentation::Syntax syntax_like = "tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])";
-        FunctionDocumentation::Examples examples_like = {
-            {
-                "Default tokenizer",
+        FunctionDocumentation::Examples examples_like
+            = {{"Default tokenizer",
                 R"(SELECT tokensForLikePattern('%test1,test2,test3%') AS tokens;)",
                 R"(
                     ['test2']
-                    )"
-            }
-        };
+                    )"}};
         FunctionDocumentation::IntroducedIn introduced_in_like = {26, 3};
-        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
+        FunctionDocumentation documentation_like
+            = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
 
         factory.registerFunction<FunctionTokensOverloadResolver<LikePatternTokensTraits>>(documentation_like);
     }

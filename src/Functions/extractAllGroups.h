@@ -2,8 +2,11 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
@@ -73,12 +76,24 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(arguments[0].type.get());
+            nullable && isNothing(*nullable->getNestedType()))
+            return arguments[0].type;
+
+        auto is_string_or_fixed_string_nullable = [](const IDataType & type) -> bool
+        {
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+                return isStringOrFixedString(*nullable->getNestedType()) || isNothing(*nullable->getNestedType());
+            return isStringOrFixedString(type);
+        };
+
         FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(is_string_or_fixed_string_nullable), nullptr, "String or FixedString"},
             {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArguments(*this, arguments, args);
@@ -87,12 +102,28 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = arguments[0].column;
+        ColumnPtr column_haystack = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
+        const NullMap * null_map = nullptr;
+
+        if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(column_haystack.get()))
+        {
+            /// Preserve the default NULL-literal short circuit without evaluating the regular expression.
+            if (isNothing(col_nullable->getNestedColumn().getDataType()))
+                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+            if (checkColumn<ColumnString>(&col_nullable->getNestedColumn()))
+            {
+                column_haystack = col_nullable->getNestedColumnPtr();
+                null_map = &col_nullable->getNullMapData();
+            }
+            else
+                column_haystack = col_nullable->getNestedColumnWithDefaultOnNull();
+        }
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -133,6 +164,8 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view current_row = column_haystack->getDataAt(i);
+                if (null_map && (*null_map)[i])
+                    current_row.remove_prefix(current_row.size());
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 // Match over the whole row, advancing the start offset, so that the characters before the current
@@ -175,8 +208,9 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t matches_per_row = 0;
-
-                const auto & current_row = column_haystack->getDataAt(i);
+                std::string_view current_row = column_haystack->getDataAt(i);
+                if (null_map && (*null_map)[i])
+                    current_row.remove_prefix(current_row.size());
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 // Match over the whole row, advancing the start offset, so that the characters before the current

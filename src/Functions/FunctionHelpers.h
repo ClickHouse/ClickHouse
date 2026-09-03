@@ -211,6 +211,7 @@ struct NullPresence
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
+bool isStringOrNullableString(const IDataType & type);
 bool isLowCardinalityType(const IDataType & type);
 /// Returns true if any of the argument types is or contains LowCardinality
 /// (e.g. LowCardinality(UInt8), Array(LowCardinality(String)) or Map(LowCardinality(String), String)).

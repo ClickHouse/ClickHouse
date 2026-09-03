@@ -1,0 +1,78 @@
+-- Test basic nullable string
+['hello','world']
+['hello','world']
+[]
+-- Test optional arguments are non-nullable
+-- Test with different tokenizer
+['abc','bc ','c d',' de','def']
+[]
+-- Test with FixedString nullable variant
+['test']
+-- Test NULL FixedString uses the nested default
+['00000000']
+['00000000']
+['00000000']
+-- Test alphaTokens with nullable
+['abc','def']
+[]
+-- Test mixed nullable rows
+['hello','world']
+[]
+['foo','bar']
+['a','b']
+['']
+['c','d']
+['1','22']
+[]
+['333']
+['a','b']
+[]
+['c']
+-- Test arrayStringConcat with nullable array elements
+helloworld
+helloworld
+hello, world
+-- Test extractAllGroups with nullable
+[['abc','111'],['def','222']]
+[]
+\N
+\N
+[['00'],['00'],['00'],['00']]
+[['00'],['00'],['00'],['00']]
+-- Test extractAllGroupsHorizontal with nullable
+[['abc','def'],['111','222']]
+[[],[]]
+\N
+\N
+[['00','00','00','00']]
+-- Test extractAllGroupsVertical with nullable
+[['abc','111'],['def','222']]
+[]
+\N
+\N
+[['00'],['00'],['00'],['00']]
+-- Test ngrams with nullable
+['Cli','lic','ick','ckH','kHo','Hou','ous','use']
+[]
+['00000000']
+['00000000']
+-- Test sparseGrams with nullable
+[]
+-- Test splitByChar with nullable
+['a','b','c']
+['a','b']
+['a','b']
+['']
+['']
+-- Test splitByNonAlpha with nullable
+['hello','world','123']
+[]
+-- Test splitByRegexp with nullable
+['a','b','c','']
+['']
+-- Test splitByString with nullable
+['a','b','c']
+['']
+-- Test splitByWhitespace with nullable
+['hello','world','test']
+[]
