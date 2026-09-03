@@ -29,9 +29,14 @@ run "SELECT avgIf(a) FROM l"
 # `countIf` takes only the condition, so one argument is the right count there.
 run "SELECT countIf(a) FROM l"
 
+# The wording of these messages is produced by the analyzer, so pin it regardless of the default in the run.
 echo
 echo '=== an ASOF join says that the inequality is needed in addition to the equalities'
-run "SELECT * FROM l ASOF JOIN r ON l.a = r.a"
+run "SELECT * FROM l ASOF JOIN r ON l.a = r.a SETTINGS enable_analyzer = 1"
+
+echo
+echo '=== equality predicates are optional, so they are not mentioned when there are none'
+run "SELECT * FROM l ASOF JOIN r ON l.t != r.t SETTINGS enable_analyzer = 1"
 
 echo
 echo '=== the same, spelled correctly'
