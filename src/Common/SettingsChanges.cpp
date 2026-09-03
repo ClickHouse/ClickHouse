@@ -65,6 +65,15 @@ bool SettingsChanges::insertSetting(std::string_view name, const Field & value)
     return true;
 }
 
+bool SettingsChanges::removeSetting(std::string_view name)
+{
+    auto it = std::find_if(begin(), end(), [&name](const SettingChange & change) { return change.name == name; });
+    if (it == end())
+        return false;
+    erase(it);
+    return true;
+}
+
 void SettingsChanges::setSetting(std::string_view name, const Field & value)
 {
     if (auto * setting_value = tryGet(name))
@@ -73,13 +82,18 @@ void SettingsChanges::setSetting(std::string_view name, const Field & value)
         insertSetting(name, value);
 }
 
-bool SettingsChanges::removeSetting(std::string_view name)
+void SettingsChanges::setSetting(const SettingChange & change)
 {
-    auto it = std::find_if(begin(), end(), [&name](const SettingChange & change) { return change.name == name; });
-    if (it == end())
-        return false;
-    erase(it);
-    return true;
+    if (auto * existing_change = tryGetChange(change.name))
+        *existing_change = change;
+    else
+        push_back(change);
+}
+
+void SettingsChanges::setSettings(const SettingsChanges & other)
+{
+    for (const auto & change : other)
+        setSetting(change);
 }
 
 String SettingsChanges::namesToString() const
