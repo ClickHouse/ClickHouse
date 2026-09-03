@@ -130,11 +130,16 @@ namespace
             partition_columns_asts.push_back(make_intrusive<ASTIdentifier>(column));
 
         ASTPtr partition_by = makeASTFunction("tuple", partition_columns_asts);
+        /// Hive-style object-storage partitioning: the key type must match what getPartitionExpressionActions
+        /// produces under this context (partition values are path strings, not a persisted binary key file), so
+        /// do not canonicalize only the stored side. See IPartitionStrategy.cpp createHivePartitionStrategy.
         auto key_description = KeyDescription::getKeyFromAST(
             partition_by,
             ColumnsDescription(header.getNamesAndTypesList()),
             {},
-            context);
+            context,
+            /*additional_columns=*/{},
+            /*canonicalize_key_types=*/false);
 
         return std::make_unique<HiveStylePartitionStrategy>(
             key_description,

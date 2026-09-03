@@ -1500,6 +1500,13 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
+    /// The key column types are fixed in the metadata (KeyDescription::data_types) and drive the
+    /// primary-index serializers. They are resolved with enable_extended_results_for_datetime_functions
+    /// pinned off (see KeyDescription::getKeyFromAST), so the expression that produces the actual key
+    /// columns here must be analyzed the same way, otherwise a session that runs with the setting on
+    /// makes toStartOf*/toMonday(DateTime64/Date32) return an extended type and the produced column
+    /// diverges from the serializer's expected type.
+    context = createKeyExpressionContext(context);
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }

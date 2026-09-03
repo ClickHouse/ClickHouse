@@ -755,7 +755,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
+            /// The sampling key is not a persisted binary key: its filter (greaterOrEquals/less on the
+            /// sampling expression) is re-analyzed in the query context at read time
+            /// (MergeTreeDataSelectExecutor). Keep it in the caller's context (do not canonicalize) so
+            /// validation sees the same type the runtime filter produces.
+            metadata.sampling_key = KeyDescription::getKeyFromAST(
+                args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context,
+                /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
 
         if (args.storage_def->unique_key)
         {
@@ -1078,7 +1084,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
+            /// Keep the sampling key in the caller's context (do not canonicalize): its runtime filter is
+            /// re-analyzed in the query context, so validation must see the same type. See the new-syntax path.
+            metadata.sampling_key = KeyDescription::getKeyFromAST(
+                engine_args[arg_num], metadata.columns, metadata.virtuals, context,
+                /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
             ++arg_num;
         }
 
