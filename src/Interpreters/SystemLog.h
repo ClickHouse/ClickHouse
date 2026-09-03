@@ -1628,7 +1628,10 @@ protected:
         ASTPtr comment;
 
         if (s_comment.ignore(pos, expected))
-            string_literal_parser.parse(pos, comment, expected);
+        {
+            if (!string_literal_parser.parse(pos, comment, expected))
+                return false;
+        }
 
         auto storage_with_comment = make_intrusive<StorageWithComment>();
         storage_with_comment->storage = std::move(storage);

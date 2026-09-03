@@ -19,7 +19,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def set_query_log_comment(comment):
+def set_query_log_engine(engine):
     node.exec_in_container(
         [
             "bash",
@@ -27,19 +27,24 @@ def set_query_log_comment(comment):
             f"""echo "
         <clickhouse>
             <query_log>
-                <engine>ENGINE = MergeTree
-                        PARTITION BY (event_date)
-                        ORDER BY (event_time)
-                        TTL event_date + INTERVAL 14 DAY DELETE
-                        SETTINGS ttl_only_drop_parts=1
-                        COMMENT '{comment}'
-                </engine>
+                <engine>{engine}</engine>
                 <partition_by remove='remove'/>
             </query_log>
         </clickhouse>
         " > /etc/clickhouse-server/config.d/yyy-override-query_log.xml
         """,
         ]
+    )
+
+
+def set_query_log_comment(comment):
+    set_query_log_engine(
+        f"""ENGINE = MergeTree
+                PARTITION BY (event_date)
+                ORDER BY (event_time)
+                TTL event_date + INTERVAL 14 DAY DELETE
+                SETTINGS ttl_only_drop_parts=1
+                COMMENT '{comment}'"""
     )
 
 
@@ -92,3 +97,15 @@ def test_system_logs_comment():
             "WHERE log_comment = 'system_logs_comment_history'"
         )
     ) >= history_rows_before
+
+
+def test_bare_comment_is_rejected():
+    node.stop_clickhouse()
+    set_query_log_engine("ENGINE = MergeTree ORDER BY tuple() COMMENT")
+    node.start_clickhouse(expected_to_fail=True)
+
+    assert node.contains_in_log("Storage to create table for query_log")
+    assert node.contains_in_log("string literal")
+
+    set_query_log_comment("updated_comment")
+    node.start_clickhouse()
