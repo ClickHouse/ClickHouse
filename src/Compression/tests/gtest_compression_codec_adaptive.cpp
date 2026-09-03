@@ -9,11 +9,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -39,49 +38,6 @@ CompressionCodecPtr defaultCodec()
     return CompressionCodecFactory::instance().getDefaultCodec();
 }
 
-/// A constructible representative IDataType per scalar (codec-leaf) TypeIndex. Deliberately covers more than today's candidates.
-/// If someone makes one of these a candidate for a codec that rejects it, the drift guard builds it and the rejection is caught at once.
-/// Composite and wrapper types (Array, Tuple, Map, Nullable, ...) are never codec leaves, so they return nullptr.
-DataTypePtr representativeType(TypeIndex idx)
-{
-    switch (idx)
-    {
-        case TypeIndex::Int8: return type("Int8");
-        case TypeIndex::Int16: return type("Int16");
-        case TypeIndex::Int32: return type("Int32");
-        case TypeIndex::Int64: return type("Int64");
-        case TypeIndex::Int128: return type("Int128");
-        case TypeIndex::Int256: return type("Int256");
-        case TypeIndex::UInt8: return type("UInt8");
-        case TypeIndex::UInt16: return type("UInt16");
-        case TypeIndex::UInt32: return type("UInt32");
-        case TypeIndex::UInt64: return type("UInt64");
-        case TypeIndex::UInt128: return type("UInt128");
-        case TypeIndex::UInt256: return type("UInt256");
-        case TypeIndex::BFloat16: return type("BFloat16");
-        case TypeIndex::Float32: return type("Float32");
-        case TypeIndex::Float64: return type("Float64");
-        case TypeIndex::Decimal32: return type("Decimal(9, 2)");
-        case TypeIndex::Decimal64: return type("Decimal(18, 2)");
-        case TypeIndex::Decimal128: return type("Decimal(38, 2)");
-        case TypeIndex::Decimal256: return type("Decimal(76, 2)");
-        case TypeIndex::Date: return type("Date");
-        case TypeIndex::Date32: return type("Date32");
-        case TypeIndex::DateTime: return type("DateTime");
-        case TypeIndex::DateTime64: return type("DateTime64(3)");
-        case TypeIndex::Time: return type("Time");
-        case TypeIndex::Time64: return type("Time64(3)");
-        case TypeIndex::Enum8: return type("Enum8('a' = 1)");
-        case TypeIndex::Enum16: return type("Enum16('a' = 1)");
-        case TypeIndex::String: return type("String");
-        case TypeIndex::FixedString: return type("FixedString(16)");
-        case TypeIndex::UUID: return type("UUID");
-        case TypeIndex::IPv4: return type("IPv4");
-        case TypeIndex::IPv6: return type("IPv6");
-        default: return nullptr;
-    }
-}
-
 /// Serialize values to a little-endian byte buffer, the way the codecs read them back.
 template <typename T>
 std::vector<char> bytesOf(const std::vector<T> & values)
@@ -94,6 +50,19 @@ std::vector<char> bytesOf(const std::vector<T> & values)
         pos += sizeof(T);
     }
     return bytes;
+}
+
+/// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order.
+void expectPool(const char * name, std::initializer_list<std::string_view> extras)
+{
+    Codecs pool;
+    ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*type(name), defaultCodec())) << "type " << name;
+    ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
+    EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
+    EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
+    size_t i = 2;
+    for (const auto extra : extras)
+        EXPECT_EQ(pool[i++]->getCodecDesc()->formatForLogging(), extra) << "type " << name;
 }
 
 /// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.
@@ -119,42 +88,42 @@ uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & b
 
 }
 
-TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
+TEST(AdaptiveCodecPool, CandidateTypesGetT64)
 {
-    /// Drift guard. Every candidate must build for its type (naming a codec the type cannot take would otherwise throw at write time).
-    for (const TypeIndex idx : AdaptiveCodec::candidateTypeIndexes())
-    {
-        const DataTypePtr t = representativeType(idx);
-        ASSERT_NE(t, nullptr) << "no representative type for candidate TypeIndex " << static_cast<int>(idx)
-                              << " -- add a case to representativeType()";
-
-        Codecs pool;
-        ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*t, defaultCodec())) << "TypeIndex " << static_cast<int>(idx);
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "TypeIndex " << static_cast<int>(idx); /// NONE is always [0]
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "TypeIndex " << static_cast<int>(idx); /// default is always [1]
-        EXPECT_GE(pool.size(), 3u) << "TypeIndex " << static_cast<int>(idx);
-    }
+    for (const auto * name :
+         {"Int8",
+          "Int16",
+          "Int32",
+          "Int64",
+          "UInt8",
+          "UInt16",
+          "UInt32",
+          "UInt64",
+          "Enum8('a' = 1)",
+          "Enum16('a' = 1)",
+          "Date",
+          "Date32",
+          "DateTime",
+          "DateTime64(3)",
+          "Time",
+          "Time64(3)",
+          "Decimal(9, 2)",
+          "Decimal(18, 2)",
+          "IPv4"})
+        expectPool(name, {"T64"});
 }
 
-TEST(AdaptiveCodecPool, RepresentativeTypesMatchTheirIndex)
+TEST(AdaptiveCodecPool, FloatTypesGetALPVariants)
 {
-    for (int i = 0; i < 256; ++i)
-    {
-        const auto idx = static_cast<TypeIndex>(i);
-        if (const DataTypePtr t = representativeType(idx))
-            EXPECT_EQ(t->getTypeId(), idx) << "representativeType built the wrong type for TypeIndex " << i;
-    }
+    /// STD before RD because STD decompressed faster (we want it in case of tie)
+    for (const auto * name : {"Float32", "Float64"})
+        expectPool(name, {"ALP(STD)", "ALP(RD)"});
 }
 
 TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
 {
-    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "Float32", "Float64", "UUID"})
-    {
-        auto pool = AdaptiveCodec::poolForType(*type(name), defaultCodec());
-        EXPECT_EQ(pool.size(), 2u) << "type " << name;
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name;
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name;
-    }
+    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "UUID", "BFloat16"})
+        expectPool(name, {});
 }
 
 TEST(AdaptiveCodecPool, MultipleCodecAggregatesEncryption)

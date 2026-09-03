@@ -7,9 +7,12 @@ keywords: ['prometheus', 'grafana', 'monitoring', 'metrics', 'exporter']
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-La fonctionnalité prend en charge l’intégration de [Prometheus](https://prometheus.io/) pour surveiller les services ClickHouse Cloud. L’accès aux métriques Prometheus est disponible via l’endpoint de la [ClickHouse Cloud API](/fr/products/cloud/features/admin-features/api/api-overview), qui vous permet de vous connecter de manière sécurisée et d’exporter les métriques vers votre collector Prometheus. Ces métriques peuvent être intégrées à des dashboards, par exemple dans Grafana ou Datadog, à des fins de visualisation.
+La fonctionnalité prend en charge l’intégration de [Prometheus](https://prometheus.io/) pour surveiller les services ClickHouse Cloud. L’accès aux métriques Prometheus est disponible via l’endpoint de la [ClickHouse Cloud API](/fr/products/cloud/features/admin-features/api/api-overview), qui vous permet de vous connecter de manière sécurisée et d’exporter les métriques vers votre collector Prometheus. Ces métriques peuvent être intégrées à des tableaux de bord, par exemple dans Grafana ou Datadog, à des fins de visualisation.
+
+Les métriques des [ClickPipes](/fr/integrations/clickpipes) rattachés à un service sont incluses avec les métriques ClickHouse de ce service.
 
 Pour commencer, [générez une clé API](/fr/products/cloud/features/admin-features/api/openapi).
 
@@ -23,10 +26,15 @@ Si vous recherchez l’endpoint équivalent pour les services [ClickHouse Manage
   ### Référence de l’API
 </div>
 
-| Méthode | Chemin                                                                                                                          | Description                                                   |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Renvoie les métriques d’un service spécifique                 |
-| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Renvoie les métriques de tous les services d’une organisation |
+| Méthode | Chemin                                                                                                                          | Description                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Renvoie les métriques d’un service spécifique                                                                                                                                          |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **Obsolète.** Renvoie les métriques de tous les services d’une organisation                                                                                                            |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | Renvoie les cibles de scraping Prometheus pour tous les services d’une organisation, au format de [découverte de services HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) |
+
+<Note>
+  L’endpoint de métriques à l’échelle de l’organisation (`GET /v1/organizations/{organizationId}/prometheus`) est obsolète au profit de la [découverte automatique des services](#automatic-service-discovery). Les organisations existantes peuvent continuer à l’utiliser ; les organisations nouvellement créées utilisent à la place l’endpoint de découverte. Contactez le support ClickHouse si vous avez besoin d’accéder à cet endpoint.
+</Note>
 
 **Paramètres de la requête**
 
@@ -35,6 +43,8 @@ Si vous recherchez l’endpoint équivalent pour les services [ClickHouse Manage
 | Organization ID      | Adresse de l’endpoint | uuid                 |
 | Service ID           | Adresse de l’endpoint | uuid (facultatif)    |
 | filtered&#95;metrics | Paramètre de requête  | booléen (facultatif) |
+
+Les schémas complets des requêtes et réponses pour ces endpoints sont disponibles dans la [référence de l’API Cloud](/fr/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
   ### Authentification
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que le label d’instance soit correctement renseigné. De plus, `filtered_metrics` est défini sur `true` dans l’exemple ci-dessus, mais doit être configuré selon les préférences de l’utilisateur.
+
+<div id="automatic-service-discovery">
+  ### Découverte automatique des services
+</div>
+
+<BetaBadge />
+
+L’endpoint de découverte renvoie une cible de scraping par service de votre organisation, au format [découverte de services HTTP](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) de Prometheus. Prometheus actualise la liste des cibles à chaque interrogation de découverte et scrape chaque cible découverte. Les services nouvellement créés sont donc automatiquement pris en compte, tandis que les services supprimés sont retirés de la liste des cibles. Seuls les services que votre clé API est autorisée à consulter sont inclus ; les services en cours de suppression ou déjà supprimés sont omis.
+
+Pour l’utiliser, configurez un job [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) pour qu’il pointe vers l’endpoint de découverte :
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+Définissez `basic_auth` aux deux emplacements : le bloc sous `http_sd_configs` authentifie les requêtes de découverte, et le bloc du job de scraping authentifie la récupération des métriques pour chaque service. Comme pour la configuration statique, définissez `honor_labels: true` afin que le libellé d’instance soit correctement renseigné.
+
+Exemple de réponse de découverte :
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+Les cibles découvertes récupèrent les métriques avec `filtered_metrics=true`. Pour découvrir les cibles qui récupèrent l’ensemble complet des métriques, ajoutez `?filtered_metrics=false` à l’URL de découverte. La spécification complète de l’endpoint est disponible dans la [référence de l’API Cloud](/fr/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
   ## Intégration à Grafana
