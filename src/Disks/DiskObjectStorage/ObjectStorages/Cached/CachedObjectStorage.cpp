@@ -179,9 +179,11 @@ void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
-    std::optional<ObjectAttributes> object_to_attributes)
+    std::optional<ObjectAttributes> object_to_attributes,
+    const std::function<void()> & cancellation_hook)
 {
-    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
+    object_storage->copyObjectToAnotherObjectStorage(
+        object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes, cancellation_hook);
 }
 
 void CachedObjectStorage::copyObject( // NOLINT

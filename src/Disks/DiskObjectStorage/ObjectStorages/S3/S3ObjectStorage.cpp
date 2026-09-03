@@ -583,7 +583,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
-    std::optional<ObjectAttributes> object_to_attributes)
+    std::optional<ObjectAttributes> object_to_attributes,
+    const std::function<void()> & cancellation_hook)
 {
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
@@ -608,8 +609,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
                 scheduler,
-                [&, this]{ return readObject(object_from, read_settings_to_use);},
-                object_to_attributes);
+                [&, this] { return readObject(object_from, read_settings_to_use); },
+                object_to_attributes,
+                cancellation_hook);
             return;
         }
         catch (S3Exception & exc)
@@ -638,7 +640,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         }
     }
 
-    IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
+    IObjectStorage::copyObjectToAnotherObjectStorage(
+        object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes, cancellation_hook);
 }
 
 void S3ObjectStorage::copyObject( // NOLINT

@@ -29,10 +29,22 @@
 
 #include <base/defines.h>
 
+#include <functional>
+
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+
+template <typename Request>
+void setRequestCancellationHook(Request & request, const std::function<void()> & cancellation_hook)
+{
+    if (!cancellation_hook)
+        return;
+
+    cancellation_hook();
+    request.SetRequestRetryHandler([cancellation_hook](const Aws::AmazonWebServiceRequest &) { cancellation_hook(); });
+}
 
 /// Used only for S3Express
 namespace RequestChecksum

@@ -63,6 +63,16 @@ public:
         disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
+    void copyFile(
+        const std::string & from_file_path,
+        const std::string & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override
+    {
+        disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings, cancellation_hook);
+    }
+
     std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
         size_t buf_size,
@@ -79,6 +89,18 @@ public:
         const WriteSettings & settings) override
     {
         return disk.writeFile(path, buf_size, mode, settings);
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook) override
+    {
+        auto buffer = disk.writeFile(path, buf_size, mode, settings);
+        buffer->setCancellationHook(std::move(cancellation_hook));
+        return buffer;
     }
 
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override

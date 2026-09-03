@@ -4009,12 +4009,13 @@ bool MutateTask::prepare()
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
-            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+        IDataPartStorage::ClonePartParams clone_params{
+            .txn = ctx->txn,
+            .hardlinked_files = &ctx->hardlinked_files,
             .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
+            .cancellation_hook = ctx->cancellation_hook,
         };
 
         MergeTreeData::MutableDataPartPtr part;

@@ -128,7 +128,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
-        std::optional<ObjectAttributes> object_to_attributes = {}) override;
+        std::optional<ObjectAttributes> object_to_attributes,
+        const std::function<void()> & cancellation_hook) override;
 
     void shutdown() override;
 

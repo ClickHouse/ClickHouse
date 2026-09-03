@@ -888,15 +888,21 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
 
 
-def test_cancelling_vertical_multipart_merge_stops_s3_retries(cluster, broken_s3):
+@pytest.mark.parametrize(
+    "storage_policy",
+    ["broken_s3_always_multi_part", "encrypted_broken_s3_always_multi_part"],
+)
+def test_cancelling_vertical_multipart_merge_stops_s3_retries(
+    cluster, broken_s3, storage_policy
+):
     node = cluster.instances["node"]
-    table = "cancel_vertical_multipart_merge"
+    table = f"cancel_vertical_multipart_merge_{storage_policy}"
 
     node.query(f"DROP TABLE IF EXISTS {table} NO DELAY")
     node.query(
         f"CREATE TABLE {table} (key UInt32, value String, extra String) "
         "ENGINE=MergeTree ORDER BY key "
-        "SETTINGS storage_policy='broken_s3_always_multi_part', "
+        f"SETTINGS storage_policy='{storage_policy}', "
         "vertical_merge_algorithm_min_rows_to_activate=0, "
         "vertical_merge_algorithm_min_columns_to_activate=0"
     )
@@ -904,6 +910,7 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(cluster, broken_s3
     node.query(f"INSERT INTO {table} SELECT number, toString(number), toString(number) FROM numbers(10000)")
     node.query(f"INSERT INTO {table} SELECT number + 10000, toString(number), toString(number) FROM numbers(10000)")
 
+    broken_s3.reset()
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(action="internal_error", count=10000)
     node.query(f"SYSTEM START MERGES {table}")
@@ -937,6 +944,64 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(cluster, broken_s3
     time.sleep(0.5)
     assert broken_s3.get_request_counts() == request_counts
     assert request_counts["abort_multipart_upload"] == 0
+
+    broken_s3.reset()
+    node.query(f"SYSTEM START MERGES {table}")
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+@pytest.mark.parametrize(
+    "part_storage_type,min_bytes_for_full_part_storage",
+    [("Full", "0"), ("Packed", "10M")],
+)
+def test_cancelling_untouched_mutation_copy_stops_s3_retries(
+    cluster, broken_s3, part_storage_type, min_bytes_for_full_part_storage
+):
+    node = cluster.instances["node"]
+    table = f"cancel_untouched_mutation_copy_{part_storage_type.lower()}"
+
+    node.query(f"DROP TABLE IF EXISTS {table} NO DELAY")
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3', "
+        "always_use_copy_instead_of_hardlinks=1, "
+        f"min_bytes_for_full_part_storage='{min_bytes_for_full_part_storage}'"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)"
+    )
+    assert (
+        node.query(
+            "SELECT part_storage_type FROM system.parts "
+            f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+        ).strip()
+        == part_storage_type
+    )
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(
+        action="internal_error", after=1, count=10000
+    )
+    request = node.get_query_request(
+        f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 "
+        "SETTINGS mutations_sync=1, s3_retry_attempts=100"
+    )
+
+    deadline = time.monotonic() + 10
+    while (
+        broken_s3.get_request_counts()["object_upload"] < 2
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.1)
+    assert broken_s3.get_request_counts()["object_upload"] >= 2
+
+    node.query(f"SYSTEM STOP MERGES {table}")
+    assert "ABORTED" in request.get_error()
+
+    request_counts = broken_s3.get_request_counts()
+    time.sleep(0.5)
+    assert broken_s3.get_request_counts() == request_counts
 
     broken_s3.reset()
     node.query(f"SYSTEM START MERGES {table}")

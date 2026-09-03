@@ -557,7 +557,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         /* max_level= */ {},
         params.copy_instead_of_hardlink,
         params.files_to_copy_instead_of_hardlinks,
-        params.external_transaction);
+        params.external_transaction,
+        params.cancellation_hook);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
@@ -634,7 +635,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         /* max_level= */ {},
         true,
         /* files_to_copy_intead_of_hardlinks= */ {},
-        params.external_transaction);
+        params.external_transaction,
+        params.cancellation_hook);
 
     /// The save_metadata_callback function acts on the target dist.
     if (save_metadata_callback)

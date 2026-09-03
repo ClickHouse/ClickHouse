@@ -450,7 +450,11 @@ class _ServerRuntime:
         self.lock = threading.Lock()
         self.at_part_upload = None
         self.at_object_upload = None
-        self.request_counts = {"part_upload": 0, "abort_multipart_upload": 0}
+        self.request_counts = {
+            "object_upload": 0,
+            "part_upload": 0,
+            "abort_multipart_upload": 0,
+        }
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
         self.slow_put = None
@@ -472,7 +476,11 @@ class _ServerRuntime:
         with self.lock:
             self.at_part_upload = None
             self.at_object_upload = None
-            self.request_counts = {"part_upload": 0, "abort_multipart_upload": 0}
+            self.request_counts = {
+                "object_upload": 0,
+                "part_upload": 0,
+                "abort_multipart_upload": 0,
+            }
             self.fake_put_when_length_bigger = None
             self.fake_uploads = dict()
             self.slow_put = None
@@ -747,6 +755,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if _runtime.is_fake_upload(upload_id, parts.path):
                     return self._fake_put_ok()
         else:
+            with _runtime.lock:
+                _runtime.request_counts["object_upload"] += 1
+
             if _runtime.at_object_upload is not None:
                 if _runtime.at_object_upload.has_effect():
                     self.log_message(

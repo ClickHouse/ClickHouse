@@ -277,6 +277,8 @@ public:
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
         NameSet invalidated_columns_to_write = {};
+        /// Operation-local cancellation check for physical part-data copies and rewrites.
+        std::function<void()> cancellation_hook = {};
         /// fsync the cloned/frozen directories (the clone subtree plus the ancestor chain up to
         /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
         /// by freeze() on a local disk, outside an external transaction.

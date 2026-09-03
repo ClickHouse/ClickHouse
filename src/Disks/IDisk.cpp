@@ -74,6 +74,7 @@ void IDisk::copyFile( /// NOLINT
 
     auto in = readFile(from_file_path, read_settings);
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+    out->setCancellationHook(cancellation_hook);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
 }
