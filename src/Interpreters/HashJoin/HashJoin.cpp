@@ -48,6 +48,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
@@ -296,14 +297,20 @@ BuildResult insertIntoSlots(
         }
     }
 
+    /// One sweep is far shorter than the microsecond the event counts in, so the wait is
+    /// summed in nanoseconds and reported once.
+    UInt64 lock_wait_ns = 0;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::HashJoinBuildLockWaitMicroseconds, lock_wait_ns / 1000); });
+
     /// A fully filtered block still has to reach `insertFromBlockImpl`: that is what reports
     /// `is_inserted` for the map kinds that keep every block.
     if (slots_left == 0)
     {
-        {
-            std::lock_guard lock(locks[0].mutex);
-            insert_slot(0);
-        }
+        Stopwatch acquire_watch(CLOCK_MONOTONIC);
+        std::lock_guard lock(locks[0].mutex);
+        lock_wait_ns = acquire_watch.elapsedNanoseconds();
+
+        insert_slot(0);
         return result;
     }
 
@@ -311,6 +318,7 @@ BuildResult insertIntoSlots(
 
     while (slots_left > 0)
     {
+        Stopwatch sweep_watch(CLOCK_MONOTONIC);
         bool made_progress = false;
 
         for (size_t i = 0; i < num_slots; ++i)
@@ -329,12 +337,13 @@ BuildResult insertIntoSlots(
             --slots_left;
         }
 
-        /// Yielding beats blocking: another slot of this block is probably free.
-        if (!made_progress)
-        {
-            ProfileEventTimeIncrement<Microseconds> lock_wait_watch(ProfileEvents::HashJoinBuildLockWaitMicroseconds);
-            std::this_thread::yield();
-        }
+        if (made_progress)
+            continue;
+
+        /// Yielding beats blocking: another slot of this block is probably free. The sweep that
+        /// found nothing counts as wait as well, and it costs more than the yield.
+        std::this_thread::yield();
+        lock_wait_ns += sweep_watch.elapsedNanoseconds();
     }
 
     return result;
