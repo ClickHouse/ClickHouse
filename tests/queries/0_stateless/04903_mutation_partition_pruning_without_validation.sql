@@ -27,8 +27,13 @@ ALTER TABLE mutation_pruning_without_validation DELETE WHERE d IN (SELECT d FROM
 -- The mutation entry is created in ZooKeeper synchronously by the ALTER, while
 -- `system.mutations` is populated asynchronously by the mutations-updating task,
 -- so only the former can be asserted without a race.
+-- The path comes from `system.replicas`, not from the literal above: the engine arguments a user
+-- writes are not necessarily the path the table ends up at.
 SELECT count()
 FROM system.zookeeper
-WHERE path = '/clickhouse/tables/' || currentDatabase() || '/mutation_pruning_without_validation/mutations';
+WHERE path IN (
+    SELECT zookeeper_path || '/mutations'
+    FROM system.replicas
+    WHERE database = currentDatabase() AND table = 'mutation_pruning_without_validation');
 
 DROP TABLE mutation_pruning_without_validation SYNC;
