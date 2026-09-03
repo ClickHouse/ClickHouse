@@ -10,7 +10,6 @@ from datetime import datetime
 
 import pytest
 
-from helpers.client import QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
@@ -2017,10 +2016,13 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
             timeout=60,
         )
 
-        # Arm the publish pause only now that the single-task stages are done, then let the data
+        # Arm the publish pauses only now that the earlier stages have joined, then let the data
         # restore tasks run: the first of them to publish is held with its own snapshot.
         instance.query(
             "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT restore_pause_before_publishing_final_progress"
         )
         instance.query(
             "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
@@ -2037,30 +2039,22 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
             max_attempts=100,
         )
 
-        # Re-arm the pause so that the publication which follows the join is held too. Releasing
-        # the held task then leaves its stale snapshot as the last published one, which is the
-        # state a restore used to end in.
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
-        )
+        # Releasing the held task makes it publish its stale snapshot last. The restore then stops
+        # right before the publication that follows the join, which is the state a restore used to
+        # end in, so the counters can be read there rather than raced against their repair.
         instance.query(
             "SYSTEM NOTIFY FAILPOINT backups_pause_before_publishing_progress"
         )
-        try:
-            instance.query(
-                "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE",
-                timeout=30,
-            )
-        except QueryTimeoutExceedException:
-            # A restore that publishes nothing after the join never reaches the re-armed pause. The
-            # counters below are then read once the released task has published, which is the point.
-            pass
+        instance.query(
+            "SYSTEM WAIT FAILPOINT restore_pause_before_publishing_final_progress PAUSE",
+            timeout=60,
+        )
         held = get_backup_info_from_system_backups(by_id=restore_id)
         assert held.files_read == undisturbed.files_read
         assert held.bytes_read == undisturbed.bytes_read
 
         instance.query(
-            "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+            "SYSTEM NOTIFY FAILPOINT restore_pause_before_publishing_final_progress"
         )
         restored = wait_condition(
             lambda: get_backup_info_from_system_backups(by_id=restore_id),
@@ -2077,6 +2071,9 @@ def test_system_backups_read_counters_survive_a_stale_publisher():
         )
         instance.query(
             "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT restore_pause_before_publishing_final_progress"
         )
 
 

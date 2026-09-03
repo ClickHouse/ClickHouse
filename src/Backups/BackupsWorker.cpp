@@ -78,6 +78,7 @@ namespace FailPoints
 {
     extern const char backup_pause_on_start[];
     extern const char backups_pause_before_publishing_progress[];
+    extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
 }
 
@@ -1235,6 +1236,7 @@ void BackupsWorker::doRestore(
 
         /// NOTE: the callback above runs inside each restore task, so every value it publishes is a
         /// mid-flight snapshot. All the tasks have joined by now, so this publish is the authoritative one.
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_publishing_final_progress);
         setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getTotalSize(), backup->getNumEntries(),
                            backup->getUncompressedSize(), backup->getCompressedSize(), backup->getNumReadFiles(), backup->getNumReadBytes());
     }

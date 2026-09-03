@@ -1044,8 +1044,8 @@ void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 
 void RestorerFromBackup::runDataRestoreTasks()
 {
-    /// Every earlier stage is a single task, so this is the first point where a test can arm a
-    /// fail point and be sure the next task to reach it is one of several concurrent ones.
+    /// Every earlier stage has joined its own tasks, so this is the first point where a test can
+    /// arm a fail point and be sure the next task to reach it is one of several concurrent ones.
     FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_data_restore_tasks);
 
     /// Iterations are required here because data restore tasks are allowed to call addDataRestoreTask() and add other data restore tasks.
