@@ -30,6 +30,12 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ytsaurus_table_function;
+    extern const SettingsBool ytsaurus_check_table_schema;
+}
+
+namespace YTsaurusSetting
+{
+    extern const YTsaurusSettingsBool check_table_schema;
 }
 
 namespace
@@ -91,6 +97,9 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
     ASTs & args = func_args.arguments->children;
 
     YTsaurusSettings yt_settings;
+    const auto & settings = context->getSettingsRef();
+
+    yt_settings[YTsaurusSetting::check_table_schema] = settings[Setting::ytsaurus_check_table_schema];
 
     for (auto it = args.begin(); it != args.end(); ++it)
     {
