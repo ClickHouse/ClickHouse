@@ -283,6 +283,14 @@ const InvisibleRowsMask * maskPtr(const std::optional<InvisibleRowsMask> & mask)
     return mask ? &*mask : nullptr;
 }
 
+/// Whether two optional requested-type hints request the same type; two absent hints count as the same.
+bool sameHint(const DataTypePtr & a, const DataTypePtr & b)
+{
+    if (!a || !b)
+        return !a && !b;
+    return a->equals(*b);
+}
+
 /// Whether a field's decoded size derives from FieldNode lengths alone, with no buffer whose validated
 /// size bounds the declared row count. A `null`-typed field carries no buffers at all; a struct or
 /// fixed-size-list tree of such fields adds only validity buffers, which may legitimately be absent
@@ -2121,6 +2129,75 @@ DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hin
     for (size_t i = 0; i < list_depth && hint; ++i)
         hint = arrayElementHint(hint);
     return hint;
+}
+
+UnorderedMapWithMemoryTracking<Int64, DataTypePtr> RecordBatchDecoder::collectDictionaryValueHints(
+    const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+{
+    target_types = target_types_;
+    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> hints;
+    UnorderedSetWithMemoryTracking<Int64> conflicting;
+    for (const ArrowField & field : schema.fields)
+    {
+        /// The same kept-field test and starting path as `decodeBatch`.
+        const String normalized_name = normalizedName(field.name);
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+            continue;
+        collectDictionaryValueHints(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, hints, conflicting);
+    }
+    target_types = nullptr;
+
+    for (Int64 id : conflicting)
+        hints.erase(id);
+    std::erase_if(hints, [](const auto & id_and_hint) { return !id_and_hint.second; });
+    return hints;
+}
+
+void RecordBatchDecoder::collectDictionaryValueHints(
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    UnorderedMapWithMemoryTracking<Int64, DataTypePtr> & hints, UnorderedSetWithMemoryTracking<Int64> & conflicting) const
+{
+    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
+    if (field.dictionary)
+    {
+        const Int64 id = field.dictionary->id;
+        auto [it, inserted] = hints.emplace(id, effective_hint);
+        if (!inserted && !sameHint(it->second, effective_hint))
+            conflicting.insert(id);
+        return;
+    }
+
+    const ArrowType & type = field.type;
+    switch (type.kind)
+    {
+        case TypeKind::List:
+        case TypeKind::LargeList:
+        case TypeKind::FixedSizeList:
+            collectDictionaryValueHints(
+                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, hints, conflicting);
+            break;
+        case TypeKind::Map:
+            collectDictionaryValueHints(
+                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, hints, conflicting);
+            break;
+        case TypeKind::Struct:
+            for (size_t i = 0; i < type.children.size(); ++i)
+            {
+                const ArrowField & child = type.children[i];
+                collectDictionaryValueHints(
+                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
+                    childPath(path, child.name), list_depth, hints, conflicting);
+            }
+            break;
+        case TypeKind::Union:
+            /// `decodeUnion` decodes its children with no hint, path or list depth.
+            for (const ArrowField & child : type.children)
+                collectDictionaryValueHints(child, /*target_hint=*/nullptr, /*path=*/{}, /*list_depth=*/0, hints, conflicting);
+            break;
+        default:
+            break;
+    }
 }
 
 }
