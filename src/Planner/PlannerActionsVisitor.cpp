@@ -47,7 +47,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
     extern const SettingsBool format_display_secrets_in_show_and_select;
@@ -265,35 +264,6 @@ public:
                     break;
                 }
 
-                /// Function tuple with enable_named_columns_in_function_tuple generates a named tuple
-                /// with element names taken from the argument aliases. The element names must be part
-                /// of the action node name in addition to the argument names appended below: the same
-                /// arguments with different aliases produce different result types, and different
-                /// arguments can have the same aliases (e.g. SELECT tuple(1 AS x), tuple(2 AS x)),
-                /// so neither the element names alone nor the argument names alone identify the action,
-                /// and actions with equal names are collapsed into one.
-                String named_tuple_element_names;
-                if (function_node.getFunctionName() == "tuple"
-                    && planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
-                {
-                    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
-                    {
-                        if (type_tuple->hasExplicitNames())
-                        {
-                            const auto & names = type_tuple->getElementNames();
-                            size_t size = names.size();
-                            WriteBufferFromOwnString s;
-                            for (size_t i = 0; i < size; ++i)
-                            {
-                                if (i != 0)
-                                    s << ", ";
-                                s << backQuoteIfNeed(names[i]);
-                            }
-                            named_tuple_element_names = s.str();
-                        }
-                    }
-                }
-
                 String in_function_second_argument_node_name;
 
                 if (isNameOfInFunction(function_node.getFunctionName()))
@@ -305,11 +275,6 @@ public:
 
                 WriteBufferFromOwnString buffer;
                 buffer << function_node.getFunctionName();
-
-                /// The names of the elements of a named tuple, written like function parameters:
-                /// tuple(`x`, `y`)(1_UInt8, 2_UInt8). Function tuple has no real parameters.
-                if (!named_tuple_element_names.empty())
-                    buffer << '(' << named_tuple_element_names << ')';
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 

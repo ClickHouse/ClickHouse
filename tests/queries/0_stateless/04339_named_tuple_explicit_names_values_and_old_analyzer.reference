@@ -1,0 +1,5 @@
+(1)	(1)	Tuple(\n    a UInt8)	Tuple(\n    b UInt8)
+(1,2)	Tuple(\n    a UInt8,\n    b UInt8)
+(1)	(1)	Tuple(\n    a UInt8)	Tuple(\n    b UInt8)
+(1,2)	Tuple(\n    a UInt8,\n    b UInt8)
+2	1

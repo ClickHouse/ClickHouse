@@ -46,6 +46,8 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
+#include <Functions/tuple.h>
+#include <Parsers/isUnquotedIdentifier.h>
 #include <Storages/StorageJoin.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -54,6 +56,7 @@
 
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 
@@ -94,6 +97,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsMap additional_table_filters;
 }
 
@@ -1294,6 +1298,63 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    /// Rewrite tuple(x AS a, y AS b) to tuple('a', 'b')(x, y) if setting enabled and all arguments have explicit aliases.
+    /// Don't rewrite if the tuple already has parameters (i.e., tuple(names...)(values...) syntax)
+    if (function_name == "tuple"
+        && scope.context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]
+        && function_node_ptr->getParameters().getNodes().empty())
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (!arguments.empty())
+        {
+            Names names;
+            names.reserve(arguments.size());
+            NameSet name_set;
+
+            bool can_rewrite = true;
+            for (const auto & arg : arguments)
+            {
+                String name;
+                if (arg->hasAlias())
+                {
+                    /// Only trust aliases written in the query text: analyzer passes synthesize aliases
+                    /// through setAlias too (for example for JOIN USING and generated ARRAY JOIN columns),
+                    /// and such internal names must not opt a positional tuple into the named form.
+                    /// The original AST carries the alias only when the user wrote it explicitly.
+                    const auto * ast_with_alias = arg->hasOriginalAST() ? dynamic_cast<const ASTWithAlias *>(arg->getOriginalAST().get()) : nullptr;
+                    if (ast_with_alias && ast_with_alias->alias == arg->getAlias())
+                        name = arg->getAlias();
+                }
+
+                if (name.empty() || !isUnquotedIdentifier(name) || !name_set.insert(name).second)
+                {
+                    can_rewrite = false;
+                    break;
+                }
+
+                names.push_back(std::move(name));
+            }
+
+            if (can_rewrite && names.size() == arguments.size())
+            {
+                /// Create tuple('name1', 'name2', ...)(value1, value2, ...) syntax
+                node = node->clone();
+                function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
+
+                /// Set parameters (names)
+                auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
+                parameters_nodes.reserve(names.size());
+                for (const auto & name : names)
+                    parameters_nodes.push_back(std::make_shared<ConstantNode>(name));
+
+                /// Tuple operator with 'names' parameter is unsupported due to parser complexity.
+                function_node_ptr->markAsOperator(false);
+
+                /// Continue to resolve the new tuple function with parameters
+            }
+        }
+    }
 
     /// Resolve function parameters
 
@@ -3083,6 +3144,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
         }
+
+        /// Temporary workaround for tuple function with parameters to support named tuples.
+        /// Syntax: tuple(name1, name2, ...)(value1, value2, ...)
+        /// This is a minimal change approach - we recreate the function instance with parameters.
+        /// TODO: Extend FunctionFactory to support passing parameters to create methods,
+        /// which would require changing all function creator signatures.
+        if (function && function->getName() == "tuple" && !parameters.empty())
+        {
+            /// Create a new FunctionTuple instance with parameters
+            auto tuple_function = std::make_shared<FunctionTuple>(parameters);
+            function = std::make_shared<FunctionToOverloadResolverAdaptor>(tuple_function);
+        }
     }
 
     if (function)
@@ -3139,7 +3212,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    if (!parameters.empty() && !can_have_parameters)
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    /// `tuple` is a special case: it may carry parameters to name its arguments.
+    if (!parameters.empty() && !can_have_parameters && function_name != "tuple")
     {
         throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }

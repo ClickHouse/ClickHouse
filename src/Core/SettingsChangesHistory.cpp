@@ -65,6 +65,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"enable_named_columns_in_function_tuple", false, false, "Keep the setting disabled pending usability improvements"},
+            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.9."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
