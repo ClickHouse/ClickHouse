@@ -1170,14 +1170,20 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt32, allow_feature_tier, 0, R"(
     Controls if the user can change settings related to the different feature tiers.
 
-    - `0` - Changes to any setting are allowed (experimental, beta, production).
-    - `1` - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
-    - `2` - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
+    - `0` - Changes to any setting are allowed (experimental, private preview, beta, production).
+    - `1` - Only changes to private preview, beta and production feature settings are allowed. Changes to experimental settings are rejected.
+    - `2` - Only changes to beta and production feature settings are allowed. Changes to experimental or private preview settings are rejected.
+    - `3` - Only changes to production settings are allowed. Changes to experimental, private preview or beta settings are rejected.
 
-    This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `BETA` features.
+    This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
 
     :::note
     A value of `0` means that all settings can be changed.
+    :::
+
+    :::note
+    `2` previously meant "production settings only". It now also allows beta settings, so a configuration
+    that pinned `2` to allow production settings only must use `3`.
     :::
     )", 0) \
     DECLARE(Bool, dictionaries_lazy_load, 1, R"(

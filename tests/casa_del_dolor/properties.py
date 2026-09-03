@@ -88,7 +88,7 @@ rocksdb_properties = {
 
 
 possible_properties = {
-    "allow_feature_tier": lambda: random.randint(0, 2),
+    "allow_feature_tier": lambda: random.randint(0, 3),
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
         "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
