@@ -65,6 +65,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"optimize_prune_impossible_string_comparisons", false, true, "New optimization that replaces comparisons of stringified restricted-alphabet types (e.g. `toString(number) LIKE '%hello%'`) with a constant when the string constant can never appear in the text representation of the type. `compatibility` with versions before 26.8 disables it."},
+            {"optimize_destructure_tuple_string_comparisons", false, true, "New optimization that rewrites `toString(tuple) LIKE '%needle%'` into a chain of per-element `LIKE` conditions joined by `OR`, which may allow using a text index. `compatibility` with versions before 26.8 disables it."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",
