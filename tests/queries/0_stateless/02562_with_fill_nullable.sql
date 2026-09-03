@@ -6,8 +6,10 @@ SELECT '---';
 SELECT number % 2 ? NULL : toNullable(toInt32(number)) AS x FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1 TO 3;
 SELECT '---';
 -- DISTINCT in order above the fill checks the stream itself for contiguity, not only the
--- deduplicated result, so pin that the in-order transform is the one the plan picks.
-SELECT count() > 0 FROM
+-- deduplicated result. Every DISTINCT stage has to be the in-order one: a hash stage below the
+-- sorted one would drop a non-contiguous duplicate before the sorted one could see it.
+SELECT (countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0)
+   AND (countIf(explain ILIKE '%DistinctTransform%') = 0) FROM
 (
     EXPLAIN PIPELINE
     SELECT DISTINCT * FROM
@@ -16,7 +18,6 @@ SELECT count() > 0 FROM
         FROM numbers(2) ORDER BY p ASC, x ASC WITH FILL FROM 1 TO 3
     )
 )
-WHERE explain ILIKE '%DistinctSortedStreamTransform%'
 SETTINGS optimize_distinct_in_order = 1;
 SELECT DISTINCT * FROM
 (
@@ -29,4 +30,10 @@ SELECT '---';
 -- column, so a generated row defaults it and that key, not the fill key, decides the row's position.
 SELECT toInt32(number) - 2 AS p, number % 2 ? NULL : toNullable(toInt32(number)) AS x
 FROM numbers(2) ORDER BY p ASC, x ASC NULLS LAST WITH FILL FROM 1 TO 2
+SETTINGS use_with_fill_by_sorting_prefix = 0;
+SELECT '---';
+-- Same fill key with no ORDER BY key ahead of it: the fill key still decides placement, so the
+-- setting being off changes nothing.
+SELECT number % 2 ? NULL : toNullable(toInt32(number)) AS x
+FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1 TO 3
 SETTINGS use_with_fill_by_sorting_prefix = 0;
