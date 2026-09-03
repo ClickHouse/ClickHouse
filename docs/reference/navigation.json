@@ -196,6 +196,7 @@
           "pages": [
             "reference/operators/index",
             "reference/operators/exists",
+            "reference/operators/unique",
             "reference/operators/distributed-ddl"
           ]
         }

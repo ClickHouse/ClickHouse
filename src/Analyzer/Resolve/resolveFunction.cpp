@@ -1265,6 +1265,186 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+/// Rewrite UNIQUE(subquery) into SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND ...
+ProjectionNames QueryAnalyzer::resolveUniquePredicate(
+    QueryTreeNodePtr & node,
+    const FunctionNodePtr & function_node_ptr,
+    IdentifierResolveScope & scope,
+    bool allow_niladic_functions)
+{
+    checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+    if (function_node_ptr->getArguments().getNodes().size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function 'UNIQUE' expects exactly one subquery argument. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    const auto & unique_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+    auto unique_subquery_argument_node_type = unique_subquery_argument->getNodeType();
+    if (unique_subquery_argument_node_type != QueryTreeNodeType::QUERY
+        && unique_subquery_argument_node_type != QueryTreeNodeType::UNION)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Function 'UNIQUE' expects a subquery argument. Actual: {}. In scope {}",
+            unique_subquery_argument->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    /// Wrap the subquery as `SELECT * FROM (subquery)` and resolve it once.
+    /// This detects correlation and lets us address every projected column by position.
+    auto inner_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    inner_subquery->setIsSubquery(true);
+    inner_subquery->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
+    inner_subquery->getJoinTreeNode() = unique_subquery_argument;
+    QueryTreeNodePtr inner_argument = inner_subquery;
+    resolveExpressionNode(
+        inner_argument,
+        scope,
+        true /*allow_lambda_expression*/,
+        true /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions
+    );
+
+    if (inner_subquery->isCorrelated())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Correlated subqueries are not supported for the UNIQUE predicate. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    /// Rename every projected column to a unique synthetic name.
+    /// A subquery may expose duplicate column names (e.g. `SELECT t.x, s.x FROM t, s`),
+    /// and referencing them by name in the NULL filter below would bind several filters
+    /// to the same column. Renaming makes the filter address columns by position.
+    /// The matcher-expanded projection nodes keep their (position-correct) column sources,
+    /// so only the output names of the resolved subquery change.
+    auto & inner_projection_nodes = inner_subquery->getProjection().getNodes();
+    const auto inner_projection_columns = inner_subquery->getProjectionColumns();
+    NamesAndTypes renamed_projection_columns;
+    renamed_projection_columns.reserve(inner_projection_columns.size());
+    Names unique_column_names;
+    unique_column_names.reserve(inner_projection_columns.size());
+    for (size_t i = 0; i < inner_projection_columns.size(); ++i)
+    {
+        auto unique_name = "__unique_predicate_column_" + std::to_string(i);
+        inner_projection_nodes[i]->setAlias(unique_name);
+        renamed_projection_columns.emplace_back(unique_name, inner_projection_columns[i].type);
+        unique_column_names.push_back(std::move(unique_name));
+    }
+    inner_subquery->resolveProjectionColumns(std::move(renamed_projection_columns));
+
+    /// Build `SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND ...`.
+    auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    new_unique_subquery->setIsSubquery(true);
+    auto count_function = std::make_shared<FunctionNode>("count");
+    auto uniq_exact_function = std::make_shared<FunctionNode>("uniqExact");
+    uniq_exact_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
+    auto equals_function = std::make_shared<FunctionNode>("equals");
+    equals_function->getArguments().getNodes().push_back(count_function);
+    equals_function->getArguments().getNodes().push_back(uniq_exact_function);
+    new_unique_subquery->getProjection().getNodes().push_back(equals_function);
+    new_unique_subquery->getJoinTreeNode() = inner_argument;
+
+    /// WHERE isNotNull(c1) AND isNotNull(c2) AND ... — per SQL standard, NULL rows are never duplicates.
+    QueryTreeNodePtr where_condition;
+    for (const auto & unique_name : unique_column_names)
+    {
+        auto col_ref = std::make_shared<IdentifierNode>(Identifier{unique_name});
+        auto is_not_null_func = std::make_shared<FunctionNode>("isNotNull");
+        is_not_null_func->getArguments().getNodes().push_back(std::move(col_ref));
+        if (!where_condition)
+            where_condition = std::move(is_not_null_func);
+        else
+        {
+            auto and_func = std::make_shared<FunctionNode>("and");
+            and_func->getArguments().getNodes().push_back(std::move(where_condition));
+            and_func->getArguments().getNodes().push_back(std::move(is_not_null_func));
+            where_condition = std::move(and_func);
+        }
+    }
+    if (where_condition)
+        new_unique_subquery->getWhere() = std::move(where_condition);
+
+    QueryTreeNodePtr new_unique_argument = new_unique_subquery;
+    auto unique_subquery_projection_names = resolveExpressionNode(
+        new_unique_argument,
+        scope,
+        true /*allow_lambda_expression*/,
+        true /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions);
+
+    /// The projection name of the whole `UNIQUE` predicate must be stable: it must not depend on the
+    /// boolean result or on synthetic scalar-subquery numbers. The rewritten subquery can be cloned
+    /// while a view is analyzed, assigning it a different `_subquery_N` name and making an enclosing
+    /// parametric aggregate look up a non-existent column. Keep the internal predicate name instead;
+    /// it is identical in `only_analyze` and execution modes.
+    auto unique_projection_name = function_node_ptr->getFunctionName();
+
+    /// Table function, parameterized view, and constant-expression arguments need their actual
+    /// values during analysis. They configure a storage or the query structure itself, so use
+    /// the same evaluation contract as scalar subqueries even in only_analyze mode. This covers,
+    /// for example, `EXPLAIN SELECT * FROM numbers(UNIQUE(SELECT number FROM numbers(3)))` and
+    /// `topK(UNIQUE(SELECT number FROM numbers(3)))(number)`.
+    const bool analysis_needs_real_value
+        = table_function_arguments_in_resolve_process
+        || parameterized_view_arguments_in_resolve_process
+        || constant_expression_in_resolve_process;
+
+    if (only_analyze && !analysis_needs_real_value)
+    {
+        /// Do not execute the scalar subquery in only_analyze mode (EXPLAIN, `CREATE VIEW`
+        /// validation, distributed shard headers). Produce a typed `UInt8` `ConstantNode`
+        /// whose source expression is the rewritten subquery, exactly as the executed path
+        /// below does. Only the result type and structure matter here; the value is a
+        /// placeholder, as it is for any scalar subquery in only_analyze mode.
+        ///
+        /// Leaving a raw non-correlated `QueryNode` in expression position would make later
+        /// `only_analyze` consumers that build projection actions from the analyzed tree
+        /// (for example `InterpreterSelectQueryAnalyzer::getSampleBlock`) reach it through
+        /// `PlannerActionsVisitor::visitQuery`, which rejects non-correlated query nodes with
+        /// "Only correlated QueryNode can be used as an action query tree node". As a result a
+        /// dry-run path such as `CREATE VIEW v AS SELECT UNIQUE(SELECT number FROM numbers(3))`
+        /// would fail even though the same `SELECT` executes normally.
+        auto placeholder_column = ColumnUInt8::create();
+        /// Use a truthy value for the placeholder. While the `materialize` wrapper below
+        /// prevents normal constant folding, some only-analyze consumers execute projection
+        /// actions while constructing a sample block. A false placeholder could then make a
+        /// valid view definition such as `intDiv(1, UNIQUE(...))` fail validation.
+        placeholder_column->getData().push_back(static_cast<UInt8>(1));
+        ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
+        auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
+
+        /// Keep the placeholder constant. `materialize` turns it into the default value while
+        /// sample-block actions are built, which makes `CREATE VIEW ... intDiv(1, UNIQUE(...))`
+        /// fail analysis with division by zero. The original query is retained for execution, so
+        /// this value is used only while deriving the result type and header.
+        node = std::move(placeholder_const_node);
+        return {unique_projection_name};
+    }
+
+    evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
+    const auto * const_node = new_unique_argument->as<ConstantNode>();
+    if (!const_node || const_node->getColumn()->isNullAt(0))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE rewrite did not produce a scalar constant. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    auto res_col = ColumnUInt8::create();
+    res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->getUInt(0)));
+    ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
+    /// Use the rewritten subquery (a QueryNode) as the source expression, not the internal
+    /// `__unique(subquery)` function. `PlannerActionsVisitor` short-circuits the action-node name of
+    /// a constant when its source expression is a QUERY/UNION node, but recurses into any other source
+    /// expression. With the `__unique` function as the source, that recursion reaches the raw,
+    /// non-correlated subquery QueryNode and throws "Only correlated QueryNode can be used as action
+    /// query tree node" whenever the predicate is nested inside another expression (for example
+    /// `uniq(UNIQUE(...), b)` in ORDER BY). The rewritten subquery is the same representation that
+    /// scalar subqueries fold to, so the planner treats it as an already-evaluated constant.
+    auto result_const_node = std::make_shared<ConstantNode>(std::move(const_value), new_unique_subquery);
+    node = std::move(result_const_node);
+    return {std::move(unique_projection_name)};
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -1297,12 +1477,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function parameters
 
-    auto parameters_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getParametersNode(),
-        scope,
-        false /*allow_lambda_expression*/,
-        false /*allow_table_expression*/,
-        allow_niladic_functions);
+    /// Function parameters must remain plain constants because they configure the function
+    /// implementation. In only-analyze mode, `UNIQUE` needs its real value in such a context.
+    /// The flag must cover the parameters only: the function arguments are ordinary
+    /// expressions, and keeping the flag set for them would make every scalar subquery below
+    /// this function be executed during analysis.
+    ProjectionNames parameters_projection_names;
+    {
+        bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+        constant_expression_in_resolve_process = true;
+        SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
+
+        parameters_projection_names = resolveExpressionNodeList(
+            function_node_ptr->getParametersNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/,
+            allow_niladic_functions);
+    }
 
     /// Convert function parameters into constant parameters array
 
@@ -1430,6 +1622,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
+    bool is_special_function_unique = false;
     bool is_special_function_multi_if = false;
 
     if (!lambda_expression_untyped)
@@ -1439,6 +1632,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
+        is_special_function_unique = function_name == "__unique";
         is_special_function_multi_if = function_name == "multiIf";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
@@ -1942,6 +2136,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
     }
+
+    if (is_special_function_unique)
+        return resolveUniquePredicate(node, function_node_ptr, scope, allow_niladic_functions);
 
     if (is_special_function_exists)
     {
