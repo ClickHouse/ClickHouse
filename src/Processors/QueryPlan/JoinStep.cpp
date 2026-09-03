@@ -8,6 +8,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Interpreters/PasteJoin.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -326,6 +327,9 @@ StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) c
     /// Case of Y-shaped join
     if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
         return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+
+    if (typeid_cast<const PasteJoin *>(join.get()))
+        return join->getAnalysisReport();
 
     /// Case for sharded join
     auto executed_joins = collectExecutedJoins(step_processors);
