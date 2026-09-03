@@ -23,7 +23,7 @@ CREATE DATABASE d ENGINE = Memory;
 ATTACH TABLE d.t1 (x UInt64) ENGINE = IcebergS3('${GONE_S3}_iceberg/', 'clickhouse', 'clickhouse');
 ATTACH TABLE d.t2 (x UInt64) ENGINE = DeltaLakeS3('${GONE_S3}_delta/', 'clickhouse', 'clickhouse');
 SELECT count(), countIf(total_rows IS NULL), countIf(total_bytes IS NULL) FROM system.tables WHERE database = 'd';
-SELECT sum(value) FROM system.events WHERE event IN ('S3ReadRequestAttempts', 'S3WriteRequestAttempts');
+SELECT sum(value) FROM system.events WHERE event LIKE 'S3%Request%';
 "
 
 # Reading a table still reports the failure. Local paths keep this offline and quick.
