@@ -217,7 +217,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     /// Decimal constants (including decimals nested in Array/Tuple/Map/Variant/Dynamic) have no exact
     /// literal syntax: a bare numeric literal is re-parsed as Float64 on the receiving side and rounds.
-    /// A Variant value has none either: a literal does not record its active alternative, so the
+    /// A `Variant` value has none either: a literal does not record its active alternative, so the
     /// receiving side re-selects one by value.
     /// Rebuild the literal from the column, upgrading every decimal-backed leaf to an exact
     /// String -> Decimal cast (reconstructed with its own type), then cast the whole value to the

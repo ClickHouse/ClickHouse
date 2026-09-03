@@ -1555,8 +1555,8 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 }
 
 /// True if a value of this type has no exact literal syntax: a decimal-backed leaf anywhere
-/// (Decimal/DateTime64/Time64), a Dynamic whose runtime value can be a decimal not visible in the
-/// type, or a Variant, whose active alternative a literal does not record.
+/// (`Decimal`/`DateTime64`/`Time64`), a `Dynamic` whose runtime value can be a decimal not visible in
+/// the type, or a `Variant`, whose active alternative a literal does not record.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
     bool result = false;

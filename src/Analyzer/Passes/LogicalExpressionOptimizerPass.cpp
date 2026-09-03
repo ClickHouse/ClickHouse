@@ -1134,8 +1134,8 @@ static void convertNotEqualsChainToNotIn(
         }
 
         /// Carry each constant over as its own column: a `Field` records neither which `Variant`
-        /// alternative a value occupies nor its exact type (`DateTime` collapses to `UInt32`, an Enum to
-        /// its underlying integer), so `notIn` would compare different values than the notEquals it replaces.
+        /// alternative a value occupies nor its exact type (`DateTime` collapses to `UInt32`, an `Enum` to
+        /// its underlying integer), so `notIn` would compare different values than the `notEquals` it replaces.
         auto rhs_node = std::make_shared<ConstantNode>(
             ColumnConst::create(ColumnTuple::create(std::move(element_columns)), 1),
             std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));

@@ -294,8 +294,8 @@ ASTPtr tryBuildAdditionalFilterAST(
         {
             ASTPtr literal;
             if (typeNeedsExactLiteralSerialization(*node->result_type))
-                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) and Variant
-                /// values exactly, so the shard re-parses neither through Float64/text nor a wrong alternative.
+                /// Serialize decimal-backed constants (`Decimal`/`DateTime64`/`Time64`, incl. nested) and `Variant`
+                /// values exactly, so the shard re-parses neither through `Float64`/text nor a wrong alternative.
                 literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
             else
                 /// Other types keep their raw Field literal. In particular a DateTime serialized as local
