@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCovar = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CovarMoments>>;
 
-void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSamp_description = R"(
@@ -18,7 +17,7 @@ $$
 $$
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/reference/functions/aggregate-functions/covarSampStable) function.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/sql-reference/aggregate-functions/reference/covarsampstable) function.
 It works slower but provides a lower computational error.
 :::
     )";
@@ -54,7 +53,7 @@ FROM series LIMIT 1
         )",
         R"(
 ┌─covarSamp(x_value, y_value)─┐
-│           7.206275555555556 │
+│                         nan │
 └─────────────────────────────┘
         )"
     }
@@ -74,7 +73,7 @@ $$
 <br/>
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](/reference/functions/aggregate-functions/covarPopStable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](../reference/covarPopStable.md) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax covarPop_syntax = "covarPop(x, y)";

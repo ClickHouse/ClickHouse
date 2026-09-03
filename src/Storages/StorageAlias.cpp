@@ -4,21 +4,16 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
-#include <Common/assert_cast.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -27,13 +22,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool allow_experimental_alias_table_engine;
 }
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 StorageAlias::StorageAlias(
@@ -46,6 +42,14 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
+    StorageID target_id(target_database, target_table);
+    if (table_id_ == target_id)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+    // Disallow target is also an alias
+    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
+    if (target_storage && target_storage->getName() == "Alias")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -61,93 +65,23 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
-{
-    if (!query_context)
-        return false;
-
-    auto access = query_context->getAccess();
-    if (column_name.empty())
-        return access->isGranted(access_type, target_database, target_table);
-
-    return access->isGranted(access_type, target_database, target_table, column_name);
-}
-
 /// AliasSink: Writes data to the target table using full INSERT pipeline
 /// which triggers materialized views on the target table.
-class AliasSink final : public SinkToStorage, WithContext
+class AliasSink : public SinkToStorage, WithContext
 {
 public:
     AliasSink(
         StorageAlias & storage_,
         ContextPtr context_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        bool async_insert_)
+        const StorageMetadataPtr & metadata_snapshot_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
-        , async_insert(async_insert_)
     {
-    }
-
-    ~AliasSink() override
-    {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
-        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
-        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
-        if (executor)
-        {
-            try
-            {
-                executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("AliasSink");
-            }
-        }
     }
 
     String getName() const override { return "AliasSink"; }
-
-    void onStart() override
-    {
-        StoragePtr target = storage.getTargetTable();
-
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = target->getStorageID();
-        ASTPtr query_ptr(insert.release());
-
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->makeQueryContext();
-        if (getContext()->hasQueryContext())
-            insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
-        addInterpreterContext(insert_context);
-
-        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
-        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
-        /// letting every branch fan out again would multiply the number of real sink branches (part
-        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
-        /// budget the user allowed for this INSERT.
-        insert_context->setSetting("max_insert_threads", 1);
-
-        /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
-        /// Alias matches a direct insert: async batches select async dedup settings and skip the
-        /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
-        /// break its row/offset invariant.
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_insert */ async_insert);
-
-        block_io = interpreter.execute();
-        executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
-        executor->start();
-    }
 
     void consume(Chunk & chunk) override
     {
@@ -160,48 +94,34 @@ public:
         for (const auto & col : non_materialized_header)
             non_materialized_block.insert(block.getByName(col.name));
 
-        Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
-        non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+        StoragePtr target = storage.getTargetTable();
+        StorageID target_id = target->getStorageID();
 
-        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
-        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
-        /// dependent materialized view whose inner query changed the number of rows, those chunks
-        /// no longer match the rows the info's offsets describe, and computing a data hash after
-        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
-        /// info is still consistent.
-        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
-            deduplication_info->cacheDataHashes(data_hash_cache);
+        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+        insert->table_id = target_id;
+        ASTPtr query_ptr(insert.release());
 
-        executor->push(std::move(non_materialized_chunk));
-    }
+        auto insert_context = Context::createCopy(getContext());
+        insert_context->makeQueryContext();
 
-    void onFinish() override
-    {
-        executor->finish();
-        executor.reset();
+        InterpreterInsertQuery interpreter(
+            query_ptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_insert */ false);
 
-        block_io.onFinish();
-        block_io = {};
-    }
-
-    void onException(std::exception_ptr) override
-    {
-        if (executor)
-            executor->cancel();
-        executor.reset();
-        block_io.onException();
-        block_io = {};
+        BlockIO block_io = interpreter.execute();
+        PushingPipelineExecutor executor(block_io.pipeline);
+        executor.start();
+        executor.push(std::move(non_materialized_block));
+        executor.finish();
     }
 
 private:
     StorageAlias & storage;
     Block non_materialized_header;
-    bool async_insert;
-    BlockIO block_io;
-    std::unique_ptr<PushingPipelineExecutor> executor;
-    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
-    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
-    DeduplicationInfo::DataHashCache data_hash_cache;
 };
 
 void StorageAlias::read(
@@ -219,7 +139,7 @@ void StorageAlias::read(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -240,14 +160,14 @@ SinkToStoragePtr StorageAlias::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    bool async_insert)
+    bool /*async_insert*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
+    return std::make_shared<AliasSink>(*this, local_context, target_metadata);
 }
 
 void StorageAlias::alter(
@@ -256,26 +176,6 @@ void StorageAlias::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
-    auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
-    {
-        auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
-        if (target_db && target_db->getEngineName() == "Replicated")
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "ALTER through alias is not supported when the target table is in a different Replicated database. "
-                "Execute the ALTER directly on the target table: {}",
-                target_storage_id.getNameForLogs());
-        }
-    }
-
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
@@ -286,7 +186,7 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
@@ -301,7 +201,7 @@ bool StorageAlias::optimize(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -312,7 +212,7 @@ Pipe StorageAlias::alterPartition(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
 
@@ -323,7 +223,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
     ContextPtr local_context) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
 }
 
@@ -336,20 +236,7 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto lock = target_storage->lockForShare(
-        local_context->getCurrentQueryId(),
-        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-
-    auto pipeline = target_storage->updateLightweight(commands, local_context);
-
-    /// The caller locks the alias, not the target, so the target needs its own share lock held
-    /// until the pipeline has committed the patch part.
-    QueryPlanResourceHolder target_resources;
-    target_resources.storage_holders.emplace_back(target_storage);
-    target_resources.table_locks.emplace_back(std::move(lock));
-    pipeline.addResources(std::move(target_resources));
-
-    return pipeline;
+    return target_storage->updateLightweight(commands, local_context);
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -365,39 +252,6 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
-}
-
-namespace
-{
-
-/// Holds the resolved target StoragePtr alongside its task list
-struct AliasCheckTasks : IStorage::DataValidationTasksBase
-{
-    StoragePtr target;
-    IStorage::DataValidationTasksPtr inner;
-
-    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
-        : target(std::move(target_)), inner(std::move(inner_))
-    {
-        chassert(inner);
-    }
-
-    size_t size() const override { return inner->size(); }
-};
-
-}
-
-IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
-{
-    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
-    auto inner = target->getCheckTaskList(filter, query_context);
-    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
-}
-
-std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
-{
-    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
-    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
@@ -425,46 +279,6 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
-bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
-{
-    if (!storage_snapshot)
-        return false;
-
-    bool has_select_access = false;
-    for (const auto & column : storage_snapshot->metadata->getColumns())
-    {
-        if (isTargetTableGranted(query_context, AccessType::SELECT, column.name))
-        {
-            has_select_access = true;
-            break;
-        }
-    }
-
-    if (!has_select_access)
-        return false;
-
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
-}
-
-std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
-{
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
-        return {};
-
-    auto target = tryGetTargetTable();
-    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
-}
-
-std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
-{
-    if (!isTargetTableGranted(query_context, AccessType::SHOW_TABLES, {}))
-        return {};
-
-    auto target = tryGetTargetTable();
-    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
-}
-
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
 {
     // Only rename the alias itself, not the target table
@@ -478,12 +292,11 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }
 
-void registerStorageAlias(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)
@@ -495,6 +308,11 @@ void registerStorageAlias(StorageFactory & factory)
         //  CREATE TABLE t2 ENGINE = Alias('db', 't')
 
         auto local_context = args.getLocalContext();
+
+        // Compatible with existing Alias tables
+        if (args.mode == LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_alias_table_engine])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "Experimental Alias table engine is not enabled (turn on setting 'allow_experimental_alias_table_engine')");
 
         String target_database;
         String target_table;
@@ -547,26 +365,6 @@ void registerStorageAlias(StorageFactory & factory)
                 "Storage Alias does not support explicit column definitions");
         }
 
-        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
-            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
-
-        /// The restrictions below read the catalog, so they may only judge freshly supplied input:
-        /// an already accepted definition must stay loadable, because a rejection while loading
-        /// metadata fails the whole load rather than the one table. They run after the access check
-        /// so that a caller without access to the target cannot learn its engine from the message.
-        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-        if (fresh_user_definition)
-        {
-            StorageID target_id(target_database, target_table);
-            if (args.table_id == target_id)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-            auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
-            if (target_storage && target_storage->getName() == "Alias")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
-        }
-
         return std::make_shared<StorageAlias>(
             args.table_id,
             local_context,
@@ -575,318 +373,7 @@ void registerStorageAlias(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true
-    },
-    Documentation{
-        .description = R"DOCS_MD(
-# Alias table engine
-
-The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
-
-## Creating a Table {#creating-a-table}
-
-```sql
-CREATE TABLE [db_name.]alias_name
-ENGINE = Alias(target_table)
-```
-
-Or with explicit database name:
-
-```sql
-CREATE TABLE [db_name.]alias_name
-ENGINE = Alias(target_db, target_table)
-```
-
-:::note
-The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-:::
-
-## Engine Parameters {#engine-parameters}
-
-- **`target_db (optional)`** — Name of the database containing the target table.
-- **`target_table`** — Name of the target table.
-
-:::note
-When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-:::
-
-## Supported Operations {#supported-operations}
-
-The `Alias` table engine supports all major operations.
-### Operations on Target Table {#operations-on-target}
-
-These operations are proxied to the target table:
-
-| Operation | Support | Description |
-|-----------|---------|-------------|
-| `SELECT` | ✅ | Read data from target table |
-| `INSERT` | ✅ | Write data to target table |
-| `INSERT SELECT` | ✅ | Batch insert into target table |
-| `ALTER TABLE ADD COLUMN` | ✅ | Add columns to target table |
-| `ALTER TABLE MODIFY SETTING` | ✅ | Modify target table settings |
-| `ALTER TABLE PARTITION` | ✅ | Partition operations (DETACH/ATTACH/DROP) on target |
-| `ALTER TABLE UPDATE` | ✅ | Update rows in target table (mutation) |
-| `ALTER TABLE DELETE` | ✅ | Delete rows from target table (mutation) |
-| `OPTIMIZE TABLE` | ✅ | Optimize target table (merge parts) |
-| `TRUNCATE TABLE` | ✅ | Truncate target table |
-
-### Operations on Alias Itself {#operations-on-alias}
-
-These operations only affect the alias, **not** the target table:
-
-| Operation | Support | Description |
-|-----------|---------|-------------|
-| `DROP TABLE` | ✅ | Drop the alias only, target table remains unchanged |
-| `RENAME TABLE` | ✅ | Rename the alias only, target table remains unchanged |
-
-## Usage Examples {#usage-examples}
-
-### Basic Alias Creation {#basic-alias-creation}
-
-Create a simple alias in the same database:
-
-```sql
--- Create source table
-CREATE TABLE source_data (
-    id UInt32,
-    name String,
-    value Float64
-) ENGINE = MergeTree
-ORDER BY id;
-
--- Insert some data
-INSERT INTO source_data VALUES (1, 'one', 10.1), (2, 'two', 20.2);
-
--- Create alias
-CREATE TABLE data_alias ENGINE = Alias('source_data');
-
--- Query through alias
-SELECT * FROM data_alias;
-```
-
-```text
-┌─id─┬─name─┬─value─┐
-│  1 │ one  │  10.1 │
-│  2 │ two  │  20.2 │
-└────┴──────┴───────┘
-```
-
-### Cross-Database Alias {#cross-database-alias}
-
-Create an alias pointing to a table in a different database:
-
-```sql
--- Create databases
-CREATE DATABASE db1;
-CREATE DATABASE db2;
-
--- Create source table in db1
-CREATE TABLE db1.events (
-    timestamp DateTime,
-    event_type String,
-    user_id UInt32
-) ENGINE = MergeTree
-ORDER BY timestamp;
-
--- Create alias in db2 pointing to db1.events
-CREATE TABLE db2.events_alias ENGINE = Alias('db1', 'events');
-
--- Or using database.table format
-CREATE TABLE db2.events_alias2 ENGINE = Alias('db1.events');
-
--- Both aliases work identically
-INSERT INTO db2.events_alias VALUES (now(), 'click', 100);
-SELECT * FROM db2.events_alias2;
-```
-
-### Write Operations Through Alias {#write-operations}
-
-All write operations are forwarded to the target table:
-
-```sql
-CREATE TABLE metrics (
-    ts DateTime,
-    metric_name String,
-    value Float64
-) ENGINE = MergeTree
-ORDER BY ts;
-
-CREATE TABLE metrics_alias ENGINE = Alias('metrics');
-
--- Insert through alias
-INSERT INTO metrics_alias VALUES
-    (now(), 'cpu_usage', 45.2),
-    (now(), 'memory_usage', 78.5);
-
--- Insert with SELECT
-INSERT INTO metrics_alias
-SELECT now(), 'disk_usage', number * 10
-FROM system.numbers
-LIMIT 5;
-
--- Verify data is in the target table
-SELECT count() FROM metrics;  -- Returns 7
-SELECT count() FROM metrics_alias;  -- Returns 7
-```
-
-### Schema Modification {#schema-modification}
-
-Alter operations modify the target table schema:
-
-```sql
-CREATE TABLE users (
-    id UInt32,
-    name String
-) ENGINE = MergeTree
-ORDER BY id;
-
-CREATE TABLE users_alias ENGINE = Alias('users');
-
--- Add column through alias
-ALTER TABLE users_alias ADD COLUMN email String DEFAULT '';
-
--- Column is added to target table
-DESCRIBE users;
-```
-
-```text
-┌─name──┬─type───┬─default_type─┬─default_expression─┐
-│ id    │ UInt32 │              │                    │
-│ name  │ String │              │                    │
-│ email │ String │ DEFAULT      │ ''                 │
-└───────┴────────┴──────────────┴────────────────────┘
-```
-
-### Data Mutations {#data-mutations}
-
-UPDATE and DELETE operations are supported:
-
-```sql
-CREATE TABLE products (
-    id UInt32,
-    name String,
-    price Float64,
-    status String DEFAULT 'active'
-) ENGINE = MergeTree
-ORDER BY id;
-
-CREATE TABLE products_alias ENGINE = Alias('products');
-
-INSERT INTO products_alias VALUES
-    (1, 'item_one', 100.0, 'active'),
-    (2, 'item_two', 200.0, 'active'),
-    (3, 'item_three', 300.0, 'inactive');
-
--- Update through alias
-ALTER TABLE products_alias UPDATE price = price * 1.1 WHERE status = 'active';
-
--- Delete through alias
-ALTER TABLE products_alias DELETE WHERE status = 'inactive';
-
--- Changes are applied to target table
-SELECT * FROM products ORDER BY id;
-```
-
-```text
-┌─id─┬─name─────┬─price─┬─status─┐
-│  1 │ item_one │ 110.0 │ active │
-│  2 │ item_two │ 220.0 │ active │
-└────┴──────────┴───────┴────────┘
-```
-
-### Partition Operations {#partition-operations}
-
-For partitioned tables, partition operations are forwarded:
-
-```sql
-CREATE TABLE logs (
-    date Date,
-    level String,
-    message String
-) ENGINE = MergeTree
-PARTITION BY toYYYYMM(date)
-ORDER BY date;
-
-CREATE TABLE logs_alias ENGINE = Alias('logs');
-
-INSERT INTO logs_alias VALUES
-    ('2024-01-15', 'INFO', 'message1'),
-    ('2024-02-15', 'ERROR', 'message2'),
-    ('2024-03-15', 'INFO', 'message3');
-
--- Detach partition through alias
-ALTER TABLE logs_alias DETACH PARTITION '202402';
-
-SELECT count() FROM logs_alias;  -- Returns 2 (partition 202402 detached)
-
--- Attach partition back
-ALTER TABLE logs_alias ATTACH PARTITION '202402';
-
-SELECT count() FROM logs_alias;  -- Returns 3
-```
-
-### Table Optimization {#table-optimization}
-
-Optimize operations merge parts in the target table:
-
-```sql
-CREATE TABLE events (
-    id UInt32,
-    data String
-) ENGINE = MergeTree
-ORDER BY id;
-
-CREATE TABLE events_alias ENGINE = Alias('events');
-
--- Multiple inserts create multiple parts
-INSERT INTO events_alias VALUES (1, 'data1');
-INSERT INTO events_alias VALUES (2, 'data2');
-INSERT INTO events_alias VALUES (3, 'data3');
-
--- Check parts count
-SELECT count() FROM system.parts
-WHERE database = currentDatabase()
-AND table = 'events'
-AND active;
-
--- Optimize through alias
-OPTIMIZE TABLE events_alias FINAL;
-
--- Parts are merged in target table
-SELECT count() FROM system.parts
-WHERE database = currentDatabase()
-AND table = 'events'
-AND active;  -- Returns 1
-```
-
-### Alias Management {#alias-management}
-
-Aliases can be renamed or dropped independently:
-
-```sql
-CREATE TABLE important_data (
-    id UInt32,
-    value String
-) ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO important_data VALUES (1, 'critical'), (2, 'important');
-
-CREATE TABLE old_alias ENGINE = Alias('important_data');
-
--- Rename alias (target table unchanged)
-RENAME TABLE old_alias TO new_alias;
-
--- Create another alias to same table
-CREATE TABLE another_alias ENGINE = Alias('important_data');
-
--- Drop one alias (target table and other aliases unchanged)
-DROP TABLE new_alias;
-
-SELECT * FROM another_alias;  -- Still works
-SELECT count() FROM important_data;  -- Data intact, returns 2
-```
-)DOCS_MD",
-        .syntax = "ENGINE = Alias([target_db, ]target_table)"});
+    });
 }
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long, no-encrypted-storage
 
 set -e -o pipefail
 
@@ -128,10 +128,6 @@ function concurrent_drop_part_after()
 
     reset_table drop_part_after_table
 
-    # Truncating in a transaction sets remove_time = 0, so the background cleanup thread may log
-    # RemovePart before the part_log assertion below reads it. Keep the parts until it has run.
-    $CLICKHOUSE_CLIENT -q "system stop cleanup drop_part_after_table"
-
     tx 61 "begin transaction"
     tx 62             "begin transaction"
     tx 61 "truncate table drop_part_after_table"
@@ -147,8 +143,6 @@ function concurrent_drop_part_after()
     $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
                               where event_date >= yesterday() AND event_time >= now() - 600 AND table='drop_part_after_table' and database=currentDatabase()
                               order by part_name"
-
-    $CLICKHOUSE_CLIENT -q "system start cleanup drop_part_after_table"
 }
 
 concurrent_drop_part_after
