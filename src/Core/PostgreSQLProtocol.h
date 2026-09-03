@@ -304,7 +304,7 @@ class CancelRequest : public FirstMessage
 {
 public:
     Int32 process_id = 0;
-    Int32 secret_key = 0;
+    UInt32 secret_key = 0;
 
     explicit CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
@@ -686,10 +686,10 @@ class BackendKeyData : BackendMessage
 {
 private:
     Int32 process_id;
-    Int32 secret_key;
+    UInt32 secret_key;
 
 public:
-    BackendKeyData(Int32 process_id_, Int32 secret_key_)
+    BackendKeyData(Int32 process_id_, UInt32 secret_key_)
     : process_id(process_id_)
     , secret_key(secret_key_)
     {}
@@ -737,11 +737,7 @@ public:
     String function_name;
     String sql_query;
     Int16 num_params{};
-    /// Declared parameter type OIDs from the Parse message, in order. Clients
-    /// send these so a bound value keeps its declared type; we use them to emit
-    /// a numeric parameter as a bare literal instead of a quoted string (so e.g.
-    /// `SELECT $1 + 1` and `LIMIT $1` keep working). An OID of 0 means the type
-    /// is unspecified and the value is treated as text.
+    /// Parameter type OIDs from `Parse`; 0 requests inference.
     VectorWithMemoryTracking<Int32> parameter_types;
 
     void deserialize(ReadBuffer & in) override
@@ -796,18 +792,10 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    /// A bound parameter is either a client-supplied value (std::nullopt means
-    /// the SQL NULL sentinel, length -1 on the wire) or a text/binary payload.
-    /// The value is stored raw here; quoting into a SQL literal happens when the
-    /// statement body is assembled (see PreparedStatemetsManager::getStatement).
+    /// Raw `Bind` values; `std::nullopt` represents protocol `NULL`.
     VectorWithMemoryTracking<std::optional<String>> parameters;
     Int16 num_params{};
-    /// True if any parameter carries a binary (non-text) format code. We only
-    /// support the text format, but the whole message is still consumed here so
-    /// the byte stream stays aligned on the next message boundary; the caller
-    /// rejects the binary format after deserialization (see attachBindQuery).
-    /// Rejecting mid-deserialization would leave the stream misaligned and break
-    /// the error-recovery skip-until-Sync path.
+    /// Set after reading the full message; `attachBindQuery` rejects it.
     bool has_binary_format_param = false;
 
     void deserialize(ReadBuffer & in) override
@@ -817,13 +805,7 @@ public:
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        /// Per-parameter format codes (0 = text, 1 = binary). Count semantics:
-        /// 0 means all parameters are text, 1 means the single code applies to
-        /// every parameter, otherwise there is one code per parameter. We only
-        /// support text: a binary payload would have to be decoded using the
-        /// declared type, which this handler does not do. Record that a binary
-        /// code is present and let the caller reject it once the message is fully
-        /// read, rather than splice raw bytes into the statement body.
+        /// Read all format codes before rejecting binary values to preserve stream alignment.
         Int16 num_format_params = 0;
         readBinaryBigEndian(num_format_params, in);
         if (num_format_params < 0)
@@ -833,8 +815,6 @@ public:
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
-            /// FormatCode is declared further down in this header; 0 is TEXT,
-            /// anything else (1 = BINARY) is unsupported here.
             if (format_param != 0)
                 has_binary_format_param = true;
         }
@@ -861,12 +841,7 @@ public:
             parameters.push_back(std::move(current_param));
         }
 
-        /// Requested result column format codes. We always emit text
-        /// RowDescription/DataRow (see PostgreSQLOutputFormat), and every column's
-        /// RowDescription honestly advertises FormatCode::TEXT, so a client that
-        /// requested binary reads text and adapts. Real clients (e.g. Npgsql)
-        /// request binary results by default; rejecting the request would break
-        /// them. Consume the codes to keep the stream aligned and ignore them.
+        /// Consume result format codes; this implementation always returns text.
         Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
         if (num_format_params_result < 0)
@@ -1953,17 +1928,10 @@ public:
 
     String getStatement(ASTExecute * execute)
     {
-        /// The simple PREPARE/EXECUTE path has no declared parameter types; the
-        /// arguments are already formatted as SQL literals by the parser.
         auto it = statements.find(execute->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
-        /// Enforce exact arity, same as the extended Bind path (attachBindQuery):
-        /// EXECUTE must supply one argument per `$N` placeholder the statement body
-        /// references. Without this, `EXECUTE s(1, 2)` on `PREPARE s AS SELECT $1`
-        /// silently drops the extra argument (`substitute` ignores arguments past
-        /// the highest placeholder), and `EXECUTE s(1)` on `PREPARE s AS SELECT $1,
-        /// $2` leaves `$2` literally in the executed SQL.
+        /// Require one argument for each referenced placeholder.
         if (execute->arguments.size() != it->second.parameter_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "EXECUTE supplies {} argument(s) but the prepared statement has {} parameter(s)",
@@ -1980,11 +1948,7 @@ public:
         statements.erase(it);
     }
 
-    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
-    /// statement or portal is not an error — it is a silent no-op that still
-    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
-    /// from the extended-query `Close` handler so a stray `Close` does not
-    /// terminate the connection.
+    /// `Close` on an unknown statement is a successful no-op.
     void tryDeleteStatement(const String & function_name)
     {
         statements.erase(function_name);
@@ -1992,54 +1956,29 @@ public:
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// We only support the unnamed portal (an empty `portal_name`).
-        /// Reject named portals explicitly: with a single bind slot we cannot
-        /// keep their state correct, and silently overwriting would let
-        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
+        /// A single bind slot can represent only the unnamed portal.
         if (!query->portal_name.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Named portals are not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
 
-        /// We only understand the text format. A binary payload would have to be
-        /// decoded using the declared type, which this handler does not do, so
-        /// reject it rather than splice raw bytes into the statement body. The
-        /// Bind message was fully consumed by deserialize (the flag is only set),
-        /// so the byte stream stays aligned for the error-recovery path.
+        /// Binary values require type-specific decoding, which is not implemented.
         if (query->has_binary_format_param)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Binary format parameters are not supported in Bind messages, use the text format");
 
-        /// `Bind` creates the (unnamed) portal, so resolve and snapshot the
-        /// referenced prepared statement now — not lazily at `Execute`. Per the
-        /// extended-query protocol, once `BindComplete` is sent the portal owns
-        /// its statement body/types: a later `Parse` that redefines the statement
-        /// or a `Close` that deallocates it must not change what `Execute` runs.
-        /// Re-resolving through the live `statements` map at `Execute` broke that
-        /// (`Parse s AS SELECT 1; Bind("",s); Parse s AS SELECT 2; Execute("")`
-        /// wrongly ran `SELECT 2`, and `Close('S','s')` between `Bind` and
-        /// `Execute` turned it into `Execute without prior Bind`).
+        /// A portal keeps the statement snapshot resolved by `Bind`.
         auto it = statements.find(query->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        /// Arity check. The frontend must supply exactly one value per placeholder
-        /// the statement text references. The declared-type count is NOT the arity:
-        /// PostgreSQL lets `Parse` send zero or fewer explicit OIDs than there are
-        /// `$N` placeholders (the rest are inferred), so checking against
-        /// `parameter_types.size()` would let `Parse "SELECT $1, $2"` + one-value
-        /// `Bind` through, leaving `$2` literally in the SQL at `Execute`, and would
-        /// silently ignore extra bound values (`substitute` drops arguments past the
-        /// highest referenced placeholder). Check against the true parameter count —
-        /// the highest `$N` in the body — recorded when the statement was stored.
+        /// OID count is not arity because `Parse` can omit inferred parameter types.
         if (query->parameters.size() != it->second.parameter_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Bind supplies {} parameter value(s) but the prepared statement has {} parameter(s)",
                 query->parameters.size(), it->second.parameter_count);
 
-        /// For the unnamed portal, a new `Bind` replaces the previous one
-        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
-        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
+        /// A new `Bind` replaces the unnamed portal.
         bound_statement = it->second;
         bind_query = std::move(query);
     }
@@ -2049,25 +1988,9 @@ public:
         if (!bind_query || !bound_statement.has_value())
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        /// Use the statement snapshotted at `Bind` time (see attachBindQuery),
-        /// not a fresh `statements` lookup — the portal is independent of any
-        /// later redefinition or `Close` of the prepared statement.
         const auto & parameter_types = bound_statement->parameter_types;
 
-        /// Bind parameters arrive as untyped text from the wire. Turn each into a
-        /// safe SQL literal before it is spliced into the statement body. The NULL
-        /// sentinel becomes the SQL keyword NULL. For a value we use the declared
-        /// parameter type OID from the Parse message (see formatTypedParameter): a
-        /// type we can map to a ClickHouse type is emitted as
-        /// `accurateCast('<escaped value>', '<type>')`, which delegates parsing,
-        /// range/width checking and rejection to ClickHouse's own parser while
-        /// keeping the declared type (`int4` rejects `3.14` and out-of-range
-        /// `2147483648`, `numeric` keeps full precision as a Decimal, `bool`/`date`/
-        /// `uuid` stay their declared type). Every other OID becomes a quoted+escaped
-        /// string literal. Both forms are injection-safe by construction: the value
-        /// is always inside a quoted+escaped string literal (the cast argument or the
-        /// literal itself), so a parameter such as `x' UNION ALL SELECT ...`, `1--`
-        /// or `1+2` can never break out of the value position.
+        /// Convert every value to a safe SQL fragment before substitution.
         VectorWithMemoryTracking<String> arguments;
         arguments.reserve(bind_query->parameters.size());
         for (size_t i = 0; i < bind_query->parameters.size(); ++i)
@@ -2078,11 +2001,7 @@ public:
                 arguments.emplace_back("NULL");
                 continue;
             }
-            /// An OID of 0 (or an omitted trailing OID) means "the server infers the
-            /// parameter type from the statement" in the PostgreSQL protocol, not
-            /// "text". A declared OID we can map keeps its type via formatTypedParameter;
-            /// a declared-but-unmapped OID is text (quoted+escaped string). Only OID 0
-            /// goes through formatInferredParameter, which lets the server infer.
+            /// OID 0 requests inference; unmapped declared OIDs become strings.
             const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
             if (auto formatted = formatTypedParameter(oid, *parameter))
                 arguments.push_back(std::move(*formatted));
@@ -2105,19 +2024,13 @@ private:
     struct PreparedStatement
     {
         String body;
-        /// Declared parameter type OIDs from the Parse message (empty for the
-        /// simple PREPARE/EXECUTE path). Used to format Bind values by type.
+        /// Empty for the simple `PREPARE`/`EXECUTE` path.
         VectorWithMemoryTracking<Int32> parameter_types;
-        /// The statement's true parameter count: the highest `$N` referenced in
-        /// the body. This is the arity `Bind` must match exactly, independent of
-        /// how many parameter type OIDs `Parse` chose to declare.
+        /// Highest referenced `$N`, which defines `Bind` arity.
         size_t parameter_count = 0;
     };
 
-    /// Count the statement's parameters as the highest `$N` placeholder in the
-    /// body (1-based). Mirrors `substitute`'s placeholder recognition: a `$`
-    /// followed by digits, tokenized as a BareWord by the Lexer. A `$` followed by
-    /// a non-digit is an identifier, not a placeholder.
+    /// Return the highest `$N` placeholder token in the statement.
     static size_t countPlaceholders(const String & body)
     {
         size_t max_index = 0;
@@ -2138,8 +2051,7 @@ private:
                     is_placeholder = false;
                     break;
                 }
-                /// Guard against overflow from an absurdly long digit run; such a
-                /// token cannot be a real placeholder anyway.
+                /// An overflowing index cannot reference a supplied argument.
                 if (index > (std::numeric_limits<size_t>::max() - 9) / 10)
                 {
                     is_placeholder = false;
@@ -2156,19 +2068,10 @@ private:
     UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
-    /// Snapshot of the prepared statement taken when the current `bind_query`
-    /// was attached. `Execute` reads this, so the portal stays valid even if the
-    /// prepared statement is later redefined by `Parse` or removed by `Close`.
+    /// Statement snapshot owned by the unnamed portal.
     std::optional<PreparedStatement> bound_statement;
 
-    /// Returns true if the whole string is exactly one decimal numeric literal:
-    ///   [sign] digits [. digits] [ (e|E) [sign] digits ]
-    /// with at least one digit in the mantissa and no trailing characters. This is
-    /// a strict grammar check, not a per-character whitelist: a per-character check
-    /// accepts values like `1--`, `1+2` or `1-2` (every character is "numeric") that
-    /// are not a single literal — `1--` makes `Lexer` treat the rest of the query as
-    /// a line comment, and `1+2` / `1-2` splice an expression where a bound value is
-    /// expected. Requiring the value to parse as one literal end-to-end forbids that.
+    /// Match one decimal literal: `[sign] digits [. digits] [(e|E) [sign] digits]`.
     static bool isSingleNumericLiteral(const String & value)
     {
         const char * p = value.data();
@@ -2215,25 +2118,14 @@ private:
         return p == end;
     }
 
-    /// Maximum number of significant digits a Decimal256 can hold (precision).
+    /// Maximum `Decimal256` precision.
     static constexpr UInt32 DECIMAL256_MAX_PRECISION = 76;
 
-    /// Bound on the magnitude of the decimal exponent we are willing to fold in.
-    /// The final value must fit Decimal256 (<= 76 significant digits), so any
-    /// exponent beyond a small multiple of that can never produce a representable
-    /// number and is rejected up front, before any exponent arithmetic or
-    /// zero-padding runs. This keeps the huge-exponent path cheap (no O(exponent)
-    /// zero-padding for `1e1000000`) and safe (no signed-Int64 overflow when
-    /// accumulating an exponent like `1e99999999999999999999`).
+    /// Reject unreasonable exponents before arithmetic or zero-padding.
     static constexpr Int64 MAX_ABS_EXPONENT = 1000;
 
-    /// Normalizes a validated numeric literal (see isSingleNumericLiteral) into a
-    /// plain, exponent-free decimal string plus the number of fractional digits
-    /// (scale). This lets a PostgreSQL `numeric` value be re-serialized as an exact
-    /// Decimal rather than reparsed as Float64 (which loses precision). Handles the
-    /// optional exponent by shifting the decimal point. Returns nullopt if the value
-    /// needs more significant digits than Decimal256 can represent, in which case
-    /// the exact semantics cannot be preserved and the caller rejects the value.
+    /// Convert a validated numeric literal to an exact exponent-free decimal and scale.
+    /// Return `std::nullopt` if it exceeds `Decimal256`.
     static std::optional<std::pair<String, UInt32>> normalizeDecimal(const String & value)
     {
         const char * p = value.data();
@@ -2246,8 +2138,7 @@ private:
             ++p;
         }
 
-        /// Collect mantissa digits and remember where the decimal point sits,
-        /// measured as the number of digits to its right (fractional digits).
+        /// Collect mantissa digits and scale.
         String digits;
         Int64 point_from_right = 0;
         bool seen_point = false;
@@ -2263,8 +2154,7 @@ private:
                 ++point_from_right;
         }
 
-        /// Apply the exponent: a positive exponent moves the point right (fewer
-        /// fractional digits), a negative one moves it left (more).
+        /// Shift the decimal point by the exponent.
         if (p != end && (*p == 'e' || *p == 'E'))
         {
             ++p;
@@ -2278,10 +2168,7 @@ private:
             for (; p != end && *p >= '0' && *p <= '9'; ++p)
             {
                 exp = exp * 10 + (*p - '0');
-                /// Reject an oversize exponent before it can overflow Int64 or
-                /// drive O(exponent) zero-padding below. Clamping the accumulator
-                /// as soon as it exceeds the bound keeps the check cheap even for a
-                /// value with a very long exponent like `1e99999999999999999999`.
+                /// Bound work and prevent exponent overflow.
                 if (exp > MAX_ABS_EXPONENT)
                     return std::nullopt;
             }
@@ -2296,8 +2183,7 @@ private:
             ++first_significant;
         digits.erase(0, first_significant);
 
-        /// A negative point_from_right means trailing implicit zeros (e.g. 1e2 =
-        /// "100"); pad them in and clamp the scale to zero.
+        /// Materialize trailing zeros for a negative scale.
         while (point_from_right < 0)
         {
             digits += '0';
@@ -2305,9 +2191,7 @@ private:
         }
         UInt32 scale = static_cast<UInt32>(point_from_right);
 
-        /// If there are more fractional digits than integer+fractional digits
-        /// (value like .5 -> "5" with scale 1), pad the integer side with a zero so
-        /// the emitted string is a well-formed decimal.
+        /// Add a leading zero when the scale covers all digits.
         if (scale >= digits.size())
             digits.insert(0, String(scale - digits.size() + 1, '0'));
 
@@ -2327,13 +2211,8 @@ private:
         return std::make_pair(std::move(plain), scale);
     }
 
-    /// Maps a declared PostgreSQL type OID to the ClickHouse type name a Bind value
-    /// of that type must be cast to, or nullptr when we have no safe mapping (the
-    /// caller then treats the value as text). Only types whose PostgreSQL text
-    /// representation is accepted verbatim by ClickHouse's parser are mapped, so the
-    /// cast below both preserves the declared type and enforces its exact
-    /// range/width (e.g. int4 rejects `2147483648`, oid rejects `-1`).
-    static const char * clickHouseTypeForOID(Int32 oid)
+    /// Map OIDs whose PostgreSQL text form ClickHouse parses without conversion.
+    static const char * clickhouseTypeForOID(Int32 oid)
     {
         switch (oid)
         {
@@ -2346,40 +2225,16 @@ private:
             case 701:  return "Float64";        /// float8
             case 1082: return "Date32";         /// date
             case 1114: return "DateTime64(6)";  /// timestamp
-            /// timestamptz carries its timezone in the type semantics, so it maps
-            /// to DateTime64(6, 'UTC') (matching how PostgreSQL timestamptz is
-            /// mapped elsewhere in the codebase). Otherwise toTypeName would report
-            /// the wrong type and offset-bearing values would be reparsed as local
-            /// wall-clock time instead of UTC.
+            /// Preserve `timestamptz` UTC semantics.
             case 1184: return "DateTime64(6, 'UTC')";  /// timestamptz
             case 2950: return "UUID";           /// uuid
             default:   return nullptr;
         }
     }
 
-    /// Formats a Bind parameter declared with a PostgreSQL type OID as a
-    /// type-preserving SQL fragment, or returns nullopt when the OID has no safe
-    /// mapping (the caller then quotes the value as a string literal).
-    ///
-    /// A mapped OID is emitted as `accurateCast('<escaped value>', '<type>')`. This
-    /// hands parsing, range/width checking and rejection to ClickHouse's own parser
-    /// (accurateCast, unlike CAST, does not silently wrap on overflow), so the
-    /// declared type and exact value survive and out-of-range or malformed input for
-    /// the declared type is rejected rather than truncated: `int4` rejects `3.14` and
-    /// `2147483648`, `int2` rejects `32768`, `oid` rejects `-1`/`1e2`, `bool` keeps
-    /// its boolean type, `date`/`timestamp`/`uuid` keep theirs.
-    ///
-    /// `numeric` (OID 1700) is special: ClickHouse SQL has no Decimal literal (a bare
-    /// `2.11` would be reparsed as Float64, losing precision) and a fixed cast scale
-    /// would truncate, so the value is first validated and normalized to a plain,
-    /// exponent-free decimal string with its exact scale and cast to a Decimal256 of
-    /// that scale; a value needing more significant digits than Decimal256 can hold
-    /// is rejected rather than silently rounded.
-    ///
-    /// Every mapped branch is injection-safe by construction: the value is always
-    /// quoted+escaped inside the cast argument, so a payload such as `1--`, `1+2` or
-    /// `1 UNION ALL SELECT ...` stays inside the string literal and can never break
-    /// out of the value position.
+    /// Format a declared type with `accurateCast` so validation cannot wrap values.
+    /// `numeric` is normalized to an exact `Decimal256`; unsupported OIDs return
+    /// `std::nullopt`. Values remain quoted and escaped in every cast.
     static std::optional<String> formatTypedParameter(Int32 oid, const String & value)
     {
         if (oid == 1700) /// numeric
@@ -2395,23 +2250,14 @@ private:
             return fmt::format("accurateCast({}, 'Decimal256({})')", quoteString(normalized->first), normalized->second);
         }
 
-        if (const char * type = clickHouseTypeForOID(oid))
-            /// Both the value and the type name are emitted as quoted+escaped SQL
-            /// string literals. Quoting the type name matters for types whose name
-            /// itself contains a quote, e.g. DateTime64(6, 'UTC') -> the inner
-            /// quotes are backslash-escaped so the cast argument stays a single
-            /// well-formed string literal.
+        if (const char * type = clickhouseTypeForOID(oid))
+            /// Quote both arguments because a type name can contain quotes.
             return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
 
         return std::nullopt;
     }
 
-    /// Returns true if the whole string is the boolean literal `true` or `false`
-    /// (case-insensitive, matching both ClickHouse's boolean keyword literals and
-    /// PostgreSQL's canonical boolean text). Nothing else — `t`/`f`/`yes`/`1` are not
-    /// ClickHouse boolean literals, and accepting them would either mis-parse or, for
-    /// arbitrary text, reopen injection. Used by formatInferredParameter so an
-    /// unspecified-OID boolean bind infers as Bool, not String.
+    /// Match only the case-insensitive boolean keywords `true` and `false`.
     static bool isBooleanLiteral(const String & value)
     {
         static constexpr std::string_view t = "true";
@@ -2430,32 +2276,8 @@ private:
         return ci_equals(value, t) || ci_equals(value, f);
     }
 
-    /// Formats a Bind parameter whose type was left unspecified (OID 0 / omitted) in
-    /// the Parse message. In the PostgreSQL protocol OID 0 means "let the server infer
-    /// the parameter type from the statement", so `Parse("SELECT $1 + 1")` /
-    /// `Parse("... LIMIT $1")` must keep working as numbers and `Parse("SELECT NOT
-    /// $1")` + `Bind("true")` must infer Bool, not regress to a String literal
-    /// (`'41' + 1` fails, `LIMIT '1'` is rejected, `NOT 'true'` fails). We honor
-    /// inference for the cases where the value's own text is an unambiguous,
-    /// injection-safe SQL literal: a numeric literal or a boolean keyword is emitted
-    /// verbatim as a bare, space-padded literal, so ClickHouse infers its type exactly
-    /// as an inline literal would. Any other value stays a quoted+escaped string
-    /// literal (its only safe inference is text; a genuine string parameter infers
-    /// String correctly).
-    ///
-    /// The value is emitted bare (not parenthesized): a body like `SELECT $1::Int32`
-    /// must stay a numeric cast, but `($1)::Int32` parses as `CAST('(42)', 'Int32')`
-    /// (a parenthesized literal before `::` is taken as a string) and then fails to
-    /// parse. The single space on each side blocks token-adjacency instead: a body
-    /// `5-$1` with value `-5` becomes `5- -5 ` (= 5 - (-5)), never the
-    /// comment-truncating `5--5`.
-    ///
-    /// Injection-safe by construction: isSingleNumericLiteral accepts ONLY a single
-    /// optionally-signed decimal/exponent literal and isBooleanLiteral ONLY the exact
-    /// tokens `true`/`false`, so a payload such as `1--`, `1+2`, `1 UNION ALL SELECT
-    /// ...`, `true; DROP ...` or `x'; DROP ...` fails both checks and falls through to
-    /// the quoted-string branch. The surrounding spaces keep the validated literal a
-    /// single, self-contained token sequence regardless of neighboring SQL.
+    /// Preserve unambiguous numeric and boolean literals for OID 0 inference.
+    /// Quote all other values. Spaces keep bare values separate from adjacent tokens.
     static String formatInferredParameter(const String & value)
     {
         if (isSingleNumericLiteral(value) || isBooleanLiteral(value))
@@ -2463,17 +2285,8 @@ private:
         return quoteString(value);
     }
 
-    /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
-    /// arguments. Each argument MUST already be a safe SQL fragment (a quoted
-    /// literal, a validated number, or NULL); callers are responsible for that
-    /// (the EXECUTE path uses FieldVisitorToString, the Bind path quoteString or
-    /// formatTypedParameter).
-    ///
-    /// Substitution runs over lexer tokens: a `$N` is replaced only where it is a
-    /// real token, never inside a string literal, quoted identifier, comment or
-    /// heredoc (there a quoted argument has no literal meaning and could break
-    /// out of the surrounding context), and a whole token must match so `$1` is
-    /// not taken for the prefix of `$10`.
+    /// Substitute placeholder tokens only; arguments must already be safe SQL fragments.
+    /// The lexer excludes placeholders inside strings, identifiers, comments, and heredocs.
     static String substitute(const String & body, const VectorWithMemoryTracking<String> & arguments)
     {
         String result;
@@ -2491,9 +2304,7 @@ private:
             std::string_view text(token.begin, token.size());
             if (token.type == TokenType::BareWord && text.size() > 1 && text[0] == '$')
             {
-                /// Parse `$<n>` (1-based). A non-digit makes it a plain identifier,
-                /// not a placeholder; bail out early once the value runs past the
-                /// argument count so a huge index cannot overflow.
+                /// Reject non-digits and stop before the index can overflow.
                 size_t index = 0;
                 bool is_placeholder = true;
                 for (size_t i = 1; i < text.size(); ++i)

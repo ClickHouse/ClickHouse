@@ -68,21 +68,15 @@ private:
     bool ssl_enabled = false;
     bool secure_required = false;
     Int32 connection_id = 0;
-    Int32 secret_key = 0;
+    UInt32 secret_key = 0;
 
-    /// ReadyForQuery is emitted only at explicit protocol boundaries, never at the
-    /// top of every idle loop iteration. This flag is set once at startup, after a
-    /// simple query completes, and on Sync — giving exactly one ReadyForQuery per
-    /// boundary (in particular exactly one per Sync, even a bare standalone Sync).
+    /// Emit one `ReadyForQuery` at the next protocol boundary.
     bool need_ready_for_query = false;
 
     /// If set, overrides the `default_session_user` server setting for this listener.
     std::optional<String> default_session_user;
 
-    /// Set after an error in the extended-query protocol (Parse/Bind/Describe/
-    /// Execute/Close). Per the PostgreSQL protocol the backend must then discard
-    /// every message until the next Sync and only afterwards send ReadyForQuery,
-    /// keeping the connection alive instead of closing it.
+    /// Discard extended-query messages through the next `Sync`.
     bool ignore_until_sync = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
@@ -111,7 +105,7 @@ private:
 
     /// The query id every statement of this connection runs under, which a cancel request resolves to.
     String currentQueryId() const;
-    static String queryIdFor(Int32 connection_id_, Int32 secret_key_);
+    static String queryIdFor(Int32 connection_id_, UInt32 secret_key_);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 

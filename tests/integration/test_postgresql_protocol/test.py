@@ -599,9 +599,7 @@ def test_prepared_statement(started_cluster):
 
 
 def test_prepared_statement_no_sql_injection(started_cluster):
-    # Bound parameters must be treated as data, never spliced into the SQL text.
-    # A parameter such as "x' UNION ALL SELECT ..." must not be able to break out
-    # of the literal and read another table.
+    # Bound parameters must remain data, never SQL.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -618,12 +616,7 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("CREATE TABLE inj_secret (sid Int32, secret String) ENGINE = Memory;")
     cur.execute("INSERT INTO inj_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
 
-    # A parameterized execute already uses the extended Parse/Bind/Execute path
-    # (the bound value travels the wire as data) - that is the path under test.
-    # We do not pass prepare=True: it adds a named, server-side cached statement
-    # whose lifecycle is driven by the client's own prepared-statement cache, and
-    # repeated named prepares on one connection are an unrelated source of
-    # flakiness here. The unnamed parameterized form exercises the same binding.
+    # The unnamed parameterized form exercises `Parse`/`Bind`/`Execute` directly.
 
     # Benign string parameter.
     cur.execute("SELECT id FROM inj_users WHERE name = %s;", ("bob",))
@@ -633,18 +626,12 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("SELECT id FROM inj_users WHERE id > %s ORDER BY id;", ("1",))
     assert cur.fetchall() == [(2,)]
 
-    # Injection attempt: the payload must be bound as a single string literal,
-    # not interpreted as SQL, so the secret table is never read.
+    # The injection payload remains one string value.
     payload = "x' UNION ALL SELECT secret FROM inj_secret -- "
     cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,))
     assert cur.fetchall() == []
 
-    # Placeholder inside a block comment: $1 there is not a real placeholder, so
-    # the bound value must not be spliced into the comment. Otherwise a value
-    # beginning with "*/ ... --" closes the comment and what follows becomes
-    # executable SQL ahead of the real placeholder. The body keeps a $1 in a
-    # leading comment and a real $1 in the WHERE; the secret must stay unread
-    # (pre-fix this leaked TOP_SECRET).
+    # Ignore placeholders inside comments; substitute only the real `$1`.
     payload = "*/ SELECT secret FROM inj_secret -- "
     cur.execute("/* $1 */ SELECT name FROM inj_users WHERE name = %s;", (payload,))
     assert ("TOP_SECRET",) not in cur.fetchall()
@@ -658,11 +645,7 @@ def test_prepared_statement_no_sql_injection(started_cluster):
 
 
 def test_bind_binary_format_rejected(started_cluster):
-    # The Bind message carries a format code per parameter (0 = text, 1 = binary).
-    # This handler only understands text and would otherwise literalize a binary
-    # payload as a raw byte string (silent misbinding), so a binary format code
-    # must be rejected up front. Drive the extended Parse/Bind/Execute path with
-    # an explicit binary format code via libpq and assert the server refuses it.
+    # Reject binary `Bind` values because the handler implements only text decoding.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -693,14 +676,7 @@ def test_bind_binary_format_rejected(started_cluster):
 
 
 def test_bind_preserves_declared_parameter_types(started_cluster):
-    # The Parse message declares a type OID per parameter. A declared type must be
-    # preserved (emitted as `accurateCast('<value>', '<type>')`), not coerced to a
-    # String literal, so a typed bind such as `SELECT $1 + 1` or `LIMIT $1` keeps
-    # working, and the declared type's range/width is enforced by ClickHouse's own
-    # parser. Force-quoting every value (the earlier injection fix) broke type
-    # preservation; here we drive libpq's typed exec_params and assert types are
-    # preserved and out-of-range/malformed values for the declared type are
-    # rejected, while injection payloads can never break out of the value position.
+    # Preserve declared OID types while keeping values inside quoted cast arguments.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -711,14 +687,12 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     )
     pg = ch.pgconn
 
-    # int4 OID = 23. `SELECT $1 + 1` must arithmetically add, not concatenate or
-    # error: a String-coerced `'41' + 1` would not yield 42.
+    # int4 OID = 23; it must support arithmetic.
     res_add = pg.exec_params(b"SELECT $1 + 1", [b"41"], [23], [0], 0)
     assert res_add.status == psycopg.pq.ExecStatus.TUPLES_OK, res_add.error_message
     assert res_add.get_value(0, 0) == b"42"
 
-    # `LIMIT $1` requires a numeric literal; a quoted string is rejected by
-    # ClickHouse. With type preservation the bound int4 value works as a LIMIT.
+    # `LIMIT` requires the bound value to retain its numeric type.
     setup = ch.cursor()
     setup.execute("DROP TABLE IF EXISTS bind_num_t;")
     setup.execute("CREATE TABLE bind_num_t (x Int32) ENGINE = Memory;")
@@ -736,17 +710,13 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     )
     assert res_limit.get_value(0, 0) == b"2"
 
-    # An injection payload declared int4 stays quoted inside the cast, so it can
-    # never splice SQL; the value simply fails to parse as the declared type.
+    # An invalid int4 payload remains inside the cast argument.
     res_inj = pg.exec_params(
         b"SELECT $1", [b"1 UNION ALL SELECT 42"], [23], [0], 0
     )
     assert res_inj.status == psycopg.pq.ExecStatus.FATAL_ERROR
 
-    # `1--`, `1+2`, `1-2` declared int4: the sharpest is `1--`. Emitted inside a
-    # quoted cast argument as `x = accurateCast('1--', 'Int32') AND x = 42`, the
-    # trailing predicate is preserved and the `--` cannot start a comment, so the
-    # query errors on the bad value and never leaks rows for every tenant.
+    # Numeric-looking SQL fragments are invalid values, not expressions.
     for payload in (b"1--", b"1+2", b"1-2"):
         res_bad = pg.exec_params(
             b"SELECT count() FROM bind_num_t WHERE x = $1 AND x = 42",
@@ -757,15 +727,11 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
         )
         assert res_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
 
-    # Type preservation validates the value against the DECLARED type. An int4
-    # parameter must reject a fractional value: `SELECT $1 + 1` with `3.14` must not
-    # assemble `SELECT 3.14 + 1` (int4 has no fractional part). It is rejected.
+    # Validate against the declared type, not the value's lexical shape.
     res_int_frac = pg.exec_params(b"SELECT $1 + 1", [b"3.14"], [23], [0], 0)
     assert res_int_frac.status == psycopg.pq.ExecStatus.FATAL_ERROR
 
-    # Range/width is enforced per declared OID, not just lexical shape: values
-    # outside the declared integer type's range are rejected, not emitted as a
-    # larger ClickHouse literal.
+    # Enforce the declared integer width.
     for oid, payload in (
         (23, b"2147483648"),           # int4 max + 1
         (21, b"32768"),                # int2 max + 1
@@ -780,32 +746,26 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     assert res_ok.status == psycopg.pq.ExecStatus.TUPLES_OK, res_ok.error_message
     assert res_ok.get_value(0, 0) == b"32000"
 
-    # `oid` (OID 26) is unsigned: a negative value PostgreSQL would reject is
-    # rejected here too, rather than emitted as a bare `-1`.
+    # `oid` (OID 26) is unsigned.
     res_oid_neg = pg.exec_params(b"SELECT $1", [b"-1"], [26], [0], 0)
     assert res_oid_neg.status == psycopg.pq.ExecStatus.FATAL_ERROR
 
-    # Non-numeric declared OIDs are preserved too, not silently downgraded to a
-    # quoted String literal (which regressed standards-compliant typed binds):
-    #  - bool (OID 16): `NOT $1` must negate a boolean, not error on a string.
+    # Preserve non-numeric declared OIDs, starting with bool (OID 16).
     res_bool = pg.exec_params(b"SELECT NOT $1", [b"true"], [16], [0], 0)
     assert res_bool.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool.error_message
-    # Bool renders as `f`/`t` in the PostgreSQL text format (`false`/`0` in some
-    # versions); accept any of them. The point is that it negated a boolean rather
-    # than erroring on a string.
+    # Accept equivalent boolean text renderings across versions.
     assert res_bool.get_value(0, 0) in (b"f", b"false", b"0")
     res_bool_type = pg.exec_params(b"SELECT toTypeName($1)", [b"true"], [16], [0], 0)
     assert res_bool_type.get_value(0, 0) == b"Bool", res_bool_type.get_value(0, 0)
 
-    #  - date (OID 1082): preserved as a Date, and an invalid date is rejected.
+    # date (OID 1082) preserves type and rejects invalid values.
     res_date = pg.exec_params(b"SELECT toTypeName($1)", [b"2024-01-15"], [1082], [0], 0)
     assert res_date.status == psycopg.pq.ExecStatus.TUPLES_OK, res_date.error_message
     assert res_date.get_value(0, 0).startswith(b"Date"), res_date.get_value(0, 0)
     res_date_bad = pg.exec_params(b"SELECT $1", [b"not-a-date"], [1082], [0], 0)
     assert res_date_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR
 
-    #  - uuid (OID 2950): preserved as a UUID, and an injection payload declared
-    #    uuid stays inside the cast and simply fails to parse.
+    # uuid (OID 2950) preserves type and contains invalid payloads.
     res_uuid = pg.exec_params(
         b"SELECT toTypeName($1)",
         [b"61f0c404-5cb3-11e7-907b-a6006ad3dba0"],
@@ -818,10 +778,7 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     res_uuid_inj = pg.exec_params(b"SELECT $1", [b"x' OR 1=1--"], [2950], [0], 0)
     assert res_uuid_inj.status == psycopg.pq.ExecStatus.FATAL_ERROR
 
-    # `numeric` (OID 1700) has no Decimal literal in ClickHouse SQL. A bare `2.11`
-    # would be reparsed as Float64 and lose precision; instead it is validated and
-    # re-serialized as an exact Decimal, so `toTypeName($1)` reports a Decimal and
-    # the exact value round-trips.
+    # `numeric` (OID 1700) round-trips through an exact `Decimal`.
     res_num_type = pg.exec_params(b"SELECT toTypeName($1)", [b"2.11"], [1700], [0], 0)
     assert res_num_type.status == psycopg.pq.ExecStatus.TUPLES_OK, (
         res_num_type.error_message
@@ -835,25 +792,18 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     )
     assert res_num_val.get_value(0, 0) == b"2.11", res_num_val.get_value(0, 0)
 
-    # The injection payloads are rejected for a numeric OID too (not only int4):
-    # the numeric branch validates the value as one literal before re-serializing.
+    # `numeric` accepts only one numeric literal.
     for payload in (b"1--", b"1+2"):
         res_num_bad = pg.exec_params(b"SELECT $1", [payload], [1700], [0], 0)
         assert res_num_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
         assert b"prepared-statement parameter" in res_num_bad.error_message, payload
 
-    # An oversize exponent for a numeric OID is rejected up front, before the
-    # normalizer does any exponent arithmetic or zero-padding: `1e1000000` would
-    # otherwise drive O(exponent) zero-padding and `1e99999999999999999999` would
-    # overflow the signed exponent accumulator. Each is rejected and the
-    # connection stays alive for the next request.
+    # Huge exponents are rejected before arithmetic or zero-padding.
     for payload in (b"1e1000000", b"1e-1000000", b"1e99999999999999999999"):
         res_exp = pg.exec_params(b"SELECT $1", [payload], [1700], [0], 0)
         assert res_exp.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
 
-    # timestamptz (OID 1184) carries its timezone in the type: it maps to
-    # DateTime64(6, 'UTC'), not bare DateTime64(6), so toTypeName reports the
-    # timezone-bearing type and offset values are interpreted as UTC.
+    # timestamptz (OID 1184) preserves UTC semantics.
     res_tstz = pg.exec_params(
         b"SELECT toTypeName($1)", [b"2024-01-15 12:30:45+02"], [1184], [0], 0
     )
@@ -865,13 +815,7 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
 
 
 def test_bind_unspecified_oid_infers_type(started_cluster):
-    # An OID of 0 (or an omitted OID) in Parse means "the server infers the parameter
-    # type from the statement", NOT "text". A standards-compliant frontend that binds
-    # `SELECT $1 + 1` / `LIMIT $1` with an unspecified OID (e.g. PQexecParams with
-    # paramTypes = NULL) must keep working as a number, not regress to `'41' + 1`
-    # (type error) / `LIMIT '1'` (rejected). A numeric value is inferred as a numeric
-    # literal; a non-numeric value stays a safely quoted string; injection payloads
-    # can never break out of the value position.
+    # OID 0 requests inference: preserve safe literals and quote everything else.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -882,14 +826,12 @@ def test_bind_unspecified_oid_infers_type(started_cluster):
     )
     pg = ch.pgconn
 
-    # OID 0 = unspecified. `SELECT $1 + 1` with `41` must add arithmetically (42),
-    # not concatenate/error as a String would.
+    # An inferred integer supports arithmetic.
     res_add = pg.exec_params(b"SELECT $1 + 1", [b"41"], [0], [0], 0)
     assert res_add.status == psycopg.pq.ExecStatus.TUPLES_OK, res_add.error_message
     assert res_add.get_value(0, 0) == b"42"
 
-    # `LIMIT $1` with an unspecified OID requires a numeric literal; inference makes
-    # the bound value work as a LIMIT (a String would be rejected by ClickHouse).
+    # An inferred integer works in `LIMIT`.
     setup = ch.cursor()
     setup.execute("DROP TABLE IF EXISTS bind_infer_t;")
     setup.execute("CREATE TABLE bind_infer_t (x Int32) ENGINE = Memory;")
@@ -905,35 +847,28 @@ def test_bind_unspecified_oid_infers_type(started_cluster):
     assert res_limit.status == psycopg.pq.ExecStatus.TUPLES_OK, res_limit.error_message
     assert res_limit.get_value(0, 0) == b"2"
 
-    # Passing no paramTypes at all (paramTypes = NULL, the common libpq call) also
-    # leaves the OID unspecified and infers.
+    # A null `paramTypes` array also requests inference.
     res_none = pg.exec_params(b"SELECT $1 + 1", [b"41"])
     assert res_none.status == psycopg.pq.ExecStatus.TUPLES_OK, res_none.error_message
     assert res_none.get_value(0, 0) == b"42"
 
-    # A boolean keyword (`true`/`false`) carries an unambiguous type in its own text,
-    # so an unspecified-OID boolean bind infers as Bool. `SELECT NOT $1` + `true` must
-    # negate a boolean (NOT rejects a String argument), not become `NOT 'true'`.
+    # Exact boolean keywords infer as `Bool`.
     res_bool = pg.exec_params(b"SELECT NOT $1", [b"true"], [0], [0], 0)
     assert res_bool.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool.error_message
     # `NOT true` is false, rendered as `f`/`false`/`0` depending on the text format.
     assert res_bool.get_value(0, 0) in (b"f", b"false", b"0"), res_bool.get_value(0, 0)
 
-    # A non-numeric, non-boolean unspecified-OID value can only be inferred as text, so
-    # it stays a safely quoted string literal.
+    # Other inferred values remain quoted text.
     res_text = pg.exec_params(b"SELECT $1", [b"hello"], [0], [0], 0)
     assert res_text.status == psycopg.pq.ExecStatus.TUPLES_OK, res_text.error_message
     assert res_text.get_value(0, 0) == b"hello"
 
-    # A boolean-looking payload with a trailing injection is not the exact `true`/
-    # `false` keyword, so it stays a quoted string and cannot splice SQL.
+    # A boolean with trailing syntax stays quoted.
     res_bool_inj = pg.exec_params(b"SELECT $1", [b"true; DROP TABLE bind_infer_t"], [0], [0], 0)
     assert res_bool_inj.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool_inj.error_message
     assert res_bool_inj.get_value(0, 0) == b"true; DROP TABLE bind_infer_t"
 
-    # Injection payloads with an unspecified OID are not single numeric literals, so
-    # they fall through to a quoted string and cannot splice SQL. `1--` used as a
-    # WHERE value can never truncate the trailing predicate into a comment.
+    # Numeric-looking SQL fragments stay quoted.
     res_inj = pg.exec_params(
         b"SELECT count() FROM bind_infer_t WHERE x = $1 AND x = 42",
         [b"1--"],
@@ -941,8 +876,7 @@ def test_bind_unspecified_oid_infers_type(started_cluster):
         [0],
         0,
     )
-    # The quoted string compared against an Int32 column is a type error, not a
-    # rows-leaking comment truncation; either way it must not return all rows.
+    # A type error is safe; the trailing predicate must remain active.
     if res_inj.status == psycopg.pq.ExecStatus.TUPLES_OK:
         assert res_inj.get_value(0, 0) == b"0", res_inj.get_value(0, 0)
 
@@ -951,11 +885,7 @@ def test_bind_unspecified_oid_infers_type(started_cluster):
 
 
 def test_bind_error_keeps_connection_alive(started_cluster):
-    # An extended-query (Parse/Bind/Execute) error must not drop the connection:
-    # per the PostgreSQL protocol the backend sends ErrorResponse, discards
-    # messages until Sync, then sends ReadyForQuery so the same connection stays
-    # usable. Rejecting a typed Bind value (the type-preservation validation) must
-    # therefore leave the client able to run further queries on the same session.
+    # Extended-query errors recover at `Sync` without closing the connection.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -990,15 +920,11 @@ def test_bind_error_keeps_connection_alive(started_cluster):
 
 
 def _pg_raw_extended_query_session(node):
-    # Minimal PostgreSQL v3 wire client used to drive the extended-query state
-    # machine directly (Parse/Bind/Describe/Close/Sync). libpq/psycopg hide these
-    # messages, so a raw socket is the only way to send a standalone
-    # Describe/Sync or Close/Sync and count the backend's ReadyForQuery replies.
+    # Minimal raw client for protocol messages hidden by libpq and psycopg.
     sock = socket.create_connection((node.ip_address, server_port), timeout=10)
 
     def read_until_ready(timeout=10.0):
-        # Read framed backend messages until ReadyForQuery ('Z'); return the
-        # list of message type characters seen (in order).
+        # Read backend message types through `ReadyForQuery` (`Z`).
         sock.settimeout(timeout)
         buf = b""
         types = []
@@ -1038,21 +964,7 @@ def _fe(t, body):
 
 
 def test_extended_query_ready_for_query_and_describe(started_cluster):
-    # Regression for the extended-query protocol contract on the typed-Bind path.
-    #
-    # ReadyForQuery must be emitted exactly once per Sync. Emitting it at the top
-    # of every idle loop iteration caused a standalone Describe/Sync or Close/Sync
-    # to emit ReadyForQuery mid-cycle (before the Sync was read) and then again for
-    # the Sync, desyncing strict clients that count one ReadyForQuery per Sync. It
-    # is now armed only at explicit protocol boundaries -- startup, a completed
-    # simple query, and Sync -- so extended-query messages never produce one of
-    # their own.
-    #
-    # Describe is a silent no-op: this wire implementation does not know the row
-    # layout until the query runs, and the RowDescription is emitted at Execute
-    # time by PostgreSQLOutputFormat, which standard clients (which pipeline
-    # Describe with Bind/Execute/Sync) read together. So a Parse/Bind/Describe/
-    # Execute/Sync cycle must let the Execute run to completion, not abort it.
+    # Each `Sync` produces one `ReadyForQuery`; `Describe` defers row layout to `Execute`.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1082,7 +994,7 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     def execute(portal):
         return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
 
-    # Close('S', <nonexistent>)/Sync: CloseComplete then exactly ONE ReadyForQuery.
+    # Closing an unknown statement is a successful no-op.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(close("S", "nope") + sync())
     types = read_until_ready()
@@ -1090,18 +1002,14 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     assert "3" in types, f"Close must respond with CloseComplete, got {types}"
     sock.close()
 
-    # Describe('S', '')/Sync: a silent no-op then exactly ONE ReadyForQuery. The
-    # backend must not desync by emitting a mid-cycle ReadyForQuery before Sync.
+    # `Describe` emits no mid-cycle `ReadyForQuery`.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(describe("S", "") + sync())
     types = read_until_ready()
     assert types.count("Z") == 1, f"Describe/Sync must emit one ReadyForQuery, got {types}"
     sock.close()
 
-    # Full Parse/Bind/Describe/Execute/Sync: the Describe no-op must NOT abort the
-    # cycle. The Execute runs, so the backend sends RowDescription ('T'),
-    # DataRow ('D'), CommandComplete ('C') and then exactly ONE ReadyForQuery for
-    # the Sync. The typed int4 bind keeps this on the path this PR touches.
+    # `Describe` does not abort a complete extended-query cycle.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(
         parse("", "SELECT $1", (23,))
@@ -1116,8 +1024,7 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     assert "T" in types and "C" in types, f"Execute must run and return rows, got {types}"
     sock.close()
 
-    # A rejected typed Bind (the 1-- injection guard) must still emit exactly one
-    # ReadyForQuery per Sync and keep the connection usable afterwards.
+    # A rejected typed `Bind` still recovers at `Sync`.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(parse("", "SELECT $1 AS a", (23,)) + bind("", "", ("1--",)) + execute("") + sync())
     types = read_until_ready()
@@ -1130,25 +1037,18 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
 
 
 def test_bind_negative_count_recovers(started_cluster):
-    # Regression for malformed Bind count fields. A negative num_params (or
-    # num_format_params_result) would skip the params loop, misread the following
-    # bytes as the next count, and leave the rest of the Bind body unread, which
-    # desyncs the skip-until-Sync recovery. The backend must reject a negative
-    # count with an ErrorResponse and still emit exactly one ReadyForQuery for the
-    # Sync, keeping the connection usable.
+    # Reject negative `Bind` counts without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
         return _fe("S", b"")
 
-    # Bind with num_params = -1: empty portal/statement names, no parameter
-    # format codes, then a negative parameter count.
+    # `num_params = -1`.
     def bind_neg_num_params():
         b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
         return _fe("B", b)
 
-    # Bind with a negative result-format-code count: valid names, no format
-    # codes, no parameters, then a negative result-format-code count.
+    # Negative result-format-code count.
     def bind_neg_result_formats():
         b = (
             b"\x00"
@@ -1175,13 +1075,7 @@ def test_bind_negative_count_recovers(started_cluster):
 
 
 def test_flush_error_discards_until_sync(started_cluster):
-    # Regression for the skip-until-Sync recovery on the FLUSH and unsupported-
-    # message error branches. FLUSH is not supported and answers with an
-    # ErrorResponse. Before the fix that branch left ignore_until_sync = false, so
-    # a pipeline like Parse; Bind; FLUSH; Execute; Sync would still run the Execute
-    # after the FLUSH error instead of discarding everything until Sync. The
-    # Execute must NOT run (no RowDescription / DataRow / CommandComplete), and the
-    # backend must emit exactly one ReadyForQuery for the Sync, then stay usable.
+    # A `FLUSH` error discards the rest of the cycle through `Sync`.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1233,13 +1127,7 @@ def test_flush_error_discards_until_sync(started_cluster):
 
 
 def test_bind_binary_result_format_accepted_as_text(started_cluster):
-    # Regression for the Bind requested-result-format codes. We always emit text
-    # rows and RowDescription advertises FormatCode::TEXT for every column, so a
-    # binary result format request (resultFormat = 1) is accepted and ignored: the
-    # client receives text and adapts. Real clients (e.g. Npgsql / the .NET driver)
-    # request binary results by default, so rejecting the request would break them.
-    # The extended-query flow must complete normally (RowDescription, DataRow,
-    # CommandComplete) and the result-format codes must not misalign the stream.
+    # Accept binary result requests while returning correctly advertised text.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1285,13 +1173,7 @@ def test_bind_binary_result_format_accepted_as_text(started_cluster):
 
 
 def test_standalone_sync_emits_one_ready_for_query(started_cluster):
-    # Regression: ReadyForQuery must be emitted exactly once per Sync, including a
-    # bare standalone Sync issued while the backend is already idle. When
-    # ReadyForQuery was sent speculatively at the top of every idle loop iteration,
-    # a client sending Sync while idle received that pre-loop ReadyForQuery, and the
-    # Sync then produced a second one, giving two per Sync. ReadyForQuery is now
-    # emitted only at explicit boundaries (startup, simple query, Sync), so each
-    # Sync yields exactly one.
+    # A standalone `Sync` produces exactly one `ReadyForQuery`.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1303,8 +1185,7 @@ def test_standalone_sync_emits_one_ready_for_query(started_cluster):
     types = read_until_ready()
     assert types.count("Z") == 1, f"standalone Sync must emit one ReadyForQuery, got {types}"
 
-    # Several standalone Syncs in a row: exactly one ReadyForQuery each (no extra
-    # mid-cycle ReadyForQuery). Read them one at a time so the count is unambiguous.
+    # Read consecutive `Sync` replies separately to count them exactly.
     for _ in range(3):
         sock.sendall(sync())
         types = read_until_ready()
@@ -1320,12 +1201,7 @@ def test_standalone_sync_emits_one_ready_for_query(started_cluster):
 
 
 def test_bind_requires_exact_placeholder_count(started_cluster):
-    # Regression: Bind arity is the statement's placeholder count (highest $N), not
-    # the number of declared parameter type OIDs. Parse may declare fewer OIDs than
-    # there are placeholders, so checking against the declared-type count let a
-    # "SELECT $1, $2" statement bound with one value through, leaving $2 in the SQL
-    # at Execute; extra values were silently dropped. Both mismatches must now be
-    # rejected with an ErrorResponse, and the connection must recover.
+    # `Bind` arity follows the highest `$N`, not the number of declared OIDs.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1350,8 +1226,7 @@ def test_bind_requires_exact_placeholder_count(started_cluster):
     def execute(portal):
         return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
 
-    # Two placeholders, no declared OIDs, one bound value -> rejected (previously
-    # this passed and left $2 literally in the query).
+    # Reject one value for two placeholders.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(
         parse("", "SELECT $1, $2", ())
@@ -1364,8 +1239,7 @@ def test_bind_requires_exact_placeholder_count(started_cluster):
     assert "C" not in types, f"Execute must not run after the arity error, got {types}"
     assert types.count("Z") == 1, f"arity error must emit one ReadyForQuery, got {types}"
 
-    # Too many values (one placeholder, two values) -> rejected (previously the
-    # extra value was silently dropped).
+    # Reject two values for one placeholder.
     sock.sendall(
         parse("", "SELECT $1", ())
         + bind("", "", ("1", "2"))
@@ -1391,9 +1265,7 @@ def test_bind_requires_exact_placeholder_count(started_cluster):
 
 
 def test_execute_no_sql_injection(started_cluster):
-    # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
-    # prepared statement body by $N substitution, so a string argument must be
-    # emitted as a quoted+escaped SQL literal, never as raw SQL text.
+    # Simple `EXECUTE` arguments must also remain safe SQL literals.
     node = started_cluster.instances["node"]
 
     def connect():
@@ -1423,14 +1295,7 @@ def test_execute_no_sql_injection(started_cluster):
     cur.execute("EXECUTE by_name('alice');")
     assert cur.fetchall() == [(1,)]
 
-    # Injection through a real, bare $N placeholder (not one wrapped in quotes:
-    # a quoted '$1' is a string-literal token and is left untouched, so it would
-    # never exercise this sink). The placeholder sits in a numeric comparison, so
-    # a client passes a string argument expecting it to be bound as one value. It
-    # must be emitted as a quoted+escaped literal; raw substitution would splice
-    # "1 UNION ALL SELECT secret ..." straight into the SQL and leak the secret.
-    # With the fix the string cannot be coerced to Int32 and the query errors out,
-    # which also drops the connection, so this runs on its own connection.
+    # Exercise a bare placeholder; quoted `$1` is not a placeholder token.
     inj = connect()
     inj_cur = inj.cursor()
     inj_cur.execute("PREPARE by_id_inj AS SELECT name FROM exec_users WHERE id = $1;")
@@ -1445,8 +1310,7 @@ def test_execute_no_sql_injection(started_cluster):
     assert ("TOP_SECRET",) not in leaked
     inj.close()
 
-    # An argument echoed straight back must round-trip as data, never as SQL: the
-    # same payload through "SELECT $1" comes back as a single string value.
+    # The same payload round-trips as one string value.
     cur.execute("PREPARE echo_inj AS SELECT $1;")
     cur.execute("EXECUTE echo_inj('1 UNION ALL SELECT secret FROM exec_secret -- ');")
     assert cur.fetchall() == [("1 UNION ALL SELECT secret FROM exec_secret -- ",)]
@@ -1465,10 +1329,7 @@ def test_execute_no_sql_injection(started_cluster):
 
 
 def test_execute_requires_exact_argument_count(started_cluster):
-    # The exact-arity invariant must hold on the simple SQL PREPARE/EXECUTE path too,
-    # not only the extended Bind path. Without the check `EXECUTE s(1, 2)` on
-    # `PREPARE s AS SELECT $1` silently drops the extra argument, and `EXECUTE s(1)`
-    # on `PREPARE s AS SELECT $1, $2` leaves `$2` literally in the executed SQL.
+    # Simple `PREPARE`/`EXECUTE` requires exact arity too.
     node = started_cluster.instances["node"]
 
     def connect():
@@ -1479,8 +1340,7 @@ def test_execute_requires_exact_argument_count(started_cluster):
             password="123",
         )
 
-    # Exact arity is accepted (a fresh connection per case: a rejected EXECUTE errors
-    # out and drops the connection).
+    # Use a fresh connection after each rejected `EXECUTE`.
     ch = connect()
     cur = ch.cursor()
     cur.execute("PREPARE one_arg AS SELECT $1 AS v;")
@@ -1529,14 +1389,7 @@ def test_execute_requires_exact_argument_count(started_cluster):
 
 
 def test_execute_rejects_non_literal_arguments(started_cluster):
-    # A simple-query EXECUTE argument binds one parameter VALUE, so it must be a
-    # literal. A non-literal expression (`1 + 1`, `now()`, `rand()`) cannot be
-    # bound as a value: the parser has no execution context, and splicing the
-    # expression's SQL text into the body via `$N` substitution changes results
-    # (`$1 * 10` with `1 + 1` assembles `1 + 1 * 10` = 11 not 20; `$1, $1` with
-    # `rand()` evaluates it twice). Such arguments must be rejected cleanly, not
-    # crash the connection and not be re-serialized. Negative numbers are single
-    # literals and stay accepted.
+    # Reject expressions whose substitution would change precedence or evaluation count.
     node = started_cluster.instances["node"]
 
     def connect():
@@ -1548,8 +1401,7 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
         )
 
     def rejected(prepare_sql, execute_sql):
-        # Each probe uses a fresh connection: a rejected EXECUTE errors the
-        # transaction, so reusing the connection would fail unrelated queries.
+        # A rejected `EXECUTE` requires a fresh connection.
         ch = connect()
         cur = ch.cursor()
         try:
@@ -1563,9 +1415,7 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
         finally:
             ch.close()
 
-    # Arithmetic, function-call and injection-shaped expression arguments are
-    # rejected (would otherwise give wrong precedence/double-eval results or,
-    # before, crash on a null deref).
+    # Reject arithmetic, function calls, and injection-shaped expressions.
     assert rejected("PREPARE expr_arith AS SELECT $1 AS v;", "EXECUTE expr_arith(1 + 1);")
     assert rejected("PREPARE expr_func AS SELECT $1 AS v;", "EXECUTE expr_func(abs(-5));")
     assert rejected("PREPARE expr_rand AS SELECT $1 AS v;", "EXECUTE expr_rand(rand());")
@@ -1574,16 +1424,10 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
         "EXECUTE expr_concat(concat('1 UNION ALL SELECT 2', ' -- '));",
     )
 
-    # A precedence-sensitive body makes the wrongness of serialization concrete:
-    # if `1 + 1` were spliced into `$1 * 10` it would give `1 + 1 * 10` = 11.
-    # Rejection avoids the wrong answer entirely.
+    # Reject a precedence-sensitive expression.
     assert rejected("PREPARE expr_prec AS SELECT $1 * 10 AS v;", "EXECUTE expr_prec(1 + 1);")
 
-    # A negative number is a single literal and round-trips unchanged. `SELECT
-    # -7` infers Int8, which maps to the PostgreSQL "char" OID (18, a text type),
-    # so the driver decodes the value as the string "-7"; a positive literal
-    # infers UInt8 -> INT2 and decodes as an int. That result-type mapping is
-    # orthogonal to this test: assert on the numeric VALUE, not the wire type.
+    # Negative numbers are literals; normalize their protocol text for comparison.
     ch = connect()
     cur = ch.cursor()
     cur.execute("PREPARE expr_neg AS SELECT $1 AS v;")
@@ -1593,11 +1437,7 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
 
 
 def test_execute_zero_parameter_statement(started_cluster):
-    # A prepared statement with no parameters must be runnable through the simple
-    # SQL EXECUTE path. PostgreSQL lets the argument list be omitted (`EXECUTE s`)
-    # or empty (`EXECUTE s()`) for a zero-parameter statement. `ParserExecute`
-    # previously required `(` and a non-empty list, so `PREPARE s AS SELECT 1` had
-    # no executable EXECUTE form. Both forms must now work and return the body.
+    # Accept both PostgreSQL forms of zero-parameter `EXECUTE`.
     node = started_cluster.instances["node"]
 
     ch = psycopg.connect(
@@ -1620,16 +1460,11 @@ def test_execute_zero_parameter_statement(started_cluster):
 
 
 def test_copy_no_sql_injection(started_cluster):
-    # COPY builds its SELECT/INSERT from the client-supplied table and column
-    # identifiers. A malicious identifier (quoted so it survives as a single
-    # token) must be back-quoted into one harmless identifier, never spliced as
-    # raw SQL, so it cannot break out into a UNION or a second statement.
+    # Treat client-supplied `COPY` table and column names as identifiers.
     node = started_cluster.instances["node"]
 
     def connect():
-        # psycopg2's `with connection` manages the transaction but does NOT close
-        # the connection, so wrap in closing() to guarantee each probe's broken
-        # connection is actually closed.
+        # `with connection` manages transactions but does not close the connection.
         c = py_psql.connect(
             host=node.ip_address,
             port=server_port,
@@ -1661,14 +1496,9 @@ def test_copy_no_sql_injection(started_cluster):
     setup_cur.execute("CREATE TABLE copy_secret_str (s String) ENGINE = Memory;")
     setup_cur.execute("INSERT INTO copy_secret_str VALUES ('TOP_SECRET');")
 
-    # A COPY rejected by the server leaves the psycopg2 connection in a broken
-    # state (the next call raises "cursor already closed"), so every COPY attempt
-    # below uses its own connection. Otherwise the benign COPY after a blocked
-    # one would fail for a reason unrelated to the security check under test.
+    # Use a fresh connection after each rejected `COPY`.
 
-    # Malicious table identifier: the whole UNION is wrapped in one quoted
-    # identifier so it reaches the handler as a single name. It must be treated
-    # as one (non-existent) table name, not executed as SQL.
+    # A quoted injection remains one table name.
     out = StringIO()
     with connect() as c, pytest.raises(Exception):
         c.cursor().copy_expert(
@@ -1690,11 +1520,7 @@ def test_copy_no_sql_injection(started_cluster):
         c.cursor().copy_expert("COPY copy_t TO STDOUT", out3)
     assert sorted(out3.getvalue().split()) == ["1", "2"]
 
-    # COPY FROM builds an INSERT INTO from the same client-supplied identifiers.
-    # A malicious column identifier (quoted so it reaches the handler as one
-    # token) must be back-quoted into a single column name. Otherwise it is
-    # spliced raw and turns the INSERT into "INSERT INTO load (s) SELECT s FROM
-    # secret", copying the secret into the load table.
+    # A quoted injection remains one `COPY FROM` column name.
     with connect() as c, pytest.raises(Exception):
         c.cursor().copy_expert(
             'COPY copy_load ("s) SELECT s FROM copy_secret_str -- ") FROM STDIN',
@@ -1952,11 +1778,7 @@ def _assert_cancel_request_does_not_cancel_http_query(node, query_id, pid, key):
 
     def run_http_query():
         try:
-            # The sleep must contribute to the returned value: a `sleepEachRow` column that no outer
-            # expression consumes is dropped from the plan, and the query finishes instantly instead
-            # of staying in the process list. One row per block gives the query one cancellation
-            # checkpoint per 0.3 s for ~9 s, so a cancel that (wrongly) went through would reliably
-            # fail it while the test is still watching.
+            # Consume `sleepEachRow` so optimization cannot remove the delay.
             result["output"] = node.http_query(
                 "SELECT sum(sleepEachRow(0.3) + number) FROM numbers(30)",
                 params={"query_id": query_id, "max_block_size": "1"},
@@ -1971,8 +1793,7 @@ def _assert_cancel_request_does_not_cancel_http_query(node, query_id, pid, key):
     try:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            # Poll over HTTP: a `clickhouse-client` round trip through `docker exec` can take
-            # seconds under sanitizers, which would eat the window while the query is running.
+            # Poll over HTTP to avoid slow `docker exec` round trips under sanitizers.
             if (
                 node.http_query(
                     f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
@@ -2014,8 +1835,7 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
     holds the id."""
     node = started_cluster.instances["node"]
 
-    # Run a statement over the PostgreSQL interface to obtain a genuinely server-assigned id, then
-    # close the connection so the id is freed.
+    # Obtain a server-assigned PostgreSQL query ID, then free it.
     ch = py_psql.connect(
         host=node.ip_address,
         port=server_port,
@@ -2040,13 +1860,7 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
 
 
 def test_bind_portal_snapshots_statement(started_cluster):
-    # Regression for the extended-query portal contract. Once Bind creates the
-    # (unnamed) portal, the portal owns a snapshot of the referenced prepared
-    # statement. A later Parse that redefines the statement, or a Close that
-    # deallocates it, must not change what the already-bound Execute runs. Before
-    # the fix, Execute re-resolved the statement from the live map, so
-    # redefinition leaked into the bound portal and a Close turned Execute into
-    # "Execute without prior Bind".
+    # The unnamed portal owns the statement snapshot captured by `Bind`.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -2074,8 +1888,7 @@ def test_bind_portal_snapshots_statement(started_cluster):
         return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
 
     def datarow_values(raw):
-        # Extract the DataRow ('D') payloads' first column text from a raw byte
-        # stream of framed backend messages.
+        # Extract the first text column from each `DataRow` (`D`).
         out = []
         buf = raw
         while len(buf) >= 5:
@@ -2093,8 +1906,7 @@ def test_bind_portal_snapshots_statement(started_cluster):
             buf = buf[1 + mlen :]
         return out
 
-    # Redefining the prepared statement after Bind must not affect the portal:
-    # Parse s AS SELECT 1; Bind("", s); Parse s AS SELECT 2; Execute("") -> 1.
+    # Redefinition after `Bind` does not affect the portal.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.settimeout(10)
     sock.sendall(
@@ -2120,8 +1932,7 @@ def test_bind_portal_snapshots_statement(started_cluster):
     assert b"E\x00" not in buf[:1] , "no error expected"
     sock.close()
 
-    # Deallocating the prepared statement after Bind must not invalidate the
-    # portal: Parse s; Bind("", s); Close('S', s); Execute("") -> still runs.
+    # Closing the statement after `Bind` does not invalidate the portal.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.settimeout(10)
     sock.sendall(

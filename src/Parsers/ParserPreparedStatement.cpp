@@ -88,11 +88,7 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     result->function_name = ast_ident->as<ASTIdentifier>()->full_name;
 
-    /// The argument list is optional so a zero-parameter statement is runnable as
-    /// `EXECUTE s` or `EXECUTE s()` (PostgreSQL lets the parentheses be omitted when
-    /// there are no parameters). When parentheses are present they may enclose an
-    /// empty list. Arity is checked against the statement's placeholder count later
-    /// (getStatement for the simple path, attachBindQuery for the extended path).
+    /// Accept both forms of a zero-parameter statement: `EXECUTE s` and `EXECUTE s()`.
     if (open_bracket.ignore(pos, expected) && !close_bracket.ignore(pos, expected))
     {
         ASTPtr ast_args;
@@ -101,21 +97,13 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         for (const auto & child : ast_args->children)
         {
-            /// An EXECUTE argument binds one parameter VALUE, so it must be a literal.
-            /// A non-literal expression (`1 + 1`, `now()`, `rand()`) cannot be bound as
-            /// a value here: this parser has no execution context, and splicing the
-            /// expression's SQL text into the body via `$N` substitution changes results
-            /// (`$1 * 10` with `1 + 1` assembles `1 + 1 * 10` = 11 not 20; `$1, $1` with
-            /// `rand()` evaluates it twice). Reject it cleanly instead. `-1`/`-1.5`
-            /// parse as a single ASTLiteral, so negative numbers are still accepted.
+            /// Expressions cannot be substituted as one parameter value without changing semantics.
             const auto * literal = child->as<ASTLiteral>();
             if (!literal)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXECUTE argument must be a literal value, not an expression: {}",
                     child->formatWithSecretsOneLine());
-            /// Numbers stay bare, strings are quoted and escaped by FieldVisitorToString,
-            /// so a crafted string argument stays a single quoted literal and cannot break
-            /// out of its context to inject SQL.
+            /// `FieldVisitorToString` quotes and escapes string literals.
             result->arguments.push_back(applyVisitor(FieldVisitorToString(), literal->value));
         }
 

@@ -2,18 +2,13 @@
 # Tags: no-fasttest
 # Tag no-fasttest: Requires postgresql-client
 
-# A PostgreSQL client cancels a running statement by opening a second connection and sending a
-# `CancelRequest` on it, carrying the (process id, secret key) pair the server handed out in
-# `BackendKeyData`. That connection never authenticates - the secret key is the credential - so the
-# server must not need an authenticated session to honour it, and the key must identify the query that
-# is actually running. `psql` sends exactly this on `SIGINT`.
+# `CancelRequest` authenticates with the process ID and secret from `BackendKeyData`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The user name must be unique per test run: the flaky check runs this test many times concurrently,
-# and a global name would collide with `ACCESS_ENTITY_ALREADY_EXISTS`.
+# Avoid user-name collisions in concurrent flaky checks.
 PG_USER="postgresql_user_05056_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -21,9 +16,7 @@ DROP USER IF EXISTS ${PG_USER};
 CREATE USER ${PG_USER} HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
 "
 
-# A marker in the query text, to find this exact query in `system.processes`. A single stream of
-# single-row blocks makes the statement run for 300 seconds, and nothing but the cancel request may end
-# it earlier.
+# Keep a marked query visible in `system.processes` until cancellation.
 MARKER="cancel_request_05056_${CLICKHOUSE_DATABASE}"
 LONG_QUERY="SELECT '${MARKER}', sleepEachRow(0.1) FROM numbers(3000)
     SETTINGS max_block_size = 1, max_threads = 1, max_execution_time = 0"
@@ -52,13 +45,12 @@ echo "--- the statement is running"
 count_running
 
 echo "--- under a query id the client can cancel"
-# `BackendKeyData` gives the client `postgres:<connection id>:<secret key>`, so a query id of that shape
-# is what the cancel request resolves to.
+# `BackendKeyData` maps to `postgres:<connection id>:<secret key>`.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT match(query_id, '^postgres:\\d+:\\d+\$') FROM system.processes
     WHERE query LIKE '%${MARKER}%' AND query NOT LIKE '%system.processes%'"
 
-# This is what makes `psql` send a `CancelRequest` on a connection of its own.
+# Make `psql` send `CancelRequest`.
 kill -INT "${PSQL_PID}"
 wait "${PSQL_PID}" 2>/dev/null
 

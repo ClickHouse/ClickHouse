@@ -176,8 +176,7 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         msg.deserialize(in);
     }));
 
-    /// -1 is the protocol sentinel for a NULL parameter; no value bytes follow.
-    /// It maps to a disengaged optional, distinct from the literal text "NULL".
+    /// -1 represents protocol `NULL` without payload bytes.
     {
         std::string bytes = build(-1, "");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -200,10 +199,7 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
 
 TEST(PostgreSQLProtocol, BindRejectsNegativeCounts)
 {
-    /// A malformed Bind carrying a negative parameter count must be rejected
-    /// rather than silently skipping the params loop: a negative num_params would
-    /// leave the parameter payload unread and the next bytes would be misread as
-    /// the result-format-code count, desynchronizing the skip-until-Sync recovery.
+    /// Reject negative counts before they desynchronize the stream.
     {
         std::string bytes;
         putInt32(bytes, 0); /// outer size field is unused for bounds here
@@ -218,8 +214,7 @@ TEST(PostgreSQLProtocol, BindRejectsNegativeCounts)
         }));
     }
 
-    /// A negative result-format-code count is malformed for the same reason and
-    /// must also be rejected.
+    /// A negative result-format-code count is also malformed.
     {
         std::string bytes;
         putInt32(bytes, 0);
@@ -238,9 +233,7 @@ TEST(PostgreSQLProtocol, BindRejectsNegativeCounts)
 
 TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
 {
-    /// Build a Bind message whose parameter format codes are given explicitly.
-    /// `format_codes` become the per-parameter format-code array (0 = text,
-    /// 1 = binary); a single text parameter "hi" follows.
+    /// Build a `Bind` with explicit parameter format codes and one value.
     auto build = [](const std::vector<Int16> & format_codes)
     {
         std::string bytes;
@@ -257,9 +250,7 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         return bytes;
     };
 
-    /// deserialize fully consumes the message and only records a binary format
-    /// code in `has_binary_format_param` (so the byte stream stays aligned for the
-    /// error-recovery skip-until-Sync path); attachBindQuery is what rejects it.
+    /// Deserialization records binary format only after consuming the message.
     auto deserializeThenAttach = [](const std::string & bytes) -> bool
     {
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -316,8 +307,7 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         EXPECT_FALSE(msg.has_binary_format_param);
     }
 
-    /// A binary format code is consumed by deserialize (which records the flag but
-    /// does not throw, keeping the stream aligned) and rejected by attachBindQuery.
+    /// Consume binary codes before `attachBindQuery` rejects them.
     {
         std::string bytes = build({1});
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -343,13 +333,7 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
 
 TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
 {
-    /// Build a Bind with a single text parameter "hi", explicit result column
-    /// format codes, and a trailing marker byte. `result_codes` become the
-    /// requested result-format-code array (0 = text, 1 = binary). We always emit
-    /// text rows and RowDescription advertises text for every column, so a binary
-    /// result request is accepted and ignored (real clients such as Npgsql request
-    /// binary by default). The only requirement is that deserialize consumes the
-    /// codes exactly and leaves the stream aligned on the next message boundary.
+    /// Build a `Bind` with explicit result formats and a trailing alignment marker.
     auto build = [](const std::vector<Int16> & result_codes)
     {
         std::string bytes;
@@ -367,8 +351,7 @@ TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
         return bytes;
     };
 
-    /// deserialize must succeed for any result format request and leave exactly the
-    /// trailing marker byte in the buffer (stream aligned for the next message).
+    /// All result formats are consumed while output remains text.
     auto deserializeKeepsAligned = [](const std::string & bytes)
     {
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -393,10 +376,7 @@ TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
 namespace
 {
 
-/// Drive Parse -> Bind -> Execute through the PreparedStatemetsManager and return
-/// the SQL body that gets executed. `oids` are the declared parameter type OIDs
-/// from the Parse message; `values` are the text-format Bind values (nullopt is a
-/// SQL NULL). This mirrors what PostgreSQLHandler does for the extended protocol.
+/// Run `Parse` -> `Bind` -> `Execute` and return the assembled SQL.
 String bindAndGetStatement(
     const String & body,
     const std::vector<Int32> & oids,
@@ -424,10 +404,7 @@ String bindAndGetStatement(
 
 TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
 {
-    /// A parameter declared with a mapped OID is emitted as an accurateCast to the
-    /// matching ClickHouse type, so `SELECT $1 + 1` and `LIMIT $1` keep working and
-    /// the declared type is preserved instead of being coerced to a String literal.
-    /// The value is always quoted+escaped inside the cast, so nothing can break out.
+    /// Mapped OIDs use `accurateCast` with a quoted value.
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT accurateCast('41', 'Int32') + 1");
     EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {23}, {{"10"}}),
               "SELECT * FROM t LIMIT accurateCast('10', 'Int32')");
@@ -443,24 +420,19 @@ TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {700}, {{"3.14"}}), "SELECT accurateCast('3.14', 'Float32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT accurateCast('-2.5e-3', 'Float64')");
 
-    /// Non-numeric typed OIDs are preserved too (previously they were silently
-    /// downgraded to a String literal, regressing standards-compliant typed binds).
+    /// Preserve mapped non-numeric types.
     EXPECT_EQ(bindAndGetStatement("SELECT NOT $1", {16}, {{"true"}}), "SELECT NOT accurateCast('true', 'Bool')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1082}, {{"2024-01-15"}}),
               "SELECT accurateCast('2024-01-15', 'Date32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1114}, {{"2024-01-15 12:30:45"}}),
               "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6)')");
-    /// timestamptz (OID 1184) carries its timezone in the type: it maps to
-    /// DateTime64(6, 'UTC'), not bare DateTime64(6), so toTypeName reports the
-    /// right type and offset-bearing values are interpreted as UTC, not local
-    /// wall-clock. The type name's inner quotes are escaped by quoteString.
+    /// `timestamptz` preserves its UTC semantics.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1184}, {{"2024-01-15 12:30:45+02"}}),
               "SELECT accurateCast('2024-01-15 12:30:45+02', 'DateTime64(6, \\'UTC\\')')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}}),
               "SELECT accurateCast('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')");
 
-    /// A declared-but-unmapped OID (25 = text) stays a quoted+escaped string literal.
-    /// OID 0 (unspecified) is handled by the inference path, tested separately below.
+    /// Unmapped declared OIDs remain quoted strings; OID 0 uses inference.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {25}, {{"hi"}}), "SELECT 'hi'");
 
     /// A NULL parameter is the SQL keyword NULL regardless of declared type.
@@ -469,21 +441,14 @@ TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
 
 TEST(PostgreSQLProtocol, BindTypedNumericIsInjectionSafeInsideCast)
 {
-    /// The mapped-OID path emits accurateCast('<escaped value>', '<type>'). Range,
-    /// width and type validation for these OIDs is delegated to ClickHouse's parser
-    /// at execution time (accurateCast rejects out-of-range or malformed input for
-    /// the declared type); the integration test asserts that rejection. Here we
-    /// assert the assembled fragment is injection-safe: an injection payload stays
-    /// quoted+escaped inside the cast argument and can never splice SQL, even though
-    /// it is not a valid value for the declared type.
+    /// Invalid typed values stay quoted inside `accurateCast` and cannot splice SQL.
     EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {23}, {{"1--"}}),
               "SELECT id = accurateCast('1--', 'Int32')");
     EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {23}, {{"1+2"}}),
               "SELECT id = accurateCast('1+2', 'Int32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"1 UNION ALL SELECT secret FROM s"}}),
               "SELECT accurateCast('1 UNION ALL SELECT secret FROM s', 'Int32')");
-    /// A single quote in the value is backslash-escaped so it cannot close the cast
-    /// argument's string literal.
+    /// Quotes cannot close the cast argument.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"1'"}}),
               "SELECT accurateCast('1\\'', 'Int32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"x' OR 1=1--"}}),
@@ -506,9 +471,7 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
         }
     };
 
-    /// `numeric` (OID 1700) has no Decimal literal form in ClickHouse SQL, so a bare
-    /// `2.11` would be reparsed as Float64 and lose precision. It is validated and
-    /// re-serialized as an exact Decimal via accurateCast, preserving value and type.
+    /// `numeric` is normalized to an exact `Decimal256`.
     EXPECT_EQ(bindAndGetStatement("SELECT toTypeName($1)", {1700}, {{"2.11"}}),
               "SELECT toTypeName(accurateCast('2.11', 'Decimal256(2)'))");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-5"}}), "SELECT accurateCast('-5', 'Decimal256(0)')");
@@ -518,22 +481,16 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-2.5e-3"}}), "SELECT accurateCast('-0.0025', 'Decimal256(4)')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{".5"}}), "SELECT accurateCast('0.5', 'Decimal256(1)')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"5."}}), "SELECT accurateCast('5', 'Decimal256(0)')");
-    /// A value needing more significant digits than Decimal256 can hold is rejected,
-    /// not silently rounded.
+    /// Reject values that exceed `Decimal256` precision.
     EXPECT_TRUE(throwsBadArgument(1700, String(78, '9')));
 
-    /// An oversize exponent is rejected up front, before the normalizer does any
-    /// exponent arithmetic or zero-padding. This keeps the huge-exponent path cheap
-    /// and safe: `1e1000000` / `1e-1000000` can never fit Decimal256, so there is no
-    /// O(exponent) zero-padding blow-up, and an exponent large enough to overflow a
-    /// signed Int64 (`1e99999999999999999999`) can never be folded in (no UB).
+    /// Reject huge exponents before arithmetic or padding.
     EXPECT_TRUE(throwsBadArgument(1700, "1e1000000"));
     EXPECT_TRUE(throwsBadArgument(1700, "1e-1000000"));
     EXPECT_TRUE(throwsBadArgument(1700, "1e99999999999999999999"));
     EXPECT_TRUE(throwsBadArgument(1700, "1e-99999999999999999999"));
 
-    /// The numeric branch validates the value as one literal at assembly time, so an
-    /// injection payload declared `numeric` is rejected, never spliced or cast.
+    /// A `numeric` injection payload is not one literal.
     EXPECT_TRUE(throwsBadArgument(1700, "1--"));
     EXPECT_TRUE(throwsBadArgument(1700, "1+2"));
     EXPECT_TRUE(throwsBadArgument(1700, "1-2"));
@@ -546,8 +503,7 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
 
 TEST(PostgreSQLProtocol, BindTextParameterStaysQuotedString)
 {
-    /// A parameter with no declared type or an unmapped OID is always a
-    /// quoted+escaped string literal, so an injection payload can never break out.
+    /// Unmapped values remain quoted and escaped.
     auto quotesAsString = [](const String & value, const String & expected)
     {
         EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{value}}), expected);
@@ -558,12 +514,7 @@ TEST(PostgreSQLProtocol, BindTextParameterStaysQuotedString)
     quotesAsString("1--", "SELECT '1--'");
     quotesAsString("x' UNION ALL SELECT 1--", "SELECT 'x\\' UNION ALL SELECT 1--'");
 
-    /// The `1--` payload proves injection containment concretely: with a per-character
-    /// numeric check it would splice in as `id = 1-- AND ...`, dropping the trailing
-    /// predicate. Because the value is emitted inside a quoted cast argument, the
-    /// trailing predicate is preserved verbatim and the `--` cannot start a comment:
-    /// the assembled query is `id = accurateCast('1--', 'Int32') AND tenant_id = 42`
-    /// (which the parser then rejects at execution time, so no rows leak).
+    /// `1--` remains inside the cast argument and cannot hide the trailing predicate.
     EXPECT_EQ(
         bindAndGetStatement("SELECT * FROM t WHERE id = $1 AND tenant_id = 42", {23}, {{"1--"}}),
         "SELECT * FROM t WHERE id = accurateCast('1--', 'Int32') AND tenant_id = 42");
@@ -576,45 +527,31 @@ TEST(PostgreSQLProtocol, BindTextParameterStaysQuotedString)
 
 TEST(PostgreSQLProtocol, BindUnspecifiedOidInfersType)
 {
-    /// An OID of 0 (or an omitted trailing OID) means "the server infers the parameter
-    /// type from the statement" in the PostgreSQL protocol, NOT "text". A numeric value
-    /// is emitted as a bare, space-padded numeric literal so `Parse("SELECT $1 + 1")`,
-    /// `Parse("... LIMIT $1")` and `Parse("SELECT $1::Int32")` keep working as numbers
-    /// instead of regressing to `'41' + 1` (type error) / `LIMIT '1'` (rejected) /
-    /// `CAST('(42)', 'Int32')` (parse error).
+    /// OID 0 preserves unambiguous literals for server inference.
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {0}, {{"41"}}), "SELECT  41  + 1");
     EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {0}, {{"10"}}), "SELECT * FROM t LIMIT  10 ");
-    /// An omitted trailing OID (Parse declared fewer OIDs than placeholders) infers
-    /// per-slot: the slot with a declared OID keeps its accurateCast, the slot with
-    /// the omitted OID infers.
+    /// Missing trailing OIDs infer per slot.
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + $2", {23}, {{"1"}, {"2"}}),
               "SELECT accurateCast('1', 'Int32') +  2 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + $2", {}, {{"1"}, {"2"}}), "SELECT  1  +  2 ");
 
-    /// Every numeric literal form the value's own text carries is preserved verbatim,
-    /// space-padded so ClickHouse infers the numeric type exactly as an inline literal
-    /// would (signed, decimal, exponent).
+    /// Preserve supported numeric literal forms.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-5"}}), "SELECT  -5 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"+5"}}), "SELECT  +5 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"3.14"}}), "SELECT  3.14 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-2.5e-3"}}), "SELECT  -2.5e-3 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{".5"}}), "SELECT  .5 ");
 
-    /// A boolean keyword (`true`/`false`, case-insensitive) also carries an
-    /// unambiguous type in its own text, so it infers as Bool: `Parse("SELECT NOT
-    /// $1")` + `Bind("true")` must assemble `SELECT NOT  true `, not `SELECT NOT
-    /// 'true'` (NOT rejects a String argument).
+    /// Exact boolean keywords infer as `Bool`.
     EXPECT_EQ(bindAndGetStatement("SELECT NOT $1", {0}, {{"true"}}), "SELECT NOT  true ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"false"}}), "SELECT  false ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"TRUE"}}), "SELECT  TRUE ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"False"}}), "SELECT  False ");
 
-    /// A non-numeric, non-boolean value's only safe inference is text, so it stays a
-    /// quoted+escaped string literal.
+    /// Other values infer as quoted text.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"hi"}}), "SELECT 'hi'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"2024-01-15"}}), "SELECT '2024-01-15'");
-    /// Values that merely resemble a boolean but are not the exact keyword stay text
-    /// (accepting them would either mis-parse or reopen injection).
+    /// Boolean-like values that are not exact keywords stay text.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"t"}}), "SELECT 't'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"truex"}}), "SELECT 'truex'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true--"}}), "SELECT 'true--'");
@@ -622,10 +559,7 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidInfersType)
 
 TEST(PostgreSQLProtocol, BindUnspecifiedOidIsInjectionSafe)
 {
-    /// The inference path emits a bare numeric literal only when the value passes
-    /// isSingleNumericLiteral, which accepts exactly one optionally-signed
-    /// decimal/exponent literal. Any injection payload fails that check and falls
-    /// through to a quoted+escaped string literal, so it can never splice SQL.
+    /// Only one validated numeric literal can remain bare.
     EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {0}, {{"1--"}}), "SELECT id = '1--'");
     EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {0}, {{"1+2"}}), "SELECT id = '1+2'");
     EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {0}, {{"1-2"}}), "SELECT id = '1-2'");
@@ -633,26 +567,18 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidIsInjectionSafe)
               "SELECT '1 UNION ALL SELECT secret FROM s'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1.2.3"}}), "SELECT '1.2.3'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1e"}}), "SELECT '1e'");
-    /// A boolean-looking payload with a trailing injection is not the exact `true`/
-    /// `false` keyword, so it fails isBooleanLiteral and stays quoted.
+    /// A boolean with trailing syntax stays quoted.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true; DROP TABLE s"}}), "SELECT 'true; DROP TABLE s'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true OR 1=1"}}), "SELECT 'true OR 1=1'");
-    /// The surrounding spaces additionally block token-adjacency: a body `5-$1` with
-    /// value `-5` becomes `5- -5 ` (= 5 - (-5)), never the comment-truncating `5--5`.
+    /// Spaces prevent a negative value from forming `--` with adjacent SQL.
     EXPECT_EQ(bindAndGetStatement("SELECT 5-$1", {0}, {{"-5"}}), "SELECT 5- -5 ");
-    /// A single quote in a non-numeric value is backslash-escaped so it cannot close
-    /// the string literal.
+    /// Escape quotes in inferred text.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"x' OR 1=1--"}}), "SELECT 'x\\' OR 1=1--'");
 }
 
 TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
 {
-    /// Per the extended-query protocol, once `Bind` creates the portal it owns a
-    /// snapshot of the referenced prepared statement. A later `Parse` that
-    /// redefines the statement, or a `Close` that deallocates it, must not change
-    /// what the already-bound `Execute` runs. Before this fix `Execute`
-    /// re-resolved the statement from the live map, so redefinition/close leaked
-    /// into the bound portal.
+    /// A portal owns the statement snapshot captured by `Bind`.
     auto addStatement = [](PreparedStatements::PreparedStatemetsManager & manager, const String & name, const String & body)
     {
         ASTPreparedStatement statement;
@@ -676,9 +602,7 @@ TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
         EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
     }
 
-    /// Deallocating the prepared statement after Bind does not invalidate the
-    /// portal — Execute still runs the bound statement, no "Execute without prior
-    /// Bind".
+    /// Deallocating the statement does not invalidate its portal.
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStatement(manager, "s", "SELECT 1");
@@ -690,8 +614,7 @@ TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
 
 TEST(PostgreSQLProtocol, ExecuteWithoutBindIsRejected)
 {
-    /// Execute with no prior Bind (and after a Sync/Close reset) must fail cleanly
-    /// rather than run stale state.
+    /// `Execute` without a portal must not run stale state.
     PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
     ASTPreparedStatement statement;
     statement.function_name = "s";
@@ -718,9 +641,7 @@ TEST(PostgreSQLProtocol, ExecuteWithoutBindIsRejected)
 
 TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
 {
-    /// Bind must supply exactly one value per placeholder the statement references.
-    /// Fewer values leaves a `$N` in the SQL at Execute; more values are silently
-    /// dropped by substitute. Both are rejected.
+    /// `Bind` requires exactly one value per referenced placeholder.
     PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
     ASTPreparedStatement statement;
     statement.function_name = "s";
@@ -753,12 +674,7 @@ TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
 
 TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
 {
-    /// The arity Bind must match is the statement's true parameter count — the
-    /// highest `$N` in the body — NOT the number of parameter type OIDs Parse
-    /// chose to declare. PostgreSQL lets Parse send zero or fewer OIDs than there
-    /// are placeholders (the rest are inferred). Checking against the declared-type
-    /// count let `Parse "SELECT $1, $2"` (no OIDs) + one-value Bind through,
-    /// leaving `$2` in the SQL, and silently dropped extra values.
+    /// Arity is the highest `$N`, not the number of declared OIDs.
     auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
     {
         ASTPreparedStatement statement;
@@ -796,11 +712,7 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStmt(manager, "SELECT $1, $2", {});
         EXPECT_NO_THROW(bindN(manager, 2));
-        /// Both placeholders are substituted (arity satisfied). With no declared OID
-        /// the numeric values infer as bare, space-padded numeric literals.
-        /// Expected value is the space-padded "SELECT" + inferred "1" + "," + "2". The comma is
-        /// isolated in its own adjacent literal (compile-time concatenated) so neither the
-        /// whitespace-before-comma nor the double-space-after-comma style rule matches in source.
+        /// Split the literal to avoid source-format checks on the intentional spaces.
         EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  1 " "," "  2 ");
     }
 
@@ -847,12 +759,7 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
 
 TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
 {
-    /// The exact-arity invariant must hold on the simple SQL PREPARE/EXECUTE path
-    /// too, not only the extended Bind path. `getStatement` goes straight to
-    /// `substitute`, so without the check `EXECUTE s(1, 2)` on `PREPARE s AS SELECT
-    /// $1` silently drops the extra argument and `EXECUTE s(1)` on `PREPARE s AS
-    /// SELECT $1, $2` leaves `$2` literally in the executed SQL. The statement's
-    /// parameter count (highest `$N`) is already recorded at PREPARE time.
+    /// Simple `PREPARE`/`EXECUTE` enforces the same exact arity as `Bind`.
     auto prepare = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body)
     {
         ASTPreparedStatement statement;
@@ -910,15 +817,7 @@ TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
 
 TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
 {
-    /// `ParserExecute` accepts a general expression list, but an EXECUTE argument
-    /// binds one parameter VALUE, so it must be a literal. A non-literal expression
-    /// (`1 + 1`, `now()`, `rand()`) cannot be bound as a value here: the parser has
-    /// no execution context, and splicing the expression's SQL text into the body
-    /// via `$N` substitution changes results (`$1 * 10` with `1 + 1` assembles
-    /// `1 + 1 * 10` = 11 not 20; `$1, $1` with `rand()` evaluates it twice). An
-    /// earlier fix dereferenced a null `as<ASTLiteral>()` for such expressions and
-    /// crashed the connection; a later attempt re-serialized the AST but produced
-    /// those wrong results. The correct behavior is a clean rejection.
+    /// Reject expressions because substitution can change precedence or evaluate them twice.
     auto parse_args = [](const String & query)
     {
         ParserExecute parser;
@@ -926,13 +825,12 @@ TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
         return ast->as<ASTExecute>()->arguments;
     };
 
-    /// Non-literal expressions must be rejected cleanly (not crash, not serialize).
+    /// Reject non-literal expressions cleanly.
     EXPECT_THROW(parse_args("EXECUTE s(1 + 1)"), Exception);
     EXPECT_THROW(parse_args("EXECUTE s(now())"), Exception);
     EXPECT_THROW(parse_args("EXECUTE s(rand())"), Exception);
     EXPECT_THROW(parse_args("EXECUTE s(concat('a', 'b'))"), Exception);
-    /// A string argument that itself contains SQL is a literal, so it is accepted
-    /// as a single quoted value; but a bare expression injection attempt is rejected.
+    /// SQL text inside a string remains one literal.
     EXPECT_THROW(parse_args("EXECUTE s(1 UNION ALL SELECT secret)"), Exception);
 
     /// A negative number already parses as a single literal (not an expression),
@@ -965,13 +863,7 @@ TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
 
 TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
 {
-    /// End-to-end through the real SQL grammar: a zero-parameter prepared statement
-    /// must be runnable as `EXECUTE s` (parentheses omitted, as PostgreSQL allows) or
-    /// `EXECUTE s()` (empty list). Previously `ParserExecute` required `(` and a
-    /// non-empty argument list, so `PREPARE s AS SELECT 1` had no executable EXECUTE
-    /// form even though the arity check accepted zero arguments at the AST level.
-    /// Return the owning ASTPtr so the parsed AST outlives every access below;
-    /// `ast->as<ASTExecute>()` is only a non-owning view into it.
+    /// Both PostgreSQL forms execute a zero-parameter statement.
     auto parse = [](const String & query)
     {
         ParserExecute parser;
@@ -993,8 +885,7 @@ TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
         EXPECT_EQ(execute->arguments.size(), 0u);
     }
 
-    /// And a zero-parameter statement run through the parsed EXECUTE produces the body
-    /// unchanged (the whole path PREPARE -> EXECUTE s -> substitute now works).
+    /// Substitution leaves a zero-parameter body unchanged.
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         ASTPreparedStatement prepared;
@@ -1010,15 +901,7 @@ TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
 
 TEST(PostgreSQLProtocol, InferredUnspecifiedOidFractionalIntCastIsRejectedNotTruncated)
 {
-    /// A Bind parameter left with an unspecified type (OID 0 / omitted) is emitted as
-    /// a bare, space-padded literal so the server infers the type from the statement
-    /// context — `SELECT $1 + 1`, `LIMIT $1`, `SELECT $1::Int32` keep working as
-    /// numbers. This is not full statement-context type inference (the layer has only
-    /// the body text and the value text, no resolved AST), but binding `3.14` to
-    /// `SELECT $1::Int32` assembles `SELECT  3.14 ::Int32`, which casts the numeric
-    /// literal to Int32 and REJECTS the fractional value rather than truncating it —
-    /// matching PostgreSQL's rejection of `3.14` for `int4`. This end-to-end Bind test
-    /// pins the exact spliced form the reviewer asked about.
+    /// OID 0 emits an unambiguous numeric value as a bare, space-padded literal.
     auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
     {
         ASTPreparedStatement statement;
@@ -1036,9 +919,7 @@ TEST(PostgreSQLProtocol, InferredUnspecifiedOidFractionalIntCastIsRejectedNotTru
         manager.attachBindQuery(std::move(msg));
     };
 
-    /// `3.14` with an unspecified OID against `SELECT $1::Int32` assembles the cast of
-    /// a numeric literal; the value is emitted bare and space-padded (not quoted),
-    /// which infers as a number just as an inline literal would.
+    /// The statement applies its own cast to the inferred numeric literal.
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStmt(manager, "SELECT $1::Int32", {});

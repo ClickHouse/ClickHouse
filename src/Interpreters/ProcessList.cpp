@@ -824,20 +824,12 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current
         if (query_user == queries_to_user.end())
             return CancellationCode::NotFound;
 
-        /// The caller identifies the target only by the `postgres:<connection id>:<secret key>` query id
-        /// that the server itself assigns to statements of a PostgreSQL connection. That string is not
-        /// reserved to the PostgreSQL interface, though: other interfaces let a client pick an arbitrary
-        /// query id (e.g. the HTTP `query_id` parameter), so a query of another user could impersonate the
-        /// shape. The secret key is only a credential for ids the server assigned, so a query that did not
-        /// arrive through the PostgreSQL interface is treated as not found rather than cancelled.
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
         elem = tryGetProcessListElement(current_query_id, query_user->second);
         if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
             return CancellationCode::NotFound;
 
-        /// The verified entry is marked under the same lock and cancelled below by pointer. Re-resolving
-        /// the query id after releasing the lock would open a race: the PostgreSQL query could finish and
-        /// the freed id could be taken by a new query of the same user from another interface, and the
-        /// cancel would hit a query that never passed the interface check above.
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 
