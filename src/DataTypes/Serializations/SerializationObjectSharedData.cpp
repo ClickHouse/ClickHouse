@@ -1283,7 +1283,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             if (!values_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data copy values");
 
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();
@@ -1315,9 +1324,30 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                         granules_limits.push_back((*structure_granules)[granule].limit);
                 }
+                /// All buckets store the same rows, so they must be split into the same granules.
+                else if (structure_granules->size() != granules_limits.size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Bucket {} of Object shared data has {} granules, but bucket 0 has {} granules",
+                        bucket,
+                        structure_granules->size(),
+                        granules_limits.size());
+                }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
+                {
+                    if ((*structure_granules)[granule].limit != granules_limits[granule])
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Granule {} of bucket {} of Object shared data has {} rows, but the same granule of bucket 0 has {} rows",
+                            granule,
+                            bucket,
+                            (*structure_granules)[granule].limit,
+                            granules_limits[granule]);
+
                     granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(), (*structure_granules)[granule].all_paths.end());
+                }
 
                 settings.path.pop_back();
             }
@@ -1370,7 +1400,16 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Read values.
             settings.path.push_back(Substream::ObjectSharedDataCopyValues);
             auto * values_stream = settings.getter(settings.path);
+            size_t values_size_before = values_column.size();
             SerializationString::create()->deserializeBinaryBulk(values_column, *values_stream, nested_limit, 0);
+            /// The number of values comes from the offsets, so a shorter column would be read out of bounds.
+            if (values_column.size() != values_size_before + nested_limit)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected number of values in Object shared data: {}. Expected {}",
+                    values_column.size() - values_size_before,
+                    nested_limit);
+
             settings.path.pop_back();
 
             settings.path.pop_back();

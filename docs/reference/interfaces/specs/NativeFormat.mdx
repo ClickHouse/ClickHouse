@@ -1118,7 +1118,7 @@ A few things worth noting about the table:
 
 - **The values are not contiguous.** `Dynamic` uses `1`, `2`, `3`, `4` with `V3` at `4` and `FLATTENED` at `3`. A higher number is not necessarily newer.
 - **Some values are native-format-only.** `Object::STRING`, `Object::FLATTENED`, and `Dynamic::FLATTENED` exist for native-protocol compatibility with clients that do not implement full Object/Dynamic. They do not appear in MergeTree on-disk storage.
-- **`V3` is primarily on-disk.** Clients consuming the native TCP protocol typically see `FLATTENED` (value `3`) rather than `V3` (value `4`).
+- **`V3` is on-disk only.** `Object::V3` and `Dynamic::V3` are written into MergeTree parts and never onto the wire, so a decoder never sees them here, and an encoder must not send them: ClickHouse rejects either of them in a `Native` stream with `INCORRECT_DATA`. This matters beyond tidiness, because `Object::V3` is what carries the shared-data sub-version, and the bucket and granule layouts of `MAP_WITH_BUCKETS` and `ADVANCED` describe an on-disk part rather than a block. Clients consuming the native TCP protocol see `V1`, `V2`, `STRING` or `FLATTENED`.
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1314,7 +1314,7 @@ The discriminator run holds exactly `num_rows` entries, and a decoder must verif
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 </Note>
 
-The runtime type list normally follows the `Variant` canonicalization — the regular variant slots are written in `DataTypeVariant` (type-name) order, so the wire order does not follow insertion order. It is **not always** globally sorted, however: types that overflowed into the shared variant (for example under `Dynamic(max_types=N)`) are appended after the regular slots in first-seen order, so the tail of the list can break type-name order. A decoder must therefore treat the transmitted type list as authoritative for discriminator assignment and must not re-sort it itself. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
+The runtime type list normally follows the `Variant` canonicalization — the regular variant slots are written in `DataTypeVariant` (type-name) order, so the wire order does not follow insertion order. It is **not always** globally sorted, however: types that overflowed into the shared variant (for example under `Dynamic(max_types=N)`) are appended after the regular slots in first-seen order, so the tail of the list can break type-name order. A decoder must therefore treat the transmitted type list as authoritative for discriminator assignment and must not re-sort it itself. What the list may not contain is a repeated type or `Nothing`: two equal entries map onto one discriminator and `Nothing` is not a variant at all, so in both cases part of the list has nowhere to be reconstructed into. ClickHouse rejects either with `INCORRECT_DATA`. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
@@ -1352,7 +1352,7 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
+Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key. The dynamic path names must be distinct and none of them may repeat a path that the type string already declares as typed — either would give the assembled object two values under one key, so ClickHouse rejects both with `INCORRECT_DATA`. The same applies to the dynamic path list of the non-flat encodings.
 
 <Info>
 **Malformed counts**

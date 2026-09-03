@@ -193,6 +193,18 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);
 
     size_t num_rows = shared_data_buckets[0]->size();
+    /// Every row is collected from all buckets at once, so a shorter bucket would be indexed out of bounds.
+    for (size_t bucket = 1; bucket != shared_data_buckets.size(); ++bucket)
+    {
+        if (shared_data_buckets[bucket]->size() != num_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Bucket {} of Object shared data has {} rows, but bucket 0 has {} rows",
+                bucket,
+                shared_data_buckets[bucket]->size(),
+                num_rows);
+    }
+
     for (size_t i = 0; i != num_rows; ++i)
     {
         /// Shared data contains paths in sorted order in each row.
@@ -263,11 +275,10 @@ void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuff
     /// Avoiding calling resize in a loop improves the performance.
     data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
 
+    /// The number of indexes comes from the offsets, so stopping at the end of the stream would leave the
+    /// paths column shorter than the offsets say and it would be read out of bounds.
     for (size_t i = 0; i != limit; ++i)
     {
-        if (istr.eof())
-            break;
-
         T index;
         readBinaryLittleEndian(index, istr);
 
