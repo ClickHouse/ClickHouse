@@ -95,17 +95,15 @@ is enabled:
 
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
-If several profiles apply to a user, their constraints are merged. How they merge
-depends on `settings_constraints_replace_previous`:
-- **true** (recommended): the last constraint for a setting replaces the earlier
-  one, including the fields the new constraint does not set.
-- **false** (default): the last constraint replaces only the fields it sets, and
-  the remaining fields are kept from the earlier one.
+If several profiles apply to a user, their constraints are combined per setting:
+`min` and `max` come from the last profile which sets them, the disallowed values
+of all the profiles are collected together, and the writability (`readonly`,
+`const`, `changeable_in_readonly`) comes from the last profile which constrains
+that setting.
 
 A profile applied with [`SET profile`](/sql-reference/statements/set) follows a
 different rule. It can add restrictions, but it cannot remove or weaken a
-restriction that already applies to the session. This rule does not depend on
-`settings_constraints_replace_previous`.
+restriction that already applies to the session.
 
 For example, suppose the profile assigned to a user limits `max_threads` to `8`:
 
