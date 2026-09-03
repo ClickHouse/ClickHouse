@@ -2175,6 +2175,8 @@ Allows you to use more sources than the number of threads - to more evenly distr
 )", 0) \
     DECLARE(Float, max_streams_multiplier_for_merge_tables, 5, R"(
 Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.
+
+The number of streams that read simultaneously is capped by this multiplier as well - except for a `Merge` table read with plan-based parallel replicas ([parallel_replicas_allow_merge_tables](#parallel_replicas_allow_merge_tables)), which is expanded into a union of the reads from its underlying tables and is therefore capped by [max_streams_for_union_step](#max_streams_for_union_step), like any other union.
 )", 0) \
     \
     DECLARE(String, network_compression_method, "LZ4", R"(
@@ -6345,6 +6347,9 @@ Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_
     DECLARE(Bool, force_distinct_partitions_independently, false, R"(
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0) \
+    DECLARE(Bool, allow_preliminary_distinct_abandoning, true, R"(
+Let the preliminary (per-stream) `DISTINCT` give up deduplicating mostly-unique input, freeing its hash table and passing the remaining rows through. The preliminary `DISTINCT` is best-effort by design - duplicates from different streams pass through it even when it deduplicates - and the final `DISTINCT` deduplicates its output again, so abandoning gives up the removal of almost nothing and saves the memory and hashing of a second copy of the unique keys. Not applied when the preliminary `DISTINCT` carries a limit hint (a plain `LIMIT` with no subsequent ordering).
+)", 0) \
     DECLARE(Bool, allow_window_partitions_independently, true, R"(
 Enable independent evaluation of window functions per partition on separate threads when the partition expression of the `MergeTree` table is a deterministic function of the window `PARTITION BY` columns. Each partition is read through a separate stream, sorted independently by the window sort description, and processed by its own window transform, skipping the hash scatter that ordinarily reshuffles every row across threads. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_window](#max_number_of_partitions_for_independent_window) and [force_window_partitions_independently](#force_window_partitions_independently). Not applied with `FINAL` or parallel replicas.
 )", 0) \
@@ -6547,7 +6552,7 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 )", 0) \
     DECLARE(UInt64, max_streams_for_union_step, 0, R"(
-Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
+Limits the number of simultaneously active data streams in a `UNION` step (applies to `UNION ALL`, to `UNION DISTINCT`, because it is implemented via a `UNION ALL` step followed by a `DISTINCT` step, and to a `Merge` table read with plan-based parallel replicas, which is expanded into a union of the reads from its underlying tables). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
 )", 0) \
     DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
 This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit. Like `max_streams_for_union_step`, the limit is not applied when the query plan requires each output stream of the `UNION` to stay individually sorted.
@@ -6688,6 +6693,14 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+)", 0) \
+    DECLARE(Bool, query_plan_lower_array_join_function, false, R"(
+Toggles a query-plan-level optimization which lowers an `arrayJoin` function inside an expression into a real `ARRAY JOIN` step, so it goes through the same execution machinery as the `ARRAY JOIN` clause (lazy replication and filter fusion).
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 :::note
@@ -8206,6 +8219,9 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_plan_based, false, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
+Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
+)", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
 When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
 When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
@@ -8797,9 +8813,6 @@ implementation.
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify any experimental compression codec.
-)", EXPERIMENTAL) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \
@@ -9232,6 +9245,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
