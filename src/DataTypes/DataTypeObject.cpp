@@ -1783,7 +1783,7 @@ Let's investigate the content of the [GH Archive](https://www.gharchive.org/) da
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1843,7 +1843,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
@@ -2189,6 +2189,9 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 The `JSONAllPaths(json_column)` expression produces an `Array(String)` containing all paths present in a JSON value.
 The skip index stores these path strings in its data structure (bloom filter or inverted index).
 When a query filters on `json.some.path`, the index checks whether the string `"some.path"` is present in the index for each granule and skips granules where it is absent.
+
+Only plain path access is matched against the index, optionally with a type hint or a cast (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Filters on the sub-object subcolumn (`json.^a`) and on the combined literal+sub-object subcolumn (``json.@`a``) do not use the index: these subcolumns are not `NULL` whenever any sub-path of `a` exists, so the presence of the path `a` itself in `JSONAllPaths` is not an equivalent condition.
 
 #### Safety with missing paths {#json-indexes-jsonallpaths-safety-with-missing-paths}
 

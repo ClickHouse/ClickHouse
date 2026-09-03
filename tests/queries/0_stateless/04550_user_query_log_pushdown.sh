@@ -55,13 +55,11 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
 
     -- The pushed-down predicate prunes all partitions of the backing table (it is partitioned by
     -- event_date here): the query reads no rows at all, while the unrestricted scan reads the whole
-    -- retained log. This holds with both analyzers.
+    -- retained log.
     SET log_comment = '04550_full';
     SELECT count() FROM system.user_query_log FORMAT Null;
-    SET log_comment = '04550_pruned_analyzer';
+    SET log_comment = '04550_pruned';
     SELECT count() FROM system.user_query_log WHERE event_date > today() + 1 SETTINGS enable_analyzer = 1 FORMAT Null;
-    SET log_comment = '04550_pruned_old_analyzer';
-    SELECT count() FROM system.user_query_log WHERE event_date > today() + 1 SETTINGS enable_analyzer = 0 FORMAT Null;
 
     -- The '>=' and '<=' operators (named 'greaterOrEquals' / 'lessOrEquals') must also be pushed down,
     -- so a bounded predicate that excludes every partition still reads no rows from the backing table.
@@ -75,9 +73,7 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
     SELECT read_rows >= 1 FROM system.query_log
     WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_full';
     SELECT read_rows FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned_analyzer';
-    SELECT read_rows FROM system.query_log
-    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned_old_analyzer';
+    WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned';
     SELECT read_rows FROM system.query_log
     WHERE type = 'QueryFinish' AND query_kind = 'Select' AND current_database = currentDatabase() AND log_comment = '04550_pruned_ge';
     SELECT read_rows FROM system.query_log

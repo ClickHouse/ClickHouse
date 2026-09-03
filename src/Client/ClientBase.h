@@ -14,7 +14,6 @@
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Interpreters/Context.h>
-#include <Storages/StorageFile.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -23,6 +22,7 @@
 #include <boost/program_options.hpp>
 
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string_view>
@@ -262,7 +262,15 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
-    static fs::path getHistoryFilePath();
+    /// The setting that the `--format` option and the `format` config key are mirrored into.
+    /// In `clickhouse-local`, `--format` has always set both the default input and the default output
+    /// format, so it maps to the bidirectional `format` setting. In `clickhouse-client` (including the
+    /// embedded client), `--format` is documented as output-only, so it maps to `output_format`:
+    /// mirroring it into `format` would make it override the `FORMAT` clause of `INSERT` queries
+    /// on the input side.
+    virtual std::string_view mappedFormatOptionSetting() const { return "output_format"; }
+
+    static std::filesystem::path getHistoryFilePath();
 private:
     /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
     /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
@@ -467,8 +475,8 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    fs::path home_path;
-    fs::path history_file; /// Path to a file containing command history.
+    std::filesystem::path home_path;
+    std::filesystem::path history_file; /// Path to a file containing command history.
     UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
@@ -562,6 +570,22 @@ protected:
     {
         String host;
         std::optional<UInt16> port;
+        /// Whether TLS has to be used for this address. It is unset unless it was specified explicitly
+        /// for this address or it was determined by the automatic choice between the plain and the
+        /// secure port, which remembers its outcome here (and not in the global configuration,
+        /// so that the other addresses keep choosing their transport on their own).
+        std::optional<bool> secure;
+        /// Which of the addresses this host resolves to is known to answer. A host can resolve to several
+        /// addresses, and the connection tries them one by one, so an unresponsive address in front of the
+        /// list costs a whole connection timeout. The automatic choice between the plain and the secure
+        /// port learns the answering address and remembers it here, because a reconnect to this address
+        /// does not probe the ports again and would otherwise start from the first address once more.
+        std::optional<Poco::Net::SocketAddress> address;
+        /// Whether `port` and `secure` above were determined by the automatic choice between the plain
+        /// and the secure port rather than specified by the user. Such a choice is only valid for the
+        /// endpoints the host resolved to at the time of the probe, so it and the address above are
+        /// forgotten after a failed connection attempt, and the next attempt probes the ports again.
+        bool transport_auto_detected = false;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};

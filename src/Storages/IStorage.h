@@ -118,6 +118,12 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true for storages that do not store data themselves but read it from other tables,
+    /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
+    /// of the rows read from such a storage carry the name of the table that actually produced
+    /// each row, which is not necessarily the name of this storage.
+    virtual bool readsFromOtherTables() const { return false; }
+
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
@@ -138,6 +144,11 @@ public:
 
     /// Returns true if the storage supports queries with the TTL section.
     virtual bool supportsTTL() const { return false; }
+
+    /// Returns true if the storage supports column statistics. Storages that reject the dedicated
+    /// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` commands must also reject the column-declaration
+    /// spelling `ALTER TABLE ... ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which is gated on this.
+    virtual bool supportsStatistics() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
@@ -183,6 +194,10 @@ public:
     virtual bool supportsSubcolumns() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
+    /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
+    /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
+    /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
+    virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -247,6 +262,13 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+    }
+
+    void setInMemoryMetadataComment(const String & comment)
+    {
+        auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
+        updated->setComment(comment);
+        metadata.set(std::move(updated));
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
@@ -380,14 +402,6 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual Pipe watch(
-        const Names & /*column_names*/,
-        const SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum & /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/);
-
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -433,6 +447,10 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
+    /// Returns an upper bound on the number of sources created for a read request.
+    /// The default is conservative: a storage may create one source per requested stream.
+    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
+
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.

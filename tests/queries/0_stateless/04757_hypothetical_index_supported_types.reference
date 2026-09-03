@@ -1,0 +1,18 @@
+--- every allowed type is estimated by EXPLAIN WHATIF ---
+minmax: applicable empirical
+set(100): applicable empirical
+bloom_filter(0.01): applicable empirical
+ngrambf_v1(3, 256, 2, 0): applicable empirical
+tokenbf_v1(256, 2, 0): applicable empirical
+sparse_grams(3, 100, 512, 2, 0): applicable empirical
+--- types outside the allowlist are rejected, and the error names what is supported ---
+Supported types: bloom_filter, minmax, ngrambf_v1, set, sparse_grams, tokenbf_v1
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+--- validate still runs before the allowlist check ---
+ILLEGAL_INDEX
+INCORRECT_QUERY
+--- arguments the creator rejects fail at CREATE, not later ---
+BAD_ARGUMENTS
+--- a schema change that invalidates the index degrades to not_applicable ---
+status: not_applicable

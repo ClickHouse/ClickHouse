@@ -2,14 +2,15 @@
 slug: /use-cases/observability/clickstack/sdks
 description: 'SDKs de linguagem para ClickStack - A stack de observabilidade do ClickHouse'
 title: 'SDKs de linguagem'
+sidebarTitle: 'Visão geral'
 doc_type: 'guide'
 keywords: ['SDKs do ClickStack', 'SDKs de linguagem do ClickStack', 'SDKs do OpenTelemetry para ClickStack', 'SDKs de instrumentação de aplicações
 ', 'SDKs de coleta de telemetria']
 ---
 
-Os dados normalmente são enviados ao ClickStack por meio do **Collector do OpenTelemetry (OTel)**, seja diretamente dos SDKs de linguagem ou por um Collector intermediário do OpenTelemetry atuando como agente, por exemplo, coletando métricas e logs da infraestrutura.
+Os dados normalmente são enviados ao ClickStack por meio do **coletor do OpenTelemetry (OTel)**, seja diretamente dos SDKs de linguagem ou por um coletor do OpenTelemetry intermediário atuando como agente, por exemplo, coletando métricas e logs da infraestrutura.
 
-Os SDKs de linguagem são responsáveis por coletar telemetria de dentro da sua aplicação — principalmente **traces** e **logs** — e exportar esses dados para o Collector do OpenTelemetry, por meio do endpoint OTLP, que faz a ingestão no ClickHouse.
+Os SDKs de linguagem são responsáveis por coletar telemetria de dentro da sua aplicação — principalmente **traces** e **logs** — e exportar esses dados para o coletor do OpenTelemetry, por meio do endpoint OTLP, que faz a ingestão no ClickHouse.
 
 Em ambientes baseados em navegador, os SDKs também podem ser responsáveis por coletar **dados de sessão**, incluindo eventos da UI, cliques e navegação, permitindo assim a reprodução das sessões dos usuários.
 

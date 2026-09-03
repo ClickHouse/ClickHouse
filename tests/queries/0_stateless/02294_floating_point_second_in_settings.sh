@@ -9,12 +9,13 @@ set -e -o pipefail
 
 MAX_TIMEOUT_MS=1100
 MAX_TIMEOUT_SEC=$(awk "BEGIN {printf \"%.3f\", ${MAX_TIMEOUT_MS}/1000}") # Use 1.1 because using 0.x truncates to 0 in older releases
+MAX_TIMEOUT_MS_FORMATTED=$(awk "BEGIN {printf \"%.3f\", ${MAX_TIMEOUT_MS}}")
 
 # Function to check the output for maximum execution time in milliseconds
 function check_output() {
   # Extract the maximum time used from the output, including 'ms'
   MAXTIME_USED=$(echo "$1" | grep -Eo "maximum: [0-9]+(\.[0-9]+)? ms" | head -n1 || true)
-  EXPECTED="maximum: ${MAX_TIMEOUT_MS} ms"
+  EXPECTED="maximum: ${MAX_TIMEOUT_MS_FORMATTED} ms"
   if [ "${MAXTIME_USED}" != "${EXPECTED}" ]; then
     echo "'${MAXTIME_USED}' is not equal to '${EXPECTED}'"
     echo "OUTPUT: $1"
