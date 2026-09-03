@@ -27,6 +27,29 @@ SERVER_LOG_FAMILY_GLOB = "clickhouse-server*.log*"
 # OOM would excuse that very failure.
 CURRENT_SERVER_LOG_GLOB = "clickhouse-server*.log"
 
+# Failing rows an out-of-memory run cannot produce, matched case-insensitively against the
+# result name. A failed test case, a server that would not come back up and a non-zero script
+# exit are all ordinary collateral of a server killed mid-run, and the OOM downgrade exists
+# for them. These are findings in their own right - the writers are `stress.py` (hung check),
+# `tests/docker_scripts/stress_tests.lib` (the rest) and the log parser below - so the
+# downgrade must not bury them even though no crash was named.
+NON_OOM_FINDING_MARKERS = (
+    "hung check",
+    "possible deadlock",
+    "logical error",
+    "sanitizer",
+    "lost forever",
+    "no such key",
+)
+
+
+def _names_a_non_oom_finding(results: List[Result]) -> bool:
+    return any(
+        marker in (r.name or "").lower()
+        for r in results
+        for marker in NON_OOM_FINDING_MARKERS
+    )
+
 
 def _log_family(directory: Path, matches) -> List[Path]:
     """Every file of one log family in `directory`, sorted, tolerating a missing directory."""
@@ -549,6 +572,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
+    oom_cannot_explain = _names_a_non_oom_finding(failed_results)
+    if oom_cannot_explain:
+        print("A failing result names a finding an OOM does not explain")
+
     all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
         results=all_results,
@@ -558,8 +585,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     # Running out of memory is allowed in stress tests, so it passes the run - but it does
     # not explain a crash. A kernel OOM kill writes no `Logical error`, no assertion and no
     # sanitizer report, so when the parser named one of those the run found a real bug and
-    # the downgrade must not bury it.
-    if not r.is_ok() and is_oom and not crash_named:
+    # the downgrade must not bury it. Nor when a failing row names one itself: the parser only
+    # runs under `server_died or crash_evidence`, so a hung check or a lost-key error reported
+    # by the suite alone leaves `crash_named` False and would otherwise be rewritten to OK.
+    if not r.is_ok() and is_oom and not (crash_named or oom_cannot_explain):
         r.set_status(Result.Status.OK)
         r.set_info("OOM error (allowed in stress tests)")
 

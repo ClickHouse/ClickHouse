@@ -147,6 +147,18 @@ def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
 BUZZHOUSE_ORACLE_ERROR_CODE = 1018
 BUZZHOUSE_ORACLE_EXIT_CODE = BUZZHOUSE_ORACLE_ERROR_CODE & 0xFF
 
+# BUZZHOUSE (739) truncated the same way: the fuzzer found a disallowed error code, or bailed
+# out on its own.
+BUZZHOUSE_EXCEPTION_ERROR_CODE = 739
+BUZZHOUSE_EXCEPTION_EXIT_CODE = BUZZHOUSE_EXCEPTION_ERROR_CODE & 0xFF
+
+# What the AST fuzzer client passes to `_exit` after its oracle finds a wrong result
+# (programs/client/FuzzLoop.cpp). Not a dedicated code: LOGICAL_ERROR is also 49 and
+# `mainEntryClickHouseClient` returns an exception code verbatim, so the marker block the
+# client writes just before exiting is what tells the two apart.
+AST_FUZZER_ORACLE_EXIT_CODE = 49
+AST_FUZZER_ORACLE_MARKER = "AST FUZZER ORACLE MISMATCH"
+
 # Genuine (non-OOM) failure signals that veto the OOM-is-success downgrade, so a crash on
 # one node isn't hidden by a benign OOM on another. `is_memory_limit_exceeded` is excluded
 # (surviving the memory cap is itself benign), and bare signal numbers are excluded too (the
@@ -421,6 +433,30 @@ def analyze_job_logs(
         else ""
     )
     oracle_finding = not server_died and bool(oracle_error)
+    # Same reasoning for the other two client-side findings, and the same reason the marker
+    # is part of the contract rather than mere evidence: exit 49 is equally LOGICAL_ERROR,
+    # and a BuzzHouse exit 227 is either a disallowed error code or the fuzzer giving up.
+    # Without the marker line neither is a finding, and the generic branch below is right.
+    ast_oracle_error = (
+        Shell.get_output(f"rg --text -A 30 '{AST_FUZZER_ORACLE_MARKER}' {fuzzer_log}")
+        if fuzzer_exit_code == AST_FUZZER_ORACLE_EXIT_CODE
+        and not server_died
+        and not buzzhouse
+        and not server_fuzzer
+        else ""
+    )
+    buzzhouse_error = (
+        Shell.get_output(
+            f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
+        )
+        if fuzzer_exit_code == BUZZHOUSE_EXCEPTION_EXIT_CODE and not server_died
+        else ""
+    )
+    # A finding the client reported and left proof of in its log. A sanitizer OOM elsewhere in
+    # the run explains none of them, so all three skip the OOM downgrade below - not only
+    # `oracle_finding`, which would otherwise let an OOM rewrite an already-classified
+    # wrong-result or disallowed-error finding to OK.
+    client_finding = oracle_finding or bool(ast_oracle_error) or bool(buzzhouse_error)
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
@@ -463,32 +499,20 @@ def analyze_job_logs(
         # system tables. `oracle_error` is the matched log line, kept verbatim.
         status = Result.Status.FAIL
         info.append(f"FAIL: {oracle_error}")
-    elif fuzzer_exit_code in (227,):
+    elif fuzzer_exit_code == BUZZHOUSE_EXCEPTION_EXIT_CODE:
         # BuzzHouse exception: an unwanted exception was found, or the fuzzer
         # itself failed. Oracle failures have their own exit code above.
         status = Result.Status.ERROR
-        error_info = (
-            Shell.get_output(
-                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
-            )
-            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
+        info.append(
+            f"ERROR: {buzzhouse_error or 'BuzzHouse fuzzer exception not found, fuzzer issue?'}"
         )
-        info.append(f"ERROR: {error_info}")
-    elif fuzzer_exit_code == 49 and not buzzhouse and not server_fuzzer:
+    elif ast_oracle_error:
         # AST fuzzer client called _exit(49) after the server-side oracle
         # reported a wrong-result mismatch. The fuzzer log contains a clearly
         # delimited "AST FUZZER ORACLE MISMATCH (fatal)" block with the
         # reproducer query and the server-side oracle output.
         status = Result.Status.ERROR
-        error_info = Shell.get_output(
-            f"rg --text -A 30 'AST FUZZER ORACLE MISMATCH' {fuzzer_log}"
-        )
-        if not error_info:
-            error_info = (
-                "AST fuzzer oracle mismatch detected, but the marker block was "
-                "not found in the fuzzer log (see attached fuzzer.log)."
-            )
-        info.append(f"ERROR: AST fuzzer oracle mismatch\n{error_info}")
+        info.append(f"ERROR: AST fuzzer oracle mismatch\n{ast_oracle_error}")
     else:
         status = Result.Status.ERROR
         # The server was alive, but the fuzzer returned some error. This might
@@ -508,7 +532,7 @@ def analyze_job_logs(
     # (the fatal log of a node below; the OOM classifier slices it likewise).
     primary_server_logs = server_logs[: len(stderr_logs)]
 
-    if is_failed and not oracle_finding:
+    if is_failed and not client_finding:
         if is_sanitized:
             is_oom_success, oom_messages = _classify_sanitizer_oom(
                 server_logs,
@@ -545,7 +569,7 @@ def analyze_job_logs(
                 status=Result.Status.FAIL,
             )
         )
-    if is_failed and status != Result.Status.ERROR and not oracle_finding:
+    if is_failed and status != Result.Status.ERROR and not client_finding:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
             server_logs=server_logs,

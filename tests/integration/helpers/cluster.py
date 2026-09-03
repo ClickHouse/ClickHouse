@@ -6039,16 +6039,19 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_original_version(
-        self,
-        stop_start_wait_sec=300,
-        callback_onstop=None,
-        signal=15,
-        clear_data_dir=False,
-    ):
-        begin_time = time.time()
-        if not self.stay_alive:
-            raise Exception("Cannot restart not stay alive container")
+    def _stop_for_binary_swap(self, signal, stop_start_wait_sec):
+        """Stop the server so a version-swap helper can replace its binary.
+
+        Not `stop_clickhouse`: these helpers stop with a caller-chosen signal and start the
+        replacement themselves. The bookkeeping a stop owes is the same though - the exit
+        code of the exec that just ended, and whether the stop had to escalate to SIGKILL -
+        so a server that hung on shutdown is not reported as a clean restart.
+        """
+        # Both describe the stop that is about to happen. Cleared here rather than at the
+        # start below, so what this one learns survives into the replacement server and a
+        # second swap cannot leave the first one's verdict standing.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
         self.exec_in_container(
             ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
         )
@@ -6063,12 +6066,48 @@ class ClickHouseInstance:
 
         # force kill if server hangs
         if self.get_process_pid("clickhouse server"):
+            logging.warning(
+                f"Force kill clickhouse on {self.name}: it did not stop on signal {signal}"
+            )
+            self.clickhouse_forced_stop = True
             # server can die before kill, so don't throw exception, it's expected
             self.exec_in_container(
                 ["bash", "-c", "pkill -{} clickhouse".format(9)],
                 nothrow=True,
                 user="root",
             )
+        self._capture_clickhouse_exit()
+
+    def _start_after_binary_swap(self):
+        """Start the replacement server of a version-swap helper.
+
+        The exec id has to go and stay gone: this start daemonizes, so the exec is a launcher
+        that exits 0 the moment it has forked, and keeping its id would let
+        `_capture_clickhouse_exit` report a clean exit for a server that went on to crash.
+        What `_stop_for_binary_swap` recorded about the server being replaced is kept, so a
+        caller can still see it had to be force killed and with what code it went - a plain
+        `start_clickhouse` clears both, but there the caller had a window between the two
+        calls to read them, and here there is none.
+        """
+        self.clickhouse_exec_id = ""
+        self.exec_in_container(
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+        )
+
+    def restart_with_original_version(
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
+    ):
+        begin_time = time.time()
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self._stop_for_binary_swap(signal, stop_start_wait_sec)
 
         if callback_onstop:
             callback_onstop(self)
@@ -6098,19 +6137,7 @@ class ClickHouseInstance:
             ],
             user="root",
         )
-        # Make sure no ClickHouse exec id is set before starting, and leave it unset: this
-        # start daemonizes, so the exec is a launcher that exits 0 the moment it has forked.
-        # Keeping its id would let `_capture_clickhouse_exit` report a clean exit for a
-        # server that went on to crash. Without one the exit is honestly unaccounted for.
-        self.clickhouse_exec_id = ""
-        self.clickhouse_last_exit_code = None
-        self.clickhouse_forced_stop = False
-        self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
-            user=str(os.getuid()),
-            detach=True,
-            use_cli=False,
-        )
+        self._start_after_binary_swap()
 
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
@@ -6133,26 +6160,7 @@ class ClickHouseInstance:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
-        self.exec_in_container(
-            ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
-        )
-        retries = int(stop_start_wait_sec / 0.5)
-        local_counter = 0
-        # wait stop
-        while local_counter < retries:
-            if not self.get_process_pid("clickhouse server"):
-                break
-            time.sleep(0.5)
-            local_counter += 1
-
-        # force kill if server hangs
-        if self.get_process_pid("clickhouse server"):
-            # server can die before kill, so don't throw exception, it's expected
-            self.exec_in_container(
-                ["bash", "-c", "pkill -{} clickhouse".format(9)],
-                nothrow=True,
-                user="root",
-            )
+        self._stop_for_binary_swap(signal, stop_start_wait_sec)
 
         if callback_onstop:
             callback_onstop(self)
@@ -6192,19 +6200,7 @@ class ClickHouseInstance:
                     "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
-        # Make sure no ClickHouse exec id is set before starting, and leave it unset: this
-        # start daemonizes, so the exec is a launcher that exits 0 the moment it has forked.
-        # Keeping its id would let `_capture_clickhouse_exit` report a clean exit for a
-        # server that went on to crash. Without one the exit is honestly unaccounted for.
-        self.clickhouse_exec_id = ""
-        self.clickhouse_last_exit_code = None
-        self.clickhouse_forced_stop = False
-        self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
-            user=str(os.getuid()),
-            detach=True,
-            use_cli=False,
-        )
+        self._start_after_binary_swap()
 
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()

@@ -415,6 +415,37 @@ def grep_server_logs(server, substring: str) -> list[str]:
     return lines
 
 
+# Attempts to stop Distributed sends before a shutdown, as the stress suite does.
+DISTRIBUTED_SENDS_STOP_ATTEMPTS = 30
+DISTRIBUTED_SENDS_STOP_TIMEOUT = 10
+
+
+def stop_distributed_sends(server) -> None:
+    """Ask a server to stop Distributed sends before shutting it down.
+
+    The same workaround the stress suite applies in `stop_server` (tests/docker_scripts/
+    stress_tests.lib): Distributed tables are shut down sequentially, so a send already in
+    flight can hold the whole shutdown past its window and get the server force killed.
+    Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
+
+    Defined ahead of the run loop because both shutdown paths need it: a scheduled restart
+    hangs on an in-flight send exactly as the final teardown does, and there it would be
+    reported as a server that had to be force killed.
+    """
+    last_error = None
+    for _ in range(DISTRIBUTED_SENDS_STOP_ATTEMPTS):
+        try:
+            server.query(
+                "SYSTEM STOP DISTRIBUTED SENDS", timeout=DISTRIBUTED_SENDS_STOP_TIMEOUT
+            )
+            return
+        except Exception as ex:
+            last_error = ex
+            if server.get_process_pid("clickhouse") is None:
+                return  # already gone, nothing left to ask
+    logging.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
+
+
 # Set seed first
 seed = args.seed
 if seed == 0:
@@ -720,6 +751,9 @@ while all_running and (not reached_limit):
         )
 
         try:
+            if not kill_server:
+                # Only for a graceful stop: a SIGKILL never waits on a send anyway.
+                stop_distributed_sends(next_pick)
             stopped = next_pick.stop_clickhouse(
                 stop_wait_sec=SERVER_STOP_WAIT_SECONDS, kill=kill_server
             )
@@ -822,33 +856,6 @@ while all_running and (not reached_limit):
 # Frames of the shutdown thread copied into dolor.log. Enough to name the stage of shutdown
 # that did not finish; the whole dump of every thread stays in the gdb.log artifact.
 FORCED_STOP_BACKTRACE_FRAMES = 60
-
-
-# Attempts to stop Distributed sends before a shutdown, as the stress suite does.
-DISTRIBUTED_SENDS_STOP_ATTEMPTS = 30
-DISTRIBUTED_SENDS_STOP_TIMEOUT = 10
-
-
-def stop_distributed_sends(server) -> None:
-    """Ask a server to stop Distributed sends before shutting it down.
-
-    The same workaround the stress suite applies in `stop_server` (tests/docker_scripts/
-    stress_tests.lib): Distributed tables are shut down sequentially, so a send already in
-    flight can hold the whole shutdown past its window and get the server force killed.
-    Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
-    """
-    last_error = None
-    for _ in range(DISTRIBUTED_SENDS_STOP_ATTEMPTS):
-        try:
-            server.query(
-                "SYSTEM STOP DISTRIBUTED SENDS", timeout=DISTRIBUTED_SENDS_STOP_TIMEOUT
-            )
-            return
-        except Exception as ex:
-            last_error = ex
-            if server.get_process_pid("clickhouse") is None:
-                return  # already gone, nothing left to ask
-    logging.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
 
 
 def _compact_frame(line: str, width: int = 200) -> str:
