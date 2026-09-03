@@ -1318,6 +1318,18 @@ bool walkOrdinaryFunctions(const QueryTreeNodePtr & node, KeepFunction && keep_f
         {
             if (function->isWindowFunction() || function->isAggregateFunction())
                 return false;
+            /// `IN local_table` is node-local: remotes may not have the table. Subquery `IN`
+            /// is already rejected via `QUERY` / `UNION` above. Tuple / literal `IN` stays.
+            if (functionIsInOrGlobalInOperator(function->getFunctionName()))
+            {
+                const auto & args = function->getArguments().getNodes();
+                if (args.size() == 2)
+                {
+                    const auto rhs_type = args[1]->getNodeType();
+                    if (rhs_type == QueryTreeNodeType::TABLE || rhs_type == QueryTreeNodeType::TABLE_FUNCTION)
+                        return false;
+                }
+            }
             if (function->isOrdinaryFunction())
             {
                 auto function_base = function->getFunction();

@@ -251,7 +251,9 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
   *
   * The wrap `WHERE` is sent to remote cluster nodes. Node-local functions such as `hostName`,
   * `dictGet`, `joinGet`, `FQDN`, and `queryID` must stay on the initiator: remotes can miss the
-  * dictionary, see different data, or return a different server-local value.
+  * dictionary, see different data, or return a different server-local value. `IN` / `GLOBAL IN`
+  * over a `TABLE` or `TABLE_FUNCTION` set is the same class: remotes can miss the table or see
+  * different rows. Literal and tuple `IN` stay copyable.
   */
 void removeExpressionsThatAreUnsafeToDuplicate(
     QueryTreeNodePtr & expression,
