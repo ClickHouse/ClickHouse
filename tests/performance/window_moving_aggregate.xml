@@ -20,7 +20,10 @@
     <query>SELECT sumIf(number, number % 2 = 0) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(500000) FORMAT Null</query>
     <query>SELECT uniqExact(toString(number)) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(30000) FORMAT Null</query>
     <query>SELECT max(toString(number)) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(300000) FORMAT Null</query>
-    <query>SELECT sumMap([number % 10], [number]) OVER (ROWS BETWEEN 5000 PRECEDING AND CURRENT ROW) FROM numbers(300000) FORMAT Null</query>
+    <!-- Kept small: rebuilding a sumMap state by re-adding the whole frame costs the
+         reference server ~40 s at 300000 rows over a 5000 row frame, over the 15 s
+         per-query limit of the comparison harness. -->
+    <query>SELECT sumMap([number % 10], [number]) OVER (ROWS BETWEEN 2500 PRECEDING AND CURRENT ROW) FROM numbers(20000) FORMAT Null</query>
 
     <!-- Frames below the crossover stay on the plain recompute path, and so do
          functions where re-adding beats merging (numeric uniq states, constant-time
