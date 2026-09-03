@@ -35,11 +35,21 @@ ${CLICKHOUSE_CLIENT} --user "$granted_user" --query "SYSTEM DROP QUERY PLAN CACH
 ${CLICKHOUSE_CLIENT} --user "$granular_user" --query "SYSTEM DROP QUERY PLAN CACHE" && echo "ok"
 ${CLICKHOUSE_CLIENT} --user "$granular_user" --query "SYSTEM CLEAR QUERY PLAN CACHE" && echo "ok"
 
-# Negative: no privilege at all, and a different cache privilege.
-${CLICKHOUSE_CLIENT} --user "$no_grant_user" --query "SYSTEM DROP QUERY PLAN CACHE" 2>&1 | grep -c -F "ACCESS_DENIED"
-${CLICKHOUSE_CLIENT} --user "$other_cache_user" --query "SYSTEM DROP QUERY PLAN CACHE" 2>&1 | grep -c -F "ACCESS_DENIED"
+# Negative: no privilege at all, and a different cache privilege. The denial must also name the
+# privilege that is actually required.
+denied() {
+    local out
+    out=$(${CLICKHOUSE_CLIENT} --user "$1" --query "SYSTEM DROP QUERY PLAN CACHE" 2>&1)
+    if ! grep -qF "ACCESS_DENIED" <<< "$out"; then
+        echo "FAIL: expected ACCESS_DENIED: $out"
+    elif ! grep -qF "SYSTEM DROP QUERY PLAN CACHE ON *.*" <<< "$out"; then
+        echo "FAIL: the denial does not name the required privilege: $out"
+    else
+        echo "denied"
+    fi
+}
 
-# The denial names the privilege that is actually required.
-${CLICKHOUSE_CLIENT} --user "$no_grant_user" --query "SYSTEM DROP QUERY PLAN CACHE" 2>&1 | grep -c -F "SYSTEM DROP QUERY PLAN CACHE ON *.*"
+denied "$no_grant_user"
+denied "$other_cache_user"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $granted_user, $granular_user, $other_cache_user, $no_grant_user"
