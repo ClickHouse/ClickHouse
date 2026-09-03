@@ -257,7 +257,7 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::encodeDictionaryCol
     if (!state.emitted || delta_size > 0)
     {
         ColumnPtr delta = state.values->cut(delta_start, delta_size);
-        auto dict_batch = encoder->encode({delta}, {value_type}, delta_size);
+        auto dict_batch = encoder->encode({delta}, {value_type}, 0, delta_size);
         auto written = writeBatchMessage(dict_batch, dict.id, /*is_delta=*/state.emitted);
         if (!stream)
             dictionary_blocks.push_back({written.offset, written.metadata_length, written.body_length});
@@ -353,21 +353,10 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     return {column, type};
 }
 
-void ArrowIPCBlockOutputFormat::writeRecordBatch(const Columns & columns, size_t num_rows)
+void ArrowIPCBlockOutputFormat::writeRecordBatch(
+    const Columns & columns, const DataTypes & types, size_t begin, size_t end)
 {
-    /// Dictionary-encoded columns are replaced in the record batch by their integer index column; their
-    /// values go into separate DictionaryBatch messages (extended across batches via deltas).
-    Columns record_columns(columns.begin(), columns.end());
-    DataTypes record_types = column_types;
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        auto [substituted_column, substituted_type] = substituteDictionaries(columns[i], column_types[i], column_dict_plans[i]);
-        record_columns[i] = std::move(substituted_column);
-        record_types[i] = std::move(substituted_type);
-    }
-
-    auto batch = encoder->encode(record_columns, record_types, num_rows);
+    auto batch = encoder->encode(columns, types, begin, end);
     auto written = writeBatchMessage(batch);
     if (!stream)
         record_blocks.push_back({written.offset, written.metadata_length, written.body_length});
@@ -380,8 +369,21 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
     const size_t num_rows = chunk.getNumRows();
     const Columns & columns = chunk.getColumns();
 
+    /// Dictionary-encoded columns are replaced in the record batch by their integer index column; their
+    /// values go into separate DictionaryBatch messages, written here so they precede every record batch
+    /// of this chunk (extended across chunks via deltas).
+    Columns record_columns(columns.begin(), columns.end());
+    DataTypes record_types = column_types;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto [substituted_column, substituted_type] = substituteDictionaries(columns[i], column_types[i], column_dict_plans[i]);
+        record_columns[i] = std::move(substituted_column);
+        record_types[i] = std::move(substituted_type);
+    }
+
     /// One record batch per chunk, unless the chunk exceeds what a record batch can address; then it is
-    /// split into several, each written by `writeRecordBatch` with the dictionary delta for its own rows.
+    /// written as several batches over successive row ranges. The limit is measured on the chunk's own
+    /// columns, since a dictionary-encoded one is already reduced to fixed-width indexes by now.
     size_t offset = 0;
     do
     {
@@ -401,17 +403,7 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
         /// A row that does not fit on its own cannot be represented at all; let the encoder reject it.
         rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
 
-        if (rows == num_rows)
-        {
-            writeRecordBatch(columns, num_rows);
-        }
-        else
-        {
-            Columns batch_columns(columns.size());
-            for (size_t i = 0; i < columns.size(); ++i)
-                batch_columns[i] = columns[i]->cut(offset, rows);
-            writeRecordBatch(batch_columns, rows);
-        }
+        writeRecordBatch(record_columns, record_types, offset, offset + rows);
         offset += rows;
     } while (offset < num_rows);
 }

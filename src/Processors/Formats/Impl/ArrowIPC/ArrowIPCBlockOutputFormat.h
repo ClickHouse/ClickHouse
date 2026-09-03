@@ -46,9 +46,8 @@ private:
     void resetFormatterImpl() override;
 
     void writeSchemaIfNeeded();
-    /// Writes `num_rows` rows of `columns` as a single record batch (plus any dictionary batch its
-    /// dictionary-encoded columns need).
-    void writeRecordBatch(const Columns & columns, size_t num_rows);
+    /// Writes rows [begin, end) of the already dictionary-substituted `columns` as one record batch.
+    void writeRecordBatch(const Columns & columns, const DataTypes & types, size_t begin, size_t end);
     /// Writes one encapsulated message for an encoded batch (a record batch, or a dictionary batch
     /// when `dictionary_id` is set), returning its location for recording an Arrow file `Block`.
     ArrowIPC::MessageWriter::WrittenMessage writeBatchMessage(
