@@ -80,7 +80,9 @@ SELECT count()
 FROM numbers(1000)
 WHERE parseISO8601Duration(concat('PT0.', toString(number), 'S')) != toFloat64(concat('0.', toString(number)));
 
--- The integer part is read the same way, so it stays exact past 2^53.
+-- The integer part goes through the same reader, so past 2^53 it lands on whichever `Float64` the
+-- decimal itself parses to. Not exact - `toFloat64('9007199254740993')` is already 9007199254740992 -
+-- but the same rounding, which is the contract here.
 SELECT parseISO8601Duration('PT9007199254740993S') = toFloat64('9007199254740993');
 
 -- Values that do not fit into Float64 are rejected rather than returned as infinity.
