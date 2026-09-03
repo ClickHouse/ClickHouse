@@ -18,9 +18,16 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
+option (ENABLE_VORTEX "Enable the Vortex file format" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT)
-    message(STATUS "prql, skim, and polyglot are disabled")
+# Instrumented for MSan this library grows enough that linking `unit_tests_dbms` runs out of
+# `R_X86_64_PC32` relocations - the binary no longer fits the 2 GiB the small code model allows.
+if (SANITIZE STREQUAL "memory")
+    set (ENABLE_VORTEX OFF)
+endif()
+
+if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_VORTEX)
+    message(STATUS "prql, skim, polyglot, and vortex are disabled")
     return()
 endif()
 
@@ -94,6 +101,12 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+endif()
+
+if (ENABLE_VORTEX AND TARGET ch_contrib::arrow)
+    clickhouse_config_crate_flags(_ch_rust_vortex)
+    target_include_directories(_ch_rust_vortex INTERFACE vortex/include)
+    add_library(ch_rust::vortex ALIAS _ch_rust_vortex)
 endif()
 
 add_subdirectory (wasmtime)

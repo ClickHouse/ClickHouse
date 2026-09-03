@@ -1,0 +1,24 @@
+[package]
+edition = "2021"
+name = "_ch_rust_vortex"
+version = "0.1.0"
+
+[dependencies]
+# Has to stay whatever version `vortex` itself pulls in, or Arrow data would need converting on the
+# way between the two crates.
+arrow-array = "58.4.0"
+arrow-schema = "58.4.0"
+# The building blocks of the host-driven runtime (see `HostRuntime` in `src/lib.rs`): the tasks the
+# host runs on its own threads, the queues they wait in, and the parking of a thread that drives the
+# runtime itself. All of them are dependencies of `vortex` already.
+async-task = "4.7"
+concurrent-queue = "2"
+futures = "0.3"
+parking = "2"
+# The same MPMC channel `vortex-io` uses; the scan hands its chunks to any number of consumer
+# threads through it.
+kanal = "0.1"
+vortex = { version = "0.84.0", default-features = false, features = ["files", "zstd"] }
+
+[lib]
+crate-type = ["staticlib"]

@@ -82,9 +82,19 @@ const char * __tsan_default_suppressions()
     /// matches any frame, so it covers the whole callee subtree. That subtree is only
     /// `bytesSize`, a read-only size computation, and a use-after-free blinded there still
     /// surfaces on the next access to the same request in `dispatchThread`.
+    ///
+    /// The `oneshot` entries cover the handover of a segment read in the Rust `vortex` library:
+    /// the sender writes the payload and publishes it with `swap(MESSAGE, AcqRel)`, and the
+    /// receiver loads the state relaxed and reads the payload behind a standalone `fence(Acquire)`,
+    /// which is a valid release/acquire pair. `rustc` does not tell ThreadSanitizer about
+    /// `core::sync::atomic::fence` (unlike clang, which models `std::atomic_thread_fence`), so
+    /// every such handover is reported as a race on the payload. Both the sending and the
+    /// receiving side are named, because either can be the stack that a report is matched on.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
-           "race:^DB::getRequestBytesCost\n";
+           "race:^DB::getRequestBytesCost\n"
+           "race:oneshot::channel::Channel\n"
+           "race:oneshot::receiver::\n";
 }
 #endif
 

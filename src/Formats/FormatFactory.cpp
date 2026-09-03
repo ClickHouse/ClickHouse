@@ -370,6 +370,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
+    format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
+    format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -1219,6 +1221,8 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
 {
     auto format_name = boost::to_lower_copy(name);
     if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
+        return false;
+    if (format_name == "vortex" && context->getSettingsRef()[Setting::input_format_vortex_preserve_order])
         return false;
 
     return true;

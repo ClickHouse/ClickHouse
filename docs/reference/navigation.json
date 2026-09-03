@@ -959,6 +959,7 @@
         },
         "reference/formats/Values",
         "reference/formats/Vertical",
+        "reference/formats/Vortex",
         "reference/formats/XML"
       ]
     },

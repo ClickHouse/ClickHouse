@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-flaky-check
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
 # no-random-settings: this test is already slow, and randomized settings make it slower
+# no-flaky-check: one run already takes 320-600s on debug, so the repeated runs of the flaky check cannot fit in the per-test timeout
 
 set -e
 
@@ -10,9 +11,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# `Vortex` is excluded for two reasons: it is not available in every build (it is disabled under
+# MSan), so its presence would make the output differ between builds, and its writer samples many
+# encodings per column, which is slow enough to push this serial loop over the per-test timeout.
+# It is covered separately by `04892_vortex_insert_sparse`.
 formats=$($CLICKHOUSE_CLIENT --query "
     SELECT name FROM system.formats
-    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON')
+    WHERE is_input AND is_output AND name NOT IN ('Template', 'Npy', 'RawBLOB', 'ProtobufList', 'ProtobufSingle', 'Protobuf', 'LineAsString', 'GeoJSON', 'Vortex')
     ORDER BY name FORMAT TSV
 ")
 

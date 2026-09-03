@@ -65,6 +65,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"input_format_vortex_filter_push_down", true, true, "New setting to push translatable parts of WHERE conditions on top-level integer, floating-point, and string/binary columns down into the Vortex format scan, which may reduce the rows decoded; ClickHouse reapplies the full filter after the scan, and whole segments are not yet pruned by statistics."},
+            {"input_format_vortex_preserve_order", false, false, "New setting to return the rows of a Vortex file in file order; by default the file is decoded in parallel and the row order is not guaranteed."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",

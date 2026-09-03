@@ -5,7 +5,7 @@
 namespace DB
 {
 
-#define THREAD_NAME_VALUES(M)\
+#define THREAD_NAME_VALUES(M) \
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
@@ -173,6 +173,8 @@ namespace DB
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \
+    M(VORTEX_DECODER, "VortexDecoder") \
+    M(VORTEX_READER, "VortexReader") \
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
@@ -182,7 +184,7 @@ namespace DB
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
-    M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
+    M(DISTRIBUTED_CACHE_DROP, "DropDistCache")
 
 
 enum class ThreadName : uint8_t
