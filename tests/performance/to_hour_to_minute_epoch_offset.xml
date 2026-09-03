@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- A zone whose UTC offset never changes after 1970-01-01 has a constant hour and
+         minute component of that offset, so toHour and toMinute are pure arithmetic there.
+         Asia/Istanbul observed DST during that period and Asia/Kolkata is a fixed +05:30,
+         which is why the two zones behave differently for the same accessor. -->
+
+    <query>SELECT sum(toHour(t, 'UTC')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+    <query>SELECT sum(toMinute(t, 'Asia/Kolkata')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+
+    <query>SELECT sum(toHour(t, 'Asia/Istanbul')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+    <query>SELECT sum(toMinute(t, 'UTC')) FROM (SELECT toDateTime(1600000000 + number % 50000000, 'UTC') AS t FROM numbers(50000000))</query>
+</test>
