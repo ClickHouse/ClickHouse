@@ -32,8 +32,12 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 -q "
     CREATE TABLE t0_05060 (id UInt64, v Int64) ENGINE = IcebergLocal('${TEST_DIR}/t0/');
     INSERT INTO t0_05060 VALUES (1, 10), (2, 20);
 "
+# t1's INSERT deliberately runs with the setting off, so B-F measure the form the table carries
+# from its creation rather than one a concurrent setting could impose on the write.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --write_full_path_in_iceberg_metadata 1 -q "
     CREATE TABLE t1_05060 (id UInt64, v Int64) ENGINE = IcebergLocal('${TEST_DIR}/t1/');
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 -q "
     INSERT INTO t1_05060 VALUES (1, 10), (2, 20);
 "
 
@@ -49,7 +53,10 @@ loc = json.load(open('${TEST_DIR}/t0/metadata/v2.metadata.json'))['location']
 print('A default   ' + ('no-scheme' if '://' not in loc else 'UNEXPECTED ' + loc))
 m = json.load(open('${TEST_DIR}/t1/metadata/v2.metadata.json'))
 loc = m['location']
-print('B location  ' + ('file:///+root' if loc == root else 'UNEXPECTED ' + loc))
+# v1 is what CREATE stamped, v2 what the setting-off INSERT carried forward: both, so the arm
+# covers the create-time choice and its inheritance rather than only the state after both.
+created = json.load(open('${TEST_DIR}/t1/metadata/v1.metadata.json'))['location']
+print('B location  ' + ('file:///+root' if loc == root and created == root else 'UNEXPECTED ' + created + ' ' + loc))
 # An empty authority contributes no path segment, so an absolute path keeps exactly one root slash.
 print('C authority ' + ('one-slash' if loc.startswith('file:///') and not loc.startswith('file:////') else 'UNEXPECTED ' + loc))
 ml = m['snapshots'][-1]['manifest-list']
