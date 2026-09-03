@@ -326,9 +326,35 @@
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_path>/shm_udf_accounting</shared_memory_path>
         <shared_memory_size>786432</shared_memory_size>
-        <command>shm_udf.py</command>
+        <command>shm_udf.py --report-pid</command>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_shm_exact_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>6</shared_memory_size>
+        <command>shm_udf_grow.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_grow_trim_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_path>/shm_udf_trim</shared_memory_path>
+        <shared_memory_size>4096</shared_memory_size>
+        <shared_memory_max_size>1048576</shared_memory_max_size>
+        <command>shm_udf_grow.py</command>
+    </function>
     <function>
         <type>executable_pool</type>
         <name>test_function_shm_pool_discard_over_python</name>
@@ -388,6 +414,16 @@
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>1048576</shared_memory_size>
         <shared_memory_path>dev/shm</shared_memory_path>
+        <command>shm_udf.py</command>
+    </function>
+
+    <function>
+        <type>executable</type><name>test_function_shm_unsupported_path</name>
+        <return_type>String</return_type><argument><type>UInt64</type></argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>1048576</shared_memory_size>
+        <shared_memory_path>/proc</shared_memory_path>
         <command>shm_udf.py</command>
     </function>
 </functions>

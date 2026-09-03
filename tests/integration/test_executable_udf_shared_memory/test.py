@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import pytest
 
@@ -17,6 +18,7 @@ node = cluster.add_instance(
         "/shm_udf_tiny:size=1M",
         "/shm_udf_accounting:size=1M",
         "/shm_udf_discard:size=1M",
+        "/shm_udf_trim:size=4M",
     ],
 )
 
@@ -56,6 +58,12 @@ def tiny_shm_file_count():
 
 def discard_shm_file_count():
     return shm_file_count("/shm_udf_discard")
+
+
+def shm_file_sizes(path):
+    find = f"find {path} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%s\\n'"
+    listing = node.exec_in_container(["bash", "-c", find]).split()
+    return sorted(int(size) for size in listing)
 
 
 config = """<clickhouse>
@@ -170,13 +178,23 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
     assert "Memory limit" in str(exc.value)
     assert shm_file_count("/shm_udf_accounting") == 0
 
-    assert (
-        node.query(
-            "SELECT test_function_shm_pool_accounting_python(1) "
-            "SETTINGS max_memory_usage=10485760, max_untracked_memory=0"
-        )
-        == "Key 1\n"
+    successful_query = (
+        "SELECT test_function_shm_pool_accounting_python(1) "
+        "SETTINGS max_memory_usage=10485760, max_untracked_memory=0"
     )
+    worker_pid = node.query(successful_query).strip()
+    assert worker_pid.isdigit()
+
+    # The region now exists, so this borrow fails while charging it in the source constructor.
+    # No request has reached the worker and the same process must remain reusable.
+    with pytest.raises(Exception) as exc:
+        node.query(
+            "SELECT test_function_shm_pool_accounting_python(1) FORMAT Null "
+            "SETTINGS max_memory_usage=524288, max_untracked_memory=0"
+        )
+
+    assert "Memory limit" in str(exc.value)
+    assert node.query(successful_query).strip() == worker_pid
 
 
 def test_shared_memory_udf_pool_short_result_does_not_hang(started_cluster):
@@ -248,6 +266,19 @@ def test_shared_memory_udf_grows(started_cluster):
     )
 
 
+def test_shared_memory_udf_input_fills_the_region_exactly(started_cluster):
+    skip_test_msan(node)
+
+    # `numbers(3)` serializes to exactly the 6 bytes of the region, which may not grow
+    # (`shared_memory_max_size` defaults to `shared_memory_size`). Filling the region to its very
+    # last byte must not be mistaken for needing one byte more. shm_udf_grow.py echoes the input
+    # back at offset 0, so the result fits exactly as well.
+    assert (
+        node.query("SELECT test_function_shm_exact_python(number) FROM numbers(3)")
+        == "0\n1\n2\n"
+    )
+
+
 def test_shared_memory_udf_grows_with_room_for_the_result(started_cluster):
     skip_test_msan(node)
 
@@ -266,13 +297,34 @@ def test_shared_memory_udf_grows_with_room_for_the_result(started_cluster):
 def test_shared_memory_udf_grows_pool(started_cluster):
     skip_test_msan(node)
 
-    # Same, but through the pool: the grown region is reused across borrows.
+    # Same, but through the pool: every borrow of the reused worker grows the region again, because
+    # a borrow gives back the space it grew (see test_shared_memory_udf_pool_trims_grown_region).
     expected = "".join(f"{i}\n" for i in range(200))
     for _ in range(3):
         assert (
             node.query("SELECT test_function_shm_grow_pool_python(number) FROM numbers(200)")
             == expected
         )
+
+
+def test_shared_memory_udf_pool_trims_grown_region(started_cluster):
+    skip_test_msan(node)
+
+    # A pooled region that one chunk had to grow must not stay that large while the worker waits in
+    # the pool: nothing would ever shrink it again, and its memory is charged server-wide, where no
+    # query is blamed for it. The region file is therefore back at the configured
+    # shared_memory_size (4096) once the query is over, and the next borrow grows it again.
+    assert shm_file_sizes("/shm_udf_trim") == []
+
+    expected = "".join(f"{i}\n" for i in range(2000))
+    for _ in range(3):
+        assert (
+            node.query(
+                "SELECT test_function_shm_grow_trim_pool_python(number) FROM numbers(2000)"
+            )
+            == expected
+        )
+        assert shm_file_sizes("/shm_udf_trim") == [4096]
 
 
 def test_shared_memory_udf_pipeline(started_cluster):
@@ -403,6 +455,7 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         "test_function_shm_bad_max_lt_size",         # shared_memory_max_size < shared_memory_size
         "test_function_shm_bad_empty_path",          # empty shared_memory_path
         "test_function_shm_bad_relative_path",       # relative shared_memory_path
+        "test_function_shm_unsupported_path",        # filesystem without O_TMPFILE support
     ]:
         with pytest.raises(Exception) as exc:
             node.query(f"SELECT {name}(1) FORMAT Null")
@@ -428,6 +481,25 @@ def test_shared_memory_udf_initial_region_reserves_backing_storage(started_clust
         node.query("SELECT test_function_shm_initial_enospc_python(1) FORMAT Null")
 
     assert "Cannot reserve backing storage" in str(exc.value)
+    assert "No space left on device" in str(exc.value)
+
+
+def test_shared_memory_udf_failed_constructor_does_not_wait_for_the_command(started_cluster):
+    skip_test_msan(node)
+
+    # The same failure, timed: the region cannot be created, so the source fails before its stdin
+    # write buffer exists. The command is already running and blocked reading its stdin, so unless
+    # that descriptor is closed anyway, the query only ends once command_termination_timeout
+    # (10 seconds by default) expires and the command is signalled.
+    started_at = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_initial_enospc_python(1) FORMAT Null")
+    elapsed = time.monotonic() - started_at
+
+    assert "Cannot reserve backing storage" in str(exc.value)
+    # Well below the 10 seconds the bug cost, and well above what a failing query needs on a loaded
+    # CI machine, so the assertion catches the regression without being timing-sensitive.
+    assert elapsed < 7
 
 
 def test_shared_memory_udf_grow_reserves_backing_storage(started_cluster):

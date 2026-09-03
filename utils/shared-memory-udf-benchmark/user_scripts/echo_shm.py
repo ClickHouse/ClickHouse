@@ -5,7 +5,7 @@
 # writes the serialized input into the region and sends {version, path, offset, size}; this process
 # maps the file, echoes the input back at offset 0 (over the already-consumed input) and replies
 # with {status, offset, size}. The echo output is exactly as large as the input, so it always fits.
-# See docs/en/sql-reference/functions/udf.md ("Shared memory mode") for the protocol.
+# See docs/reference/functions/regular-functions/udf.mdx ("Shared memory mode") for the protocol.
 
 import mmap
 import os

@@ -6,6 +6,7 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 
 #include <gtest/gtest.h>
 
@@ -179,6 +180,33 @@ TEST(DoubleBufferedProducer, StopWakesBlockedConsumer)
     ASSERT_EQ(consumer.wait_for(std::chrono::seconds(5)), std::future_status::ready)
         << "next() did not return after stop() — the blocked consumer deadlocked";
     EXPECT_FALSE(consumer.get().has_value());
+}
+
+/// `stop` cannot interrupt a callback that has already started - it only ends the loop between
+/// callbacks - so a callback that would otherwise keep producing polls isStopRequested() and gives
+/// up. Without that flag being visible to it, stop() here would never return.
+TEST(DoubleBufferedProducer, RunningCallbackSeesTheStopRequest)
+{
+    DoubleBufferedProducer producer;
+    std::promise<void> inside_callback;
+    std::atomic<bool> entered{false};
+
+    producer.start(nullptr, kName, [&](size_t) -> std::optional<size_t>
+    {
+        if (!entered.exchange(true))
+            inside_callback.set_value();
+
+        while (!producer.isStopRequested()) /// stands for a callback that keeps pulling input blocks
+            std::this_thread::yield();
+
+        return std::nullopt;
+    });
+
+    inside_callback.get_future().wait();
+
+    auto stopper = std::async(std::launch::async, [&] { producer.stop(); });
+    ASSERT_EQ(stopper.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "stop() did not return — the running producer callback never saw the stop request";
 }
 
 /// A consumer that stops calling next() (it already got everything it needed) would never see a

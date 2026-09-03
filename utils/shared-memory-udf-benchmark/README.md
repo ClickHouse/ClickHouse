@@ -5,8 +5,7 @@ This benchmark compares the data transports used by executable user-defined func
 * `bench_pipe_stream`  — plain pipe transport, flush per row (the documented streaming pattern);
 * `bench_pipe_chunk`   — pipe transport with `send_chunk_header`, flush once per chunk (fair per-chunk baseline);
 * `bench_shm`          — shared-memory transport (`use_shared_memory`);
-* `bench_shm_pipeline` — shared-memory transport with pipelined double buffering (`shared_memory_pipeline`);
-* `bench_shm_busy` / `bench_shm_busy_pipeline` — same, with artificial per-chunk CPU work in the command, to probe the pipelined variant under a compute-heavy command.
+* `bench_shm_busy` — shared-memory transport with artificial per-request CPU work in the command.
 
 All functions are functionally identical echoes (see [`functions.xml`](functions.xml) and [`user_scripts/`](user_scripts)), so wall-clock differences are attributable to the transport alone.
 
@@ -46,7 +45,7 @@ Typical finding: `tmpfs`+`mmap` and `memfd`+`mmap` are essentially identical (th
 
 ## What to expect
 
-The shared-memory transport moves the bulk data through an `mmap`ed `tmpfs` file, so essentially no payload crosses the kernel: `OSReadChars`/`OSWriteChars` drop from the full payload volume to a few tens of kilobytes (control messages only), and wall-clock time drops accordingly. The pipelined variant does not regress; its overlap benefit is only realized in serialization-bound workloads, which a Python echo UDF (dominated by the child's own work) is not.
+The shared-memory transport moves the bulk data through an `mmap`ed `tmpfs` file, so essentially no payload crosses the kernel: `OSReadChars`/`OSWriteChars` drop from the full payload volume to a few tens of kilobytes (control messages only), and wall-clock time drops accordingly.
 
 > The `build/` in this repository is a **Debug** build, so absolute times are much slower than a release build; the meaningful figures are the *relative* transport comparison and the (build-independent) syscall-I/O volume.
 
@@ -59,11 +58,9 @@ One release-build run with `./run.sh --rows 1000000 --row-bytes 100 --iters 9 --
 | `bench_pipe_stream` | 0.76 | 96.4 MiB | 96.3 MiB |
 | `bench_pipe_chunk` | 0.26 | 96.4 MiB | 96.3 MiB |
 | `bench_shm` | 0.18 | 0.04 MiB | 0.00 MiB |
-| `bench_shm_pipeline` | 0.19 | 0.04 MiB | 0.00 MiB |
 | `bench_shm_busy` | 0.56 | 0.04 MiB | 0.00 MiB |
-| `bench_shm_busy_pipeline` | 0.56 | 0.05 MiB | 0.00 MiB |
 
-The fair pipe baseline is `bench_pipe_chunk`, because it also exchanges data once per block. In this run `bench_shm` is `1.44x` faster (`0.26 / 0.18`) and removes almost all kernel-visible payload I/O (`~96 MiB` down to `~0.04 MiB`). `bench_shm_pipeline` is neutral on the echo workload, as expected: the child-side Python echo dominates enough that double buffering has little serialization to hide.
+The fair pipe baseline is `bench_pipe_chunk`, because it also exchanges data once per block. In this run `bench_shm` is `1.44x` faster (`0.26 / 0.18`) and removes almost all kernel-visible payload I/O (`~96 MiB` down to `~0.04 MiB`).
 
 The same harness was also swept with `matrix.sh` (`bench_pipe_chunk` vs `bench_shm`, larger shared-memory region, pool size `16`). Representative release-build medians:
 

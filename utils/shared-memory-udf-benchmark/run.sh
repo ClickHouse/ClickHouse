@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Benchmark of the executable-UDF data transports: pipes vs shared memory (and pipelined shared
-# memory). All UDFs are functionally identical echoes (see functions.xml / user_scripts), so
+# Benchmark of the executable-UDF data transports: pipes vs shared memory. All UDFs are
+# functionally identical echoes (see functions.xml / user_scripts), so
 # wall-clock differences are attributable to the transport alone.
 #
 # It runs each variant with clickhouse-local, reports the median query time over several iterations
@@ -84,7 +84,7 @@ echo
 printf "%-26s %12s %14s %14s\n" "transport" "median, s" "read via sc" "write via sc"
 printf "%-26s %12s %14s %14s\n" "--------------------------" "---------" "-----------" "------------"
 
-for fn in bench_pipe_stream bench_pipe_chunk bench_shm bench_shm_pipeline bench_shm_busy bench_shm_busy_pipeline; do
+for fn in bench_pipe_stream bench_pipe_chunk bench_shm bench_shm_busy; do
     run_once "$fn" >/dev/null                       # warmup (dropped)
     times=""
     for _ in $(seq 1 "$ITERS"); do times+="$(run_once "$fn")"$'\n'; done

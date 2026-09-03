@@ -9,8 +9,13 @@
 //                 (this is what the shared-memory UDF transport does);
 //   memfd-mmap  - same, but the shared memory is an anonymous memfd_create() region the child
 //                 inherits (no filesystem path);
-//   vmsplice    - the parent gifts its buffer pages into a pipe with vmsplice(SPLICE_F_GIFT) and
-//                 the child splices them out (a zero-copy pipe path).
+//   vmsplice    - the parent maps its buffer pages straight into a pipe with vmsplice(), saving the
+//                 copy a write() makes on the sending side, and the child read()s them out.
+//
+// The parent's buffer is deliberately NOT donated with SPLICE_F_GIFT: gifted pages may be stolen by
+// the kernel, so they could not be reused by the next iteration, and the receiving end can only
+// avoid the second copy by splicing the pages somewhere it never looks at them (e.g. /dev/null) -
+// which is not something a UDF that has to consume its input can do.
 //
 // For every mechanism the child actually reads all the bytes (touches the data), so the numbers
 // reflect transfer + consume, not just signaling.
@@ -108,23 +113,19 @@ static void bench_shared(const char *name, int fd)
     report(name, t1 - t0, 0);
 }
 
-// -------- vmsplice: gift buffer pages into a pipe, child splices them to /dev/null --------
+// -------- vmsplice: map buffer pages into a pipe, child reads them out --------
 static void bench_vmsplice(void)
 {
     int data[2], ack[2];
     if (pipe(data) || pipe(ack)) { perror("pipe"); exit(1); }
-    int devnull = open("/dev/null", O_WRONLY);
-    char *buf = aligned_alloc(4096, CHUNK);
+    char *buf = aligned_alloc(4096, CHUNK), *rcv = malloc(CHUNK);
     memset(buf, 'x', CHUNK);
 
     pid_t pid = fork();
     if (pid == 0) {
         close(data[1]); close(ack[0]);
-        for (size_t i = 0; i < ITERS; i++) {
-            size_t left = CHUNK;
-            while (left) { ssize_t s = splice(data[0], NULL, devnull, NULL, left, SPLICE_F_MOVE); if (s <= 0) _exit(1); left -= (size_t)s; }
-            full_write(ack[1], "x", 1);
-        }
+        // Like every other mechanism here, the child actually consumes all the bytes.
+        for (size_t i = 0; i < ITERS; i++) { full_read(data[0], rcv, CHUNK); full_write(ack[1], "x", 1); }
         _exit(0);
     }
     close(data[0]); close(ack[1]);
@@ -132,12 +133,12 @@ static void bench_vmsplice(void)
     for (size_t i = 0; i < ITERS; i++) {
         char c; struct iovec iov = { buf, CHUNK };
         size_t left = CHUNK; char *p = buf;
-        while (left) { iov.iov_base = p; iov.iov_len = left; ssize_t s = vmsplice(data[1], &iov, 1, SPLICE_F_GIFT); if (s <= 0) { perror("vmsplice"); _exit(1); } p += s; left -= (size_t)s; }
+        while (left) { iov.iov_base = p; iov.iov_len = left; ssize_t s = vmsplice(data[1], &iov, 1, 0); if (s <= 0) { perror("vmsplice"); _exit(1); } p += s; left -= (size_t)s; }
         full_read(ack[0], &c, 1);
     }
     double t1 = now_sec();
     close(data[1]); close(ack[0]); waitpid(pid, NULL, 0);
-    free(buf);
+    free(buf); free(rcv);
     report("vmsplice", t1 - t0, 1);
 }
 

@@ -69,7 +69,10 @@ def process(input_data, region, region_size):
     for line in input_data.split(b"\n"):
         if line == b"":
             continue
-        output += b"Key " + line + b"\n"
+        if "--report-pid" in sys.argv:
+            output += str(os.getpid()).encode("ascii") + b"\n"
+        else:
+            output += b"Key " + line + b"\n"
 
     output_offset = len(input_data)  # write the result right after the input
     if output_offset + len(output) > region_size:

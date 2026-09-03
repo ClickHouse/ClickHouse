@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
@@ -110,7 +111,13 @@ public:
         producer_cv.notify_one();
     }
 
-    /// Requests the producer to stop and joins it. Idempotent; also called by the destructor.
+    /// Producer: whether the consumer has asked to stop. A callback that can keep working for a
+    /// long time should poll this and return `std::nullopt`: `stop` ends the loop between callbacks,
+    /// so a callback that has already started is waited for, however long it takes.
+    bool isStopRequested() const { return stop_requested.load(std::memory_order_relaxed); }
+
+    /// Requests the producer to stop and joins it. Idempotent; also called by the destructor. Waits
+    /// for a callback that is already running - see `isStopRequested`.
     void stop() noexcept
     {
         {
@@ -172,7 +179,9 @@ private:
     std::array<bool, 2> free_buffers{{true, true}};
     std::optional<Item> ready;
     bool finished = false;
-    bool stop_requested = false;
+    /// Written under the mutex (the condition variables' predicates read it there), but a producer
+    /// callback polls it without the lock - see `isStopRequested`.
+    std::atomic<bool> stop_requested = false;
     std::exception_ptr producer_exception;
 
     ThreadFromGlobalPool thread;

@@ -242,11 +242,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
 
     if (use_shared_memory)
     {
-        /// The shared-memory transport is available on Linux only. Reject it here, where the
-        /// setting is accepted, instead of loading the function and failing every call at query
-        /// time with an error about the region that cannot be created.
-        SharedMemoryRegion::checkSupported();
-
+        /// Reject invalid combinations before probing the configured shared-memory directory below.
         if (send_chunk_header)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Executable user defined function {}: `use_shared_memory` is incompatible with `send_chunk_header`",
@@ -296,6 +292,10 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes) must not exceed {}",
                 name, shared_memory_region_count, shared_memory_max_size, max_shared_memory_size);
+
+        /// Validate filesystem support and `/proc/self/fd` access while loading the function, so an
+        /// unusable configuration is rejected once instead of failing every invocation.
+        SharedMemoryRegion::checkSupported(shared_memory_path);
     }
     else if (shared_memory_pipeline)
     {
