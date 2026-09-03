@@ -2,6 +2,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -32,6 +33,19 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `IStorageCluster` cannot apply `PREWHERE`. A JOIN wrap copies left-only
+/// `PREWHERE` into wrap `WHERE` instead. Allow the parent clause so that copy
+/// can run; a single-table cluster `PREWHERE` still throws.
+bool clusterJoinWillWrapPrewhere(const StoragePtr & storage, const QueryTreeNodePtr & query_node)
+{
+    if (dynamic_cast<const IStorageCluster *>(storage.get()) == nullptr)
+        return false;
+    const auto * query = query_node->as<QueryNode>();
+    if (!query)
+        return false;
+    return extractTableExpressions(query->getJoinTreeNodeTyped()).size() > 1;
+}
 
 class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSourceColumnsVisitor>
 {
@@ -311,7 +325,7 @@ public:
         if (!table_expression)
         {
             const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
-            if (!storage->supportsPrewhere())
+            if (!storage->supportsPrewhere() && !clusterJoinWillWrapPrewhere(storage, query_node))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
                     storage->getName(),
@@ -354,12 +368,12 @@ private:
     bool table_supported_prewhere_columns_include_subcolumns = false;
 };
 
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
+void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression, const QueryTreeNodePtr & query_node)
 {
     if (auto * table_node = table_expression->as<TableNode>())
     {
         auto storage = table_node->getStorage();
-        if (!storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !clusterJoinWillWrapPrewhere(storage, query_node))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -368,7 +382,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
         auto storage = table_function_node->getStorage();
-        if (!storage->supportsPrewhere())
+        if (!storage->supportsPrewhere() && !clusterJoinWillWrapPrewhere(storage, query_node))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table function storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
@@ -431,7 +445,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (!prewhere_table_expression)
         {
             prewhere_table_expression = table_expressions_nodes[0];
-            checkStorageSupportPrewhere(prewhere_table_expression);
+            checkStorageSupportPrewhere(prewhere_table_expression, query_node);
         }
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(prewhere_table_expression);

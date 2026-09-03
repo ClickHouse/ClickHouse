@@ -1708,6 +1708,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             if (parent_query->hasPrewhere())
                 wrap_prewhere = copy_left_only(parent_query->getPrewhere());
 
+            const auto * orig_table = original_table_expression->as<TableNode>();
+            const auto * orig_table_function = original_table_expression->as<TableFunctionNode>();
+            const StoragePtr & orig_storage
+                = orig_table ? orig_table->getStorage() : orig_table_function->getStorage();
+            /// `IStorageCluster` does not support `PREWHERE`. Fold the copied clause into
+            /// wrap `WHERE` so dummy analysis / initiator listing see it, and wrap
+            /// planning does not throw `ILLEGAL_PREWHERE`.
+            if (wrap_prewhere && dynamic_cast<const IStorageCluster *>(orig_storage.get()))
+            {
+                if (wrap_where)
+                    wrap_where = mergeConditionNodes({std::move(wrap_where), std::move(wrap_prewhere)}, query_context);
+                else
+                    wrap_where = std::move(wrap_prewhere);
+                wrap_prewhere = {};
+            }
+
             /// Keep copied `WHERE` columns in the wrap projection. `icebergCluster`
             /// reports `WithMergeableState`, so wrap planning does not add a `FilterStep`.
             if (auto listing_predicate = wrap_where ? wrap_where : wrap_prewhere)
