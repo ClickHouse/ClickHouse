@@ -68,8 +68,6 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
         with_ties,
         description,
         dataflow_cache_updater);
-    if (is_result_cap)
-        transform->markAsResultCap();
     if (is_shard_limit)
         transform->markAsShardLimit();
     pipeline.addTransform(std::move(transform));
@@ -106,7 +104,6 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
     map.add("With Ties", with_ties);
     map.add("Reads All Data", always_read_till_end);
-    map.add("Result Cap", is_result_cap);
 }
 
 void LimitStep::serialize(Serialization & ctx) const
@@ -116,8 +113,6 @@ void LimitStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (with_ties)
         flags |= 2;
-    if (is_result_cap)
-        flags |= 4;
 
     writeIntBinary(flags, ctx.out);
 
@@ -135,7 +130,6 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
-    bool is_result_cap = bool(flags & 4);
 
     UInt64 limit = 0;
     UInt64 offset = 0;
@@ -147,10 +141,7 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     if (with_ties)
         deserializeSortDescription(description, ctx.in);
 
-    auto step = std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
-    if (is_result_cap)
-        step->markAsResultCap();
-    return step;
+    return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
 QueryPlanStepPtr LimitStep::clone() const

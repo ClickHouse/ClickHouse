@@ -3702,21 +3702,6 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
         query_plan.addStep(std::move(limit_range_step));
 
-        if (settings_limit_for_range > 0)
-        {
-            auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), settings_limit_for_range, settings_offset_for_range, always_read_till_end, false, SortDescription{});
-            limit->markAsResultCap();
-            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
-            query_plan.addStep(std::move(limit));
-        }
-        else if (settings_offset_for_range > 0)
-        {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings_offset_for_range);
-            offset->setStepDescription("OFFSET for SETTINGS");
-            query_plan.addStep(std::move(offset));
-        }
-
         return;
     }
 

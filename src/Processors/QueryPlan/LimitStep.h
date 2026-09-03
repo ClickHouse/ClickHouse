@@ -36,12 +36,6 @@ public:
 
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
-    bool isResultCap() const { return is_result_cap; }
-
-    /// Mark this limit as the global result cap produced from the `limit`/`offset` settings. Such a
-    /// step is applied above the query's own limiting operations and must not take over the
-    /// rows_before_limit_at_least counter from a LimitRangeTransform below it.
-    void markAsResultCap() { is_result_cap = true; }
 
     void markAsShardLimit() { is_shard_limit = true; }
 
@@ -68,7 +62,6 @@ private:
 
     bool with_ties;
     const SortDescription description;
-    bool is_result_cap = false;
     bool is_shard_limit = false;
 };
 

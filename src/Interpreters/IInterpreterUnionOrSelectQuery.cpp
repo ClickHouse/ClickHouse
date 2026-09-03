@@ -49,19 +49,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
-void IInterpreterUnionOrSelectQuery::removeLimitOffsetSettings(ASTSelectQuery & query)
-{
-    ASTPtr settings_ast = query.settings();
-    if (!settings_ast)
-        return;
-
-    auto & settings_query = settings_ast->as<ASTSetQuery &>();
-    settings_query.changes.removeSetting("limit");
-    settings_query.changes.removeSetting("offset");
-    if (settings_query.changes.empty())
-        query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-}
-
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
     : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
 {

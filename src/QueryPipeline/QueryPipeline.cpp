@@ -227,17 +227,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             has_limit = true;
             /// LimitRangeTransform is a single-input simple transform that keeps its own counter
-            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). It must
-            /// own the counter even when a result-cap LimitStep sits downstream (LIMIT ... AFTER ...
-            /// SETTINGS limit = N); otherwise that outer cap would shadow it and report rows after
-            /// the range instead of the total scanned, diverging from normal LIMIT semantics.
-            auto * downstream_limit = typeid_cast<LimitTransform *>(limit_being_counted);
-            if (!limit_being_counted || (downstream_limit && downstream_limit->isResultCap()))
-            {
+            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). Like any
+            /// other limiting operation, it does not take the counter over from a limit downstream.
+            if (!limit_being_counted)
                 processors.emplace(processor);
-                if (limit_being_counted)
-                    counted_inputs_by_limit.erase(limit_being_counted);
-            }
             continue;
         }
 
@@ -255,17 +248,6 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         else if (limit || negative_limit || typeid_cast<FractionalLimitTransform *>(processor))
         {
             has_limit = true;
-
-            /// A result cap (the `limit`/`offset` settings applied above the query's own limiting
-            /// operations) owns the counter only when no other limiting operation exists below it;
-            /// otherwise that operation reports the row count, matching the queries where the settings
-            /// are folded into the query limit instead of being a separate step.
-            auto * downstream_limit = typeid_cast<LimitTransform *>(limit_being_counted);
-            if (downstream_limit && downstream_limit->isResultCap())
-            {
-                counted_inputs_by_limit.erase(limit_being_counted);
-                limit_being_counted = nullptr;
-            }
 
             /// A limit from the query changes the rows seen by an outer limit. Do not count through it.
             if (limit_being_counted)

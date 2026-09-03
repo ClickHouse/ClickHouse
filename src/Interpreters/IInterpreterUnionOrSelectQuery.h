@@ -53,13 +53,7 @@ protected:
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
-    UInt64 settings_limit_for_range = 0;
-    UInt64 settings_offset_for_range = 0;
     bool uses_view_source = false;
-
-    /// Removes the `limit` and `offset` settings from the query's SETTINGS clause (dropping the
-    /// clause entirely when it becomes empty), after they have been consumed as a result cap.
-    static void removeLimitOffsetSettings(ASTSelectQuery & query);
 
     /// Set quotas to query pipeline.
     void setQuota(QueryPipeline & pipeline) const;

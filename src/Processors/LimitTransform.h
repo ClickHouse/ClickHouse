@@ -63,11 +63,6 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
-    /// This limit is the global result cap produced from the `limit`/`offset` settings, applied above
-    /// the query's own limiting operations. It must not take over the rows_before_limit_at_least
-    /// counter from a LimitRangeTransform below it.
-    bool is_result_cap = false;
-
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
@@ -92,9 +87,6 @@ public:
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
-
-    void markAsResultCap() { is_result_cap = true; }
-    bool isResultCap() const { return is_result_cap; }
 
     void markAsShardLimit() { is_shard_limit = true; }
     bool isShardLimit() const { return is_shard_limit; }
