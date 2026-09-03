@@ -190,7 +190,7 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
 
 }
 
-void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)
+void DictionaryRegistry::set(Int64 id, ColumnPtr column, DataTypePtr type, bool is_delta)
 {
     auto it = dictionaries.find(id);
     if (is_delta)
@@ -200,17 +200,17 @@ void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)
         /// wrong LowCardinality values. Reject it instead of treating the delta as a fresh dictionary.
         if (it == dictionaries.end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
-        auto merged = IColumn::mutate(std::move(it->second));
-        merged->insertRangeFrom(*values, 0, values->size());
-        it->second = std::move(merged);
+        auto merged = IColumn::mutate(std::move(it->second.column));
+        merged->insertRangeFrom(*column, 0, column->size());
+        it->second.column = std::move(merged);
     }
     else
     {
-        dictionaries[id] = std::move(values);
+        dictionaries[id] = Values{std::move(column), std::move(type)};
     }
 }
 
-ColumnPtr DictionaryRegistry::get(Int64 id) const
+const DictionaryRegistry::Values & DictionaryRegistry::get(Int64 id) const
 {
     auto it = dictionaries.find(id);
     if (it == dictionaries.end())
@@ -1136,7 +1136,8 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows)
 {
     const Slice indices_slice = nextBuffer();
-    ColumnPtr values = registry.get(field.dictionary->id);
+    const DictionaryRegistry::Values & dictionary = registry.get(field.dictionary->id);
+    const ColumnPtr & values = dictionary.column;
     const size_t dict_size = values->size();
 
     const int bits = field.dictionary->index_bit_width;
@@ -1155,7 +1156,9 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     /// fields, a trailing NULL. A row can be null either via the index validity or by pointing at a null entry
     /// inside the dictionary values. Invisible rows' index bytes are undefined per the Arrow spec, so they must not be
     /// bounds-checked; for a non-nullable field the trailing key holds the value type's default instead of NULL.
-    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable);
+    /// The registered type describes these values (they may have been decoded under a requested type hint,
+    /// see `DictionaryRegistry::Values`), so it — not the referencing field's natural type — declares them.
+    const DataTypePtr & value_type = dictionary.type;
     MutableColumnPtr keys = IColumn::mutate(values->cloneResized(dict_size));
     UInt64 fallback_key_index = dict_size;
     if (field.nullable || invisible_rows)
@@ -1723,10 +1726,18 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
 
         DecodedColumn decoded;
         decoded.name = field.name;
-        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
-        /// A top-level dictionary-encoded field decodes into a LowCardinality column of its value type.
-        if (field.dictionary && decoded.type->canBeInsideLowCardinality())
-            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
+        /// A dictionary-encoded field is declared by its registered value type — the type its dictionary
+        /// batch was decoded to under the field's requested type hint (see `DictionaryRegistry::Values`),
+        /// which is what `decodeDictionary` builds the column from — rather than by its natural type; at
+        /// the top level it decodes into a LowCardinality column of that value type.
+        if (field.dictionary)
+        {
+            decoded.type = registry.get(field.dictionary->id).type;
+            if (decoded.type->canBeInsideLowCardinality())
+                decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
+        }
+        else
+            decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
         /// `normalized_name` seeds the recursive `date32` numeric type hint (looked up in `target_types`);
         /// nested fields derive their hints from it as the decoder recurses. See decodeField/decodeInner.
         decoded.column = decodeField(

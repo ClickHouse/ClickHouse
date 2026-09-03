@@ -21,19 +21,31 @@
 namespace DB::ArrowIPC
 {
 
-/// Decoded dictionary value columns (from `DictionaryBatch` messages), keyed by Arrow dictionary id.
-/// Referenced by `RecordBatchDecoder` when materializing dictionary-encoded (LowCardinality) fields.
+/// Decoded dictionary values (from `DictionaryBatch` messages), keyed by Arrow dictionary id. Referenced
+/// by `RecordBatchDecoder` when materializing dictionary-encoded (LowCardinality) fields.
 class DictionaryRegistry
 {
 public:
-    /// Replaces (or, for delta batches, appends to) the values for a dictionary id.
-    void set(Int64 id, ColumnPtr values, bool is_delta);
-    ColumnPtr get(Int64 id) const;
+    /// A dictionary's values and the type describing them. The type is not always the value field's
+    /// natural type: the values are decoded under the requested type hint of the field(s) encoding them
+    /// (a `date32` under a numeric target holds raw day numbers, binary under an IPv6 / big-integer
+    /// target is already reinterpreted), so the decoder builds `LowCardinality` columns from this pair
+    /// instead of re-deriving the type from the referencing field.
+    struct Values
+    {
+        ColumnPtr column;
+        DataTypePtr type;
+    };
+
+    /// Replaces (or, for delta batches, appends to) the values for a dictionary id. A delta batch is
+    /// decoded under the same hint as its base, so it carries the same type.
+    void set(Int64 id, ColumnPtr column, DataTypePtr type, bool is_delta);
+    const Values & get(Int64 id) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
     void clear() { dictionaries.clear(); }
 
 private:
-    UnorderedMapWithMemoryTracking<Int64, ColumnPtr> dictionaries;
+    UnorderedMapWithMemoryTracking<Int64, Values> dictionaries;
 };
 
 /// Rows whose values are semantically absent: null at this or an ancestor level, in a list range no
