@@ -41,6 +41,7 @@ inline static void logDebug(const char * key, const T & value, const char * sepa
 namespace ErrorCodes
 {
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int LOGICAL_ERROR;
 }
 
 Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description/*, const InterpolateDescription & interpolate_description*/)
