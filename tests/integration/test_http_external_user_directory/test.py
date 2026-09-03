@@ -1485,6 +1485,10 @@ def test_refused_reattachment_leaves_session_intact(started_cluster):
     # A reattachment refused by admission (USER_SESSION_LIMIT_EXCEEDED from the reattaching
     # role's profile) must leave the named session as it was: its SET state survives and the
     # next reattachment binds its own roles.
+    admin(
+        "CREATE SETTINGS PROFILE IF NOT EXISTS one_session_profile SETTINGS max_sessions_for_user = 1"
+    )
+    admin("ALTER ROLE limit_role_a ADD PROFILES 'one_session_profile'")
     session = "sess_refused_reattach"
     in_session = lambda sql, password: instance.http_query(
         sql, user="limit_user", password=password, params={"session_id": session}
