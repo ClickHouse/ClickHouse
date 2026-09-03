@@ -1316,9 +1316,11 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
+    /// Is running on the initiating server after the remote servers completed their aggregation stage?
+    bool from_aggregation_stage = from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, from_aggregation_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {

@@ -234,6 +234,9 @@ struct ExpressionAnalysisResult
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     bool second_stage = false;
+    /// The query starts from the state that remote servers completed after their aggregation, so this
+    /// server executes only the tail of the second stage (`WITH FILL`, `LIMIT AFTER`/`UNTIL`, `LIMIT`).
+    bool from_aggregation_stage = false;
 
     bool need_aggregate = false;
     bool has_order_by   = false;
@@ -290,6 +293,7 @@ struct ExpressionAnalysisResult
         const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
+        bool from_aggregation_stage,
         bool only_types,
         const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
