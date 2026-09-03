@@ -151,6 +151,22 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
     return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
 }
 
+void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
+{
+    if (!has_range)
+    {
+        range_min = new_min;
+        range_max = new_max;
+        has_range = true;
+        return;
+    }
+
+    if (accurateLess(new_min, range_min))
+        range_min = new_min;
+    if (accurateLess(range_max, new_max))
+        range_max = new_max;
+}
+
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
     const char * position = raw_data;
@@ -629,21 +645,7 @@ void RuntimeFilter::insert(ColumnPtr values)
                     Field column_max;
                     values->getExtremes(column_min, column_max, 0, values->size());
                     if (!column_min.isNull() && !column_max.isNull())
-                    {
-                        if (!filter_data->has_range)
-                        {
-                            filter_data->range_min = column_min;
-                            filter_data->range_max = column_max;
-                            filter_data->has_range = true;
-                        }
-                        else
-                        {
-                            if (accurateLess(column_min, filter_data->range_min))
-                                filter_data->range_min = column_min;
-                            if (accurateLess(filter_data->range_max, column_max))
-                                filter_data->range_max = column_max;
-                        }
-                    }
+                        extendRange(filter_data->has_range, filter_data->range_min, filter_data->range_max, column_min, column_max);
                 }
                 filter.insert(std::move(values));
             }
@@ -709,21 +711,12 @@ void RuntimeFilter::merge(const RuntimeFilter * source)
                 destination_filter.mergeFrom(source_filter);
                 if (destination_data->index_analysis_enabled && destination_data->range_supported && destination_data->range_positive
                     && source_data->has_range)
-                {
-                    if (!destination_data->has_range)
-                    {
-                        destination_data->range_min = source_data->range_min;
-                        destination_data->range_max = source_data->range_max;
-                        destination_data->has_range = true;
-                    }
-                    else
-                    {
-                        if (accurateLess(source_data->range_min, destination_data->range_min))
-                            destination_data->range_min = source_data->range_min;
-                        if (accurateLess(destination_data->range_max, source_data->range_max))
-                            destination_data->range_max = source_data->range_max;
-                    }
-                }
+                    extendRange(
+                        destination_data->has_range,
+                        destination_data->range_min,
+                        destination_data->range_max,
+                        source_data->range_min,
+                        source_data->range_max);
                 if constexpr (!DestinationFilter::is_prebuilt)
                     destination_data->build_state.finishMerge();
             }
