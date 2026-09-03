@@ -16,6 +16,18 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace
+{
+
+std::optional<std::pair<ActionsDAG, String>> cloneCondition(const std::optional<std::pair<ActionsDAG, String>> & condition)
+{
+    if (!condition)
+        return std::nullopt;
+    return std::make_pair(condition->first.clone(), condition->second);
+}
+
+}
+
 static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
@@ -47,6 +59,16 @@ LimitRangeStep::LimitRangeStep(
     , start_all(start_all_)
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
+{
+}
+
+LimitRangeStep::LimitRangeStep(const LimitRangeStep & other)
+    : ITransformingStep(other)
+    , start_condition(cloneCondition(other.start_condition))
+    , end_condition(cloneCondition(other.end_condition))
+    , start_all(other.start_all)
+    , limit(other.limit)
+    , always_read_till_end(other.always_read_till_end)
 {
 }
 
@@ -214,20 +236,7 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr LimitRangeStep::clone() const
 {
-    auto clone_condition = [](const std::optional<std::pair<ActionsDAG, String>> & condition) -> std::optional<std::pair<ActionsDAG, String>>
-    {
-        if (!condition)
-            return std::nullopt;
-        return std::make_pair(condition->first.clone(), condition->second);
-    };
-
-    return std::make_unique<LimitRangeStep>(
-        input_headers.front(),
-        clone_condition(start_condition),
-        clone_condition(end_condition),
-        start_all,
-        limit,
-        always_read_till_end);
+    return std::make_unique<LimitRangeStep>(*this);
 }
 
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);

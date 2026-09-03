@@ -20,6 +20,8 @@ public:
         std::optional<UInt64> limit_,
         bool always_read_till_end_);
 
+    LimitRangeStep(const LimitRangeStep & other);
+
     String getName() const override { return "LimitRange"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
