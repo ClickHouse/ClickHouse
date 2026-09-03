@@ -490,6 +490,10 @@ namespace ServerSetting
     extern const ServerSettingsString logger_shutdown_level;
     extern const ServerSettingsString openssl_server_certificate_file;
     extern const ServerSettingsString openssl_server_private_key_file;
+    extern const ServerSettingsString openssl_server_ca_config;
+    extern const ServerSettingsString openssl_client_certificate_file;
+    extern const ServerSettingsString openssl_client_private_key_file;
+    extern const ServerSettingsString openssl_client_ca_config;
     extern const ServerSettingsString distributed_ddl_path;
     extern const ServerSettingsString distributed_ddl_replicas_path;
     extern const ServerSettingsInt32 distributed_ddl_pool_size;
@@ -1053,6 +1057,23 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
+    }
+#endif
+
+#if USE_JEMALLOC && (defined(OS_LINUX) || defined(OS_DARWIN))
+    {
+        /// Whether disabled at runtime by jemalloc itself or overridden by the operator, per-CPU
+        /// arenas are worth recommending on platforms with a working current-CPU query.
+        const char * effective_mode = nullptr;
+        if (Jemalloc::tryGetValue("opt.percpu_arena", effective_mode) && effective_mode == std::string_view("disabled"))
+        {
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::JEMALLOC_PERCPU_ARENA_DISABLED,
+                PreformattedMessage::create(
+                    "jemalloc per-CPU arenas are disabled, either via configuration or automatically by jemalloc itself "
+                    "(it disables them at startup when it cannot query the current CPU). They reduce memory usage by "
+                    "capping the arena count at the number of CPUs"));
+        }
     }
 #endif
 
@@ -2651,26 +2672,25 @@ try
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
 
-    std::string cert_path = server_settings[ServerSetting::openssl_server_certificate_file];
-    std::string key_path = server_settings[ServerSetting::openssl_server_private_key_file];
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    auto watch_path = [&](const std::string & file_path)
+    {
+        if (!file_path.empty())
+            extra_paths.emplace_back(file_path);
+    };
+    watch_path(server_settings[ServerSetting::openssl_server_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_server_ca_config]);
+    watch_path(server_settings[ServerSetting::openssl_client_certificate_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_private_key_file]);
+    watch_path(server_settings[ServerSetting::openssl_client_ca_config]);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config().keys("protocols", protocols);
     for (const auto & protocol : protocols)
-    {
-        cert_path = config().getString("protocols." + protocol + ".certificateFile", "");
-        key_path = config().getString("protocols." + protocol + ".privateKeyFile", "");
-        if (!cert_path.empty())
-            extra_paths.emplace_back(cert_path);
-        if (!key_path.empty())
-            extra_paths.emplace_back(key_path);
-    }
+        for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
+            watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
@@ -3525,23 +3545,10 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
-        /// All settings can be changed in the global config
-        bool allowed_experimental = true;
-        bool allowed_private_preview = true;
-        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
         global_context->getReplicatedMergeTreeSettings().sanityCheck(
-            background_pool_tasks,
-            allowed_experimental,
-            allowed_private_preview,
-            allowed_beta,
-            global_context->wasBackgroundPoolAutoLowered());
+            background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");

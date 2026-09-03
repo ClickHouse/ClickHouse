@@ -33,8 +33,9 @@ wait_failed() {
 # skips the transient internal state system.view_refreshes briefly reports between state
 # transitions), leaving the last output in $wait_result. Expiry reports and exits non-zero.
 wait_for() {
-    local query="$1" op="$2" value="$3" rc remaining reason
+    local query="$1" op="$2" value="$3" rc remaining out
     local poll_end=$((EPOCHSECONDS + WAIT_POLL_S + WAIT_KILL_S))
+    wait_result='(no poll returned)'
     while :
     do
         remaining=$((poll_end - EPOCHSECONDS - WAIT_KILL_S))
@@ -44,11 +45,12 @@ wait_for() {
                 "budget exhausted, last poll returned normally"
         fi
         # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
-        wait_result=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
+        out=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
         # Not through a pipe: rc would then be xargs' status, not the client's.
         rc=$?
         if ((rc == 0))
         then
+            wait_result=$out
             case "$op" in
                 # xargs trims the string and turns \t and \n into spaces.
                 '==') [ "$(echo "$wait_result" | xargs)" == "$value" ] && return ;;
@@ -56,11 +58,10 @@ wait_for() {
                 no-scheduling) grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$wait_result" || return ;;
             esac
         else
-            if ((rc == 124 || rc == 137))
-            then reason="poll query hit the remaining budget, killed with exit $rc"
-            else reason="client failed with exit $rc"
-            fi
-            wait_failed "$query" "$op $value" "$wait_result" "$reason"
+            # `clickhouse-client` returns a server exception's code as its exit status, and 124 and
+            # 137 are themselves error codes, so rc cannot say whether `timeout` did the killing.
+            wait_failed "$query" "$op $value" "$wait_result" \
+                "last poll failed with status $rc, timeout was ${remaining}s"
         fi
         sleep 0.5
     done
