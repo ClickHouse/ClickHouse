@@ -369,7 +369,8 @@ INNER JOIN
     GROUP BY frame_desc, cur.n
 ) AS gt USING (frame_desc, n)
 GROUP BY frame_desc
-ORDER BY frame_desc;
+ORDER BY frame_desc
+SETTINGS enable_analyzer = 1; -- the inequality JOIN ON is only supported by the new analyzer
 
 -- Floating point: a transient Inf/NaN inside the frame must not poison the results of
 -- later frames after the offending row leaves. The 20-row frame stays on the recompute
