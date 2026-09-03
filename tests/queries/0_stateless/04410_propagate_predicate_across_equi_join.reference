@@ -20,6 +20,8 @@ both sides propagate	2	2
 both sides propagate correctness	0
 any inner	2
 any inner correctness	0
+any left	2
+any left unmatched keys	(15,10,4999985)	1
 distinct target	1
 sorted target	2
 key vs key	1

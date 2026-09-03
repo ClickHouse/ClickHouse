@@ -248,6 +248,26 @@ SELECT 'any inner correctness',
         ANY INNER JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_propagate_predicate_across_join = 0);
 
+-- `ANY LEFT` keeps every left row, so the copy must not remove a match or an unmatched row
+SELECT 'any left',
+       countIf(explain LIKE '%ilter column:%orderkey = 4242%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM prop_orders WHERE orderkey = 4242) AS o
+    ANY LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+);
+
+WITH
+    (SELECT (count(), countIf(l.orderkey = 0), sum(l.orderkey))
+     FROM (SELECT * FROM prop_orders WHERE orderkey BETWEEN 999995 AND 1000009) AS o
+     ANY LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey) AS with_pass,
+    (SELECT (count(), countIf(l.orderkey = 0), sum(l.orderkey))
+     FROM (SELECT * FROM prop_orders WHERE orderkey BETWEEN 999995 AND 1000009) AS o
+     ANY LEFT JOIN prop_lineitem AS l ON o.orderkey = l.orderkey
+     SETTINGS query_plan_propagate_predicate_across_join = 0) AS without_pass
+SELECT 'any left unmatched keys', with_pass, with_pass = without_pass;
+
 -- Index analysis cannot reach past `DISTINCT`, so the predicate stays on the source side
 SELECT 'distinct target',
        countIf(explain LIKE '%ilter column:%orderkey = 4242%')
