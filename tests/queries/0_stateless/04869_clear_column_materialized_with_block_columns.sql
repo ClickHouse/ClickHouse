@@ -71,9 +71,11 @@ SELECT x, y, mk FROM t_clear_unrelated_block_columns;
 
 DROP TABLE t_clear_unrelated_block_columns;
 
--- A DELETE coalesced with an UPDATE rewrites every surviving column, while the index dependency
--- puts the otherwise unchanged `b` in the readonly stage. `b` must still be written against the new
--- row set - dropping it from the written set would hardlink files holding the pre-delete rows.
+-- An `ALTER DELETE` coalesced with an `ALTER UPDATE`, where the index dependency puts the otherwise
+-- unchanged `b` in the readonly stage. Positive coverage rather than a test of the whole-part guard:
+-- the `DELETE` routes to `MutateAllPartColumnsTask`, which writes every column from the pipeline and
+-- never consults `updated_header`, so the guard has no effect here today. This pins that the shape
+-- keeps working - `b` intact against the post-delete row set - whichever task is chosen for it.
 DROP TABLE IF EXISTS t_delete_with_index_dependency;
 
 CREATE TABLE t_delete_with_index_dependency

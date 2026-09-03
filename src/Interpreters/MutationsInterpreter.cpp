@@ -2596,8 +2596,9 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     Block header = builder.getHeader();
 
-    /// Once a stage rewrites the whole part - a DELETE filter does - a column left out here would be
-    /// hardlinked with the old row count.
+    /// Defensive: a stage that rewrites the whole part - an `ALTER DELETE` filter does - routes to
+    /// `MutateAllPartColumnsTask`, which writes every column from the pipeline and never consults
+    /// this. The guard keeps the two from disagreeing if that ever stops being true.
     const bool rewrites_whole_part = settings.return_all_columns
         || std::any_of(
             stages.begin(),
