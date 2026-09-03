@@ -1,7 +1,5 @@
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan
-SET explain_query_plan_default = 'legacy';
-SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 
 set enable_analyzer=1;
 set serialize_query_plan = 0;
@@ -39,8 +37,6 @@ select * from (explain indexes=1, actions=1, distributed=1
 
 select * from (explain indexes=1, actions=1, distributed=1
     select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab0) group by x) where x = 42
-    -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
-    settings distributed_aggregation_memory_efficient=1
 );
 
 select '============ in / global in';

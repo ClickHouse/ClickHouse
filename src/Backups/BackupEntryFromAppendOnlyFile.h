@@ -27,7 +27,6 @@ public:
     ~BackupEntryFromAppendOnlyFile() override;
 
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override;
-    std::unique_ptr<SeekableReadBuffer> getReadBufferForEncryptionHeader(const ReadSettings & read_settings) const override;
     UInt64 getSize() const override { return size; }
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }

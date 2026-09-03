@@ -524,7 +524,7 @@ SELECT
 
     /// UUIDStringToNum documentation
     FunctionDocumentation::Description description_UUIDStringToNum = R"(
-Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](/reference/data-types/fixedstring) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
     )";
     FunctionDocumentation::Syntax syntax_UUIDStringToNum = "UUIDStringToNum(string[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDStringToNum = {
@@ -568,7 +568,7 @@ SELECT
 
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
-Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default).
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
@@ -618,7 +618,7 @@ Returns the timestamp component of a UUID version 7.
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
         {"uuid", "A UUID version 7.", {"String"}},
-        {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
+        {"timezone", "Optional. [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
@@ -629,7 +629,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 12:30:29.048 │
+│                                          2024-04-22 15:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -640,8 +640,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                              2024-04-22 08:30:29.048 │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+│                                                             2024-04-22 11:30:29.048 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

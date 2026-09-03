@@ -12,7 +12,7 @@
 namespace DB
 {
 
-constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
+thread_local ThreadStatus constinit * current_thread = nullptr;
 
 namespace ErrorCodes
 {
@@ -112,14 +112,6 @@ ContextPtr CurrentThread::tryGetQueryContext()
         return {};
 
     return current_thread->tryGetQueryContext();
-}
-
-void CurrentThread::checkIfNotCancelled()
-{
-    if (unlikely(!current_thread))
-        return;
-
-    current_thread->throwIfQueryCanceled();
 }
 
 std::string_view CurrentThread::getQueryId()
