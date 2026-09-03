@@ -24,6 +24,15 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (aggregating_step->inOrder())
         return nullptr;
 
+    /// Partial aggregation is annotated only by the shard-side Planner hook
+    /// (`applyTopKPushdownToPartialAggregation`), which requires a real `ORDER BY` prefix.
+    /// This pass must not match it: a deserialized shipped plan is re-optimized on the
+    /// follower, and synthesizing a sort + limit over *partial* states would truncate each
+    /// follower's group set independently, with no initiator-side sort to discard the
+    /// resulting incomplete groups.
+    if (!aggregating_step->isFinal())
+        return nullptr;
+
     const auto & params = aggregating_step->getParams();
 
     if (params.top_k)
@@ -49,7 +58,11 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
 
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
+    /// The distributed planner splits aggregation itself; shard-local heaps for that
+    /// path are future work. `serialize_query_plan` is fine: `AggregatingStep::serialize`
+    /// carries `top_k` since plan serialization version 10, and omits it towards older
+    /// followers (which then aggregate without the heap - the safe direction).
+    if (settings.make_distributed_plan)
         return 0;
 
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());

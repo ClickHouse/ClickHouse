@@ -723,15 +723,6 @@ void applyTopKPushdownToPartialAggregation(
     if (settings[Setting::make_distributed_plan])
         return;
 
-    /// With `serialize_query_plan` the follower executes the initiator's
-    /// serialized sub-plan instead of planning the query text, and
-    /// `AggregatingStep::serialize` deliberately does not carry `top_k` (the
-    /// plan-serialization protocol has no version negotiation, so appending
-    /// fields would break older followers).  Annotating the step here would
-    /// only mislead: EXPLAIN would show a Top-K the followers never run.
-    if (settings[Setting::serialize_query_plan])
-        return;
-
     /// Pruning undercounts `rows_before_limit_at_least` in exact mode.
     if (settings[Setting::exact_rows_before_limit])
         return;
