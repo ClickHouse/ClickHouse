@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -1783,6 +1784,12 @@ ReturnType readDateTimeTextFallback(
                     }
                 }
             }
+        }
+
+        if constexpr (dt64_mode)
+        {
+            if (year == 0 && (month == 0 || day == 0))
+                skipDateTimeSubseconds(buf);
         }
     }
     else
