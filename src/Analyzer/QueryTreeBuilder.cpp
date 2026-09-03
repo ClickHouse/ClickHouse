@@ -357,12 +357,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         {
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
-                /// Union-shaped CTEs are speculatively marked recursive here; whether a CTE actually
-                /// references itself is only known after analysis. The recursive evaluation cannot
-                /// itself be materialized, so `MATERIALIZED` on a self-referencing CTE is rejected in
-                /// `QueryAnalyzer::resolveUnion`. Helper CTEs that do not reference themselves may be
-                /// `MATERIALIZED`: they are materialized once and every recursive step reads the
-                /// snapshot instead of re-evaluating the subquery per step.
                 auto * with_union_node = with_node->as<UnionNode>();
                 if (!with_union_node)
                     continue;

@@ -47,6 +47,24 @@ SELECT count() FROM
     SELECT * FROM walk
 ) WHERE explain LIKE '%MaterializingCTE (Materializing CTE: seq)%';
 
+-- A helper referenced only from the non-recursive (anchor) member is evaluated once anyway, so the
+-- single-use rule applies and it is inlined: no materialization step.
+SELECT count() FROM
+(
+    EXPLAIN
+    WITH RECURSIVE seq AS MATERIALIZED
+    (
+        SELECT number AS n FROM numbers(1, 5)
+    ),
+    walk AS
+    (
+        SELECT n AS x FROM seq WHERE n = 1
+        UNION ALL
+        SELECT x + 1 FROM walk WHERE x < 5
+    )
+    SELECT * FROM walk
+) WHERE explain LIKE '%MaterializingCTE (Materializing CTE: seq)%';
+
 -- Functional pin using nondeterminism: the snapshot is stable across recursive steps, so a
 -- non-deterministic helper referenced only from the recursive member contributes exactly as many
 -- distinct values as it has rows, however many steps read it.

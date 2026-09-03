@@ -111,11 +111,7 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
         if (!canonical)
             candidates.push_back(table_node);                      /// first encountered = canonical (deterministic)
         else if (canonical->getMaterializedCTE() != table_node->getMaterializedCTE())
-        {
-            canonical->getMaterializedCTE()->is_referenced_from_recursive_cte_member
-                |= table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member;
             table_node->adoptMaterializedCTE(canonical->getMaterializedCTE(), context);
-        }
         /// same pointer already (in-branch repeat) -> merge is a no-op
 
         /// Count AFTER adoption so in-branch shared-pointer repeats and cross-branch

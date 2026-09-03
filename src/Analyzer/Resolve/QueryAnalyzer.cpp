@@ -7119,7 +7119,8 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
         /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
-        /// would inline them and the subquery would be re-executed on every step.
+        /// would inline them and the subquery would be re-executed on every step. The non-recursive member
+        /// `queries_nodes[0]` is executed once, so a materialized CTE referenced only from it is not affected.
         for (size_t i = 1; i < queries_nodes_size; ++i)
         {
             traverseQueryTree(queries_nodes[i], Everything{}, [&](const QueryTreeNodePtr & node)
