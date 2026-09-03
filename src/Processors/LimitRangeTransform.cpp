@@ -11,7 +11,7 @@ namespace DB
 
 static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
 {
-    UInt64 result;
+    UInt64 result = 0;
     if (common::addOverflow(lhs, rhs, result))
         return std::numeric_limits<UInt64>::max();
     return result;
