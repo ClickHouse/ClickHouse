@@ -9071,6 +9071,14 @@ Possible values:
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_read_in_order, false, R"(
+Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
+table's sorting key can skip the sort and stop early instead of scanning and sorting.
+
+Off by default: the rewrite that distributes a sort assumes the sort it wraps does not depend on its input
+already being ordered, and a sort that does can be fed rows through an exchange that does not preserve
+order. Only shapes where no exchange survives between the read and the sort are safe today.
+)", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
 )", EXPERIMENTAL) \
