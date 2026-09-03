@@ -542,8 +542,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                 buf = getCacheReadBuffer(file_segment, info_);
                 if (!buf)
                 {
-                    /// `getCacheReadBuffer` asks us to bypass the cache (see the comment there).
-                    /// Read from the source, as the `DETACHED` branch does.
+                    /// `getCacheReadBuffer` found the cache file truncated and asks us to bypass it.
                     type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     buf = getRemoteReadBuffer(file_segment, offset, type, info_);
                 }

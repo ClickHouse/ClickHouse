@@ -2493,8 +2493,6 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         auto delim_pos = offset_with_suffix.find('_');
         if (size_delim_pos != std::string::npos)
         {
-            /// `<offset>.<size>`: the size is encoded in the name, so we can
-            /// load this segment without a `stat` syscall.
             UInt64 size_value = 0;
             parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, size_delim_pos))
                 && tryParse<UInt64>(size_value, offset_with_suffix.substr(size_delim_pos + 1));

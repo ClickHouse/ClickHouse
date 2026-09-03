@@ -1295,9 +1295,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
 
-            /// The size read from the name `<offset>.<size>` is trusted without a `stat`.
-            /// A truncated file is detected later by `getCacheReadBuffer`, which discards the entry.
-            /// Asserting here would restore the `stat` and fail on startup in debug builds instead.
+            /// The size read from the name is trusted without a `stat`, see the constructor.
             if (!size_in_filename)
             {
                 auto file_size = fs::file_size(getPath());
