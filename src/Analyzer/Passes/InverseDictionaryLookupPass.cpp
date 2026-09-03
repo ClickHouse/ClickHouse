@@ -26,8 +26,8 @@
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 
-#include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
@@ -94,10 +94,10 @@ bool isSupportedDictGetFunction(const String & name)
     return supported_functions.contains(name);
 }
 
-bool isSafePassThroughQuery(const QueryNode & query_node){
-    if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct()
-        || query_node.hasHaving() || query_node.hasWindow() || query_node.hasQualify()
-        || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy())
+bool isSafePassThroughQuery(const QueryNode & query_node)
+{
+    if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct() || query_node.hasHaving()
+        || query_node.hasWindow() || query_node.hasQualify() || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy())
         return false;
 
     auto join_tree_node_type = query_node.getJoinTree().getNodeType();
@@ -119,7 +119,7 @@ QueryTreeNodePtr tryResolveViewInnerQueryForInspection(const TableNode & table_n
         ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
         QueryTreeNodePtr view_query_tree = buildQueryTree(view_ast, view_context);
 
-        QueryAnalyzer view_analyzer(/*only_analyze_=*/ true);
+        QueryAnalyzer view_analyzer(/*only_analyze_=*/true);
         view_analyzer.resolve(view_query_tree, {}, view_context);
 
         if (view_query_tree->as<QueryNode>())
@@ -182,7 +182,6 @@ std::optional<ColumnDefinition> tryResolveColumnDefinition(const ColumnNode & co
 
 std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
-
     const auto * function_node = node->as<FunctionNode>();
 
     if (!function_node)
@@ -203,7 +202,8 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
         {
             const String dict_name = info->dict_name_node->getValue().safeGet<String>();
             auto dict = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-            if (!context->getAccess()->isGranted(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
+            if (!context->getAccess()->isGranted(
+                    AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName()))
                 return std::nullopt;
         }
         catch (const Exception &)
@@ -679,11 +679,11 @@ public:
 
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node, arguments[1] };
+            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node, arguments[1]};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node };
+            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node};
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
