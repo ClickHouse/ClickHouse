@@ -6,6 +6,8 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -64,10 +66,15 @@ struct AnalyzedExpressionWithSampleBlock
 /// `analyzeExpressionToActions(expr, columns, context, /*add_aliases=*/true)->getSampleBlock()`,
 /// but the underlying DAG is built only once.  Avoids running `IN (subquery)` sets
 /// twice via `buildSetInplace`, which the analyzer executes eagerly when the DAG is built.
+///
+/// `identifier_typo_hint_columns` restricts the `maybe you meant` suggestions for an unknown
+/// identifier to these names, for a caller that resolves the expression over every available column
+/// but whose own subsequent check accepts only a part of them (@sa `QueryAnalyzer`).
 AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    CompileExpressions compile_expressions = CompileExpressions::no);
+    CompileExpressions compile_expressions = CompileExpressions::no,
+    const std::optional<Names> & identifier_typo_hint_columns = {});
 
 }

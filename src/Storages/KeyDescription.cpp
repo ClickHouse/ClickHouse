@@ -76,9 +76,10 @@ void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<Names> & hint_columns)
 {
-    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, hint_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
@@ -157,7 +158,8 @@ KeyDescription KeyDescription::getKeyFromAST(
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
-    const NamesAndTypesList & additional_columns)
+    const NamesAndTypesList & additional_columns,
+    const std::optional<Names> & hint_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
@@ -179,7 +181,12 @@ KeyDescription KeyDescription::getKeyFromAST(
         /// Build the analyzer DAG once: `analyzeExpressionToActionsDAG` runs
         /// `buildSetInplace` for any `IN (subquery)` set, so calling it twice
         /// would execute the subquery twice and could pick up inconsistent rows.
-        auto analyzed = analyzeExpressionToActionsAndSampleBlock(expr, all_columns, context);
+        ///
+        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into
+        /// `columns` and `virtuals`, so by default a typo may be resolved to any of them; a caller
+        /// that accepts less narrows the suggestions down.
+        auto analyzed = analyzeExpressionToActionsAndSampleBlock(
+            expr, all_columns, context, CompileExpressions::no, hint_columns);
         /// In expression we also need to store source columns
         result.expression = std::move(analyzed.expression);
         /// In sample block we use just key columns

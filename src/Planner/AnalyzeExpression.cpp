@@ -64,7 +64,8 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    bool build_subquery_sets)
+    bool build_subquery_sets,
+    const std::optional<Names> & identifier_typo_hint_columns = {})
 {
     /// Ensure the AST is an expression list, because QueryNode projection expects a ListNode.
     ASTPtr expr_list_ast = expression_ast;
@@ -166,7 +167,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    QueryAnalyzer analyzer(/* only_analyze */ true);
+    QueryAnalyzer analyzer(/* only_analyze */ true, identifier_typo_hint_columns);
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
@@ -548,9 +549,11 @@ AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
-    CompileExpressions compile_expressions)
+    CompileExpressions compile_expressions,
+    const std::optional<Names> & identifier_typo_hint_columns)
 {
-    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context, /* build_subquery_sets */ true);
+    auto core = buildExpressionCoreDAG(
+        expression_ast, available_columns, context, /* build_subquery_sets */ true, identifier_typo_hint_columns);
     auto & actions = core.actions;
 
     if (actions.getOutputs().empty() && core.ast_column_names_no_aliases.empty())
