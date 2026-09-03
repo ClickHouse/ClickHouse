@@ -7,14 +7,29 @@ title: '安装指南'
 doc_type: 'guide'
 ---
 
-import {galaxyOnClick} from "/snippets/zh/lib/galaxy.jsx";
+export const withDocsBase = (href) => {
+  if (!href || !href.startsWith('/')) return href;
+  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  return base + href;
+};
 
-<Card title="ClickHouse Cloud" icon="cloud" href="/zh/get-started/setup/cloud" cta="查看指南">
-  无需为集群进行容量规划和扩缩容，即可立即开始构建。ClickHouse Cloud 会负责容量规划、扩缩容、
-  安全、可靠性和升级。
-</Card>
-
-<br />
+<div className="ch-install-cloud-card">
+  <span className="ch-install-cloud-badge">推荐</span>
+  <span className="ch-install-cloud-icon" aria-hidden="true"></span>
+  <p className="ch-install-cloud-title">ClickHouse Cloud</p>
+  <p className="ch-install-cloud-description">
+    无需为集群进行容量规划和扩缩容，即可立即开始构建。ClickHouse Cloud 会负责容量规划、扩缩容、
+    安全、可靠性和升级。
+  </p>
+  <div className="ch-install-cloud-actions">
+    <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
+      免费开始使用
+    </a>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/zh/get-started/setup/cloud')}>
+      阅读快速入门教程
+    </a>
+  </div>
+</div>
 
 如果你希望自行管理，请从下方的开源 ClickHouse 选项中选择一种。
 你可以使用快速安装脚本或 `clickhousectl` 命令行客户端进行本地安装，或者通过软件包或二进制文件安装
