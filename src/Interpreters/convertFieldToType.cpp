@@ -564,6 +564,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
+        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
+        const IDataType * unwrapped_hint = from_type_hint;
+        while (unwrapped_hint)
+        {
+            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
+                unwrapped_hint = nullable_hint->getNestedType().get();
+            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
+                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
+            else
+                break;
+        }
+
+        /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
+        if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
+            return convertFieldToTypeImpl(
+                enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
         return applyVisitor(FieldVisitorToString(), src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
@@ -823,7 +841,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", src.getTypeName(), agg_func_type->getName());
 
         const auto & name = src.safeGet<AggregateFunctionStateData>().name;
-        if (agg_func_type->getName() != name)
+        if (agg_func_type->getName() != name
+            && !DataTypeAggregateFunction::nameMatchesState(name, agg_func_type->getFunction(), agg_func_type->getVersion()))
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
