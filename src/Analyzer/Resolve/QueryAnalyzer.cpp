@@ -5817,6 +5817,13 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
             || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context)))
         return;
 
+    /// An `additional_table_filters` entry keyed by this view is applied by `PlannerJoinTree`, which
+    /// only looks at `TableNode` / `TableFunctionNode`. Inlining replaces the view's `TableNode` with
+    /// its query tree, and the filter would simply disappear - a wrong result even for an `INVOKER`
+    /// view, where the entry is the invoker's own. Keep such a view a table expression.
+    if (has_additional_filter)
+        return;
+
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
     auto view_query_tree = buildQueryTree(view_ast, view_context);

@@ -1,0 +1,8 @@
+invoker, analyzer:
+definer, analyzer:	198
+none, analyzer:	198
+definer, analyzer, inline views:	198
+invoker, legacy analyzer:
+definer, legacy analyzer:	198
+none, legacy analyzer:	198
+definer results:	98	0	98

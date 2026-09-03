@@ -2166,7 +2166,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
+                        /// A view-keyed `additional_table_filters` entry hides rows exactly like the
+                        /// view's own `WHERE` does, and the pushdown folds it into the shipped query
+                        /// (see below), where the invoker's predicate is free to merge with it on the
+                        /// shard. A barrier view must decline the rewrite for the same fail-closed
+                        /// reason it declines for a row policy, and read through
+                        /// `StorageView::readImpl`, which marks that filter step as a barrier.
+                        const bool additional_filter_needs_barrier = table_expression_query_info.additional_filter_ast
+                            && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
+
                         if (has_row_policy
+                            || additional_filter_needs_barrier
                             || force_skip_unused_shards
                             || inner_settings_forbid_pushdown
                             || outer_group_by_forbids_pushdown

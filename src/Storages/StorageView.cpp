@@ -57,6 +57,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -159,6 +160,30 @@ bool hasAggregatesOutsideSubqueries(const IAST & ast)
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             continue;
         if (hasAggregatesOutsideSubqueries(*child))
+            return true;
+    }
+    return false;
+}
+
+/// The `arrayJoin` function is the expression-level twin of the `ARRAY JOIN` clause: it drops the
+/// rows whose array is empty and multiplies the rest. It never shows up in `arrayJoinExpressionList`,
+/// so a view carrying it must be recognized here. Subqueries are skipped: their own rows are not the
+/// rows the enclosing `SELECT` returns, and `canHideRows` descends into them separately.
+bool hasArrayJoinFunctionOutsideSubqueries(const IAST & ast)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        const auto name = Poco::toLower(function->name);
+        /// `unnest` is a case-insensitive alias of `arrayJoin`.
+        if (name == "arrayjoin" || name == "unnest")
+            return true;
+    }
+
+    for (const auto & child : ast.children)
+    {
+        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
+            continue;
+        if (hasArrayJoinFunctionOutsideSubqueries(*child))
             return true;
     }
     return false;
@@ -996,8 +1021,10 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
         return true;
 
     /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
-    /// distinguishing), an aggregation without `GROUP BY` collapses all rows into one.
-    if (select->arrayJoinExpressionList().first || hasAggregatesOutsideSubqueries(*select))
+    /// distinguishing), an aggregation without `GROUP BY` collapses all rows into one, and the
+    /// `arrayJoin` function does what the clause does without appearing in the clause list.
+    if (select->arrayJoinExpressionList().first || hasAggregatesOutsideSubqueries(*select)
+        || hasArrayJoinFunctionOutsideSubqueries(*select))
         return true;
 
     const auto & tables = select->tables();
