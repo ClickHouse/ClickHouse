@@ -1,6 +1,6 @@
 #pragma once
+#include <mutex>
 #include <optional>
-
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
@@ -71,8 +71,38 @@ struct AggregatingTransformParams
 
 struct ManyAggregatedData
 {
+    /// Shared state of the kept-keys cutoff (`Aggregator::Params::shared_kept_keys_for_overflow_any`).
+    ///
+    /// The streams aggregate completely normally until the first stream exceeds
+    /// `max_rows_to_group_by` (`checkLimits` sets its `no_more_keys` in `ANY` mode). That stream
+    /// publishes a `seed` block of exactly `max_rows_to_group_by` of its keys with empty aggregate
+    /// states and sets `frozen`. Every stream then rebuilds its `AggregatedDataVariants` to exactly
+    /// the kept key set — before consuming its next chunk, or at merge preparation for the streams
+    /// that had already finished — keeping the states it accumulated for the kept keys and dropping
+    /// the rest, and continues on the regular `no_more_keys` path against the rebuilt table.
+    ///
+    /// The merged values of the kept keys are exact: every row consumed before the stream applied
+    /// the cutoff was aggregated normally, and every later row of a kept key finds the key in the
+    /// rebuilt table. Rows of the dropped keys are irrelevant — the keys are absent from every
+    /// rebuilt table, so they never reach the merged result (an unspecified subset of the groups
+    /// is a valid result for the LIMIT-without-ORDER-BY queries this serves).
+    struct SharedKeptKeys
+    {
+        std::mutex mutex;
+        std::atomic<bool> frozen{false};
+        /// Kept keys + empty aggregate states in the mergeable block layout.
+        /// Written once under `mutex`; immutable after `frozen` is set (readers synchronize
+        /// with an acquire load of `frozen`).
+        Block seed;
+        /// Per-variant: the variant was rebuilt to the kept key set. Written only by the variant's
+        /// owning stream during consumption; read by the last finishing stream in `initGenerate`,
+        /// synchronized via `num_finished`.
+        std::vector<char> applied;
+    };
+
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
+    std::shared_ptr<SharedKeptKeys> shared_kept_keys;
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
@@ -89,6 +119,12 @@ struct ManyAggregatedData
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
+    }
+
+    void enableSharedKeptKeys()
+    {
+        shared_kept_keys = std::make_shared<SharedKeptKeys>();
+        shared_kept_keys->applied.resize(variants.size(), 0);
     }
 
     ~ManyAggregatedData();
@@ -144,6 +180,11 @@ protected:
 private:
     size_t getGeneratingStepGroup() const;
 
+    /// Rebuilds `variants` to the shared kept key set (see ManyAggregatedData::SharedKeptKeys).
+    /// With `may_freeze` (this stream has just exceeded `max_rows_to_group_by`), publishes the
+    /// kept key set first unless another stream has already frozen it.
+    void applySharedKeptKeysCutoff(bool may_freeze);
+
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -162,12 +203,13 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+    /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
+    size_t variant_index = 0;
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
     /// included header (see `AdaptiveAggregationImpl.h`).
     std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
-
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

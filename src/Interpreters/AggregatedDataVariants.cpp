@@ -137,6 +137,7 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
     aggregates_pool = nullptr;
     aggregator = nullptr;
     type = Type::EMPTY;
+    restricted_to_kept_keys = false;
 }
 
 size_t AggregatedDataVariants::allocatedBytes() const

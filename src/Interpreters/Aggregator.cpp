@@ -66,6 +66,7 @@ namespace ProfileEvents
     extern const Event AggregationTopKKeysEvicted;
     extern const Event AggregationTopKKeysPruned;
     extern const Event AggregationTopKHeapsFrozen;
+    extern const Event AggregationSharedKeptKeysSpillReseeds;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
@@ -840,6 +841,26 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #undef M
         default:
             ;
+    }
+
+    /// See the comment on the member: the kept-keys cutoff must stay inert for the fixed hash
+    /// map methods, whose tables are bounded by the key space anyway.
+    if (params.shared_kept_keys_for_overflow_any)
+    {
+        switch (method_chosen)
+        {
+            case AggregatedDataVariants::Type::key8:
+            case AggregatedDataVariants::Type::key16:
+            case AggregatedDataVariants::Type::keys16:
+            case AggregatedDataVariants::Type::nullable_key8:
+            case AggregatedDataVariants::Type::nullable_key16:
+            case AggregatedDataVariants::Type::low_cardinality_key8:
+            case AggregatedDataVariants::Type::low_cardinality_key16:
+                shared_kept_keys_cutoff_inert = true;
+                break;
+            default:
+                break;
+        }
     }
 
     HashMethodContext::Settings cache_settings;
@@ -2478,14 +2499,19 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
+      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
+      * or re-seeds the kept keys into the emptied table (after it); see
+      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+        && worth_convert_to_two_level
+        && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
+        reseedKeptKeysAfterSpill(result);
     }
 
     return true;
@@ -2939,9 +2965,55 @@ void Aggregator::writeToTemporaryFileImpl(
 }
 
 
+bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
+{
+    if (!params.shared_kept_keys_control)
+        return true;
+
+    /// This stream has already stopped admitting keys. Its table may be flushed only once it has
+    /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is
+    /// re-seeded with them right after the flush, so the remaining rows of those keys keep being
+    /// aggregated (`reseedKeptKeysAfterSpill`). Before the rebuild the table still holds arbitrary
+    /// keys, whose merged values would be undercounted, so the spill is skipped — the very next
+    /// chunk applies the cutoff and unblocks it.
+    if (no_more_keys)
+        return result.restricted_to_kept_keys && params.shared_kept_keys_control->keptKeysSeed() != nullptr;
+
+    /// Before any freeze, the spill wins by permanently abandoning the cutoff: no rows have been
+    /// dropped anywhere yet, `checkLimits` stops capping, and the aggregation completes exactly,
+    /// spilling as it would without the optimization.
+    return params.shared_kept_keys_control->tryAbandon();
+}
+
+void Aggregator::reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const
+{
+    if (!result.restricted_to_kept_keys)
+        return;
+
+    /// The flush emptied the table while the stream keeps rejecting new keys, so re-insert the
+    /// kept keys with empty aggregate states. Merging an empty state into another is a no-op, so
+    /// the flushed partial states and the ones accumulated from here on add up exactly.
+    auto seed = params.shared_kept_keys_control->keptKeysSeed();
+    chassert(seed);
+
+    bool reseed_no_more_keys = false;
+    std::atomic<bool> is_cancelled = false;
+    mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, result, reseed_no_more_keys, is_cancelled);
+    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
+    chassert(!reseed_no_more_keys);
+
+    ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysSpillReseeds);
+}
+
 bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
-    if (!no_more_keys && params.max_rows_to_group_by && result_size > params.max_rows_to_group_by)
+    /// A cutoff abandoned in favor of external aggregation stops capping the tables entirely:
+    /// the derived `max_rows_to_group_by` exists only to serve the cutoff (see
+    /// `Params::SharedKeptKeysControl`).
+    const bool cutoff_abandoned = params.shared_kept_keys_control && params.shared_kept_keys_control->isAbandoned();
+
+    if (!no_more_keys && params.max_rows_to_group_by && !shared_kept_keys_cutoff_inert && !cutoff_abandoned
+        && result_size > params.max_rows_to_group_by)
     {
         switch (params.group_by_overflow_mode)
         {
@@ -5055,14 +5127,19 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
+      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
+      * or re-seeds the kept keys into the emptied table (after it); see
+      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && worth_convert_to_two_level)
+        && worth_convert_to_two_level
+        && spillAllowedUnderKeptKeysCutoff(no_more_keys, result))
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
+        reseedKeptKeysAfterSpill(result);
     }
 
     return true;

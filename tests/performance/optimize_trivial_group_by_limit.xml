@@ -10,4 +10,11 @@
 
     <query tag="optimized">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
     <query tag="baseline">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
+
+    <!-- With aggregate functions in the projection, the optimization restricts all
+         aggregation threads to a shared set of `n` kept keys, so the hash tables stay
+         tiny and the values of the kept keys stay exact (the ClickBench Q17 shape). -->
+
+    <query tag="optimized_agg">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
+    <query tag="baseline_agg">SELECT number % 100000000 AS k, count() FROM numbers_mt(200000000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
 </test>
