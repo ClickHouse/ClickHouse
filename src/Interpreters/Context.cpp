@@ -7318,6 +7318,9 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
     }
 
+    /// Disks and caches built by the reload above only recorded their probe; publish it here, where
+    /// none of the locks taken above is held, so a reload logs it instead of waiting for a reader.
+    flushExt4CorruptionKernelBugWarning(*this);
 }
 
 

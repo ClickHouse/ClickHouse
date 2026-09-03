@@ -22,7 +22,8 @@ namespace
     std::mutex pending_warning_mutex;
     std::optional<PreformattedMessage> pending_warning;
 
-    void recordWarning(PreformattedMessage message)
+    /// Only reached on Linux; the probe below is compiled out elsewhere.
+    [[maybe_unused]] void recordWarning(PreformattedMessage message)
     {
         std::lock_guard lock(pending_warning_mutex);
         pending_warning = std::move(message);
