@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace ProfileEvents
 {
@@ -21,6 +22,8 @@ namespace ProfileEvents
     extern const Event IcebergMetadataFilesCacheStaleMisses;
     extern const Event IcebergMetadataFilesCacheHits;
     extern const Event IcebergMetadataFilesCacheWeightLost;
+    extern const Event IcebergStorageMetadataCacheHits;
+    extern const Event IcebergStorageMetadataCacheMisses;
 }
 
 namespace CurrentMetrics
@@ -66,6 +69,16 @@ struct ParsedTableMetadata
 };
 using ParsedTableMetadataPtr = std::shared_ptr<const ParsedTableMetadata>;
 
+/// Derived query-ready storage metadata (columns + sorting key) built from one table state.
+/// Cached in the files cache so its lifecycle (bounded eviction, `SYSTEM CLEAR ICEBERG
+/// METADATA CACHE`) matches the parsed state it is derived from.
+struct DerivedStorageMetadata
+{
+    Iceberg::TableStateSnapshot state;
+    std::shared_ptr<const StorageInMemoryMetadata> metadata;
+};
+using DerivedStorageMetadataPtr = std::shared_ptr<const DerivedStorageMetadata>;
+
 /// The structure that can identify a manifest file. We store it in cache.
 /// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
 struct ManifestFileCacheKey
@@ -92,8 +105,17 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
     /// - parsed table state [file_path#version#snapshot_selector --> ParsedTableMetadataPtr]
-    std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo, ParsedTableMetadataPtr> cached_element;
+    /// - derived storage metadata [state serialization --> DerivedStorageMetadataPtr]
+    std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo, ParsedTableMetadataPtr, DerivedStorageMetadataPtr> cached_element;
     size_t memory_bytes;
+
+    explicit IcebergMetadataFilesCacheCell(DerivedStorageMetadataPtr derived_storage_metadata)
+        : cached_element(std::move(derived_storage_metadata))
+        /// Rough estimate: one entry per column plus overhead; the sorting-key
+        /// expression is small next to the column descriptions.
+        , memory_bytes(4096 + std::get<DerivedStorageMetadataPtr>(cached_element)->metadata->getColumns().size() * 256)
+    {
+    }
 
     explicit IcebergMetadataFilesCacheCell(ParsedTableMetadataPtr parsed_table_metadata)
         : cached_element(std::move(parsed_table_metadata))
@@ -192,6 +214,21 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
         return std::get<ParsedTableMetadataPtr>(result.first->cached_element);
+    }
+
+    template <typename LoadFunc>
+    DerivedStorageMetadataPtr getOrSetDerivedStorageMetadata(const String & key, LoadFunc && load_fn)
+    {
+        auto load_fn_wrapper = [&]()
+        {
+            return std::make_shared<IcebergMetadataFilesCacheCell>(load_fn());
+        };
+        auto result = Base::getOrSet(key, load_fn_wrapper);
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheHits);
+        return std::get<DerivedStorageMetadataPtr>(result.first->cached_element);
     }
 
     template <typename LoadFunc>

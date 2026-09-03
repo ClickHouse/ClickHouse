@@ -234,13 +234,6 @@ private:
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
-
-    struct DerivedMetadataCacheEntry
-    {
-        Iceberg::TableStateSnapshot state;
-        std::shared_ptr<const StorageInMemoryMetadata> metadata;
-    };
-    mutable std::shared_ptr<const DerivedMetadataCacheEntry> derived_metadata_cache;
 };
 
 }

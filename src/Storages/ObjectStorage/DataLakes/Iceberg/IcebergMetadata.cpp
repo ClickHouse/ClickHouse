@@ -1405,33 +1405,38 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     const auto & query_settings = local_context->getSettingsRef();
     const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
         || query_settings[Setting::iceberg_snapshot_id].changed;
-    if (!time_travel)
-    {
-        if (auto cached = std::atomic_load_explicit(&derived_metadata_cache, std::memory_order_acquire);
-            cached && cached->state == iceberg_state)
-        {
-            ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheHits);
-            return std::make_unique<StorageInMemoryMetadata>(*cached->metadata);
-        }
-        ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheMisses);
-    }
 
-    auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
-    result->setDataLakeTableState(state);
-    result->sorting_key = getSortingKey(local_context, iceberg_state);
-    if (!time_travel)
+    auto build = [&]() -> std::shared_ptr<const StorageInMemoryMetadata>
     {
-        auto entry = std::make_shared<DerivedMetadataCacheEntry>();
-        entry->state = iceberg_state;
-        entry->metadata = std::make_shared<const StorageInMemoryMetadata>(*result);
-        std::atomic_store_explicit(
-            &derived_metadata_cache,
-            std::const_pointer_cast<const DerivedMetadataCacheEntry>(entry),
-            std::memory_order_release);
-    }
-    return result;
+        auto result = std::make_unique<StorageInMemoryMetadata>();
+        result->setColumns(
+            ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+        result->setDataLakeTableState(state);
+        result->sorting_key = getSortingKey(local_context, iceberg_state);
+        return result;
+    };
+
+    /// Time-travel queries bypass the cache so they can never replace the current-state
+    /// entry. Without a files cache (e.g. `use_iceberg_metadata_files_cache=0`) there is
+    /// nothing to cache into, so build directly.
+    if (time_travel || !persistent_components.metadata_cache)
+        return std::make_unique<StorageInMemoryMetadata>(*build());
+
+    /// The key covers exactly the fields of `TableStateSnapshot::operator==`, so a cache hit
+    /// always describes the requested state.
+    const String derived_key = iceberg_state.metadata_file_path + "#v" + toString(iceberg_state.metadata_version)
+        + "#schema=" + toString(iceberg_state.schema_id) + "#snap="
+        + (iceberg_state.snapshot_id ? toString(*iceberg_state.snapshot_id) : "none");
+    auto cached = persistent_components.metadata_cache->getOrSetDerivedStorageMetadata(
+        derived_key,
+        [&]()
+        {
+            auto entry = std::make_shared<DerivedStorageMetadata>();
+            entry->state = iceberg_state;
+            entry->metadata = build();
+            return DerivedStorageMetadataPtr(std::move(entry));
+        });
+    return std::make_unique<StorageInMemoryMetadata>(*cached->metadata);
 }
 
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
