@@ -47,21 +47,25 @@ bech32Decode(address[, 'raw'])
 **アドレスをデコード**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **テストネットアドレス**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -105,7 +109,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Bech32アルゴリズム**
@@ -116,7 +120,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **カスタムHRP**
@@ -128,7 +132,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Cosmos SDK アドレス (BIP173、witness versionなし)&#x20;**
@@ -140,7 +144,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -231,7 +235,7 @@ SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS bin_uuid
 
 導入バージョン: v21.7.0
 
-この関数は、符号なし整数のバイナリ表現において、1 であるビットの位置を昇順で返します。
+この関数は、符号なし整数の2進表現において、1 であるビットの位置を昇順で返します。
 符号付きの入力整数は、まず符号なし整数にキャストされます。
 
 **構文**
@@ -246,7 +250,7 @@ bitPositionsToArray(arg)
 
 **戻り値**
 
-入力のバイナリ表現において、1 になっているビットの位置を昇順に並べた配列を返します。[`Array(UInt64)`](/ja/reference/data-types/array)
+入力の2進表現において、1 になっているビットの位置を昇順に並べた配列を返します。[`Array(UInt64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -269,9 +273,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
@@ -306,9 +310,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **2の累乗が1つだけ**
@@ -354,9 +358,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -547,35 +551,35 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **引数が1つの場合**
 
 ```sql title=Query
--- 引数が1つの場合、Hilbertコードは常にその引数自体（タプルとして）になります。
+-- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **拡張モード**
 
 ```sql title=Query
--- ビットシフトを指定するタプルを持つ単一の引数は、それに応じて右シフトされます。
+-- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **カラムでの使用**
 
 ```sql title=Query
--- まずテーブルを作成してデータを挿入する
+-- First create the table and insert some data
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
     n2 UInt32
@@ -584,12 +588,12 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
--- 定数の代わりにカラム名を関数の引数として使用する
+-- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -713,7 +717,7 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 
 導入バージョン: v24.6.0
 
-Morton エンコーディング (ZCurve) を、対応する符号なし整数のタプルにデコードします。
+Morton 符号化 (ZCurve) を、対応する符号なし整数のタプルにデコードします。
 
 `mortonEncode` 関数と同様に、この関数には 2 つの動作モードがあります。
 
@@ -743,10 +747,10 @@ Morton エンコーディング (ZCurve) を、対応する符号なし整数の
 **構文**
 
 ```sql
--- シンプルモード
+-- Simple mode
 mortonDecode(tuple_size, code)
 
--- 拡張モード
+-- Expanded mode
 mortonDecode(range_mask, code)
 ```
 
@@ -769,7 +773,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **引数が1つの場合**
@@ -779,7 +783,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **拡張モードで 1 つの引数を縮小する**
@@ -789,13 +793,13 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **カラムでの使用**
 
 ```sql title=Query
--- まずテーブルを作成してデータを挿入する
+-- First create the table and insert some data
 CREATE TABLE morton_numbers(
     n1 UInt32,
     n2 UInt32,
@@ -810,12 +814,12 @@ ENGINE=MergeTree()
 ORDER BY n1;
 INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 
--- 関数の引数として定数の代わりにカラム名を使用する
+-- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -971,9 +975,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1054,7 +1058,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1101,7 +1105,7 @@ unhex(arg)
 
 **引数**
 
-* `arg` — 任意個の16進数字を含む文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
+* `arg` — 任意個の16 進数を含む文字列。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
 
 **戻り値**
 
@@ -1116,7 +1120,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```

@@ -6,7 +6,7 @@ Run from the docs root (the directory containing docs.json):
 
     python3 ../ci/jobs/scripts/docs/quickstarts_check.py .
 
-Two checks (see docs/get-started/quickstarts/README.md for the authoring
+Eight checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
@@ -29,8 +29,35 @@ guide):
    author edited a quickstart without re-running the generator and committing
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
+
+3. Homepage links. English and localized homepages must render the canonical
+   `/docs` mount during server-side rendering. Localized links must also use the
+   page's locale before hydration. This keeps middle-click, copied links, and
+   no-JavaScript clients on the final published destination.
+
+4. Install-page Cloud banner parity. The English and localized install pages
+   must render the same recommended Cloud banner, attributed signup link, and
+   locale-preserving quickstart link under the canonical `/docs` mount.
+
+5. Explorer links. Quickstart and sample-dataset cards must render the
+   canonical `/docs` mount during server-side rendering in English and every
+   locale.
+
+6. Cloud setup signup attribution. The English and localized Cloud setup
+   guides must all use the same attributed signup URL.
+
+7. Localized quickstart navigation. The group labels added for the quickstart
+   explorer must use each locale's existing terminology instead of rendering
+   English labels in translated sidebars.
+
+8. Cloud setup link labels. Links from quickstart prerequisites to the Cloud
+   setup guide must use that destination page's title in English and every
+   locale, so retiring or renaming an onboarding page cannot leave stale copy.
 """
 
+import html
+import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -53,6 +80,87 @@ ALLOWED_PRODUCTS = [
 ]
 SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
+CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
+INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
+EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
+LOCALIZED_QUICKSTART_GROUPS = {
+    "ar": [
+        "الأدلة السريعة",
+        "جميع حالات الاستخدام",
+        "التحليلات في الوقت الفعلي",
+        "مستودعات البيانات",
+        "أوبزرفابيليتي",
+    ],
+    "es": [
+        "Guías de inicio rápido",
+        "Todos los casos de uso",
+        "Análisis en tiempo real",
+        "Almacenamiento de datos",
+        "Observabilidad",
+    ],
+    "fr": [
+        "Guides de démarrage rapide",
+        "Tous les cas d’usage",
+        "Analytique en temps réel",
+        "Entrepôt de données",
+        "Observabilité",
+    ],
+    "ja": [
+        "クイックスタート",
+        "すべてのユースケース",
+        "リアルタイム分析",
+        "データウェアハウジング",
+        "オブザーバビリティ",
+    ],
+    "ko": [
+        "빠른 시작",
+        "모든 사용 사례",
+        "실시간 분석",
+        "데이터 웨어하우징",
+        "관측성",
+    ],
+    "pt-BR": [
+        "Guias de início rápido",
+        "Todos os casos de uso",
+        "Analytics em tempo real",
+        "Armazenamento de dados",
+        "Observabilidade",
+    ],
+    "ru": [
+        "Быстрый старт",
+        "Все сценарии использования",
+        "Аналитика в реальном времени",
+        "Хранилище данных",
+        "Обсервабилити",
+    ],
+    "zh": [
+        "快速入门",
+        "所有用例",
+        "实时分析",
+        "数据仓库",
+        "可观测性",
+    ],
+}
+LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
+    "ar": "البدء السريع عبر Cloud",
+    "es": "Inicio rápido en Cloud",
+    "fr": "Démarrage rapide Cloud",
+    "ja": "Cloud クイックスタート",
+    "ko": "Cloud 빠른 시작",
+    "pt-BR": "Início rápido na Cloud",
+    "ru": "Быстрый старт в Cloud",
+    "zh": "Cloud 快速入门",
+}
+LOCALIZED_MCP_LABELS = {
+    "ar": "خادم MCP",
+    "es": "servidor MCP",
+    "fr": "serveur MCP",
+    "ja": "MCPサーバー",
+    "ko": "MCP 서버",
+    "pt-BR": "servidor MCP",
+    "ru": "MCP-сервер",
+    "zh": "MCP 服务器",
+}
 
 # The badge block the generator rewrites, same pattern as
 # update_quickstart_page in _site/scripts/update_quickstarts.py.
@@ -188,6 +296,668 @@ def generated_paths(docs_root: Path) -> list:
 GENERATOR_COMMAND = "python3 _site/scripts/update_quickstarts.py"
 
 
+def read_generated_quickstarts(path: Path) -> list:
+    """Read the JSON array embedded in a generated quickstarts data module."""
+    source = path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^export const quickStartsData = (?P<data>\[.*\]);\s*$",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        raise ValueError("could not find the exported quickStartsData array")
+    data = json.loads(match.group("data"))
+    if not isinstance(data, list):
+        raise ValueError("quickStartsData must be an array")
+    return data
+
+
+def check_cloud_setup_cards(docs_root: Path) -> list:
+    """Ensure legacy pages stay deleted while their explorer cards remain."""
+    generator_path = docs_root / "_site" / "scripts" / "update_quickstarts.py"
+    spec = importlib.util.spec_from_file_location(
+        "update_quickstarts_for_check", generator_path
+    )
+    if spec is None or spec.loader is None:
+        return [f"could not load quickstart generator from {generator_path}"]
+
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+
+    errors = []
+    translations = generator.CLOUD_SETUP_CARD_TRANSLATIONS
+    if set(translations) != set(LOCALES):
+        errors.append(
+            "Cloud setup card translations must cover exactly: "
+            + ", ".join(LOCALES)
+        )
+
+    unsupported_frontmatter = {
+        "multiline YAML scalars": (
+            "---\ntitle: 'Example'\ndescription: >\n  Folded\n---\n"
+        ),
+        "unsupported double-quoted YAML escapes": (
+            '---\ntitle: "Line\\nBreak"\ndescription: "Example"\n---\n'
+        ),
+    }
+    for description, sample in unsupported_frontmatter.items():
+        try:
+            generator.parse_frontmatter(sample)
+        except ValueError:
+            pass
+        else:
+            errors.append(
+                f"the quickstart generator must reject {description} that "
+                "its limited frontmatter parser cannot represent"
+            )
+
+    redirects_path = docs_root / "_site" / "redirects.json"
+    redirects = json.loads(redirects_path.read_text(encoding="utf-8"))
+
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        legacy_page = (
+            docs_root
+            / prefix
+            / "get-started"
+            / "quickstarts"
+            / "create-your-first-service-on-cloud.mdx"
+        )
+        if legacy_page.exists():
+            errors.append(
+                f"{legacy_page.relative_to(docs_root)}: delete this legacy "
+                "page; the explorer card is generated separately"
+            )
+
+        locale_prefix = f"/{locale}" if locale else ""
+        redirect_source = (
+            f"{locale_prefix}/get-started/quickstarts/"
+            "create-your-first-service-on-cloud"
+        )
+        redirect_destination = f"{locale_prefix}/get-started/setup/cloud"
+        redirect_matches = [
+            item for item in redirects if item.get("source") == redirect_source
+        ]
+        if (
+            len(redirect_matches) != 1
+            or redirect_matches[0].get("destination") != redirect_destination
+        ):
+            errors.append(
+                f"{redirects_path.relative_to(docs_root)}: expected exactly "
+                f"one redirect from {redirect_source!r} to "
+                f"{redirect_destination!r}"
+            )
+
+        expected = {
+            **generator.CLOUD_SETUP_CARD,
+            **translations.get(locale, {}),
+        }
+        generated = []
+        try:
+            generator.add_cloud_setup_card(generated, locale)
+        except Exception as ex:
+            errors.append(f"{locale or 'English'}: Cloud setup card failed: {ex}")
+            continue
+
+        card = generated[0]
+        for field in ("id", "title", "description", "useCases", "products"):
+            if card.get(field) != expected.get(field):
+                errors.append(
+                    f"{locale or 'English'}: generated Cloud card {field} "
+                    "does not match its configured explorer metadata"
+                )
+        setup_page = (
+            docs_root / prefix / "get-started" / "setup" / "cloud.mdx"
+        )
+        try:
+            frontmatter = generator.parse_frontmatter(
+                setup_page.read_text(encoding="utf-8")
+            )
+        except ValueError as ex:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: unsupported "
+                f"frontmatter: {ex}"
+            )
+            frontmatter = {}
+        for field in ("title", "description"):
+            if card.get(field) != frontmatter.get(field):
+                errors.append(
+                    f"{setup_page.relative_to(docs_root)}: generated Cloud "
+                    f"card {field} must match the destination page frontmatter"
+                )
+        expected_href = f"{locale_prefix}/get-started/setup/cloud"
+        if card.get("href") != expected_href:
+            errors.append(
+                f"{locale or 'English'}: generated Cloud card href is "
+                f"{card.get('href')!r}; expected {expected_href!r}"
+            )
+
+        data_root = docs_root / "snippets"
+        if locale:
+            data_root /= locale
+        data_path = (
+            data_root
+            / "components"
+            / "QuickStartsGrid"
+            / "quickstarts-data.jsx"
+        )
+        try:
+            shipped_cards = read_generated_quickstarts(data_path)
+        except (OSError, ValueError, json.JSONDecodeError) as ex:
+            errors.append(
+                f"{data_path.relative_to(docs_root)}: cannot validate "
+                f"generated Cloud setup card: {ex}"
+            )
+            shipped_cards = []
+
+        matching_cards = [
+            item for item in shipped_cards
+            if item.get("id") == generator.CLOUD_SETUP_CARD["id"]
+        ]
+        if len(matching_cards) != 1:
+            errors.append(
+                f"{data_path.relative_to(docs_root)}: expected exactly one "
+                "shipped create-your-first-service-on-cloud card"
+            )
+        else:
+            expected_shipped = {**expected, "href": expected_href}
+            expected_shipped["useCases"] = [
+                generator.slugify_tag(value)
+                for value in expected_shipped["useCases"]
+            ]
+            expected_shipped["products"] = [
+                generator.slugify_tag(value)
+                for value in expected_shipped["products"]
+            ]
+            shipped_card = matching_cards[0]
+            for field in (
+                "id",
+                "title",
+                "description",
+                "href",
+                "useCases",
+                "products",
+            ):
+                if shipped_card.get(field) != expected_shipped.get(field):
+                    errors.append(
+                        f"{data_path.relative_to(docs_root)}: shipped Cloud "
+                        f"card {field} is {shipped_card.get(field)!r}; "
+                        f"expected {expected_shipped.get(field)!r}"
+                    )
+
+        expected_sidebar_title = (
+            LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES[locale]
+            if locale
+            else "Cloud quickstart"
+        )
+        if frontmatter.get("sidebarTitle") != expected_sidebar_title:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: sidebarTitle is "
+                f"{frontmatter.get('sidebarTitle')!r}; expected "
+                f"{expected_sidebar_title!r}"
+            )
+    return errors
+
+
+def check_cloud_setup_link_labels(docs_root: Path) -> list:
+    """Ensure Cloud prerequisite links use their destination page title."""
+    errors = []
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        locale_prefix = f"/{locale}" if locale else ""
+        setup_page = (
+            docs_root / prefix / "get-started" / "setup" / "cloud.mdx"
+        )
+        setup_source = setup_page.read_text(encoding="utf-8")
+        title_match = re.search(
+            r"^title:\s*(['\"])(.*?)\1\s*$", setup_source, re.MULTILINE
+        )
+        if not title_match:
+            errors.append(
+                f"{setup_page.relative_to(docs_root)}: missing quoted title"
+            )
+            continue
+        expected_label = title_match.group(2)
+        expected_href = f"{locale_prefix}/get-started/setup/cloud"
+        markdown_link = re.compile(
+            rf"\[([^\]]+)\]\({re.escape(expected_href)}\)"
+        )
+        opening_tag = re.compile(
+            r"<(?P<tag>[A-Za-z][\w.:-]*)\b(?P<attrs>[^>]*)>",
+            re.DOTALL,
+        )
+        carrier_target = re.compile(
+            rf"\b(?:href|to)\s*=\s*(?:\{{[^}}]*?)?(['\"])"
+            rf"{re.escape(expected_href)}\1(?:[^}}]*\}})?"
+        )
+        label_attribute = re.compile(
+            r"\b(?:aria-label|label|title)\s*=\s*(?:\{\s*)?"
+            r"(['\"])(.*?)\1\s*\}?",
+            re.DOTALL,
+        )
+        quickstarts_dir = docs_root / prefix / "get-started" / "quickstarts"
+        for pattern in ("**/*.mdx", "**/*.md"):
+            for page in quickstarts_dir.glob(pattern):
+                source = page.read_text(encoding="utf-8")
+                covered_spans = []
+                for match in markdown_link.finditer(source):
+                    covered_spans.append(match.span())
+                    if match.group(1) != expected_label:
+                        errors.append(
+                            f"{page.relative_to(docs_root)}: Cloud setup link "
+                            f"label is {match.group(1)!r}; expected destination "
+                            f"title {expected_label!r}"
+                        )
+
+                for match in opening_tag.finditer(source):
+                    attrs = match.group("attrs")
+                    if not carrier_target.search(attrs):
+                        continue
+                    covered_spans.append(match.span())
+                    labels = [
+                        html.unescape(" ".join(label.group(2).split()))
+                        for label in label_attribute.finditer(attrs)
+                    ]
+                    if not match.group(0).rstrip().endswith("/>"):
+                        closing = re.search(
+                            rf"</{re.escape(match.group('tag'))}\s*>",
+                            source[match.end():],
+                            re.IGNORECASE,
+                        )
+                        if closing:
+                            body = source[
+                                match.end():match.end() + closing.start()
+                            ]
+                            body = re.sub(r"<[^>]+>", "", body)
+                            body = re.sub(r"\{[^{}]*\}", "", body)
+                            body_label = html.unescape(" ".join(body.split()))
+                            if body_label:
+                                labels.append(body_label)
+                    if expected_label not in labels:
+                        line = source.count("\n", 0, match.start()) + 1
+                        errors.append(
+                            f"{page.relative_to(docs_root)}:{line}: Cloud "
+                            "setup href/to carrier must expose the destination "
+                            f"title {expected_label!r}; found {labels!r}"
+                        )
+
+                for target in re.finditer(re.escape(expected_href), source):
+                    if any(
+                        start <= target.start() < end
+                        for start, end in covered_spans
+                    ):
+                        continue
+                    line = source.count("\n", 0, target.start()) + 1
+                    errors.append(
+                        f"{page.relative_to(docs_root)}:{line}: Cloud setup "
+                        "path is outside a supported labeled Markdown or "
+                        "MDX href/to carrier"
+                    )
+    return errors
+
+
+def check_localized_homepage_links(docs_root: Path) -> list:
+    """Ensure homepage links include the docs mount and locale before hydration."""
+    component = re.compile(
+        r"export const QuickstartPill = \(\{ children \}\) => \{"
+        r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
+        r".*?const href = withDocsBase\(path\);"
+        r".*?href=\{href\}",
+        re.DOTALL,
+    )
+    helper = re.compile(
+        r"export const localizeHref = \(href\) => \{"
+        r".*?const locale = match \? match\[1\] : "
+        r"['\"](?P<locale>[^'\"]+)['\"];"
+        r".*?return `/\$\{locale\}\$\{href\}`;",
+        re.DOTALL,
+    )
+    hero_card = re.compile(
+        r'<HeroCard\s+.*?galaxyEvent="docs\.home\.get-started".*?\n\s*/>',
+        re.DOTALL,
+    )
+    localized_link = re.compile(
+        r"localizeHref\((?P<quote>['\"])(?P<href>/[^'\"]+)"
+        r"(?P=quote)\)"
+    )
+    raw_internal_link = re.compile(
+        r"href(?:=\{?|:)\s*['\"](?P<href>/[^'\"]+)['\"]"
+    )
+    mcp_link = re.compile(
+        r"export const McpLink = \(\{ children \}\) => \{"
+        r".*?const path = localizeHref\("
+        r"['\"]/resources/support-center/knowledge-base/setup-installation/"
+        r"set-up-clickhouse-documentation-mcp-server['\"]\);"
+        r".*?const href = withDocsBase\(path\);"
+        r".*?href=\{href\}",
+        re.DOTALL,
+    )
+    docs_base_helper = (
+        "export const withDocsBase = (href) => {\n"
+        "    if (!href || !href.startsWith('/')) return href;\n"
+        "    const base = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
+        "    return base + href;\n"
+        "};"
+    )
+    navigation_helper = (
+        "export const navigateTo = (event, href) => {\n"
+        "    if (event.defaultPrevented) return;\n"
+        "    if (event.metaKey || event.ctrlKey || event.shiftKey || "
+        "event.altKey || event.button !== 0) return;\n"
+        "    event.preventDefault();\n"
+        "    window.location.href = href;\n"
+        "};"
+    )
+    docs_base_requirements = {
+        "const assetBase = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
+        "const resolvedHref = withDocsBase(href);": 1,
+        "href={resolvedHref}": 2,
+        "href={withDocsBase(link.href)}": 1,
+        "onClick={(event) => navigateTo(event, resolvedHref)}": 2,
+        "onClick={(event) => navigateTo(event, "
+        "withDocsBase(link.href))}": 1,
+        "onClick={(event) => navigateTo(event, href)}": 3,
+        "const href = withDocsBase(localizeHref('/integrations/home'));": 1,
+        "const href = withDocsBase(path);": 2,
+    }
+    cloud_link = 'localizeHref("/get-started/setup/cloud")'
+    errors = []
+
+    for locale in [None, *LOCALES]:
+        prefix = f"{locale}/" if locale else ""
+        page = docs_root / prefix / "index.mdx"
+        source = page.read_text(encoding="utf-8")
+        name = page.relative_to(docs_root)
+
+        if source.count(docs_base_helper) != 1:
+            errors.append(
+                f"{name}: withDocsBase must default to the canonical `/docs` "
+                "mount during server-side rendering"
+            )
+        if source.count(navigation_helper) != 1:
+            errors.append(
+                f"{name}: navigateTo must preserve modifier and non-primary "
+                "clicks before overriding same-tab navigation"
+            )
+        for marker, count in docs_base_requirements.items():
+            if source.count(marker) != count:
+                errors.append(
+                    f"{name}: expected {count} occurrence(s) of {marker!r} "
+                    "so rendered homepage anchors include `/docs`"
+                )
+
+        expected_path = "/get-started/setup/cloud"
+        if locale:
+            expected_path = f"/{locale}{expected_path}"
+        component_match = component.search(source)
+        if not component_match:
+            errors.append(
+                f"{name}: could not find a static QuickstartPill path "
+                "resolved through withDocsBase"
+            )
+        elif component_match.group("path") != expected_path:
+            errors.append(
+                f"{name}: QuickstartPill path is "
+                f"{component_match.group('path')!r}; expected "
+                f"{expected_path!r}, which resolves to "
+                f"{f'/docs{expected_path}'!r} during server rendering"
+            )
+
+    for locale in LOCALES:
+        page = docs_root / locale / "index.mdx"
+        source = page.read_text(encoding="utf-8")
+
+        helper_match = helper.search(source)
+        if not helper_match or helper_match.group("locale") != locale:
+            errors.append(
+                f"{page.relative_to(docs_root)}: localizeHref must use "
+                f"{locale!r} as its server-rendering fallback"
+            )
+
+        localized_links = [
+            match.group("href") for match in localized_link.finditer(source)
+        ]
+        if len(localized_links) != EXPECTED_LOCALIZED_HOMEPAGE_LINKS:
+            errors.append(
+                f"{page.relative_to(docs_root)}: found {len(localized_links)} "
+                "homepage links routed through localizeHref; expected "
+                f"{EXPECTED_LOCALIZED_HOMEPAGE_LINKS}"
+            )
+        elif helper_match:
+            fallback = helper_match.group("locale")
+            invalid = [
+                href for href in localized_links
+                if not f"/{fallback}{href}".startswith(f"/{locale}/")
+            ]
+            if invalid:
+                errors.append(
+                    f"{page.relative_to(docs_root)}: server-rendered links "
+                    f"do not preserve {locale!r}: {', '.join(invalid)}"
+                )
+
+        raw_links = [
+            match.group("href") for match in raw_internal_link.finditer(source)
+        ]
+        if raw_links:
+            errors.append(
+                f"{page.relative_to(docs_root)}: raw internal homepage links "
+                "bypass localizeHref: " + ", ".join(raw_links)
+            )
+
+        if not mcp_link.search(source):
+            errors.append(
+                f"{page.relative_to(docs_root)}: McpLink must route its "
+                "knowledge-base path through localizeHref"
+            )
+
+        mcp_label = LOCALIZED_MCP_LABELS[locale]
+        mcp_label_marker = f"<McpLink>{mcp_label}</McpLink>"
+        if source.count(mcp_label_marker) != 1:
+            errors.append(
+                f"{page.relative_to(docs_root)}: expected localized MCP "
+                f"link label {mcp_label!r}"
+            )
+
+        hero_match = hero_card.search(source)
+        if not hero_match or hero_match.group(0).count(cloud_link) != 2:
+            errors.append(
+                f"{page.relative_to(docs_root)}: the main get-started "
+                "HeroCard must route both Cloud setup links through "
+                "localizeHref"
+            )
+    return errors
+
+
+def check_cloud_setup_signup_attribution(docs_root: Path) -> list:
+    """Ensure every Cloud setup guide uses the attributed signup URL."""
+    signup_link = re.compile(
+        r"https://(?:console\.)?clickhouse\.cloud/signUp(?:\?[^)\s]+)?"
+    )
+    pages = [docs_root / "get-started" / "setup" / "cloud.mdx"]
+    pages += [
+        docs_root / locale / "get-started" / "setup" / "cloud.mdx"
+        for locale in LOCALES
+    ]
+
+    errors = []
+    for page in pages:
+        links = signup_link.findall(page.read_text(encoding="utf-8"))
+        if not links:
+            errors.append(
+                f"{page.relative_to(docs_root)}: no ClickHouse Cloud signup "
+                "link found"
+            )
+            continue
+        for link in links:
+            if link != CLOUD_SIGNUP_URL:
+                errors.append(
+                    f"{page.relative_to(docs_root)}: signup link is {link!r}; "
+                    f"expected {CLOUD_SIGNUP_URL!r}"
+                )
+    return errors
+
+
+def check_install_cloud_banners(docs_root: Path) -> list:
+    """Ensure every install page has the same Cloud-first entry points."""
+    pages = [(None, docs_root / "get-started" / "setup" / "install.mdx")]
+    pages += [
+        (
+            locale,
+            docs_root / locale / "get-started" / "setup" / "install.mdx",
+        )
+        for locale in LOCALES
+    ]
+
+    docs_base_helper = (
+        "export const withDocsBase = (href) => {\n"
+        "  if (!href || !href.startsWith('/')) return href;\n"
+        "  const base = typeof window === 'undefined' || "
+        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
+        "  return base + href;\n"
+        "};"
+    )
+    errors = []
+    for locale, page in pages:
+        source = page.read_text(encoding="utf-8")
+        name = page.relative_to(docs_root)
+        quickstart_href = "/get-started/setup/cloud"
+        if locale:
+            quickstart_href = f"/{locale}{quickstart_href}"
+        quickstart_anchor = f"href={{withDocsBase('{quickstart_href}')}}"
+
+        if source.count('className="ch-install-cloud-card"') != 1:
+            errors.append(
+                f"{name}: expected one recommended Cloud install banner"
+            )
+        if source.count(f'href="{INSTALL_SIGNUP_URL}"') != 1:
+            errors.append(
+                f"{name}: expected one signup link attributed with "
+                "`loc=docs-install-page-banner`"
+            )
+        if source.count(docs_base_helper) != 1:
+            errors.append(
+                f"{name}: withDocsBase must default to the canonical `/docs` "
+                "mount during server-side rendering"
+            )
+        if source.count(quickstart_anchor) != 1:
+            errors.append(
+                f"{name}: expected one Cloud quickstart link that renders "
+                f"{f'/docs{quickstart_href}'!r} during server-side rendering"
+            )
+        if '<Card title="ClickHouse Cloud"' in source:
+            errors.append(
+                f"{name}: legacy single-card Cloud treatment is still present"
+            )
+    return errors
+
+
+def check_explorer_docs_links(docs_root: Path) -> list:
+    """Ensure explorer card anchors include `/docs` before hydration."""
+    errors = []
+    for locale in [None, *LOCALES]:
+        snippets_root = docs_root / "snippets"
+        if locale:
+            snippets_root /= locale
+            docs_base = (
+                'const assetBase = typeof window === "undefined" || '
+                'window.location.pathname.startsWith("/docs") ? "/docs" : ""'
+            )
+        else:
+            docs_base = (
+                "const assetBase = typeof window === 'undefined' || "
+                "window.location.pathname.startsWith('/docs') ? '/docs' : '';"
+            )
+
+        components = [
+            (
+                snippets_root
+                / "components"
+                / "QuickStartsGrid"
+                / "QuickStartsGrid.jsx",
+                "href={withBase(quickStart.href)}",
+                "href={quickStart.href}",
+                2,
+            ),
+            (
+                snippets_root
+                / "components"
+                / "SampleDatasetExplorer"
+                / "SampleDatasetExplorer.jsx",
+                "href={withBase(ds.href)}",
+                "href={ds.href}",
+                1,
+            ),
+        ]
+        for path, resolved_anchor, raw_anchor, expected_count in components:
+            source = path.read_text(encoding="utf-8")
+            name = path.relative_to(docs_root)
+            if source.count(docs_base) != 1:
+                errors.append(
+                    f"{name}: assetBase must default to `/docs` during "
+                    "server-side rendering"
+                )
+            if source.count(resolved_anchor) != expected_count:
+                errors.append(
+                    f"{name}: expected {expected_count} server-rendered "
+                    "card anchor(s) resolved through withBase"
+                )
+            if raw_anchor in source:
+                errors.append(
+                    f"{name}: raw card anchor {raw_anchor!r} bypasses the "
+                    "canonical `/docs` mount"
+                )
+    return errors
+
+
+def navigation_groups(node):
+    """Yield every navigation object that owns a named page group."""
+    if isinstance(node, dict):
+        if "group" in node and "pages" in node:
+            yield node
+        for value in node.values():
+            yield from navigation_groups(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from navigation_groups(value)
+
+
+def check_localized_quickstart_navigation(docs_root: Path) -> list:
+    """Ensure the new quickstart groups are translated in every locale."""
+    errors = []
+    for locale in LOCALES:
+        path = docs_root / locale / "get-started" / "navigation.json"
+        navigation = json.loads(path.read_text(encoding="utf-8"))
+        home = f"{locale}/get-started/quickstarts/home"
+        matches = [
+            group
+            for group in navigation_groups(navigation)
+            if home in group.get("pages", [])
+        ]
+        if len(matches) != 1:
+            errors.append(
+                f"{path.relative_to(docs_root)}: expected exactly one "
+                "Quickstarts group containing the explorer home page"
+            )
+            continue
+
+        quickstarts_group = matches[0]
+        labels = [quickstarts_group["group"]]
+        labels += [
+            page["group"]
+            for page in quickstarts_group["pages"]
+            if isinstance(page, dict) and "group" in page
+        ]
+        expected = LOCALIZED_QUICKSTART_GROUPS[locale]
+        if labels != expected:
+            errors.append(
+                f"{path.relative_to(docs_root)}: localized quickstart groups "
+                f"are {labels!r}; expected {expected!r}"
+            )
+    return errors
+
+
 def check_freshness(docs_root: Path) -> list:
     generator = docs_root / "_site" / "scripts" / "update_quickstarts.py"
     # Snapshot the content of everything the generator may rewrite, so the
@@ -239,6 +1009,13 @@ def main() -> int:
 
     errors = check_searchable(docs_root)
     errors += check_frontmatter(docs_root)
+    errors += check_cloud_setup_cards(docs_root)
+    errors += check_cloud_setup_link_labels(docs_root)
+    errors += check_localized_homepage_links(docs_root)
+    errors += check_install_cloud_banners(docs_root)
+    errors += check_explorer_docs_links(docs_root)
+    errors += check_cloud_setup_signup_attribution(docs_root)
+    errors += check_localized_quickstart_navigation(docs_root)
     # Only bother running the generator when the tags are valid — invalid tags
     # would just produce garbage slugs in the regenerated data.
     if not errors:
@@ -249,7 +1026,7 @@ def main() -> int:
         for e in errors:
             print(f"- {e}")
         return 1
-    print("OK: quickstart frontmatter valid, generated data up to date")
+    print("OK: quickstart and Cloud onboarding docs checks passed")
     return 0
 
 
