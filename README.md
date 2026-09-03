@@ -67,7 +67,7 @@ Upcoming meetups
 Recent meetups
 * [Bangalore Iceberg Community Meetup](https://luma.com/clickh-t3iz) - August 22nd, 2026
 * [Vancouver Meetup](https://luma.com/jr8tc94e) - August 25th, 2026
-* [Boston Trivia](https://luma.com/clickh-thmi)- August 31st, 2026
+* [Boston Trivia](https://luma.com/clickh-thmi) - August 31st, 2026
 * [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 * [The Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
 
