@@ -21,7 +21,7 @@ SELECT id FROM t_has_enum_bf WHERE has(CAST(['a', 'b'], 'Array(Enum8(\'a\' = 1, 
 SELECT id FROM t_has_enum_bf WHERE has(CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), f) ORDER BY id;
 
 -- The index is used and prunes the granules that do not have the name of the enum value.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_enum_bf WHERE has(CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), s)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_enum_bf WHERE has(CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), s)) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 -- The same without the index.
 SELECT id FROM t_has_enum_bf WHERE has(CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'), s) ORDER BY id SETTINGS use_skip_indexes = 0;
@@ -52,7 +52,7 @@ SELECT id FROM t_has_any_enum_bf WHERE hasAny(f, CAST(['a'], 'Array(Enum8(\'a\' 
 SELECT id FROM t_has_any_enum_bf WHERE hasAll(f, CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))')) ORDER BY id;
 
 -- The index is used and prunes the granules that do not have the name of the enum value.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_any_enum_bf WHERE hasAny(s, CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'))) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_has_any_enum_bf WHERE hasAny(s, CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))'))) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 -- The same without the index: the results must agree.
 SELECT id FROM t_has_any_enum_bf WHERE hasAny(s, CAST(['a'], 'Array(Enum8(\'a\' = 1, \'b\' = 2))')) ORDER BY id SETTINGS use_skip_indexes = 0;

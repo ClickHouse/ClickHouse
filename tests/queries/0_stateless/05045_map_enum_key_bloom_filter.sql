@@ -33,7 +33,7 @@ SELECT id FROM t_map_enum_bf WHERE m['nonexistent'] = 10 ORDER BY id; -- { serve
 -- The index is still used and prunes the granules that do not have the key.
 SELECT count() FROM t_map_enum_bf WHERE m['a'] = 10;
 SELECT count() FROM t_map_enum_bf WHERE m['b'] = 10;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_enum_bf WHERE m['b'] = 20) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_enum_bf WHERE m['b'] = 20) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
 -- The same with the subcolumn rewrite enabled.
 SET optimize_functions_to_subcolumns = 1;

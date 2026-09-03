@@ -63,7 +63,7 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_not_has SELECT intDiv(number, 4) FROM numbers(24);
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has WHERE notHas([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has WHERE notHas([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 SELECT count() FROM test_not_has WHERE notHas([1], x);
 SELECT count() FROM test_not_has WHERE notHas([1], x) SETTINGS use_primary_key = 0;
 SELECT count() FROM test_not_has WHERE NOT has([1], x);
