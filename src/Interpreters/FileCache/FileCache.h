@@ -223,13 +223,10 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
-    /// The budget of the current query for this cache. Null when this cache forbids the limit, the
-    /// query sets none, or there is no query at all (a background operation).
-    FileCacheQueryBudgetPtr getQueryBudget(const FilesystemCacheSettings & settings) const;
-
-    /// The budget of the current query if it already has one for this cache. Used by writes, which
-    /// do not know the limit themselves: they take part in it only when the query also reads.
-    FileCacheQueryBudgetPtr getQueryBudgetIfExists() const;
+    /// The budget of the current query for this cache, created on the first call. Null when this
+    /// cache forbids the limit, the query sets none, or there is no query at all (a background
+    /// operation).
+    FileCacheQueryBudgetPtr getQueryBudget(size_t query_limit_bytes) const;
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 

@@ -3917,13 +3917,6 @@ FileCacheQueryBudgetPtr Context::getFilesystemCacheQueryBudget(const FileCache &
     return budget;
 }
 
-FileCacheQueryBudgetPtr Context::tryGetFilesystemCacheQueryBudget(const FileCache & cache) const
-{
-    std::lock_guard lock(filesystem_cache_query_budgets_mutex);
-    auto it = filesystem_cache_query_budgets.find(&cache);
-    return it == filesystem_cache_query_budgets.end() ? nullptr : it->second;
-}
-
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
@@ -8865,6 +8858,7 @@ WriteSettings Context::getWriteSettings() const
     res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_query_limit_bytes = settings_ref[Setting::filesystem_cache_query_limit_bytes];
 
     res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
     res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];

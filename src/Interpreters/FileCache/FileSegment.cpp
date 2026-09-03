@@ -778,9 +778,7 @@ bool FileSegment::reserve(
     }
 
     /// Remembered for the background download, which continues on a thread with no query of its
-    /// own and keeps charging the query which last reserved with a limit. Skipping the null budget
-    /// spares the segment lock in the common case, and it keeps a query without a limit from
-    /// clearing a stored budget (the background bytes would then be charged to nobody).
+    /// own and keeps charging the query which last reserved with a limit.
     if (query_budget)
     {
         auto lk = lock();
@@ -985,10 +983,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
-    /// Give the space reserved but not written back to the cache: the segment is complete, so
-    /// nothing will fill it and it must not stay charged. Done before the early return below,
-    /// because with `reserve_granularity == boundary_alignment` a tiny read rounds up to the whole
-    /// range and would otherwise keep a full granule charged.
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {

@@ -520,7 +520,7 @@ DiskCacheProvider::DiskCacheProvider(
 {
     /// Created here, in the query's thread, so that the writes below find it. Null when the query
     /// sets no limit.
-    query_budget = cache->getQueryBudget(cache_settings);
+    query_budget = cache->getQueryBudget(cache_settings.query_limit_bytes);
 }
 
 /// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared

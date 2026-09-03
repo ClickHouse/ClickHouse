@@ -7223,8 +7223,8 @@ Allow to use the filesystem cache in passive mode - benefit from the existing ca
 How much data a single query may write into one filesystem cache. `0` disables the limit.
 Counts the space the query reserves itself: data another query cached and this one only reads is
 not counted, and eviction of what it wrote does not give the limit back. When the limit is
-reached, the query stops caching and keeps reading. Has no effect if the cache is configured with
-`enable_filesystem_query_cache_limit = 0`.
+reached, the query stops caching and continues without it. Has no effect if the cache is
+configured with `enable_filesystem_query_cache_limit = 0`.
 )", 0, filesystem_cache_max_download_size) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)

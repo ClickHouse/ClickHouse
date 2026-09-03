@@ -31,6 +31,7 @@ public:
         const FileSegment::Key & key_,
         const FileCacheOriginInfo & origin_,
         size_t reserve_space_lock_wait_timeout_milliseconds_,
+        FileCacheQueryBudgetPtr query_budget_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
         const String & source_path_,
@@ -66,8 +67,8 @@ private:
     void completeFileSegment();
 
     FileCache * cache;
-    /// Charged by `write`; null when the query set no limit or does not read this cache.
-    FileCacheQueryBudgetPtr query_budget;
+    /// Charged by `write`; null when the query set no limit.
+    const FileCacheQueryBudgetPtr query_budget;
     const FileSegment::Key key;
     const FileCacheOriginInfo origin;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
@@ -144,6 +145,8 @@ private:
     const String query_id;
     const FileCacheOriginInfo origin;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
+    /// How much this query may still write into `cache`. Null when it set no limit.
+    const FileCacheQueryBudgetPtr query_budget;
     const bool throw_on_error_from_cache;
     const bool is_distributed_cache;
 

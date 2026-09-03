@@ -519,9 +519,9 @@ ContextPtr getCurrentQueryContext()
 }
 }
 
-FileCacheQueryBudgetPtr FileCache::getQueryBudget(const FilesystemCacheSettings & settings) const
+FileCacheQueryBudgetPtr FileCache::getQueryBudget(size_t query_limit_bytes) const
 {
-    if (!query_limit_allowed || settings.query_limit_bytes == 0)
+    if (!query_limit_allowed || query_limit_bytes == 0)
         return nullptr;
 
     /// The budget belongs to a query and dies with it. Work which is not a query (merges,
@@ -530,16 +530,7 @@ FileCacheQueryBudgetPtr FileCache::getQueryBudget(const FilesystemCacheSettings 
     if (!query_context)
         return nullptr;
 
-    return query_context->getFilesystemCacheQueryBudget(*this, settings.query_limit_bytes);
-}
-
-FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
-{
-    if (!query_limit_allowed)
-        return nullptr;
-
-    auto query_context = getCurrentQueryContext();
-    return query_context ? query_context->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
+    return query_context->getFilesystemCacheQueryBudget(*this, query_limit_bytes);
 }
 
 void FileCache::assertInitialized() const

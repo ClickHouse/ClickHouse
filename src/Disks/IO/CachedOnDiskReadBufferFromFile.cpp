@@ -143,7 +143,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         cache_settings_,
         local_fs_buffer_size_,
         read_until_position_.value_or(file_size_),
-        cache_->getQueryBudget(cache_settings_),
+        cache_->getQueryBudget(cache_settings_.query_limit_bytes),
         std::move(local_throttler_))
 {
     LOG_TEST(
