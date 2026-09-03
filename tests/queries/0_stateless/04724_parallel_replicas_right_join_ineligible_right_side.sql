@@ -486,6 +486,26 @@ SELECT count() FROM (
              parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
 ) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%t_merge_left%';
 
+-- A `GLOBAL IN` on the materialized side is materialized by the same collector, so a storage
+-- reachable only through one does not force the outer JOIN global either. A local `IN` is read by
+-- every replica, which is the control.
+
+SELECT '-- global IN on the materialized left: the local join is kept';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_mid WHERE key GLOBAL IN (SELECT key FROM t_merge_left)) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain NOT ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- local IN on the materialized left: the outer JOIN is still globalized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM t_mid WHERE key IN (SELECT key FROM t_merge_left)) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
 SELECT '-- explicit GLOBAL nested join on the materialized left: results are correct';
 SELECT r.key FROM (
     SELECT a.key AS key FROM t_mid AS a GLOBAL LEFT JOIN t_merge_left AS b ON a.key = b.key

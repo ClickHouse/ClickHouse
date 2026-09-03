@@ -225,6 +225,10 @@
 1
 -- ineligible table on the surviving side of a nested global join: the raw read is not sent to the replicas
 0
+-- global IN on the materialized left: the local join is kept
+1
+-- local IN on the materialized left: the outer JOIN is still globalized
+1
 -- explicit GLOBAL nested join on the materialized left: results are correct
 0
 1

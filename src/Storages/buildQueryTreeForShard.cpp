@@ -1069,10 +1069,15 @@ public:
         }
     }
 
-    /// The materialized side of a GLOBAL join is read on the initiator and shipped as a temporary
-    /// table, so no replica ever reads the storages under it.
+    /// The materialized side of a GLOBAL join and the arguments of a GLOBAL IN are read on the
+    /// initiator and shipped as temporary tables, so no replica reads the storages under them.
+    /// Same two cases, in the same order, as the collector that does the materializing.
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        auto * function_node = parent->as<FunctionNode>();
+        if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
+            return false;
+
         auto * join_node = parent->as<JoinNode>();
         return !(join_node && join_node->getLocality() == JoinLocality::Global
             && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child);
