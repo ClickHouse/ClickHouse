@@ -23,7 +23,10 @@ static ITransformingStep::Traits getTraits()
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = true,
+            /// The transform keeps the row order of its single stream, but `transformPipeline` first
+            /// resizes several input streams into one without merging them, so a per-stream order is
+            /// lost. A global order survives the step; `applyOrder` in the plan optimizer keeps it.
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = false,
