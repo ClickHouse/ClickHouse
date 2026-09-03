@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "zh/get-started/index",
-        "zh/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "快速入门",
+          "pages": [
+            "zh/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "所有用例",
+              "pages": [
+                "zh/get-started/setup/cloud",
+                "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "zh/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "zh/get-started/quickstarts/creating-tables",
+                "zh/get-started/quickstarts/writing-queries",
+                "zh/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "实时分析",
+              "pages": [
+                "zh/get-started/quickstarts/create-your-first-materialized-view",
+                "zh/get-started/quickstarts/create-your-first-projection",
+                "zh/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "数据仓库",
+              "pages": [
+                "zh/get-started/quickstarts/connect-your-iceberg-catalog",
+                "zh/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "可观测性",
+              "pages": [
+                "zh/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
