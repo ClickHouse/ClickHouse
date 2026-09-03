@@ -2594,32 +2594,37 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         }
     }
 
-    /// A readonly stage only reads unchanged columns, so that indices, projections and TTL
-    /// expressions can be recalculated; writing them would rewrite data the mutation does not touch.
-    NameSet written_by_stages;
-    NameSet readonly_stage_columns;
-    bool rewrites_whole_part = settings.return_all_columns;
-    for (const auto & stage : stages)
-    {
-        if (stage.is_readonly)
-        {
-            for (const auto & [column_name, _] : stage.column_to_updated)
-                readonly_stage_columns.insert(column_name);
-        }
-        else
-        {
-            rewrites_whole_part |= stage.affects_all_columns;
-            for (const auto & [column_name, _] : stage.column_to_updated)
-                written_by_stages.insert(column_name);
-        }
-    }
-
     Block header = builder.getHeader();
 
     /// Once a stage rewrites the whole part - a DELETE filter does - every column is written against
-    /// the new row set, so a column left out here would keep hardlinked files with the old row count.
+    /// the new row set, so a column left out below would keep hardlinked files with the old row count.
+    const bool rewrites_whole_part = settings.return_all_columns
+        || std::any_of(
+            stages.begin(),
+            stages.end(),
+            [](const Stage & stage) { return !stage.is_readonly && stage.affects_all_columns; });
+
     if (!rewrites_whole_part)
     {
+        /// A readonly stage only reads unchanged columns, so that indices, projections and TTL
+        /// expressions can be recalculated; writing them would rewrite data the mutation does not
+        /// touch. A column another stage writes stays, or the mutation loses its own result.
+        NameSet written_by_stages;
+        NameSet readonly_stage_columns;
+        for (const auto & stage : stages)
+        {
+            if (stage.is_readonly)
+            {
+                for (const auto & [column_name, _] : stage.column_to_updated)
+                    readonly_stage_columns.insert(column_name);
+            }
+            else
+            {
+                for (const auto & [column_name, _] : stage.column_to_updated)
+                    written_by_stages.insert(column_name);
+            }
+        }
+
         Block kept;
         for (const auto & column : header)
         {
