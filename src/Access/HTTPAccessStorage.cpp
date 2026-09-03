@@ -57,9 +57,16 @@ HTTPAccessStorage::HTTPAccessStorage(
 
 HTTPAccessStorage::~HTTPAccessStorage()
 {
-    /// `cached_user_count` (relaxed load) instead of `memory_storage.findAll<User>().size`:
-    /// walking every cached entry just to shut down is unnecessary work.
-    CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, cached_user_count.load(std::memory_order_relaxed));
+    CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, cached_user_count);
+}
+
+AuthenticationData HTTPAccessStorage::makeAuthenticationData(time_t valid_until) const
+{
+    AuthenticationData auth_data(AuthenticationType::HTTP);
+    auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
+    auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
+    auth_data.setValidUntil(valid_until);
+    return auth_data;
 }
 
 void HTTPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -125,19 +132,20 @@ void HTTPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         for (const String & key : network_keys)
         {
             String value = config.getString(networks_config + "." + key);
-            if (key.starts_with("ip"))
+            /// Exact names only (plus Poco's `[n]` suffix for repeated elements): a typo such as
+            /// `ip_typo` or `hostname` is rejected, consistent with the top-level keys.
+            if (key == "ip" || key.starts_with("ip["))
                 allowed_client_hosts.addSubnet(value);
-            else if (key.starts_with("host_regexp"))
+            else if (key == "host_regexp" || key.starts_with("host_regexp["))
                 allowed_client_hosts.addNameRegexp(value);
-            else if (key.starts_with("host"))
+            else if (key == "host" || key.starts_with("host["))
                 allowed_client_hosts.addName(value);
             else
                 throw Exception(ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE, "Unknown address pattern type: {}", key);
         }
     }
 
-    /// A soft bound: concurrent successful authentications may exceed it by the
-    /// number of in-flight materializations. 0 means unlimited.
+    /// 0 means unlimited.
     max_cached_users = config.getUInt64(prefix + ".max_cached_users", 10000);
 }
 
@@ -201,151 +209,37 @@ void HTTPAccessStorage::reload(ReloadMode reload_mode)
     if (reload_mode != ReloadMode::ALL)
         return;
 
-    /// Under the materialization mutex, so `cached_user_count` and the metric stay consistent
-    /// with the storage content against a concurrent `getOrCreateUser` insert.
     std::lock_guard lock{mutex};
     memory_storage.removeAllExcept({});
-    const auto dropped = cached_user_count.exchange(0, std::memory_order_relaxed);
+    const auto dropped = cached_user_count;
+    cached_user_count = 0;
     CurrentMetrics::sub(CurrentMetrics::HTTPUserDirectoryCachedUsers, dropped);
     LOG_INFO(getLogger(), "Dropped {} materialized users on reload", dropped);
 }
 
 UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
 {
-    /// Deliberately narrow fast path. With no `default_profile` configured there is
-    /// NOTHING an already-materialized user needs reconciled, so a cache hit is served
-    /// without touching this directory's mutex — and that is the common shape of the hot
-    /// path, because ordinary HTTP requests authenticate individually.
-    ///
-    /// Its safety rests entirely on v1 invariants, each of them stated elsewhere in this
-    /// design, and it MUST be revisited if any one of them changes:
-    ///   * the directory configuration is immutable until restart, so `default_profile`
-    ///     cannot become non-empty later, and neither can `http_auth_server_name` or
-    ///     `networks` — the only other configuration the cached `User` embeds;
-    ///   * no authentication-derived state is stored on the cached `User`: helper-returned
-    ///     roles, `settings` and `valid_until` all ride on `AuthResult`, and the roles are
-    ///     session-scoped by design and never added to `granted_roles`;
-    ///   * this storage is read-only, so nothing updates a cached user out from under us.
-    ///     The cache is append-only except for `reload`, which drops everything: a hit that
-    ///     races a reload hands the caller an id that no longer resolves, and that
-    ///     authentication fails closed exactly like any concurrent user removal would;
-    ///   * with no `default_profile` the `User` holds no `parent_profile` at all, so even
-    ///     the generic `removeReferencesToRemovedIDs` cascade finds no dependency to strip.
-    /// So the cached entity is a pure function of immutable configuration and the
-    /// username, and there is no resolution instant for it to be compared against. If a
-    /// later version adds reloadable baseline state, or stores any per-authentication
-    /// state on the cached user, DELETE this fast path — do not try to patch it.
-    ///
-    /// Note what this is NOT: the generic "resolve the profile unlocked, compare it
-    /// unlocked, return when equal" shortcut. That one is also sound today, but it
-    /// re-creates an unlocked resolve-then-compare shape whose correctness rests on an
-    /// invariant a later edit can silently break. It is deliberately not taken.
-    if (default_profile.empty())
-    {
-        if (auto id = memory_storage.find<User>(user_name))
-            return *id;
-    }
-
-    /// Soft concurrent bound: the capacity OBSERVATION stays outside the mutex, which is
-    /// exactly what keeps the bound soft — simultaneous materializations of DIFFERENT new
-    /// usernames each observe capacity independently and may overshoot the configured
-    /// value by the number of in-flight authentications, with no reservation protocol and
-    /// no capacity serialization.
-    ///
-    /// The observation must NOT decide the outcome by itself, though. Whether this
-    /// username is still new is decided by the authoritative lookup under the mutex
-    /// below, and only then may a full observation reject it. Otherwise the rejection
-    /// would rest on two observations taken at different instants and describe no
-    /// coherent cache state: `find` says "absent", a concurrent authentication of exactly
-    /// this username then materializes it and takes the last slot, the count observation
-    /// then says "full" — and this authentication would be rejected on the cache bound
-    /// even though its user is, by that point, materialized. That contradicts the
-    /// unconditional rule that an already-materialized user keeps authenticating, and it
-    /// would make concurrent first authentications of one username fail instead of
-    /// converging on the single entity.
-    ///
-    /// The unlocked `find` below is only a short-circuit sparing known users the count
-    /// check; it decides nothing. Deferring the decision also loses no precision in the
-    /// restrictive direction, because this cache is append-only for the lifetime of the
-    /// process — nothing ever removes a user from it (this directory never removes, and
-    /// the generic dependency cascade cannot write to it) — so an observation of "full"
-    /// can never have become false by the time the decision is made.
-    ///
-    /// `cached_user_count` (relaxed load) replaces `memory_storage.findAll<User>().size`
-    /// here: `MemoryAccessStorage::findAllImpl` walks every entry under its own mutex to
-    /// build a vector, so with a large cache that call would do O(cache size) work on every
-    /// first-time authentication merely to learn a count. The counter is maintained
-    /// alongside the single `memory_storage.insert` call below and is purely a capacity
-    /// statistic — `memory_order_relaxed` is enough on both ends because it does not
-    /// synchronize access to the cached entity itself, only this soft bound decision.
-    bool observed_cache_full = false;
-    if (max_cached_users && !memory_storage.find<User>(user_name))
-        observed_cache_full = cached_user_count.load(std::memory_order_relaxed) >= max_cached_users;
-
+    /// One critical section for resolve, lookup and insert. No remote I/O happens here (the
+    /// external authentication has already completed), so distinct usernames still authenticate
+    /// concurrently, while concurrent first authentications of one username converge on a single
+    /// entity, the published `default_profile` identity is never older than one a concurrent
+    /// authentication has already resolved, and the cache bound is exact.
     std::lock_guard lock{mutex};
 
-    /// Resolve default_profile INSIDE the critical section, and use this resolution — and
-    /// only this one — for both the reconciliation and the insertion below.
-    ///
-    /// Why on every call, cache hit included: a configured default_profile is baseline
-    /// policy (it is how this directory expresses "every user of mine gets at least this
-    /// settings profile"), so dropping it must fail authentication even for a user
-    /// materialized before the drop, matching the unresolvable-default_profile row of the
-    /// fail-closed contract. It cannot be resolved once at construction either, because
-    /// the referenced profile may live in an access storage configured later than this
-    /// directory, and it can be dropped and recreated (with a new UUID) at any later time.
-    /// This also closes a gap in the generic dependency-cleanup machinery
-    /// (`IAccessStorage::removeReferencesToRemovedIDs`): it treats an
-    /// `ACCESS_STORAGE_READONLY` update failure as "harmless, reconciled on the next
-    /// config reload" — true for `users.xml`, false for this directory, which never
-    /// reloads. Left alone, a cached user's stale `parent_profile` UUID would sit
-    /// unreconciled forever, and `SettingsProfilesCache::substituteProfiles` silently
-    /// drops a `parent_profile` it can't find (see the source comment there) — so
-    /// authentication would keep succeeding with the configured baseline policy silently
-    /// gone. Re-resolving here, fail-closed, is what prevents that.
-    ///
-    /// Why under the mutex rather than before it: reconciliation is a compare-and-set
-    /// against a resolution instant, so resolving outside and writing inside does NOT
-    /// converge, for a cache hit any more than for a materialization. With the profile
-    /// dropped and recreated under the same name, an authentication that resolved the old
-    /// identity `A` can otherwise land its write after one that resolved the new identity
-    /// `B` and put the cached user back onto `A` — which no longer exists, and which
-    /// `substituteProfiles` then silently skips, so every later authentication served from
-    /// that cache entry runs with the baseline policy gone. Holding the mutex across
-    /// resolution and use makes the sequence atomic against the only other writer of
-    /// `memory_storage`, which is another `getOrCreateUser` call.
-    ///
-    /// This is cheap and does not weaken the concurrency contract: everything inside the
-    /// critical section is an in-memory `AccessControl::find` / `MemoryAccessStorage`
-    /// lookup, the external HTTP authentication has already completed before
-    /// getOrCreateUser is called, and no remote I/O is ever performed under this mutex —
-    /// so distinct usernames still authenticate fully concurrently.
-    ///
-    /// Scope, stated honestly: this bounds staleness, it does not make concurrent
-    /// settings-profile DDL atomic with respect to authentication. An authentication that
-    /// resolves a profile which is dropped microseconds later still succeeds against the
-    /// identity it observed; the next authentication of that user fails closed or
-    /// reconciles. What is guaranteed is that no authentication publishes or is served an
-    /// identity older than one a concurrent authentication has already resolved.
+    /// Re-resolved on every authentication, cache hit included: a configured `default_profile` is
+    /// baseline policy for every user of this directory, so it must fail closed while dropped, and
+    /// it may be recreated with a new UUID at any time. The generic dependency cleanup cannot
+    /// repair a stale reference here, because this storage is read-only.
     auto profile_id = resolveDefaultProfile();
 
-    /// Authoritative lookup. A cache hit converges on the existing entity, reconciled
-    /// against the resolution above, and returns BEFORE the cache bound is consulted at
-    /// all — the bound never applies to an already-materialized user, including one
-    /// materialized by a concurrent authentication while we waited for the mutex. This
-    /// branch therefore doubles as the recheck the miss path needs.
     if (auto id = memory_storage.find<User>(user_name))
     {
         reconcileCachedProfile(*id, profile_id);
         return *id;
     }
 
-    /// Authoritatively a new username, and the cache was observed full: reject.
-    /// `HTTPUserDirectoryCacheLimitExceeded` is incremented right here — an atomic
-    /// `ProfileEvents` add, so holding the mutex across it costs nothing. The capacity is
-    /// NOT re-observed under the mutex: that would serialize capacity and make the bound
-    /// strict, which is deliberately not the contract.
-    if (observed_cache_full)
+    /// Only a new username is subject to the bound; a materialized user always authenticates.
+    if (max_cached_users && cached_user_count >= max_cached_users)
     {
         ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryCacheLimitExceeded);
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
@@ -355,10 +249,7 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
 
     auto user = std::make_shared<User>();
     user->setName(user_name);
-    AuthenticationData auth_data(AuthenticationType::HTTP);
-    auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
-    auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
-    user->authentication_methods.emplace_back(std::move(auth_data));
+    user->authentication_methods.emplace_back(makeAuthenticationData());
     user->allowed_client_hosts = allowed_client_hosts;
     if (profile_id)
     {
@@ -368,9 +259,7 @@ UUID HTTPAccessStorage::getOrCreateUser(const String & user_name) const
     }
 
     auto id = memory_storage.insert(user);
-    /// Relaxed: a capacity statistic feeding the soft bound above, not synchronization for
-    /// the cached entity (the mutex held across this whole function already provides that).
-    cached_user_count.fetch_add(1, std::memory_order_relaxed);
+    ++cached_user_count;
     ProfileEvents::increment(ProfileEvents::HTTPUserDirectoryUsersCreated);
     CurrentMetrics::add(CurrentMetrics::HTTPUserDirectoryCachedUsers);
     return id;
@@ -464,10 +353,7 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
         AuthResult result;
         result.user_id = getOrCreateUser(user_name);
         result.user_name = user_name;
-        AuthenticationData auth_data(AuthenticationType::HTTP);
-        auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
-        auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
-        result.authentication_data = std::move(auth_data);
+        result.authentication_data = makeAuthenticationData();
         return result;
     }
 
@@ -566,13 +452,11 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
             result.settings = std::move(settings);
             result.external_roles = std::move(external_role_ids);
 
-            AuthenticationData auth_data(AuthenticationType::HTTP);
-            auth_data.setHTTPAuthenticationServerName(http_auth_server_name);
-            auth_data.setHTTPAuthenticationScheme(HTTPAuthenticationScheme::BASIC);
             /// Rides the existing per-authentication expiry machinery
+
             /// (Session::checkIfUserIsStillValid enforces it per query).
-            auth_data.setValidUntil(response.valid_until);
-            result.authentication_data = std::move(auth_data);
+
+            result.authentication_data = makeAuthenticationData(response.valid_until);
 
             return result;
         }

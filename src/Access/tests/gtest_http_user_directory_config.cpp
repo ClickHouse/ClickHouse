@@ -97,6 +97,19 @@ TEST(HTTPUserDirectoryConfig, RepeatedSingletonKeysRejected)
     }
 }
 
+TEST(HTTPUserDirectoryConfig, NetworksKeysAreExact)
+{
+    /// Inside <networks> only ip / host / host_regexp (and their repeated `[n]` forms) are known.
+    for (const auto & body : {
+        "<networks><ip_typo>::/0</ip_typo></networks>",
+        "<networks><hostname>localhost</hostname></networks>",
+        "<networks><host_regexp_old>.*</host_regexp_old></networks>",
+    })
+    {
+        EXPECT_THROW(registerDirectory(directoryXML(body)), Exception) << body;
+    }
+}
+
 TEST(HTTPUserDirectoryConfig, RepeatableKeysAccepted)
 {
     EXPECT_NO_THROW(registerDirectory(directoryXML(

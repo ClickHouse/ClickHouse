@@ -140,7 +140,7 @@ starts with an empty cache.
 | `allowed_role_prefix` | empty | Prefix of local role names this directory may assign; may be repeated. |
 | `default_profile` | none | Settings profile attached to every user materialized by this directory. The configured name is re-resolved on every authentication that materializes a user or reuses a cached one; if it does not resolve, the attempt fails. A cached user's profile reference is reconciled if a profile of the same name is recreated with a new identity. |
 | `networks` | any host | ClickHouse-side network restrictions (`ip`, `host`, `host_regexp`) for users of this directory. |
-| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. New usernames are rejected once the observed cache size is at or above the bound; already-materialized users keep authenticating. The bound is approximate under concurrent authentication. Materialized users are not evicted on their own; `SYSTEM RELOAD USERS` drops all of them (see below), and so does a restart. |
+| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. A new username is rejected once the bound is reached; already-materialized users keep authenticating. Materialized users are not evicted on their own; `SYSTEM RELOAD USERS` drops all of them (see below), and so does a restart. |
 
 Unknown parameters are rejected at startup, and so is a repeated parameter: only
 `allowed_role_prefix` (and the `role` and network entries inside `allowed_roles` and

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <mutex>
 #include <optional>
 #include <unordered_set>
@@ -84,8 +83,12 @@ private: // IAccessStorage implementations.
     void checkRoleIsAllowed(const String & role_name) const;
 
     /// Returns the id of the cached user with this name, materializing a new
-    /// ephemeral user if needed (subject to the max_cached_users soft bound).
+    /// ephemeral user if needed (subject to the max_cached_users bound).
     UUID getOrCreateUser(const String & user_name) const;
+
+    /// The HTTP authentication method every user of this directory carries, with the
+    /// per-authentication expiry when the response returned one.
+    AuthenticationData makeAuthenticationData(time_t valid_until = 0) const;
 
     /// Resolves the configured `default_profile` to the UUID it currently names, or
     /// nullopt when no `default_profile` is configured. Throws (fail-closed) when a
@@ -109,43 +112,14 @@ private: // IAccessStorage implementations.
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     size_t max_cached_users = 10000;
 
-    /// Guards the whole resolve-then-find-then-reconcile-or-insert sequence of
-    /// getOrCreateUser: concurrent first authentications of the same username converge on
-    /// one cached entity, and the default_profile identity that is published — whether by
-    /// inserting a new user or by reconciling a cached one — is never older than what a
-    /// concurrent authentication has already resolved. Both effects need resolution AND
-    /// its use in one critical section, not merely a lock around the write.
-    /// Remote HTTP I/O is never performed under this mutex: authentication against the
-    /// external server has already completed by the time getOrCreateUser is called, and
-    /// everything inside is an in-memory AccessControl/MemoryAccessStorage lookup, so
-    /// distinct usernames still authenticate fully concurrently.
-    /// The max_cached_users capacity is deliberately NOT observed under this mutex — it is
-    /// a soft bound, observed on the cache size outside. Only the decision to apply that
-    /// observation is inside, because it depends on the authoritative new-vs-cached
-    /// lookup: a username that turns out to be already materialized is never rejected on
-    /// the bound.
-    /// MemoryAccessStorage is internally thread-safe; getOrCreateUser is its only writer
-    /// here (the generic `removeReferencesToRemovedIDs` cascade cannot write to it: it
-    /// goes through the read-only outer storage and fails with ACCESS_STORAGE_READONLY),
-    /// so this mutex is sufficient to make the reconciliation a true compare-and-set.
-    /// One case bypasses this mutex entirely: a cache hit when no `default_profile` is
-    /// configured, where there is nothing to reconcile and the cached entity is a pure
-    /// function of immutable configuration — see the guard at the top of getOrCreateUser
-    /// for the invariants that make it safe and the condition for deleting it.
+    /// Serializes `getOrCreateUser` and `reload`, the only writers of `memory_storage`
+    /// (the generic dependency cleanup cannot write through the read-only outer storage).
+    /// No remote I/O is performed under it.
     mutable std::mutex mutex;
     mutable MemoryAccessStorage memory_storage;
-
-    /// Count of users materialized so far, maintained instead of querying
-    /// `memory_storage.findAll<User>().size` on every first-time authentication:
-    /// `MemoryAccessStorage::findAllImpl` walks every cached entry and builds a vector, so
-    /// with a large cache that query would do O(cache size) work on the hot path merely to
-    /// learn a count. Incremented once, right after a successful `memory_storage.insert` in
-    /// `getOrCreateUser` (the only inserter). `memory_order_relaxed` is sufficient on both
-    /// the increment and the load in `getOrCreateUser`: this is a capacity statistic feeding
-    /// a soft, approximate bound, not the synchronization mechanism for the cached entity
-    /// itself — the mutex above already provides that. Also used by the destructor instead
-    /// of `findAll<User>().size`.
-    mutable std::atomic<size_t> cached_user_count{0};
+    /// Number of materialized users; cheaper than counting `memory_storage` on every
+    /// first authentication. Guarded by `mutex`.
+    mutable size_t cached_user_count = 0;
 };
 
 }
