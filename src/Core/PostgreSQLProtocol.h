@@ -9,6 +9,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/Base64.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -228,8 +229,22 @@ public:
                             "Wrong message length {} received from client, it must be at least {}", size, sizeof(size));
 
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>();
-        LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(size) - sizeof(size)});
-        message->deserialize(limited_in);
+
+        /// The declared length is a frame boundary, not merely an upper bound: whatever the parser
+        /// leaves unread must not be taken for the beginning of the next message. The remainder of
+        /// the frame is skipped even when parsing throws, so that the stream stays aligned and the
+        /// connection can resynchronize on the next message.
+        size_t unparsed_bytes = 0;
+        {
+            LimitReadBuffer limited_in(*in, {.read_no_more = static_cast<size_t>(size) - sizeof(size)});
+            SCOPE_EXIT_SAFE({ unparsed_bytes = limited_in.ignoreAll(); });
+            message->deserialize(limited_in);
+        }
+
+        if (unparsed_bytes != 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Message of {} bytes received from client has {} bytes left unparsed", size, unparsed_bytes);
+
         return message;
     }
 

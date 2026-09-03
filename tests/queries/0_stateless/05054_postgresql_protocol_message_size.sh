@@ -99,6 +99,31 @@ sock.sendall(b"Q" + struct.pack(">i", 4 + 9) + b"SELECT 1\x00")
 data = read_until_ready(sock)
 print("well-formed exchange:", "query result received" if b"C\x00\x00\x00\rSELECT 1\x00" in data else "UNEXPECTED REPLY " + repr(data[:96]))
 sock.close()
+
+# A `Query` that terminates its string early and smuggles a whole second `Query` into the tail of the
+# same declared frame. The declared length is a frame boundary, so the tail must be rejected instead
+# of being read as the next message.
+sock = connect()
+startup(sock, user_plain)
+sock.recv(4096)
+sock.sendall(b"p" + struct.pack(">i", 4 + 2) + b"x\x00")
+read_until_ready(sock)
+body = b"SELECT 1\x00" + b"SELECT 2\x00"
+sock.sendall(b"Q" + struct.pack(">i", 4 + len(body)) + body)
+print("query with a smuggled tail:", outcome(sock))
+sock.close()
+
+# An oversized `Sync`, whose parser reads nothing at all: its payload must not survive the message
+# boundary and be reinterpreted as the next message.
+sock = connect()
+startup(sock, user_plain)
+sock.recv(4096)
+sock.sendall(b"p" + struct.pack(">i", 4 + 2) + b"x\x00")
+read_until_ready(sock)
+body = b"Q" + struct.pack(">i", 4 + 9) + b"SELECT 2\x00"
+sock.sendall(b"S" + struct.pack(">i", 4 + len(body)) + body)
+print("oversized sync:", outcome(sock))
+sock.close()
 PYTHON
 
 $CLICKHOUSE_CLIENT --query "DROP USER ${USER_SCRAM}"
