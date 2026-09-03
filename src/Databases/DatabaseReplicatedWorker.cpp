@@ -297,9 +297,7 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+        database->updateCluster(!database->replica_group_name.empty() /* also_update_all_groups */);
         need_update_cached_cluster = false;
     }
 }

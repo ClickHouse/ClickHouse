@@ -1,6 +1,9 @@
--- Tags: zookeeper, no-replicated-database, no-ordinary-database, need-query-parameters
+-- Tags: zookeeper, no-replicated-database, no-ordinary-database, need-query-parameters, no-parallel
 -- no-replicated-database: the test creates a Replicated database of its own
 -- no-ordinary-database: `implicit_transaction` needs an Atomic database
+-- no-parallel: creates and drops global named collections; the flaky check runs the same test
+--              concurrently, and parallel repetitions collide on them (the first finishing run
+--              drops the collection while others still use it).
 
 -- `ALTER DATABASE ... MODIFY SETTING` for the replica-local settings of a `Replicated` database.
 -- The metadata file is the source of truth for these, so every assertion reads `engine_full`,
@@ -9,7 +12,8 @@
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 -- Named collections are server-global, so the name is fixed rather than derived from the test
 -- database, and a leftover from an earlier run is dropped first.
-DROP NAMED COLLECTION IF EXISTS collection_05055;
+DROP NAMED COLLECTION IF EXISTS collection_05055_alter_db_replicated_settings_secure;
+DROP NAMED COLLECTION IF EXISTS collection_05055_alter_db_replicated_settings_not_secure;
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = Replicated('/test/' || currentDatabase() || '/alter_local_settings', 'shard1', 'replica1');
@@ -74,10 +78,16 @@ FROM system.clusters WHERE cluster = {CLICKHOUSE_DATABASE_1:String};
 -- reader connects with the new credentials. `collection_name` is the only mutable setting that
 -- feeds a `Cluster` -- the other one `getClusterImpl` reads, `internal_replication`, is immutable
 -- -- which is why the invalidation is gated on it.
-CREATE NAMED COLLECTION collection_05055 AS cluster_username = 'alice';
-ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING collection_name = 'collection_05055';
+CREATE NAMED COLLECTION collection_05055_alter_db_replicated_settings_not_secure AS cluster_username = 'alice',
+    cluster_secure_connection = 'false';
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING collection_name = 'collection_05055_alter_db_replicated_settings_not_secure';
 
 SELECT 'cluster user', user FROM system.clusters WHERE cluster = {CLICKHOUSE_DATABASE_1:String};
+
+CREATE NAMED COLLECTION collection_05055_alter_db_replicated_settings_secure AS cluster_username = 'bob',
+    cluster_secure_connection = 'true';
+
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING collection_name = 'collection_05055_alter_db_replicated_settings_secure'; -- { serverError QUERY_NOT_ALLOWED }
 
 -- Clearing `collection_name` is allowed: it resets the cluster auth info to the default instead of
 -- looking up a collection named ''. The default username is `default`, not the empty string.
@@ -101,4 +111,5 @@ SELECT 'after transaction', replaceAll(engine_full, currentDatabase(), '{db}')
 FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-DROP NAMED COLLECTION collection_05055;
+DROP NAMED COLLECTION collection_05055_alter_db_replicated_settings_secure;
+DROP NAMED COLLECTION collection_05055_alter_db_replicated_settings_not_secure;

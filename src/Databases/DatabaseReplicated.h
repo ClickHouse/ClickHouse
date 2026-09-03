@@ -188,13 +188,38 @@ private:
 
     struct ClusterAuthInfo
     {
+        ClusterAuthInfo() = default;
+        explicit ClusterAuthInfo(bool secure_connection)
+            : cluster_secure_connection(secure_connection)
+        {}
+        ClusterAuthInfo(const ClusterAuthInfo &) = default;
+        ClusterAuthInfo(ClusterAuthInfo &&) = default;
+
+        void copyCredsFrom(const ClusterAuthInfo & other)
+        {
+            if (this == &other)
+                return;
+
+            cluster_username = other.cluster_username;
+            cluster_password = other.cluster_password;
+            cluster_secret = other.cluster_secret;
+        }
+
+        void moveCredsFrom(ClusterAuthInfo && other)
+        {
+            if (this == &other)
+                return;
+
+            cluster_username = std::move(other.cluster_username);
+            cluster_password = std::move(other.cluster_password);
+            cluster_secret = std::move(other.cluster_secret);
+        }
+
         String cluster_username{"default"};
         String cluster_password;
         String cluster_secret;
-        bool cluster_secure_connection{false};
+        const bool cluster_secure_connection{false};
     };
-
-    ClusterAuthInfo cluster_auth_info;
 
     static ClusterAuthInfo getClusterAuthInfo(const String & collection_name);
 
@@ -228,7 +253,8 @@ private:
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
-    ClusterPtr getClusterImpl(bool all_groups = false) const;
+    ClusterPtr getClusterImpl(bool all_groups = false) const TSA_REQUIRES(mutex);
+    void updateCluster(bool also_update_all_groups);
     void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
     void setClusterLocked(ClusterPtr && new_cluster, bool all_groups = false) TSA_REQUIRES(mutex);
 
@@ -276,6 +302,8 @@ private:
 
     String replica_group_name;
     MultiVersion<DatabaseReplicatedSettings> db_settings;
+
+    std::unique_ptr<ClusterAuthInfo> cluster_auth_info;
 
     ZooKeeperPtr getZooKeeper() const;
 

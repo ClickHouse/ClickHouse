@@ -230,8 +230,8 @@ DatabaseReplicated::DatabaseReplicated(
     if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
-    if (!(*db_settings_version)[DatabaseReplicatedSetting::collection_name].value.empty())
-        cluster_auth_info = getClusterAuthInfo((*db_settings_version)[DatabaseReplicatedSetting::collection_name].value);
+    cluster_auth_info = std::make_unique<ClusterAuthInfo>(
+        getClusterAuthInfo((*db_settings_version)[DatabaseReplicatedSetting::collection_name].value));
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -412,6 +412,16 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     return cluster_all_groups;
 }
 
+void DatabaseReplicated::updateCluster(bool also_update_all_groups)
+{
+    std::lock_guard lock{mutex};
+    setClusterLocked(getClusterImpl());
+    if (also_update_all_groups)
+    {
+        setClusterLocked(getClusterImpl(true /* all_groups */), true /* all_groups */);
+    }
+}
+
 void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
 {
     std::lock_guard lock{mutex};
@@ -525,7 +535,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
     UInt16 default_port = 0;
-    if (cluster_auth_info.cluster_secure_connection)
+    if (cluster_auth_info->cluster_secure_connection)
         default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
     else
         default_port = getContext()->getTCPPort();
@@ -538,16 +548,16 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
 
     ClusterConnectionParameters params{
-        cluster_auth_info.cluster_username,
-        cluster_auth_info.cluster_password,
+        cluster_auth_info->cluster_username,
+        cluster_auth_info->cluster_password,
         default_port,
         treat_local_as_remote,
         treat_local_port_as_remote,
-        cluster_auth_info.cluster_secure_connection,
+        cluster_auth_info->cluster_secure_connection,
         /* bind_host= */ "",
         Priority{1},
         cluster_name,
-        cluster_auth_info.cluster_secret};
+        cluster_auth_info->cluster_secret};
 
     const auto db_settings_version = db_settings.get();
     return std::make_shared<Cluster>(getContext()->getSettingsRef(),
@@ -645,13 +655,18 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
 DatabaseReplicated::ClusterAuthInfo DatabaseReplicated::getClusterAuthInfo(const String & collection_name)
 {
+    if (collection_name.empty())
+    {
+        return {};
+    }
+
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
-    ClusterAuthInfo result;
+    ClusterAuthInfo result(collection->getOrDefault<bool>("cluster_secure_connection", false));
+
     result.cluster_username = collection->getOrDefault<String>("cluster_username", "");
     result.cluster_password = collection->getOrDefault<String>("cluster_password", "");
     result.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
-    result.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 
     return result;
 }
@@ -704,7 +719,7 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
             return;
         }
 
-        String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+        String host_id = getHostID(getContext(), db_uuid, cluster_auth_info->cluster_secure_connection);
         String host_id_default = getHostID(getContext(), db_uuid, false);
 
         if (replica_host_id != host_id && replica_host_id != host_id_default)
@@ -928,7 +943,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    const auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+    const auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info->cluster_secure_connection);
 
     const std::vector<String> check_paths = {
         replica_path,
@@ -2732,6 +2747,11 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
 
     if (query_context->getCurrentTransaction() && query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing settings inside transactions is not supported");
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (is_probably_dropped)
+            throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Database is being dropped");
+    }
 
     std::lock_guard metadata_lock(metadata_mutex);
 
@@ -2757,7 +2777,13 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         if (change.name == "collection_name")
         {
             const String & collection_name = new_settings[DatabaseReplicatedSetting::collection_name];
-            new_cluster_auth_info = collection_name.empty() ? ClusterAuthInfo{} : getClusterAuthInfo(collection_name);
+            new_cluster_auth_info.emplace(getClusterAuthInfo(collection_name));
+            if (new_cluster_auth_info->cluster_secure_connection != cluster_auth_info->cluster_secure_connection)
+            {
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                    "Can't change `cluster_secure_connection` setting, current value: {}. Recreate replica to change it.",
+                    cluster_auth_info->cluster_secure_connection);
+            }
         }
     }
 
@@ -2813,7 +2839,7 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
     {
         std::lock_guard lock(mutex);
 
-        cluster_auth_info = std::move(*new_cluster_auth_info);
+        cluster_auth_info->moveCredsFrom(std::move(*new_cluster_auth_info));
 
         setClusterLocked(nullptr, false);
         setClusterLocked(nullptr, true);
