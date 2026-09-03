@@ -77,6 +77,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
+    extern const char backups_pause_before_publishing_progress[];
     extern const char restore_pause_on_start[];
 }
 
@@ -1448,6 +1449,10 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
+    /// The caller has already snapshotted the counters into the arguments, so a test can hold a
+    /// publisher here and let a later one publish first.
+    FailPointInjection::pauseFailPoint(FailPoints::backups_pause_before_publishing_progress);
+
     /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);

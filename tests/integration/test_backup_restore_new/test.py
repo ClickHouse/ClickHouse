@@ -1978,6 +1978,85 @@ def test_system_backups():
     assert info.bytes_read == 0
 
 
+def test_system_backups_read_counters_survive_a_stale_publisher():
+    # A restore publishes its progress from inside each of its concurrent tasks, and every task
+    # snapshots the counters before publishing them. This holds one task after its snapshot until
+    # its siblings have restored everything, so it publishes the oldest counts last.
+    instance.query("CREATE DATABASE test")
+    # More partitions than the default 16 of `restore_threads`: when the first task reaches the
+    # publish point the queued parts are still unread, so its snapshot is below the final counts.
+    instance.query(
+        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x % 24"
+    )
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(240)"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    # An undisturbed restore reads exactly the same files from the same backup, so it gives the
+    # counts the disturbed restore below has to end up with.
+    undisturbed_id = instance.query(
+        f"RESTORE TABLE test.table AS test.undisturbed FROM {backup_name}"
+    ).split("\t")[0]
+    undisturbed = get_backup_info_from_system_backups(by_id=undisturbed_id)
+    assert undisturbed.files_read > 0
+    assert undisturbed.bytes_read > 0
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        restore_id = instance.query(
+            f"RESTORE TABLE test.table AS test.restored FROM {backup_name} SETTINGS async = 1"
+        ).split("\t")[0]
+        instance.query(
+            "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE"
+        )
+
+        # Arm the publish pause only now that the single-task stages are done, then let the data
+        # restore tasks run: the first of them to publish is held with its own snapshot.
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        instance.query(
+            "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE"
+        )
+
+        # The siblings of the held task restore the remaining parts and publish the full counts.
+        wait_condition(
+            lambda: get_backup_info_from_system_backups(by_id=restore_id).files_read,
+            lambda files_read: files_read == undisturbed.files_read,
+            max_attempts=100,
+        )
+
+        # Releasing the held task makes it publish its stale snapshot last.
+        instance.query(
+            "SYSTEM NOTIFY FAILPOINT backups_pause_before_publishing_progress"
+        )
+
+        restored = wait_condition(
+            lambda: get_backup_info_from_system_backups(by_id=restore_id),
+            lambda info: info.status == "RESTORED",
+            max_attempts=100,
+        )
+        assert restored.error == ""
+        assert restored.files_read == undisturbed.files_read
+        assert restored.bytes_read == undisturbed.bytes_read
+        assert instance.query("SELECT count() FROM test.restored") == "240\n"
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+
+
 def test_mutation():
     create_and_fill_table(engine="MergeTree ORDER BY tuple()", n=5)
 
