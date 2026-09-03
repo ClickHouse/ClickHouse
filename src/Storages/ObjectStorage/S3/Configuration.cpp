@@ -140,7 +140,7 @@ void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
+    headers_from_ast = context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers_from_ast));
     StorageObjectStorageConfiguration::check(context);
 }
 
