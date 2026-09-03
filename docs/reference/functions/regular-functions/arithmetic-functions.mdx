@@ -705,6 +705,294 @@ SELECT isNaN(NaN)
 1
 ```
 
+## kqlBin {#kqlBin}
+
+Introduced in: v26.8.0
+
+Rounds a value down to a multiple of `roundTo`, as the Kusto Query Language's `bin()` does.
+
+The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
+is an `Interval`) is rounded by a timespan, and a datetime is rounded by a timespan. A KQL
+datetime is a `DateTime64`; the narrower `DateTime` and `Date` carriers are rejected, because
+they cannot represent every bin a KQL datetime can produce.
+
+This function backs `bin()` when `dialect = 'kusto'`. It is not meant to be called directly
+from SQL.
+
+**Syntax**
+
+```sql
+kqlBin(value, roundTo)
+```
+
+**Arguments**
+
+- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `roundTo` — The bin size. 
+
+**Returned value**
+
+`value` rounded down to the nearest multiple of `roundTo`.
+
+**Examples**
+
+**number**
+
+```sql title=Query
+SELECT kqlBin(4.5, 1)
+```
+
+```response title=Response
+4
+```
+
+**timespan**
+
+```sql title=Query
+SELECT kqlBin(toIntervalNanosecond(16 * 86400000000000), toIntervalNanosecond(7 * 86400000000000))
+```
+
+```response title=Response
+1209600000000000
+```
+
+**datetime**
+
+```sql title=Query
+SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
+```
+
+```response title=Response
+2026-08-01 12:00:00.0000000
+```
+
+## kqlBinAt {#kqlBinAt}
+
+Introduced in: v26.8.0
+
+Rounds a value down to a multiple of `binSize` counted from `fixedPoint`, as the Kusto Query
+Language's `bin_at()` does. The bins may align before or after the fixed point.
+
+The rule depends on the argument types: a number is rounded arithmetically, a timespan (which
+is an `Interval`) is rounded by a timespan from a timespan, and a datetime is rounded by a
+timespan counted from a datetime fixed point. A KQL datetime is a `DateTime64`; the narrower
+`DateTime` and `Date` carriers are rejected, because they cannot represent every bin a KQL
+datetime can produce.
+
+This function backs `bin_at()` when `dialect = 'kusto'`. It is not meant to be called directly
+from SQL.
+
+**Syntax**
+
+```sql
+kqlBinAt(value, binSize, fixedPoint)
+```
+
+**Arguments**
+
+- `value` — A number, a timespan, or a datetime (a `DateTime64`). - `binSize` — The bin size. - `fixedPoint` — The point the bins are counted from. 
+
+**Returned value**
+
+`value` rounded down to the nearest multiple of `binSize` counted from `fixedPoint`.
+
+**Examples**
+
+**number**
+
+```sql title=Query
+SELECT kqlBinAt(6.5, 2.5, -0.5)
+```
+
+```response title=Response
+4.5
+```
+
+**datetime**
+
+```sql title=Query
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'))
+```
+
+```response title=Response
+2026-08-01 12:30:00.0000000
+```
+
+## kqlDateTimeBinAt {#kqlDateTimeBinAt}
+
+Introduced in: v26.8.0
+
+Rounds a datetime down to a timespan multiple counted from a datetime fixed point.
+
+**Syntax**
+
+```sql
+kqlDateTimeBinAt(value, binSize, fixedPoint)
+```
+
+**Arguments**
+
+- `value` — The datetime to round. - `binSize` — The timespan bin size. - `fixedPoint` — The datetime fixed point. 
+
+**Returned value**
+
+The rounded datetime.
+
+**Examples**
+
+## kqlDivide {#kqlDivide}
+
+Introduced in: v26.8.0
+
+Division as the Kusto Query Language defines it: two integer operands divide to an integer,
+so `7 / 2` is `3`, and two timespan operands (which are `Interval` values) divide to their
+real-valued ratio, so `15ms / 10ms` is `1.5`. Any other combination of operand types divides
+as [`divide`](#divide) does.
+
+This function backs the `/` operator when `dialect = 'kusto'`. It is not meant to be called
+directly from SQL.
+
+**Syntax**
+
+```sql
+kqlDivide(x, y)
+```
+
+**Arguments**
+
+- `x` — The dividend. - `y` — The divisor. 
+
+**Returned value**
+
+`intDiv(x, y)` when both arguments are integers, the ratio of the intervals' ticks when both are intervals, `divide(x, y)` otherwise.
+
+**Examples**
+
+**integers**
+
+```sql title=Query
+SELECT kqlDivide(7, 2)
+```
+
+```response title=Response
+3
+```
+
+**reals**
+
+```sql title=Query
+SELECT kqlDivide(7.0, 2)
+```
+
+```response title=Response
+3.5
+```
+
+**timespans**
+
+```sql title=Query
+SELECT kqlDivide(toIntervalNanosecond(15000000), toIntervalNanosecond(10000000))
+```
+
+```response title=Response
+1.5
+```
+
+## kqlMultiply {#kqlMultiply}
+
+Introduced in: v26.8.0
+
+Multiplication as the Kusto Query Language defines it: a timespan (an `Interval`) scales by a
+number on either side, so `2 * 1h` is two hours. Two arguments without an interval multiply as
+[`multiply`](#multiply) does.
+
+This function backs the `*` operator when `dialect = 'kusto'`. It is not meant to be called
+directly from SQL.
+
+**Syntax**
+
+```sql
+kqlMultiply(x, y)
+```
+
+**Arguments**
+
+- `x` — A number or a timespan. - `y` — A number, or a timespan when `x` is a number. 
+
+**Returned value**
+
+The product; an interval of the same kind when either argument is one.
+
+**Examples**
+
+**timespan**
+
+```sql title=Query
+SELECT kqlMultiply(2, toIntervalNanosecond(3600000000000))
+```
+
+```response title=Response
+7200000000000
+```
+
+**numbers**
+
+```sql title=Query
+SELECT kqlMultiply(6, 7)
+```
+
+```response title=Response
+42
+```
+
+## kqlRangeCount {#kqlRangeCount}
+
+Introduced in: v26.8.0
+
+The number of rows the `range` source of the Kusto Query Language produces: `floor((to - from)
+/ step) + 1`, and never less than zero. The bounds and the step are numbers, or datetimes
+stepped by a timespan (an `Interval`), or timespans; the temporal forms are counted in integer
+nanoseconds, which no single ClickHouse division expresses. Integers and decimals are counted
+exactly, not through `Float64`.
+
+This function backs the `range` source when `dialect = 'kusto'`. It is not meant to be called
+directly from SQL.
+
+**Syntax**
+
+```sql
+kqlRangeCount(from, to, step)
+```
+
+**Arguments**
+
+- `from` — The first value of the range. - `to` — The value the range does not go past. - `step` — The difference between two consecutive values. 
+
+**Returned value**
+
+The number of values in the range.
+
+**Examples**
+
+**numbers**
+
+```sql title=Query
+SELECT kqlRangeCount(1, 7, 2)
+```
+
+```response title=Response
+4
+```
+
+**datetimes**
+
+```sql title=Query
+SELECT kqlRangeCount(toDateTime64('2026-08-01 00:00:00', 7, 'UTC'), toDateTime64('2026-08-01 12:00:00', 7, 'UTC'), toIntervalHour(5))
+```
+
+```response title=Response
+3
+```
+
 ## lcm {#lcm}
 
 Introduced in: v1.1.0
@@ -901,6 +1189,10 @@ Introduced in: v1.1.0
 Calculates the difference of two values `a` and `b`. The result is always signed.
 Similar to plus, it is possible to subtract an integer from a date or date with time.
 Additionally, subtraction between date with time is supported, resulting in the time difference between them.
+It is also possible to subtract a `Time` or `Time64` from a `DateTime` or `DateTime64`;
+the time value is applied as an offset in seconds. `DateTime` minus `Time` produces
+a `DateTime`, any combination involving `DateTime64` or `Time64` produces a `DateTime64`
+with the maximum scale of the two arguments.
     
 
 **Syntax**
@@ -1263,6 +1555,10 @@ increments the number of seconds in the date with time.
 It is also possible to add a date and a time. Adding a `Date` and a `Time`
 produces a `DateTime`. Adding a `Date` and a `Time64`, or a `Date32` and
 a `Time` or `Time64`, produces a `DateTime64`.
+Adding a `Time` or `Time64` to a `DateTime` or `DateTime64` applies the time
+value as an offset in seconds. `DateTime` plus `Time` produces a `DateTime`,
+any combination involving `DateTime64` or `Time64` produces a `DateTime64`
+with the maximum scale of the two arguments.
     
 
 **Syntax**

@@ -1,5 +1,6 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -926,31 +927,48 @@ static void deserializeTextImpl(
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
 }
 
-template <typename NestedSerialize>
+template <typename NestedSerialize, typename SerializeNull>
 static void serializeTextImpl(
     const IColumn & column,
     size_t row_num,
     WriteBuffer & ostr,
-    NestedSerialize nested_serialize)
+    NestedSerialize nested_serialize,
+    SerializeNull serialize_null)
 {
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_column = dynamic_column.getVariantColumn();
+    auto global_discr = variant_column.globalDiscriminatorAt(row_num);
+
+    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+    {
+        serialize_null(ostr);
+        return;
+    }
+
     /// Check if this row has value in shared variant. In this case we should first deserialize it from binary format.
-    if (variant_column.globalDiscriminatorAt(row_num) == dynamic_column.getSharedVariantDiscriminator())
+    if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ReadBufferFromMemory buf(value);
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
-        auto variant_serialization = variant_type->getDefaultSerialization();
+        /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
+        auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
         variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
         nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+        return;
     }
-    /// Otherwise just use serialization for Variant.
-    else
-    {
-        nested_serialize(*dynamic_column.getVariantInfo().variant_type->getDefaultSerialization(), variant_column, row_num, ostr);
-    }
+
+    /// Otherwise use the serialization of the exact variant this row holds. Getting the serialization of the whole
+    /// Variant type instead would build serializations and names of all the variants and go through the globally
+    /// locked serialization pool for every value.
+    const auto & variant_info = dynamic_column.getVariantInfo();
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+    nested_serialize(
+        *getDataTypesCache().getSerialization(variant_info.variant_names[global_discr], variant_types[global_discr]),
+        variant_column.getVariantByGlobalDiscriminator(global_discr),
+        variant_column.offsetAt(row_num),
+        ostr);
 }
 
 SerializationPtr SerializationDynamic::create(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_)
@@ -965,7 +983,12 @@ void SerializationDynamic::serializeTextCSV(const IColumn & column, size_t row_n
         serialization.serializeTextCSV(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [&settings](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullCSV(buf, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1003,7 +1026,12 @@ void SerializationDynamic::serializeTextEscaped(const IColumn & column, size_t r
         serialization.serializeTextEscaped(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [&settings](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullEscaped(buf, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1041,7 +1069,12 @@ void SerializationDynamic::serializeTextQuoted(const IColumn & column, size_t ro
         serialization.serializeTextQuoted(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullQuoted(buf);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1079,7 +1112,12 @@ void SerializationDynamic::serializeTextJSON(const IColumn & column, size_t row_
         serialization.serializeTextJSON(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullJSON(buf);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
@@ -1089,7 +1127,12 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
         serialization.serializeTextJSONPretty(col, row, buf, settings, indent);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullJSON(buf);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1127,7 +1170,12 @@ void SerializationDynamic::serializeTextRaw(const IColumn & column, size_t row_n
         serialization.serializeTextRaw(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [&settings](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullRaw(buf, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1165,7 +1213,12 @@ void SerializationDynamic::serializeText(const IColumn & column, size_t row_num,
         serialization.serializeText(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [&settings](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullText(buf, settings);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 void SerializationDynamic::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1203,7 +1256,12 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
         serialization.serializeTextXML(col, row, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, nested_serialize);
+    auto serialize_null = [](WriteBuffer & buf)
+    {
+        SerializationNullable::serializeNullXML(buf);
+    };
+
+    serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
 }
 
 SerializationPtr SerializationDynamic::createSerializationForType(const DataTypePtr & type) const
