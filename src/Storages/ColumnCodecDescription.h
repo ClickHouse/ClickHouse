@@ -37,15 +37,15 @@ public:
     /// The codec source selected for one logical path after applying inheritance.
     struct Resolved
     {
-        ASTPtr ast;
+        ASTPtr codec;
         /// Path on which the winning declaration is stored; empty for a root declaration or part default.
         CodecPath declaration_path;
         /// True when the stream follows the part default, including an explicit `CODEC(Default)` declaration.
-        bool uses_part_default = true;
+        bool codec_is_part_default = true;
     };
 
-    /// Explicit tuple-element declarations belonging to this column.
-    using SubcolumnCodecs = std::map<CodecPath, ASTPtr>;
+    /// Explicit declarations belonging to this column. The empty path denotes the column-level codec.
+    using CodecsByPath = std::map<CodecPath, ASTPtr>;
 
     ColumnCodecDescription() = default;
     ColumnCodecDescription(const ColumnCodecDescription & other);
@@ -57,15 +57,15 @@ public:
     ColumnCodecDescription & operator=(const ASTPtr & ast) { setRoot(ast); return *this; }
     explicit operator bool() const { return !empty(); }
 
-    bool empty() const { return !root && subcolumns.empty(); }
-    bool hasRoot() const { return static_cast<bool>(root); }
-    bool hasSubcolumns() const { return !subcolumns.empty(); }
-    const ASTPtr & getRoot() const { return root; }
-    const SubcolumnCodecs & getSubcolumns() const { return subcolumns; }
+    bool empty() const { return codecs.empty(); }
+    bool hasRoot() const { return codecs.contains(CodecPath{}); }
+    bool hasSubcolumns() const { return codecs.size() > static_cast<size_t>(hasRoot()); }
+    const ASTPtr & getRoot() const;
+    const CodecsByPath & getCodecs() const { return codecs; }
 
     void setRoot(const ASTPtr & ast);
-    void resetRoot() { root.reset(); }
-    void reset() { root.reset(); subcolumns.clear(); }
+    void resetRoot() { codecs.erase(CodecPath{}); }
+    void reset() { codecs.clear(); }
     void set(CodecPath path, const ASTPtr & ast);
     void erase(const CodecPath & path);
 
@@ -74,8 +74,7 @@ public:
     bool operator==(const ColumnCodecDescription & rhs) const;
 
 private:
-    ASTPtr root;
-    SubcolumnCodecs subcolumns;
+    CodecsByPath codecs;
 };
 
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path);

@@ -1056,9 +1056,9 @@ void MergeTreeData::checkProperties(
                     return;
                 const auto codec_path = getCodecPathForStream(*key_column, owning_column->type, substream_path);
                 const auto resolved = owning_column->codec.resolve(codec_path, nullptr);
-                if (resolved.ast)
+                if (resolved.codec)
                     is_lossy = CompressionCodecFactory::instance()
-                                   .get(resolved.ast, substream_path.back().data.type.get())->isLossyCompression();
+                                   .get(resolved.codec, substream_path.back().data.type.get())->isLossyCompression();
             };
             const auto serialization = IDataType::getSerialization(*key_column);
             serialization->enumerateStreams(callback, key_column->type);
@@ -5301,8 +5301,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     return;
                 result += fmt::format("{}={}:{}:{}:{};", fmt::join(path, "."), params->method, params->dimensions, params->bits, params->m);
             };
-            append({}, codec.getRoot());
-            for (const auto & [path, ast] : codec.getSubcolumns())
+            for (const auto & [path, ast] : codec.getCodecs())
                 append(path, ast);
             return result;
         };

@@ -97,11 +97,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         /// If we can use special codec than just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
         {
-            compression_codec = CompressionCodecFactory::instance().get(resolved.ast, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(resolved.uses_part_default, subtype, compression_codec);
+            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(resolved.codec_is_part_default, subtype, compression_codec);
         }
         else /// otherwise return only generic codecs and don't use info about data_type
-            compression_codec = CompressionCodecFactory::instance().get(resolved.ast, nullptr, default_codec, true);
+            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec

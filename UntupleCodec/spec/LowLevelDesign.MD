@@ -21,11 +21,6 @@ Add `src/Storages/ColumnCodecDescription.h` and `src/Storages/ColumnCodecDescrip
 ```cpp
 using CodecPath = std::vector<String>;
 
-struct CodecPathLess
-{
-    bool operator()(const CodecPath & lhs, const CodecPath & rhs) const;
-};
-
 class ColumnCodecDescription
 {
 public:
@@ -37,16 +32,18 @@ public:
 
     struct Resolved
     {
-        ASTPtr ast;
+        ASTPtr codec;
         CodecPath declaration_path;
-        bool uses_part_default;
+        bool codec_is_part_default;
     };
 
-    using SubcolumnCodecs = std::map<CodecPath, ASTPtr, CodecPathLess>;
+    using CodecsByPath = std::map<CodecPath, ASTPtr>;
 
     bool empty() const;
+    bool hasRoot() const;
+    bool hasSubcolumns() const;
     const ASTPtr & getRoot() const;
-    const SubcolumnCodecs & getSubcolumns() const;
+    const CodecsByPath & getCodecs() const;
 
     void setRoot(ASTPtr ast);
     void resetRoot();
@@ -59,11 +56,11 @@ public:
 };
 ```
 
-`root` is a nullable `ASTPtr`. Every map value is non-null. An empty path is represented only by `root`, never as a map key. `CodecPathLess` is the ordinary lexicographical comparison of segments, giving deterministic formatting and equality. Copy operations deep-clone every AST. Initially preserve the current `ColumnDescription` move-assignment ownership behavior as well: clone codec ASTs into the destination and reset them in the source. A later conversion to ordinary container moves is allowed only after auditing all construction and modification paths for assumptions about AST sharing; it is not required for this feature.
+All explicit declarations use one map: the empty path is the root declaration and non-empty paths are tuple-element declarations. Every map value is non-null. `std::map` compares the path vectors lexicographically, giving deterministic formatting and equality. Copy operations deep-clone every AST. `hasRoot`, `getRoot`, `setRoot`, and `resetRoot` remain convenience operations over the empty-path entry so call sites which specifically mean the column-level declaration remain readable. Initially preserve the current `ColumnDescription` move-assignment ownership behavior as well: clone codec ASTs into the destination and reset them in the source. A later conversion to ordinary container moves is allowed only after auditing all construction and modification paths for assumptions about AST sharing; it is not required for this feature.
 
-`Resolved::declaration_path` is empty for a root declaration and also for the part default; `uses_part_default` disambiguates them. It is true when there is no applicable declaration or when the winning declaration is exactly `CODEC(Default)`. A compound expression such as `CODEC(Delta, Default)` is explicit and therefore has `uses_part_default == false`, matching `CompressionCodecFactory::isDefaultCodec`. `Resolved::ast` is an `ASTPtr` returned by value, so it owns an intrusive reference for the entire use of the result; it is never a reference into a map entry.
+`Resolved::declaration_path` is empty for a root declaration and also for the part default; `codec_is_part_default` disambiguates them. It is true when there is no applicable declaration or when the winning declaration is exactly `CODEC(Default)`. A compound expression such as `CODEC(Delta, Default)` is explicit and therefore has `codec_is_part_default == false`, matching `CompressionCodecFactory::isDefaultCodec`. `Resolved::codec` is an `ASTPtr` returned by value, so it owns an intrusive reference for the entire use of the result; it is never a reference into a map entry.
 
-For compatibility during the conversion, provide narrow convenience methods such as `hasRoot`, `getRootOrNull`, and `hasAnyExplicitCodec`; do not expose the map for mutation. Call sites which mean “top-level declaration” must use `getRoot`, while writer and validation call sites must use `resolve`. This prevents an accidental return to root-only behavior.
+The map is exposed only as a const view. Call sites which mean “top-level declaration” use the root convenience methods, while writer and effective-policy call sites use `resolve`. This prevents an accidental return to root-only behavior.
 
 ## Canonical logical paths
 
@@ -311,9 +308,9 @@ private:
 
 1. Uses the stream leaf type and `CompressionCodecFactory::get` when `ISerialization::isSpecialCompressionAllowed` is true.
 2. Uses a null type and `only_generic = true` for structural streams.
-3. Applies `maybeAdaptiveDefaultCodec` only when `Resolved::uses_part_default` is true, the leaf type is an adaptive candidate, and the resolved codec is not encrypting.
+3. Applies `maybeAdaptiveDefaultCodec` only when `Resolved::codec_is_part_default` is true, the leaf type is an adaptive candidate, and the resolved codec is not encrypting.
 
-`resolve` returns its AST by value. `getCodec` consumes that owning result synchronously; it does not cache a raw `IAST *`, a reference to `Resolved::ast`, or a reference to an entry in `policy`. The `CompressionCodecPtr` passed to `getCodec` is the already resolved part-default codec used for factory substitution and adaptive wrapping; its full AST must match the resolver's owning `part_default`.
+`resolve` returns its AST by value. `getCodec` consumes that owning result synchronously; it does not cache a raw `IAST *`, a reference to `Resolved::codec`, or a reference to an entry in `policy`. The `CompressionCodecPtr` passed to `getCodec` is the already resolved part-default codec used for factory substitution and adaptive wrapping; its full AST must match the resolver's owning `part_default`.
 
 Remove `IMergeTreeDataPartWriter::getCodecDescOrDefault` and `columnUsesDefaultCodec`. Their separate calls cannot express per-stream inheritance reliably. Change `MergeTreeDataPartWriterOnDisk::addStreams`, `MergeTreeDataPartWriterWide::addStreams`, and `MergeTreeDataPartWriterCompact::addStreams` to accept a resolver or fetch it by `getNameInStorage`.
 
@@ -395,7 +392,7 @@ No data-part read-format change is required. Readers continue to select decompre
 The metadata rules are:
 
 - A missing policy and a legacy null `codec` both mean no declaration.
-- A legacy root AST becomes a policy with only `root` populated.
+- A legacy root AST becomes a policy containing only the empty-path map entry.
 - Root-only formatting stays byte-for-byte compatible with the existing normalized column declaration.
 - Metadata containing subcolumn annotations requires a server feature/version gate for replicated databases, backups restored into older versions, and rolling upgrades. Reject creation or alteration until every metadata consumer can parse the representation.
 - Replication compares the full deterministic policy through `ColumnsDescription::toString`; mismatched subcolumn entries are metadata mismatches.

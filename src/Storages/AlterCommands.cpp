@@ -234,7 +234,7 @@ void extractTupleCodecPatch(
     CodecPath path;
     std::vector<size_t> positions;
     collectTupleCodecPatch(declaration.getType(), logical_type, path, positions, declarations, removals);
-    if (countTupleCodecPatchOperations(declaration.getType()) != declarations.getSubcolumns().size() + removals.size())
+    if (countTupleCodecPatchOperations(declaration.getType()) != declarations.getCodecs().size() + removals.size())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Tuple element codec operations through non-Tuple wrapper types are not supported");
@@ -829,10 +829,10 @@ static void applyTupleCodecPatch(
     for (const auto & removal : removals)
     {
         CodecPath declaration_path;
-        if (original_policy.getSubcolumns().contains(removal.path))
+        if (original_policy.getCodecs().contains(removal.path))
             declaration_path = removal.path;
         else if (auto positional_path = getPositionalCodecPredecessor(removal, old_type, new_type);
-                 positional_path && original_policy.getSubcolumns().contains(*positional_path))
+                 positional_path && original_policy.getCodecs().contains(*positional_path))
             declaration_path = std::move(*positional_path);
         else
             throw Exception(
@@ -851,7 +851,7 @@ static void applyTupleCodecPatch(
 
     for (const auto & path : translated_removals)
         policy.erase(path);
-    for (const auto & [path, codec_ast] : declarations.getSubcolumns())
+    for (const auto & [path, codec_ast] : declarations.getCodecs())
         policy.set(path, codec_ast);
 }
 
@@ -861,17 +861,17 @@ static ColumnCodecDescription getChangedTupleCodecDeclarations(
     const ColumnCodecDescription & normalized_resulting_policy)
 {
     ColumnCodecDescription changed;
-    for (const auto & [path, _] : declarations.getSubcolumns())
+    for (const auto & [path, _] : declarations.getCodecs())
     {
-        const auto normalized = normalized_resulting_policy.getSubcolumns().find(path);
-        if (normalized == normalized_resulting_policy.getSubcolumns().end())
+        const auto normalized = normalized_resulting_policy.getCodecs().find(path);
+        if (normalized == normalized_resulting_policy.getCodecs().end())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Normalized codec policy has no explicitly declared tuple element path {}",
                 formatTupleCodecPath(path));
 
-        auto current = current_policy.getSubcolumns().find(path);
-        if (current == current_policy.getSubcolumns().end()
+        auto current = current_policy.getCodecs().find(path);
+        if (current == current_policy.getCodecs().end()
             || current->second->formatWithSecretsOneLine() != normalized->second->formatWithSecretsOneLine())
             changed.set(path, normalized->second);
     }

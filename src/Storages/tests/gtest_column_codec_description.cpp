@@ -36,9 +36,28 @@ TEST(ColumnCodecDescription, ExtractAndApply)
 
     ASSERT_TRUE(codec.hasRoot());
     EXPECT_EQ(codec.getRoot()->formatWithSecretsOneLine(), "CODEC(LZ4)");
-    ASSERT_EQ(codec.getSubcolumns().size(), 2);
-    EXPECT_EQ(codec.getSubcolumns().at(CodecPath{"id"})->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
-    EXPECT_EQ(codec.getSubcolumns().at(CodecPath{"nested", "value"})->formatWithSecretsOneLine(), "CODEC(LZ4HC(4))");
+    ASSERT_EQ(codec.getCodecs().size(), 3);
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{})->formatWithSecretsOneLine(), "CODEC(LZ4)");
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{"id"})->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+    EXPECT_EQ(codec.getCodecs().at(CodecPath{"nested", "value"})->formatWithSecretsOneLine(), "CODEC(LZ4HC(4))");
+
+    const auto element_codec = codec.resolve(CodecPath{"id"}, nullptr);
+    ASSERT_TRUE(element_codec.codec);
+    EXPECT_EQ(element_codec.codec->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
+    EXPECT_EQ(element_codec.declaration_path, CodecPath{"id"});
+    EXPECT_FALSE(element_codec.codec_is_part_default);
+
+    const auto inherited_root_codec = codec.resolve(CodecPath{"nested", "flag"}, nullptr);
+    ASSERT_TRUE(inherited_root_codec.codec);
+    EXPECT_EQ(inherited_root_codec.codec->formatWithSecretsOneLine(), "CODEC(LZ4)");
+    EXPECT_TRUE(inherited_root_codec.declaration_path.empty());
+    EXPECT_FALSE(inherited_root_codec.codec_is_part_default);
+
+    auto without_root = codec.clone();
+    without_root.resetRoot();
+    EXPECT_FALSE(without_root.hasRoot());
+    EXPECT_TRUE(without_root.hasSubcolumns());
+    EXPECT_EQ(without_root.getCodecs().size(), 2);
 
     ASTColumnDeclaration restored;
     restored.name = declaration.name;

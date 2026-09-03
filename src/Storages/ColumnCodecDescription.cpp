@@ -28,45 +28,52 @@ ColumnCodecDescription & ColumnCodecDescription::operator=(const ColumnCodecDesc
 {
     if (this == &other)
         return *this;
-    root = other.root ? other.root->clone() : nullptr;
-    subcolumns.clear();
-    for (const auto & [path, ast] : other.subcolumns)
-        subcolumns.emplace(path, ast->clone());
+    codecs.clear();
+    for (const auto & [path, codec] : other.codecs)
+        codecs.emplace(path, codec->clone());
     return *this;
+}
+
+const ASTPtr & ColumnCodecDescription::getRoot() const
+{
+    static const ASTPtr null_codec;
+    auto it = codecs.find(CodecPath{});
+    return it == codecs.end() ? null_codec : it->second;
 }
 
 void ColumnCodecDescription::setRoot(const ASTPtr & ast)
 {
-    root = ast ? ast->clone() : nullptr;
+    if (ast)
+        codecs[CodecPath{}] = ast->clone();
+    else
+        resetRoot();
 }
 
 void ColumnCodecDescription::set(CodecPath path, const ASTPtr & ast)
 {
-    if (path.empty() || !ast)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A subcolumn codec requires a non-empty path and codec expression");
-    subcolumns[std::move(path)] = ast->clone();
+    if (!ast)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A codec declaration requires a codec expression");
+    codecs[std::move(path)] = ast->clone();
 }
 
 void ColumnCodecDescription::erase(const CodecPath & path)
 {
-    subcolumns.erase(path);
+    codecs.erase(path);
 }
 
 ColumnCodecDescription::Resolved ColumnCodecDescription::resolve(const CodecPath & logical_path, const ASTPtr & part_default) const
 {
-    for (size_t size = logical_path.size(); size; --size)
+    CodecPath candidate = logical_path;
+    while (true)
     {
-        CodecPath candidate(logical_path.begin(), logical_path.begin() + size);
-        if (auto it = subcolumns.find(candidate); it != subcolumns.end())
+        if (auto it = codecs.find(candidate); it != codecs.end())
         {
             bool use_default = CompressionCodecFactory::isDefaultCodec(it->second);
-            return {use_default && part_default ? part_default : it->second, std::move(candidate), use_default};
+            return {use_default && part_default ? part_default : it->second, candidate, use_default};
         }
-    }
-    if (root)
-    {
-        bool use_default = CompressionCodecFactory::isDefaultCodec(root);
-        return {use_default && part_default ? part_default : root, {}, use_default};
+        if (candidate.empty())
+            break;
+        candidate.pop_back();
     }
     return {part_default, {}, true};
 }
@@ -74,11 +81,11 @@ ColumnCodecDescription::Resolved ColumnCodecDescription::resolve(const CodecPath
 bool ColumnCodecDescription::operator==(const ColumnCodecDescription & rhs) const
 {
     auto format = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
-    if (format(root) != format(rhs.root) || subcolumns.size() != rhs.subcolumns.size())
+    if (codecs.size() != rhs.codecs.size())
         return false;
-    auto lhs_it = subcolumns.begin();
-    auto rhs_it = rhs.subcolumns.begin();
-    for (; lhs_it != subcolumns.end(); ++lhs_it, ++rhs_it)
+    auto lhs_it = codecs.begin();
+    auto rhs_it = rhs.codecs.begin();
+    for (; lhs_it != codecs.end(); ++lhs_it, ++rhs_it)
         if (lhs_it->first != rhs_it->first || format(lhs_it->second) != format(rhs_it->second))
             return false;
     return true;
@@ -171,7 +178,7 @@ void collectTupleCodecs(
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Quantized codec on tuple subcolumns is not supported yet because its custom serialization must be path-aware");
-            if (result.getSubcolumns().contains(path))
+            if (result.getCodecs().contains(path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for tuple subcolumn");
             result.set(path, tuple_ast->element_codecs[i]);
         }
@@ -230,7 +237,7 @@ void collectEffectiveDeclarationTypes(
     }
 
     auto resolved = policy.resolve(path, nullptr);
-    if (resolved.ast)
+    if (resolved.codec)
         declaration_types[resolved.declaration_path].push_back(type);
 }
 
@@ -241,14 +248,12 @@ ColumnCodecDescription validateEffectivePolicy(
     const ColumnCodecDescription * declarations_to_admit = nullptr)
 {
     ColumnCodecDescription canonical_policy;
-    if (policy.hasRoot())
-        canonical_policy.setRoot(policy.getRoot());
-    for (const auto & [declaration_path, ast] : policy.getSubcolumns())
+    for (const auto & [declaration_path, codec] : policy.getCodecs())
     {
-        auto canonical_path = canonicalizeCodecPath(logical_type, declaration_path);
-        if (canonical_policy.getSubcolumns().contains(canonical_path))
+        auto canonical_path = declaration_path.empty() ? CodecPath{} : canonicalizeCodecPath(logical_type, declaration_path);
+        if (canonical_policy.getCodecs().contains(canonical_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate codec declaration for tuple subcolumn");
-        canonical_policy.set(std::move(canonical_path), ast);
+        canonical_policy.set(std::move(canonical_path), codec);
     }
 
     DeclarationTypes declaration_types;
@@ -260,18 +265,13 @@ ColumnCodecDescription validateEffectivePolicy(
     const auto validate_declaration = [&](const CodecPath & declaration_path, const ASTPtr & ast)
     {
         const bool use_session_settings = !declarations_to_admit
-            || (declaration_path.empty()
-                ? declarations_to_admit->hasRoot()
-                : declarations_to_admit->getSubcolumns().contains(declaration_path));
+            || declarations_to_admit->getCodecs().contains(declaration_path);
         const auto & declaration_settings = use_session_settings ? settings : trusted_settings;
         auto types_it = declaration_types.find(declaration_path);
         if (types_it == declaration_types.end() || types_it->second.empty())
         {
             CompressionCodecFactory::instance().validateCodecDeclaration(ast, declaration_settings);
-            if (declaration_path.empty())
-                normalized.setRoot(ast);
-            else
-                normalized.set(declaration_path, ast);
+            normalized.set(declaration_path, ast);
             return;
         }
 
@@ -287,16 +287,11 @@ ColumnCodecDescription validateEffectivePolicy(
         }
 
         ASTPtr stored = all_normalized_equal ? common_normalized : ast;
-        if (declaration_path.empty())
-            normalized.setRoot(stored);
-        else
-            normalized.set(declaration_path, stored);
+        normalized.set(declaration_path, stored);
     };
 
-    if (canonical_policy.hasRoot())
-        validate_declaration({}, canonical_policy.getRoot());
-    for (const auto & [declaration_path, ast] : canonical_policy.getSubcolumns())
-        validate_declaration(declaration_path, ast);
+    for (const auto & [declaration_path, codec] : canonical_policy.getCodecs())
+        validate_declaration(declaration_path, codec);
     return normalized;
 }
 
@@ -314,7 +309,7 @@ void installTupleCodecs(ASTPtr & type_ast, CodecPath & path, const ColumnCodecDe
     {
         const String segment = tuple->element_names.empty() ? std::to_string(i + 1) : tuple->element_names[i];
         path.push_back(segment);
-        if (auto it = codec.getSubcolumns().find(path); it != codec.getSubcolumns().end())
+        if (auto it = codec.getCodecs().find(path); it != codec.getCodecs().end())
             tuple->element_codecs[i] = it->second->clone();
         installTupleCodecs(arguments->children[i], path, codec);
         path.pop_back();
@@ -351,7 +346,8 @@ ColumnCodecDescription codecDescriptionFromAST(
         result.setRoot(root);
     CodecPath path;
     collectTupleCodecs(declaration.getType(), logical_type, path, result);
-    if (countTupleCodecAnnotations(declaration.getType()) != result.getSubcolumns().size())
+    if (countTupleCodecAnnotations(declaration.getType())
+        != result.getCodecs().size() - static_cast<size_t>(result.hasRoot()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Tuple element codec declarations through non-Tuple wrapper types are not supported");

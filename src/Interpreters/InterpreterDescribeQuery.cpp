@@ -337,8 +337,8 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(column.comment);
 
             const auto resolved_codec = column.codec.resolve(getCodecPath(path), nullptr);
-            if (resolved_codec.ast && ISerialization::isSpecialCompressionAllowed(path))
-                res_columns[i++]->insert(resolved_codec.ast->template as<ASTFunction>()->arguments->formatForLogging());
+            if (resolved_codec.codec && ISerialization::isSpecialCompressionAllowed(path))
+                res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 
