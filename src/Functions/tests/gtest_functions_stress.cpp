@@ -2131,7 +2131,9 @@ struct FunctionsStressTestThread
             /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
             /// return false (conservative) because injectivity of the underlying function does not hold
             /// on the mixed-type domain, and the resolver lacks full type information before build().
-            if (!isAnyArgumentDynamicallyTyped(valid_args))
+            /// A result type admitting at most one value is skipped for the same reason: it is known
+            /// only after build(), and mapping a whole domain onto one value is not injective.
+            if (!isAnyArgumentDynamicallyTyped(valid_args) && !isNothing(removeNullable(result_type)))
             {
                 stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
             }
