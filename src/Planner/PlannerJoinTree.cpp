@@ -1407,8 +1407,10 @@ void pushOrderByIntoView(
     if (sel->qualify())
         return;
 
-    /// View must not already have ORDER BY/LIMIT
-    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
+    /// View must not already have ORDER BY/LIMIT, including a `LIMIT [n] AFTER/UNTIL` range: the
+    /// injected `ORDER BY` would change which rows its boundaries select, and the injected
+    /// `LIMIT_LENGTH` would become the count of a range that had none.
+    if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset() || sel->limitAfter() || sel->limitUntil())
         return;
 
     /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
