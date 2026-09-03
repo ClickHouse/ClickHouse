@@ -9,6 +9,19 @@
 namespace DB
 {
 
+struct Settings;
+
+/// Settings that change how a function inside a condition evaluates without leaving any trace in the
+/// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family reads all of them while it runs).
+/// Two queries whose conditions differ only in those settings must not share a cache entry: a mark verdict
+/// computed under one value is wrong under the other. Fold the returned salt into the condition hash.
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings);
+
+/// Combines the hash of a condition's `ActionsDAG` with that salt. Every producer of a query condition
+/// cache key has to use it, or a verdict written by one query is never found by the next one.
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt);
+
+
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
 /// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may

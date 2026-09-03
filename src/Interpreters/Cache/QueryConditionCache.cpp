@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
@@ -20,6 +21,38 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_e_with_space_padding;
+    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
+}
+
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::formatdatetime_f_prints_single_zero].value);
+    hash.update(settings[Setting::formatdatetime_f_prints_scale_number_of_digits].value);
+    hash.update(settings[Setting::formatdatetime_parsedatetime_m_is_month_name].value);
+    hash.update(settings[Setting::formatdatetime_format_without_leading_zeros].value);
+    hash.update(settings[Setting::formatdatetime_e_with_space_padding].value);
+    hash.update(settings[Setting::parsedatetime_parse_without_leading_zeros].value);
+    hash.update(settings[Setting::parsedatetime_e_requires_space_padding].value);
+    return hash.get64();
+}
+
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt)
+{
+    SipHash hash;
+    hash.update(condition_dag_hash);
+    hash.update(settings_salt);
+    return hash.get64();
+}
 
 QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
