@@ -57,6 +57,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -157,6 +158,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <base/hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -791,15 +793,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -1118,12 +1113,15 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
+
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
 
         for (const String & col : used_columns)
         {
@@ -5958,6 +5956,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -5974,8 +5988,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6357,15 +6369,8 @@ void MergeTreeData::changeSettings(
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
@@ -10266,6 +10271,26 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
+    /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than
+    /// a counter, because the directory can live on storage shared with other servers, where a
+    /// process-local counter restarts and repeats itself.
+    ///
+    /// A dry run cannot simply reuse the directory name of the merge it simulates: the two would then
+    /// claim the same name, which is the very `LOGICAL_ERROR` this fixes, only raised by the real
+    /// merge instead. The name therefore has to be distinct, and the only cost that can be minimized
+    /// is by how much it exceeds the budget of the merge being simulated.
+    ///
+    /// 48 random bits, written as 12 hexadecimal digits, are kept out of the generated UUID, so the
+    /// whole basename is a fixed `tmp_merge_dr_<12 hex>`: 25 bytes of the filename limit, 36 once
+    /// `IMergeTreeDataPart::remove` prepends `delete_tmp_`, which is 6 bytes more than the merge of
+    /// the shortest possible pair of parts takes and no more than the merge of any part whose name
+    /// is 15 characters or longer. The temporary directory of a dry run lives only for that one query, and
+    /// there are at most a handful of them at a time, so 48 bits leave the collision probability at
+    /// nothing.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX)
+        + getHexUIntLowercase(UUIDHelpers::getLowBytes(UUIDHelpers::generateV4())).substr(4);
+
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -10279,7 +10304,10 @@ void MergeTreeData::optimizeDryRun(
         deduplicate_by_columns,
         cleanup,
         merging_params,
-        nullptr /* txn */);
+        nullptr /* txn */,
+        /*projection=*/ nullptr,
+        /*parent_part=*/ nullptr,
+        dry_run_suffix);
 
     auto new_part = executeHere(merge_task);
 
@@ -12099,6 +12127,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
 
     return true;
 }

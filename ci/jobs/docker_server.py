@@ -119,7 +119,9 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
             ).get_value(),
             encoding="utf-8",
         )
@@ -247,7 +249,9 @@ BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
-    "unexpected status from HEAD request",
+    # One containerd error, formatted `unexpected status from <method> request to <url>:
+    # <status>`, so the method is an interpolated field and not part of the failure.
+    "unexpected status from ",
     "500 Internal Server Error",
     "502 Bad Gateway",
     "503 Service Unavailable",
