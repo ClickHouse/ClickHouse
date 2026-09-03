@@ -2853,6 +2853,13 @@ class QueryResultElement extends HTMLElement
                     border-collapse: collapse;
                 }
 
+                /* A real-time preview of the query result (the "preview" packets, see
+                   updatePreview) is visually muted until the real result replaces it. */
+                #data-table.preview
+                {
+                    opacity: 0.6;
+                }
+
                 #data-table.fixed
                 {
                     table-layout: fixed;
@@ -4285,6 +4292,8 @@ class QueryResultElement extends HTMLElement
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
+        this._dataTable.classList.remove('preview');
+        this._received_real_meta = false;
         this._dataDiv.classList.remove('fixed');
         /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
         /// result finishes rendering. Clearing it here means that while rows are still streaming in,
@@ -4610,6 +4619,29 @@ class QueryResultElement extends HTMLElement
         table.style.display = 'table';
 
         this._row_idx = 0;
+    }
+
+    /// Real-time preview of the query result (the `preview` packets of framing formats, see the
+    /// `query_result_previews` setting): each preview is a complete small result set that fully
+    /// replaces the previous one, rendered like the ordinary table but visually muted
+    /// (`#data-table.preview`). The first packet of the real result supersedes the preview.
+    updatePreview(meta, rows)
+    {
+        /// A stale preview must never overwrite the real result.
+        if (this._received_real_meta) return;
+        this.appendHeader(meta);
+        this._dataTable.classList.add('preview');
+        const fragment = document.createDocumentFragment();
+        for (const row of rows)
+            if (!this.appendRow(row, fragment))
+                break;
+        this.flushFragment(fragment);
+        /// Colorization (bars, heatmaps, categorical colors) applies to previews like to the real
+        /// result. The pass is re-runnable and each preview frame is a complete small table; the
+        /// user-selected color modes (`_colorModes`, keyed by column name) survive the per-frame
+        /// table rebuild, so a mode toggled during previews sticks for the frames that follow and
+        /// for the real result.
+        this.applyColumnColors();
     }
 
     appendRow(row, fragment)
@@ -7038,6 +7070,8 @@ class QueryResultElement extends HTMLElement
         }
         else if (json.meta)
         {
+            this._received_real_meta = true;
+            this._dataTable.classList.remove('preview');
             this.appendHeader(json.meta);
             return true;
         }
@@ -9963,6 +9997,34 @@ function makeEventStreamHandler(targetResultEl, options = {})
             }
             targetResultEl.flushFragment(fragment);
             if (!cont && options.onStop) options.onStop();
+        }
+        else if (name === 'preview')
+        {
+            /// A real-time preview of the query result (the `query_result_previews` setting). Each
+            /// `preview` packet carries a complete, self-contained document of the payload format -
+            /// for the framed default format: its own column names line, types line, and the rows -
+            /// and fully replaces the previous preview. Shown only on the table path: the verbatim
+            /// modes reproduce the format's own output, which previews are not part of.
+            if (options.onBytes || options.rawText) return;
+            const payload = options.base64
+                ? new TextDecoder().decode(base64ToBytes(dataLines.join('')))
+                : dataLines.join('\n');
+            let preview_names = null;
+            let preview_meta = null;
+            const preview_rows = [];
+            for (const line of payload.split('\n'))
+            {
+                if (line === '') continue;
+                const json = JSON.parse(line);
+                if (!Array.isArray(json)) return;
+                if (preview_names === null)
+                    preview_names = json;
+                else if (preview_meta === null)
+                    preview_meta = preview_names.map((n, i) => ({ name: n, type: json[i] }));
+                else
+                    preview_rows.push(Object.fromEntries(preview_names.map((n, i) => [n, json[i]])));
+            }
+            if (preview_meta) targetResultEl.updatePreview(preview_meta, preview_rows);
         }
         else if (name === 'progress')
         {

@@ -1560,6 +1560,11 @@ Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
+            case Protocol::Server::PreviewData:
+                res.block = receiveData();
+                res.block.info.is_preview = true;
+                return res;
+
             case Protocol::Server::Exception:
                 res.exception = receiveException();
                 return res;

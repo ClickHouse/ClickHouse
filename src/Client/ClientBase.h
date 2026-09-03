@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Client/ProgressTable.h>
+#include <Client/QueryResultPreviewDisplay.h>
 #include <Client/Suggest.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -288,6 +289,7 @@ private:
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
     void onData(Block & block, ASTPtr parsed_query);
+    void onPreviewData(Block & block);
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);
     void onExtremes(Block & block, ASTPtr parsed_query);
@@ -492,6 +494,7 @@ protected:
     /// Replayed into output_format once it's available.
     Progress pending_progress;
     ProgressTable progress_table;
+    QueryResultPreviewDisplay query_result_preview_display;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
     bool progress_table_toggle_enabled = true;

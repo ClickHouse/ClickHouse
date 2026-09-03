@@ -57,6 +57,9 @@ public:
 
     String getName() const override { return "RemoveVirtualRowTransform"; }
 
+    /// Stateless with respect to preview chunks (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
     void transform(Chunk & chunk) override
     {
         if (isVirtualRow(chunk))
@@ -458,9 +461,23 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
+    QueryPipelineBuilder & pipeline,
+    const Settings & sort_settings,
+    const SortDescription & result_sort_desc,
+    UInt64 limit_,
+    TopKThresholdTrackerPtr threshold_tracker,
+    const QueryResultPreviewsSettings * query_result_previews_settings)
 {
     bool increase_sort_description_compile_attempts = true;
+
+    /// Query result previews (see `QueryResultPreview.h`): only a sorting with a small enough
+    /// limit emits them - its accumulated top-N candidates form a meaningful intermediate result.
+    /// Emission stays dormant until `QueryPipeline::complete` proves the downstream path safe.
+    SortingQueryResultPreviewsPtr query_result_previews;
+    if (query_result_previews_settings && query_result_previews_settings->enabled && limit_
+        && (!query_result_previews_settings->max_result_rows || limit_ <= query_result_previews_settings->max_result_rows))
+        query_result_previews
+            = std::make_shared<SortingQueryResultPreviews>(*query_result_previews_settings, pipeline.getNumStreams());
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
     if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
@@ -500,7 +517,9 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
-                sort_settings.min_free_disk_space, threshold_tracker);
+                sort_settings.min_free_disk_space,
+                threshold_tracker,
+                query_result_previews);
         });
 }
 
@@ -510,7 +529,8 @@ void SortingStep::fullSortStreams(
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
     const bool skip_partial_sort,
-    TopKThresholdTrackerPtr threshold_tracker)
+    TopKThresholdTrackerPtr threshold_tracker,
+    const QueryResultPreviewsSettings * query_result_previews_settings)
 {
     if (!skip_partial_sort || limit_)
     {
@@ -537,15 +557,25 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, query_result_previews_settings);
 }
 
-void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
+void SortingStep::fullSort(
+    QueryPipelineBuilder & pipeline,
+    const SortDescription & result_sort_desc,
+    const UInt64 limit_,
+    QueryPipelineProcessorsCollector & collector,
+    const bool skip_partial_sort,
+    const QueryResultPreviewsSettings * query_result_previews_settings)
 {
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
+    /// A partitioned sort produces per-partition orders, not one global order, so no previews.
+    if (!partition_by_description.empty())
+        query_result_previews_settings = nullptr;
+
+    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker, query_result_previews_settings);
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
@@ -576,7 +606,7 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     }
 }
 
-void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
@@ -640,7 +670,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
-    fullSort(pipeline, result_description, limit, collector);
+    fullSort(pipeline, result_description, limit, collector, /*skip_partial_sort=*/false, &build_settings.query_result_previews);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });

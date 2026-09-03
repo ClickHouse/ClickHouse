@@ -1,4 +1,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryResultPreview.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -284,6 +289,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
     , output(outputs.front())
     , input_header(*input_header_)
     , window_description(window_description_)
+    , window_functions_for_preview(functions)
 {
     // Materialize all columns in header, because we materialize all columns
     // in chunks and it's convenient if they match.
@@ -1640,6 +1646,13 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
+    // An out-of-band query result preview computed by work() (see `QueryResultPreview.h`).
+    if (pending_query_result_preview && output.canPush())
+    {
+        output.push(std::move(pending_query_result_preview));
+        return Status::PortFull;
+    }
+
     chassert(first_not_ready_row.block >= first_block_number);
     // The first_not_ready_row might be past-the-end if we have already
     // calculated the window functions for all input rows. That's why the
@@ -1708,6 +1721,15 @@ IProcessor::Status WindowTransform::prepare()
             return Status::PortFull;
         }
 
+        // A query result preview is computed standalone by work(), out of band (see
+        // `QueryResultPreview.h`); it must not enter the window calculation state.
+        if (isQueryResultPreview(input_data.chunk))
+        {
+            query_result_preview_input = std::move(input_data.chunk);
+            input_data = {};
+            return Status::Ready;
+        }
+
         has_input = true;
 
         // Now we have new input and can try to generate more output in work().
@@ -1731,8 +1753,53 @@ IProcessor::Status WindowTransform::prepare()
     return Status::NeedData;
 }
 
+void WindowTransform::computeQueryResultPreview()
+{
+    Chunk preview = std::move(query_result_preview_input);
+
+    /// The marker must not enter the one-shot pipeline: the fresh transform would divert
+    /// the chunk right back instead of computing it.
+    preview.getChunkInfos().extract<QueryResultPreviewInfo>();
+
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(input.getSharedHeader(), std::move(preview))));
+    builder.addTransform(std::make_shared<WindowTransform>(
+        input.getSharedHeader(), output.getSharedHeader(), window_description, window_functions_for_preview));
+
+    auto preview_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    PullingPipelineExecutor executor(preview_pipeline);
+
+    /// A single input chunk produces a single output chunk, but drain defensively.
+    Chunk computed;
+    Chunk next;
+    while (executor.pull(next))
+    {
+        if (!next.hasRows())
+            continue;
+        if (!computed)
+            computed = std::move(next);
+        else
+            computed.append(next);
+    }
+
+    /// An empty preview is a preview state of its own: it replaces the previous one and tells the
+    /// client to clear it, so it is forwarded instead of being dropped (a preview emptied upstream
+    /// by `HAVING`, `OFFSET` or `LIMIT` arrives here with no rows).
+    if (!computed.hasColumns())
+        computed.setColumns(output.getHeader().cloneEmptyColumns(), 0);
+
+    markAsQueryResultPreview(computed);
+    pending_query_result_preview = std::move(computed);
+}
+
 void WindowTransform::work()
 {
+    if (query_result_preview_input)
+    {
+        computeQueryResultPreview();
+        return;
+    }
+
     // Exceptions should be skipped in prepare().
     chassert(!input_data.exception);
 

@@ -826,6 +826,12 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 profile_info_callback(packet.profile_info);
             break;
 
+        case Protocol::Server::PreviewData:
+            /// Query result previews of remote queries are not supported yet: the initiator would
+            /// have to merge the per-shard previews. `query_result_previews` is force-disabled for
+            /// secondary queries (see `ClusterProxy::executeQuery`); drop the block defensively.
+            break;
+
         case Protocol::Server::Totals:
             totals = packet.block;
             if (!totals.empty())

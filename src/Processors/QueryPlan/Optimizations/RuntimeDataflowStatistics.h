@@ -163,6 +163,9 @@ public:
 
     String getName() const override { return "RuntimeDataflowStatisticsCollector"; }
 
+    /// Preview chunks pass through without being recorded into the dataflow statistics.
+    bool supportsQueryResultPreviews() const override { return true; }
+
 protected:
     void transform(Chunk & chunk) override;
 

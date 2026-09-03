@@ -354,6 +354,7 @@ Packet HedgedConnections::drain()
         {
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
+            case Protocol::Server::PreviewData:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:
@@ -530,6 +531,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
         case Protocol::Server::ProfileEvents:
+        case Protocol::Server::PreviewData:
             replica_with_last_received_packet = replica_location;
             break;
 

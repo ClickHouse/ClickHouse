@@ -134,7 +134,9 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
         /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
         /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
-        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
+        /// `implicit_table_at_top_level`), or ask for previews of the query result, which only the
+        /// initiator can display (`query_result_previews` and its `query_result_previews_*` thresholds).
+        /// Forwarding them to the hosts that pick up this DDL entry is at
         /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
         /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
         /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
@@ -144,7 +146,10 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
             "database", "select", "order", "sort", "filter", "additional_result_filter",
             "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
             "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+            "query_result_previews", "query_result_previews_min_interval_ms", "query_result_previews_min_rows",
+            "query_result_previews_min_bytes", "query_result_previews_max_result_rows",
+            "query_result_previews_max_result_bytes"};
         for (const auto * name : initiator_only_settings)
             settings->removeSetting(name);
     }

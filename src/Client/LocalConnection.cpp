@@ -706,7 +706,7 @@ bool LocalConnection::poll(size_t)
 
     if (state->block && !state->block.value().empty())
     {
-        next_packet_type = Protocol::Server::Data;
+        next_packet_type = state->block.value().info.is_preview ? Protocol::Server::PreviewData : Protocol::Server::Data;
         return true;
     }
 
@@ -818,6 +818,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
         case Protocol::Server::Data:
+        case Protocol::Server::PreviewData:
         case Protocol::Server::ProfileEvents:
         {
             if (state->block && !state->block.value().empty())

@@ -65,6 +65,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
+            {"query_result_previews", false, false, "New experimental setting to enable real-time previews of query results."},
+            {"query_result_previews_min_interval_ms", 1000, 1000, "New setting to limit the frequency of query result previews."},
+            {"query_result_previews_min_rows", 0, 0, "New setting to limit the frequency of query result previews."},
+            {"query_result_previews_min_bytes", 0, 0, "New setting to limit the frequency of query result previews."},
+            {"query_result_previews_max_result_rows", 1000, 1000, "New setting to limit the size of the intermediate state for which query result previews are emitted."},
+            {"query_result_previews_max_result_bytes", 67108864, 67108864, "New setting to limit the size of the intermediate state for which query result previews are emitted."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
         });
         addSettingsChanges(settings_changes_history, "26.8",

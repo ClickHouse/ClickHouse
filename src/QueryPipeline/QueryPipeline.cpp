@@ -5,6 +5,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,6 +14,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
@@ -650,6 +652,64 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     output_format = format.get();
 
     processors->emplace_back(std::move(format));
+
+    activateQueryResultPreviews();
+}
+
+/// Preview emitters (see `QueryResultPreview.h`) are constructed dormant. They are activated
+/// only for pipelines completed with an output format that can deliver previews to the client,
+/// and only when every processor between the emitter and the format supports preview chunks
+/// (fail-close: any unknown stateful processor on the way keeps the emitter dormant, so preview
+/// chunks can never be mixed into an accumulated state or a result).
+void QueryPipeline::activateQueryResultPreviews()
+{
+    if (!output_format || !output_format->canWriteQueryResultPreviews())
+        return;
+
+    for (const auto & processor : *processors)
+    {
+        auto * emitter = dynamic_cast<IQueryResultPreviewEmitter *>(processor.get());
+        if (!emitter)
+            continue;
+
+        bool downstream_path_is_safe = true;
+        UnorderedSetWithMemoryTracking<const IProcessor *> visited;
+        VectorWithMemoryTracking<const IProcessor *> to_visit{processor.get()};
+        visited.insert(processor.get());
+
+        while (downstream_path_is_safe && !to_visit.empty())
+        {
+            const auto * current = to_visit.back();
+            to_visit.pop_back();
+
+            for (const auto & port : current->getOutputs())
+            {
+                if (!port.isConnected())
+                {
+                    downstream_path_is_safe = false;
+                    break;
+                }
+
+                const auto * next = &port.getInputPort().getProcessor();
+
+                /// The format is the endpoint: its base class treats preview chunks out-of-band.
+                if (dynamic_cast<const IOutputFormat *>(next))
+                    continue;
+
+                if (!next->supportsQueryResultPreviews())
+                {
+                    downstream_path_is_safe = false;
+                    break;
+                }
+
+                if (visited.insert(next).second)
+                    to_visit.push_back(next);
+            }
+        }
+
+        if (downstream_path_is_safe)
+            emitter->activateQueryResultPreviews();
+    }
 }
 
 Block QueryPipeline::getHeader() const

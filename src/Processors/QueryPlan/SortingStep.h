@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -156,7 +157,8 @@ public:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false,
-        TopKThresholdTrackerPtr threshold_tracker = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker = nullptr,
+        const QueryResultPreviewsSettings * query_result_previews_settings = nullptr);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
@@ -195,7 +197,9 @@ private:
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
-        UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+        UInt64 limit_,
+        TopKThresholdTrackerPtr threshold_tracker,
+        const QueryResultPreviewsSettings * query_result_previews_settings);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,
@@ -211,7 +215,8 @@ private:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         QueryPipelineProcessorsCollector & collector,
-        bool skip_partial_sort = false);
+        bool skip_partial_sort = false,
+        const QueryResultPreviewsSettings * query_result_previews_settings = nullptr);
 
     Type type;
 

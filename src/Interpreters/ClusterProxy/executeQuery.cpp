@@ -117,6 +117,12 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool query_result_previews;
+    extern const SettingsUInt64 query_result_previews_min_interval_ms;
+    extern const SettingsUInt64 query_result_previews_min_rows;
+    extern const SettingsUInt64 query_result_previews_min_bytes;
+    extern const SettingsUInt64 query_result_previews_max_result_rows;
+    extern const SettingsUInt64 query_result_previews_max_result_bytes;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -284,6 +290,22 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::implicit_table_at_top_level].changed = false;
     }
 
+    /// Query result previews of remote queries are not supported yet: the initiator drops every
+    /// `PreviewData` packet of a remote query (see `RemoteQueryExecutor::processPacket`), so a shard
+    /// that still had them enabled would snapshot and serialize its intermediate state for nothing.
+    /// The thresholds are stripped together with the switch: they are meaningless once previews are
+    /// off, and an older shard in a rolling upgrade rejects them with `UNKNOWN_SETTING`.
+    if (settings[Setting::query_result_previews].changed || settings[Setting::query_result_previews])
+    {
+        settings[Setting::query_result_previews] = false;
+        settings[Setting::query_result_previews].changed = false;
+    }
+    settings[Setting::query_result_previews_min_interval_ms].changed = false;
+    settings[Setting::query_result_previews_min_rows].changed = false;
+    settings[Setting::query_result_previews_min_bytes].changed = false;
+    settings[Setting::query_result_previews_max_result_rows].changed = false;
+    settings[Setting::query_result_previews_max_result_bytes].changed = false;
+
     /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -304,6 +326,9 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
     "database",
+    "query_result_previews", "query_result_previews_min_interval_ms", "query_result_previews_min_rows",
+    "query_result_previews_min_bytes", "query_result_previews_max_result_rows",
+    "query_result_previews_max_result_bytes",
 };
 
 bool isInitiatorOnlySettingName(std::string_view name)

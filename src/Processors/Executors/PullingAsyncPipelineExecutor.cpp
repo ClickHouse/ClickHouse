@@ -166,6 +166,8 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
          block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
 
+    block.info.is_preview = isQueryResultPreview(chunk);
+
     return true;
 }
 

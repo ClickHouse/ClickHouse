@@ -39,6 +39,9 @@ public:
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
+    /// Preview chunks pass through untouched (see `IInflatingTransform::prepare`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
 protected:
     void consume(Chunk chunk) override;
     bool canGenerate() override;

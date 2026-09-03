@@ -1,3 +1,4 @@
+#include <Processors/QueryResultPreview.h>
 #include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -332,6 +333,11 @@ RuntimeDataflowStatisticsCollector::RuntimeDataflowStatisticsCollector(
 
 void RuntimeDataflowStatisticsCollector::transform(Chunk & chunk)
 {
+    /// Query result previews (see `QueryResultPreview.h`) are not part of the result and must not
+    /// be recorded into the dataflow statistics.
+    if (isQueryResultPreview(chunk))
+        return;
+
     if (updater)
         updater->recordOutputChunk(chunk, getOutputPort().getHeader());
 }

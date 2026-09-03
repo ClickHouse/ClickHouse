@@ -2627,7 +2627,7 @@ The setting currently applies to the HTTP protocol and is ignored for other inte
 Possible values:
 
 - `None` - transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs), so everything works as it is by default.
-- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. Progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, a block of formatted data is base64-encoded into a single `data` field of the event, which decodes to the fully formatted payload with all of its newlines; the `Content-Type` carries a `payload=base64` parameter to say so. Any output format can be carried this way byte-exactly, text and binary alike.
+- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `preview` (see `query_result_previews`), `progress`, `log`, `profile_events`, `exception`. Progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, a block of formatted data is base64-encoded into a single `data` field of the event, which decodes to the fully formatted payload with all of its newlines; the `Content-Type` carries a `payload=base64` parameter to say so. Any output format can be carried this way byte-exactly, text and binary alike.
 - `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
 - `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
 
@@ -2647,6 +2647,32 @@ Result:
 {"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 )", BETA) \
+    DECLARE(Bool, query_result_previews, false, R"(
+Enables real-time previews of query results.
+
+While a long-running query of a simple shape (aggregation, optionally followed by `HAVING`, projection expressions, `DISTINCT`, window functions, `ORDER BY`, and `LIMIT`, or a top-N sorting) is running, the accumulating processors periodically emit a snapshot of the intermediate result. The snapshot is processed by the rest of the query pipeline like ordinary data (so `HAVING`, projections, sorting, and `LIMIT` apply to it) and is delivered to the client as a preview: over the native protocol as a separate `PreviewData` packet, rendered by `clickhouse-client` as a live-updating table, and over HTTP as `preview` packets of [framing formats](/interfaces/framing-formats), rendered by the Web UI. Each preview fully replaces the previous one. Previews never affect the query result: they are excluded from result limits, quotas, `result_rows`/`result_bytes` counters, and the query result cache.
+
+Previews are emitted only while the intermediate state is small: the aggregation state must be single-level, not spilled to disk, with at most `query_result_previews_max_result_rows` keys and at most `query_result_previews_max_result_bytes` of memory; a sorting must have a `LIMIT` of at most `query_result_previews_max_result_rows` rows. The frequency of previews is limited by `query_result_previews_min_interval_ms`, `query_result_previews_min_rows`, and `query_result_previews_min_bytes`.
+
+Stateful operations apply to each preview standalone: `DISTINCT` deduplicates the preview alone, and window functions are computed over the preview alone (so `bar(x, 0, max(x) OVER (), 100)` draws bars scaled by the maximum of the intermediate result). For queries with `WITH TOTALS`, `ROLLUP`, `CUBE`, `GROUPING SETS`, `LIMIT BY`, `WITH FILL`, and for the merging stages of distributed queries, previews are not emitted.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_result_previews_min_interval_ms, 1000, R"(
+The minimum time in milliseconds between two consecutive previews of the query result (see `query_result_previews`).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_result_previews_min_rows, 0, R"(
+The minimum number of source rows an accumulating processor has to process between two consecutive previews of the query result (see `query_result_previews`). Zero means no limit.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_result_previews_min_bytes, 0, R"(
+The minimum number of source bytes an accumulating processor has to process between two consecutive previews of the query result (see `query_result_previews`). Zero means no limit.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_result_previews_max_result_rows, 1000, R"(
+The maximum number of rows in the intermediate state (the number of aggregation keys of the whole aggregation, or the `LIMIT` of a sorting) for which previews of the query result are emitted (see `query_result_previews`). When the state grows above this threshold, previews stop.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_result_previews_max_result_bytes, 67108864, R"(
+The maximum size in bytes of the intermediate state for which previews of the query result are emitted (see `query_result_previews`). When the state grows above this threshold, previews stop.
+
+The size is the memory the aggregation really holds across all of its threads, as accounted by the aggregation's own memory tracker - the one that also decides when to spill to disk. It covers the arenas and the hash tables as well as everything the aggregate function states allocate on their own, which is where a `uniq`, a `uniqExact` or a `groupArray` keeps almost all of its data.
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.

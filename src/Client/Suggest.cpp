@@ -246,6 +246,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
             case Protocol::Server::Extremes:
             case Protocol::Server::Log:
             case Protocol::Server::ProfileEvents:
+            case Protocol::Server::PreviewData:
                 continue;
 
             case Protocol::Server::Exception:
