@@ -833,7 +833,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         {
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
-                last_scanned_snapshot_id = *prefix_end;
+                last_scanned_snapshot_id = prefix_end;
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;
@@ -855,7 +855,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         {
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
-                last_scanned_snapshot_id = *prefix_end;
+                last_scanned_snapshot_id = prefix_end;
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;

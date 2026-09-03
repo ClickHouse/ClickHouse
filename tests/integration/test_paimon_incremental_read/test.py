@@ -366,11 +366,17 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
 def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
     """A read that no longer holds the processing lock must not commit its watermark.
 
-    The `paimon_incremental_read_pause_before_watermark_commit` failpoint parks the
-    read after it collected the batch but before it advances the watermark. The lock
-    is taken away and handed to a competitor in that window, exactly as a Keeper
-    session expiry followed by another consumer polling would do. The read must then
-    fail instead of overwriting the competitor's progress or deleting its lock."""
+    The `paimon_incremental_read_pause_before_watermark_commit` failpoint parks the read
+    after it collected the batch but before it advances the watermark, and the lock is
+    replaced by a node this read does not own in that window. It must then fail rather
+    than overwrite the new holder's progress, and must leave the new holder's lock alone.
+
+    The competitor here is created straight in Keeper rather than through
+    `acquireProcessingLock`, so what rejects the commit is the version check: a bare
+    `create` leaves the node at version 0, while an acquisition leaves it at 1. Losing
+    the lock for real is a session event - Keeper drops the ephemeral only when its
+    session expires, and the commit runs through that same session - and is rejected by
+    `check_session_valid` instead, which this test does not exercise."""
     writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
 
     warehouse_name = "warehouse_lost_lock"
@@ -409,8 +415,9 @@ def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
             f"the reader returned before the lock was taken away: {reader_result!r}"
         )
 
-        # What a session expiry does to the holder's ephemeral, followed by
-        # another consumer acquiring the freed lock.
+        # The lock node is gone and something else now sits at that path. Not a session
+        # expiry: this reader's session is still alive, which is what makes the version
+        # check rather than the session check the thing that has to catch it.
         zk.delete(lock_path)
         zk.create(lock_path, b"competitor", ephemeral=True)
 
