@@ -256,9 +256,11 @@ def main():
     # `.github/workflows` differ from master are not rejected by GitHub's
     # push-time workflow-scope check (which the App token, lacking that scope,
     # cannot pass on a repo this large).
-    # A dry run pushes nothing and runs on an untrusted PR runner with no SSM access, so skip the robot PAT; gh reads use the ambient `gh auth token`.
+    # A dry run has no SSM access, so use the minted PR token (which the changelog step passes into a container with no host gh session) instead of the robot PAT.
     if not args.dry_run:
         os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    else:
+        os.environ["GH_TOKEN"] = Shell.get_output("gh auth token", strict=True)
 
     results = []
     ok = True
@@ -399,16 +401,17 @@ def main():
             _write_secret_file(
                 os.path.expanduser("~/.r2_auth_test"), _R2_AUTH_TEST_SECRET.get_value()
             )
-            if not args.dry_run:
-                _write_secret_file(
-                    os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
-                )
+            _write_secret_file(
+                os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
+            )
 
-        step(
-            name="Write R2 Auth Config",
-            command=write_r2_auth,
-            workdir=REPO_PATH,
-        )
+        # The R2 secrets live in SSM, unreachable from an untrusted PR runner; a dry run publishes nothing and skips every package export, so it needs no R2 auth.
+        if not args.dry_run:
+            step(
+                name="Write R2 Auth Config",
+                command=write_r2_auth,
+                workdir=REPO_PATH,
+            )
 
         # Import the signing key into a per-run GNUPGHOME (0700) rather than the
         # runner user's default keyring, and export it so reprepro signing in
@@ -431,11 +434,13 @@ def main():
             finally:
                 os.unlink(key_file)
 
-        step(
-            name="Import GPG Signing Key",
-            command=import_gpg_key,
-            workdir=REPO_PATH,
-        )
+        # The signing key lives in SSM (unreachable from a PR runner) and only reprepro signing in the package export uses it, which a dry run skips.
+        if not args.dry_run:
+            step(
+                name="Import GPG Signing Key",
+                command=import_gpg_key,
+                workdir=REPO_PATH,
+            )
 
     step(
         name="Prepare Release Info",
@@ -638,16 +643,18 @@ def main():
             workdir=REPO_PATH,
         )
 
-        step(
-            name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+        # --create-gh-release asserts the packages were downloaded, but a dry-run commit has none in S3 (the download step skipped them) and publishes no release.
+        if not args.dry_run:
+            step(
+                name="Create GH Release",
+                command=[
+                    f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
+                    f" {dry_run_flag}".strip()
+                ],
+                workdir=REPO_PATH,
+            )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if args.release_type == "patch" and not args.skip_repo and not args.dry_run:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
