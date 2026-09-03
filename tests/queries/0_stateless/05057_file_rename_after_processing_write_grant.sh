@@ -120,8 +120,9 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
 file_state cluster_no_setting
 
 echo '--- a distributed INSERT SELECT is refused too, and inserts nothing'
-# `parallel_distributed_insert_select`, 2 by default, hands the workers their tasks straight from
-# `getTaskIteratorExtension`, so this route never reaches `IStorageCluster::read`.
+# `parallel_distributed_insert_select` hands the workers their tasks straight from
+# `getTaskIteratorExtension`, so this route never reaches `IStorageCluster::read`. It is pinned
+# because the runner randomizes it to 0, which would take the two arms below the other route.
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dst (x UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dist AS ${CLICKHOUSE_DATABASE}.dst
@@ -131,7 +132,7 @@ GRANT INSERT ON ${CLICKHOUSE_DATABASE}.* TO ${READER};
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.dist SELECT * FROM
      fileCluster('test_shard_localhost', '${FILES_DIR}/dist_insert_denied.csv', 'CSV', 'x UInt8')
-     SETTINGS ${RENAME}" 2>&1 |
+     SETTINGS ${RENAME}, parallel_distributed_insert_select = 2" 2>&1 |
     grep -o -m1 'WRITE ON FILE'
 file_state dist_insert_denied
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dst"
@@ -199,7 +200,7 @@ ${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE ${CLICKHOUSE_DATABASE}.dst"
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "INSERT INTO ${CLICKHOUSE_DATABASE}.dist SELECT * FROM
      fileCluster('test_shard_localhost', '${FILES_DIR}/dist_insert_granted.csv', 'CSV', 'x UInt8')
-     SETTINGS ${RENAME}"
+     SETTINGS ${RENAME}, parallel_distributed_insert_select = 2"
 file_state dist_insert_granted
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.dst"
 
