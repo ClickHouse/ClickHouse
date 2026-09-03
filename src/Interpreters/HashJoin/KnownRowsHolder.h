@@ -128,20 +128,10 @@ void addFoundRowAll(
     }
     else
     {
-        /// Fast path mirroring the lazy branch above: when the list has a single row,
-        /// skip constructing a ForwardIterator and feed the inline RowRef directly.
-        if (mapped.rows == 1)
+        for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(static_cast<const RowRef *>(&mapped), false);
+            added.appendFromBlock(*it, false);
             ++current_offset;
-        }
-        else
-        {
-            for (auto it = mapped.begin(); it.ok(); ++it)
-            {
-                added.appendFromBlock(*it, false);
-                ++current_offset;
-            }
         }
     }
 }

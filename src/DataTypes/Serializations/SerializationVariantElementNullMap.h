@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Columns/ColumnVariant.h>
 #include <Common/Exception.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ class SerializationVariantElement;
 /// but differs in that there is no need to read the actual data of the variant, only discriminators.
 class SerializationVariantElementNullMap final : public SimpleTextSerialization
 {
-private:
+public:
     SerializationVariantElementNullMap(
         const String & variant_element_name_,
         ColumnVariant::Discriminator variant_discriminator_,
@@ -34,16 +35,6 @@ private:
         , num_variants(num_variants_)
     {
     }
-
-public:
-    static UInt128 getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_);
-
-    static SerializationPtr create(
-        const String & variant_element_name_,
-        ColumnVariant::Discriminator variant_discriminator_,
-        size_t num_variants_ = 0);
-
-    size_t allocatedBytes() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

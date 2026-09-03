@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -17,7 +18,9 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
@@ -73,9 +76,6 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
     std::shared_ptr<AzureBlobStorage::StaticCredential>>;
-
-
-struct ConnectionParams;
 }
 
 #endif
@@ -89,8 +89,6 @@ class Client;
 
 namespace DB
 {
-
-class ReadPipeline;
 
 namespace ErrorCodes
 {
@@ -107,11 +105,6 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     bool is_size_known = true;
     Poco::Timestamp last_modified;
-    /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
-    /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
-    /// default epoch would make the schema/count caches treat the object as older than any cached entry and
-    /// silently reuse a stale value. Cache validators must skip the cache when this is `false`.
-    bool is_last_modified_known = true;
     std::string etag;
     ObjectAttributes tags;
     ObjectAttributes attributes;
@@ -122,10 +115,6 @@ struct DataLakeObjectMetadata;
 struct RelativePathWithMetadata
 {
     String relative_path;
-    std::optional<size_t> read_source_index;
-    std::optional<String> path_for_glob_matching;
-    std::optional<String> path_for_deduplication;
-    bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -136,31 +125,12 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
-    RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
-        : relative_path(std::move(relative_path_))
-        , read_source_index(read_source_index_)
-        , metadata(std::move(metadata_))
-    {}
-
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     ~RelativePathWithMetadata() = default;
 
-    std::string getFileName() const
-    {
-        if (!derive_file_name_from_url_path)
-            return std::filesystem::path(relative_path).filename();
-
-        /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
-        /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
-        /// extension-based format/compression detection, so strip them only for web paths, consistent
-        /// with how direct `url` reads use the URL path component.
-        const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return std::filesystem::path(path_without_query).filename();
-    }
+    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
     std::string getPath() const { return relative_path; }
-    std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
 };
 
 struct ObjectKeyWithMetadata
@@ -234,42 +204,15 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
-    virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
-    {
-        return getObjectMetadata(object.getPath(), with_tags);
-    }
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
-    {
-        return tryGetObjectMetadata(object.getPath(), with_tags);
-    }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const = 0;
-
-    /// Populate a `ReadPipeline` with the source and any stages this storage needs.
-    ///
-    /// The "source" is the bottom layer of the read-buffer chain — a descriptor
-    /// (not an actual buffer) that tells `ReadPipeline::build()` how to construct
-    /// the base `ReadBufferFromFileBase`. For object storages the descriptor is
-    /// `ObjectStorageSource { storage, read_hint }`; later stages (disk cache,
-    /// gather, async-prefetch, decryption) wrap around the buffer it produces.
-    ///
-    /// Default: sets the source to this storage. `CachedObjectStorage` overrides
-    /// to delegate to the inner storage and adds the disk cache stage.
-    virtual void prepareRead(
-        ObjectStoragePtr storage,
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Read small object into memory and return it as string
     /// Also contain consistent object metadata if available in this object storage.
@@ -371,16 +314,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
-
     virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
-
 #endif
 
 #if USE_AWS_S3
@@ -405,10 +342,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
 #endif
-
-    /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
-    /// Returns nullptr for non-decorator types, meaning this storage is already the base.
-    virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

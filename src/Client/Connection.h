@@ -157,6 +157,8 @@ public:
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
+    /// Send parts' uuids to excluded them from query processing
+    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
@@ -184,8 +186,6 @@ public:
     {
         format_settings = settings;
     }
-
-    UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
 
 private:
     String host;
