@@ -1593,6 +1593,24 @@ For testing. Do not change it.
     DECLARE(Float, fault_probability_after_part_commit, 0, R"(
 For testing. Do not change it.
 )", 0) \
+    DECLARE(String, geo_replication_control_region, "", R"(
+    Which region the replica belongs to, value defined by users.
+    )", 0) \
+    DECLARE(UInt64, geo_replication_control_leader_election_period_ms, 10 * 1000, R"(
+    If there is no region leader, how frequently this replica should trigger a leader election.
+    )", 0) \
+    DECLARE(Seconds, geo_replication_control_leader_wait, 5, R"(
+    When the target part is not yet on any node in the region, how long a follower should wait before trying to execute the log entry again.
+    )", 0) \
+    DECLARE(Seconds, geo_replication_control_leader_wait_timeout, 300, R"(
+    Maximum time a follower should wait to fetch within the region; on timeout the follower will fetch from any replica.
+    )", 0) \
+    DECLARE(Bool, fetch_merged_part_within_region_only, true, R"(
+    If true, always fetch merged parts from the same region only, unless the local merge results in an inconsistent part and we need to fetch from somewhere to bring all replicas to a consistent state. While no replica in the region has the merged part, the log entry is postponed by `geo_replication_control_leader_wait` per attempt; after `geo_replication_control_leader_wait_timeout` the part may be fetched from any replica.
+    )", 0) \
+    DECLARE(Bool, fetch_covered_part_within_region_only, true, R"(
+    If true, when fetching a part, only look for a covered part within the same region, unless the exact part cannot be found on any replica and we need to fetch a covered part from somewhere to bring all replicas to a consistent state.
+    )", 0) \
     DECLARE(Bool, shared_merge_tree_disable_merges_and_mutations_assignment, false, R"(
 Stop merges assignment for shared merge tree. Only available in ClickHouse
 Cloud
@@ -3208,6 +3226,11 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "table_disk"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
+        /// The geo replication controller snapshots the region once in its constructor and creates its background
+        /// task there. Applying `MODIFY SETTING geo_replication_control_region` live would leave the controller in
+        /// its old state (or, when enabling from empty, with no task at all) until the next restart, so the region
+        /// is only allowed to be chosen at table creation time.
+        || name == "geo_replication_control_region"
     ;
 }
 

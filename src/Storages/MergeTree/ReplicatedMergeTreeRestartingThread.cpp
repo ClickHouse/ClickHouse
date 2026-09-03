@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -170,6 +171,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     setNotReadonly();
 
+
     /// Start queue processing
     storage.background_operations_assignee.start();
     storage.background_streaming_assignee.start();
@@ -193,6 +195,22 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     try
     {
         removeFailedQuorumParts();
+
+        /// Publish this replica's region membership (and enter leader election) before `activateReplica`
+        /// advertises `/replicas/<name>/is_active`. Peers classify same-region fetch sources from
+        /// `/replicas/<name>/region`: if `is_active` appeared first, peers could already select this replica as
+        /// an active source during the startup window and misclassify it as out-of-region because the `region`
+        /// node does not exist yet. The region node must also be published before this replica's own queue
+        /// starts (below), otherwise a recovering replica could fetch cross-region purely because region
+        /// publication lagged behind queue startup. If publishing it failed, keep the table readonly and retry
+        /// the whole startup instead of proceeding without region information.
+        if (!storage.geo_replication_controller.start())
+        {
+            storage.geo_replication_controller.stop();
+            LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
+            return false;
+        }
+
         activateReplica();
 
         const auto & zookeeper = storage.getZooKeeper();
@@ -250,6 +268,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
+        /// `geo_replication_controller.start` publishes the replica region and may acquire the regional leader
+        /// lease before the remaining startup steps finish. A readonly replica must not keep that state alive:
+        /// it would prevent an active peer in the same region from becoming leader and fetching remote parts.
+        storage.geo_replication_controller.stop();
         storage.replica_is_active_node = nullptr;
 
         try
