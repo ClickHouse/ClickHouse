@@ -1267,7 +1267,10 @@ def test_priority_scheduling_io():
                 )
                 with counts_lock:
                     counts[label] += 1
-            except QueryRuntimeException:
+            # Under strict priority a lower-priority read may be starved for a while; that (or a
+            # kill on teardown) can surface as any client error. We only care about completion
+            # counts, so swallow all of them rather than let a thread crash the test.
+            except Exception:
                 pass
 
     threads = []

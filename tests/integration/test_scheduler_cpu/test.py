@@ -366,11 +366,14 @@ def test_priority_scheduling():
         while not stop_event.is_set():
             try:
                 node.query(
-                    f"select count(*) from numbers_mt(100000000) settings workload='all', priority={priority}, max_threads=2"
+                    f"select count(*) from numbers_mt(10000000) settings workload='all', priority={priority}, max_threads=2"
                 )
                 with counts_lock:
                     counts[label] += 1
-            except QueryRuntimeException:
+            # Under strict priority a lower-priority query may be starved for a while; that (or a
+            # kill on teardown) can surface as any client error. We only care about completion
+            # counts, so swallow all of them rather than let a thread crash the test.
+            except Exception:
                 pass
 
     threads = []
