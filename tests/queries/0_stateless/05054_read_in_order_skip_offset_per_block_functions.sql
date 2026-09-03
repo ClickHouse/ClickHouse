@@ -1,4 +1,6 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
+-- no-parallel-replicas: the optimization is disabled when reading from parallel replicas, so the `read_rows`
+-- checks would not observe it.
 
 -- A per-block function such as `blockSize` is not stateful, but its result still depends on how the rows reaching
 -- it are batched. Skipping leading granules changes the block boundaries the offset step passes on, so the
