@@ -2596,8 +2596,8 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     Block header = builder.getHeader();
 
-    /// Once a stage rewrites the whole part - a DELETE filter does - every column is written against
-    /// the new row set, so a column left out below would keep hardlinked files with the old row count.
+    /// Once a stage rewrites the whole part - a DELETE filter does - a column left out here would be
+    /// hardlinked with the old row count.
     const bool rewrites_whole_part = settings.return_all_columns
         || std::any_of(
             stages.begin(),
