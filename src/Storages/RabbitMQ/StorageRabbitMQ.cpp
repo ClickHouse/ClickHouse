@@ -1771,4 +1771,11 @@ For the recommended materialized-view consumption path (the acknowledgement is s
             .related = {"Kafka", "NATS", "FileLog"}});
 }
 
+TableSettings StorageRabbitMQ::getTableSettings(ContextPtr query_context) const
+{
+    /// A named collection may also have set these, but this storage does not keep the
+    /// collection's name, so a setting it changed reports `other` rather than a guess.
+    return attributeSettingsStatedInDefinition(rabbitmq_settings->enumerateSettings(), query_context);
+}
+
 }

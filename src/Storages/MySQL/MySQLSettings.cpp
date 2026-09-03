@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/Settings.h>
@@ -142,4 +143,9 @@ void MySQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & par
 {
     fillEngineSettingsColumnsFromImpl<MySQLSettingsImpl>(params);
 }
+TableSettings MySQLSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

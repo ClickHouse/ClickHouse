@@ -91,6 +91,8 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;

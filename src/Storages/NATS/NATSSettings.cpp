@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
@@ -129,4 +130,9 @@ void NATSSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & para
 {
     fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(params);
 }
+TableSettings NATSSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

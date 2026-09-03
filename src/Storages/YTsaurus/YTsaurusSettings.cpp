@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Interpreters/Context.h>
@@ -112,5 +113,10 @@ void YTsaurusSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & 
     fillEngineSettingsColumnsFromImpl<YTsaurusSettingsImpl>(params);
 }
 
+
+TableSettings YTsaurusSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
 
 }

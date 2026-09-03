@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
@@ -130,4 +131,9 @@ void RabbitMQSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & 
 {
     fillEngineSettingsColumnsFromImpl<RabbitMQSettingsImpl>(params);
 }
+TableSettings RabbitMQSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

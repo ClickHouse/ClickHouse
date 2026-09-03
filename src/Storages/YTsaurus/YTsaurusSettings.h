@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Columns/IColumn_fwd.h>
@@ -45,6 +47,8 @@ struct YTsaurusSettings
     static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
     static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
     static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
 
 private:

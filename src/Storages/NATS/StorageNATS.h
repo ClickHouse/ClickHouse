@@ -78,6 +78,8 @@ public:
 
     const String & getFormatName() const { return format_name; }
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     String getStreamName() const;
     String getConsumerName() const;
