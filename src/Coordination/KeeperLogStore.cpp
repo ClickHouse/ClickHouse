@@ -121,6 +121,12 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
     return changelog.entryAt(index);
 }
 
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at_in_memory(uint64_t index)
+{
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    return changelog.entryFromMemory(index);
+}
+
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at_ext(uint64_t index, bool for_commit)
 {
     if (!for_commit)
