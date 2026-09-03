@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS json_sparse_evolution_wide;
 DROP TABLE IF EXISTS json_sparse_evolution_compact;
 
+SET mutations_sync = 2;
+
 CREATE TABLE json_sparse_evolution_wide
 (
     id UInt64,

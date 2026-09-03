@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS json_sparse_nullable_nested_evolution;
 
+SET mutations_sync = 2;
+
 CREATE TABLE json_sparse_nullable_nested_evolution
 (
     id UInt64,
@@ -60,8 +62,6 @@ SELECT count(), countIf(j.o.x = 'value')
 FROM json_sparse_nullable_nested_evolution;
 
 DROP TABLE json_sparse_nullable_nested_evolution;
-
-SET mutations_sync = 2;
 
 CREATE TABLE json_sparse_nullable_carrier_change
 (
