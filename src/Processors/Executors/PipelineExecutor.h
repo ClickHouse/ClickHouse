@@ -55,8 +55,6 @@ public:
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
-    const Processors & getProcessors() const;
-
     using ExecutionStatus = PipelineExecutionStatus;
 
     /// Cancel execution. May be called from another thread.

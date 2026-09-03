@@ -153,11 +153,6 @@ PipelineExecutor::~PipelineExecutor()
         process_list_element->removePipelineExecutor(this);
 }
 
-const Processors & PipelineExecutor::getProcessors() const
-{
-    return graph->getProcessors();
-}
-
 static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
 {
     switch (status)
