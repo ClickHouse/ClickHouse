@@ -1,6 +1,6 @@
 0
---- Same COLLATE locale re-runs reuse the same QCC entry
-1
-1
---- Different COLLATE locale writes a separate entry
+--- Same COLLATE locale re-runs reuse the same QCC entries
 2
+2
+--- Different COLLATE locale writes separate entries
+4

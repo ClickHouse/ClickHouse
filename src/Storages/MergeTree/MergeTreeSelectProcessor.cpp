@@ -24,9 +24,12 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
+
+#include <boost/functional/hash.hpp>
 
 namespace
 {
@@ -289,8 +292,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
             /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
-            /// apply_mutations_on_fly = 0 query.
-            if (!current_task.appliesMutationsBeforePrewhere())
+            /// apply_mutations_on_fly = 0 query. A row policy also runs before WHERE but is not in
+            /// the cache key, so it must not contribute cached mark decisions.
+            if (!current_task.appliesMutationsBeforePrewhere() && !row_level_filter)
             {
                 String part_name
                     = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
@@ -426,8 +430,26 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
                         {
+                            /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+                            /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+                            /// `unsigned long long`).
+                            size_t condition_hash = output->getHash();
                             if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                            {
+                                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+                                /// granules it drops depend on the running threshold. They can still be
+                                /// recorded: for a fixed plan and data the threshold only tightens, so a
+                                /// granule with no surviving rows has no row that could have reached the
+                                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+                                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                                /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
+                                /// condition must not be cached at all.
+                                if (!reader_settings.query_condition_cache_top_k_salt
+                                    || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                                    break;
+                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
+                            }
 
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             const auto & data_part_info = task->getInfo().data_part_info;
@@ -439,7 +461,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                output->getHash(),
+                                condition_hash,
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),

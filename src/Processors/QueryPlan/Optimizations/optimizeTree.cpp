@@ -352,6 +352,31 @@ void optimizeTreeSecondPass(
                 [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
+    /// The runtime `FilterStep`s added and pushed down just above are invisible to the
+    /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
+    /// running TopK threshold. Re-walk the plan so a TopK read under such a filter stops reusing and
+    /// writing threshold-dependent query condition cache entries.
+    if (join_runtime_filters_were_added && optimization_settings.use_query_condition_cache)
+    {
+        Stack top_k_qcc_stack;
+        top_k_qcc_stack.push_back({.node = &root});
+        while (!top_k_qcc_stack.empty())
+        {
+            disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
+
+            auto & top_k_qcc_frame = top_k_qcc_stack.back();
+            if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
+            {
+                auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
+                ++top_k_qcc_frame.next_child;
+                top_k_qcc_stack.push_back({.node = next_node});
+                continue;
+            }
+
+            top_k_qcc_stack.pop_back();
+        }
+    }
+
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
     /// recognizes physical JoinStep, so with parallel replicas - where the conversion is deferred until
     /// after `applyParallelReplicas` - it runs there instead, see below.

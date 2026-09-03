@@ -368,6 +368,7 @@ bool analyzeProjectionCandidate(
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
@@ -404,7 +405,10 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         top_k_filter_info,
         context,
-        context->getSettingsRef()[Setting::max_threads]);
+        context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /*use_query_condition_cache=*/true,
+        allow_top_k_prewhere_query_condition_cache);
 
     /// If projection analysis exceeded limits, skip this candidate
     if (!projection_result_ptr->isUsable())
@@ -506,7 +510,9 @@ void filterPartsAndCollectProjectionCandidates(
         reading.getTopKFilterInfo(),
         context,
         context->getSettingsRef()[Setting::max_threads],
-        nullptr);
+        /*max_block_numbers_to_read=*/nullptr,
+        /*use_query_condition_cache=*/true,
+        reading.isTopKPrewhereQueryConditionCacheAllowed());
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
