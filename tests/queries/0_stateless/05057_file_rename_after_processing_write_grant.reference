@@ -18,6 +18,7 @@ intact
 --- structure resolution builds no reader and keeps working with READ ON FILE alone
 x	UInt8
 x	UInt8
+intact
 --- a plain read without the setting is not affected
 7
 intact

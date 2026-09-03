@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
-# no-replicated-database: with a replicated access storage the entity serialization round trip widens
-# `GRANT READ ON FILE` to both `READ` and `WRITE` (see issue
-# https://github.com/ClickHouse/ClickHouse/issues/111402, whose fix is not merged yet), so every
-# denial asserted below would hold for the wrong reason.
+# no-replicated-database: that mode installs a replicated access storage, whose entity serialization
+# round trip widens `GRANT READ ON FILE` to both `READ` and `WRITE` (see issue
+# https://github.com/ClickHouse/ClickHouse/issues/111402, whose fix is not merged yet), so the reader
+# would hold `WRITE` and none of the denials asserted below would fire.
 
 # `rename_files_after_processing` renames the files a `SELECT` has read, so it is a write to the
 # source and requires `WRITE ON FILE` on top of `READ ON FILE`. It is also a per-query rule, so it
@@ -96,6 +96,7 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "DESCRIBE TABLE fileCluster('test_shard_localhost', '${FILES_DIR}/explain_plan.csv', 'CSV', 'x UInt8')
      SETTINGS describe_include_virtual_columns = 1, ${RENAME} FORMAT TSV" 2>&1 |
     cut -f1,2 | head -1
+file_state explain_plan
 
 echo '--- a plain read without the setting is not affected'
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
