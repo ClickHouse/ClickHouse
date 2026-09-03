@@ -1467,6 +1467,29 @@ def test_execute_zero_parameter_statement(started_cluster):
     ch.close()
 
 
+def test_execute_negative_argument_stays_a_separate_token(started_cluster):
+    # A substituted argument must not merge with the token before it: `5-$1` bound to `-1` would
+    # otherwise read as `5--1`, whose `--` comments out the rest of the statement.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+
+    cur.execute("PREPARE negative_argument AS SELECT 5-$1 AS v, 'tail' AS t;")
+    cur.execute("EXECUTE negative_argument(-1);")
+    assert cur.fetchall() == [(6, "tail")]
+    # Control: the same statement with an argument that cannot merge.
+    cur.execute("EXECUTE negative_argument(1);")
+    assert cur.fetchall() == [(4, "tail")]
+
+    ch.close()
+
+
 def test_copy_no_sql_injection(started_cluster):
     # Treat client-supplied `COPY` table and column names as identifiers.
     node = started_cluster.instances["node"]

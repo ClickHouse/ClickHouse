@@ -2268,12 +2268,11 @@ private:
         return ci_equals(value, "true") || ci_equals(value, "false");
     }
 
-    /// Preserve unambiguous numeric and boolean literals for OID 0 inference.
-    /// Quote all other values. Spaces keep bare values separate from adjacent tokens.
+    /// Preserve unambiguous numeric and boolean literals for OID 0 inference. Quote all other values.
     static String formatInferredParameter(const String & value)
     {
         if (isSingleNumericLiteral(value) || isBooleanLiteral(value))
-            return fmt::format(" {} ", value);
+            return value;
         return quoteString(value);
     }
 
@@ -2309,7 +2308,11 @@ private:
                 }
                 if (index >= 1 && index <= arguments.size())
                 {
+                    /// Surrounding spaces keep the argument a separate token: a value such as `-1`
+                    /// next to an operator would otherwise form `--` and comment out the remainder.
+                    result += ' ';
                     result += arguments[index - 1];
+                    result += ' ';
                     continue;
                 }
             }
