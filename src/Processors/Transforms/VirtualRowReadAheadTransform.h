@@ -4,30 +4,26 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
-#include <queue>
+#include <deque>
+#include <set>
 #include <unordered_map>
 
 namespace DB
 {
 
-/// Sits between the in-order MergeTree sources and the merge. Each source starts by sending
-/// a virtual row: a single row with the sort key of its future output, built from the primary
-/// key index without reading any data. The merge keeps such a source parked until the merge
-/// actually reaches that key, so a source it never reaches is never read. On its own, though,
-/// the merge wakes the parked sources strictly one at a time, so a scan over many parts runs
-/// sequentially. This transform owns one buffered lane per source and wakes lanes ahead of
-/// the merge:
+/// N-in / N-out processor between the in-order `MergeTree` streams and the final
+/// `MergingSortedTransform` of a read-in-order query. Lane i passes input i to output i
+/// unchanged; the transform decides which lanes may read ahead of the merge, how far, and
+/// buffers what they read. The merge alone consumes deferred streams one at a time, which
+/// serialises a scan over many parts; this transform restores the parallelism while keeping
+/// the reads wasted under a `LIMIT` bounded.
 ///
-/// - a lane starts reading when the merge asks for it and its buffer is empty;
-/// - a lane that feeds the merge keeps reading ahead, so its next read overlaps with merging;
-/// - once the merge has moved to a second lane (so the limit is clearly not answered by the
-///   first lane alone), up to `read_ahead_window` parked lanes nearest to the merge in key
-///   order read ahead in parallel.
-///
-/// With `read_in_order_use_virtual_row_per_block` a source sends a virtual row after every
-/// block. A "group" here means what a source produces between two virtual rows: one block
-/// and the announcement after it (without the per-block mode, everything after the initial
-/// virtual row is a single group).
+/// A lane's bound is the sort key of the latest chunk it pulled: the key of a virtual row, or
+/// the last row of a real chunk. The K lanes with the smallest bounds (the set) read ahead up
+/// to the frontier, the smallest bound of a lane outside the set: the merge cannot consume
+/// beyond that key without another lane, so anything further is premature. A lane the merge
+/// demands always reads. With a limit, the set starts reading only once the merge has demanded
+/// a second lane parked behind a virtual row, and stops once the rows pulled reach the limit.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
 public:
@@ -42,60 +38,76 @@ public:
         size_t read_ahead_window_);
 
     String getName() const override { return "VirtualRowReadAhead"; }
+
     Status prepare() override;
-    /// Processes only the lanes whose ports changed; the overload above is the full pass
-    /// over all lanes, kept for the first call and the (rare) terminal events.
     Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
 
 private:
+    struct BoundLess
+    {
+        const VirtualRowReadAheadTransform * self;
+        bool operator()(size_t lhs, size_t rhs) const;
+    };
+
+    using RankedLanes = std::set<size_t, BoundLess>;
+
     struct Lane
     {
         InputPort * input = nullptr;
         OutputPort * output = nullptr;
 
-        std::queue<Chunk> buffer;
+        /// Real chunks with rows in arrival order. A pending virtual row, if any, is the last element.
+        std::deque<Chunk> buffer;
+        bool pending_virtual_row = false;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
-        /// Rows pulled from the input; once it reaches the limit the input is closed,
-        /// because a merge never needs more than `limit` rows from any single source.
-        size_t num_processed_rows = 0;
 
-        /// Sort key of the latest virtual row (1-row columns in sort description order).
-        /// A lane without one either did not produce its initial virtual row yet or has none
-        /// at all (plain source); such lanes are read on demand without deferral bookkeeping.
-        Columns boundary;
+        /// Sort key of the latest chunk pulled; empty until the first one.
+        Columns bound;
+        bool bound_from_virtual_row = false;
+        bool ranked = false;
+        RankedLanes::iterator rank_it;
 
-        /// Permission to read one group ahead; consumed by the next virtual row, granted
-        /// again when the merge asks for the lane, when the lane just fed the merge, and by
-        /// `topUpReadAhead`. So the window limits how many lanes speculate at once, and the
-        /// buffer caps limit how much real data a lane accumulates ahead of the merge. A lane
-        /// that never produces virtual rows keeps its credit and streams like a plain buffer.
-        size_t credit = 0;
+        UInt64 rows_pulled = 0;
+        /// Rows pulled since the latest virtual row. A virtual row arriving while this is 0 after
+        /// an earlier one means the lane just passed a fully filtered block.
+        UInt64 rows_since_announcement = 0;
+        bool announced = false;
 
-        /// The current credit was granted by `topUpReadAhead` and the merge has not reached
-        /// this lane since: only such lanes count toward `read_ahead_window`, so a window of
-        /// N really means N sources reading ahead of the merge (the lane feeding the merge,
-        /// and lanes that never announce boundaries, hold demand-driven credit outside it).
-        bool speculative = false;
+        bool in_set = false;
+        /// Granted by a filtered stretch on the demanded lane: may pull one block, then parks.
+        bool warmup_credit = false;
+        bool output_finished = false;
+        bool input_finished_noted = false;
+        bool queued = false;
     };
 
-    /// Returns true if any port state changed (more progress may be possible).
-    bool processLane(size_t lane_num);
-    void onMiss(size_t lane_num);
-    bool underBufferCaps(const Lane & lane) const
-    {
-        return lane.buffered_rows < max_rows_to_buffer || lane.buffered_bytes < max_bytes_to_buffer;
-    }
-    Status tryFinish();
-    void grantCredit(size_t lane_num, bool speculative = false);
-    /// Returns true if the lane was not yet in the touched set of this prepare.
-    bool touchLane(size_t lane_num);
-    void topUpReadAhead();
-    bool speculationAllowed() const { return read_ahead_window > 0; }
-    bool boundaryLess(const Lane & lhs, const Lane & rhs) const;
-    Columns extractBoundary(const Chunk & chunk) const;
+    Status prepareImpl(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs);
 
-    const SortDescription description;
+    int compareKeys(const Columns & lhs, const Columns & rhs) const;
+    Columns virtualRowKey(const Chunk & chunk) const;
+    Columns lastRowKey(const Chunk & chunk) const;
+
+    bool underCaps(const Lane & lane) const;
+    bool isDemanded(const Lane & lane) const;
+    bool mayRead(size_t lane_num) const;
+    ssize_t frontierFor(size_t lane_num) const;
+
+    void enqueue(size_t lane_num);
+    void runLanes();
+    void recomputeSet();
+    void driveLane(size_t lane_num);
+    void noteInputFinished(size_t lane_num);
+    void pushFromBuffer(Lane & lane);
+    void consume(size_t lane_num, Chunk chunk);
+    void setBound(size_t lane_num, Columns key, bool from_virtual_row);
+    void noteDemand(size_t lane_num);
+    void grantWarmup(size_t lane_num);
+    void finishLane(size_t lane_num);
+
+    SharedHeader header;
+    SortDescription description;
+    std::vector<size_t> sort_column_positions;
     const bool apply_virtual_row_conversions;
     const UInt64 limit;
     const size_t max_rows_to_buffer;
@@ -103,24 +115,27 @@ private:
     const size_t read_ahead_window;
 
     std::vector<Lane> lanes;
+    std::unordered_map<const Port *, size_t> lane_by_port;
 
-    /// Read-ahead beyond the demanded lane starts only after demand has visited two distinct
-    /// lanes (or with no limit): until then the limit may be answered by the front lane alone
-    /// and the other lanes must stay unread.
-    ssize_t first_miss_lane = -1;
-    bool cross_lane_read_ahead = false;
+    /// Lanes with a known bound and an unfinished output, in (bound, lane index) order.
+    RankedLanes ranked_lanes;
+    /// The set and the two smallest-bound ranked lanes outside it (-1 = none). Two are kept so
+    /// that a lane reading outside the set can take the frontier excluding itself.
+    std::vector<size_t> set_lanes;
+    std::vector<size_t> previous_set_lanes;
+    ssize_t frontier_lanes[2] = {-1, -1};
 
-    /// Lanes are positionally aligned with the ports, but the ports live in std::lists and
-    /// the partial `prepare` receives pointers, so this is the O(1) reverse index
-    /// (`getInputPortNumber` would walk the list on every event).
-    std::unordered_map<const Port *, size_t> port_to_lane;
-    std::vector<UInt64> lane_touch_epoch;
-    std::vector<size_t> touched_lanes;
-    /// Lanes `grantCredit` woke during the running fixpoint pass; they join `touched_lanes`
-    /// between passes, so no pass appends to the set it iterates.
-    std::vector<size_t> credited_lanes;
-    UInt64 touch_epoch = 0;
+    bool window_open;
+    ssize_t first_demanded_lane = -1;
+    ssize_t last_demanded_lane = -1;
+    /// Rows pulled over lanes whose output is not finished.
+    UInt64 budget_rows = 0;
+    size_t finished_outputs = 0;
     bool initialized = false;
+    /// Raised by every state transition that can change the set, the frontier or a lane's reading rights.
+    bool recompute_needed = true;
+
+    std::vector<size_t> candidates;
 };
 
 }
