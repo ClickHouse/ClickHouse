@@ -220,8 +220,27 @@ RETURNS return_type
 - `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
-    - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, and `Buffers`. Default: `MsgPack`. Block-based formats such as `Buffers` must return a single column whose type matches the declared function signature.
+    - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`, and [`ColumnBinary`](/reference/formats/ColumnBinary). Default: `MsgPack`. Block-based formats such as `Buffers` and `ColumnBinary` must return a single column whose type matches the declared function signature.
     - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
+
+## NULL handling {#null-handling}
+
+Whether a WASM UDF sees `NULL` values at all is decided by the return type declared in `RETURNS`.
+
+- If the declared return type is **not** `Nullable`, ClickHouse applies its ordinary null propagation:
+  `NULL` arguments are stripped before the call, the module is never handed a nullable column, and any
+  row where an argument is `NULL` yields `NULL` in the result without the module being consulted for it.
+  This is the same behaviour as built-in functions. The one exception is a return type that cannot be
+  placed inside `Nullable` at all, such as `Array(...)`: there the result stays non-nullable and rows with
+  a `NULL` argument are evaluated over the argument's default value instead.
+- If the declared return type **is** `Nullable`, the module owns null propagation. ClickHouse passes the
+  nullable argument columns through unchanged, and the module decides, per row, which results are `NULL`.
+  With `ABI BUFFERED_V1`, nullability is visible through the chosen `serialization_format` — for example
+  the `COL_IS_NULLABLE` flag and null map of [`ColumnBinary`](/reference/formats/ColumnBinary), or a JSON
+  `null` with `JSONEachRow`.
+
+So a module that needs to distinguish "the argument was `NULL`" from "the argument was the default value"
+must declare a `Nullable` return type, even if it never actually returns `NULL`.
 
 ## ABIs Versions
 
@@ -500,7 +519,7 @@ The following query-level settings control WebAssembly UDF execution:
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 
-- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 (the default) for no fixed row cap: the input block is then split dynamically, only when its estimated serialized size would exceed half of the guest's current linear memory. A block that fits in that budget is passed to the guest in a single call.
 
 - `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
 

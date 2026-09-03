@@ -52,7 +52,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters);
 
 private:
-    void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
+    void preallocateResultColumns(size_t num_bytes, const Columns & reference_columns);
 
     const Block header;
     const InputFormatPtr format;

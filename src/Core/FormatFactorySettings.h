@@ -286,6 +286,27 @@ The number of columns in inserted MsgPack data. Used for automatic schema infere
     DECLARE(MsgPackUUIDRepresentation, output_format_msgpack_uuid_representation, FormatSettings::MsgPackUUIDRepresentation::EXT, R"(
 The way how to output UUID in MsgPack format.
 )", 0) \
+    DECLARE(Bool, allow_experimental_column_binary_format, false, R"(
+Allow the experimental `ColumnBinary` input and output format.
+
+`ColumnBinary` exposes a flat columnar wire format. Its frame header carries a magic and a
+format version, so an incompatible layout change is rejected rather than misparsed, but the
+layout is still evolving and no compatibility between versions is promised yet: a future
+version may refuse data written today. Do not persist `ColumnBinary` data until the layout
+is frozen.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, column_binary_disable_preallocation, false, R"(
+Disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics.
+)", 0) \
+    DECLARE(UInt64, column_binary_max_frame_size, 1024ull * 1024 * 1024, R"(
+The maximum total size in bytes of a single ColumnBinary frame's column data section.
+ColumnBinaryOutputFormat writes one frame per Chunk without splitting, so this must stay
+above the largest valid frame you expect to read or write; it exists only to reject
+frames whose descriptor-declared data_offset/data_size would otherwise force an
+unreasonably large allocation before any data has been validated. The ColumnBinary WASM
+UDF ABI shares this wire format and is bounded by a wasm32 guest's 4 GiB linear memory
+address space regardless of this setting.
+)", 0) \
     DECLARE(UInt64, input_format_max_rows_to_read_for_schema_inference, 25000, R"(
 The maximum rows of data to read for automatic schema inference.
 )", 0) \

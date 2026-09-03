@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-flaky-check
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
-# no-random-settings: this test is already slow, and randomized settings make it slower
+# no-random-settings: serial loop over every I/O format on debug sits at the 600s per-test timeout; randomized query settings amplify wall-time ~3x and tip it over
+# no-flaky-check: any PR adding a format touches the reference file, and dozens of parallel debug reruns of this near-timeout loop over every I/O format spuriously hit the 600s limit
 
 set -e
 
@@ -19,6 +20,8 @@ formats=$($CLICKHOUSE_CLIENT --query "
 schema_registry="http://127.0.0.1:8081"
 # Subject must be unique to avoid conflicts with other tests
 avro_settings="output_format_avro_confluent_subject=test_subject_03251&format_avro_schema_registry_url=$schema_registry"
+# ColumnBinary is experimental while its wire layout is still evolving.
+extra_settings="$avro_settings&allow_experimental_column_binary_format=1"
 
 # `enable_parsing_to_custom_serialization` below takes its hints from the parts that already exist,
 # so the table must not be empty when the first format is inserted, and the ratio must stay below
@@ -40,11 +43,11 @@ prev=$($CLICKHOUSE_CLIENT --query "
 for format in $formats; do
     echo $format
 
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&$avro_settings" -d "SELECT number AS a, 0::UInt64 AS b, '' AS c FROM numbers(1000) FORMAT $format" \
-        | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_sparse_all_formats+FORMAT+$format&enable_parsing_to_custom_serialization=1&$avro_settings" --data-binary @-
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&$extra_settings" -d "SELECT number AS a, 0::UInt64 AS b, '' AS c FROM numbers(1000) FORMAT $format" \
+        | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_sparse_all_formats+FORMAT+$format&enable_parsing_to_custom_serialization=1&$extra_settings" --data-binary @-
 
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&$avro_settings" -d "SELECT number AS a FROM numbers(1000) FORMAT $format" \
-        | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_sparse_all_formats(a)+FORMAT+$format&enable_parsing_to_custom_serialization=1&$avro_settings" --data-binary @-
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&$extra_settings" -d "SELECT number AS a FROM numbers(1000) FORMAT $format" \
+        | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_sparse_all_formats(a)+FORMAT+$format&enable_parsing_to_custom_serialization=1&$extra_settings" --data-binary @-
 
     # Every format appends the same 2000 rows, so every delta below is the same constant.
     # `UInt64 - UInt64` is `Int64`, which these sums overflow, hence the widening.

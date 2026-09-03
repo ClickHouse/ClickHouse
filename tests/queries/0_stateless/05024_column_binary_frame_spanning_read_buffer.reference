@@ -1,0 +1,5 @@
+frame larger than 64 KiB: 1
+in-place matches source: 1
+frame-spanning matches in-place: 1
+truncated frame rejected with max_read_buffer_size=4194304: 1
+truncated frame rejected with max_read_buffer_size=8192: 1
