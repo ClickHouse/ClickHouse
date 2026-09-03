@@ -98,4 +98,64 @@ FROM
     WHERE data.value::String IN ('ABC')
 );
 
+SELECT 'String IN with FixedString set keeps query semantics';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE data.value::String IN (SELECT toFixedString('ABC', 5))
+    ORDER BY id
+);
+
+SELECT 'String IN with FixedString set does not select JSONAllValues index';
+SELECT countIf(position(explain, 'Name: idx_json') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE data.value::String IN (SELECT toFixedString('ABC', 5))
+);
+
+SELECT 'String GLOBAL IN with FixedString set keeps query semantics';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE data.value::String GLOBAL IN (SELECT toFixedString('ABC', 5))
+    ORDER BY id
+);
+
+SELECT 'String GLOBAL IN with FixedString set does not select JSONAllValues index';
+SELECT countIf(position(explain, 'Name: idx_json') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE data.value::String GLOBAL IN (SELECT toFixedString('ABC', 5))
+);
+
+SELECT 'String tuple IN with FixedString set keeps query semantics';
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE (data.value::String, id) IN (SELECT toFixedString('ABC', 5), toUInt32(2))
+    ORDER BY id
+);
+
+SELECT 'String tuple IN with FixedString set does not select JSONAllValues index';
+SELECT countIf(position(explain, 'Name: idx_json') > 0)
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM test_json_subcolumn_in_preprocessor
+    WHERE (data.value::String, id) IN (SELECT toFixedString('ABC', 5), toUInt32(2))
+);
+
 DROP TABLE test_json_subcolumn_in_preprocessor;

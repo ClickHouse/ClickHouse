@@ -13,3 +13,15 @@ FixedString tuple IN does not select JSONAllValues index
 String IN applies preprocessor and can use JSONAllValues index
 [2]
 1
+String IN with FixedString set keeps query semantics
+[2]
+String IN with FixedString set does not select JSONAllValues index
+0
+String GLOBAL IN with FixedString set keeps query semantics
+[2]
+String GLOBAL IN with FixedString set does not select JSONAllValues index
+0
+String tuple IN with FixedString set keeps query semantics
+[2]
+String tuple IN with FixedString set does not select JSONAllValues index
+0
