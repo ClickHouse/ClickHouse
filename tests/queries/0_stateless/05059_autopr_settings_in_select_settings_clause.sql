@@ -29,12 +29,6 @@ SET merge_tree_min_bytes_per_task_for_remote_reading=0;
 -- External aggregation is not supported at the moment, i.e., no statistics will be reported
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
--- Merge the partial aggregation results of the replicas without `GroupingAggregatedTransform`: the
--- memory efficient merging rarely hits `Logical error: 'Bucket N is pushed twice'`
--- (https://github.com/ClickHouse/ClickHouse/issues/115663), which has nothing to do with what this
--- test checks - the decision of automatic parallel replicas, not how the partial results are merged.
-SET distributed_aggregation_memory_efficient=0;
-
 INSERT INTO t SELECT number % 1000, number % 500, number % 200 FROM numbers(5e5);
 
 -- `automatic_parallel_replicas_mode` is passed in the query's own `SETTINGS` clause, which is the whole
