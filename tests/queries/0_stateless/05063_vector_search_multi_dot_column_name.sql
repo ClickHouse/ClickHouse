@@ -32,26 +32,28 @@ WHERE explain LIKE '%idx%';
 SELECT 'control: ordering by the indexed column returns the nearest neighbours';
 SELECT id FROM t_05063 ORDER BY L2Distance(`values.id`, [0., 1.]) LIMIT 3;
 
+SET enable_analyzer = 1;
+
 SELECT 'multi-dot column, analyzer: the index of the suffix column is not used';
 SELECT count() = 0 FROM (
     EXPLAIN indexes = 1
-    SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3
-        SETTINGS enable_analyzer = 1)
+    SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3)
 WHERE explain LIKE '%idx%';
 
 SELECT 'multi-dot column, analyzer: correct result';
-SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3
-    SETTINGS enable_analyzer = 1;
+SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3;
+
+SET enable_analyzer = 0;
 
 SELECT 'multi-dot column, old analyzer: the index of the suffix column is not used';
 SELECT count() = 0 FROM (
     EXPLAIN indexes = 1
-    SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3
-        SETTINGS enable_analyzer = 0)
+    SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3)
 WHERE explain LIKE '%idx%';
 
 SELECT 'multi-dot column, old analyzer: correct result';
-SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3
-    SETTINGS enable_analyzer = 0;
+SELECT id FROM t_05063 ORDER BY L2Distance(`n.values.id`, [0., 1.]) LIMIT 3;
+
+SET enable_analyzer = 1;
 
 DROP TABLE t_05063;
