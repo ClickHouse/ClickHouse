@@ -88,12 +88,18 @@ public:
     /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).
     ///
     /// Lifetime of a parsed batch is:
-    /// [preprocess/PreAppendLog -> commit]
-    /// [preprocess/PreAppendLog -> rollback]
-    /// on events like commit and rollback we can remove the parsed batch from cache to keep the
-    /// memory usage at minimum; the cache is also cleaned on session close in case something
-    /// strange happened.
-    /// final - whether it's the final time we will fetch the batch so we can safely remove it from cache
+    /// [preprocess/PreAppendLog -> pre_commit -> commit]
+    /// [preprocess/PreAppendLog -> pre_commit -> rollback]
+    /// To avoid re-parsing at each step, the first parse attaches the batch to the in-memory
+    /// nuraft::log_entry (`entry->user_data`), later parses reuse it, and the last one detaches
+    /// it to keep memory usage at minimum.
+    /// No mutex protects `entry->user_data` or the KeeperRequestBatch fields: for a given log
+    /// entry all the steps above are ordered (append happens-before commit/rollback, through
+    /// nuraft's and the log store's locks), and nothing else holds the parsed batch.
+    /// entry - the log entry `data` belongs to, for attaching the parsed batch; nullptr to just
+    /// parse. Only used if it's really `data`'s entry (checked by buffer address; e.g. rollback
+    /// can be handed a buffer whose log index was already overwritten by a different entry).
+    /// final - whether it's the final time we will fetch the batch so we can detach it from the entry
     /// serialization_version - which format/fields were parsed from the buffer so we can modify the buffer accordingly
     /// patched_fields_offset - where the leader-patched fields live: for batch entries it is
     /// BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET; for legacy entries it is the request end position
@@ -102,7 +108,8 @@ public:
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version = nullptr,
-        size_t * patched_fields_offset = nullptr);
+        size_t * patched_fields_offset = nullptr,
+        nuraft::log_entry * entry = nullptr);
 
     /// Preprocess all requests of the batch in order. The batch must have first_zxid assigned.
     /// Returns the digest after the last request, or nullopt if the storage is finalized.
@@ -269,21 +276,8 @@ private:
         nuraft::buffer & data,
         bool final,
         ZooKeeperLogSerializationVersion * serialization_version,
-        size_t * patched_fields_offset);
-
-    /// Whether a parsed log entry should go through parsed_batch_cache;
-    /// (session_id, xid) are of the entry's first request.
-    bool shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const;
-
-    /// Cache of parsed batch log entries, keyed by (session_id, xid) of the batch's first request.
-    /// Entries of closed sessions are erased on Close commit in case something strange happened.
-    /// TODO: Replace this cache by plumbing the parsed batch through nuraft as an opaque pointer attached to the log entry, instead of re-parsing (and caching) the exact buffer we serialized microseconds earlier in the same process.
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestBatchPtr>> parsed_batch_cache;
-    uint64_t min_request_size_to_cache{0};
-    /// we only need to protect the access to the map itself
-    /// batches can be modified from anywhere without lock because a single batch
-    /// can be processed only in 1 thread at any point
-    std::mutex request_cache_mutex;
+        size_t * patched_fields_offset,
+        nuraft::log_entry * entry);
 
     LoggerPtr log;
 
