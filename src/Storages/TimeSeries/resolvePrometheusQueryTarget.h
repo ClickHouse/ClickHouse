@@ -37,8 +37,9 @@ void checkNoBypassedReadRestriction(
 /// `time_series` type, or the read is refused.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
-/// The same targets for a write, refused while any replica is unreachable or has no such table (it would take samples
-/// unchecked) and under insert_shard_id / insert_distributed_one_random_shard: the key alone routes a batch.
+/// The same targets for a write, refused while any replica is unreachable, has no such table or does not show its
+/// `time_series` type (it would take samples unchecked), and under insert_shard_id / insert_distributed_one_random_shard:
+/// the key alone routes a batch.
 void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
 
 /// The wrapper's declared {skip_unavailable_shards, skip_unavailable_shards_mode}, restated as the
