@@ -24,3 +24,9 @@ Missing source table
 ACCESS_DENIED
 Missing source table, for a user who can see the database
 UNKNOWN_TABLE
+Hidden source table, before it is resolved, on the read path
+ACCESS_DENIED
+Missing source table, on the read path
+ACCESS_DENIED
+Missing source table, on the read path, for a user who can see the database
+UNKNOWN_TABLE

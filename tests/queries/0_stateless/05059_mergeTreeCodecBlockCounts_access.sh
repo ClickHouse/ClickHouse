@@ -90,6 +90,24 @@ ${CLICKHOUSE_CLIENT} --query \
     "DESCRIBE mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_missing);" 2>&1 |
     grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
 
+# The same for an ordinary read: the check on the name runs in `executeImpl` as well, not only when the
+# structure is resolved, so a plain `SELECT` is not an existence oracle either.
+
+echo "Hidden source table, before it is resolved, on the read path"
+${CLICKHOUSE_CLIENT} --user="${username}" --query \
+    "SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_hidden);" 2>&1 |
+    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
+
+echo "Missing source table, on the read path"
+${CLICKHOUSE_CLIENT} --user="${username}" --query \
+    "SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_missing);" 2>&1 |
+    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
+
+echo "Missing source table, on the read path, for a user who can see the database"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_missing);" 2>&1 |
+    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
+
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER ${username};
     DROP TABLE t_codec_access;
