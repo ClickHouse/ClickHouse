@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/Execution/ExecutingGraph.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <condition_variable>
 

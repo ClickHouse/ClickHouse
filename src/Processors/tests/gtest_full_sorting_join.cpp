@@ -15,7 +15,7 @@
 
 #include <Interpreters/TableJoin.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Execution/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>

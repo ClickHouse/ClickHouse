@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/ExecutingGraph.h>
-#include <Processors/Executors/PipelineExecutionStatus.h>
+#include <Processors/Executors/Execution/ExecutingGraph.h>
+#include <Processors/Executors/Execution/PipelineExecutionStatus.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/ExecutorTasks.h>
+#include <Processors/Executors/Execution/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>

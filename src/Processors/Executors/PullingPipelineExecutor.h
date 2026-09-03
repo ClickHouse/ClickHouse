@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Processors/Executors/PipelineExecutionStatus.h>
+#include <Processors/Executors/Execution/PipelineExecutionStatus.h>
 #include <atomic>
 #include <memory>
 

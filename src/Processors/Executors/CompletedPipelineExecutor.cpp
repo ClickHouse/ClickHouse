@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Execution/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>

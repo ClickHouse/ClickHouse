@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/ExecutionThreadContext.h>
-#include <Processors/Executors/PollingQueue.h>
-#include <Processors/Executors/ThreadsQueue.h>
-#include <Processors/Executors/TasksQueue.h>
+#include <Processors/Executors/Execution/ExecutionThreadContext.h>
+#include <Processors/Executors/Execution/PollingQueue.h>
+#include <Processors/Executors/Execution/ThreadsQueue.h>
+#include <Processors/Executors/Execution/TasksQueue.h>
 #include <Common/ISlotControl.h>
 
 namespace DB
