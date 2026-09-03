@@ -72,11 +72,54 @@ if (ENABLE_GPU)
     set (CMAKE_CUDA_STANDARD 20)
     set (CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-    string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC")
+    # The host pass needs the GNU dialect. RAPIDS code relies on GNU preprocessor
+    # extensions: KvikIO dispatches its NVTX macros on `,##__VA_ARGS__`, which strict c++20
+    # does not collapse, so the wrong overload is selected and the error surfaces three
+    # headers away naming an unrelated function.
+    #
+    # It has to reach gcc through -Xcompiler. nvcc rejects `-std=gnu++20` for itself
+    # ("Value 'gnu++20' is not defined for option 'std'"), and CMAKE_CUDA_EXTENSIONS is a
+    # no-op here - CMake emits -std=c++20 for nvcc either way.
+    string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC -Xcompiler -std=gnu++20")
 
     set (CMAKE_CUDA_FLAGS_DEBUG          "-G -g")
     set (CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O3 -lineinfo")
     set (CMAKE_CUDA_FLAGS_RELEASE        "-O3")
+
+    # Puts a target on the cuDF island: one libstdc++ shared with the device code, and none
+    # of ClickHouse's own toolchain.
+    #
+    # Two separate problems. CMake has one CXX compiler per project, so these .cpp files
+    # cannot go to gcc while ClickHouse's go to clang - compiling them as CUDA routes them
+    # through nvcc's gcc host pass instead. And ClickHouse applies its toolchain to every
+    # target in the tree via directory scope (`link_libraries(global-group)` in the
+    # top-level CMakeLists.txt, `add_definitions` in cmake/target.cmake), which nvcc either
+    # rejects - its `-Werror` takes a value, so it swallows the next argument - or accepts
+    # to worse effect, pulling ClickHouse's libc++ headers into the island.
+    #
+    # Call this immediately after add_library, before any target_* call, or it clears those
+    # too. And link ordinary ClickHouse targets as $<LINK_ONLY:...> with their include
+    # directories given explicitly: they carry global-group's INTERFACE_COMPILE_OPTIONS,
+    # which puts -Werror back on the island.
+    function (gpu_island_target target)
+        set_target_properties (${target} PROPERTIES
+            LINK_LIBRARIES ""
+            INTERFACE_LINK_LIBRARIES ""
+            COMPILE_OPTIONS ""
+            COMPILE_DEFINITIONS ""
+            INCLUDE_DIRECTORIES ""
+            POSITION_INDEPENDENT_CODE ON
+        )
+
+        get_target_property (_gpu_island_srcs ${target} SOURCES)
+        foreach (_gpu_island_src IN LISTS _gpu_island_srcs)
+            if (_gpu_island_src MATCHES "\\.(cpp|cc|cxx)$")
+                set_source_files_properties ("${_gpu_island_src}"
+                    TARGET_DIRECTORY ${target}
+                    PROPERTIES LANGUAGE CUDA)
+            endif ()
+        endforeach ()
+    endfunction ()
 
     message (STATUS "GPU engine: ENABLED")
     message (STATUS "  CUDA:          ${CMAKE_CUDA_COMPILER_VERSION} at ${GPU_CUDA_ROOT}")

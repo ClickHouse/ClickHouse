@@ -13,25 +13,11 @@ add_library (clickhouse_gpu_kernels STATIC
     kernels/Reduction.cu
 )
 
-# ClickHouse applies its toolchain to every target in the tree through directory scope:
-# `link_libraries(global-group)` in the top-level CMakeLists.txt, `add_definitions` in
-# cmake/target.cmake, `include_directories` for the generated config headers. All of it is
-# written for clang and for the libc++ in contrib, and nvcc either rejects it outright
-# (its own `-Werror` takes a value, so it swallows the following argument) or -- worse --
-# accepts it: pulling ClickHouse's libc++ headers into a .cu file is precisely the ABI
-# mixing that GPUKernels.h exists to prevent. So this target drops everything it inherited
-# and states its dependencies itself.
-#
-# Clearing has to happen before target_link_libraries below, or it would wipe those too.
-set_target_properties (clickhouse_gpu_kernels PROPERTIES
-    LINK_LIBRARIES ""
-    INTERFACE_LINK_LIBRARIES ""
-    COMPILE_OPTIONS ""
-    COMPILE_DEFINITIONS ""
-    INCLUDE_DIRECTORIES ""
-    CUDA_SEPARABLE_COMPILATION OFF
-    POSITION_INDEPENDENT_CODE ON
-)
+# Drops everything the target inherited from ClickHouse's toolchain - see
+# gpu_island_target in cmake/cuda.cmake for why. Must precede the target_* calls below.
+gpu_island_target (clickhouse_gpu_kernels)
+
+set_target_properties (clickhouse_gpu_kernels PROPERTIES CUDA_SEPARABLE_COMPILATION OFF)
 
 # cudart_static keeps the CUDA runtime inside the binary, matching how ClickHouse links
 # the rest of its dependencies. The CUDA driver (libcuda.so) is still resolved at run time
