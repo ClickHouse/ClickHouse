@@ -3655,6 +3655,132 @@ TEST(MergeTreeDeduplicationLog, ReenablingWithInFlightPublicationFailsClosed)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: a part commit that resolves while deduplication is disabled must
+/// not evict the block ids it has just committed. `finishPartPublication` enforces the
+/// window once the outcome of the insert is known, and a zero window would trim them
+/// out of the live state at that very moment - although they were published while
+/// deduplication was enabled and their part did become active. Re-enabling
+/// deduplication must then still deduplicate their retry (in-process, before any
+/// restart replays the durable ADD records), the way it does for a block id whose
+/// commit resolved before the window was disabled.
+TEST(MergeTreeDeduplicationLog, CommitResolvedWhileDisabledKeepsDeduplicating)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_commit_while_disabled/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    /// An insert publishes "block1" and its part commit stays in flight ...
+    const std::vector<std::string> in_flight{"block1"};
+    bool part_was_published = false;
+    EXPECT_TRUE(log.addPart(in_flight, part("all_1_1_0"), &part_was_published).empty());
+    ASSERT_TRUE(part_was_published);
+
+    /// ... while deduplication is disabled, and the commit resolves only afterwards.
+    log.setDeduplicationWindowSize(0);
+    log.finishPartPublication(in_flight);
+
+    /// Nothing is deduplicated while the window is zero.
+    EXPECT_TRUE(log.addPart(in_flight, part("all_2_2_0")).empty());
+
+    /// Once re-enabled, the committed block id deduplicates again, without a restart.
+    log.setDeduplicationWindowSize(2);
+    EXPECT_FALSE(log.addPart(in_flight, part("all_3_3_0")).empty());
+
+    /// The window is enforced again from here on: two newer block ids evict it.
+    EXPECT_TRUE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+    EXPECT_TRUE(log.addPart({"block3"}, part("all_5_5_0")).empty());
+    EXPECT_TRUE(log.addPart(in_flight, part("all_6_6_0")).empty());
+
+    log.shutdown();
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: the same, with the on-disk history fenced off when deduplication
+/// is disabled. Disabling deduplication while a publication is in flight keeps only
+/// that publication's block id alive; when its commit then resolves under the zero
+/// window and the block id is evicted, the later re-enabling ALTER - the first
+/// operation after the disk recovers - repairs the fenced history from a live state
+/// that no longer holds the committed block id. The repair snapshot would then
+/// durably forget an insert that did commit, so its retry would be accepted both
+/// in-process and after a restart. The committed block id must survive both.
+TEST(MergeTreeDeduplicationLog, CommitResolvedWhileDisabledSurvivesHistoryRepair)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_commit_while_disabled_fenced/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+    auto marker_is_active = [&]() -> bool
+    {
+        return std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) != 0;
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        /// deduplication_window == 2 gives rotate_interval == 4.
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// An insert publishes "block1" (flush 1) and its part commit stays in flight.
+        const std::vector<std::string> in_flight{"block1"};
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart(in_flight, part("all_1_1_0"), &part_was_published).empty());
+        ASSERT_TRUE(part_was_published);
+
+        /// A second insert writes its three ADD records (flushes 2 to 4), reaches the
+        /// rotation interval, and the rotation's fsync (sync 1) fails; its rollback
+        /// cannot write the compensating records (flush 5) and the repair snapshot
+        /// cannot be written either, so the history is fenced off with the marker.
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+        EXPECT_TRUE(marker_is_active());
+
+        /// Deduplication is disabled while the first insert is still in flight, and
+        /// the insert commits only afterwards, under the zero window.
+        log.setDeduplicationWindowSize(0);
+        log.finishPartPublication(in_flight);
+
+        /// The disk recovers, and re-enabling deduplication is the first operation
+        /// after that: it repairs the fenced history from the live state and clears
+        /// the marker.
+        disk->fail_from_flush = std::numeric_limits<size_t>::max();
+        EXPECT_NO_THROW(log.setDeduplicationWindowSize(2));
+        EXPECT_FALSE(marker_is_active());
+
+        /// The block id committed under the zero window still deduplicates; the
+        /// rolled-back insert's block ids are retryable.
+        EXPECT_FALSE(log.addPart(in_flight, part("all_3_3_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_4_4_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The repair snapshot carried the committed block id: it still deduplicates
+        /// after a restart.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_5_5_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
 #endif
 
 /// Regression test: disabling deduplication before the log has any file must not walk

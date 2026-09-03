@@ -300,7 +300,11 @@ public:
     /// commit, and a retry of that unrelated insert would then be wrongly accepted and
     /// duplicate its data. Keeping the map overfull by the in-flight block ids instead
     /// makes the rollback a plain `erase` that restores the previous state exactly, and
-    /// the window is enforced here, once the outcome is known.
+    /// the window is enforced here, once the outcome is known - unless deduplication
+    /// has been disabled in the meantime: a zero window would evict the just-committed
+    /// block ids at once, and they stay instead until deduplication is re-enabled, which
+    /// enforces the new window, so that a repair of the on-disk history from the live
+    /// state does not forget an insert that did commit.
     void finishPartPublication(const std::vector<std::string> & block_ids) noexcept;
 
     /// Load history from disk. Ignores broken logs.

@@ -1579,7 +1579,21 @@ void MergeTreeDeduplicationLog::finishPartPublication(const std::vector<std::str
         /// The outcome of the insert is known now: either its block ids are committed
         /// and must take their place in the window, or the rollback has already erased
         /// them and the map is back within the window anyway.
-        enforceDeduplicationWindow();
+        ///
+        /// Not while deduplication is disabled, though. A zero window keeps alive only
+        /// the block ids of inserts that were published while it was still enabled, and
+        /// enforcing it here would evict exactly the block ids this commit has just made
+        /// durable - the same instant their bookkeeping stops being needed for a
+        /// rollback, but before they have been written anywhere as committed state. If
+        /// the history was fenced off in the meantime (see fenceOffDivergedHistory),
+        /// the re-enabling ALTER repairs it from the live state, and a snapshot taken
+        /// after that eviction would durably forget an insert that did commit, so its
+        /// retry would be accepted again. Keep them until deduplication is re-enabled
+        /// (`setDeduplicationWindowSize` enforces the new window then) or the log is
+        /// shut down. Nothing else is published under a zero window, so this cannot
+        /// grow the map beyond the inserts that were in flight when it was disabled.
+        if (deduplication_window != 0)
+            enforceDeduplicationWindow();
     }
     catch (...)
     {
