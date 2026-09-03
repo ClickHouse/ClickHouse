@@ -51,10 +51,10 @@ SELECT count() FROM (SELECT c0 FROM t_jit_float_cast_arms GROUP BY c0 HAVING uni
 DROP TABLE t_jit_float_cast_arms;
 
 -- Every row above is a value oracle, so all of them would still pass if the conversions silently
--- stopped or started being compiled. These pin which of the two shapes compiles. Each shape has one
+-- stopped or started being compiled. The shapes below pin which of them compiles. Each has one
 -- compilable child, so once its `CAST` is declined nothing is left to compile: a declined shape
 -- reaches zero even where the control compiles. `CompiledFunctionExecute` counts executions of an
--- already-compiled node, so a warm compiled cache does not change any of the three.
+-- already-compiled node, so a warm compiled cache does not change any of them.
 SELECT CAST(toFloat64(number) AS Bool) FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_bool' FORMAT Null;
 SELECT CAST(toFloat64(number) AS UInt8) FROM numbers(2)
@@ -62,8 +62,9 @@ SELECT CAST(toFloat64(number) AS UInt8) FROM numbers(2)
 SELECT toFloat64(number) + 1 FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_control' FORMAT Null;
 -- The reported shape: a comparison whose right side is a declined conversion. The conversion becomes
--- an input to the compiled expression, so the comparison around it must still compile.
-SELECT toFloat64(number) / 10 <= CAST(toFloat64(number) AS UInt8) FROM numbers(2)
+-- an input to the compiled expression, so the comparison around it must still compile. Neither side
+-- can compile on its own, so the counter here belongs to the comparison and to nothing else.
+SELECT toFloat64(number) <= CAST(toFloat64(number) AS UInt8) FROM numbers(2)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05055_parent' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;

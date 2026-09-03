@@ -41,10 +41,11 @@ SELECT toFloat64(materialize(2::UInt256) + materialize(0::UInt256));
 
 -- Every row above compares a compiled value against an interpreted one, so all of them would still
 -- pass if the JIT arm stopped compiling. This pins that the 128-bit conversion is compiled wherever
--- the 64-bit control is, which also holds in a build without the embedded compiler.
+-- the control is, which also holds in a build without the embedded compiler. The control is plain
+-- arithmetic, so it stays at 1 even if every conversion stops being compilable.
 SELECT toFloat64(materialize(2::Int128) + materialize(0::Int128))
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '04240_int128' FORMAT Null;
-SELECT toFloat64(materialize(2::Int64) + materialize(0::Int64))
+SELECT materialize(2.0) + materialize(0.0) + materialize(1.0)
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '04240_control' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
