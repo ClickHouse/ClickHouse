@@ -71,7 +71,6 @@ void clearGlobalOrderedRowGroupIndexCache()
     if (auto cache = getGlobalOrderedRowGroupIndexCache())
         cache->clear();
 }
-}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
