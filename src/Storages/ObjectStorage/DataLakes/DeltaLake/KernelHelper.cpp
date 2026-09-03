@@ -344,7 +344,20 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     /// explicitly, since the object-store builder is https-only by default.
     if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
     {
-        set_option("azure_endpoint", endpoint.storage_account_url);
+        std::string azure_endpoint = endpoint.storage_account_url;
+        /// Endpoint-style disk configurations (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
+        /// keep only the scheme and host in `storage_account_url` and carry the account name as a
+        /// separate path segment (`add_account_name_to_url` is true), the same way
+        /// `Endpoint::getServiceEndpoint` re-assembles the URL for the SDK client. All other
+        /// configuration forms set `add_account_name_to_url` to false or leave it unset, keeping the
+        /// account either in the URL path already or in the host name, so nothing is appended for them.
+        if (!endpoint.account_name.empty() && endpoint.add_account_name_to_url.value_or(false))
+        {
+            if (!azure_endpoint.ends_with('/'))
+                azure_endpoint += '/';
+            azure_endpoint += endpoint.account_name;
+        }
+        set_option("azure_endpoint", azure_endpoint);
         if (endpoint.storage_account_url.starts_with("http://"))
             set_option("azure_allow_http", "true");
     }

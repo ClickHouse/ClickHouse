@@ -63,6 +63,9 @@ def get_spark(log_dir=None):
     return builder.getOrCreate()
 
 
+AZURE_ENDPOINT_PREFIX = "endpoint_sub_path"
+
+
 def generate_cluster_def(common_path, port, azure_container):
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
     suffix = f"_{worker_id}" if worker_id else ""
@@ -106,6 +109,14 @@ def generate_cluster_def(common_path, port, azure_container):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </disk_azure_common>
+            <disk_azure_prefixed>
+                <type>object_storage</type>
+                <object_storage_type>azure_blob_storage</object_storage_type>
+                <endpoint>http://azurite1:{port}/devstoreaccount1/{azure_container}/{AZURE_ENDPOINT_PREFIX}/</endpoint>
+                <skip_access_check>true</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+            </disk_azure_prefixed>
             <disk_s3_0_with_cache>
                 <type>cache</type>
                 <disk>disk_s3_0_common</disk>
@@ -129,7 +140,7 @@ def generate_cluster_def(common_path, port, azure_container):
             </disk_azure_with_cache>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common,disk_s3_0_with_cache,disk_s3_1_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common,disk_azure_prefixed,disk_s3_0_with_cache,disk_s3_1_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -421,5 +432,91 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_c
         assert instance.query(
             f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}', SETTINGS disk = '{disk_name}')"
         ) == instance.query(inserted_data)
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
+    """A disk defined with an endpoint sub-path
+    (`<endpoint>http://host:port/account/container/prefix/</endpoint>`) stores every blob
+    under `prefix/`, while the Delta log commits paths relative to the table root
+    `az://container/prefix/table`. Writes through such a disk must place the data files
+    under `prefix/table/` exactly once (no `prefix/prefix/...`, no unprefixed copy), and
+    the table must stay readable through the Delta metadata.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = f"test_writes_endpoint_prefix_{get_uuid_str()}"
+
+    # Create the initial Delta table locally and upload it under the endpoint prefix.
+    # No column mapping: written tables must keep physical column names.
+    local_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}"
+    writer = (
+        generate_data(spark, 0, 10)
+        .write.mode("overwrite")
+        .option("compression", "none")
+        .format("delta")
+    )
+    if partitioned:
+        writer = writer.partitionBy("a")
+    writer.save(local_path)
+    AzureUploader(
+        started_cluster.blob_service_client,
+        started_cluster.azure_container_name,
+        use_relpath=True,
+    ).upload_directory(local_path, f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}")
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake('{TABLE_NAME}')
+        SETTINGS disk = 'disk_azure_prefixed'
+        """
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+
+    container_client = started_cluster.blob_service_client.get_container_client(
+        started_cluster.azure_container_name
+    )
+
+    def list_blobs(path_prefix):
+        return [
+            blob.name
+            for blob in container_client.list_blobs(name_starts_with=path_prefix)
+        ]
+
+    initial_files = set(list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/"))
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} SELECT number AS a, toString(number + 1) AS b FROM numbers(10, 10)",
+        settings={"allow_experimental_delta_lake_writes": 1},
+    )
+
+    # The data files written by ClickHouse must land under the prefixed table root,
+    # which external readers resolve `add.path` against.
+    written_files = [
+        name
+        for name in list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/")
+        if name not in initial_files and name.endswith(".parquet")
+    ]
+    expected_files = 10 if partitioned else 1
+    assert len(written_files) == expected_files, f"Written files: {written_files}"
+    if partitioned:
+        assert all(
+            name.startswith(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/a=")
+            for name in written_files
+        ), f"Written files: {written_files}"
+
+    # Nothing may be written with the prefix doubled or dropped.
+    assert not list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{AZURE_ENDPOINT_PREFIX}/")
+    assert not list_blobs(f"{TABLE_NAME}/")
+    assert not list_blobs(f"/{AZURE_ENDPOINT_PREFIX}/")
+
+    expected = "\n".join(f"{i}\t{i + 1}" for i in range(20))
+    assert (
+        instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY a").strip() == expected
+    )
 
     instance.query(f"DROP TABLE {TABLE_NAME}")

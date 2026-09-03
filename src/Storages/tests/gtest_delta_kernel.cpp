@@ -198,6 +198,31 @@ TEST(DeltaLakeAzureKernelHelper, ExplicitHttpEndpointAllowsPlainHttp)
     ASSERT_EQ(*allow_http, "true");
 }
 
+/// An endpoint-style disk configuration (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
+/// keeps only the scheme and host in `storage_account_url` and carries the account name as a
+/// separate path segment (`add_account_name_to_url` is set). The kernel must receive the endpoint
+/// with the account segment appended, the same URL the SDK client itself uses.
+TEST(DeltaLakeAzureKernelHelper, EndpointStyleConfigAppendsAccountName)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "http://127.0.0.1:10000";
+    params.endpoint.container_name = "testcontainer";
+    params.endpoint.account_name = "devstoreaccount1";
+    params.endpoint.prefix = "sub/path";
+    params.endpoint.add_account_name_to_url = true;
+    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("devstoreaccount1", "dGVzdGtleQ==");
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto endpoint_url = findBuilderOption(options, "azure_endpoint");
+    ASSERT_TRUE(endpoint_url.has_value());
+    ASSERT_EQ(*endpoint_url, "http://127.0.0.1:10000/devstoreaccount1");
+
+    const auto allow_http = findBuilderOption(options, "azure_allow_http");
+    ASSERT_TRUE(allow_http.has_value());
+    ASSERT_EQ(*allow_http, "true");
+}
+
 /// A real connection string (non-empty ConnectionString alternative) must still be parsed
 /// into its components, including the account name.
 TEST(DeltaLakeAzureKernelHelper, ConnectionStringSetsAccountName)
