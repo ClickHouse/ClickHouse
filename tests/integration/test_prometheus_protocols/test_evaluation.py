@@ -1153,6 +1153,193 @@ def test_function_absent():
     )
 
 
+def test_function_timestamp():
+    # `test` has samples at 110, 120, 130, 140, ... At time 135 the sample selected by the instant selector
+    # (within the default 5m lookback) is the one at 130 - timestamp() must report *that* sample's own
+    # timestamp (130), not the query's evaluation time (135) and not the sample's value (3).
+
+    # Plain vector selector: returns the sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Selector wrapped in an offset modifier: returns the selected sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test offset 1m)",
+        195,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [195, "130"]}]}',
+        [["[]", "1970-01-01 00:03:15.000", 130]],
+    )
+
+    # Selector wrapped in an @ modifier: returns the selected sample's own timestamp (120).
+    do_query_test(
+        "timestamp(test @ 120)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
+    # Combined modifiers evaluate at @ minus offset (90), before `test` has samples.
+    do_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Range query regression for offset-modified selector (/api/v1/query_range):
+    # Verifies applyOffset realigns/duplicates selector results across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test offset 1m)",
+        190,
+        210,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[190, "130"], [200, "140"], [210, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:03:10.000',130),('1970-01-01 00:03:20.000',140),('1970-01-01 00:03:30.000',140)]",
+            ]
+        ],
+    )
+
+    # Range query regression for @-modified selector (/api/v1/query_range):
+    # Verifies fixed @ evaluation time realignment across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test @ 120)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
+            ]
+        ],
+    )
+
+    # Range query regression for a combined @ and offset-modified selector (/api/v1/query_range):
+    # It evaluates at 90 and is empty for every output grid point.
+    do_range_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
+    # In Prometheus 3.5.0, non-selector expressions are materialized at each query step evaluation timestamp T_eval,
+    # returning T_eval (135) for each present sample.
+    do_query_test(
+        "timestamp(test * 1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(-test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(timestamp(test))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(test > bool 10)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    # A comparison without `bool` filters out non-matching samples (at t=135 test is 3, so test > 10 drops the sample),
+    # producing an empty result.
+    do_query_test(
+        "timestamp(test > 10)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Scalar-backed instant vectors (e.g. vector(1)) retain INSTANT_VECTOR type contract when wrapped in timestamp(),
+    # allowing vector-only operators like abs() and scalar() to consume the result without type errors.
+    do_query_test(
+        "abs(timestamp(vector(1)))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "scalar(timestamp(vector(1)))",
+        135,
+        '{"resultType": "scalar", "result": [135, "135"]}',
+        [["1970-01-01 00:02:15.000", 135]],
+    )
+
+    # Non-instant-vector arguments (bare scalar literals, range vectors) must be rejected up front with user-facing type errors.
+    do_query_test_expect_error(
+        "timestamp(1)",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(test[5m])",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
+    # timestamp() call that itself has a modifier - are not valid PromQL syntax: the offset/@ modifier may only
+    # attach directly to a selector or a subquery, never to a function call's result. Real Prometheus rejects
+    # these with a parse error rather than evaluating them, so ClickHouse must reject them the same way (as a
+    # CANNOT_PARSE_PROMQL_QUERY parse error, "mismatched input ... while parsing PromQL query" from the ANTLR
+    # grammar) instead of falling through to NOT_IMPLEMENTED. Combining both modifiers on a *single* selector
+    # (e.g. `test @ 120 offset 30s`) is the only supported form and is already covered above.
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
