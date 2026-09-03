@@ -15,6 +15,7 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
@@ -1017,9 +1018,16 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
 /// garbage decide deletion. Even `allow_suspicious_ttl_expressions` must not allow that; only loading
 /// already stored metadata does, because a rejection there fails the whole load rather than the one
 /// table.
-void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+///
+/// The built DAG only carries an `ARRAY_JOIN` node when `ActionsVisitor` recognised the literal name
+/// `arrayJoin`, which it does not do for the `unnest` alias when `normalize_function_names = 0` left
+/// the name uncanonicalized (the expression is then built as an ordinary call of a special function
+/// that throws `FUNCTION_IS_SPECIAL` on every later TTL evaluation). The AST is therefore checked as
+/// well, by canonical function name, so the verdict does not depend on that setting or on the
+/// spelling of the alias.
+void checkTTLExpressionPreservesRowCount(const ExpressionActionsPtr & expression, const ASTPtr & ast, std::string_view expression_kind)
 {
-    if (expression->hasArrayJoin())
+    if (expression->hasArrayJoin() || expressionContainsArrayJoin(ast))
         throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
             "TTL {}expression cannot contain arrayJoin, because it changes the number of rows",
             expression_kind);
@@ -1340,6 +1348,9 @@ TTLDescription TTLDescription::getTTLFromAST(
                 if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
 
+                if (validation_mode != TTLValidationMode::Attach)
+                    checkTTLExpressionPreservesRowCount(set_part.expression, value, /*expression_kind=*/ "GROUP BY SET ");
+
                 result.set_parts.emplace_back(set_part);
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
@@ -1363,11 +1374,9 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     if (validation_mode != TTLValidationMode::Attach)
     {
-        checkTTLExpressionPreservesRowCount(expression, /*expression_kind=*/ "");
+        checkTTLExpressionPreservesRowCount(expression, result.expression_ast, /*expression_kind=*/ "");
         if (where_expression)
-            checkTTLExpressionPreservesRowCount(where_expression, /*expression_kind=*/ "WHERE ");
-        for (const auto & set_part : result.set_parts)
-            checkTTLExpressionPreservesRowCount(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+            checkTTLExpressionPreservesRowCount(where_expression, result.where_expression_ast, /*expression_kind=*/ "WHERE ");
     }
 
     if (where_expression && !skip_validation)

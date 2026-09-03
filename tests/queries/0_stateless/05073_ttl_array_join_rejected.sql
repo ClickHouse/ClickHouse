@@ -17,6 +17,18 @@ ALTER TABLE t_ttl_array_join MODIFY TTL arrayJoin(arr) SETTINGS allow_suspicious
 -- A column TTL is checked the same way.
 ALTER TABLE t_ttl_array_join MODIFY COLUMN ts DateTime TTL arrayJoin(arr); -- { serverError BAD_TTL_EXPRESSION }
 
+-- The `unnest` alias is the same function, so it is rejected the same way, whatever its spelling and
+-- whether or not `normalize_function_names` canonicalized the name in the AST.
+ALTER TABLE t_ttl_array_join MODIFY TTL unnest(arr); -- { serverError BAD_TTL_EXPRESSION }
+ALTER TABLE t_ttl_array_join MODIFY TTL UNNEST(arr); -- { serverError BAD_TTL_EXPRESSION }
+
+SET normalize_function_names = 0;
+ALTER TABLE t_ttl_array_join MODIFY TTL unnest(arr); -- { serverError BAD_TTL_EXPRESSION }
+ALTER TABLE t_ttl_array_join MODIFY TTL unnest(arr) SETTINGS allow_suspicious_ttl_expressions = 1; -- { serverError BAD_TTL_EXPRESSION }
+ALTER TABLE t_ttl_array_join MODIFY TTL arr[1] WHERE unnest(arr) > now() SETTINGS allow_suspicious_ttl_expressions = 1; -- { serverError BAD_TTL_EXPRESSION }
+ALTER TABLE t_ttl_array_join MODIFY COLUMN ts DateTime TTL unnest(arr) SETTINGS allow_suspicious_ttl_expressions = 1; -- { serverError BAD_TTL_EXPRESSION }
+SET normalize_function_names = 1;
+
 -- An ordinary TTL still works, and still expires only what it should.
 SELECT 'ordinary ttl';
 ALTER TABLE t_ttl_array_join MODIFY TTL arr[1] SETTINGS materialize_ttl_after_modify = 0;
