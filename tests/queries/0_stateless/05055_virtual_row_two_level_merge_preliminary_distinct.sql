@@ -21,6 +21,10 @@ INSERT INTO t_virtual_row_two_level_distinct SELECT number % 10, number % 7 FROM
 SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_two_level_merge_threshold = 1,
     max_threads = 2, max_block_size = 64;
 
+-- DISTINCT per partition reads each partition through its own port and skips the merge
+-- altogether, so there would be no preliminary merge to forward through.
+SET allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0;
+
 -- The read must go through preliminary merges below the final one.
 SELECT count() > 1
 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM t_virtual_row_two_level_distinct ORDER BY a, b)
