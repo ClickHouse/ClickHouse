@@ -181,7 +181,8 @@ _PIPELINE_NOTES = {
     ),
     Labels.CI_COVERAGE: (
         "Label `ci-coverage` forces coverage jobs and the `LLVM Coverage` merge job "
-        "to run even though the change does not affect the build."
+        "to run even though the change does not affect the build. The "
+        "`excluded_from_llvm` jobs stay skipped: they produce no coverage data."
     ),
 }
 
@@ -413,7 +414,15 @@ def should_skip_job(job_name):
         ):
             # The `ci-coverage` label overrides only this automatic skip: it lets
             # a tests-only PR still measure the coverage of the tests it adds.
+            # The `excluded_from_llvm` jobs stay skipped even then - they run on a
+            # plain build and produce no coverage data, and the tests they hold
+            # are covered by the regular (non-coverage) test jobs of the PR.
             if Labels.CI_COVERAGE in _info_cache.pr_labels:
+                if "excluded_from_llvm" in job_name:
+                    return (
+                        True,
+                        f"Skipped: '{Labels.CI_COVERAGE}' forces only the coverage jobs; this job produces no coverage data",
+                    )
                 _add_pipeline_note(Labels.CI_COVERAGE)
                 return False, ""
             return True, "Skipped: no build-affecting changes; coverage would be identical to master"
