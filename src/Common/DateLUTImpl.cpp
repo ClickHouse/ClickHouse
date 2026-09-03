@@ -96,11 +96,12 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
 
-    /// Time-of-day part of the UTC offset at the start of the epoch; the two flags above assert that every
-    /// epoch day agrees with it, which is what lets the addends below stand in for the offset itself.
-    const Time epoch_offset_time_of_day = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
-    hour_of_day_offset_addend = 86400 - epoch_offset_time_of_day;
-    minute_of_hour_offset_addend = 3600 - epoch_offset_time_of_day % 3600;
+    /// The UTC time of day at which a local day begins: 66600 for `Asia/Kolkata`, whose +05:30 puts local
+    /// midnight at 18:30 the day before. The two flags above assert that every epoch day begins at it, which
+    /// is what lets its complements below stand in for the offset.
+    const Time utc_time_of_day_at_local_midnight = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
+    hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
+    minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
     cctz::civil_day date = lut_start;
     cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
@@ -185,7 +186,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
             if (values.amount_of_offset_change_value != 0 || (i != 0 && values.date - lut[i - 1].date != 86400))
                 offset_is_fixed_during_epoch = false;
 
-            if (time_of_day % 60 != 0 || time_of_day % 3600 != epoch_offset_time_of_day % 3600
+            if (time_of_day % 60 != 0 || time_of_day % 3600 != utc_time_of_day_at_local_midnight % 3600
                 || values.amount_of_offset_change() % 3600 != 0)
                 offset_minute_of_hour_is_constant_during_epoch = false;
         }
