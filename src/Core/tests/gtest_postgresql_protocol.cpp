@@ -800,8 +800,8 @@ TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
     /// Exact arity is accepted and substituted (a repeated placeholder counts once).
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        prepare(manager, "SELECT $1 AS a, $2 AS b");
-        EXPECT_EQ(execute(manager, {"1", "2"}), "SELECT  1  AS a,  2  AS b");
+        prepare(manager, "SELECT $1 + $2");
+        EXPECT_EQ(execute(manager, {"1", "2"}), "SELECT  1  +  2 ");
     }
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
