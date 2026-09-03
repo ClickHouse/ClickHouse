@@ -954,6 +954,12 @@ static bool partHasStaleTopKIndex(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context)
 {
+    /// A masking policy rewrites the indexed column's values at read time, so the part's minmax no
+    /// longer describes the values the query sees. The top-k optimization must not trust it; disable
+    /// it the same way statistics-based pruning does (see filterPartsByStatistics).
+    if (part->storage.hasEnabledMaskingPolicies(context))
+        return true;
+
     /// Materialized lightweight delete: the part carries a _row_exists column.
     if (part->hasLightweightDelete())
         return true;
