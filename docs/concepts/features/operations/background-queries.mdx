@@ -34,12 +34,14 @@ submitting connection, and the query never starts.
 
 ### Data that streams over the connection {#data-that-streams-over-the-connection}
 
-The data of an `INSERT` must travel with the query itself. An `INSERT` whose data arrives after the query text, or
-which reads its data through `input`, is rejected with
-`A query whose data streams over the connection cannot be run in the background`:
+An `INSERT` is rejected when the server would still need to read data from the submitting connection after dispatching
+the query. 
+
+This can affect both `INSERT ... FORMAT ...` and queries that read through `input`. Such a request is rejected
+with `A query whose data streams over the connection cannot be run in the background`:
 
 ```sql
--- Rejected: the data does not travel with the query
+-- Rejected over the native protocol: the client sends the data separately
 INSERT INTO target_table FORMAT TSV
 INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
 
@@ -49,10 +51,11 @@ INSERT INTO target_table SELECT number FROM numbers(1000000)
 
 `clickhouse-client` sends the data of an `INSERT ... FORMAT ...` in separate packets, so that form can never run in the background over the native protocol.
 
-Over HTTP the query text is read from the request body, so an `INSERT` whose data fits within `max_query_size` is accepted, while a larger body keeps streaming past the query text and is rejected.
+Over HTTP, either form can be accepted when the complete query and its data fit in the initial parsing buffer, which is bounded by `max_query_size`. 
 
-Do not rely on that size boundary: use `INSERT ... SELECT`, or a table function such as `url` or `s3`,
-for data that must be loaded in the background.
+This includes an HTTP query that reads an inline payload through `input`. A larger body keeps streaming past the buffered query text and is rejected.
+
+Do not rely on that size boundary: use `INSERT ... SELECT`, or a table function such as `url` or `s3`, for data that must be loaded in the background.
 
 ### Other rejected requests {#other-rejected-requests}
 
