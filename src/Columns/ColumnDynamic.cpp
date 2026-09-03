@@ -889,18 +889,6 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     }
 }
 
-void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 null_bit = 0;
-    readBinaryLittleEndian<UInt8>(null_bit, in);
-    if (null_bit)
-        return;
-
-    size_t type_and_value_size = 0;
-    readBinaryLittleEndian<size_t>(type_and_value_size, in);
-    in.ignore(type_and_value_size);
-}
-
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & variant_col = getVariantColumn();
