@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -987,14 +988,23 @@ bool MergeTreeIndexConditionText::canUseJSONAllValuesIndexForNode(const RPNBuild
     if (!tryMatchNodeToJSONIndex(node, header, "JSONAllValues"))
         return false;
 
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return false;
+
+    /// `JSONAllValues` stores strings without `FixedString` padding. A `FixedString` subcolumn
+    /// or cast is tokenized with that padding and therefore cannot use this index safely.
+    const auto nested_result_type = removeNullable(removeLowCardinality(dag_node->result_type));
+    if (isFixedString(nested_result_type))
+        return false;
+
     /// A preprocessed `JSONAllValues` index can be rebound only to a path whose value is
-    /// represented by the same `String`. Explicit conversions such as `FixedString` and
-    /// container paths can change the value and therefore cannot use this index safely.
+    /// represented by the same `String`. Other explicit conversions and container paths can
+    /// change the value and therefore cannot use this index safely.
     if (!has_preprocessor)
         return true;
 
-    const auto * dag_node = node.getDAGNode();
-    return dag_node && isString(dag_node->result_type);
+    return isString(dag_node->result_type);
 }
 
 bool MergeTreeIndexConditionText::textIndexConditionMayMatchDefaultString(const RPNElement & element) const
