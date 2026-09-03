@@ -286,6 +286,16 @@ def test_mysql_require_secure_transport_ignores_advertised_capability(started_cl
     CLIENT_SECURE_CONNECTION = 0x8000
     CLIENT_PLUGIN_AUTH = 0x80000
 
+    # A user that needs no credentials, so that the handshake would complete with an OK packet if
+    # the gate did not reject it: this is what makes the test prove the gate rather than an
+    # authentication failure.
+    creds = {"password": "123"}
+    node_secure.query("DROP USER IF EXISTS mysql_plaintext_client_ssl", settings=creds)
+    node_secure.query(
+        "CREATE USER mysql_plaintext_client_ssl IDENTIFIED WITH no_password",
+        settings=creds,
+    )
+
     sock = socket.create_connection(
         (started_cluster.get_instance_ip("node_secure"), server_port), timeout=10
     )
@@ -303,7 +313,7 @@ def test_mysql_require_secure_transport_ignores_advertised_capability(started_cl
         body += struct.pack("<I", 16 * 1024 * 1024)  # max packet size
         body += bytes([0x21])  # charset utf8_general_ci
         body += b"\x00" * 23  # reserved
-        body += b"default\x00"
+        body += b"mysql_plaintext_client_ssl\x00"
         body += bytes([0])  # empty auth response
         body += b"mysql_native_password\x00"
         # The payload is longer than an `SSLRequest`, so the server keeps reading it as a plaintext
@@ -319,6 +329,7 @@ def test_mysql_require_secure_transport_ignores_advertised_capability(started_cl
         assert reply is None or reply[0] == 0xFF, reply
     finally:
         sock.close()
+        node_secure.query("DROP USER mysql_plaintext_client_ssl", settings=creds)
 
 
 def test_mysql_client_exception(started_cluster):
