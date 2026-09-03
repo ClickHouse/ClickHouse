@@ -495,7 +495,7 @@ std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
         condition_node,
         header->getColumnsWithTypeAndName(),
         planner_context,
-        {});
+        query_node.getCorrelatedColumnsSet());
     correlated_subtrees.assertEmpty("in " + description + " expression");
 
     const auto * output = condition_actions_dag.getOutputs().at(0);
