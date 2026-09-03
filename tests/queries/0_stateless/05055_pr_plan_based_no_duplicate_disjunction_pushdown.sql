@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- The plan-based parallel-replicas path and `JoinStepLogical` exist only in the new analyzer.
+
 -- Join reordering rebuilds the join steps, which used to reset the guard that says the disjunction
 -- push-down already ran. A plan optimized twice - which is what the plan-based parallel-replicas path
 -- does - then pushed the same partial predicate a second time, leaving a `Filter` above a read whose
@@ -24,20 +27,28 @@ SET use_join_disjunctions_push_down = 1;
 -- The pushed disjunction must appear once per read - as a `Filter` or in `PREWHERE`, not as both.
 -- Before the fix the plan-based build pushed it a second time and left a redundant `Filter` above a
 -- read whose `PREWHERE` already applied it, which showed up here as four occurrences instead of two.
-SELECT countIf(explain LIKE '%FRANCE%' AND explain LIKE '%OR%') AS pushed_disjunctions
+-- The second column names the parallel-replicas read each mode is expected to build, so a query that
+-- silently fell back to a local plan fails here instead of comparing two plans that prove nothing.
+SELECT
+    countIf(explain LIKE '%FRANCE%' AND explain LIKE '%OR%'
+            AND (explain LIKE '%Filter column:%' OR explain LIKE '%Prewhere filter column:%')) AS pushed_disjunctions,
+    countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') AS tree_based_reads
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM disj_left AS l, disj_right AS r
     WHERE l.k = r.k AND ((l.name = 'FRANCE' AND r.name = 'GERMANY') OR (l.name = 'GERMANY' AND r.name = 'FRANCE'))
-) WHERE explain LIKE '%Filter column:%' OR explain LIKE '%Prewhere filter column:%'
+)
 SETTINGS parallel_replicas_plan_based = 0;
 
-SELECT countIf(explain LIKE '%FRANCE%' AND explain LIKE '%OR%') AS pushed_disjunctions
+SELECT
+    countIf(explain LIKE '%FRANCE%' AND explain LIKE '%OR%'
+            AND (explain LIKE '%Filter column:%' OR explain LIKE '%Prewhere filter column:%')) AS pushed_disjunctions,
+    countIf(explain LIKE '%ReadFromParallelReplicas (QueryPlan%') AS plan_based_reads
 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM disj_left AS l, disj_right AS r
     WHERE l.k = r.k AND ((l.name = 'FRANCE' AND r.name = 'GERMANY') OR (l.name = 'GERMANY' AND r.name = 'FRANCE'))
-) WHERE explain LIKE '%Filter column:%' OR explain LIKE '%Prewhere filter column:%'
+)
 SETTINGS parallel_replicas_plan_based = 1;
 
 -- And the answer does not change.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-old-analyzer
+# The plan-based parallel-replicas path and `JoinStepLogical` exist only in the new analyzer.
 
 # The plan-based parallel-replicas path ships an already-optimized plan to the replicas, which optimize
 # it again before building the pipeline. `JoinStepLogical` used to drop `disjunctions_optimization_applied`
@@ -36,13 +38,16 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, text_log"
 
 # The initiator pushes the two partial predicates once while planning; the replicas, which receive that
-# plan already optimized, must add none. `on_initiator` is there so the test fails loudly if the log
-# message is ever renamed rather than quietly reporting zero pushes everywhere.
+# plan already optimized, must add none. The other two columns keep a zero from being vacuous:
+# `shipped_to_replicas` proves a fragment was actually shipped rather than the query falling back to a
+# local plan, and `on_initiator` proves the log message this counts still exists under that name.
 #
 # The secondary queries of the plan-based path are logged with `current_database` = `default` rather than
 # the database of the query they belong to, so only the initiator row can be pinned to `currentDatabase()`.
 $CLICKHOUSE_CLIENT -q "
     SELECT
+        (SELECT count() > 0 FROM system.query_log
+         WHERE initial_query_id = '$query_id' AND NOT is_initial_query) AS shipped_to_replicas,
         countIf(query_id = '$query_id') AS on_initiator,
         countIf(query_id != '$query_id') AS on_replicas
     FROM system.text_log
