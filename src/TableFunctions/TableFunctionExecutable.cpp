@@ -54,6 +54,9 @@ private:
 
     const char * getStorageEngineName() const override { return "Executable"; }
 
+    /// `executable` runs a server-side script.
+    bool requiresTableEngineGrant() const override { return true; }
+
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
