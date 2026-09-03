@@ -1843,8 +1843,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// background merges. Entries ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION were
         /// selected without the headroom and carry bypass_min_unreserved_space, because honouring it
         /// here would postpone them forever (see #80006).
+        /// TTL drop merges are selected without any size limit too: their source parts are fully expired,
+        /// so the merge writes an empty part and reserves no space. Applying the headroom would stop TTL.
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS
-            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
+            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data,
+                /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space && entry.merge_type != MergeType::TTLDrop)
             : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,

@@ -509,30 +509,39 @@ with every insert.
 )", 0) \
     DECLARE(UInt64, min_unreserved_disk_space_for_merge, 0, R"(
 Keeps the specified amount of unreserved disk space (in bytes) out of reach of
-background merges: a merge is selected only if the disk would still have at
-least this much unreserved space after booking the space for it. As the disk
-fills up, the maximum size of selected merges shrinks dynamically, and merges
-stop entirely once the remaining unreserved space falls to this threshold,
-leaving it available for inserts and other operations. (0 means disabled)
+background merges, so that they cannot starve inserts. The amount is subtracted
+from the free space, and the limit on the total size of a merge's source parts
+is derived from what remains with a safety factor on top, so the largest
+allowed merge stays well under that. The limit shrinks as the disk fills up and
+reaches zero once free space is down to this amount, at which point no
+background merge is selected at all. (0 means disabled)
 
-Unlike `keep_free_space_bytes`, the protected space remains usable by
-ClickHouse itself - it is only excluded from merge scheduling. The setting has
-no effect on disks with unlimited space (such as object storage).
+Unlike `keep_free_space_bytes`, the protected space stays usable by ClickHouse
+itself - it is only kept out of merge scheduling. Mutations are not limited by
+it and can still consume the protected space, and the setting has no effect on
+disks with unlimited space (such as object storage).
 
 Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
-with an explicit `PARTITION` ignore this setting (only the free disk space is
-taken into account).
+with an explicit `PARTITION` ignore this setting, as do merges that only drop
+wholly expired parts: those reserve no space and write an empty part. TTL
+merges that rewrite data (`TTL ... DELETE`, recompression) are not exempt and
+are postponed while the headroom binds. The drop exemption only applies while
+the limit is above zero - at zero nothing is selected, expired-part drops
+included.
 
-On `ReplicatedMergeTree` that exemption travels in the replication log entry,
-and the entry carries it only when the setting is non-zero on the replica that
-queues it. An `OPTIMIZE` queued while the setting was 0 is therefore executed
-under the headroom, even if the setting is raised before the merge runs.
+Once the limit is zero a plain `OPTIMIZE` assigns nothing: it is a no-op, or
+throws `CANNOT_ASSIGN_OPTIMIZE` with `optimize_throw_if_noop = 1`. Use `FINAL`
+or an explicit `PARTITION` to merge into the protected space. On
+`ReplicatedMergeTree` that exemption is recorded in the replication log entry
+only when the setting is non-zero on the replica that queues it, so an
+`OPTIMIZE` queued while it was 0 still runs under the headroom.
 
-During a rolling upgrade, leave this setting at `0` on `ReplicatedMergeTree`
-until every replica has been upgraded. A non-zero value makes those `OPTIMIZE`
-merges write an extra field into the `MERGE_PARTS` log entry, and a replica
-that does not know the field fails on the entry instead of skipping it, so the
-queue stalls on that replica.
+`ALTER TABLE ... MODIFY SETTING` is not replicated, so give every replica the
+same value: a replica with a larger headroom re-applies it to merges assigned
+elsewhere and can postpone them indefinitely. Keep the value at `0` until every
+replica runs a version that knows the setting - an older replica cannot parse
+the log entries written for the exempt merges and stops pulling any further
+entries for the table, including those for ordinary inserts.
 )", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
