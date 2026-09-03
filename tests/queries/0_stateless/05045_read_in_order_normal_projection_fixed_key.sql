@@ -52,6 +52,32 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT DISTINCT c FROM mt_fixed_key WHE
 
 DROP TABLE mt_fixed_key SYNC;
 
+DROP TABLE IF EXISTS mt_proj_only SYNC;
+
+-- The table key cannot serve the `ORDER BY`, so only the projection can, and only once its
+-- leading key is seen as fixed by the `WHERE`.
+CREATE TABLE mt_proj_only
+(
+    a UInt64,
+    b UInt64,
+    c UInt64,
+    PROJECTION p (SELECT * ORDER BY b, c)
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 4;
+
+INSERT INTO mt_proj_only SELECT number, number % 3, number FROM numbers(64);
+
+SELECT 'in order read of the projection, projection step';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT a, c FROM mt_proj_only WHERE b = 1 ORDER BY c LIMIT 5) WHERE explain LIKE '%ReadType: InOrder%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT a, c FROM mt_proj_only WHERE b = 1 ORDER BY c LIMIT 5) WHERE explain LIKE '%ReadFromMergeTree (p)%';
+
+SELECT 'same rows and same order as reading the table, projection only';
+SELECT groupArray(c) = (SELECT groupArray(c) FROM (SELECT c FROM mt_proj_only WHERE b = 1 ORDER BY c LIMIT 5 SETTINGS optimize_use_projections = 0)) FROM (SELECT c FROM mt_proj_only WHERE b = 1 ORDER BY c LIMIT 5);
+
+DROP TABLE mt_proj_only SYNC;
+
 DROP TABLE IF EXISTS mt_alias SYNC;
 
 CREATE TABLE mt_alias
