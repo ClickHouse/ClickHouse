@@ -7,36 +7,36 @@
       "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-03T18:43:37.825Z",
+          "updatedAt": "2026-09-03T19:03:20.214Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-03T18:43:38.112Z",
+          "updatedAt": "2026-09-03T19:03:20.316Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-03T18:43:38.552Z",
+          "updatedAt": "2026-09-03T19:03:20.554Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-03T18:43:38.982Z",
+          "updatedAt": "2026-09-03T19:03:20.772Z",
           "fileName": "docs.json",
           "postProcessHash": "a7ce0aefef5f845a7e9b1af32c5de5a9eee0919940a43b64b97b7b241650f838"
         },
         "es": {
-          "updatedAt": "2026-09-03T18:43:37.164Z",
+          "updatedAt": "2026-09-03T19:03:19.966Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-03T18:43:38.755Z",
+          "updatedAt": "2026-09-03T19:03:20.658Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-03T18:43:38.329Z",
+          "updatedAt": "2026-09-03T19:03:20.441Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-03T18:43:37.445Z",
+          "updatedAt": "2026-09-03T19:03:20.107Z",
           "fileName": "docs.json"
         }
       },
@@ -38694,47 +38694,47 @@
     },
     {
       "fileId": "a39645178ddaba673631a5030a1c944e23d78ff1a13a8ffddb5be92ea7dc3897",
-      "versionId": "20f511914ecfb33355966a8ba506fa58bed2a668bbb205c1cfe0171c7058f955",
+      "versionId": "53d043eaba12a5670efa184ba3fd58f11f0e963fe082c8fd33d0346c84e30bc9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-28T14:55:59.077Z",
-          "fileName": "es/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "98d69bd4a966f9f847b4e3abefac72d700f6a567fb54a546d40b7746c43fbd6c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-28T14:55:59.077Z",
-          "fileName": "ru/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "24fec9233e68302c778d06c5a9a29285c70000bb17998c199c082a2581a10da6"
-        },
-        "ar": {
-          "updatedAt": "2026-08-28T14:55:59.078Z",
-          "fileName": "ar/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "8acefcb3cc1c217fa144111a63f339ddf575afc94141976763bd8960f8668670"
+        "ja": {
+          "updatedAt": "2026-09-03T19:03:23.570Z",
+          "fileName": "ja/integrations/clickpipes/postgres/index.mdx",
+          "postProcessHash": "fc1bde9a86d31ab172fec7b8abc42e6a6f824f5f5ba919f7315e2bf624a76a54"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-28T14:55:59.079Z",
+          "updatedAt": "2026-09-03T19:03:23.571Z",
           "fileName": "pt-BR/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "c32e800cd14571667d4667149394acf90ef2508704d85e28a6a141ad75b47777"
+          "postProcessHash": "57bfd7ac4ddb1c0e79d3c771c344ab1e1bd3a5a4a3d6b961737a12a590edddd1"
+        },
+        "ru": {
+          "updatedAt": "2026-09-03T19:03:23.571Z",
+          "fileName": "ru/integrations/clickpipes/postgres/index.mdx",
+          "postProcessHash": "bfa9201a8b75b3c2eeb1626a12762531a929b8ab5ead4083edec6af9eb9e3d75"
+        },
+        "es": {
+          "updatedAt": "2026-09-03T19:03:23.572Z",
+          "fileName": "es/integrations/clickpipes/postgres/index.mdx",
+          "postProcessHash": "829cc07d60eaf3414f6d279b202ffd6ccf102ecd47116ded713499c9490d032f"
         },
         "ko": {
-          "updatedAt": "2026-08-28T14:55:59.080Z",
+          "updatedAt": "2026-09-03T19:03:23.572Z",
           "fileName": "ko/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "04c54c6a6f493878cebf0b972a1d4de227d112da1b4f629a3ae0c7202a1eab96"
-        },
-        "zh": {
-          "updatedAt": "2026-08-28T14:55:59.081Z",
-          "fileName": "zh/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "0453b76f068b97d1a71a31dddba6f16925b2e554b2dfe3a068dccf05d27e7b18"
-        },
-        "ja": {
-          "updatedAt": "2026-08-28T14:55:59.083Z",
-          "fileName": "ja/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "8a09bdee5ae33c977713c7045704036e8ca40847607d38e2d073e140fe966a82"
+          "postProcessHash": "9e2cda6514e829e08f6f546821ff5c4c91dab795e68b35a2bbe5a83d0e1015b6"
         },
         "fr": {
-          "updatedAt": "2026-08-28T14:55:59.085Z",
+          "updatedAt": "2026-09-03T19:03:23.573Z",
           "fileName": "fr/integrations/clickpipes/postgres/index.mdx",
-          "postProcessHash": "a81bd647bd200ac4b28c13fad227a16b949653b466ef426bb45ac44c3841cb99"
+          "postProcessHash": "a20122d0dcc5fe7aab1c4f0943f6b2db05d0776977c731777a1630a2c07e88c4"
+        },
+        "zh": {
+          "updatedAt": "2026-09-03T19:03:23.573Z",
+          "fileName": "zh/integrations/clickpipes/postgres/index.mdx",
+          "postProcessHash": "b56b6bc88a9746945d71ca6db024f2062e9b54c4b752d5ad35eb369fa040c769"
+        },
+        "ar": {
+          "updatedAt": "2026-09-03T19:03:23.574Z",
+          "fileName": "ar/integrations/clickpipes/postgres/index.mdx",
+          "postProcessHash": "9ad96c6c0a3dc7d6b6e4e2a2803ac19df4fbe908480f2a6d9a4eaa480fadba44"
         }
       },
       "fileName": "integrations/clickpipes/postgres/index.mdx"
@@ -137671,6 +137671,53 @@
         }
       },
       "fileName": "integrations/language-clients/python/rust-codec.mdx"
+    },
+    {
+      "fileId": "5931e825526f20af8b5f8ebf490abc89184ea86850943d64d90d661084793094",
+      "versionId": "8a3b7d6e7dc812a21381788329a79c8d5e3c1494d194b0e4bb2925afb5d17506",
+      "translations": {
+        "fr": {
+          "updatedAt": "2026-09-03T19:03:23.574Z",
+          "fileName": "snippets/fr/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "4f5e35ada9ea5933892b183f68593ee6cc90d6a627bc684a5d95ea4ad66ac72c"
+        },
+        "ru": {
+          "updatedAt": "2026-09-03T19:03:23.574Z",
+          "fileName": "snippets/ru/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "b1bb614c1c64e690f04016291537112e6e05342cba86bb766172c45e78528abd"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-03T19:03:23.575Z",
+          "fileName": "snippets/pt-BR/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "1c5bf86e9bf5fe18ed864159f8303b0ce7218de9fa46e1daff16b40d3a0286a3"
+        },
+        "es": {
+          "updatedAt": "2026-09-03T19:03:23.575Z",
+          "fileName": "snippets/es/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "e1aced3eae1961032077755ea178fb104d8804ab650702d3136659fcaea31b95"
+        },
+        "ko": {
+          "updatedAt": "2026-09-03T19:03:23.575Z",
+          "fileName": "snippets/ko/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "4369f12614507ab359e61dfa32e85b5a5d580c69ca753b2b64872d6c2db723a1"
+        },
+        "ja": {
+          "updatedAt": "2026-09-03T19:03:23.576Z",
+          "fileName": "snippets/ja/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "8c35264939f50fc0c98d42082124a0aa9e7b0f88bc7d23bd6b59cc83f3a72edc"
+        },
+        "zh": {
+          "updatedAt": "2026-09-03T19:03:23.576Z",
+          "fileName": "snippets/zh/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "24e19a08aa9ee2b32b3d17983f52e9465d61ed280d033dbf1c41b3d41da2e29b"
+        },
+        "ar": {
+          "updatedAt": "2026-09-03T19:03:23.576Z",
+          "fileName": "snippets/ar/clickpipes/_postgres_clickpipe_cli.mdx",
+          "postProcessHash": "057cccc277ab636d1934928c4a319619f2832489f51be1265600ff226a56015f"
+        }
+      },
+      "fileName": "snippets/clickpipes/_postgres_clickpipe_cli.mdx"
     }
   ]
 }
