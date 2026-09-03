@@ -91,34 +91,51 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     });
 }
 
-void LimitRangeStep::describeActions(FormatSettings & format_settings) const
+void LimitRangeStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = format_settings.detail_prefix;
-    format_settings.out << prefix << "LimitRange limit ";
+    const String & prefix = settings.detail_prefix;
+
     if (limit)
-        format_settings.out << *limit;
-    else
-        format_settings.out << "none";
-    if (start_condition)
+        settings.out << prefix << "Limit " << *limit << '\n';
+
+    auto describe_condition = [&](const std::optional<std::pair<ActionsDAG, String>> & condition, const char * title, const char * suffix)
     {
-        format_settings.out << " AFTER";
-        if (start_all)
-            format_settings.out << " ALL";
-    }
-    if (end_condition)
-        format_settings.out << " UNTIL";
-    format_settings.out << '\n';
+        if (!condition)
+            return;
+
+        settings.out << prefix << title
+                     << (settings.pretty ? QueryPlanFormat::formatColumnPretty(condition->second, settings.pretty_names) : condition->second)
+                     << suffix << '\n';
+
+        if (!settings.compact)
+            ExpressionActions(condition->first.clone()).describeActions(settings.out, prefix);
+    };
+
+    describe_condition(start_condition, "After column: ", start_all ? " (all)" : "");
+    describe_condition(end_condition, "Until column: ", "");
+
+    if (always_read_till_end)
+        settings.out << prefix << "Reads all data: 1\n";
 }
 
 void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (limit)
         map.add("Limit", *limit);
-    else
-        map.add("Limit", "none");
-    map.add("Has After", start_condition.has_value());
-    map.add("After All", start_all);
-    map.add("Has Until", end_condition.has_value());
+
+    if (start_condition)
+    {
+        map.add("After Column", start_condition->second);
+        map.add("After Expression", ExpressionActions(start_condition->first.clone()).toTree());
+        map.add("After All", start_all);
+    }
+
+    if (end_condition)
+    {
+        map.add("Until Column", end_condition->second);
+        map.add("Until Expression", ExpressionActions(end_condition->first.clone()).toTree());
+    }
+
     map.add("Reads All Data", always_read_till_end);
 }
 
