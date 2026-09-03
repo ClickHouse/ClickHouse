@@ -259,8 +259,8 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     close enough to the edge of its type has no shifted form at all, which is a second way to lose
     the min/max condition, so both columns below are needed: one column for each.
 
-    pyiceberg writes the table because the ClickHouse Iceberg writer rejects Decimal, which is also
-    why this exercises the S3 storage backend rather than the local one."""
+    pyiceberg writes the table, so this exercises the S3 storage backend rather than the local one
+    the sibling test above uses."""
     cluster = started_cluster_iceberg_no_spark
     instance = cluster.instances["node1"]
     table_name = "test_iceberg_inverted_decimal_bounds_" + get_uuid_str()
