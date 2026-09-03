@@ -96,36 +96,25 @@ Returns a unique row number for each row processed.
         {
             "Usage example",
             R"(
-SELECT rowNumberInAllBlocks()
-FROM
-(
-    SELECT *
-    FROM system.numbers_mt
-    LIMIT 10
-)
+-- The data is processed in blocks of two rows: rowNumberInBlock restarts from 0 in every block,
+-- while rowNumberInAllBlocks keeps counting across them.
+SELECT
+    number,
+    rowNumberInBlock(),
+    rowNumberInAllBlocks()
+FROM system.numbers
+LIMIT 6
 SETTINGS max_block_size = 2
             )",
             R"(
-┌─rowNumberInAllBlocks()─┐
-│                      0 │
-│                      1 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      4 │
-│                      5 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      2 │
-│                      3 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      6 │
-│                      7 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      8 │
-│                      9 │
-└────────────────────────┘
+┌─number─┬─rowNumberInBlock()─┬─rowNumberInAllBlocks()─┐
+│      0 │                  0 │                      0 │
+│      1 │                  1 │                      1 │
+│      2 │                  0 │                      2 │
+│      3 │                  1 │                      3 │
+│      4 │                  0 │                      4 │
+│      5 │                  1 │                      5 │
+└────────┴────────────────────┴────────────────────────┘
             )"
         }
     };

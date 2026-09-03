@@ -39,7 +39,7 @@ ClickHouse не удаляет данные из таблицы автомати
 * `event_time` ([DateTime](/ru/reference/data-types/datetime)) — Дата и время завершения выполнения представления.
 * `event_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Дата и время завершения выполнения представления с точностью до микросекунд.
 * `view_duration_ms` ([UInt64](/ru/reference/data-types/int-uint)) — Длительность выполнения представления (суммарно по всем его этапам) в миллисекундах.
-* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса (для выполнения распределённого запроса).
+* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса в той же цепочке запросов.
 * `view_name` ([String](/ru/reference/data-types/string)) — Имя представления.
 * `view_uuid` ([UUID](/ru/reference/data-types/uuid)) — UUID представления.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/ru/reference/data-types/enum)) — Тип представления. Значения: &#39;Default&#39; = 1 — представления по умолчанию. Не должно появляться в этом журнале, &#39;Materialized&#39; = 2 — materialized view, &#39;Live&#39; = 3 — Live view.

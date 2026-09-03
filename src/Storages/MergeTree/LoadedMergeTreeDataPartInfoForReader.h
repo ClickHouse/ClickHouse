@@ -30,17 +30,19 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
+    const MergeTreePartition & getPartition() const override { return data_part->partition; }
+
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMinDataVersion()
+            ? data_part->getPatchPartIndex().getMinDataVersion()
             : data_part->info.getDataVersion();
     }
 
     Int64 getMaxDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getSourcePartsSet().getMaxDataVersion()
+            ? data_part->getPatchPartIndex().getMaxDataVersion()
             : data_part->info.getDataVersion();
     }
 
