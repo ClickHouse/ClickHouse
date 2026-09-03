@@ -1747,6 +1747,22 @@ void checkStorageStillHoldsValidatedTable(
                     persistent_table_components.table_path,
                     operation,
                     validated_path);
+
+            /// The validated file being intact proves only that it was not overwritten - the file
+            /// stays readable at its path after another table took the root over, because a commit
+            /// writes a new file and never removes the previous ones. What ties the file now
+            /// current to the validated one is its `metadata-log`: a commit of this table records
+            /// the file it supersedes, while a table created anew starts an empty log.
+            if (!metadataDescendsFromValidatedFile(current_metadata_object, current_metadata_path, validated_path))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The Iceberg table at {} was replaced while {} was running: the metadata now in storage is {}, which does not "
+                    "descend from {}, the file the statement was validated against, and the table carries no `table-uuid` to tell the "
+                    "two tables apart. Retry the statement.",
+                    persistent_table_components.table_path,
+                    operation,
+                    current_metadata_path,
+                    validated_path);
         }
     }
 }

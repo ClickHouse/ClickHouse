@@ -97,6 +97,35 @@ UInt64 computeMetadataContentToken(const Poco::JSON::Object::Ptr & metadata_obje
     return hash.get64();
 }
 
+bool metadataDescendsFromValidatedFile(
+    const Poco::JSON::Object::Ptr & metadata_object, const String & metadata_object_path, const String & validated_path)
+{
+    /// The paths are written by whoever committed the file, so one of them can be a full location
+    /// (`s3://bucket/table/metadata/v1.metadata.json`) while the other is the key within the
+    /// bucket. Matching on the tail is what the two spellings of the same object share.
+    auto is_same_file = [&](const String & path)
+    { return path.ends_with(validated_path) || validated_path.ends_with(path); };
+
+    if (is_same_file(metadata_object_path))
+        return true;
+
+    if (!metadata_object->has(f_metadata_log))
+        return false;
+
+    auto metadata_log = metadata_object->get(f_metadata_log).extract<Poco::JSON::Array::Ptr>();
+    if (!metadata_log)
+        return false;
+
+    for (UInt32 i = 0; i < metadata_log->size(); ++i)
+    {
+        auto entry = metadata_log->getObject(i);
+        if (entry && entry->has(f_metadata_file) && is_same_file(entry->getValue<String>(f_metadata_file)))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 #endif
