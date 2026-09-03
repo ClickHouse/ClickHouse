@@ -23,10 +23,18 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET use_join_disjunctions_push_down = 1;
+-- The assertion below is about the shape of the chosen plan, and the regression only exists in the join
+-- steps reordering rebuilds, so both inputs to the join order optimizer have to be pinned.
+-- `clickhouse-test` randomizes the first to a non-zero value in 95% of runs, feeding the optimizer
+-- invented cardinalities that pick another order, and the second to 0 in 5%, which turns reordering off
+-- altogether. Either one hides the duplicate: 20 runs against a build without the fix all passed.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
--- The pushed disjunction must appear once per read - as a `Filter` or in `PREWHERE`, not as both.
--- Before the fix the plan-based build pushed it a second time and left a redundant `Filter` above a
--- read whose `PREWHERE` already applied it, which showed up here as four occurrences instead of two.
+-- The disjunction is expected three times: the `OR` left on the join, plus the partial predicate pushed
+-- to each of the two reads - as a `Filter` or in `PREWHERE`, not as both. Before the fix the plan-based
+-- build pushed the partial predicates a second time and left a redundant `Filter` above each read whose
+-- `PREWHERE` already applied it, which shows up here as five.
 -- The second column names the parallel-replicas read each mode is expected to build, so a query that
 -- silently fell back to a local plan fails here instead of comparing two plans that prove nothing.
 SELECT
