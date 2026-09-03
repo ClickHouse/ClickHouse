@@ -168,8 +168,8 @@ SELECT timeSeriesPrometheusValueToString(toFloat64(1e-7))
         )",
             R"(
 ┌─timeSeriesPrometheusValueToString(toFloat64(1e-7))─┐
-│ 0.0000001                                           │
-└─────────────────────────────────────────────────────┘
+│ 0.0000001                                          │
+└────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
