@@ -43,23 +43,6 @@ std::chrono::seconds saturatedSeconds(T seconds)
     return std::chrono::seconds(static_cast<Int64>(seconds));
 }
 
-/// Same clamp for a microsecond-typed timeout. wait_for still converts microseconds to nanoseconds
-/// (x 1'000), so values above ~9.2e15 microseconds overflow that Int64 conversion. The cap is expressed
-/// in microseconds rather than pre-multiplied, because the multiplication that would reuse a coarser
-/// helper overflows on exactly the inputs being guarded against. The count must arrive signed: an
-/// unsigned parameter cannot tell a negative timeout ("already expired") from a huge one.
-inline constexpr Int64 MAX_WAIT_TIMEOUT_MICROSECONDS = MAX_WAIT_TIMEOUT_MILLISECONDS * 1000;
-
-template <std::integral T>
-std::chrono::microseconds saturatedMicroseconds(T microseconds)
-{
-    if (std::cmp_greater(microseconds, MAX_WAIT_TIMEOUT_MICROSECONDS))
-        return std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS);
-    if (std::cmp_less(microseconds, 0))
-        return std::chrono::microseconds(0);
-    return std::chrono::microseconds(static_cast<Int64>(microseconds));
-}
-
 /// A future deadline `base + seconds(count)` that saturates at time_point::max() instead of overflowing
 /// the clock's integer rep. Unlike saturatedSeconds() (a 1-year cap for a wait_for() timeout), it preserves
 /// any representable future instant, so it suits long-lived expiry timestamps such as a cache TTL. The whole

@@ -77,40 +77,6 @@ GTEST_TEST(SaturatedSeconds, PassesThroughInRangeValues)
     ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
 }
 
-/// saturatedMicroseconds is the microsecond-typed sibling, for timeouts that reach a wait already
-/// converted to microseconds (a Timespan setting's native rep). wait_for still turns microseconds into
-/// nanoseconds, so values above ~9.2e15 microseconds would overflow that x 1'000 conversion.
-GTEST_TEST(SaturatedMicroseconds, ClampsHugePositiveToOneYear)
-{
-    const auto max = std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS);
-
-    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<Int64>::max()), max);
-    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<UInt64>::max()), max);
-    ASSERT_EQ(saturatedMicroseconds(MAX_WAIT_TIMEOUT_MICROSECONDS + 1), max);
-    // 1e17 us is what a lock_acquire_timeout of 1e11 seconds reaches a microsecond wait as; it is below
-    // the SettingFieldTimespan source cap yet overflows the us->ns conversion.
-    ASSERT_EQ(saturatedMicroseconds(Int64(100000000000000000LL)), max);
-}
-
-GTEST_TEST(SaturatedMicroseconds, ClampsNegativeToZero)
-{
-    ASSERT_EQ(saturatedMicroseconds(Int64(-1)), std::chrono::microseconds(0));
-    ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<Int64>::min()), std::chrono::microseconds(0));
-    ASSERT_EQ(saturatedMicroseconds(Int64(-100000000000000000LL)), std::chrono::microseconds(0));
-}
-
-GTEST_TEST(SaturatedMicroseconds, PassesThroughInRangeValues)
-{
-    ASSERT_EQ(saturatedMicroseconds(Int64(0)), std::chrono::microseconds(0));
-    ASSERT_EQ(saturatedMicroseconds(Int64(120000000)), std::chrono::microseconds(120000000));
-    ASSERT_EQ(saturatedMicroseconds(MAX_WAIT_TIMEOUT_MICROSECONDS), std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS));
-
-    // The clamped value, converted to nanoseconds as a steady_clock wait would, fits in Int64.
-    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(saturatedMicroseconds(std::numeric_limits<UInt64>::max()));
-    ASSERT_GT(ns.count(), 0);
-    ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
-}
-
 /// saturatedSecondsFrom builds a future deadline base + seconds(count) for long-lived expiry timestamps
 /// (e.g. the query cache TTL). Unlike the wait_for clamps above it preserves any representable instant and
 /// only saturates at time_point::max(); all arithmetic stays in the clock rep and every step saturates, so
