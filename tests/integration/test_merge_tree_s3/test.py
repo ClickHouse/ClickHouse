@@ -283,7 +283,9 @@ def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
         f"INSERT INTO FUNCTION {table_function} "
         "SELECT number AS id, repeat('x', 1024) AS data FROM numbers(4096)"
     )
-    histogram_counts_before = get_s3_read_histogram_counts(node)
+    check_process_histograms = not node.with_remote_database_disk
+    if check_process_histograms:
+        histogram_counts_before = get_s3_read_histogram_counts(node)
 
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -314,9 +316,9 @@ def test_read_big_at_cancellation_does_not_record_s3_histograms(cluster):
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         executor.shutdown(wait=False, cancel_futures=True)
 
-    # Check process-global histograms before SYSTEM FLUSH LOGS, because with a
-    # remote database disk the flush may perform unrelated S3 reads.
-    assert get_s3_read_histogram_counts(node) == histogram_counts_before
+    # A remote database disk can perform unrelated S3 reads in background system-log flushes.
+    if check_process_histograms:
+        assert get_s3_read_histogram_counts(node) == histogram_counts_before
 
     node.query("SYSTEM FLUSH LOGS")
     assert (
