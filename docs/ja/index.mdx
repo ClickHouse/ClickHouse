@@ -8,9 +8,22 @@ sidebarTitle: "ホーム"
 
 export const localizeHref = (href) => {
     if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
-    if (typeof window === 'undefined') return href;
-    const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
-    return match ? `/${match[1]}${href}` : href;
+    const match = typeof window !== 'undefined' ? window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/) : null;
+    const locale = match ? match[1] : 'ja';
+    return `/${locale}${href}`;
+};
+
+export const withDocsBase = (href) => {
+    if (!href || !href.startsWith('/')) return href;
+    const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    return base + href;
+};
+
+export const navigateTo = (event, href) => {
+    if (event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    window.location.href = href;
 };
 
 export const FullWidthDivider = ({ style }) => {
@@ -41,8 +54,8 @@ export const FullWidthDivider = ({ style }) => {
 };
 
 export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop, galaxyEvent }) => {
-    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const resolvedHref = withDocsBase(href);
     const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
     const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
 
@@ -50,8 +63,8 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
         <>
             {links && links.length > 0 && href && (
                 <a
-                    href={href}
-                    onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}
+                    href={resolvedHref}
+                    onClick={(event) => navigateTo(event, resolvedHref)}
                     className="absolute inset-0 z-0 rounded-lg"
                     aria-label={title}
                 />
@@ -96,7 +109,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
                 <ul className="mt-6 list-none p-0 relative z-10">
                     {links.map((link, index) => (
                         <li key={index} className={index > 0 ? 'mt-2' : 'mt-0'}>
-                            <a href={link.href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(link.href); }} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
+                            <a href={withDocsBase(link.href)} onClick={(event) => navigateTo(event, withDocsBase(link.href))} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
                                 <span className="truncate min-w-0">{link.label}</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0${link.external ? ' ch-external-arrow' : ''}`}>
                                     <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -132,22 +145,22 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
         return <div className={fullClassName} data-galaxy-event={galaxyEvent}>{content}</div>;
     }
 
-    return <a className={fullClassName} href={href} data-galaxy-event={galaxyEvent} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
+    return <a className={fullClassName} href={resolvedHref} data-galaxy-event={galaxyEvent} onClick={(event) => navigateTo(event, resolvedHref)}>{content}</a>;
 };
 
 export const IntegrationsBanner = () => {
-    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = localizeHref('/integrations/home');
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const href = withDocsBase(localizeHref('/integrations/home'));
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
             href={href}
             data-galaxy-event="docs.home.integrations"
-            onClick={(e) => { e.preventDefault(); window.location.href = assetBase + href; }}
+            onClick={(event) => navigateTo(event, href)}
         >
             <div>
-                <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">Integrations</h3>
-                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">100+ integrations to connect the tools and services that you love with ClickHouse.</span>
+                <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">インテグレーション</h3>
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">100 以上のインテグレーションで、お気に入りのツールやサービスを ClickHouse に接続できます。</span>
             </div>
             <div className="ch-usecase-arrow shrink-0 flex items-center justify-center w-12 h-12 mr-2 rounded-full bg-gray-950/[0.05] dark:bg-white/[0.06]">
                 <span
@@ -180,19 +193,14 @@ export const HighlightedClickHouse = () => {
 };
 
 export const McpLink = ({ children }) => {
-    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
-    const withBase = (p) => assetBase + p;
-    const href = withBase(path);
+    const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const path = localizeHref('/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server');
+    const href = withDocsBase(path);
     return (
         <a
             href={href}
             data-galaxy-event="docs.home.mcp-server"
-            onClick={(e) => {
-                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                e.preventDefault();
-                window.location.href = href;
-            }}
+            onClick={(event) => navigateTo(event, href)}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
@@ -209,14 +217,14 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = '/get-started/quickstarts/create-your-first-service-on-cloud';
-    const withBase = (p) => (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '') + p;
+    const path = '/ja/get-started/setup/cloud';
+    const href = withDocsBase(path);
     return (
         <a
             className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
-            href={path}
+            href={href}
             data-galaxy-event="docs.home.quickstart-cloud"
-            onClick={(e) => { e.preventDefault(); window.location.href = withBase(path); }}
+            onClick={(event) => navigateTo(event, href)}
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0 text-gray-500 dark:text-zinc-300"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path></svg>
             <span>{children}</span>
@@ -327,7 +335,7 @@ export const PageWrapper = ({ children }) => {
           title="はじめに"
           galaxyEvent="docs.home.get-started"
           description="初めての方へ。まずは基本を学び、さらに詳しく知る"
-          href={localizeHref("/get-started/quickstarts/create-your-first-service-on-cloud")}
+          href={localizeHref("/get-started/setup/cloud")}
           icon={
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
               <path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path>
