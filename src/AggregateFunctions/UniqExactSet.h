@@ -246,7 +246,6 @@ public:
                     const auto bucket = next_bucket_to_merge->fetch_add(1);
                     if (bucket >= NUM_BUCKETS)
                         return;
-                    task_timer.recordWorkItem();
 
                     for (size_t j = 1; j < two_level_ptrs.size(); ++j)
                     {
@@ -255,6 +254,7 @@ public:
 
                         first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
                     }
+                    task_timer.recordWorkItem();
                 }
             };
 

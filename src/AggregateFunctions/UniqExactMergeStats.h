@@ -2,12 +2,12 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/getThreadId.h>
 #include <base/types.h>
 
 #include <atomic>
-#include <vector>
 
 namespace ProfileEvents
 {
@@ -85,7 +85,7 @@ private:
     Stopwatch wall_watch;
     std::atomic<UInt64> cpu_time_nanoseconds = 0;
     std::atomic<size_t> processed_items = 0;
-    std::vector<std::atomic<UInt64>> worker_thread_ids;
+    VectorWithMemoryTracking<std::atomic<UInt64>> worker_thread_ids;
 };
 
 /// Measures one pooled task with the per-thread CPU clock. The stats object outlives every task

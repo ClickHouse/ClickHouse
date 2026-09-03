@@ -30,8 +30,8 @@ TEST(UniqExactParallelMerge, WaveWorkersAreDistinct)
 {
     constexpr size_t NUM_TASKS = 8;
 
-    ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 1);
     UniqExactMergeWaveStats wave_stats(NUM_TASKS, NUM_TASKS);
+    ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), 1);
 
     const auto waves_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaves];
     const auto wave_states_before = ProfileEvents::global_counters[ProfileEvents::UniqExactMergeWaveInputStates];

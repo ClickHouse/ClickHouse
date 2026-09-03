@@ -413,7 +413,7 @@ protected:
             params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
 
         shared_data->is_bucket_processed[bucket_num] = true;
-        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
+        if (data->size() > 1 && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
             shared_data->recordSuccessfulBucket(source_index, bucket_watch.elapsedMicroseconds());
 
         return chunk;
