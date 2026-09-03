@@ -369,8 +369,13 @@ StorageView::StorageView(
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
     {
-        /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
+        /// A parameterized view normally has no columns of its own, because they are only known
+        /// after parameter substitution. The exception is a view whose stored definition declares
+        /// an explicit column list: that declared schema is exposed and enforced. Whether the
+        /// declared list is part of the stored definition is decided once, at CREATE time, by
+        /// `use_declared_schema_for_parameterized_views`, so nothing here depends on the current
+        /// value of that setting.
+        if (!query.isParameterizedView() || !columns_.empty())
             storage_metadata.setColumns(columns_);
     }
     else

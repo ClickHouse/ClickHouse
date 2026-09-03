@@ -150,6 +150,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool use_declared_schema_for_parameterized_views;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
     extern const SettingsBool use_legacy_to_time;
 }
@@ -831,13 +832,34 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
-            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
-            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
-            const bool check_defaults_over_virtual_columns
-                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
-            properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+            /// A parameterized view usually infers its schema only after parameter substitution, so
+            /// its declared column list is honoured only when
+            /// `use_declared_schema_for_parameterized_views` is enabled.
+            ///
+            /// The setting is consulted exactly once, here, and the outcome is *persisted* in the
+            /// stored definition: when it is enabled the declared list is kept and drives both
+            /// exposure (`SHOW COLUMNS`/`system.columns`) and validation after substitution; when it
+            /// is disabled the list is dropped from the stored definition, because it is ignored
+            /// anyway. Reloading the stored definition (ATTACH, server startup, `Replicated`
+            /// database replay) therefore never consults the setting again, so one `CREATE VIEW`
+            /// definition always materializes the same way on every replica and across restarts.
+            if (create.isParameterizedView()
+                && (mode == LoadingStrictnessLevel::CREATE
+                    || (mode == LoadingStrictnessLevel::ATTACH && create.select && !create.attach_short_syntax))
+                && !getContext()->getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
+            {
+                create.columns_list->reset(create.columns_list->columns);
+            }
+            else
+            {
+                /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
+                /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
+                /// target metadata), so a default over a virtual column is inert there and must not be rejected.
+                const bool check_defaults_over_virtual_columns
+                    = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+                properties.columns = getColumnsDescription(
+                    *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+            }
         }
 
         if (create.columns_list->indices)
@@ -965,7 +987,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            /// A parameterized view without a declared column list infers its schema only after
+            /// parameter substitution, so there is nothing to do here. A declared column list
+            /// (`create.columns_list`) is handled by the branch above, which also decides - once,
+            /// at CREATE time - whether the list is persisted in the stored definition.
             return properties;
+        }
 
         if (create.aliases_list)
         {

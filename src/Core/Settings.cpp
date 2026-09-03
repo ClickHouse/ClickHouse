@@ -9169,6 +9169,42 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, use_declared_schema_for_parameterized_views, false, R"(
+Allow to show schemas declared in parameterized views.
+
+The schema declared in a parameterized view is only exposed when this setting is enabled.
+For example (note the `SET` before `CREATE VIEW`, without it the declared schema is not shown):
+
+```sql
+SET use_declared_schema_for_parameterized_views = 1;
+
+CREATE VIEW v_nums
+(
+    `n` UInt64
+)
+AS SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+
+SHOW COLUMNS FROM v_nums;
+```
+
+returns
+
+```text
+   ┌─field─┬─type───┬─null─┬─key─┬─default─┬─extra─┐
+1. │ n     │ UInt64 │ NO   │     │ ᴺᵁᴸᴸ    │       │
+   └───────┴────────┴──────┴─────┴─────────┴───────┘
+```
+
+The setting is read when the view is created, and the outcome is stored with the view definition:
+a view created while it was enabled keeps exposing its declared schema afterwards, on every replica
+and across restarts, and a view created while it was disabled is never exposed later. Turning the
+setting on or off does not change views that already exist.
+
+> [!WARNING]
+> A view that exposes a declared schema also enforces it: querying it throws `TYPE_MISMATCH` if the
+> actual schema after parameter substitution differs from the declared one.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL) \

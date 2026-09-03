@@ -1,0 +1,17 @@
+-- { echoOn }
+
+SHOW COLUMNS IN 05055_pv_declared;
+n	UInt64	NO		\N	
+SELECT n FROM 05055_merge ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+-- The declared schema is latched at `CREATE` time, so the rejection does not depend on the
+-- query-time value of the setting either.
+SELECT n FROM 05055_merge SETTINGS use_declared_schema_for_parameterized_views = 0; -- { serverError STORAGE_REQUIRES_PARAMETER }
+-- { echoOn }
+
+-- The view without a declared schema is rejected the same way.
+SELECT n FROM 05055_merge ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+-- { echoOn }
+
+-- With no parameterized view left, the `Merge` table reads the plain table.
+SELECT n FROM 05055_merge ORDER BY n;
+1

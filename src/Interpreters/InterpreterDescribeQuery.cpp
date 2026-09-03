@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/validateParameterizedViewSchema.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTIdentifier.h>
@@ -208,6 +209,10 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             /// a `SQL SECURITY DEFINER` view.
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
             fillColumnsFromSubqueryImpl(query, view_context);
+            NamesAndTypesList actual_columns;
+            for (const auto & column : columns)
+                actual_columns.emplace_back(column.name, column.type);
+            validateParameterizedViewSchema(table_name, actual_columns, view_metadata->getColumns());
             return;
         }
     }
@@ -258,9 +263,19 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     if (auto * storage_view = table->as<StorageView>())
     {
+        /// A parameterized view normally has no schema of its own: it is only known after parameter
+        /// substitution, so describing the view without parameters is not supported. The exception is
+        /// a view whose stored definition declares an explicit column list (see
+        /// `use_declared_schema_for_parameterized_views`): that declared schema is already exposed by
+        /// `SHOW COLUMNS` and `system.columns`, so `DESCRIBE TABLE` must return it as well instead of
+        /// rejecting the same object through a different introspection path.
         if (storage_view->isParameterizedView())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Cannot infer table schema for the parameterized view when no query parameters are provided");
+        {
+            auto view_metadata = storage_view->getInMemoryMetadataPtr(query_context, false);
+            if (view_metadata->getColumns().empty())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot infer table schema for the parameterized view when no query parameters are provided");
+        }
     }
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);

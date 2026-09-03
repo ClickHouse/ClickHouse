@@ -131,7 +131,17 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool has_columns = true;
     if (ast_create_query.is_dictionary)
         has_columns = false;
-    if (ast_create_query.isParameterizedView())
+    /// Parameterized views normally do not carry a column list. But a view whose stored definition
+    /// declares an explicit schema must have it restored on reload/ATTACH; otherwise
+    /// `SHOW COLUMNS`/`system.columns` would lose the declared schema and
+    /// `validateParameterizedViewSchema` would silently stop checking it.
+    /// This decision is driven only by the stored definition, never by the node-local value of
+    /// `use_declared_schema_for_parameterized_views` (which is consulted once, at CREATE time):
+    /// otherwise one stored definition would materialize differently on different replicas, and
+    /// a view could throw `TYPE_MISMATCH` on one node while executing fine on another.
+    if (ast_create_query.isParameterizedView()
+        && !(ast_create_query.columns_list && ast_create_query.columns_list->columns
+             && !ast_create_query.columns_list->columns->children.empty()))
         has_columns = false;
 
     if (has_columns)
