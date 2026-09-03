@@ -261,9 +261,9 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// wrapper (notably `LowCardinality`) it keeps the plain literal form, as does a `Variant` below an
 /// `Object`, whose JSON text carries no discriminator. Other values use the same representation as
 /// `getFieldFromColumnForASTLiteral`.
-/// With `date_time_as_numbers`, a `DateTime` leaf is rendered as its raw Unix timestamp named by its own
-/// type, instead of local date-time text, which two instants share across a DST overlap. Clear it for a
-/// consumer that parses this text itself, such as an external database, where `_CAST` is not valid syntax.
+/// With `date_time_as_numbers`, a `DateTime` leaf is named by its own type over its raw Unix timestamp,
+/// since local date-time text is shared by two instants across a DST overlap. Clear it where that text is
+/// parsed by the consumer itself, such as an external database.
 ASTPtr columnConstantToExactLiteralAST(
     const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
