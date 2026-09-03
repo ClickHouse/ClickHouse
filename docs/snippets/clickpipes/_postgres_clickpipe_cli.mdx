@@ -31,6 +31,7 @@ Collect the source connection details from the prerequisites step into variables
 
 ```bash
 PG_HOST=postgres.example.com
+PG_PORT=5432
 PG_DATABASE=postgres
 PG_USERNAME=clickpipes_user
 PG_PASSWORD='<your-password>'
@@ -44,6 +45,7 @@ Create the pipe on the destination service and save the response:
 clickhousectl cloud clickpipe create postgres "$CH_ID" \
   --name orders-sync \
   --host "$PG_HOST" \
+  --port "$PG_PORT" \
   --pg-database "$PG_DATABASE" \
   --username "$PG_USERNAME" \
   --password "$PG_PASSWORD" \
@@ -105,6 +107,7 @@ Notes:
 clickhousectl cloud clickpipe create postgres "$CH_ID" \
   --name orders-sync \
   --host "$PG_HOST" \
+  --port "$PG_PORT" \
   --pg-database "$PG_DATABASE" \
   --username "$PG_USERNAME" \
   --password "$PG_PASSWORD" \
@@ -174,7 +177,7 @@ clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
 
 ### Destination permissions {#destination-permissions}
 
-ClickPipes writes to the service as its own user. By default that user gets the full-access `default_role`; `--role <ROLE>` (repeatable) selects other existing ClickHouse roles instead, the CLI equivalent of the console's permission-role step. The roles you name replace `default_role`, so between them they must grant everything the pipe does — creating and writing the destination tables. A read-only role fails the create outright:
+ClickPipes writes to the service as its own user. By default that user gets the full-access `default_role`; `--role <role-name>` (repeatable) selects other existing ClickHouse roles instead, the CLI equivalent of the console's permission-role step. The roles you name replace `default_role`, so between them they must grant everything the pipe does — creating and writing the destination tables. A read-only role fails the create outright:
 
 ```text
 Error: BAD_REQUEST: ClickHouse validation failed: failed to create validation table peerdb_validation_tOgS: code: 497, message: clickpipe:...: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TABLE ON default.peerdb_validation_tOgS
@@ -200,7 +203,7 @@ clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
 
 Then re-run the create command with `--ca-certificate pg-ca.pem` added.
 
-If instead the certificate is valid but issued for a different name than the one you connect to, the error carries a different hint, pointing at `--tls-host <HOSTNAME>` to set the hostname that certificate verification should use.
+If instead the certificate is valid but issued for a different name than the one you connect to, the error carries a different hint, pointing at `--tls-host <hostname>` to set the hostname that certificate verification should use.
 
 ## Wait for the pipe to reach Running {#wait-for-running}
 
@@ -253,7 +256,7 @@ Changes on the source replicate continuously at the sync interval — 60 seconds
 Pass the password via `PGPASSWORD` rather than a connection URI, so special characters in it need no escaping:
 
 ```bash
-PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USERNAME" -d "$PG_DATABASE" \
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
   -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
 
 while [ "$(clickhousectl cloud service query --id "$CH_ID" \
@@ -264,7 +267,7 @@ done
 
 ## Manage the pipe {#manage-the-pipe}
 
-The pipe lifecycle is managed with `clickhousectl cloud clickpipe stop`, `clickhousectl cloud clickpipe start`, and `clickhousectl cloud clickpipe resync` (drops and re-snapshots the destination tables), each taking the same `"$CH_ID" "$PIPE_ID"` arguments. If the source is only reachable over private networking, `clickhousectl cloud clickpipe reverse-private-endpoint` manages the AWS PrivateLink or Google Private Service Connect endpoint; pass one of the DNS names it reports as `--host` when you create the pipe. See `clickhousectl cloud clickpipe --help` for the full list of subcommands.
+The pipe lifecycle is managed with `clickhousectl cloud clickpipe stop`, `clickhousectl cloud clickpipe start`, and `clickhousectl cloud clickpipe resync` (drops and re-snapshots the destination tables), each taking the same `"$CH_ID" "$PIPE_ID"` arguments. If the source is only reachable over private networking, `clickhousectl cloud clickpipe reverse-private-endpoint` manages the AWS PrivateLink or Google Private Service Connect endpoint; pass one of the DNS names it reports as `--host` when you create the pipe. SSH-tunneled Postgres sources are currently UI-only: the CLI supports direct connections and reverse private endpoints, but cannot configure SSH tunneling. See `clickhousectl cloud clickpipe --help` for the full list of subcommands.
 
 ## Cleanup {#cleanup}
 
