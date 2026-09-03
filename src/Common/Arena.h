@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
@@ -23,6 +24,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 
 /** Memory pool to append something. For example, short strings.
@@ -146,7 +152,10 @@ private:
     }
 
     /// The size of an allocation can come from the data, so it is rejected instead of wrapping around.
-    [[noreturn]] static void throwTooLargeAllocation(size_t size);
+    [[noreturn]] static void throwTooLargeAllocation(size_t size)
+    {
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Too large allocation of {} bytes in Arena", size);
+    }
 
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
     void NO_INLINE addMemoryChunk(size_t min_size, size_t alignment = 0)
