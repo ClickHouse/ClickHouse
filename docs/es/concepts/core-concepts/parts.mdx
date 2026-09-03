@@ -14,7 +14,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 <br />
 
-Los datos de cada tabla de la [familia de motores MergeTree](/es/reference/engines/table-engines/mergetree-family/index) de ClickHouse se organizan en disco como una colección de `data parts` inmutables.
+Los datos de cada tabla de la [familia de motores MergeTree](/es/reference/engines/table-engines/mergetree-family/index) de ClickHouse se organizan en disco como una colección de `partes de datos` inmutables.
 
 Para ilustrarlo, usamos [esta](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) tabla (adaptada del [conjunto de datos de precios de viviendas del Reino Unido](/es/get-started/sample-datasets/uk-price-paid)) que registra la fecha, la localidad, la calle y el precio de las propiedades vendidas en el Reino Unido:
 
@@ -40,13 +40,23 @@ Se crea una parte de datos cada vez que se inserta un conjunto de filas en la ta
 
 Cuando un servidor de ClickHouse procesa la inserción de ejemplo con 4 filas (por ejemplo, mediante una [sentencia INSERT INTO](/es/reference/statements/insert-into)) ilustrada en el diagrama anterior, realiza varios pasos:
 
-① **Ordenación**: Las filas se ordenan según la clave de ordenación de la tabla `(town, street)` y se genera un [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para las filas ordenadas.
+<Steps>
+  <Step title="Ordenación">
+    Las filas se ordenan según la clave de ordenación de la tabla `(town, street)` y se genera un [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para las filas ordenadas.
+  </Step>
 
-② **División**: Los datos ordenados se dividen en columnas.
+  <Step title="División">
+    Los datos ordenados se dividen en columnas.
+  </Step>
 
-③ **Compresión**: Cada columna se [comprime](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="Compresión">
+    Cada columna se [comprime](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **Escritura en disco**: Las columnas comprimidas se guardan como archivos binarios de columna dentro de un nuevo directorio que representa la parte de datos de la inserción. El índice primario disperso también se comprime y se almacena en el mismo directorio.
+  <Step title="Escritura en disco">
+    Las columnas comprimidas se guardan como archivos binarios de columna dentro de un nuevo directorio que representa la parte de datos de la inserción. El índice primario disperso también se comprime y se almacena en el mismo directorio.
+  </Step>
+</Steps>
 
 Según el motor específico de la tabla, [pueden](/es/reference/settings/session-settings) producirse transformaciones adicionales junto con la ordenación.
 

@@ -1,6 +1,2 @@
-INSERT INTO test FROM INFILE \'data.file\' SELECT x
-FROM input(\'x UInt32\') FORMAT TSV
-INSERT INTO test FROM INFILE \'data.file\' WITH
-    number AS x
-SELECT number
-FROM input(\'number UInt32\')
+INSERT INTO test FROM INFILE \'data.file\' SELECT x\nFROM input(\'x UInt32\') FORMAT TSV
+INSERT INTO test FROM INFILE \'data.file\' WITH\n    number AS x\nSELECT number\nFROM input(\'number UInt32\')

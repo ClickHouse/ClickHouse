@@ -238,6 +238,8 @@ private:
 
     static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
 
+    String getViewQueryForLog(StorageID view_id) const;
+
     StorageIDMaybeEmpty init_table_id;
     StoragePtr init_storage;
     ASTPtr init_query;

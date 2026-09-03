@@ -9,65 +9,9 @@
 107	7
 108	8
 109	9
-WITH
-    1 AS x
-SELECT x
-FROM system.one
-WITH
-    1 AS x
-SELECT *
-FROM
-(
-    SELECT x
-    FROM system.one
-)
-WITH
-    1 AS x
-SELECT
-    *,
-    x
-FROM
-(
-    WITH
-        2 AS x
-    SELECT x AS y
-    FROM system.one
-)
-(
-    WITH
-        1 AS x
-    SELECT x
-    FROM system.one
-)
-UNION ALL
-(
-    WITH
-        1 AS x
-    SELECT x
-    FROM system.one
-)
-(
-    WITH
-        1 AS x
-    SELECT x
-    FROM system.one
-)
-UNION ALL
-(
-    WITH
-        2 AS x
-    SELECT x
-    FROM system.one
-)
-WITH
-    5 AS q1,
-    x AS
-    (
-        SELECT
-            plus(number, 100) AS b,
-            number AS a
-        FROM numbers(10)
-        WHERE greater(number, q1)
-    )
-SELECT *
-FROM x
+WITH\n    1 AS x\nSELECT x\nFROM system.one
+WITH\n    1 AS x\nSELECT *\nFROM\n(\n    SELECT x\n    FROM system.one\n)
+WITH\n    1 AS x\nSELECT\n    *,\n    x\nFROM\n(\n    WITH\n        2 AS x\n    SELECT x AS y\n    FROM system.one\n)
+(\n    WITH\n        1 AS x\n    SELECT x\n    FROM system.one\n)\nUNION ALL\n(\n    WITH\n        1 AS x\n    SELECT x\n    FROM system.one\n)
+(\n    WITH\n        1 AS x\n    SELECT x\n    FROM system.one\n)\nUNION ALL\n(\n    WITH\n        2 AS x\n    SELECT x\n    FROM system.one\n)
+WITH\n    5 AS q1,\n    x AS\n    (\n        SELECT\n            plus(number, 100) AS b,\n            number AS a\n        FROM numbers(10)\n        WHERE greater(number, q1)\n    )\nSELECT *\nFROM x

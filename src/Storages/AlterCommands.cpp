@@ -65,11 +65,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
@@ -83,6 +81,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -105,6 +104,14 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+/// Whether the two names name one setting: a `MergeTree` setting can have two names.
+bool isSameSetting(const String & left, const String & right)
+{
+    auto resolve = [](const String & name)
+    { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
+    return resolve(left) == resolve(right);
+}
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
@@ -462,6 +469,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl->clone();
+        command.type = AlterCommand::MODIFY_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
         AlterCommand command;
@@ -679,7 +700,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
 
         column.ttl = ttl;
 
@@ -757,7 +778,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
 
                 if (comment)
                     column.comment = *comment;
@@ -1047,6 +1069,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
+    else if (type == MODIFY_PROJECTION)
+    {
+        if (!metadata.projections.has(projection_name))
+        {
+            /// With `IF EXISTS` the whole command must be a no-op
+            if (if_exists)
+                return;
+
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in table{}",
+                projection_name,
+                metadata.projections.getHintsMessage(projection_name));
+        }
+
+        /// create a new projection with the modified settings
+        auto new_projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        auto definition_without_settings = [](const IAST & definition_ast)
+        {
+            auto cloned = definition_ast.clone();
+            auto & decl = cloned->as<ASTProjectionDeclaration &>();
+            cloned->reset(decl.with_settings);
+            return cloned->formatWithSecretsOneLine();
+        };
+
+        const auto & old_projection = metadata.projections.get(projection_name);
+        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                "but the projection query differs from the existing one. "
+                "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                projection_name);
+
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        metadata.projections.replace(std::move(new_projection));
+    }
     else if (type == DROP_PROJECTION)
     {
         if (!partition && !clear)
@@ -1112,13 +1175,22 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
-            auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
-            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+            auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
 
-            if (it != settings_from_storage.end())
-                it->value = change.value;
-            else
+            if (it == settings_from_storage.end())
+            {
                 settings_from_storage.push_back(change);
+                continue;
+            }
+
+            /// The statement states the setting under a name of its own choosing, which need not be the one
+            /// the definition was written with. It is still one setting, so it is left holding one entry:
+            /// a definition can state a setting under each of its names, and the last of them is in effect.
+            it->name = change.name;
+            it->value = change.value;
+            settings_from_storage.erase(
+                std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
         MergeTreeSettings effective_settings;
@@ -1156,12 +1228,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
-            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
-            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
 
             if (it != settings_from_storage.end())
             {
-                settings_from_storage.erase(it);
+                settings_from_storage.erase(it, settings_from_storage.end());
             }
             else
             {
@@ -1212,7 +1284,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             /// For implicit indices, check the index name rather than column_names because
             /// for ALIAS columns, column_names contains the underlying expression columns.
             if (index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            {
                 index.definition_ast = createImplicitMinMaxIndexAST(rename_to);
+                index.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to;
+                /// For an ALIAS column the index covers the columns its expression expands to,
+                /// which the column's own name never appears in, so a rename does not affect them.
+                if (!metadata.columns.hasAlias(rename_to))
+                    index.column_names = {rename_to};
+            }
             else
                 rename_visitor.visit(index.definition_ast);
         }
@@ -1746,24 +1825,41 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
-        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        try
+        {
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(
+                ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+            metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(
+                exception.code(), "Cannot apply ALTER because it breaks the TTL of column {}: {}", backQuote(name), exception.message());
+        }
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                 : TTLValidationMode::Validate);
+    {
+        try
+        {
+            metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                metadata_copy.table_ttl.definition_ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                     : TTLValidationMode::Validate);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks the TTL of the table: {}", exception.message());
+        }
+    }
 
     metadata = std::move(metadata_copy);
 }
@@ -1953,6 +2049,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2005,12 +2102,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
@@ -2049,11 +2144,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+                /// The type is optional here, and a codec can resolve differently per type, so
+                /// validate against the type the column will have, as `apply` does.
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
-                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    command.data_type ? command.data_type : all_columns.get(column_name).type,
+                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
