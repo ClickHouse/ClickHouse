@@ -49,7 +49,7 @@ The main ClickHouse Keeper configuration tag is `<keeper_server>` and has the fo
 | `digest_enabled`                     | Enable real-time data consistency check                                                                                                                                                                                                             | `True`                                                                                                       |
 | `create_snapshot_on_exit`            | Create a snapshot during shutdown                                                                                                                                                                                                                   | -                                                                                                            |
 | `hostname_checks_enabled`            | Enable sanity hostname checks for cluster configuration (e.g. if localhost is used with remote endpoints)                                                                                                                                           | `True`                                                                                                       |
-| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `four_letter_word_white_list`        | White list of 4lw commands.                                                                                                                                                                                                                         | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`, plus `jmst, jmfp, jmep, jmdp` in builds with jemalloc |
 |`enable_ipv6`| Enable IPv6 | `True`|
 
 Other common parameters are inherited from the ClickHouse server config (`listen_host`, `logger`, and so on).
@@ -174,7 +174,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives general information about the server and connected clients, `srvr` gives extended details on the server, and `cons` gives extended details on connections.
 
-The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+The 4lw commands have a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq`, with `jmst,jmfp,jmep,jmdp` added in builds with jemalloc. The list is read once at startup, so changing it needs a restart.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
