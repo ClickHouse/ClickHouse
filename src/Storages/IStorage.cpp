@@ -188,6 +188,12 @@ void IStorage::read(
     /// remote read, where a thread blocks on a socket instead of running and they raise it to
     /// `max_distributed_connections` (and pass it to `QueryPlan::setMaxThreads`). Make the same choice here,
     /// so that such a read keeps the fan-out it asked for.
+    ///
+    /// This resize is picked while the query plan is being built, where there is no
+    /// `BuildQueryPipelineSettings` to take the budget from, hence the direct call to
+    /// `getMaxThreadsForAvailableMemory`. The other three post-read resizes are picked in
+    /// `initializePipeline` and read `BuildQueryPipelineSettings::max_threads`, which is this same helper
+    /// applied to the same two settings.
     const auto & settings = context->getSettingsRef();
     const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
         ? settings[Setting::max_distributed_connections]
