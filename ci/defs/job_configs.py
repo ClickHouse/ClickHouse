@@ -1874,7 +1874,10 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     libfuzzer_corpus_minimization_job = Job.Config(
@@ -1886,7 +1889,10 @@ class JobConfigs:
         ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
