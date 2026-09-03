@@ -633,7 +633,8 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info)
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
@@ -833,6 +834,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     project_names_actions->dag = ActionsDAG(project_names_input);
 
+    /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
+    /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
+    /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    if (!source_constants.empty())
+        for (const auto * input : project_names_actions->dag.getInputs())
+            if (input->column && source_constants.contains(input->result_name))
+                keep_inputs.insert(input);
+
     if (query_node.hasInterpolate())
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
@@ -845,15 +855,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (interpolate_names.contains(alias))
                 name = alias;
 
-        project_names_actions->dag.project(project_names);
+        project_names_actions->dag.project(project_names, keep_inputs);
     }
     else
-        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases, keep_inputs);
 
     project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    actions_chain.finalize();
+    actions_chain.finalize(source_constants);
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 

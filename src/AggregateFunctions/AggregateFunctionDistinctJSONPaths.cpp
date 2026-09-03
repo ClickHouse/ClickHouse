@@ -307,7 +307,7 @@ public:
         /// Default value for JSON is empty object, so nothing to add.
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -351,7 +351,7 @@ void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory
 {
     /// distinctJSONPaths documentation
     FunctionDocumentation::Description description_distinctJSONPaths = R"(
-Calculates a list of distinct paths stored in a [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
+Calculates a list of distinct paths stored in a [JSON](/reference/data-types/newjson) column.
     )";
     FunctionDocumentation::Syntax syntax_distinctJSONPaths = R"(
 distinctJSONPaths(json)
@@ -381,14 +381,14 @@ SELECT distinctJSONPaths(json) FROM test_json;
         R"(
 DROP TABLE IF EXISTS test_json;
 CREATE TABLE test_json(json JSON) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}')
+INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
 
 SELECT distinctJSONPaths(json) FROM test_json;
         )",
         R"(
-┌─distinctJSONPaths(json)─┐
-│ ['a','b','c']           │
-└─────────────────────────┘
+┌─distinctJSONPaths(json)───┐
+│ ['a','b','c.d.e','c.d.f'] │
+└───────────────────────────┘
         )"
     }
     };
@@ -398,7 +398,7 @@ SELECT distinctJSONPaths(json) FROM test_json;
 
     /// distinctJSONPathsAndTypes documentation
     FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
-Calculates the list of distinct paths and their types stored in [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
+Calculates the list of distinct paths and their types stored in [JSON](/reference/data-types/newjson) column.
 
 :::note
 If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.

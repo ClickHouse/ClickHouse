@@ -175,4 +175,5 @@
     :--keeper_server.latest_snapshot_storage_disk "latest_snapshot_local"
     :--keeper_server.log_storage_disk "log_local"
     :--keeper_server.latest_log_storage_disk "latest_log_local"
+    :--keeper_server.data_storage_disk "data_local"
     :--path coordination-data-dir))

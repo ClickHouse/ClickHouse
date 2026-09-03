@@ -1,3 +1,4 @@
+import datetime
 import os
 import random
 import time
@@ -103,6 +104,37 @@ def get_backup_name(backup_id):
     return f"Disk('backups', '{backup_id}')"
 
 
+# Converts a DateTime64(6) value as printed by clickhouse-client to a datetime.
+def parse_server_time(value):
+    return datetime.datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S.%f")
+
+
+# Returns the number of seconds between two DateTime64(6) values produced by the server.
+# Both endpoints must be server-recorded, so that the cost of the clickhouse-client launches
+# the test makes in between (0.5-1 s each, and much more on a contended runner) is not added
+# to the measured interval.
+def seconds_between(from_time, to_time):
+    return (parse_server_time(to_time) - parse_server_time(from_time)).total_seconds()
+
+
+# Reads the server-recorded start time of a query from system.query_log by its query_id.
+# Called after the measured operation has finished, so that neither the flush nor the read
+# can perturb the interval being measured.
+def get_query_start_time(node, query_id):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    rows = node.query(
+        "SELECT query_start_time_microseconds FROM system.query_log "
+        f"WHERE (query_id = '{query_id}') AND (type = 'QueryFinish')"
+    ).splitlines()
+    # Exactly one row must be found, so that a vanished oracle fails loudly here instead of
+    # silently skipping the caller's timing check.
+    assert (
+        len(rows) == 1
+    ), f"Expected 1 query_log row for query_id={query_id}, got {rows}"
+    print(f"{get_node_name(node)}: query {query_id} started at {rows[0]} (server time)")
+    return rows[0]
+
+
 # Reads the status of a backup or a restore from system.backups.
 def get_status(initiator, backup_id=None, restore_id=None):
     id = backup_id if backup_id is not None else restore_id
@@ -120,7 +152,7 @@ def get_error(initiator, backup_id=None, restore_id=None):
 
 
 # Waits until the status of a backup or a restore becomes a desired one.
-# Returns how many seconds the function was waiting.
+# Returns the server-recorded `end_time` of the operation (a DateTime64(6) value).
 def wait_status(
     initiator,
     status="BACKUP_CREATED",
@@ -156,6 +188,7 @@ def wait_status(
         f"(start_time = {start_time}, end_time = {end_time})"
     )
     assert current_status == status
+    return end_time
 
 
 # Returns how many entries are in system.processes corresponding to a specified backup or restore.
@@ -239,7 +272,10 @@ def wait_num_system_processes(
 
 
 # Kills a BACKUP or RESTORE query.
-# Returns how many seconds the KILL QUERY was executing.
+# Returns the `query_id` of the KILL QUERY it issued, so that the caller can look up its
+# server-recorded start time later (see get_query_start_time()), after the measured
+# operation has finished. Looking it up afterwards keeps the lookup's own cost out of the
+# interval being measured.
 def kill_query(
     node, backup_id=None, restore_id=None, is_initial_query=None, timeout=None
 ):
@@ -252,9 +288,11 @@ def kill_query(
         if is_initial_query is not None
         else ""
     )
+    kill_query_id = uuid.uuid4().hex
     old_time = time.monotonic()
     node.query(
-        f"KILL QUERY WHERE (query_kind='{query_kind}') AND (query LIKE '%{id}%'){filter_for_is_initial_query} SYNC"
+        f"KILL QUERY WHERE (query_kind='{query_kind}') AND (query LIKE '%{id}%'){filter_for_is_initial_query} SYNC",
+        query_id=kill_query_id,
     )
     waited = time.monotonic() - old_time
     print(
@@ -262,6 +300,7 @@ def kill_query(
     )
     if timeout is not None:
         assert waited < timeout
+    return kill_query_id
 
 
 # Sleeps for random amount of time.
@@ -381,6 +420,31 @@ class NoTrashChecker:
             assert False
 
 
+# Waits until every BACKUP process from a previous test has finished, so its residual errors
+# and ZooKeeper cleanup don't land inside the next test's NoTrashChecker window. Tests run in
+# random order in CI, so any test may precede another.
+def wait_for_backups_to_finish():
+    for _ in range(30):
+        if not any(
+            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
+            for node in nodes
+        ):
+            break
+        time.sleep(1)
+
+    backup_process_counts = {
+        get_node_name(node): int(
+            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
+        )
+        for node in nodes
+    }
+    total_backup_processes = sum(backup_process_counts.values())
+    assert total_backup_processes == 0, (
+        "Backup queries still running after pre-test wait: "
+        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
+    )
+
+
 __backup_id_of_successful_backup = None
 
 
@@ -414,6 +478,11 @@ def get_backup_id_of_successful_backup():
 # Test that a BACKUP operation can be cancelled with KILL QUERY.
 def test_cancel_backup():
     with NoTrashChecker() as no_trash_checker:
+        # QUERY_WAS_CANCELLED is allowed from here on, so that if the test body fails before
+        # reaching the `expect_errors` assignment below, __exit__ reports that failure instead
+        # of masking it with its own "unexpected error" assert.
+        no_trash_checker.allow_errors = ["QUERY_WAS_CANCELLED"]
+
         create_and_fill_table(random_node())
 
         initiator = random_node()
@@ -445,21 +514,30 @@ def test_cancel_backup():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        time_before_kill_query = time.monotonic()
-
-        kill_query(
+        kill_query_id = kill_query(
             node_to_cancel, backup_id=backup_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, backup_id=backup_id) == "BACKUP_CANCELLED"
-        wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
+        end_time = wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
 
-        time_to_cancel = time.monotonic() - time_before_kill_query
+        kill_start_time = get_query_start_time(node_to_cancel, kill_query_id)
+
+        # Both endpoints are server-recorded, so neither wait_status's polling nor the query_log
+        # lookup above can move them: the KILL's start precedes the polling, and the terminal
+        # status is stamped by the backup thread after it waited for the other hosts, capped on
+        # the error path by backup_restore_finish_timeout_after_error_sec (3 s in this module).
+        time_to_cancel = seconds_between(kill_start_time, end_time)
+        print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, backup_id=backup_id)
         assert get_num_system_processes(nodes, backup_id=backup_id) == 0
-        assert time_to_cancel <= 6  # A backup should be cancelled quite quickly.
+        # Unlike the previous time.monotonic() stopwatch, these are two independent
+        # CLOCK_REALTIME reads, so the interval can now come out negative if the wall clock
+        # steps backwards between them. The lower bound makes that a loud failure instead of a
+        # negative value silently satisfying the upper bound.
+        assert 0 <= time_to_cancel <= 6  # A backup should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
 
@@ -470,6 +548,11 @@ def test_cancel_restore():
 
     # Cancel restoring.
     with NoTrashChecker() as no_trash_checker:
+        # QUERY_WAS_CANCELLED is allowed from here on, so that if the test body fails before
+        # reaching the `expect_errors` assignment below, __exit__ reports that failure instead
+        # of masking it with its own "unexpected error" assert.
+        no_trash_checker.allow_errors = ["QUERY_WAS_CANCELLED"]
+
         print("Will cancel restoring")
         initiator = random_node()
         print(f"Using {get_node_name(initiator)} as initiator")
@@ -500,21 +583,27 @@ def test_cancel_restore():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        time_before_kill_query = time.monotonic()
-
-        kill_query(
+        kill_query_id = kill_query(
             node_to_cancel, restore_id=restore_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, restore_id=restore_id) == "RESTORE_CANCELLED"
-        wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
+        end_time = wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
 
-        time_to_cancel = time.monotonic() - time_before_kill_query
+        kill_start_time = get_query_start_time(node_to_cancel, kill_query_id)
+
+        # Both endpoints are server-recorded, see the comment in test_cancel_backup.
+        time_to_cancel = seconds_between(kill_start_time, end_time)
+        print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
-        assert time_to_cancel <= 6  # A restore should be cancelled quite quickly.
+        # Unlike the previous time.monotonic() stopwatch, these are two independent
+        # CLOCK_REALTIME reads, so the interval can now come out negative if the wall clock
+        # steps backwards between them. The lower bound makes that a loud failure instead of a
+        # negative value silently satisfying the upper bound.
+        assert 0 <= time_to_cancel <= 6  # A restore should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
     # Restore successfully.
@@ -534,7 +623,20 @@ def test_cancel_restore():
 
 # Test that shutdown cancels a running backup and doesn't wait until it finishes.
 def test_shutdown_cancels_backup():
+    wait_for_backups_to_finish()
+
     with NoTrashChecker() as no_trash_checker:
+        # Restarting a node mid-backup makes the surviving node briefly lose its connection
+        # to the restarting peer and to Keeper, so transient network/Keeper errors are expected.
+        no_trash_checker.allow_errors = [
+            "KEEPER_EXCEPTION",
+            "SOCKET_TIMEOUT",
+            "CANNOT_READ_ALL_DATA",
+            "NETWORK_ERROR",
+            "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
+        ]
+
         create_and_fill_table(random_node())
 
         initiator = random_node()
@@ -598,25 +700,17 @@ def test_error_leaves_no_trash():
 
 # A backup must be stopped if Zookeeper is disconnected longer than `failure_after_host_disconnected_for_seconds`.
 def test_long_disconnection_stops_backup():
+    wait_for_backups_to_finish()
+
     create_and_fill_table(random_node(), num_parts=100)
 
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
-        # Config "faster_zk_disconnect_detect.xml" is used in this test to decrease number of retries when reconnecting to ZooKeeper.
-        # Without this config this test can take several minutes (instead of seconds) to run.
-        config_manager.add_main_config(nodes, "configs/faster_zk_disconnect_detect.xml")
-
-        initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
-
         backup_id = random_id()
-        initiator.query(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 3},
-        )
 
-        assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
-        assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
-
+        # Set the relaxations before any statement that can raise, so __exit__ doesn't mask
+        # a real body failure with a spurious "unexpected error" assertion: this test
+        # deliberately disconnects ZooKeeper, so transient ZK/network errors are expected and
+        # the backup is left unfinished.
         no_trash_checker.allow_unfinished_backups = [backup_id]
         no_trash_checker.allow_errors = [
             "FAILED_TO_SYNC_BACKUP_OR_RESTORE",
@@ -629,55 +723,55 @@ def test_long_disconnection_stops_backup():
         ]
         no_trash_checker.check_zookeeper = False
 
+        # Config "faster_zk_disconnect_detect.xml" is used in this test to decrease number of retries when reconnecting to ZooKeeper.
+        # Without this config this test can take several minutes (instead of seconds) to run.
+        config_manager.add_main_config(nodes, "configs/faster_zk_disconnect_detect.xml")
+
+        initiator = random_node()
+        print(f"Using {get_node_name(initiator)} as initiator")
+
+        initiator.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC",
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 3},
+        )
+
+        assert get_status(initiator, backup_id=backup_id) == "CREATING_BACKUP"
+        assert get_num_system_processes(initiator, backup_id=backup_id) >= 1
+
         with PartitionManager() as pm:
             random_sleep(3)
-
-            time_before_disconnection = time.monotonic()
 
             node_to_drop_zk_connection = random_node()
             print(
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
+            # `now64` is evaluated on the server, so this clickhouse-client's launch cost
+            # falls outside the interval. Issued last before the drop, so the interval
+            # still covers the whole abort.
+            time_before_disconnection = initiator.query("SELECT now64(6)").strip()
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
 
             # Being disconnected from ZooKeeper a backup is expected to fail.
-            wait_status(initiator, "BACKUP_FAILED", backup_id=backup_id)
+            end_time = wait_status(initiator, "BACKUP_FAILED", backup_id=backup_id)
 
-            time_to_fail = time.monotonic() - time_before_disconnection
+            # Both endpoints are server-recorded, so the clickhouse-client wait_status
+            # launches on every poll iteration is no longer charged to the abort.
+            time_to_fail = seconds_between(time_before_disconnection, end_time)
             error = get_error(initiator, backup_id=backup_id)
             print(f"error={error}")
             assert "Lost connection" in error
 
             # A backup is expected to fail, but it isn't expected to fail too soon.
-            print(f"Backup failed after {time_to_fail} seconds disconnection")
+            print(
+                f"Backup failed after {time_to_fail} seconds disconnection (server-side)"
+            )
             assert time_to_fail > 3
             assert time_to_fail < 45
 
 
 # A backup must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_backup():
-    # Wait for any backup processes from the previous test to finish their ZooKeeper cleanup
-    # before creating the NoTrashChecker, so residual errors don't fall in its time window.
-    for _ in range(30):
-        if not any(
-            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
-            for node in nodes
-        ):
-            break
-        time.sleep(1)
-
-    backup_process_counts = {
-        get_node_name(node): int(
-            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
-        )
-        for node in nodes
-    }
-    total_backup_processes = sum(backup_process_counts.values())
-    assert total_backup_processes == 0, (
-        "Backup queries still running after pre-test wait in "
-        "test_short_disconnection_doesnt_stop_backup: "
-        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
-    )
+    wait_for_backups_to_finish()
 
     create_and_fill_table(random_node())
 
@@ -734,28 +828,7 @@ def test_short_disconnection_doesnt_stop_backup():
 
 # A restore must NOT be stopped if Zookeeper is disconnected shorter than `failure_after_host_disconnected_for_seconds`.
 def test_short_disconnection_doesnt_stop_restore():
-    # Wait for any backup processes from the previous test to finish their ZooKeeper cleanup
-    # before creating the NoTrashChecker, so residual errors don't fall in its time window.
-    for _ in range(30):
-        if not any(
-            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
-            for node in nodes
-        ):
-            break
-        time.sleep(1)
-
-    backup_process_counts = {
-        get_node_name(node): int(
-            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
-        )
-        for node in nodes
-    }
-    total_backup_processes = sum(backup_process_counts.values())
-    assert total_backup_processes == 0, (
-        "Backup queries still running after pre-test wait in "
-        "test_short_disconnection_doesnt_stop_backup: "
-        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
-    )
+    wait_for_backups_to_finish()
 
     # Make a backup.
     backup_id = get_backup_id_of_successful_backup()

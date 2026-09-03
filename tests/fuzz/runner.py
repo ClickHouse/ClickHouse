@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+from subprocess import PIPE
 import psutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +20,7 @@ OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
 DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
 SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
+MINIMIZE_ONLY = int(os.getenv("MINIMIZE_ONLY", "0"))
 
 INPUT_TIMEOUT = 0 # for debugging, set 0 when not debugging
 
@@ -349,6 +351,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
             logging.info("Not running corpus minimization for fuzzer %s - persistent corpus is empty", fuzzer)
 
 
+    if MINIMIZE_ONLY:
+        logging.info("Not running fuzzer %s - MINIMIZE_ONLY is set", fuzzer)
+        return
+
     # Fuzzing
     logging.info(
         "Running fuzzer %s for %d seconds...",
@@ -442,7 +448,7 @@ def main():
         for future in as_completed(futures):
             fuzzer = futures[future]
             try:
-                result = future.result()
+                future.result()
                 logging.info("Thread for %s finished", fuzzer)
             except Exception as exc:
                 logging.info("Thread for %s generated an exception: %s", fuzzer, exc)

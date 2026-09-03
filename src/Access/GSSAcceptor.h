@@ -21,6 +21,12 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+#if USE_KRB5
+/// Copy a GSS buffer into a String verbatim, preserving any trailing NUL bytes.
+/// Exposed for unit testing; see the definition for the rationale.
+String bufferToString(const gss_buffer_desc & buf);
+#endif
+
 class GSSAcceptorContext
     : public Credentials
 {

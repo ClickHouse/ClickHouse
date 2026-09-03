@@ -257,7 +257,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                     }
                     else if (current_tuple[subfield_index].tryGet(tmp_node_map))
                     {
-                        current_node = std::move(tmp_node_array);
+                        current_node = std::move(tmp_node_map);
                     }
 
                     else
