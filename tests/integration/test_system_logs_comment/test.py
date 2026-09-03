@@ -74,6 +74,7 @@ def test_system_logs_comment():
 
     set_query_log_comment("updated_comment")
     node.restart_clickhouse()
+    node.query("SYSTEM FLUSH LOGS")
 
     updated_comment = node.query(
         "SELECT comment FROM system.tables WHERE name = 'query_log' FORMAT TSVRaw"
