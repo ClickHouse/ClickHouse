@@ -751,7 +751,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     bool has_external_data = !external_tables.empty() || !external_scalars.empty();
-    if (!select && has_external_data)
+    if (!select && has_external_data && !is_interactive)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
     if (isEmbeeddedClient() && has_external_data)
