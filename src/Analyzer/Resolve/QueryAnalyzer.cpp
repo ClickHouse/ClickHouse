@@ -7012,6 +7012,24 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                         "Recursive CTE '{}' cannot be correlated. In scope {}",
                         union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
+
+                /// A materialized CTE referenced from a recursive member is materialized once, before the recursion
+                /// starts, while the working table of this recursive CTE is still empty, so it cannot read the
+                /// working table: fail instead of snapshotting an empty table. Checked after every widening pass,
+                /// because a later pass would otherwise report a schema mismatch of the materialized CTE instead.
+                traverseQueryTree(query_node, Everything{}, [&](const QueryTreeNodePtr & node)
+                {
+                    auto * table_node = node->as<TableNode>();
+                    if (!table_node || !table_node->isMaterializedCTE())
+                        return;
+
+                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
+                            table_node->getMaterializedCTE()->cte_name,
+                            union_node_typed.getCTEName(),
+                            scope.scope_node->formatASTForErrorMessage());
+                });
             }
 
             final_temporary_table_holder = std::move(temporary_table_holder);
@@ -7101,26 +7119,14 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
         /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
         /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
-        /// would inline them and the subquery would be re-executed on every step. The snapshot is taken once,
-        /// before the recursion starts, while the working table of this recursive CTE is still empty, so a
-        /// materialized CTE reading the working table cannot be supported: fail instead of snapshotting an
-        /// empty table.
+        /// would inline them and the subquery would be re-executed on every step.
         for (size_t i = 1; i < queries_nodes_size; ++i)
         {
             traverseQueryTree(queries_nodes[i], Everything{}, [&](const QueryTreeNodePtr & node)
             {
                 auto * table_node = node->as<TableNode>();
-                if (!table_node || !table_node->isMaterializedCTE())
-                    return;
-
-                if (isStorageUsedInTree(recursive_cte_table->storage, table_node->getMaterializedCTESubquery().get()))
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
-                        table_node->getMaterializedCTE()->cte_name,
-                        union_node_typed.getCTEName(),
-                        scope.scope_node->formatASTForErrorMessage());
-
-                table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
+                if (table_node && table_node->isMaterializedCTE())
+                    table_node->getMaterializedCTE()->is_referenced_from_recursive_cte_member = true;
             });
         }
 
