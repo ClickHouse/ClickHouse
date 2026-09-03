@@ -34,10 +34,6 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (split_actions.first.trivial())
         return 0;
 
-    /// Moving an arrayJoin below another one swaps their nesting and changes the row order.
-    if (split_actions.first.hasArrayJoin())
-        return 0;
-
     /// Add new expression step before ARRAY JOIN.
     /// Expression/Filter -> ArrayJoin -> Something
     auto & node = nodes.emplace_back();
