@@ -8230,9 +8230,14 @@ Allow usage of materialized views with parallel replicas
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
 Allow pushing down filters into the query shipped to remote replicas, so that a filter which the
 initiator applies to the result of a parallel replicas read is applied by the replicas themselves,
-and into the initiator's own local plan alongside it. Conditions that cannot decide how the local
-plan reads - anything but an equality fixing a sort key column - go into it regardless of this
-setting; that includes join runtime filters, which can never be shipped to the replicas anyway.
+and into the initiator's own local plan alongside it.
+
+Without this setting a condition may still go into the local plan, but only when it cannot change
+the coordination mode the initiator announces. That is decided conservatively: the condition must
+contain no equality at all, or the local fragment must read nothing that has a sorting key. Join
+runtime filters qualify, and they are the case that matters, being the one condition this setting
+could never ship to the replicas anyway. An ordinary `WHERE b = 'x'` does not, even where `b` has
+nothing to do with the sorting key, and waits for this setting.
 
 The condition is shipped by rewriting the replicas' query, so this setting has no effect unless
 `allow_push_predicate_ast_for_distributed_subqueries` is on, and none when the replicas run a

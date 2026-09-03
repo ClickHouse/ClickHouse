@@ -4,9 +4,11 @@
 -- the initiator would then announce `WithOrder` against the replicas' `Default`.
 --
 -- Two things keep that from happening. Above the union, read-in-order is refused outright. Inside the
--- fragment - where a view's own `ORDER BY` puts it, and the refusal does not apply - an ordinary
--- predicate never gets in without `parallel_replicas_filter_pushdown`, which puts it in the replicas'
--- query as well. A join runtime filter does get in, and fixes nothing, so the mode is unchanged.
+-- fragment - where a view's own `ORDER BY` puts it, and the refusal does not apply - a predicate that
+-- contains an equality anywhere never gets in without `parallel_replicas_filter_pushdown`, which puts
+-- it in the replicas' query as well. That is a coarse test, refusing far more than the equalities on a
+-- sort key prefix it is aimed at, but a join runtime filter carries no equality: it does get in, and
+-- fixes nothing, so the mode is unchanged.
 --
 -- `parallel_replicas_filter_pushdown` ships the predicate by rewriting the replicas' query, so it is
 -- only as good as that rewrite: the last section turns off each of the two settings that make the

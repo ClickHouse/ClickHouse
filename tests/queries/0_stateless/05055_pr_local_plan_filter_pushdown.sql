@@ -5,6 +5,10 @@
 -- So an equality waits for `parallel_replicas_filter_pushdown`, which puts it in the replicas' query
 -- too, while everything else - a comparison, a bare boolean, a join runtime filter (see 05056) - goes
 -- in regardless.
+--
+-- The test is drawn along the same coarse line the code uses: any equality waits, whatever column it
+-- names and whether or not the sorting key mentions it. `a = 5` below happens to be on the sorting
+-- key, but `b = '5'` would be refused just the same.
 
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP VIEW IF EXISTS v_pr_local_pd;
@@ -55,6 +59,14 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE a > 995)
 WHERE explain LIKE '%Prewhere filter column%';
 SELECT count() FROM v_pr_local_pd WHERE a > 995;
+
+SELECT 'equality off the sorting key, default: not in the local plan either';
+-- `b` is not in the sorting key, so this one could safely go in. The gate does not look at which
+-- column an equality names, so it waits for the setting like any other equality.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE b = '5')
+WHERE explain LIKE '%Prewhere filter column%';
+SELECT * FROM v_pr_local_pd WHERE b = '5';
 
 SELECT 'bare boolean, default: in the local plan';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
