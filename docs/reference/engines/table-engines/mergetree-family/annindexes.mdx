@@ -642,7 +642,7 @@ Further example datasets that use approximate vector search:
 
 <ExperimentalBadge/>
 
-To enable the `Quantized` codec, enable `SET allow_experimental_codecs = 1` first.
+To enable the `Quantized` codec, run `SET enable_quantized_codec = 1` first.
 In case you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 
 #### Introduction {#quantized-codecs-introduction}
@@ -675,7 +675,7 @@ The codec is a good fit for ClickHouse because the expensive part (the scan) is 
 Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

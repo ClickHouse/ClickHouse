@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -25,6 +26,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -52,10 +54,9 @@
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -115,6 +116,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Common/QueryFuzzer.h>
+#include <Interpreters/QueryOracleChecker.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <base/getFQDNOrHostName.h>
@@ -165,11 +167,12 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
+    extern const SettingsBool ast_fuzzer_oracle;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -269,6 +272,7 @@ namespace ErrorCodes
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
+    extern const int AST_FUZZER_ORACLE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
@@ -279,6 +283,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace FailPoints
@@ -701,7 +706,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -1214,6 +1219,28 @@ private:
 };
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
+
+
+/// The introspection port is open while the shared state is either not fully constructed or is being
+/// torn down, so anything that creates, changes or removes state is rejected there.
+static bool isAllowedOnIntrospectionPort(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+            return true;
+        default:
+            return false;
+    }
+}
 
 
 /// Convert a comma-separated `sort` setting (identifiers / positional references with optional
@@ -2158,6 +2185,27 @@ static void applyQueryConstructionSettings(
 }
 
 
+static void checkQueryIsAllowedOnIntrospectionPort(const IAST & ast, const Context & context)
+{
+    if (!isAllowedOnIntrospectionPort(ast))
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "Only diagnostic queries are allowed on the introspection port: "
+            "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+
+    const auto * system_query = ast.as<ASTSystemQuery>();
+    if (system_query
+        && (system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG
+            || system_query->type == ASTSystemQuery::Type::RELOAD_USERS)
+        && !context.isServerCompletelyStarted())
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "SYSTEM {} is not allowed on the introspection port until the server is completely started, "
+            "because reloading the configuration may break the initialization order",
+            ASTSystemQuery::typeToString(system_query->type));
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -2187,6 +2235,12 @@ static BlockIO executeQueryImpl(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
         LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+
+    /// A trace started by sampling (`opentelemetry_start_trace_probability`) exists only in the thread-local context.
+    /// Write the sampled context back, so that everything that forwards `ClientInfo` to secondary queries (remote and distributed
+    /// queries, DDL entries) carries the trace even where the ambient context is not available.
+    if (query_span && query_span->isTraceEnabled() && context->getClientTraceContext().trace_id == UUID{})
+        context->setClientTraceContext(OpenTelemetry::CurrentContext());
 
     /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
@@ -2235,11 +2289,20 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
+            const char * kql_pos = begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
-            ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            {
+                /// A plain `SET` passes even when the gate is off, so a session that is
+                /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
+                /// (or turn the gate back on) instead of being stranded until reconnect.
+                out_ast = tryParseKQLSetStatement(
+                    kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+            }
+            else
+                out_ast = parseKQLQuery(
+                    kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
@@ -2570,6 +2633,9 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            if (client_info.is_from_introspection_port)
+                checkQueryIsAllowedOnIntrospectionPort(*out_ast, *context);
+
             const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
 
             /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
@@ -2870,7 +2936,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
@@ -3072,7 +3138,7 @@ static BlockIO executeQueryImpl(
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
@@ -3372,6 +3438,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();
@@ -3497,52 +3564,100 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Run the fuzzed query on its own thread group, so that code reading the query context
             /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
             /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            /// The oracle's nested queries run on `fuzz_context` too, so keep the switcher alive
+            /// across them as well.
             ThreadGroupSwitcher thread_group_switcher(
                 ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
-            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
-
-            if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
-                {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
-                }
-                else
-                {
-                    if (result.second.pipeline.pulling())
-                    {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
-                    }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
+                /// Inner scope so `result`'s `finish_callbacks`/`exception_callbacks`
+                /// are destroyed BEFORE the oracle runs. Those callbacks captured
+                /// shared_ptrs (context, implicit_tcl_executor, query_span, ...) that
+                /// the oracle's nested `executeQuery` may release/transfer ownership of.
+                /// Letting them outlive the inner execution caused UAFs in `~$_2` /
+                /// `~$_3` lambda destructors (#105741). The callbacks are never invoked
+                /// by `executeASTFuzzerQueries` itself, so destroying them earlier loses
+                /// nothing.
+                auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
-                    /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
-                    /// time limit between pipeline tasks, so without a cancel callback it ignores the
-                    /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
-                    /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
-                    /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
-                    Stopwatch fuzzed_query_watch;
-                    executor.setCancelCallback(
-                        [&fuzzed_query_watch, &process_list_element]()
+                if (result.second.pipeline.initialized())
+                {
+                    if (result.second.pipeline.pushing())
+                    {
+                        /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                        result.second.pipeline.cancel();
+                    }
+                    else
+                    {
+                        if (result.second.pipeline.pulling())
                         {
-                            if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
-                                return true;
-                            if (process_list_element && !process_list_element->checkTimeLimitSoft())
-                                return true;
-                            return fuzzed_query_watch.elapsedMilliseconds() > 30000;
-                        },
-                        /*interactive_timeout_ms=*/100);
-                    executor.execute();
+                            result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                        }
+                        CompletedPipelineExecutor executor(result.second.pipeline);
+
+                        /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
+                        /// time limit between pipeline tasks, so without a cancel callback it ignores the
+                        /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
+                        /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
+                        /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
+                        Stopwatch fuzzed_query_watch;
+                        executor.setCancelCallback(
+                            [&fuzzed_query_watch, &process_list_element]()
+                            {
+                                if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+                                    return true;
+                                if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                return fuzzed_query_watch.elapsedMilliseconds() > 30000;
+                            },
+                            /*interactive_timeout_ms=*/100);
+                        executor.execute();
+                    }
+                }
+            } /// ~result here — inner BlockIO callbacks released before oracle runs.
+
+            /// Run oracle checks on the successfully-executed fuzzed query.
+            if (context->getSettingsRef()[Setting::ast_fuzzer_oracle])
+            {
+                try
+                {
+                    QueryOracleChecker oracle_checker;
+                    oracle_checker.check(fuzzed_ast, fuzz_context);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                    {
+                        LOG_FATAL(logger,
+                            "AST Fuzzer oracle mismatch detected!\n"
+                            "Fuzzed query: {}\n"
+                            "{}",
+                            fuzzed_query, e.message());
+                        /// Rethrow with the final server-side fuzzed query attached: the
+                        /// client only sees this exception's message, and with
+                        /// `ast_fuzzer_runs > 0` its own seed query differs from the query
+                        /// that actually triggered the mismatch, so without this the CI
+                        /// artifact (`fuzzer.log`) would omit the real reproducer.
+                        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
+                            "{}\nServer-side fuzzed query (the actual reproducer): {}",
+                            e.message(), fuzzed_query);
+                    }
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
+                }
+                catch (...)
+                {
+                    LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", getCurrentExceptionMessage(false));
                 }
             }
 
             reset_transactions();
             base_ast = fuzzed_ast;
         }
-        catch (...)
+        catch (const Exception & e)
         {
             reset_transactions();
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
@@ -3633,8 +3748,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     {
                         executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
                     }
-                    catch (...)
+                    catch (const Exception & e)
                     {
+                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                            throw; /// Oracle mismatch — propagate to abort the server
                         tryLogCurrentException("ASTFuzzer");
                     }
                 });
@@ -4360,6 +4477,12 @@ void executeQuery(
                 try
                 {
                     executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                        throw; /// Oracle mismatch — propagate so CI sees it
+                    tryLogCurrentException("ASTFuzzer");
                 }
                 catch (...)
                 {

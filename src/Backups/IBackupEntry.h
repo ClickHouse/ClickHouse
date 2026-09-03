@@ -6,6 +6,7 @@
 #include <vector>
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
+#include <IO/SeekableReadBuffer.h>
 
 namespace DB
 {
@@ -14,8 +15,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-class SeekableReadBuffer;
 
 /// A backup entry represents some data which should be written to the backup or has been read from the backup.
 class IBackupEntry
@@ -36,6 +35,12 @@ public:
     /// Returns a read buffer for reading the data.
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const = 0;
 
+    /// Returns a raw read buffer suitable for reading an encrypted file header.
+    virtual std::unique_ptr<SeekableReadBuffer> getReadBufferForEncryptionHeader(const ReadSettings & read_settings) const
+    {
+        return getReadBuffer(read_settings);
+    }
+
     /// Returns true if the data returned by getReadBuffer() is encrypted by an encrypted disk.
     virtual bool isEncryptedByDisk() const { return false; }
 
@@ -44,7 +49,11 @@ public:
     virtual bool isFromImmutableFile() const { return false; }
     /// if it is a BackupEntryFromRemotePath, return true.
     virtual bool isFromRemoteFile() const { return false; }
-    /// if it is a BackupEntryFromRemotePath, return the object key which the file refers to.
+    /// Returns true if this is a BackupEntryFromSnapshot (file referenced from a snapshot).
+    virtual bool isFromSnapshot() const { return false; }
+    /// Returns whether the current disk can be used to copy a snapshot entry natively.
+    virtual bool isNativeCopyAllowed() const { return true; }
+    /// Returns the remote path (object key) for snapshot (BackupEntryFromSnapshot) or remote file (BackupEntryFromRemotePath) entries.
     virtual String getRemotePath() const { return "invalid remote path"; }
     virtual String getEndpointURI() const { return "invalid endpoint"; }
     virtual String getNamespace() const { return "invalid namespace"; }

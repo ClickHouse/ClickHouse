@@ -64,7 +64,6 @@ SerializationPtr SerializationSubObjectSharedData::create(
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
 {
     ISerialization::DeserializeBinaryBulkStatePtr map_state;
-    ColumnPtr map_column;
 
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
@@ -78,28 +77,6 @@ struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::De
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (map_column)
-            callback(map_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        for (const auto & bucket_map_state : bucket_map_states)
-        {
-            if (bucket_map_state)
-                callback(bucket_map_state);
-        }
-        for (const auto & bucket_structure_state : bucket_structure_states)
-        {
-            if (bucket_structure_state)
-                callback(bucket_structure_state);
-        }
     }
 };
 
@@ -234,8 +211,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
@@ -248,41 +224,39 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
     if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP)
     {
-        /// Initialize map column if needed.
-        if (column->empty() || !sub_object_shared_data_state->map_column)
-            sub_object_shared_data_state->map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-
         /// Read shared data map column.
         size_t num_read_rows = 0;
+        ColumnPtr map_column;
         /// Check if we have map column in cache.
         if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
         {
-            std::tie(sub_object_shared_data_state->map_column, num_read_rows) = *cached_column_with_num_read_rows;
+            std::tie(map_column, num_read_rows) = *cached_column_with_num_read_rows;
         }
-        /// If we don't have it in cache, deserialize and put deserialized map in cache.
+        /// If we don't have it in cache, deserialize the whole shared data map into a fresh column and cache it.
         else
         {
-            size_t prev_size = sub_object_shared_data_state->map_column->size();
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(sub_object_shared_data_state->map_column, rows_offset, limit, settings, sub_object_shared_data_state->map_state, cache);
-            num_read_rows = sub_object_shared_data_state->map_column->size() - prev_size;
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, sub_object_shared_data_state->map_column, num_read_rows);
+            auto mutable_map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, limit, settings, sub_object_shared_data_state->map_state, cache);
+            num_read_rows = mutable_map_column->size();
+            map_column = std::move(mutable_map_column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_column, num_read_rows);
         }
 
-        size_t map_column_offset = sub_object_shared_data_state->map_column->size() - num_read_rows;
+        size_t map_column_offset = map_column->size() - num_read_rows;
 
         /// Check if we don't have any paths in shared data in current range.
-        const auto & offsets = assert_cast<const ColumnArray &>(*sub_object_shared_data_state->map_column).getOffsets();
+        const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
         if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
         {
-            column->assumeMutable()->insertManyDefaults(limit);
+            column.insertManyDefaults(limit);
         }
         /// Iterate over new rows in map column and extract paths with requested prefix.
         else
         {
-            auto [src_shared_data_paths, src_shared_data_values, src_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*sub_object_shared_data_state->map_column);
-            auto [dst_shared_data_paths, dst_shared_data_values, dst_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*column->assumeMutable());
+            auto [src_shared_data_paths, src_shared_data_values, src_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*map_column);
+            auto [dst_shared_data_paths, dst_shared_data_values, dst_shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(column);
             std::string_view prefix_ref(paths_prefix);
-            for (size_t i = map_column_offset; i != sub_object_shared_data_state->map_column->size(); ++i)
+            for (size_t i = map_column_offset; i != map_column->size(); ++i)
             {
                 size_t start = (*src_shared_data_offsets)[ssize_t(i) - 1];
                 size_t end = (*src_shared_data_offsets)[ssize_t(i)];
@@ -319,8 +293,9 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
             {
-                bucket_map_columns[bucket] = DataTypeObject::getTypeOfSharedData()->createColumn();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(bucket_map_columns[bucket], rows_offset, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
+                auto mutable_bucket_column = DataTypeObject::getTypeOfSharedData()->createColumn();
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
+                bucket_map_columns[bucket] = std::move(mutable_bucket_column);
                 addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_map_columns[bucket], bucket_map_columns[bucket]->size());
             }
 
@@ -328,7 +303,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         }
 
         /// Now we have map column from each bucket and can collect all paths with specified prefix from them.
-        collectSharedDataFromBuckets(bucket_map_columns, *column->assumeMutable(), &paths_prefix);
+        collectSharedDataFromBuckets(bucket_map_columns, column, &paths_prefix);
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
@@ -341,7 +316,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
 
             auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(sub_object_shared_data_state->bucket_structure_states[bucket]);
-            auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
+            auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
             auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
             bucket_paths_data_granules[bucket] = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 
@@ -355,7 +330,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*column->assumeMutable());
+        auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(column);
         for (size_t granule = 0; granule != bucket_paths_data_granules[0]->size(); ++granule)
         {
             /// Collect list of all paths that match prefix from all buckets in this granule.

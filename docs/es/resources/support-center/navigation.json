@@ -180,7 +180,8 @@
             "es/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "es/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "es/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "es/resources/support-center/knowledge-base/setup-installation/production"
+            "es/resources/support-center/knowledge-base/setup-installation/production",
+            "es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {
