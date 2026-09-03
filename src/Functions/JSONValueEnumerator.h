@@ -80,10 +80,13 @@ void enumerateJSONValues(
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
     const FormatSettings format_settings;
+    using PreparedPath = typename Consumer::PreparedPath;
 
-    auto consume_shared = [&](std::string_view path, std::string_view value_data)
+    auto consume_shared = [&](std::string_view path, std::string_view value_data, const PreparedPath * prepared_path = nullptr)
     {
-        if (!consumer.shouldConsumePath(path))
+        if (!prepared_path)
+            prepared_path = consumer.preparePath(path);
+        if (!prepared_path)
             return;
 
         ReadBufferFromMemory buffer(value_data);
@@ -98,7 +101,7 @@ void enumerateJSONValues(
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
         const bool has_cached_type = cache.hasElement(binary_type_index);
 
-        if (has_cached_type && !consumer.shouldConsumeValue(path, *cache.getElement(binary_type_index).type))
+        if (has_cached_type && !consumer.shouldConsumeValue(*prepared_path, *cache.getElement(binary_type_index).type))
             return;
 
         if (binary_type_index == BinaryTypeIndex::String)
@@ -110,7 +113,7 @@ void enumerateJSONValues(
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
             if (size > buffer.available())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared String value of JSON");
-            consumer.consumeSharedScalar(path, binary_type_index, std::string_view(buffer.position(), size));
+            consumer.consumeSharedScalar(*prepared_path, binary_type_index, std::string_view(buffer.position(), size));
             return;
         }
         if (binary_type_index == BinaryTypeIndex::Bool)
@@ -119,7 +122,7 @@ void enumerateJSONValues(
             UInt8 value = 0;
             readBinary(value, buffer);
             consumer.consumeSharedScalar(
-                path,
+                *prepared_path,
                 binary_type_index,
                 value ? format_settings.bool_true_representation : format_settings.bool_false_representation);
             return;
@@ -131,7 +134,7 @@ void enumerateJSONValues(
             readBinary(value, buffer);
             char text[max_int_width<Int64>];
             const char * end = itoa(value, text);
-            consumer.consumeSharedScalar(path, binary_type_index, std::string_view(text, end - text));
+            consumer.consumeSharedScalar(*prepared_path, binary_type_index, std::string_view(text, end - text));
             return;
         }
 
@@ -159,7 +162,7 @@ void enumerateJSONValues(
 
         if (isNothing(type))
             return;
-        if (!has_cached_type && !consumer.shouldConsumeValue(path, *type))
+        if (!has_cached_type && !consumer.shouldConsumeValue(*prepared_path, *type))
             return;
 
         auto [column_it, inserted] = shared_columns_cache.try_emplace(*type_name);
@@ -168,15 +171,12 @@ void enumerateJSONValues(
 
         auto & temporary_column = *column_it->second;
         serialization->deserializeBinary(temporary_column, buffer, format_settings);
-        consumer.consumeValue(path, *type, *type_name, *serialization, temporary_column, 0, true, format_settings);
+        consumer.consumeValue(*prepared_path, *type, *type_name, *serialization, temporary_column, 0, true, format_settings);
         temporary_column.popBack(1);
     };
 
-    auto consume_path = [&](PathInfo & entry, size_t row)
+    auto consume_path = [&](PathInfo & entry, const auto & prepared_path, size_t row)
     {
-        if (!consumer.shouldConsumePath(entry.path))
-            return;
-
         if ((entry.is_dynamic || entry.is_nullable) && entry.column->isNullAt(row))
         {
             consumer.consumeNull(entry.path, entry.is_nullable);
@@ -186,7 +186,7 @@ void enumerateJSONValues(
         if (!entry.is_dynamic)
         {
             consumer.consumeValue(
-                entry.path, *entry.type, entry.type_name, *entry.serialization, *entry.column, row, false, format_settings);
+                prepared_path, *entry.type, entry.type_name, *entry.serialization, *entry.column, row, false, format_settings);
             return;
         }
 
@@ -197,7 +197,7 @@ void enumerateJSONValues(
 
         if (discriminator == dynamic_column.getSharedVariantDiscriminator())
         {
-            consume_shared(entry.path, dynamic_column.getSharedVariant().getDataAt(variant_row));
+            consume_shared(entry.path, dynamic_column.getSharedVariant().getDataAt(variant_row), &prepared_path);
             return;
         }
 
@@ -213,8 +213,11 @@ void enumerateJSONValues(
             entry.cached_dynamic_serialization = serialization_it->second;
         }
 
+        if (!consumer.shouldConsumeValue(prepared_path, *entry.cached_dynamic_type))
+            return;
+
         consumer.consumeValue(
-            entry.path,
+            prepared_path,
             *entry.cached_dynamic_type,
             type_name,
             *entry.cached_dynamic_serialization,
@@ -229,10 +232,16 @@ void enumerateJSONValues(
 
     for (auto & path : sorted_paths)
     {
+        const auto * prepared_path = consumer.preparePath(path.path, path.is_dynamic ? nullptr : path.type.get());
+        if (!prepared_path)
+            continue;
+        if (!path.is_dynamic && !consumer.shouldConsumeValue(*prepared_path, *path.type))
+            continue;
+
         for (size_t row = start_row; row != end_row; ++row)
         {
             consumer.setRow(row - start_row);
-            consume_path(path, row);
+            consume_path(path, *prepared_path, row);
         }
     }
 
