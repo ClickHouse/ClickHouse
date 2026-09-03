@@ -809,9 +809,9 @@ def main():
     # which would otherwise leak base-tip contrib sources into the merge-base build.
     # Either way the "before" binary would be built against the wrong submodule content
     # (or miss a merge-base-only submodule entirely) and the validator could report a
-    # false reproduction or refutation. Never a validation either way: a PR-side or
-    # unattributable difference reports ERROR, base-only motion reports SKIPPED, and
-    # `is_success` counts neither.
+    # false reproduction or refutation. None of these outcomes counts as a validation: a
+    # PR-side or unattributable difference reports ERROR, base-only motion reports
+    # SKIPPED, and `is_success` counts neither.
     checkout_head = Shell.get_output("git rev-parse HEAD").strip()
     assert (
         checkout_head
@@ -831,7 +831,7 @@ def main():
             "The before-worktree can only be populated with the primary checkout's "
             "submodule content, not the merge-base's, so building the before-binary "
             "would validate against the wrong submodule code. This is "
-            "inconclusive — NOT a reproduction or a refutation."
+            "inconclusive, NOT a reproduction or a refutation."
         )
         if pr_submodule_changes is None:
             finalize(
