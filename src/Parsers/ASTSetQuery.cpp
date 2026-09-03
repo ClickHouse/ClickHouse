@@ -1,4 +1,5 @@
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/maskSettingValue.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
@@ -150,69 +151,19 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             CustomType custom;
             if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             {
+                /// A custom type renders its own masked form, quoting included.
                 ostr << " = " << custom.toString(/* show_secrets */false);
                 return true;
             }
 
-            if (change.name == format_avro_schema_registry_url)
+            /// Render whatever the value is rather than insisting on a String: the AST JSON path
+            /// can carry any `Field` type here, and a setting that is secret stays secret however
+            /// it was written. A rule that masks only part of its value - a URI password, say -
+            /// simply finds nothing to mask in a value that cannot hold one.
+            if (auto masked = maskSettingValue(state.create_engine_name, change.name, convertFieldToString(change.value)))
             {
-                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
-                /// AST JSON path can carry any `Field` type here.
-                String uri_string;
-                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
-                    return false;
-
-                ostr << " = '" << uri_string << "'";
+                ostr << " = '" << *masked << "'";
                 return true;
-            }
-
-            /// Intrinsically secret regardless of engine: DataLakeStorageSettings is shared by the
-            /// DataLakeCatalog database engine and the Iceberg*/Paimon*/DeltaLake* table engines.
-            /// Matches the ungated check in hasSecretParts().
-            if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            {
-                ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                return true;
-            }
-            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (Kafka::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (AzureQueue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << AzureQueue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (S3Queue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << S3Queue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
             }
 
             return false;
@@ -393,17 +344,9 @@ bool ASTSetQuery::hasSecretParts() const
         CustomType custom;
         if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             return true;
-        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
+        /// Deliberately ignores the engine: this decides whether the statement needs masking at
+        /// all, and answering yes too often is safe.
+        if (isSecretSettingName(change.name))
             return true;
 
         if (change.name == format_avro_schema_registry_url)

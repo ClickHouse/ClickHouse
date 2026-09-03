@@ -7,9 +7,9 @@ namespace NATS
 {
 
 static constexpr auto TABLE_ENGINE_NAME = "NATS";
-static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
+static constexpr auto DEFAULT_MASKING_RULE = [](std::string_view){ return "[HIDDEN]"; };
 
-using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::string(std::string_view)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"nats_password", DEFAULT_MASKING_RULE},
@@ -17,11 +17,11 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"nats_credential_file", DEFAULT_MASKING_RULE},
     {"nats_credentials", DEFAULT_MASKING_RULE},
     {"nats_server_list", DEFAULT_MASKING_RULE},
-    {"nats_url", [](const DB::Field & value)
+    {"nats_url", [](std::string_view value)
     {
-        std::string masked_value = value.safeGet<std::string>();
+        std::string masked_value{value};
         DB::maskURIPassword(&masked_value);
-        return fmt::format("'{}'", masked_value);
+        return masked_value;
     }}
 };
 

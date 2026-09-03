@@ -16,9 +16,9 @@ static constexpr std::string_view FILE_PATH_PREFIX = "file:/";
 /// We use this placeholder when user ask for SHOW CREATE TABLE unreadable_table.
 static constexpr auto FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES = "Other";
 
-static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
+static constexpr auto DEFAULT_MASKING_RULE = [](std::string_view){ return "[HIDDEN]"; };
 
-using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::string(std::string_view)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     /// Catalog credentials

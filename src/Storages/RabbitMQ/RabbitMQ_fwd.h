@@ -7,17 +7,17 @@ namespace RabbitMQ
 {
 
 static constexpr auto TABLE_ENGINE_NAME = "RabbitMQ";
-static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
+static constexpr auto DEFAULT_MASKING_RULE = [](std::string_view){ return "[HIDDEN]"; };
 
-using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::string(std::string_view)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"rabbitmq_password", DEFAULT_MASKING_RULE},
-    {"rabbitmq_address", [](const DB::Field & value)
+    {"rabbitmq_address", [](std::string_view value)
     {
-        std::string masked_value = value.safeGet<std::string>();
+        std::string masked_value{value};
         DB::maskURIPassword(&masked_value);
-        return fmt::format("'{}'", masked_value);
+        return masked_value;
     }}
 };
 
