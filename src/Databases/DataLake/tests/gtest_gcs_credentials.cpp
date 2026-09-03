@@ -111,14 +111,18 @@ TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
     EXPECT_EQ(normalized[0].name, "X-AB");
 }
 
-TEST_F(GCSCredentialsTest, HeaderValidationRejectsNameEmptyAfterNormalization)
+TEST_F(GCSCredentialsTest, HeaderValidationAcceptsNameEmptyAfterNormalization)
 {
-    /// A name that is only whitespace/control normalizes to "" and must be rejected rather than
-    /// serialized as a bare ": value" line.
+    /// A name that is only whitespace/control normalizes to "" and is accepted, not rejected: it
+    /// cannot forge a forbidden header or split the request, and rejecting it would break ATTACH
+    /// of a table stored with such a name. This matches the behaviour before this change.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({" \t ", "value"});
-    EXPECT_THROW((void)filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    DB::HTTPHeaderEntries normalized;
+    EXPECT_NO_THROW(normalized = filter.checkAndNormalizeHeaders(headers));
+    ASSERT_EQ(normalized.size(), 1u);
+    EXPECT_EQ(normalized[0].name, "");
 }
 
 }
