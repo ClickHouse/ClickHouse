@@ -2779,11 +2779,29 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-    size_t * full_group_count) const
+    size_t * full_group_count,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
+
+    /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
+    /// groups that can rank among them. It must stand down when the dataflow statistics are
+    /// being collected: the statistics must describe the untruncated merge of every group (see
+    /// `RuntimeDataflowStatistics.h`), which only the ordinary path performs (the updater is
+    /// attached per query, so all buckets take the same path). It also stands down for the lone
+    /// `count()` (`bucket_top_k`), whose conversion-stage selection reads the count straight
+    /// from the state during a single scan and is measurably cheaper than the value-peeking
+    /// walk; the threshold merge serves `count` when other aggregates ride along. And it stands
+    /// down when a throw-mode group limit is enforced at the merge (see `full_group_count`):
+    /// the limit needs the bucket's true group count, which the threshold merge never learns -
+    /// it stops before seeing every group.
+    const bool group_limit_needs_full_count = params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW;
+    if (final && params.threshold_top_k && !params.bucket_top_k && !updater && !group_limit_needs_full_count)
+        if (auto threshold_chunk
+            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
+            return std::move(*threshold_chunk);
 
     /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in
     /// the dataflow statistics, because the truncated chunk carries only the kept groups.

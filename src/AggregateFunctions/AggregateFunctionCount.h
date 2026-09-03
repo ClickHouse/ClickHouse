@@ -126,6 +126,9 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
+    /// The merged count is exactly the sum of the partial counts.
+    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
+
     /// Reset the state to specified value. This function is not the part of common interface.
     static void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {

@@ -256,6 +256,16 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    /// Only the `Subadditive` bound survives the filtering: a group whose rows all fail the
+    /// condition has an untouched nested state, whose value is 0 for the subadditive functions
+    /// (`count`, `uniqExact`) - consistent with the bound - but is a bogus default for an extremum.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if (nested_func->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
+
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
         return {num_arguments - 1};
