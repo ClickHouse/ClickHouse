@@ -381,39 +381,48 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
 
-    /// A populating miss carries its own open writer; a bypass tier's miss is writer-less. `claim` is
-    /// filled by the claim loop below (empty for a bypass tier or a tail a concurrent downloader leads).
+    /// A miss to be populated carries its own open writer; any other miss is writer-less. `claim` is
+    /// filled by the claim loop below (empty for a writer-less miss, or a tail another reader leads).
     struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
+    size_t next_resident = window_offset + max_serve;  /// nearest block any tier already has, ahead of the head
     for (auto & cache : cache_chain)
     {
         stats.add(Stats::CacheGetRequests);
-        /// `resolve` returns the window's residency in offset order; the first run reaching past
-        /// `window_offset` is the one covering it (coverage is contiguous from the ask start).
+        /// `resolve` returns the window's residency in offset order, coverage contiguous from the ask
+        /// start. The run covering `window_offset` decides the tier: a hit there serves the block from
+        /// cache. A miss is recorded, and we keep gathering the contiguous miss run behind it so the
+        /// fetch below reads the whole uncached extent in one source request; a later hit ends the run.
         auto resolutions = cache->resolve(object, object_offset, ByteRange{window_offset, max_serve});
         for (auto & resolution : resolutions)
         {
             if (resolution.range.end() <= window_offset)
                 continue;
-            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Hit && resolution.reader)
-                return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
-            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Miss)
-                miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
-            break;
+            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Hit)
+            {
+                if (resolution.range.offset <= window_offset && resolution.reader)
+                    return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
+                next_resident = std::min(next_resident, resolution.range.offset);  /// a resident block ahead
+                break;
+            }
+            miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
         }
     }
 
-    /// Every tier missed. Claim the lead role of each writing tier BEFORE the fetch. A held claim keeps
-    /// the downloader role open across the fetch+write, so concurrent executors dedup to one download.
-    /// The `available` prefix is unused here (the thin executor fetches the whole range coarsely).
+    /// Every tier missed: claim each writing tier's lead role before the fetch (a held claim dedups the
+    /// download). If `claimLeadRole` reports a prefix cached since `resolve` covering the head, serve it
+    /// from that tier - no source read; otherwise keep the claim for the fetch.
     bool any_writer = false;
     for (auto & miss_tier : miss_tiers)
     {
         if (!miss_tier.writer)
-            continue;  /// a bypass tier populates nothing
-        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
-        miss_tier.claim = std::move(lead.claim);
+            continue;  /// nothing will be populated here
         any_writer = true;
+        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
+        const ByteRange avail = lead.available;
+        if (avail.size && avail.offset <= window_offset && window_offset < avail.end())
+            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail.end(), miss_tier.range.end()))});
+        miss_tier.claim = std::move(lead.claim);
     }
 
     /// A range another thread is already downloading is fetched through below (its `write` lands 0).
@@ -430,10 +439,10 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         return readSource(window_offset, miss_end - window_offset);
     }
 
-    /// Fetch the whole writer ranges (across the objects they span), populate each, serve one block.
-    /// Coarse by design: with stacked filesystem caches a slower tier may already hold part of this
-    /// range, which is re-fetched from source here rather than promoted up. The thin executor does not
-    /// subtract slower-tier hits. The following development can improve this.
+    /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
+    /// Capped at `next_resident` - the nearest block a slower tier already holds - so a gathered miss run
+    /// never re-reads a suffix the filesystem cache already has; that suffix is served from the slower
+    /// tier on the next window.
     size_t fetch_lo = window_offset;
     size_t fetch_hi = window_offset;
     for (const auto & miss_tier : miss_tiers)
@@ -444,6 +453,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         fetch_hi = std::max(fetch_hi, miss_tier.range.end());
     }
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
+    fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
 
     ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();

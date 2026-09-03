@@ -59,9 +59,11 @@ Despite using async inserts, you can still encounter ["too many parts"](/resourc
 
 ### Deduplication and reliability {#deduplication-and-reliability}
 
-By default, ClickHouse performs automatic deduplication for synchronous inserts, which makes retries safe in failure scenarios. However, this is disabled for asynchronous inserts unless explicitly enabled (this shouldn't be enabled if you have dependent materialized views — [see issue](https://github.com/ClickHouse/ClickHouse/issues/66003)).
+Since version 26.2, ClickHouse performs automatic deduplication for asynchronous inserts as well as for synchronous ones, which makes retries safe on tables that keep a deduplication log. `*ReplicatedMergeTree` engines keep one by default; a plain `MergeTree` table needs `non_replicated_deduplication_window` set to a positive value. Both insert types are controlled by [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), which defaults to `enable`. Dependent materialized views are supported.
 
-In practice, if deduplication is turned on and the same insert is retried — due to, for instance, a timeout or network drop — ClickHouse can safely ignore the duplicate. This helps maintain idempotency and avoids double-writing data.
+In practice, if the same insert is retried — due to, for instance, a timeout or network drop — ClickHouse can safely ignore the duplicate. This helps maintain idempotency and avoids double-writing data. For asynchronous inserts, deduplication works per user query rather than per flushed batch, so a duplicate query does not discard the other queries batched with it.
+
+For details, and for the one restriction that applies to materialized views under asynchronous inserts, see [Deduplicating inserts on retries](/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
 ### Enabling asynchronous inserts {#enabling-asynchronous-inserts}
 
