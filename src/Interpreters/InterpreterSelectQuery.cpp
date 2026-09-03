@@ -3512,6 +3512,11 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
 
+        /// The DISTINCT that runs after the ORDER BY sits above the sort in the plan: the sorted order
+        /// has to survive it up to the result.
+        if (!before_order && query.orderBy())
+            distinct_step->preserveInputOrder();
+
         query_plan.addStep(std::move(distinct_step));
     }
 }

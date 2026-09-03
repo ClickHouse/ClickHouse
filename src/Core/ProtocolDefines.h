@@ -100,7 +100,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
 /// Version 11 adds the `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct`
-/// plan setting names (external DISTINCT).
+/// plan setting names (external DISTINCT) and the input-order flag of the `Distinct` step.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

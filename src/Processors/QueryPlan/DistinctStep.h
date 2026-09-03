@@ -95,6 +95,14 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// The step must return the rows in their input order: it runs above the ORDER BY sorting of its
+    /// query (set by the planners), or the optimizer propagates a global order through it, which the
+    /// steps above may rely on (set by the applyOrder optimization). The in-memory DISTINCT keeps the
+    /// order by construction; a spilling one restores it after merging its runs (see
+    /// ExternalDistinctTransform).
+    void preserveInputOrder() { preserve_input_order = true; }
+    bool preservesInputOrder() const { return preserve_input_order; }
+
 private:
     void updateOutputHeader() override;
 
@@ -104,6 +112,7 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool preserve_input_order = false;
 };
 
 }

@@ -1244,6 +1244,12 @@ void addDistinctStep(QueryPlan & query_plan,
         distinct_step->setStepDescription("Preliminary DISTINCT");
     else
         distinct_step->setStepDescription("DISTINCT");
+
+    /// The DISTINCT that runs after the ORDER BY sits above the sort in the plan: the sorted order has to
+    /// survive it up to the result.
+    if (!before_order && query_node.hasOrderBy())
+        distinct_step->preserveInputOrder();
+
     query_plan.addStep(std::move(distinct_step));
 }
 

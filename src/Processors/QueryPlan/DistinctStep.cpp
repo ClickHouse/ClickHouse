@@ -282,7 +282,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                     external_threshold,
                     tmp_data_on_disk,
                     settings.min_free_disk_space,
-                    settings.max_block_size);
+                    settings.max_block_size,
+                    preserve_input_order);
             });
         return;
     }
@@ -348,6 +349,8 @@ void DistinctStep::describeActions(FormatSettings & format_settings) const
 
     if (skip_stream_merging)
         format_settings.out << prefix << "Skip stream merging: 1\n";
+    if (preserve_input_order)
+        format_settings.out << prefix << "Preserve input order: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -359,6 +362,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     if (skip_stream_merging)
         map.add("Skip stream merging", true);
+    if (preserve_input_order)
+        map.add("Preserve input order", true);
 }
 
 void DistinctStep::updateOutputHeader()
@@ -379,6 +384,9 @@ void DistinctStep::serialize(Serialization & ctx) const
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT && !ctx.for_cache_key)
+        writeBinary(preserve_input_order, ctx.out);
 }
 
 QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
@@ -392,8 +400,15 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     for (size_t i = 0; i < columns_size; ++i)
         readStringBinary(column_names[i], ctx.in);
 
-    return std::make_unique<DistinctStep>(
+    bool preserve_input_order = false;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT)
+        readBinary(preserve_input_order, ctx.in);
+
+    auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
+    if (preserve_input_order)
+        step->preserveInputOrder();
+    return step;
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
