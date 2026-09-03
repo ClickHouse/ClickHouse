@@ -1,6 +1,6 @@
 ---
 description: 'توثيق المعاملات'
-sidebarTitle: 'المعاملات'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/operators/
 title: 'المعاملات'
 doc_type: 'مرجع'
@@ -12,9 +12,13 @@ doc_type: 'مرجع'
   ## معاملات الوصول
 </div>
 
-`a[N]` – الوصول إلى عنصر في مصفوفة. الدالة `arrayElement(a, N)`.
+`a[N]` – الوصول إلى عنصر في مصفوفة. دالة `arrayElement(a, N)`.
+يمكن أن تكون `N` أيضًا مصفوفة من الأعداد الصحيحة، وعندئذٍ تُعاد العناصر الموجودة في جميع هذه المواضع ضمن مصفوفة،
+كما في `arrayMap(i -> a[i], N)`. يمكن أن تكون المواضع قابلة للقيم الخالية. يؤدي الموضع `NULL` إلى إنتاج `NULL` عندما يكون نوع العنصر
+قابلًا للتغليف ضمن `Nullable`؛ أما أنواع العناصر التي لا يمكن أن تكون داخل `Nullable` (مثل `Array` و`Map`)، فتنتج
+القيمة الافتراضية لنوع العنصر، كما هو الحال مع فهرس `NULL` قياسي.
 
-`a.N` – الوصول إلى عنصر في tuple. الدالة `tupleElement(a, N)`.
+`a.N` – الوصول إلى عنصر في tuple. دالة `tupleElement(a, N)`.
 
 <div id="numeric-negation-operator">
   ## معامل النفي العددي
@@ -111,6 +115,32 @@ doc_type: 'مرجع'
 </div>
 
 `a ILIKE b` – هي الدالة `ilike(a, b)`.
+
+<div id="match-function">
+  ### دالة match
+</div>
+
+`a REGEXP b` – دالة `match(a, b)`.
+
+`a ~ b` – دالة `match(a, b)` (مطابقة باستخدام تعبير نمطي على نمط PostgreSQL).
+
+<div id="notmatch-function">
+  ### دالة notMatch
+</div>
+
+`a !~ b` – الدالة `notMatch(a, b)` (تتحقق من أن `a` لا يتطابق مع التعبير النمطي `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### دالة matchCaseInsensitive
+</div>
+
+`a ~* b` – الدالة `matchCaseInsensitive(a, b)` (مطابقة تعبير نمطي غير حساسة لحالة الأحرف).
+
+<div id="notmatchcaseinsensitive-function">
+  ### دالة notMatchCaseInsensitive
+</div>
+
+`a !~* b` – دالة `notMatchCaseInsensitive(a, b)` (تتحقق من أن `a` لا يطابق التعبير النمطي `b` بغض النظر عن حالة الأحرف).
 
 <div id="between-function">
   ### دالة BETWEEN
@@ -493,7 +523,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 | `Date32`       | `Time64(s)`    | `DateTime64(s)` |
 
 <Note>
-  تستخدم النتيجة [المنطقة الزمنية للجلسة](/ar/reference/settings/session-settings#session_timezone) (أو المنطقة الزمنية الافتراضية للخادوم إذا لم يتم تعيين منطقة زمنية للجلسة). ويتحكم الإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats#date_time_overflow_behavior) في ما يحدث عندما تكون النتيجة خارج النطاق القابل للتمثيل.
+  تستخدم النتيجة [المنطقة الزمنية للجلسة](/ar/reference/settings/session-settings/other#session_timezone) (أو المنطقة الزمنية الافتراضية للخادوم إذا لم يتم تعيين منطقة زمنية للجلسة). ويتحكم الإعداد [`date_time_overflow_behavior`](/ar/reference/settings/formats/date-time#date_time_overflow_behavior) في ما يحدث عندما تكون النتيجة خارج النطاق القابل للتمثيل.
 </Note>
 
 أمثلة:
@@ -540,12 +570,12 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-يمكن أن تكون `zone` أي تعبير سلسلة ثابتًا يُقيَّم إلى اسم منطقة زمنية صالح (مثل `'America/Denver'` أو `'UTC'` أو `concat('America', '/', 'Denver')`). وبما أن `AT TIME ZONE` تُختزل إلى `toTimeZone`، فإن قواعد وسيط المنطقة الزمنية نفسها تنطبق هنا: فالتعبيرات غير الثابتة، مثل الإشارة إلى عمود، تتطلب [`allow_nonconst_timezone_arguments = 1`](/ar/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+يمكن أن تكون `zone` أي تعبير سلسلة ثابت يُقيَّم إلى اسم منطقة زمنية صالح (مثل `'America/Denver'` أو `'UTC'` أو `concat('America', '/', 'Denver')`). وبما أن `AT TIME ZONE` تُختزل إلى `toTimeZone`، فإن قواعد وسيط المنطقة الزمنية نفسها تنطبق هنا: فالتعبيرات غير الثابتة، مثل الإشارة إلى عمود، تتطلب [`allow_nonconst_timezone_arguments = 1`](/ar/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments).
 
-يستخدم `AT LOCAL` [المنطقة الزمنية الحالية للجلسة](/ar/reference/settings/session-settings#session_timezone) (أو المنطقة الزمنية الافتراضية للخادم إذا لم يتم تعيين المنطقة الزمنية للجلسة). في جداول `Distributed`، يجب تعيين `session_timezone` صراحةً؛ وعندما تكون فارغة، تكون `timeZone()` محلية على مستوى shard ولا يمكن استخدامها كوسيط ثابت للدالة `toTimeZone`، مما يؤدي إلى الاستثناء `ILLEGAL_COLUMN`.
+يستخدم `AT LOCAL` [المنطقة الزمنية الحالية للجلسة](/ar/reference/settings/session-settings/other#session_timezone) (أو المنطقة الزمنية الافتراضية للخادم إذا لم يتم تعيين منطقة زمنية للجلسة). في جداول `Distributed`، يجب تعيين `session_timezone` صراحةً؛ وعندما تكون فارغة، تكون `timeZone()` محلية على مستوى shard ولا يمكن استخدامها كوسيط ثابت للدالة `toTimeZone`، مما يؤدي إلى الاستثناء `ILLEGAL_COLUMN`.
 
 <Note>
-  بخلاف PostgreSQL، حيث إن `timestamp without time zone AT TIME ZONE zone` يعيد تفسير قيمة الوقت الظاهر كما لو كانت ضمن المنطقة المحددة قبل التحويل، فإن ClickHouse يحتفظ دائمًا بنفس النقطة الزمنية المطلقة ولا يغيّر سوى تسمية المنطقة الزمنية المستخدمة للعرض. وكلتا الصيغتين مكافئتان لـ `toTimeZone` ولا تغيّران قيمة `timestamp` الأساسية.
+  بخلاف PostgreSQL، حيث إن `timestamp without time zone AT TIME ZONE zone` يعيد تفسير قيمة الوقت الظاهر على أنها ضمن المنطقة الزمنية المحددة قبل التحويل، فإن ClickHouse يحتفظ دائمًا بنفس النقطة الزمنية المطلقة ولا يغيّر سوى تسمية المنطقة الزمنية المستخدمة للعرض. وكلتا الصيغتين مكافئتان لـ `toTimeZone` ولا تغيّران قيمة `timestamp` الأساسية.
 </Note>
 
 تبلغ أسبقية المعامل `AT TIME ZONE` القيمة 13 (أعلى من `*`/`/`/`%` عند 12، وأعلى من `+`/`-` عند 11)، بما يتوافق مع PostgreSQL. وهذا يعني أن `a * ts AT TIME ZONE 'tz'` يُفسَّر على أنه `a * (ts AT TIME ZONE 'tz')`، وأن `ts + interval AT TIME ZONE 'tz'` يُفسَّر على أنه `ts + (interval AT TIME ZONE 'tz')`. لتطبيق تحويل المنطقة الزمنية بعد العمليات الحسابية، استخدم أقواسًا صريحة:
@@ -682,7 +712,7 @@ END
   * `0` بخلاف ذلك.
 * بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NULL` دائمًا القيمة `0`.
 
-يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null FROM TABLE`.
+يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null FROM TABLE`.
 
 {/* */}
 
@@ -717,7 +747,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-يمكن تحسين ذلك عبر تفعيل إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، لا تقرأ الدالة سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`.
+يمكن تحسين ذلك عبر تفعيل إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، لا تقرأ الدالة سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`.
 
 <div id="checking-boolean-values">
   ## التحقق من القيم المنطقية

@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **الوسائط**
 
 * `uuid` — UUID الإصدار 7. [`String`](/ar/reference/data-types/string)
-* `timezone` — اختياري. [اسم المنطقة الزمنية](/ar/reference/settings/server-settings/settings#timezone) للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
+* `timezone` — اختياري. [اسم المنطقة الزمنية](/ar/reference/settings/server-settings/settings/other#timezone) للقيمة المُعادة. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -251,7 +251,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -271,11 +271,11 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
   ## dateTime64ToSnowflakeID
 </div>
 
-قُدِّمت في: v24.6.0
+أُضيف v24.6.0
 
-يحوّل قيمة [DateTime64](/ar/reference/data-types/datetime64) إلى أول [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) في الوقت المحدد.
+يحوّل قيمة [DateTime64](/ar/reference/data-types/datetime64) إلى أول [معرّف Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) في الوقت المحدد.
 
-**الصيغة**
+**البنية**
 
 ```sql
 dateTime64ToSnowflakeID(value[, epoch])
@@ -299,7 +299,7 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 ```
 
 ```response title=Response
-6832626394434895872
+6832626392367104000
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -343,25 +343,21 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 أُضيفت في: v25.8.0
 
-تحوِّل قيمة [DateTime](/ar/reference/data-types/datetime) إلى [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) عند الوقت المحدد.
+تحوِّل قيمة [DateTime](/ar/reference/data-types/datetime) إلى [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) عند الوقت المحدد، كما هو معرّف في [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 راجع قسم [&quot;توليد UUIDv7&quot;](#uuidv7-generation) للاطلاع على تفاصيل بنية UUID، وإدارة العداد، وضمانات التزامن.
-
-<Note>
-  اعتبارًا من سبتمبر 2025، لا تزال معرّفات UUID من الإصدار 7 في حالة مسودة، وقد تتغير بنيتها في المستقبل.
-</Note>
 
 <Note>
   هذه الدالة غير حتمية: إذ يمكن أن تُرجع نتائج مختلفة للمعاملات نفسها.
 </Note>
 
-**الصيغة**
+**بنية**
 
 ```sql
 dateTimeToUUIDv7(value)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `value` — تاريخ ووقت. [`DateTime`](/ar/reference/data-types/datetime)
 
@@ -531,21 +527,17 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
   ## generateUUIDv7
 </div>
 
-مُقدَّم في: v24.5.0
+أُضيف في: v24.5.0
 
-يُنشئ [الإصدار 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) من [UUID](/ar/reference/data-types/uuid).
+يُنشئ [الإصدار 7](https://www.rfc-editor.org/rfc/rfc9562) من [UUID](/ar/reference/data-types/uuid) كما هو محدد في [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 راجع قسم [&quot;توليد UUIDv7&quot;](#uuidv7-generation) للاطلاع على تفاصيل بنية UUID، وإدارة العداد، وضمانات التزامن.
-
-<Note>
-  اعتبارًا من سبتمبر 2025، لا تزال معرّفات UUID من الإصدار 7 في حالة مسودة، وقد تتغير بنيتها في المستقبل.
-</Note>
 
 <Note>
   هذه الدالة غير حتمية: قد تُعيد نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصياغة**
+**بنية**
 
 ```sql
 generateUUIDv7([expr])
@@ -605,7 +597,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — معرّف Snowflake. [`UInt64`](/ar/reference/data-types/int-uint)
 * `epoch` — اختياري. حقبة معرّف Snowflake بالمللي ثانية منذ 1970-01-01. القيمة الافتراضية هي 0 ‏(1970-01-01). لحقبة Twitter/X ‏(2015-01-01)، مرّر 1288834974657. [`UInt*`](/ar/reference/data-types/int-uint)
-* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings#timezone). تحلّل الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
+* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings/other#timezone). تحلّل الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -629,11 +621,11 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
   ## snowflakeIDToDateTime64
 </div>
 
-قُدِّمت في: v24.6.0
+أُضيف v24.6.0
 
 تعيد مكوّن الطابع الزمني في [معرّف Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) كقيمة من النوع [DateTime64](/ar/reference/data-types/datetime64).
 
-**الصيغة**
+**البنية**
 
 ```sql
 snowflakeIDToDateTime64(value[, epoch[, time_zone]])
@@ -643,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — معرّف Snowflake. [`UInt64`](/ar/reference/data-types/int-uint)
 * `epoch` — اختياري. حقبة معرّف Snowflake، بالمللي ثانية منذ 1970-01-01. القيمة الافتراضية هي 0 ‏(1970-01-01). بالنسبة إلى حقبة Twitter/X ‏(2015-01-01)، أدخِل 1288834974657. [`UInt*`](/ar/reference/data-types/int-uint)
-* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings#timezone). تُحلِّل الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
+* `time_zone` — اختياري. [المنطقة الزمنية](/ar/reference/settings/server-settings/settings/other#timezone). تُحلِّل الدالة `time_string` وفقًا للمنطقة الزمنية. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -658,9 +650,9 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 ```
 
 ```response title=Response
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
 ```
 
 <div id="toUUIDOrDefault">
@@ -761,7 +753,7 @@ SELECT
 
 ```response title=Response
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
 ```
 

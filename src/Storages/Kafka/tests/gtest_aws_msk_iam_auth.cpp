@@ -6,9 +6,14 @@
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <IO/S3/Credentials.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
+#include <IO/S3Defines.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/config/ConfigAndCredentialsCacheManager.h>
 #include <cppkafka/configuration.h>
 #include <cppkafka/kafka_handle_base.h>
+#include <chrono>
 
 namespace DB
 {
@@ -101,6 +106,83 @@ TEST(AWSMSKIAMAuth, InvalidRegions)
 }
 
 // ---------------------------------------------------------------------------
+// credentialsRemainingValidity / advertisedTokenLifetime
+// ---------------------------------------------------------------------------
+
+TEST(AWSMSKIAMAuth, RemainingValidityTruncatesTowardsZero)
+{
+    const auto now = std::chrono::system_clock::now();
+
+    /// Never report more time than the credentials really have: a token advertised as valid
+    /// for the rounded-up second outlives them.
+    EXPECT_EQ(credentialsRemainingValidity(now + std::chrono::milliseconds(1500), now), std::chrono::seconds(1));
+    EXPECT_EQ(credentialsRemainingValidity(now + std::chrono::milliseconds(999), now), std::chrono::seconds(0));
+    EXPECT_EQ(credentialsRemainingValidity(now - std::chrono::milliseconds(1500), now), std::chrono::seconds(-1));
+}
+
+TEST(AWSMSKIAMAuth, RemainingValidityOfExpiredCredentialsIsNotPositive)
+{
+    const auto now = std::chrono::system_clock::now();
+
+    EXPECT_EQ(credentialsRemainingValidity(now, now), std::chrono::seconds(0));
+    EXPECT_EQ(credentialsRemainingValidity(now - std::chrono::seconds(30), now), std::chrono::seconds(-30));
+}
+
+TEST(AWSMSKIAMAuth, CredentialsWithoutExpiryDoNotOverflow)
+{
+    /// Static credentials, e.g. from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, carry no
+    /// expiration. The AWS SDK spells that as `time_point::max()`, so the subtraction against
+    /// `now` must stay representable and the cap must not shorten the lifetime.
+    const Aws::Auth::AWSCredentials never_expiring{"key", "secret"};
+    const auto now = std::chrono::system_clock::now();
+
+    const auto remaining = credentialsRemainingValidity(never_expiring.GetExpiration().UnderlyingTimestamp(), now);
+    EXPECT_GT(remaining, std::chrono::seconds::zero());
+    EXPECT_EQ(advertisedTokenLifetime(remaining), TOKEN_LIFETIME);
+}
+
+TEST(AWSMSKIAMAuth, FreshCredentialsGetTheFullTokenLifetime)
+{
+    /// STS applies a 3600s default to AssumeRoleWithWebIdentity, which is what IRSA yields.
+    EXPECT_EQ(advertisedTokenLifetime(std::chrono::seconds(3600)), TOKEN_LIFETIME);
+    EXPECT_EQ(advertisedTokenLifetime(TOKEN_LIFETIME), TOKEN_LIFETIME);
+}
+
+TEST(AWSMSKIAMAuth, LifetimeIsCappedBelowTheTokenLifetime)
+{
+    EXPECT_EQ(advertisedTokenLifetime(TOKEN_LIFETIME - std::chrono::seconds(1)), TOKEN_LIFETIME - std::chrono::seconds(1));
+    EXPECT_EQ(advertisedTokenLifetime(std::chrono::seconds(1)), std::chrono::seconds(1));
+}
+
+TEST(AWSMSKIAMAuth, NextRefreshFallsInsideTheProviderRefreshWindow)
+{
+    /// The credentials provider reloads once the credentials are within
+    /// DEFAULT_EXPIRATION_WINDOW_SECONDS of expiring, so that is the least validity
+    /// GetAWSCredentials can hand back. librdkafka refreshes at 80% of the lifetime it is
+    /// given, and that refresh has to land before the credentials expire, inside the window
+    /// where the provider produces a fresh set. This is the invariant the cap exists for.
+    const auto floor = std::chrono::seconds(DB::S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
+
+    for (auto remaining = std::chrono::seconds(1); remaining <= std::chrono::seconds(4 * TOKEN_LIFETIME.count()); ++remaining)
+    {
+        const auto lifetime = advertisedTokenLifetime(remaining);
+
+        EXPECT_GT(lifetime, std::chrono::seconds::zero()) << "remaining = " << remaining.count();
+        EXPECT_LE(lifetime, remaining) << "remaining = " << remaining.count();
+        EXPECT_LE(lifetime, TOKEN_LIFETIME) << "remaining = " << remaining.count();
+
+        if (remaining < floor)
+            continue;
+
+        /// Time left once librdkafka schedules its refresh, in seconds.
+        const double left_at_refresh = static_cast<double>(remaining.count()) - 0.8 * static_cast<double>(lifetime.count());
+        EXPECT_GT(left_at_refresh, 0.0) << "remaining = " << remaining.count();
+        if (remaining <= TOKEN_LIFETIME)
+            EXPECT_LT(left_at_refresh, static_cast<double>(floor.count())) << "remaining = " << remaining.count();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // setupAuthentication failure paths (no AWS SDK calls needed: both throw
 // before the credentials provider is created)
 // ---------------------------------------------------------------------------
@@ -146,16 +228,75 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     EXPECT_EQ(cfg.get("security.protocol"), "sasl_ssl");
 }
 
+/// Holds one process-wide AWS variable and puts back exactly what it found. `hide` clears the
+/// variable for the test's duration: S3CredentialsProviderChain consults web-identity and profile
+/// entries before EnvironmentAWSCredentialsProvider, so an IRSA-configured runner would resolve
+/// those instead and the environment-provider assertion would stop proving what it says.
+/// NOLINT(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
+class AwsEnvironmentVariableScope
+{
+public:
+    AwsEnvironmentVariableScope(const char * name, bool hide)
+    {
+        name_ = name;
+        const char * current = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+        had_value_ = current != nullptr;
+        saved_value_ = had_value_ ? std::string(current) : std::string();
+        if (hide)
+            ::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    ~AwsEnvironmentVariableScope()
+    {
+        if (had_value_)
+            ::setenv(name_, saved_value_.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            ::unsetenv(name_); // NOLINT(concurrency-mt-unsafe)
+    }
+
+private:
+    const char * name_ = nullptr;
+    bool had_value_ = false;
+    std::string saved_value_;
+};
+
 TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
 {
     // Kafka AWS_MSK_IAM is server-side, operator-configured authentication, not a user S3 query. The S3
     // credential restriction (`forbid_implicit_credentials`, default true) must not apply here: with
     // `kafka.use_environment_credentials = 1` the provider chain must still resolve the environment credentials.
+    // Declared before the variable scopes so it runs after their restores: the profile cache is read
+    // once process-wide, so it has to be re-read after the original files are reachable again.
+    SCOPE_EXIT(
+    {
+        Aws::Config::ReloadCachedConfigFile();
+        Aws::Config::ReloadCachedCredentialsFile();
+    });
+    AwsEnvironmentVariableScope access_key("AWS_ACCESS_KEY_ID", /*hide=*/false);
+    AwsEnvironmentVariableScope secret_key("AWS_SECRET_ACCESS_KEY", /*hide=*/false);
+    AwsEnvironmentVariableScope metadata_disabled("AWS_EC2_METADATA_DISABLED", /*hide=*/false);
+    AwsEnvironmentVariableScope role("AWS_ROLE_ARN", /*hide=*/true);
+    AwsEnvironmentVariableScope token("AWS_WEB_IDENTITY_TOKEN_FILE", /*hide=*/true);
+    AwsEnvironmentVariableScope profile("AWS_PROFILE", /*hide=*/true);
+    AwsEnvironmentVariableScope default_profile("AWS_DEFAULT_PROFILE", /*hide=*/true);
+    // Hiding the two variables above only seals the environment side. The web-identity resolver falls
+    // back to the cached config-file profile, so a runner whose ~/.aws/config carries web-identity
+    // settings would still insert the provider ahead of the environment one. Point both files at
+    // /dev/null for the test duration: an empty profile cannot source a role_arn or a token file.
+    AwsEnvironmentVariableScope config_file("AWS_CONFIG_FILE", /*hide=*/false);
+    AwsEnvironmentVariableScope shared_credentials_file("AWS_SHARED_CREDENTIALS_FILE", /*hide=*/false);
+
     /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
     ::setenv("AWS_ACCESS_KEY_ID", "AKID_MSK_ENV_TEST", /*overwrite=*/1);
     ::setenv("AWS_SECRET_ACCESS_KEY", "secret_msk_env_test", /*overwrite=*/1);
     ::setenv("AWS_EC2_METADATA_DISABLED", "true", /*overwrite=*/1);
+    ::setenv("AWS_CONFIG_FILE", "/dev/null", /*overwrite=*/1);
+    ::setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null", /*overwrite=*/1);
     /// NOLINTEND(concurrency-mt-unsafe)
+
+    // The cache would otherwise keep serving whatever profile an earlier test in this binary loaded.
+    Aws::Config::ReloadCachedConfigFile();
+    Aws::Config::ReloadCachedCredentialsFile();
 
     cppkafka::Configuration cfg;
     auto config = emptyConfig();
@@ -168,12 +309,6 @@ TEST(AWSMSKIAMAuth, SetupResolvesEnvironmentCredentials)
     ASSERT_NE(ctx->provider, nullptr);
     /// With the restriction wrongly applied, the chain adds no environment provider and this is empty.
     EXPECT_EQ(ctx->provider->GetAWSCredentials().GetAWSAccessKeyId(), "AKID_MSK_ENV_TEST");
-
-    /// NOLINTBEGIN(concurrency-mt-unsafe): single-threaded gtest, no concurrent getenv/setenv.
-    ::unsetenv("AWS_ACCESS_KEY_ID");
-    ::unsetenv("AWS_SECRET_ACCESS_KEY");
-    ::unsetenv("AWS_EC2_METADATA_DISABLED");
-    /// NOLINTEND(concurrency-mt-unsafe)
 }
 
 TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
