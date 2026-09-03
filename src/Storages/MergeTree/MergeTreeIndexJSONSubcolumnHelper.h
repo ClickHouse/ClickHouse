@@ -28,7 +28,7 @@ struct JSONSubcolumnIndexInfo
 ///
 /// Returns nullopt if:
 ///   - No matching index column is found in the header
-///   - The subcolumn is a sub-object access (^ prefix)
+///   - The subcolumn is a sub-object access (^ prefix) or a combined literal+sub-object access (@ prefix)
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
