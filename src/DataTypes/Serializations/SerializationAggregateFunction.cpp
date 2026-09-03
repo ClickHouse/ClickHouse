@@ -67,14 +67,15 @@ void deserializeFromString(const AggregateFunctionPtr & function, IColumn & colu
                 function->getName(),
                 read_buf.available());
         }
+
+        /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 void createStateFromValues(const AggregateFunctionPtr & function, IColumn & column, const IColumn ** arg_columns, size_t num_rows)
@@ -90,13 +91,14 @@ void createStateFromValues(const AggregateFunctionPtr & function, IColumn & colu
     try
     {
         function->addBatchSinglePlace(0, num_rows, place, arg_columns, &arena);
+        /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-    column_concrete.getData().push_back(place);
 }
 
 /// Backward compatibility: released parsed the single-argument `value` payload with the argument type's
