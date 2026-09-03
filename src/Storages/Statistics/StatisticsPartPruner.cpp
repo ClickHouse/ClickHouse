@@ -50,20 +50,6 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     return Range(min_value, true, max_value, true);
 }
 
-/// Returns true when a column's statistics description is expected to produce numeric
-/// min/max values. Either an explicit `MinMax` statistic is declared, or a `Basic`
-/// statistic on a numeric/temporal column (the only types for which `Basic` populates
-/// min/max). Used before part statistics are loaded to decide whether part pruning can
-/// be beneficial at all.
-bool statisticsHasMinMax(const ColumnStatisticsDescription & stats_desc)
-{
-    if (stats_desc.types_to_desc.contains(StatisticsType::MinMax))
-        return true;
-    if (stats_desc.types_to_desc.contains(StatisticsType::Basic))
-        return removeLowCardinalityAndNullable(stats_desc.data_type)->isValueRepresentedByNumber();
-    return false;
-}
-
 /// Functions that negate a comparison, i.e. can be `true` for a `NaN` operand. `NaN` never
 /// satisfies a plain comparison (`NaN < c`, `NaN = c`, ... are all `false`), so only a negation can
 /// make a floating-point predicate `true` for `NaN`. These are exactly the negating entries of
