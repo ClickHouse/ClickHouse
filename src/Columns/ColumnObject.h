@@ -120,6 +120,7 @@ public:
 
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
+    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
 
@@ -140,7 +141,6 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
