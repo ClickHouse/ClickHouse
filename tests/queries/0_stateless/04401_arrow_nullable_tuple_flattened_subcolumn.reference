@@ -113,6 +113,12 @@ SELECT `C0.x`, `c0.y` FROM file(currentDatabase() || '_04401_cisib.arrow', 'Arro
 []	['a','b']
 SELECT `M.keys`, `m.values` FROM file(currentDatabase() || '_04401_map.arrow', 'Arrow', '`M.keys` Array(String), `m.values` Array(UInt32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
 ['a','b']	[1,2]
+-- A dotted name that is itself a field of the file is read from that field, not as a sibling of a
+-- struct root whose name folds to the same spelling.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_cicoll.arrow', 'Arrow')
+SELECT CAST([('nested-x', 'nested-y')], 'Array(Tuple(x String, y String))') AS c0, [7]::Array(UInt32) AS `C0.x`;
+SELECT `C0.x`, `c0.y` FROM file(currentDatabase() || '_04401_cicoll.arrow', 'Arrow', '`C0.x` Array(UInt32), `c0.y` Array(String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+[7]	['nested-y']
 -- A tuple element name may itself contain a dot, so `c0.a.b` is both the element `a.b` and the path
 -- from `a` to `b`. The extractor always cuts at the first dot and takes the path, so the declared
 -- type used as the nullability arbiter has to be resolved the same way; a full-path subcolumn lookup

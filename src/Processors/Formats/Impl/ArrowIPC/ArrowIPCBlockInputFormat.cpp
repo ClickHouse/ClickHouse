@@ -913,9 +913,11 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         if (!case_insensitive)
                             continue;
                         /// Siblings of one root may each spell it differently. `Nested::collect` groups
-                        /// by the literal root name, so give them all this root's spelling.
+                        /// by the literal root name, so give them all this root's spelling. A name that
+                        /// is a decoded field itself is read from that field, so it is not a sibling.
                         const String root = Nested::extractTableName(name_and_type.name);
-                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested)
+                        if (root.size() < name_and_type.name.size() && boost::to_lower_copy(root) == search_nested
+                            && !name_to_index.contains(boost::to_lower_copy(name_and_type.name)))
                             nested_columns.emplace_back(
                                 nested_table_name + name_and_type.name.substr(root.size()), name_and_type.type);
                     }
