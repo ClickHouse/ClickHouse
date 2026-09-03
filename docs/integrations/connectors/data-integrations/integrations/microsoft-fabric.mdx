@@ -265,15 +265,19 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 
 ### Email verification fails when opening a ClickHouse item {#email-verification-fails}
 
-**Error codes:** `email_domain_unverified`, `email_domain_onmicrosoft`, `email_not_found`
+**Error codes:** `email_not_found`, `email_domain_unverified`
 
-**Cause:** Provisioning a ClickHouse user requires an email address from a verified domain on the Microsoft Entra account. Personal or test tenants using a default `.onmicrosoft.com` domain without a verified custom domain cannot provide one, and neither can Entra profiles with no email attribute set.
+**Cause:** Provisioning a ClickHouse user requires an email address from a verified domain on the Microsoft Entra account. Member accounts always qualify, including those in personal or test tenants that only have the default `.onmicrosoft.com` domain. These errors almost always mean you are signed in as a **guest (B2B) account**:
 
-**Resolution:** Contact your Fabric administrator to confirm your Microsoft Entra profile has an email address on a verified custom domain, or use an account from a tenant with one. See [Managing custom domain names in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
+- `email_not_found` — your guest profile in this tenant has no email address set.
+- `email_domain_unverified` — your email belongs to your home tenant, which is not a
+  verified domain in the tenant you are using Fabric in.
+
+**Resolution:** Use a member account of the tenant, or contact your Fabric administrator to confirm your Microsoft Entra profile has an email address on one of the tenant's verified domains. See [Managing custom domain names in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
 
 ### Cannot sign in to the ClickHouse Cloud console {#cannot-sign-in-to-the-clickhouse-cloud-console}
 
-**Cause:** ClickHouse Cloud users require an email address. Sign-in from the workload fails if the Entra profile has no email set, and first-time console sign-in sends a verification code, so the address must have a real inbox. The in-Fabric experience is unaffected; this only gates **Open in ClickHouse Cloud** and marketplace checkout.
+**Cause:** ClickHouse Cloud users require an email address. Sign-in from the workload fails if the Entra profile has no email set, and first-time console sign-in sends a verification code, so the address must have a real inbox. Default `.onmicrosoft.com` addresses often have no mailbox. The in-Fabric experience is unaffected; this only gates **Open in ClickHouse Cloud** and marketplace checkout.
 
 **Resolution:** Contact your Fabric administrator to add an email address with an active inbox to your Microsoft Entra profile, then retry.
 
