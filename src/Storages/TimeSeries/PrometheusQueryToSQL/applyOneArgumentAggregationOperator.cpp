@@ -15,8 +15,6 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
-
-
 namespace DB::PrometheusQueryToSQL
 {
 
@@ -136,6 +134,145 @@ namespace
 
         return &it->second;
     }
+
+    /// The `sum`/`avg` aggregation over a combined float+histogram grid (StoreMethod::HISTOGRAM_GRID),
+    /// mirroring `aggregation` in Prometheus promql/engine.go.
+    SQLQueryPiece applyHistogramGridAggregation(
+        const PrometheusQueryTree::AggregationOperator * operator_node,
+        SQLQueryPiece && argument,
+        ConverterContext & context)
+    {
+        const bool is_avg = (operator_node->operator_name == "avg");
+
+        auto masked = [](const char * column, UInt64 kind)
+        {
+            return makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"x", "k"}, makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(static_cast<Float64>(kind))),
+                    make_intrusive<ASTIdentifier>("x"),
+                    make_intrusive<ASTLiteral>(Field{}))),
+                make_intrusive<ASTIdentifier>(column),
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
+        };
+
+        auto kind_presence_probe = [](UInt64 kind)
+        {
+            return makeASTFunction(
+                "countForEach",
+                makeASTFunction(
+                    "arrayMap",
+                    makeASTLambda({"k"}, makeASTFunction(
+                        "if",
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), make_intrusive<ASTLiteral>(static_cast<Float64>(kind))),
+                        make_intrusive<ASTLiteral>(UInt64{1}),
+                        make_intrusive<ASTLiteral>(Field{}))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+        };
+
+        ASTPtr aggregation_query;
+        {
+            SelectQueryBuilder builder;
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            ASTPtr new_group = transformGroupASTForAggregationOperator(
+                operator_node, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, argument.metric_name_dropped);
+            new_group->setAlias(ColumnNames::NewGroup);
+            builder.select_list.push_back(std::move(new_group));
+
+            builder.select_list.push_back(makeASTFunction(is_avg ? "avgForEach" : "sumForEach", masked(ColumnNames::Values, 0)));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            builder.select_list.push_back(makeASTFunction(
+                is_avg ? "timeSeriesHistogramAvgOverGroupForEach" : "timeSeriesHistogramSumOverGroupForEach",
+                masked(ColumnNames::HistogramValues, 1)));
+            builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+            builder.select_list.push_back(kind_presence_probe(0));
+            builder.select_list.back()->setAlias("floats_count");
+
+            builder.select_list.push_back(kind_presence_probe(1));
+            builder.select_list.back()->setAlias("histograms_count");
+
+            if (operator_node->by || operator_node->without)
+                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+            /// Drop empty-values rows (see the float path: countForEach([]) returns [] for an empty input).
+            builder.having = makeASTFunction(
+                "or",
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
+
+            aggregation_query = builder.getSelectQuery();
+        }
+
+        /// Step 2: the mixed-group drop and the `sample_kinds` derivation; then rename `new_group` back to `group`.
+        {
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
+
+            SelectQueryBuilder builder;
+            builder.from_table = context.subqueries.back().name;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+            builder.select_list.back()->setAlias(ColumnNames::Group);
+
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"f", "c"}, makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("c"), make_intrusive<ASTLiteral>(UInt64{0})),
+                    make_intrusive<ASTIdentifier>("f"),
+                    make_intrusive<ASTLiteral>(Field{}))),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTIdentifier>("histograms_count")));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"h", "c"}, makeASTFunction(
+                    "if",
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("c"), make_intrusive<ASTLiteral>(UInt64{0})),
+                    make_intrusive<ASTIdentifier>("h"),
+                    make_intrusive<ASTLiteral>(Field{}))),
+                make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues),
+                make_intrusive<ASTIdentifier>("floats_count")));
+            builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+            builder.select_list.push_back(makeASTFunction(
+                "arrayMap",
+                makeASTLambda({"f", "h", "fc", "hc"}, makeASTFunction(
+                    "if",
+                    makeASTFunction(
+                        "and",
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("hc"), make_intrusive<ASTLiteral>(UInt64{0})),
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("f"))),
+                    make_intrusive<ASTLiteral>(Float64{0}),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction(
+                            "and",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("fc"), make_intrusive<ASTLiteral>(UInt64{0})),
+                            makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("h"))),
+                        make_intrusive<ASTLiteral>(Float64{1}),
+                        make_intrusive<ASTLiteral>(Field{})))),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues),
+                make_intrusive<ASTIdentifier>("floats_count"),
+                make_intrusive<ASTIdentifier>("histograms_count")));
+            builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+
+            SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::HISTOGRAM_GRID};
+            res.select_query = builder.getSelectQuery();
+            res.start_time = argument.start_time;
+            res.end_time = argument.end_time;
+            res.step = argument.step;
+            res.metric_name_dropped = argument.metric_name_dropped;
+            return res;
+        }
+    }
 }
 
 
@@ -159,6 +296,11 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
     /// If the argument is empty then the result is also empty.
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+
+    /// `sum`/`avg` over a combined float+histogram grid aggregate each kind separately and drop mixed
+    /// groups; all other aggregation operators take the float arm via toVectorGrid.
+    if ((argument.store_method == StoreMethod::HISTOGRAM_GRID) && (operator_name == "sum" || operator_name == "avg"))
+        return applyHistogramGridAggregation(operator_node, std::move(argument), context);
 
     argument = toVectorGrid(std::move(argument), context);
 
@@ -186,10 +328,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-        /// Drop empty-values rows.
-        /// If the input has no rows then countForEach([]) returns [], but the number of values
-        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
-        /// so we just drop such rows.
+        /// Drop empty-values rows: `countForEach([])` returns `[]`, but the array length must match the step count (see StoreMethod::VECTOR_GRID).
         builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         aggregation_query = builder.getSelectQuery();

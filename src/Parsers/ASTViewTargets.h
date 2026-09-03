@@ -36,6 +36,9 @@ struct ViewTarget
         /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
         RecentSamples,
 
+        /// The optional "histograms" table of a TimeSeries table, contains native histogram samples.
+        Histograms,
+
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 

@@ -10,7 +10,16 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
+#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <algorithm>
+#include <fmt/core.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 
 namespace DB::ErrorCodes
@@ -24,6 +33,194 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// The sample kind of a float sample in a `sample_kinds` array (see StoreMethod::HISTOGRAM_GRID).
+    ASTPtr floatKind()
+    {
+        return make_intrusive<ASTLiteral>(Float64{0});
+    }
+
+    /// The sample kind of a histogram sample in a `sample_kinds` array.
+    ASTPtr histogramKind()
+    {
+        return make_intrusive<ASTLiteral>(Float64{1});
+    }
+
+    /// The `sample_kinds` arm of a HISTOGRAM_GRID-producing binary operator, derived from the two
+    /// result arms (exactly one of them is non-NULL at a kept time step; both NULL at a dropped one).
+    ASTPtr buildResultSampleKinds()
+    {
+        return makeASTFunction(
+            "arrayMap",
+            makeASTLambda({"v", "h"}, makeASTFunction(
+                "if",
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("v")),
+                floatKind(),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("h")),
+                    histogramKind(),
+                    make_intrusive<ASTLiteral>(Field{})))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values),
+            make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+    }
+
+    /// Applies a simple binary operator to a scalar and a combined float+histogram grid
+    /// (StoreMethod::HISTOGRAM_GRID); an outer query derives `sample_kinds` from the two arms.
+    SQLQueryPiece applyOperatorToHistogramGridAndScalar(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        SQLQueryPiece && scalar_argument,
+        SQLQueryPiece && vector_argument,
+        bool scalar_is_left,
+        ConverterContext & context,
+        const std::function<ASTPtr(ASTPtr, ASTPtr)> & apply_function_to_ast,
+        const SimpleBinaryOperatorHistogramArm & histogram_arm,
+        bool drop_metric_name)
+    {
+        chassert(vector_argument.store_method == StoreMethod::HISTOGRAM_GRID);
+
+        /// The per-step scalar value: one expression for CONST_SCALAR/SINGLE_SCALAR, or the `s`
+        /// iterator of the arrayMap for SCALAR_GRID.
+        ASTPtr scalar_value;
+        ASTPtr scalar_grid_array;
+        switch (scalar_argument.store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                scalar_value = timeSeriesScalarToAST(scalar_argument.scalar_value, context.scalar_data_type);
+                break;
+            }
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR});
+                /// Here assumeNotNull() is used because the scalar subquery converts its result to nullable.
+                scalar_value = makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(context.subqueries.back().name));
+                break;
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR});
+                scalar_grid_array = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                scalar_value = make_intrusive<ASTIdentifier>("s");
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "applyOperatorToHistogramGridAndScalar: Can't handle scalar argument {} because of its store method {}",
+                                getPromQLText(scalar_argument, context), scalar_argument.store_method);
+            }
+        }
+
+        ASTs float_lambda_args = {make_intrusive<ASTIdentifier>("v"), make_intrusive<ASTIdentifier>("k")};
+        ASTs histogram_lambda_args = {make_intrusive<ASTIdentifier>("h"), make_intrusive<ASTIdentifier>("k")};
+        if (scalar_grid_array)
+        {
+            float_lambda_args.push_back(make_intrusive<ASTIdentifier>("s"));
+            histogram_lambda_args.push_back(make_intrusive<ASTIdentifier>("s"));
+        }
+
+        ASTPtr left_value = scalar_is_left ? scalar_value : static_cast<ASTPtr>(make_intrusive<ASTIdentifier>("v"));
+        ASTPtr right_value = scalar_is_left ? static_cast<ASTPtr>(make_intrusive<ASTIdentifier>("v")) : scalar_value;
+
+        SimpleBinaryOperatorHistogramArm::Input arm_input;
+        arm_input.left_value = left_value;
+        arm_input.right_value = right_value;
+        if (scalar_is_left)
+        {
+            arm_input.left_histogram = make_intrusive<ASTLiteral>(Field{});
+            arm_input.left_kind = floatKind();
+            arm_input.right_histogram = make_intrusive<ASTIdentifier>("h");
+            arm_input.right_kind = make_intrusive<ASTIdentifier>("k");
+        }
+        else
+        {
+            arm_input.left_histogram = make_intrusive<ASTIdentifier>("h");
+            arm_input.left_kind = make_intrusive<ASTIdentifier>("k");
+            arm_input.right_histogram = make_intrusive<ASTLiteral>(Field{});
+            arm_input.right_kind = floatKind();
+        }
+        arm_input.left_is_scalar = scalar_is_left;
+        arm_input.right_is_scalar = !scalar_is_left;
+
+        ASTPtr inner_query;
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+            /// The float arm: the scalar combined with the grid's float samples (kind 0).
+            ASTs float_sources = {
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)};
+            if (scalar_grid_array)
+                float_sources.push_back(scalar_grid_array);
+
+            auto float_lambda = makeASTFunction("tuple");
+            float_lambda->arguments->children = std::move(float_lambda_args);
+            auto float_array_map = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    std::move(float_lambda),
+                    makeASTFunction(
+                        "if",
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), floatKind()),
+                        apply_function_to_ast(std::move(left_value), std::move(right_value)),
+                        make_intrusive<ASTLiteral>(Field{}))));
+            float_array_map->arguments->children.insert(float_array_map->arguments->children.end(), float_sources.begin(), float_sources.end());
+            builder.select_list.push_back(std::move(float_array_map));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            /// The histogram arm (or NULL at time steps where the operation is not allowed).
+            ASTs histogram_sources = {
+                make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues),
+                make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)};
+            if (scalar_grid_array)
+                histogram_sources.push_back(scalar_grid_array);
+
+            auto histogram_lambda = makeASTFunction("tuple");
+            histogram_lambda->arguments->children = std::move(histogram_lambda_args);
+            auto histogram_array_map = makeASTFunction(
+                "arrayMap",
+                makeASTFunction("lambda", std::move(histogram_lambda), histogram_arm.build_histogram_values_arm(arm_input)));
+            histogram_array_map->arguments->children.insert(
+                histogram_array_map->arguments->children.end(), histogram_sources.begin(), histogram_sources.end());
+            builder.select_list.push_back(std::move(histogram_array_map));
+            builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_argument.select_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            inner_query = builder.getSelectQuery();
+        }
+
+        /// The outer query derives `sample_kinds` from the two arms.
+        {
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+            builder.select_list.push_back(buildResultSampleKinds());
+            builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(inner_query), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::HISTOGRAM_GRID};
+            res.select_query = builder.getSelectQuery();
+            res.start_time = vector_argument.start_time;
+            res.end_time = vector_argument.end_time;
+            res.step = vector_argument.step;
+            res.metric_name_dropped = vector_argument.metric_name_dropped;
+
+            if (drop_metric_name)
+                res = dropMetricName(std::move(res), context);
+
+            return res;
+        }
+    }
+
     void checkVectorMatching(
         const PrometheusQueryTree::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
@@ -70,7 +267,8 @@ namespace
         ConverterContext & context,
         std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
         bool drop_metric_name,
-        bool allow_grouping_modifier_copy_metric_name)
+        bool allow_grouping_modifier_copy_metric_name,
+        const SimpleBinaryOperatorHistogramArm * histogram_arm = nullptr)
     {
         /// If one of the arguments is empty then the result is also empty.
         if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
@@ -78,14 +276,20 @@ namespace
             return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
         }
 
+        /// The histogram mode: at least one side is a combined float+histogram grid (see SimpleBinaryOperatorHistogramArm).
+        const bool with_histograms = histogram_arm
+            && ((left_argument.store_method == StoreMethod::HISTOGRAM_GRID) || (right_argument.store_method == StoreMethod::HISTOGRAM_GRID));
+
         String sides[2];
 
-        left_argument = toVectorGrid(std::move(left_argument), context);
+        if (left_argument.store_method != StoreMethod::HISTOGRAM_GRID)
+            left_argument = toVectorGrid(std::move(left_argument), context);
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
         sides[0] = context.subqueries.back().name;
         String & left = sides[0];
 
-        right_argument = toVectorGrid(std::move(right_argument), context);
+        if (right_argument.store_method != StoreMethod::HISTOGRAM_GRID)
+            right_argument = toVectorGrid(std::move(right_argument), context);
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
         sides[1] = context.subqueries.back().name;
         String & right = sides[1];
@@ -94,22 +298,8 @@ namespace
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
 
-        /// Step 1:
-        /// new_left:
-        /// SELECT group AS original_group,
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-        ///        values
-        /// FROM left
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
-        ///
-        /// Step 2:
-        /// new_right:
-        /// SELECT group AS original_group,
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-        ///        values
-        /// FROM right
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
-        ///
+        /// Steps 1-2: each side selects `group` AS `original_group`, the join key AS `join_group`, and `values`
+        /// (with a `timeSeriesThrowDuplicateSeriesIf` duplicate check on side "one").
         bool metric_name_dropped_from_join_group = false;
 
         for (auto & side : sides)
@@ -119,9 +309,8 @@ namespace
             bool metric_name_dropped_from_group = (side == left) ? left_argument.metric_name_dropped : right_argument.metric_name_dropped;
             bool metric_name_dropped_from_join_group_on_side = metric_name_dropped_from_group;
 
-            /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
-            /// have different metric names (e.g., `foo` and `bar`), so keeping `__name__` in the join key
-            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTForBinaryOperator.
+            /// `join_group` is always computed with `drop_metric_name = true` because the sides usually have different
+            /// metric names; the exception is `on(__name__, ...)`, handled inside `transformGroupASTForBinaryOperator`.
             ASTPtr join_group = transformGroupASTForBinaryOperator(
                 operator_node,
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
@@ -131,9 +320,7 @@ namespace
             /// If the metric name has dropped from the `join_group` either on left or on right then it's dropped.
             metric_name_dropped_from_join_group |= metric_name_dropped_from_join_group_on_side;
 
-            /// If neither group_left not group_right is specified then it's one-to-one match.
-            /// If there is group_left then it's many-to-one match.
-            /// If there is group_right then it's one-to-many match.
+            /// Cardinality: one-to-one without modifiers, many-to-one with `group_left`, one-to-many with `group_right`.
             bool group_on_side = (side == left) ? group_left : group_right;
 
             /// If `join_group` is the same as `group` then we already know it's unique.
@@ -157,6 +344,47 @@ namespace
             }
             builder.select_list.push_back(std::move(values));
 
+            if (with_histograms)
+            {
+                const bool side_has_histograms = ((side == left) ? left_argument : right_argument).store_method == StoreMethod::HISTOGRAM_GRID;
+
+                ASTPtr histogram_values;
+                ASTPtr sample_kinds;
+                if (side_has_histograms)
+                {
+                    histogram_values = make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues);
+                    sample_kinds = make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds);
+                }
+                else
+                {
+                    /// A plain float side: an all-NULL histogram arm, and kind 0 at float-sample steps.
+                    histogram_values = makeASTFunction(
+                        "arrayResize",
+                        makeASTFunction(
+                            "CAST",
+                            make_intrusive<ASTLiteral>(Array{}),
+                            make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", getTimeSeriesHistogramPayloadTupleType()->getName()))),
+                        makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                    sample_kinds = makeASTFunction(
+                        "arrayMap",
+                        makeASTLambda({"x"}, makeASTFunction(
+                            "if",
+                            makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
+                            floatKind(),
+                            make_intrusive<ASTLiteral>(Field{}))),
+                        make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                }
+
+                if (check_side_one)
+                {
+                    histogram_values = makeASTFunction("any", std::move(histogram_values));
+                    histogram_values->setAlias(ColumnNames::HistogramValues);
+                    sample_kinds = makeASTFunction("any", std::move(sample_kinds));
+                    sample_kinds->setAlias(ColumnNames::SampleKinds);
+                }
+                builder.select_list.push_back(std::move(histogram_values));
+                builder.select_list.push_back(std::move(sample_kinds));
+            }
             builder.from_table = side;
 
             if (check_side_one)
@@ -179,21 +407,8 @@ namespace
             side = context.subqueries.back().name;
         }
 
-        /// Step 3:
-        /// if without grouping:
-        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS group,
-        ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
-        /// FROM left INNER ANY JOIN right
-        /// ON left.join_group = right.join_group
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
-        ///
-        /// if with group_left/group_right:
-        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.original_group, extra_labels) AS group,
-        ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
-        /// FROM left LEFT/RIGHT SEMI JOIN right
-        /// ON left.join_group = right.join_group
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
-        ///
+        /// Step 3: join the sides on `join_group` (INNER ANY without grouping; LEFT/RIGHT SEMI with `group_left`/`group_right`,
+        /// copying `side_one` tags via `timeSeriesCopyTags`) and combine values with `arrayMap(x, y -> f(x, y), ...)`.
         ASTPtr result_ast;
         bool metric_name_dropped_from_result = false;
         {
@@ -217,12 +432,8 @@ namespace
                 /// the metric name `__name__` should be preserved in the result but it has already been dropped from `join_group`.
                 if (!drop_metric_name && !left_argument.metric_name_dropped && metric_name_dropped_from_join_group)
                 {
-                    /// Example 1. `foo == ignoring(size) bar`
-                    /// - here the result should have only `size` removed, but `join_group` has both `size` and `__name__` removed,
-                    /// so we have to recompute it from the `original_group` by removing only `size`.
-                    /// Example 2. `foo == bar`
-                    /// - here the result should have all the tags of `foo`, but `join_group` has `__name__` removed,
-                    /// so we take the original group from the left argument.
+                    /// E.g. `foo == ignoring(size) bar` must drop only `size`, and `foo == bar` must keep all of `foo`'s tags,
+                    /// but `join_group` also has `__name__` removed, so recompute the group from `original_group`.
                     can_use_join_group_in_result = false;
                 }
 
@@ -252,9 +463,7 @@ namespace
                     check_no_duplicate_groups = true;
                 }
 
-                /// We look for one-to-one matches.
-                /// We've already made sure that values of `join_group` are unique on both sides,
-                /// so INNER ANY JOIN is good here.
+                /// One-to-one matches: `join_group` is unique on both sides, so INNER ANY JOIN is good here.
             }
             else
             {
@@ -335,20 +544,72 @@ namespace
             builder.select_list.push_back(std::move(new_group));
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
-            ASTPtr values = makeASTFunction(
-                "arrayMap",
-                makeASTFunction(
-                    "lambda",
-                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
-                    apply_function_to_ast(make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
-                make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
-                make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}));
+            ASTPtr values;
+            ASTPtr histogram_values;
+            if (!with_histograms)
+            {
+                values = makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                        apply_function_to_ast(make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}));
+            }
+            else
+            {
+                /// The float arm: both sides resolved to a float sample (kind 0) at this time step.
+                values = makeASTFunction(
+                    "arrayMap",
+                    makeASTLambda({"x", "k", "y", "m"}, makeASTFunction(
+                        "if",
+                        makeASTFunction(
+                            "and",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("k"), floatKind()),
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("m"), floatKind())),
+                        apply_function_to_ast(make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                        make_intrusive<ASTLiteral>(Field{}))),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SampleKinds}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::SampleKinds}));
+
+                /// The histogram arm (NULL at time steps where the operation is not allowed for the kind combination).
+                SimpleBinaryOperatorHistogramArm::Input arm_input;
+                arm_input.left_value = make_intrusive<ASTIdentifier>("x");
+                arm_input.left_histogram = make_intrusive<ASTIdentifier>("h");
+                arm_input.left_kind = make_intrusive<ASTIdentifier>("k");
+                arm_input.right_value = make_intrusive<ASTIdentifier>("y");
+                arm_input.right_histogram = make_intrusive<ASTIdentifier>("g");
+                arm_input.right_kind = make_intrusive<ASTIdentifier>("m");
+
+                histogram_values = makeASTFunction(
+                    "arrayMap",
+                    makeASTLambda({"h", "k", "g", "m", "x", "y"}, histogram_arm->build_histogram_values_arm(arm_input)),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::HistogramValues}),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SampleKinds}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::HistogramValues}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::SampleKinds}),
+                    make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+                    make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}));
+            }
 
             if (check_no_duplicate_groups)
+            {
                 values = makeASTFunction("any", std::move(values));
+                if (histogram_values)
+                    histogram_values = makeASTFunction("any", std::move(histogram_values));
+            }
 
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            if (histogram_values)
+            {
+                builder.select_list.push_back(std::move(histogram_values));
+                builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+            }
 
             builder.from_table = left;
 
@@ -377,7 +638,24 @@ namespace
             result_ast = builder.getSelectQuery();
         }
 
-        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
+        if (with_histograms)
+        {
+            /// The outer query derives `sample_kinds` from the two arms.
+            SelectQueryBuilder builder;
+
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+            builder.select_list.push_back(buildResultSampleKinds());
+            builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result_ast), SQLSubqueryType::TABLE});
+            builder.from_table = context.subqueries.back().name;
+
+            result_ast = builder.getSelectQuery();
+        }
+
+        SQLQueryPiece res{operator_node, operator_node->result_type, with_histograms ? StoreMethod::HISTOGRAM_GRID : StoreMethod::VECTOR_GRID};
 
         res.select_query = std::move(result_ast);
         res.start_time = left_argument.start_time;
@@ -397,13 +675,43 @@ SQLQueryPiece applySimpleBinaryOperator(
     ConverterContext & context,
     std::function<ASTPtr(ASTPtr, ASTPtr)> apply_function_to_ast,
     bool drop_metric_name,
-    bool allow_grouping_modifier_copy_metric_name)
+    bool allow_grouping_modifier_copy_metric_name,
+    const SimpleBinaryOperatorHistogramArm * histogram_arm)
 {
     checkVectorMatching(operator_node, left_argument, right_argument);
 
     if ((left_argument.type == ResultType::SCALAR) || (right_argument.type == ResultType::SCALAR))
     {
         /// At least one operand is scalar.
+        if (histogram_arm
+            && ((left_argument.store_method == StoreMethod::HISTOGRAM_GRID) || (right_argument.store_method == StoreMethod::HISTOGRAM_GRID))
+            && (left_argument.store_method != StoreMethod::EMPTY) && (right_argument.store_method != StoreMethod::EMPTY))
+        {
+            /// A scalar combined with a combined float+histogram grid.
+            const bool scalar_is_left = (left_argument.type == ResultType::SCALAR);
+            /// The scalar goes to the first argument and the vector to the second; spell the two cases out
+            /// so each argument is moved in exactly one place (the correlated ternaries moved both twice).
+            if (scalar_is_left)
+                return applyOperatorToHistogramGridAndScalar(
+                    operator_node,
+                    std::move(left_argument),
+                    std::move(right_argument),
+                    true,
+                    context,
+                    apply_function_to_ast,
+                    *histogram_arm,
+                    drop_metric_name);
+            return applyOperatorToHistogramGridAndScalar(
+                operator_node,
+                std::move(right_argument),
+                std::move(left_argument),
+                false,
+                context,
+                apply_function_to_ast,
+                *histogram_arm,
+                drop_metric_name);
+        }
+
         return applyOperatorToScalarsOrVectorAndScalar(
             operator_node, std::move(left_argument), std::move(right_argument), context, apply_function_to_ast, drop_metric_name);
     }
@@ -418,7 +726,8 @@ SQLQueryPiece applySimpleBinaryOperator(
         context,
         apply_function_to_ast,
         drop_metric_name,
-        allow_grouping_modifier_copy_metric_name);
+        allow_grouping_modifier_copy_metric_name,
+        histogram_arm);
 }
 
 }

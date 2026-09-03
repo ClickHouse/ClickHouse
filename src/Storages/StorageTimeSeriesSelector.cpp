@@ -32,6 +32,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
@@ -55,10 +56,7 @@ namespace
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
     const auto value = evaluateConstantExpressionAsColumn(arg, context);
-    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
-    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
-    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
-    /// NULL value as before.
+    /// Accept `Nullable`/`LowCardinality` wrappers (the previous `Field`-based code flattened them via `operator[]`), but still reject NULL.
     if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
     if (value.isNull())
@@ -82,9 +80,9 @@ namespace Setting
     extern const SettingsBool time_series_prefer_recent_samples_table;
 }
 
-StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
+StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context, ViewTarget::Kind data_target)
 {
-    std::string_view function_name = "timeSeriesSelector";
+    std::string_view function_name = (data_target == ViewTarget::Histograms) ? "timeSeriesHistogramSelector" : "timeSeriesSelector";
 
     size_t min_num_args = 4;
     size_t max_num_args = 5;
@@ -139,6 +137,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
+    if ((data_target == ViewTarget::Histograms) && !time_series_storage->hasTarget(ViewTarget::Histograms))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{}' requires a TimeSeries table with a histograms target, but table {} has none",
+                        function_name, time_series_storage_id.getNameForLogs());
+
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
@@ -156,6 +159,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.id_data_type = std::move(id_data_type);
     config.timestamp_data_type = std::move(timestamp_data_type);
     config.scalar_data_type = std::move(scalar_data_type);
+    config.data_target = data_target;
+    config.data_columns = (data_target == ViewTarget::Histograms)
+        ? getTimeSeriesHistogramPayloadColumns()
+        : NamesAndTypes{{TimeSeriesColumnNames::Value, config.scalar_data_type}};
     config.selector = std::move(selector);
     config.min_time = min_time;
     config.max_time = max_time;
@@ -203,7 +210,7 @@ namespace
         if (it != column_name_by_tag_name.end())
             return make_intrusive<ASTIdentifier>(it->second);
 
-        /// arrayElement() can be used to extract a value from a Map too.
+        /// `arrayElement` can be used to extract a value from a Map too.
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
@@ -225,8 +232,10 @@ namespace
         String value = matcher.label_value;
         if (add_anchors)
         {
+            /// PromQL regex matchers are fully anchored; anchor with an explicit group so alternations stay grouped (`^a|b$` would mean `(^a)|(b$)`).
+            /// Already-anchored patterns are left as-is.
             if (!value.starts_with('^'))
-                value = '^' + value;
+                value = "^(" + value + ")";
             if (!value.ends_with('$'))
                 value += '$';
         }
@@ -345,13 +354,8 @@ namespace
     {
         ASTs conditions;
 
-        /// Emit the timestamp range BEFORE the `id IN <set>` condition: on the default schema
-        /// (ORDER BY (id, timestamp)) primary-key pruning already returns mostly granules of matched
-        /// series, so the `id IN <set>` check passes almost all read rows, while the timestamp range
-        /// is the selective condition (e.g. a few rows per 32768-row granule for a short lookback).
-        /// The PREWHERE optimizer keeps this order whenever its selectivity estimation is inconclusive,
-        /// and running the cheap timestamp comparison before the hash-set probe of `in` significantly
-        /// reduces the scan CPU of short-window selectors.
+        /// Emit the timestamp range BEFORE `id IN <set>`: after primary-key pruning the set check passes almost all rows, while the
+        /// timestamp range is the selective condition; the PREWHERE optimizer keeps this order when its selectivity estimation is inconclusive.
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -370,11 +374,8 @@ namespace
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
-        /// For a whole-metric selector over a metric-clustered id layout two more conditions are
-        /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
-        /// hash(metric_name), max). They are a superset of the `id IN <set>` condition above, so
-        /// the returned rows do not change; their purpose is to give the primary-key index
-        /// analysis a continuous key range instead of the large set (see readImpl).
+        /// For a whole-metric selector over a metric-clustered id layout, add range conditions on the raw `id` column:
+        /// a superset of `id IN <set>` giving primary-key analysis a continuous key range instead of the large set (see `readImpl`).
         for (auto & condition : whole_metric_id_range_conditions)
             conditions.push_back(std::move(condition));
 
@@ -386,25 +387,21 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
+                                        const NamesAndTypes & data_columns,
                                         ASTs whole_metric_id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT id, timestamp, value
-        ///
-        /// The columns are read as is, without casts to the data types declared by this storage.
-        /// A cast aliased in the SELECT list (e.g. `toDateTime64(timestamp, 3) AS timestamp`) would
-        /// shadow the raw column, and the WHERE conditions below would wrap the primary key
-        /// columns, degrading the index analysis and the ordering of the PREWHERE conditions.
-        /// The casts to the declared types are applied by an outer SELECT instead
-        /// (see `makeSelectQuery`).
+        /// SELECT id, timestamp, <data columns> — read as is, without casts: an aliased cast would shadow the raw column and wrap the
+        /// primary key columns in the WHERE, degrading index analysis; casts are applied by the outer SELECT instead (see `makeSelectQuery`).
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            for (const auto & [name, type] : data_columns)
+                select_list.push_back(make_intrusive<ASTIdentifier>(name));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -424,10 +421,8 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (timestamp >= min_time) AND (timestamp <= max_time) AND (id IN <select_query_from_tags_table>)
-        ///
-        /// where <select_query_from_tags_table> is roughly:
-        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
+        /// WHERE (timestamp >= min_time) AND (timestamp <= max_time) AND (id IN <select_query_from_tags_table>),
+        /// where <select_query_from_tags_table> is roughly SELECT timeSeriesStoreTags(...) FROM tags_table WHERE <matchers>.
         {
             auto where_filter = makeWhereFilterForDataTable(
                 select_query_from_tags_table, min_time, max_time, timestamp_data_type, std::move(whole_metric_id_range_conditions));
@@ -445,24 +440,12 @@ namespace
         return select_with_union_query;
     }
 
-    /// Makes the final select query by wrapping the select query from the data table into an outer
-    /// SELECT which casts the columns to the data types expected by this storage:
-    ///
-    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
-    /// FROM (select_query_from_data_table)
-    ///
-    /// The inner query reads the samples table columns as is (see makeSelectQueryFromDataTable()),
-    /// so its result types are the physical column types, which can differ from the expected ones
-    /// (e.g. a samples table can store `timestamp` with a different timezone). Casting in an outer
-    /// SELECT keeps the WHERE conditions of the inner query on the bare primary key columns, and
-    /// the casts run only for the rows which passed the filter. The internal `_CAST` is used here
-    /// because it returns exactly the specified type (`CAST` and conversion functions like
-    /// `toDateTime64` keep the timezone of the casted expression), and it is free when the type
-    /// already matches.
+    /// Makes the final select query by wrapping the data-table query in an outer SELECT that casts columns to the types expected by this storage.
+    /// `_CAST` returns exactly the specified type (unlike `CAST`/`toDateTime64`, which keep the timezone) and is free when the type already matches.
     ASTPtr makeSelectQuery(ASTPtr select_query_from_data_table,
                            const DataTypePtr & id_data_type,
                            const DataTypePtr & timestamp_data_type,
-                           const DataTypePtr & scalar_data_type)
+                           const NamesAndTypes & data_columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -481,9 +464,12 @@ namespace
                 make_intrusive<ASTLiteral>(timestamp_data_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
 
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(scalar_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            for (const auto & [name, type] : data_columns)
+            {
+                select_list.push_back(makeASTFunction(
+                    "_CAST", make_intrusive<ASTIdentifier>(name), make_intrusive<ASTLiteral>(type->getName())));
+                select_list.back()->setAlias(name);
+            }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -579,35 +565,8 @@ namespace
             substituteMetricNameInPlace(child, metric_name_value);
     }
 
-    /// Checks whether the selector can carry a primary-key range on the samples table's `id`
-    /// column covering the whole metric, and makes the two range conditions if it can.
-    ///
-    /// With the canonical id generator for a two-component id type `Tuple(F, S)` (see
-    /// `TimeSeriesIDGenerator::getDefault`) the first id component is a hash of the metric name
-    /// alone, so all series of one metric occupy one continuous range of the samples table's
-    /// primary key: tuple(hash(metric_name), min_S) <= id <= tuple(hash(metric_name), max_S).
-    /// When additionally the selector's matchers select ALL (time-eligible) series of the metric
-    /// - the dominant shape of dashboard and recording-rule queries - the large `id IN <set>`
-    /// condition adds nothing to primary-key index analysis over that range, while costing a
-    /// generic exclusion search over the set (hundreds of milliseconds per part per query for
-    /// tens of thousands of series, single-threaded). The range conditions returned here select
-    /// the same granules through the cheap continuous-range path.
-    ///
-    /// The decision is advisory with respect to correctness: the returned range is a SUPERSET of
-    /// the resolved id set (verified over the existing series by the probe below and guaranteed
-    /// for future inserts by the id generator), and the `id IN <set>` condition is kept in the
-    /// WHERE for exact row-level filtering. Any rows a hash collision could add to the range are
-    /// still rejected row-by-row.
-    ///
-    /// Returns an empty list (= emit today's SQL) unless ALL of the following hold:
-    /// 1. The matchers contain exactly one EQ matcher on `__name__` with a non-empty value.
-    /// 2. The id type is a two-component tuple of types supported by `TimeSeriesIDGenerator`,
-    ///    and the id generator used by the table is the canonical one for that type (a custom
-    ///    generator gives no metric clustering).
-    /// 3. The samples table physically stores `id` with exactly this type.
-    /// 4. A probe query on the tags table finds NO time-eligible series of the metric that either
-    ///    fails the remaining matchers (the matcher does not select the whole metric) or has an
-    ///    id outside the range (rows written before an `ALTER ... MODIFY SETTING id_generator`).
+    /// Returns two primary-key range conditions covering a whole metric's continuous `id` range (canonical two-component id, see `TimeSeriesIDGenerator::getDefault`) — a SUPERSET of the kept `id IN <set>` filter.
+    /// Empty unless: one EQ `__name__` matcher, canonical generator, matching physical `id` type, and a tags-table probe finds no contradicting series.
     ASTs tryMakeWholeMetricIDRangeConditions(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
@@ -658,11 +617,8 @@ namespace
         if (!data_table_id_column || (data_table_id_column->type->getName() != id_data_type->getName()))
             return {};
 
-        /// 2b. The id generator is the canonical one for this id type. The resolution order mirrors
-        /// `TimeSeriesSink`: the `id_generator` setting, then the DEFAULT of the tags-table `id`
-        /// column, then the canonical generator.
-        /// `getDefault` cannot throw here: two-component tuples of the types accepted above are
-        /// exactly the tuple types it supports.
+        /// 2b. The id generator is the canonical one for this id type (resolution order mirrors `TimeSeriesSink`: the `id_generator` setting, then the tags-table `id` DEFAULT, then canonical).
+        /// `getDefault` cannot throw here: two-component tuples of the accepted types are exactly what it supports.
         ASTPtr canonical_generator = TimeSeriesIDGenerator::getDefault(id_data_type, time_series_storage_id);
         ASTPtr id_generator = time_series_settings[TimeSeriesSetting::id_generator].value;
         if (!id_generator)
@@ -673,25 +629,13 @@ namespace
         if (id_generator && (id_generator->getTreeHash(/*ignore_aliases=*/true) != canonical_generator->getTreeHash(/*ignore_aliases=*/true)))
             return {};
 
-        /// The first id component for this metric, e.g. sipHash64('my_metric'), as a constant
-        /// expression: the canonical generator's first tuple element with `metric_name` replaced
-        /// by the metric name literal.
+        /// The first id component for this metric, e.g. sipHash64('my_metric'), as a constant expression:
+        /// the canonical generator's first tuple element with `metric_name` replaced by the metric name literal.
         ASTPtr first_component = canonical_generator->as<ASTFunction &>().arguments->children.at(0)->clone();
         substituteMetricNameInPlace(first_component, metric_name);
 
-        /// 4. The probe: find one time-eligible series of the metric that contradicts the range
-        /// emission, i.e. fails the remaining matchers or does not hash into the range.
-        ///
-        ///     SELECT 1 FROM tags_table
-        ///     WHERE <__name__ matcher and the same time conditions as the tags subquery>
-        ///       AND (NOT (<other matchers>) OR tupleElement(id, 1) != <first_component>)
-        ///     LIMIT 1
-        ///
-        /// One such series means the id set is not the whole metric's primary-key range: fall back.
-        /// No such series means every series the tags subquery can select lies in the range. The
-        /// probe result cannot be raced into incorrectness: series inserted after the probe get
-        /// their ids from the current (canonical) generator, so they stay inside the range, and
-        /// the `id IN <set>` condition keeps doing the exact row-level filtering either way.
+        /// 4. The probe (SELECT 1 FROM tags_table ... LIMIT 1): find one time-eligible series of the metric failing the remaining matchers or hashing outside the range.
+        /// One such series means fall back; none means the range is safe — later inserts use the canonical generator and stay in range, and `id IN <set>` filters exactly either way.
         {
             ASTPtr counterexample = makeASTFunction(
                 "notEquals",
@@ -754,10 +698,8 @@ namespace
             }
             catch (...)
             {
-                /// The probe only chooses between two emissions with identical results; an error
-                /// here must not fail a query that works without this optimization (and an error
-                /// the main query would also hit, e.g. a missing access right on the tags table,
-                /// still surfaces when the main query runs the tags subquery).
+                /// The probe only chooses between two emissions with identical results; an error here must not fail a query that works
+                /// without this optimization (errors the main query would also hit still surface when it runs the tags subquery).
                 LOG_DEBUG(log, "Keeping the id set condition for index analysis: the whole-metric probe failed with {}", getCurrentExceptionMessage(false));
                 return {};
             }
@@ -821,9 +763,11 @@ void StorageTimeSeriesSelector::readImpl(
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
-    auto samples_table_kind = ViewTarget::Samples;
+    /// Histogram reads always go to their own target table.
+    auto data_table_kind = config.data_target;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
-    if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
+    if ((data_table_kind == ViewTarget::Samples) && recent_samples_ttl_seconds
+        && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
         /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
         static constexpr Int64 safety_margin_seconds = 60;
@@ -834,13 +778,13 @@ void StorageTimeSeriesSelector::readImpl(
         if ((config.min_time.value >= min_guaranteed_time)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
-            samples_table_kind = ViewTarget::RecentSamples;
+            data_table_kind = ViewTarget::RecentSamples;
             LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
                       quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
         }
     }
 
-    auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
+    auto data_table_id = time_series_storage->getTargetTableID(data_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
@@ -857,14 +801,14 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
-    auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
+    auto data_table_metadata = time_series_storage->getTargetTable(data_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
         matchers,
         column_name_by_tag_name,
-        samples_table_id,
-        samples_table_metadata->getColumns(),
+        data_table_id,
+        data_table_metadata->getColumns(),
         tags_table_id,
         tags_table_metadata->getColumns(),
         *time_series_settings,
@@ -901,18 +845,19 @@ void StorageTimeSeriesSelector::readImpl(
     }
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
-        samples_table_id,
+        data_table_id,
         select_query_from_tags_table,
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
+        config.data_columns,
         std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type);
+        config.data_columns);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());

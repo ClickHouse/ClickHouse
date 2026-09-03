@@ -1,0 +1,14 @@
+-- last_over_time over a subquery, instant, native histogram: the inner grid at -120..120 step 60
+-- resolves to [NULL,NULL,NULL,h@60,h@120]; the outer window [-180,120] picks h@120
+[('__name__','nh'),('job','sub')]	1970-01-01 00:02:00.000	\N	(0,-53,0,8,21,0,[(0,3)],[0,2,6],[],[],[1,2,4])
+-- last_over_time over a subquery, instant, float arm: 2.5 at t=120 (this threw before the fix)
+[('__name__','f'),('job','sub')]	1970-01-01 00:02:00.000	2.5	\N
+-- last_over_time over a subquery, range query: every outer step resamples the inner grid,
+-- and the inner matrix is NOT leaked on the inner steps (the silent-corruption case before the fix)
+[('__name__','nh'),('job','sub')]	[]	[('1970-01-01 00:02:00.000',(0,-53,0,8,21,0,[(0,3)],[0,2,6],[],[],[1,2,4])),('1970-01-01 00:03:00.000',(0,-53,0,8,21,0,[(0,3)],[0,2,6],[],[],[1,2,4])),('1970-01-01 00:04:00.000',(0,-53,0,8,21,0,[(0,3)],[0,2,6],[],[],[1,2,4]))]
+-- histogram_count over a native series plus a float-only series with the same labels: the float-only
+-- series is skipped (upstream semantics), so the `__name__` drop sees no duplicate series
+[('job','dup')]	1970-01-01 00:02:00.000	8
+-- histogram_count over two float-only series: both are skipped, empty result (this threw before the fix)
+-- histogram_quantile over the same colliding selector (its applier had the filter from the start)
+[('job','dup')]	1970-01-01 00:02:00.000	2.6666666666666665

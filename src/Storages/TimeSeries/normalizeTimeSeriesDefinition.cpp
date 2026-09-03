@@ -38,6 +38,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <base/EnumReflection.h>
 #include <unordered_set>
 
@@ -54,6 +55,8 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_native_histograms;
+    extern const TimeSeriesSettingsUInt64 histograms_index_granularity;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
 }
@@ -104,6 +107,15 @@ namespace
     bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
     {
         return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+    }
+
+    /// The "histograms" target is optional: it exists when the CREATE query mentions it explicitly
+    /// or enables it with the `store_native_histograms` setting.
+    bool hasHistogramsTarget(const ASTCreateQuery & create_query, const TimeSeriesSettings & settings)
+    {
+        if (create_query.targets && create_query.targets->tryGetTarget(ViewTarget::Histograms))
+            return true;
+        return settings[TimeSeriesSetting::store_native_histograms];
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -534,6 +546,21 @@ namespace
                 break;
             }
 
+            case ViewTarget::Histograms:
+            {
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
+
+                /// Same codec rationale as the samples table's `timestamp` column above.
+                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
+                    timestamp_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
+
+                for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                    add_column_if_missing(name, dataTypeToAST(type));
+
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -832,9 +859,10 @@ namespace
         {
             case ViewTarget::Samples:
             case ViewTarget::RecentSamples:
+            case ViewTarget::Histograms:
             {
-                /// The recent samples table gets the same generated engine as the samples table; it becomes
-                /// partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
+                /// The recent samples and histograms tables get the same generated engine as the samples table;
+                /// recent samples become partitioned and TTL'd later (see applyInnerEnginePartitionBy and applyRecentSamplesTTL).
                 auto engine = makeASTFunction(fmt::format("{}MergeTree", getInnerEngineFamilyPrefix(target_kind, context)));
                 engine->setNoEmptyArgs(false);
                 storage->set(storage->engine, engine);
@@ -901,14 +929,16 @@ namespace
         const auto & engine_name = storage.engine->name;
 
         /// The `*_index_granularity` settings set `index_granularity` of the inner MergeTree tables, overriding the engine declaration.
-        if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags || kind == ViewTarget::RecentSamples)
+        if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags || kind == ViewTarget::RecentSamples || kind == ViewTarget::Histograms)
             && engine_name.ends_with("MergeTree"))
         {
             const auto & index_granularity = settings[(kind == ViewTarget::Samples)
                 ? TimeSeriesSetting::samples_index_granularity
                 : ((kind == ViewTarget::Tags)
                     ? TimeSeriesSetting::tags_index_granularity
-                    : TimeSeriesSetting::recent_samples_index_granularity)];
+                    : ((kind == ViewTarget::RecentSamples)
+                        ? TimeSeriesSetting::recent_samples_index_granularity
+                        : TimeSeriesSetting::histograms_index_granularity))];
             if (index_granularity.isChanged() || !hasEngineSetting(storage, "index_granularity"))
                 setEngineSettings(storage, "index_granularity", Field(index_granularity.value));
         }
@@ -1148,6 +1178,15 @@ namespace
                 break;
             }
 
+            case ViewTarget::Histograms:
+            {
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
+                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                    check_column_type(name, type);
+                break;
+            }
+
             default:
                 UNREACHABLE();
         }
@@ -1189,7 +1228,10 @@ namespace
         }
 
         /// Copy inner columns and inner engines from the other table.
-        for (auto kind : getTargetKinds())
+        constexpr auto base_kinds = getTargetKinds();
+        std::vector<ViewTarget::Kind> kinds_with_histograms(base_kinds.begin(), base_kinds.end());
+        kinds_with_histograms.push_back(ViewTarget::Histograms);
+        for (auto kind : kinds_with_histograms)
         {
             if (!hasInnerColumns(create_query, kind))
             {
@@ -1212,7 +1254,7 @@ namespace
     }
 
     /// Generates the canonical column list for the TimeSeries table from the resolved types.
-    ColumnsDescription generateTimeSeriesColumns(const DataTypePtr & timestamp_type, const DataTypePtr & scalar_type)
+    ColumnsDescription generateTimeSeriesColumns(const DataTypePtr & timestamp_type, const DataTypePtr & scalar_type, bool with_histograms)
     {
         ColumnsDescription result;
 
@@ -1228,6 +1270,9 @@ namespace
 
         add_column(TimeSeriesColumnNames::TimeSeries,
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
+
+        if (with_histograms)
+            add_column(TimeSeriesColumnNames::Histograms, getTimeSeriesHistogramsOuterColumnType(timestamp_type));
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
         add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
@@ -1316,7 +1361,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         ViewTarget::Kind prev_inner_kind{};
         const ASTStorage * prev_inner_engine = nullptr;
 
-        for (auto kind : getTargetKinds())
+        constexpr auto base_kinds = getTargetKinds();
+        std::vector<ViewTarget::Kind> kinds(base_kinds.begin(), base_kinds.end());
+        if (hasHistogramsTarget(create_query, settings))
+            kinds.push_back(ViewTarget::Histograms);
+
+        for (auto kind : kinds)
         {
             /// The recent samples target is on by default and disabled by an explicit `recent_samples_ttl_seconds = 0`.
             if ((kind == ViewTarget::RecentSamples) && !recent_samples_enabled)
@@ -1368,9 +1418,14 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     /// We can change the columns of TimeSeries table because these columns are designed to work
     /// as IO interface. They store no data, in fact the data is stored in target or inner columns.
     {
+        TimeSeriesSettings settings_for_columns;
+        if (create_query.storage)
+            settings_for_columns.loadFromQuery(*create_query.storage);
+        bool with_histograms = hasHistogramsTarget(create_query, settings_for_columns);
+
         auto new_columns_ast = make_intrusive<ASTColumns>();
         new_columns_ast->set(new_columns_ast->columns,
-            InterpreterCreateQuery::formatColumns(generateTimeSeriesColumns(resolved_types.timestamp_type, resolved_types.scalar_type)));
+            InterpreterCreateQuery::formatColumns(generateTimeSeriesColumns(resolved_types.timestamp_type, resolved_types.scalar_type, with_histograms)));
         const auto * old_columns = create_query.columns_list;
         if (!old_columns
             || !old_columns->columns
