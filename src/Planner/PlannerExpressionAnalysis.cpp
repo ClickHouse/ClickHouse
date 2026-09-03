@@ -231,12 +231,18 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// ROLLUP and CUBE derive their grouping sets from the number of aggregation keys, and
+            /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
+            /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
+            bool keep_constant_keys = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube();
+
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                if (constant_key && !keep_constant_keys && !aggregates_descriptions.empty()
+                    && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
