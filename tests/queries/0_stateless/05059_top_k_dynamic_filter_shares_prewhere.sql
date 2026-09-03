@@ -70,7 +70,8 @@ DROP TABLE t_topk_prewhere;
 
 -- A stored column whose name is the name the threshold filter's own column gets must not be taken
 -- for it. The name only reaches the read's PREWHERE actions when the column takes part in the
--- promoted filter; a plain `SELECT` of it is read outside them.
+-- promoted filter; a plain `SELECT` of it reaches the read's header instead, which is the section
+-- after this one.
 
 DROP TABLE IF EXISTS t_topk_collide;
 
@@ -80,12 +81,13 @@ SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_topk_collide SELECT number, number % 10, 0 FROM numbers(50000);
 
--- Fixture control: the stored column is an input of the PREWHERE actions, so the rows below are
--- compared on a plan that actually holds both names.
+-- Fixture control: the stored column takes part in the read's own PREWHERE conjunction, so the rows
+-- below are compared on a plan that really holds both names. Matching the `Prewhere filter column:`
+-- line is what scopes this to the read: an `INPUT` line alone is printed by the steps above it too.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT k FROM t_topk_collide WHERE pred = 3 AND `__topKFilter(k)` = 0 ORDER BY k LIMIT 5)
-WHERE explain ILIKE '%INPUT%\_\_topKFilter(k) UInt8%';
+WHERE explain ILIKE '%Prewhere filter column: %equals(%\_\_topKFilter(k)%';
 
 SELECT groupArray(k) FROM (
     SELECT k FROM t_topk_collide WHERE pred = 3 AND `__topKFilter(k)` = 0 ORDER BY k LIMIT 5)
@@ -95,6 +97,57 @@ SELECT groupArray(k) FROM (
 SETTINGS use_top_k_dynamic_filtering = 1;
 
 DROP TABLE t_topk_collide;
+
+-- Without an existing PREWHERE the filter column is named after the generated node alone, and the
+-- reader resolves that name against the block the read produces, so a stored column of the same name
+-- would be removed in its place. Lazy materialization reads such a column in a separate step, but it
+-- runs after the filter is installed, so the refusal covers that arm too.
+
+DROP TABLE IF EXISTS t_topk_collide_no_prewhere;
+DROP TABLE IF EXISTS t_topk_no_prewhere;
+
+CREATE TABLE t_topk_collide_no_prewhere (k UInt32, `__topKFilter(k)` UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+-- Identical apart from the column's name, so the control below differs from the fixture in nothing else.
+CREATE TABLE t_topk_no_prewhere (k UInt32, other UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_topk_collide_no_prewhere SELECT number, number * 37 % 251 FROM numbers(50000);
+INSERT INTO t_topk_no_prewhere SELECT number, number * 37 % 251 FROM numbers(50000);
+
+-- Both columns come from the read itself, and the query has no WHERE and no PREWHERE. The second
+-- element of each tuple is the stored column, so a row that lost it would not compare equal.
+SELECT groupArray((k, x)) FROM (
+    SELECT k, `__topKFilter(k)` AS x FROM t_topk_collide_no_prewhere ORDER BY k LIMIT 5)
+SETTINGS query_plan_optimize_lazy_materialization = 0, use_top_k_dynamic_filtering = 0;
+SELECT groupArray((k, x)) FROM (
+    SELECT k, `__topKFilter(k)` AS x FROM t_topk_collide_no_prewhere ORDER BY k LIMIT 5)
+SETTINGS query_plan_optimize_lazy_materialization = 0, use_top_k_dynamic_filtering = 1;
+
+-- The same shape with lazy materialization on. `query_plan_max_limit_for_lazy_materialization` is
+-- pinned to its default so `LIMIT 5` always qualifies for it.
+SELECT groupArray((k, x)) FROM (
+    SELECT k, `__topKFilter(k)` AS x FROM t_topk_collide_no_prewhere ORDER BY k LIMIT 5)
+SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000,
+    use_top_k_dynamic_filtering = 0;
+SELECT groupArray((k, x)) FROM (
+    SELECT k, `__topKFilter(k)` AS x FROM t_topk_collide_no_prewhere ORDER BY k LIMIT 5)
+SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000,
+    use_top_k_dynamic_filtering = 1;
+
+-- Positive control: the same shape on the table that differs only in the column's name does install
+-- the filter, so the rows above cannot pass by this branch never installing at all.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k, other FROM t_topk_no_prewhere ORDER BY k LIMIT 5
+    SETTINGS query_plan_optimize_lazy_materialization = 0)
+WHERE explain ILIKE '%Prewhere filter column: \_\_topKFilter(k)%';
+
+DROP TABLE t_topk_collide_no_prewhere;
+DROP TABLE t_topk_no_prewhere;
 
 -- A TopK read served by a normal projection still carries the threshold filter, and returns the same
 -- rows as with the feature off. `a` is uncorrelated with the table's own sort key, so only the

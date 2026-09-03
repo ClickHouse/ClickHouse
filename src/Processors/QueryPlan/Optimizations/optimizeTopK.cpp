@@ -284,6 +284,8 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
+    auto initial_header = read_from_mergetree_step->getOutputHeader();
+
     /// Cannot use FunctionFactory::get because the resolver needs the threshold tracker.
     auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
 
@@ -370,10 +372,14 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         prewhere_info->prewhere_column_name = filter_node->result_name;
         prewhere_info->prewhere_actions = std::move(filter_dag);
     }
+
+    /// The reader resolves the prewhere column by name and then removes it, so the name must not be one the read produces.
+    if (initial_header->has(prewhere_info->prewhere_column_name))
+        return;
+
     prewhere_info->remove_prewhere_column = true;
     prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;
 
-    auto initial_header = read_from_mergetree_step->getOutputHeader();
     read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
     auto updated_header = read_from_mergetree_step->getOutputHeader();
 
