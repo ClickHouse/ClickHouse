@@ -1,6 +1,5 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
-#include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Interpreters/Context.h>
@@ -42,16 +41,7 @@ bool AddDefaultDatabaseVisitor::evaluateWithAliasInheritance(const SettingsChang
     /// value, an inner `compatibility` reverts what an outer one derived, and `profile` stands for
     /// the group of settings it names.
     ContextMutablePtr replay_context = Context::createCopy(context);
-    try
-    {
-        replay_context->applySettingsChanges(changes);
-    }
-    catch (const Exception &)
-    {
-        /// A value that does not convert, or a profile that does not resolve, is one this pass
-        /// cannot evaluate.
-        return inherit_with_aliases;
-    }
+    replay_context->applySettingsChanges(changes);
     return replay_context->getSettingsRef()[Setting::enable_global_with_statement];
 }
 
