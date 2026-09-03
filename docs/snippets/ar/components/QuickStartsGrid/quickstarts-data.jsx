@@ -41,7 +41,7 @@ export const quickStartsData = [
   {
     "id": "create-your-first-projection",
     "title": "أنشئ أول إسقاط لك",
-    "description": "تعرّف على كيفية استخدام الإسقاطات في ClickHouse لتخزين نسخة إضافية مرتبة من بياناتك داخل الجدول نفسه، مما يتيح عمليات بحث سريعة في الأعمدة التي لا يشملها المفتاح الأساسي.",
+    "description": "تعرّف على كيفية استخدام الإسقاطات في ClickHouse لتخزين نسخة إضافية مرتبة من بياناتك داخل الجدول نفسه، مما يتيح عمليات lookup سريعة في الأعمدة التي لا يشملها المفتاح الأساسي.",
     "href": "/ar/get-started/quickstarts/create-your-first-projection",
     "useCases": [
       "real-time-analytics",
@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "أنشئ أول خدمة Cloud لك وحمّل بيانات تجريبية",
-    "description": "أنشئ خدمة ClickHouse Cloud، واستكشف وحدة تحكم SQL، وحمّل مجموعة بيانات نموذجية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.",
-    "href": "/ar/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "البدء السريع مع ClickHouse Cloud",
+    "description": "دليل البدء السريع لـ ClickHouse Cloud",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/ar/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",
@@ -109,6 +109,20 @@ export const quickStartsData = [
     ],
     "products": [
       "cloud"
+    ]
+  },
+  {
+    "id": "tutorial",
+    "title": "دليل عملي متقدم",
+    "description": "تعرّف على كيفية إدخال البيانات والاستعلام عنها في ClickHouse باستخدام مجموعة بيانات نموذجية لسيارات الأجرة في مدينة نيويورك.",
+    "href": "/ar/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
     ]
   },
   {

@@ -71,6 +71,13 @@ namespace Setting
     extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
     extern const SettingsUInt64 vector_query_plan_cache_max_entries;
     extern const SettingsMilliseconds query_cache_min_query_duration;
+extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+extern const SettingsUInt64 automatic_parallel_replicas_mode;
+extern const SettingsBool inject_random_order_for_select_without_order_by;
+extern const SettingsParallelReplicasMode parallel_replicas_mode;
+extern const SettingsBool use_concurrency_control;
+extern const SettingsBool parallel_replicas_local_plan;
+extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -164,6 +171,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
         }
     }
+
+    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// for a query processed up to the stage `Complete`: the injection wraps the query into
+    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
+    /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
+    /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
+    /// failing with a logical error in `MergingAggregatedTransform`.
+    if (settings[Setting::inject_random_order_for_select_without_order_by]
+        && select_query_options.to_stage != QueryProcessingStage::Complete)
+        result_context->setSetting("inject_random_order_for_select_without_order_by", false);
+
     return result_context;
 }
 

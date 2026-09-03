@@ -321,9 +321,8 @@ void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & is
 }
 
 template <typename T>
-void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void SerializationNumber<T>::serializeBinaryBulk(const PaddedPODArray<T> & x, WriteBuffer & ostr, size_t offset, size_t limit)
 {
-    const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
     if (const size_t size = x.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
@@ -334,22 +333,32 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
         for (size_t i = offset; i < offset + limit; ++i)
             writeBinaryLittleEndian(x[i], ostr);
     else
-        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(T) * limit);
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    istr.ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
-    typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
+    serializeBinaryBulk(typeid_cast<const ColumnVector<T> &>(column).getData(), ostr, offset, limit);
+}
+
+template <typename T>
+void SerializationNumber<T>::deserializeBinaryBulk(PaddedPODArray<T> & x, ReadBuffer & istr, size_t limit)
+{
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::ValueType) * limit);
-    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
+    const size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(T) * limit);
+    x.resize(initial_size + size / sizeof(T));
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
+}
+
+template <typename T>
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+{
+    deserializeBinaryBulk(typeid_cast<ColumnVector<T> &>(column).getData(), istr, limit);
 }
 
 template <typename T>

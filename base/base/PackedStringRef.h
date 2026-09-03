@@ -69,6 +69,9 @@ private:
     ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
     ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
 
+    /// Every `build` path value-initializes both words before any byte is read, so the tag byte is
+    /// always defined; the analyzer cannot see that through the byte-punned `rawBytes` read.
+    // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.UndefReturn)
     ALWAYS_INLINE uint8_t getTagByte() const { return rawBytes()[TAG_BYTE_OFFSET]; }
 
     /// Store the low `n` bytes (n <= 8) of `value` at `dst` in little-endian
