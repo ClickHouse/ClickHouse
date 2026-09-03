@@ -3,6 +3,7 @@
 #include <set>
 
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Common/assert_cast.h>
 
 using namespace DB;
 
@@ -377,4 +379,56 @@ TEST(DistinctSetFilterExtraction, MixedNullableAndPlainColumns)
     checkExtractionRoundTrip(
         header,
         {{make_nullable_column({1, {}, 1, {}}), makeNumberColumn<ColumnUInt32, UInt32>({5, 5, 6, 6})}});
+}
+
+namespace
+{
+
+/// A LowCardinality(String) column of `num_rows` rows whose dictionary holds at least `dictionary_size`
+/// entries: the rows are cut from a column that used them all, and a cut keeps the dictionary.
+ColumnPtr makeLowCardinalityColumnWithLargeDictionary(const DataTypePtr & lc_type, size_t dictionary_size, size_t num_rows)
+{
+    auto column = lc_type->createColumn();
+    for (size_t i = 0; i < dictionary_size; ++i)
+    {
+        const auto value = std::to_string(i);
+        column->insertData(value.data(), value.size());
+    }
+
+    auto rows = column->cut(0, num_rows);
+    EXPECT_GE(assert_cast<const ColumnLowCardinality &>(*rows).getDictionary().size(), dictionary_size);
+    return rows;
+}
+
+}
+
+TEST(DistinctSetFilterSemantics, LowCardinalityBitmapsCountTowardsTheByteSize)
+{
+    /// The LowCardinality fast path keeps a bitmap of the seen indices per dictionary. Its size is that
+    /// of the dictionary, not of the data seen, so a few rows over a large dictionary occupy far more
+    /// than their keys in the set, and the reported size must include it.
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block header = {ColumnWithTypeAndName(lc_type, "k")};
+    const size_t dictionary_size = 200000;
+
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    filter.filter(Chunk(Columns{makeLowCardinalityColumnWithLargeDictionary(lc_type, dictionary_size, 3)}, 3));
+    EXPECT_GE(filter.getTotalByteCount(), dictionary_size);
+}
+
+TEST(DistinctSetFilterSemantics, ByteLimitSeesTheLowCardinalityBitmaps)
+{
+    /// The same three rows stay far below the limit as plain strings; over a large dictionary the bitmap
+    /// of the fast path exceeds it, and the limit must notice.
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const Block lc_header = {ColumnWithTypeAndName(lc_type, "k")};
+    const Block str_header = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k")};
+    const size_t dictionary_size = 200000;
+    SizeLimits limits(/*max_rows=*/ 0, /*max_bytes=*/ dictionary_size / 2, OverflowMode::THROW);
+
+    DistinctSetFilter str_filter(str_header, {}, limits);
+    EXPECT_NO_THROW(str_filter.filter(Chunk(Columns{makeStringColumn({"0", "1", "2"})}, 3)));
+
+    DistinctSetFilter lc_filter(lc_header, {}, limits);
+    EXPECT_ANY_THROW(lc_filter.filter(Chunk(Columns{makeLowCardinalityColumnWithLargeDictionary(lc_type, dictionary_size, 3)}, 3)));
 }

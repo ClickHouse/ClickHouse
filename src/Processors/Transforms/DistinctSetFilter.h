@@ -74,6 +74,11 @@ public:
     /// Frees the accumulated per-dictionary state.
     void clear();
 
+    /// The memory occupied by the per-dictionary bitmaps of the seen indices. A bitmap is as large as its
+    /// dictionary, whatever the number of rows seen, so it can dominate the memory of a DISTINCT over a
+    /// few rows of a large dictionary.
+    size_t getTotalByteCount() const { return total_byte_count; }
+
 private:
     std::pair<IColumn::Filter, size_t> buildMask(const ColumnLowCardinality & column, size_t num_rows);
 
@@ -81,6 +86,7 @@ private:
     /// types out of this header).
     struct DictionariesState;
     std::unique_ptr<DictionariesState> dictionaries_state;
+    size_t total_byte_count = 0;
 
     LCOptimizationController lc_optimization_controller;
 };
@@ -110,7 +116,7 @@ public:
     /// The number of distinct keys seen so far.
     size_t getTotalRowCount() const;
 
-    /// The memory occupied by the set.
+    /// The memory occupied by the set and by the LowCardinality fast path.
     size_t getTotalByteCount() const;
 
     /// Whether the keys can be materialized back into columns from the set itself. True for every set

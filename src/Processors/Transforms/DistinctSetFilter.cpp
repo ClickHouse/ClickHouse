@@ -87,6 +87,7 @@ DistinctLowCardinalityFilter::~DistinctLowCardinalityFilter() = default;
 void DistinctLowCardinalityFilter::clear()
 {
     dictionaries_state->lc_dict_states.clear();
+    total_byte_count = 0;
 }
 
 std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicable(const IColumn & column, size_t num_rows)
@@ -122,6 +123,7 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
         chassert(state.seen_indices.empty());
         chassert(state.seen_count == 0);
         state.seen_indices.resize_fill(dict_size);
+        total_byte_count += state.seen_indices.allocated_bytes();
     }
 
     /// If we've already seen all dictionary indices for this dictionary, then no row in this chunk
@@ -304,7 +306,7 @@ size_t DistinctSetFilter::getTotalRowCount() const
 size_t DistinctSetFilter::getTotalByteCount() const
 {
     chassert(data);
-    return data->getTotalByteCount();
+    return data->getTotalByteCount() + lc_filter.getTotalByteCount();
 }
 
 bool DistinctSetFilter::supportsKeyExtraction() const
@@ -530,7 +532,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     /// recorded (see isLimitReached), but the new rows of the current chunk are still returned - their
     /// keys are already in the set, and 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size, data->getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(new_set_size, getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         limit_reached = true;
 
     /// When every row is a new distinct value, the columns are kept unchanged, without copying.
