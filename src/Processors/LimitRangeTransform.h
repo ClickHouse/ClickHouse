@@ -4,6 +4,8 @@
 #include <vector>
 
 #include <Columns/IColumn.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Transforms/ChunkRowRange.h>
@@ -25,12 +27,14 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class LimitRangeTransform : public ISimpleTransform
 {
 public:
+    /// `conditions` computes the boundary columns `start_column_name` (`AFTER`) and `end_column_name`
+    /// (`UNTIL`) from the input columns; a boundary the query does not have has no name.
     LimitRangeTransform(
         SharedHeader header_,
-        ExpressionActionsPtr start_expression_,
-        const String & start_column_name_,
-        ExpressionActionsPtr end_expression_,
-        const String & end_column_name_,
+        const ActionsDAG & conditions,
+        const std::optional<String> & start_column_name,
+        const std::optional<String> & end_column_name,
+        const ExpressionActionsSettings & actions_settings,
         bool start_all_,
         std::optional<UInt64> limit_,
         bool always_read_till_end_);
@@ -46,6 +50,27 @@ public:
     }
 
 private:
+    /// Evaluates boundary conditions over the input columns they need rather than over the whole chunk.
+    struct BoundaryEvaluation
+    {
+        BoundaryEvaluation(
+            const Block & header,
+            ActionsDAG conditions,
+            const std::optional<String> & start_column_name,
+            const std::optional<String> & end_column_name,
+            const ExpressionActionsSettings & actions_settings);
+
+        /// Computes the boundary columns of a chunk; a boundary that `actions` does not compute stays null.
+        void evaluate(const Block & header, const Columns & chunk_columns, size_t num_rows, ColumnPtr & start_column, ColumnPtr & end_column) const;
+
+        ExpressionActionsPtr actions;
+        /// Header positions of the columns `actions` reads.
+        std::vector<size_t> input_positions;
+        /// Positions of the boundary columns in the evaluated block.
+        std::optional<size_t> start_position;
+        std::optional<size_t> end_position;
+    };
+
     void transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col);
 
     /// Selects the rows `[begin, end)` of the current chunk for output, extending the last slice when they
@@ -55,10 +80,10 @@ private:
     /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
     void setDone();
 
-    /// Expression that evaluates the AFTER condition per row.
-    ExpressionActionsPtr start_expression;
-    /// Expression that evaluates the UNTIL condition per row.
-    ExpressionActionsPtr end_expression;
+    /// Evaluates every boundary of the query.
+    std::optional<BoundaryEvaluation> boundary_evaluation;
+    /// Evaluates `UNTIL` alone, because once the single range has started `AFTER` no longer matters.
+    std::optional<BoundaryEvaluation> end_only_evaluation;
 
     /// ALL mode: emit the union of all windows opened by AFTER matches.
     bool start_all = false;
@@ -82,11 +107,6 @@ private:
     UInt64 repeated_window_end = 0;
     /// An AFTER match with no limit opened an unbounded window (ALL mode, no UNTIL yet).
     bool has_repeated_unbounded_window = false;
-
-    /// Position of the start condition column in the block after executing start_expression.
-    size_t start_column_position = 0;
-    /// Position of the end condition column in the block after executing end_expression.
-    size_t end_column_position = 0;
 
     /// Rows of the current chunk selected for output; reused across chunks.
     std::vector<ChunkRowRange> output_slices;

@@ -20,18 +20,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace
-{
-
-std::optional<std::pair<ActionsDAG, String>> cloneCondition(const std::optional<std::pair<ActionsDAG, String>> & condition)
-{
-    if (!condition)
-        return std::nullopt;
-    return std::make_pair(condition->first.clone(), condition->second);
-}
-
-}
-
 static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
@@ -52,14 +40,16 @@ static ITransformingStep::Traits getTraits()
 
 LimitRangeStep::LimitRangeStep(
     const SharedHeader & input_header_,
-    std::optional<std::pair<ActionsDAG, String>> start_condition_,
-    std::optional<std::pair<ActionsDAG, String>> end_condition_,
+    ActionsDAG conditions_,
+    std::optional<String> start_column_name_,
+    std::optional<String> end_column_name_,
     bool start_all_,
     std::optional<UInt64> limit_,
     bool always_read_till_end_)
     : ITransformingStep(input_header_, input_header_, getTraits())
-    , start_condition(std::move(start_condition_))
-    , end_condition(std::move(end_condition_))
+    , conditions(std::move(conditions_))
+    , start_column_name(std::move(start_column_name_))
+    , end_column_name(std::move(end_column_name_))
     , start_all(start_all_)
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
@@ -68,8 +58,9 @@ LimitRangeStep::LimitRangeStep(
 
 LimitRangeStep::LimitRangeStep(const LimitRangeStep & other)
     : ITransformingStep(other)
-    , start_condition(cloneCondition(other.start_condition))
-    , end_condition(cloneCondition(other.end_condition))
+    , conditions(other.conditions.clone())
+    , start_column_name(other.start_column_name)
+    , end_column_name(other.end_column_name)
     , start_all(other.start_all)
     , limit(other.limit)
     , always_read_till_end(other.always_read_till_end)
@@ -80,40 +71,20 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     pipeline.resize(1);
 
-    ExpressionActionsPtr start_expression;
-    String start_column_name;
-    if (start_condition)
-    {
-        start_expression = std::make_shared<ExpressionActions>(
-            start_condition->first.clone(), settings.getActionsSettings());
-        start_column_name = start_condition->second;
-    }
-
-    ExpressionActionsPtr end_expression;
-    String end_column_name;
-    if (end_condition)
-    {
-        end_expression = std::make_shared<ExpressionActions>(
-            end_condition->first.clone(), settings.getActionsSettings());
-        end_column_name = end_condition->second;
-    }
-
-    pipeline.addSimpleTransform(
-        [start_expression, start_column_name, end_expression, end_column_name, start_all_value = start_all, limit_value = limit, always_read_till_end_value = always_read_till_end]
-        (const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
         return std::make_shared<LimitRangeTransform>(
             header,
-            start_expression,
+            conditions,
             start_column_name,
-            end_expression,
             end_column_name,
-            start_all_value,
-            limit_value,
-            always_read_till_end_value);
+            settings.getActionsSettings(),
+            start_all,
+            limit,
+            always_read_till_end);
     });
 }
 
@@ -124,21 +95,21 @@ void LimitRangeStep::describeActions(FormatSettings & settings) const
     if (limit)
         settings.out << prefix << "Limit " << *limit << '\n';
 
-    auto describe_condition = [&](const std::optional<std::pair<ActionsDAG, String>> & condition, const char * title, const char * suffix)
+    auto describe_column = [&](const std::optional<String> & column_name, const char * title, const char * suffix)
     {
-        if (!condition)
+        if (!column_name)
             return;
 
         settings.out << prefix << title
-                     << (settings.pretty ? QueryPlanFormat::formatColumnPretty(condition->second, settings.pretty_names) : condition->second)
+                     << (settings.pretty ? QueryPlanFormat::formatColumnPretty(*column_name, settings.pretty_names) : *column_name)
                      << suffix << '\n';
-
-        if (!settings.compact)
-            ExpressionActions(condition->first.clone()).describeActions(settings.out, prefix);
     };
 
-    describe_condition(start_condition, "After column: ", start_all ? " (all)" : "");
-    describe_condition(end_condition, "Until column: ", "");
+    describe_column(start_column_name, "After column: ", start_all ? " (all)" : "");
+    describe_column(end_column_name, "Until column: ", "");
+
+    if (!settings.compact && (start_column_name || end_column_name))
+        ExpressionActions(conditions.clone()).describeActions(settings.out, prefix);
 
     if (always_read_till_end)
         settings.out << prefix << "Reads all data: 1\n";
@@ -149,18 +120,17 @@ void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
     if (limit)
         map.add("Limit", *limit);
 
-    if (start_condition)
+    if (start_column_name)
     {
-        map.add("After Column", start_condition->second);
-        map.add("After Expression", ExpressionActions(start_condition->first.clone()).toTree());
+        map.add("After Column", *start_column_name);
         map.add("After All", start_all);
     }
 
-    if (end_condition)
-    {
-        map.add("Until Column", end_condition->second);
-        map.add("Until Expression", ExpressionActions(end_condition->first.clone()).toTree());
-    }
+    if (end_column_name)
+        map.add("Until Column", *end_column_name);
+
+    if (start_column_name || end_column_name)
+        map.add("Expression", ExpressionActions(conditions.clone()).toTree());
 
     map.add("Reads All Data", always_read_till_end);
 }
@@ -175,9 +145,9 @@ void LimitRangeStep::serialize(Serialization & ctx) const
             DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP);
 
     UInt8 flags = 0;
-    if (start_condition)
+    if (start_column_name)
         flags |= 1;
-    if (end_condition)
+    if (end_column_name)
         flags |= 2;
     if (limit)
         flags |= 4;
@@ -191,17 +161,12 @@ void LimitRangeStep::serialize(Serialization & ctx) const
     if (limit)
         writeVarUInt(*limit, ctx.out);
 
-    auto write_condition = [&](const std::optional<std::pair<ActionsDAG, String>> & condition)
-    {
-        if (!condition)
-            return;
+    if (start_column_name)
+        writeStringBinary(*start_column_name, ctx.out);
+    if (end_column_name)
+        writeStringBinary(*end_column_name, ctx.out);
 
-        writeStringBinary(condition->second, ctx.out);
-        condition->first.serialize(ctx.out, ctx.registry);
-    };
-
-    write_condition(start_condition);
-    write_condition(end_condition);
+    conditions.serialize(ctx.out, ctx.registry);
 }
 
 QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
@@ -234,39 +199,47 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         limit_value = limit;
     }
 
-    auto read_condition = [&](bool present) -> std::optional<std::pair<ActionsDAG, String>>
+    auto read_column_name = [&](bool present) -> std::optional<String>
     {
         if (!present)
             return std::nullopt;
 
         String column_name;
         readStringBinary(column_name, ctx.in);
-        auto dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
-
-        /// The plan may come from a client (`process_query_plan_packet`), so the condition is checked
-        /// the way the planner checks it for a query: a boolean result column, and no `ARRAY JOIN`, which
-        /// would misalign the condition rows with the rows of the chunk.
-        const auto * output = dag.tryFindInOutputs(column_name);
-        if (!output)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition column {} is not an output of its expression", column_name);
-        if (!output->result_type->canBeUsedInBooleanContext())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "LimitRangeStep: condition column {} must be boolean, got {}", column_name, output->result_type->getName());
-        if (dag.hasArrayJoin())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition expression must not contain ARRAY JOIN");
-
-        return std::make_pair(std::move(dag), std::move(column_name));
+        return column_name;
     };
 
     /// Read in wire order (start before end). Function-argument evaluation order is unspecified,
     /// so the reads must happen in explicit statements, not inline in the constructor call.
-    auto start_condition = read_condition(flags & 1);
-    auto end_condition = read_condition(flags & 2);
+    auto start_column_name = read_column_name(flags & 1);
+    auto end_column_name = read_column_name(flags & 2);
+
+    auto conditions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+
+    /// The plan may come from a client (`process_query_plan_packet`), so the conditions are checked the
+    /// way the planner checks them for a query: boolean result columns, and no `ARRAY JOIN`, which would
+    /// misalign the condition rows with the rows of the chunk.
+    for (const auto & column_name : {start_column_name, end_column_name})
+    {
+        if (!column_name)
+            continue;
+
+        const auto * output = conditions.tryFindInOutputs(*column_name);
+        if (!output)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition column {} is not an output of its expression", *column_name);
+        if (!output->result_type->canBeUsedInBooleanContext())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "LimitRangeStep: condition column {} must be boolean, got {}", *column_name, output->result_type->getName());
+    }
+
+    if (conditions.hasArrayJoin())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep: condition expression must not contain ARRAY JOIN");
 
     return std::make_unique<LimitRangeStep>(
         ctx.input_headers.front(),
-        std::move(start_condition),
-        std::move(end_condition),
+        std::move(conditions),
+        std::move(start_column_name),
+        std::move(end_column_name),
         flags & 8,
         limit_value,
         bool(flags & 16));

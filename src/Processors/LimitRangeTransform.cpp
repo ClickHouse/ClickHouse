@@ -77,20 +77,63 @@ struct BoundaryColumnView
     }
 };
 
+/// The columns at `positions` of `columns`, named and typed as in `header`.
+Block makeInputBlock(const Block & header, const Columns & columns, const std::vector<size_t> & positions)
+{
+    Block block;
+    for (size_t position : positions)
+    {
+        const auto & header_column = header.getByPosition(position);
+        block.insert(ColumnWithTypeAndName(columns[position], header_column.type, header_column.name));
+    }
+    return block;
+}
+
+}
+
+LimitRangeTransform::BoundaryEvaluation::BoundaryEvaluation(
+    const Block & header,
+    ActionsDAG conditions,
+    const std::optional<String> & start_column_name,
+    const std::optional<String> & end_column_name,
+    const ExpressionActionsSettings & actions_settings)
+    : actions(std::make_shared<ExpressionActions>(std::move(conditions), actions_settings))
+{
+    for (const auto & column : actions->getRequiredColumnsWithTypes())
+        input_positions.push_back(header.getPositionByName(column.name));
+
+    /// A dry run over the empty header columns gives the positions of the boundary columns.
+    Block block = makeInputBlock(header, header.getColumns(), input_positions);
+    actions->execute(block, /*dry_run=*/true);
+    if (start_column_name)
+        start_position = block.getPositionByName(*start_column_name);
+    if (end_column_name)
+        end_position = block.getPositionByName(*end_column_name);
+}
+
+void LimitRangeTransform::BoundaryEvaluation::evaluate(
+    const Block & header, const Columns & chunk_columns, size_t num_rows, ColumnPtr & start_column, ColumnPtr & end_column) const
+{
+    Block block = makeInputBlock(header, chunk_columns, input_positions);
+    /// The row count is passed explicitly: a condition without input columns evaluates over an empty block.
+    size_t rows = num_rows;
+    actions->execute(block, rows, /*dry_run=*/false);
+    if (start_position)
+        start_column = block.getByPosition(*start_position).column;
+    if (end_position)
+        end_column = block.getByPosition(*end_position).column;
 }
 
 LimitRangeTransform::LimitRangeTransform(
     SharedHeader header_,
-    ExpressionActionsPtr start_expression_,
-    const String & start_column_name_,
-    ExpressionActionsPtr end_expression_,
-    const String & end_column_name_,
+    const ActionsDAG & conditions,
+    const std::optional<String> & start_column_name,
+    const std::optional<String> & end_column_name,
+    const ExpressionActionsSettings & actions_settings,
     bool start_all_,
     std::optional<UInt64> limit_,
     bool always_read_till_end_)
     : ISimpleTransform(header_, header_, true)
-    , start_expression(std::move(start_expression_))
-    , end_expression(std::move(end_expression_))
     , start_all(start_all_)
     , limit(limit_)
     , always_read_till_end(always_read_till_end_)
@@ -101,17 +144,15 @@ LimitRangeTransform::LimitRangeTransform(
         return;
     }
 
-    if (start_expression)
+    const Block & header = getInputPort().getHeader();
+    if (start_column_name || end_column_name)
+        boundary_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+
+    if (!start_all && end_column_name)
     {
-        Block block = getInputPort().getHeader().cloneEmpty();
-        start_expression->execute(block, /*dry_run=*/true);
-        start_column_position = block.getPositionByName(start_column_name_);
-    }
-    if (end_expression)
-    {
-        Block block = getInputPort().getHeader().cloneEmpty();
-        end_expression->execute(block, /*dry_run=*/true);
-        end_column_position = block.getPositionByName(end_column_name_);
+        ActionsDAG end_conditions = conditions.clone();
+        end_conditions.removeUnusedActions(Names{*end_column_name});
+        end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
     }
 }
 
@@ -233,25 +274,11 @@ void LimitRangeTransform::transform(Chunk & chunk)
     const size_t num_rows = chunk.getNumRows();
 
     ColumnPtr start_col;
-    if (start_expression && (start_all || !started))
-    {
-        Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        /// Pass the real chunk row count by reference (the `size_t & num_rows` overload) with
-        /// dry_run = false; otherwise the boundary predicate is evaluated in dry-run mode and a
-        /// zero-column block would mistakenly report 0 rows.
-        size_t start_rows = num_rows;
-        start_expression->execute(block, start_rows, /*dry_run=*/false);
-        start_col = block.getByPosition(start_column_position).column;
-    }
-
     ColumnPtr end_col;
-    if (end_expression)
-    {
-        Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        size_t end_rows = num_rows;
-        end_expression->execute(block, end_rows, /*dry_run=*/false);
-        end_col = block.getByPosition(end_column_position).column;
-    }
+    /// Once the single range has started only `UNTIL` matters.
+    const auto & evaluation = (start_all || !started) ? boundary_evaluation : end_only_evaluation;
+    if (evaluation)
+        evaluation->evaluate(getInputPort().getHeader(), chunk.getColumns(), num_rows, start_col, end_col);
 
     if (start_all)
     {

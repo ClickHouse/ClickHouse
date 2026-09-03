@@ -3679,25 +3679,30 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 
         const auto & header = query_plan.getCurrentHeader();
 
-        /// The boundary conditions were computed as columns by the `appendLimitRange` chain step,
-        /// so here they are read from the header by name.
-        auto build_identity_condition = [&](const String & column_name) -> std::optional<std::pair<ActionsDAG, String>>
+        /// The boundary conditions were computed as columns by the `appendLimitRange` chain step, so the
+        /// step's conditions just read them from the header by name.
+        ActionsDAG conditions;
+        auto add_boundary_column = [&](const String & column_name) -> std::optional<String>
         {
             if (column_name.empty())
                 return std::nullopt;
-            const auto & col = header->getByName(column_name);
-            ActionsDAG dag;
-            const auto * input = &dag.addInput(col.name, col.type);
-            dag.getOutputs().push_back(input);
-            return std::make_pair(std::move(dag), column_name);
+
+            /// `AFTER` and `UNTIL` with the same expression share one column.
+            if (!conditions.tryFindInOutputs(column_name))
+            {
+                const auto & column = header->getByName(column_name);
+                conditions.getOutputs().push_back(&conditions.addInput(column.name, column.type));
+            }
+            return column_name;
         };
 
-        auto start_condition = build_identity_condition(analysis_result.limit_range_start_column_name);
-        auto end_condition = build_identity_condition(analysis_result.limit_range_end_column_name);
+        auto start_column_name = add_boundary_column(analysis_result.limit_range_start_column_name);
+        auto end_column_name = add_boundary_column(analysis_result.limit_range_end_column_name);
         auto limit_range_step = std::make_unique<LimitRangeStep>(
             header,
-            std::move(start_condition),
-            std::move(end_condition),
+            std::move(conditions),
+            std::move(start_column_name),
+            std::move(end_column_name),
             query.limit_after_all,
             limit_length,
             always_read_till_end);

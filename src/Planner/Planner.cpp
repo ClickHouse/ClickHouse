@@ -476,38 +476,60 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ConstantNode & node)
         applyVisitor(FieldVisitorToString(), node.getValue()));
 }
 
-/// Builds a boundary condition of a `LIMIT` range over the columns of `header`. With `INTERPOLATE`,
-/// `FillingStep` writes the interpolated values only into the column named after the interpolated alias
-/// (see `addWithFillStepIfNeeded`), while the projection expression the alias was computed from keeps
-/// default values on the filled rows. A boundary that refers to such an alias is therefore redirected to
-/// the alias column, as `Project names` does for the query result.
-std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
-    const SharedHeader & header,
-    const QueryTreeNodePtr & condition_node,
-    const QueryNode & query_node,
-    const PlannerContextPtr & planner_context,
-    const String & description)
+struct LimitRangeConditions
 {
-    if (!condition_node)
-        return std::nullopt;
+    ActionsDAG actions;
+    std::optional<String> start_column_name;
+    std::optional<String> end_column_name;
+};
 
-    auto [condition_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        condition_node,
-        header->getColumnsWithTypeAndName(),
-        planner_context,
-        query_node.getCorrelatedColumnsSet());
-    correlated_subtrees.assertEmpty("in " + description + " expression");
+/// Builds the boundary conditions of a `LIMIT` range as one DAG over the columns of `header`, so a
+/// subexpression shared by `AFTER` and `UNTIL` is computed once; the DAG keeps only the inputs the
+/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the column
+/// named after the interpolated alias (see `addWithFillStepIfNeeded`), while the projection expression the
+/// alias was computed from keeps default values on the filled rows. A boundary that refers to such an alias
+/// is therefore redirected to the alias column, as `Project names` does for the query result.
+LimitRangeConditions buildLimitRangeConditions(
+    const SharedHeader & header,
+    const QueryNode & query_node,
+    const PlannerContextPtr & planner_context)
+{
+    ActionsDAG actions;
+    for (const auto & column : header->getColumnsWithTypeAndName())
+        actions.addInput(column);
 
-    const auto * output = condition_actions_dag.getOutputs().at(0);
-    if (!output->result_type->canBeUsedInBooleanContext())
+    PlannerActionsVisitor actions_visitor(planner_context, query_node.getCorrelatedColumnsSet());
+    auto add_boundary = [&](const QueryTreeNodePtr & boundary_node, const String & description) -> std::optional<String>
     {
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "{} expression must be boolean, got {}",
-            description,
-            output->result_type->getName());
-    }
-    String condition_name = output->result_name;
+        if (!boundary_node)
+            return std::nullopt;
+
+        auto [boundary_nodes, correlated_subtrees] = actions_visitor.visit(actions, boundary_node);
+        correlated_subtrees.assertEmpty("in " + description + " expression");
+
+        const auto * output = boundary_nodes.at(0);
+        if (!output->result_type->canBeUsedInBooleanContext())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "{} expression must be boolean, got {}",
+                description,
+                output->result_type->getName());
+        }
+
+        /// `AFTER` and `UNTIL` with the same expression share one output column.
+        if (!actions.tryFindInOutputs(output->result_name))
+            actions.getOutputs().push_back(output);
+        return output->result_name;
+    };
+
+    auto start_column_name = add_boundary(query_node.getLimitAfter(), "LIMIT AFTER");
+    auto end_column_name = add_boundary(query_node.getLimitUntil(), "LIMIT UNTIL");
+
+    Names condition_names;
+    for (const auto & column_name : {start_column_name, end_column_name})
+        if (column_name)
+            condition_names.push_back(*column_name);
 
     if (query_node.hasInterpolate())
     {
@@ -520,11 +542,11 @@ std::optional<std::pair<ActionsDAG, String>> buildLimitRangeCondition(
             interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
         }
 
-        condition_actions_dag = ActionsDAG::merge(std::move(interpolated_columns), std::move(condition_actions_dag));
-        condition_actions_dag.removeUnusedActions(Names{condition_name});
+        actions = ActionsDAG::merge(std::move(interpolated_columns), std::move(actions));
     }
 
-    return std::make_pair(std::move(condition_actions_dag), std::move(condition_name));
+    actions.removeUnusedActions(condition_names);
+    return {std::move(actions), std::move(start_column_name), std::move(end_column_name)};
 }
 
 class QueryAnalysisResult
@@ -1562,24 +1584,8 @@ void addLimitRangeStep(
     if (query_node.hasLimit())
         limit_length = query_analysis_result.limit_length;
 
-    auto start_condition = buildLimitRangeCondition(
-        query_plan.getCurrentHeader(),
-        query_node.getLimitAfter(),
-        query_node,
-        planner_context,
-        "LIMIT AFTER");
-    auto end_condition = buildLimitRangeCondition(
-        query_plan.getCurrentHeader(),
-        query_node.getLimitUntil(),
-        query_node,
-        planner_context,
-        "LIMIT UNTIL");
-
-    if (start_condition)
-        appendSetsFromActionsDAG(start_condition->first, useful_sets);
-
-    if (end_condition)
-        appendSetsFromActionsDAG(end_condition->first, useful_sets);
+    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context);
+    appendSetsFromActionsDAG(conditions.actions, useful_sets);
 
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
@@ -1591,8 +1597,9 @@ void addLimitRangeStep(
 
     auto limit_range_step = std::make_unique<LimitRangeStep>(
         query_plan.getCurrentHeader(),
-        std::move(start_condition),
-        std::move(end_condition),
+        std::move(conditions.actions),
+        std::move(conditions.start_column_name),
+        std::move(conditions.end_column_name),
         query_node.isLimitAfterAll(),
         limit_length,
         always_read_till_end);

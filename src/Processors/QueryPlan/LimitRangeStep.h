@@ -12,10 +12,14 @@ namespace DB
 class LimitRangeStep : public ITransformingStep
 {
 public:
+    /// `conditions` computes the boundary columns `start_column_name` (`AFTER`) and `end_column_name`
+    /// (`UNTIL`) from the input columns, so a subexpression shared by the two boundaries is computed once;
+    /// a boundary the query does not have has no name.
     LimitRangeStep(
         const SharedHeader & input_header_,
-        std::optional<std::pair<ActionsDAG, String>> start_condition_,
-        std::optional<std::pair<ActionsDAG, String>> end_condition_,
+        ActionsDAG conditions_,
+        std::optional<String> start_column_name_,
+        std::optional<String> end_column_name_,
         bool start_all_,
         std::optional<UInt64> limit_,
         bool always_read_till_end_);
@@ -36,11 +40,7 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    bool hasCorrelatedExpressions() const override
-    {
-        return (start_condition && start_condition->first.hasCorrelatedColumns())
-            || (end_condition && end_condition->first.hasCorrelatedColumns());
-    }
+    bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
 
 private:
     void updateOutputHeader() override
@@ -48,8 +48,9 @@ private:
         output_header = input_headers.front();
     }
 
-    std::optional<std::pair<ActionsDAG, String>> start_condition;
-    std::optional<std::pair<ActionsDAG, String>> end_condition;
+    ActionsDAG conditions;
+    std::optional<String> start_column_name;
+    std::optional<String> end_column_name;
     bool start_all = false;
     std::optional<UInt64> limit;
     bool always_read_till_end = false;
