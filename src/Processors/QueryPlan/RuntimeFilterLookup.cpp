@@ -89,7 +89,8 @@ void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
     /// Skip the configured number of blocks if too few rows got filtered out.
-    if (static_cast<double>(rows_passed) > config.pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
+    const double rows_passed_threshold = config.pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked);
+    if (static_cast<double>(rows_passed) > rows_passed_threshold)
         rows_to_skip += rows_checked * config.blocks_to_skip_before_reenabling;
 }
 
