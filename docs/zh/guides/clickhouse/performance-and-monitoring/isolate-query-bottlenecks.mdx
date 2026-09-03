@@ -1,0 +1,243 @@
+---
+slug: /optimize/isolate-query-bottlenecks
+sidebarTitle: '定位查询瓶颈'
+sidebar_label: '定位查询瓶颈'
+sidebar_position: 3
+title: '定位查询瓶颈'
+description: '通过可重复的三次运行对比，定位缓慢的 ClickHouse 查询中的瓶颈'
+doc_type: '指南'
+keywords: ['查询优化', '查询瓶颈', '性能', '基准测试']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import NYCTaxiExampleDataset from '/snippets/zh/_nyc_taxi_example_dataset.mdx';
+
+每次只修改查询的一部分，并将结果与稳定的基线进行比较，可使查询优化更容易。本指南介绍如何逐步简化查询，并通过比较各次运行结果的差异，识别对其耗时影响最大的操作。随后，您可以在选择优化方案前验证疑似瓶颈。
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+首先，确定一个要调查的反复出现的慢查询模式。如果尚未确定，请参阅[诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)，其中详细说明了该流程。
+
+若要按原文运行本指南中的示例，如果尚未创建并加载 `nyc_taxi.trips_small_inferred` 表，请先创建并加载该表：
+
+<Accordion title="设置示例数据集">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+示例表使用 `ORDER BY ()`，因此其日期过滤器无法利用排序键在读取期间跳过数据。请使用该示例练习比较方法，而不要将其视为性能目标。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+逐步简化查询，可以比较移除某个处理阶段前后的耗时。这些差异有助于判断是否需要进一步分析扫描和筛选、分组、聚合计算，或排序和输出格式化等后续操作：
+
+1. 运行原始查询，确定基线测量值。
+2. 保留 `GROUP BY`，将查询中的聚合计算替换为 `count`，并移除排序和输出格式化等后续操作。
+3. 移除分组并运行不分组的 `count`，以估算扫描、筛选和任何 join 所保留的工作量。
+
+这些步骤可直接用于常规的分组聚合查询。对于更复杂的查询，请一次对一个 `SELECT` 块应用相同原则：保留等效的数据源和过滤器，每次移除一项操作，并在每次更改后验证执行计划。
+
+<Note>
+  这些差异是诊断性估算，并非对 ClickHouse 执行阶段的精确测量。更改查询可能会改变其执行计划、读取的列以及各阶段之间传递的数据。请根据结果提出假设，然后通过查询日志和 [`EXPLAIN`](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) 进行验证。
+</Note>
+
+<div id="establish-a-repeatable-baseline">
+  ## 建立可重复的基线
+</div>
+
+采用以下做法，确保测量结果具有可比性：
+
+* 保持 `FROM`、`JOIN`、`PREWHERE` 和 `WHERE` 子句不变，确保每次比较使用相同的数据和时间范围。
+* 在相近的系统负载下，多次运行每个版本的查询。
+* 保持缓存条件一致。要么在记录测量结果前运行每个版本的查询，要么禁用下列缓存。不要比较已缓存和未缓存的运行结果。
+* 记录具有代表性的耗时，例如在完成预热运行后，取多次重复运行结果的中位数，而不要采用最快或最慢的结果。
+* 每次只更改一个变量，以便将性能差异归因于某项具体更改。
+
+对于未缓存的诊断比较，请禁用 ClickHouse 针对远程数据的文件系统缓存、查询缓存和查询条件缓存。同时也要禁用隐式投影，确保运行 C 中的 `count` 不会使用优化后的执行计划，从而绕过你要比较的扫描操作。
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+SET optimize_use_implicit_projections = 0;
+```
+
+<Note>
+  这些 `SET` 语句仅适用于当前会话。请在该会话中运行所有对比查询，或为每次运行应用相同的设置。文件系统缓存设置不会禁用操作系统的页面缓存，也不会禁用所有 [ClickHouse 缓存](/zh/concepts/features/performance/caches/caches)。完成后，请关闭此专用会话，或将每项设置恢复为原先的值。
+</Note>
+
+此工作流将受控执行查询与查询日志中的测量数据结合使用：
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="用于从查询日志中识别候选查询并隔离测试变更的工作流" />
+
+按以下方式收集每次运行的测量数据：
+
+1. 为每次运行指定唯一的查询 ID，或记录查询界面生成的 ID。例如，将重复运行标识为 `bottleneck-a-1`、`bottleneck-a-2` 和 `bottleneck-a-3`。使用 `clickhouse-client` 时，请在执行查询时传入 `--query_id your-query-id`。
+
+2. 在相同条件下多次执行每个对比查询。将预热运行与用于测量的运行分开。
+
+3. 在查找最近完成的查询前刷新查询日志：
+
+   ```sql
+   SYSTEM FLUSH LOGS;
+   ```
+
+   如果无法运行 `SYSTEM FLUSH LOGS`，请等待查询日志自动刷新，然后重试查找。如果记录始终未出现，请确认查询日志已启用、你有权限读取 `system.query_log`，并且查询的是执行该查询的节点。
+
+4. 查找每个查询 ID 对应的完成记录。对于已完成的查询，`system.query_log` 会同时记录 `QueryStart` 和 `QueryFinish` 事件。筛选 `QueryFinish`，其中包含最终耗时、读取的行数和字节数，以及峰值内存占用：
+
+   ```sql
+   SELECT
+       query_id,
+       query_duration_ms,
+       read_rows,
+       read_bytes,
+       memory_usage
+   FROM system.query_log
+   WHERE type = 'QueryFinish'
+     AND query_id = 'your-query-id'
+   ORDER BY event_time_microseconds DESC
+   LIMIT 1;
+   ```
+
+5. 对于查询的每个版本，使用测量运行的耗时中位数。记录最接近该中位数的那次运行的 `read_rows`、`read_bytes` 和峰值内存占用，以确保测量数据对应实际运行。
+
+<Note>
+  对于分布式查询，发起查询的 `QueryFinish` 记录中的 `memory_usage` 并非集群级峰值。请使用 `initial_query_id` 查看参与节点上的子 `QueryFinish` 记录。
+</Note>
+
+使用下表整理具有代表性的测量数据。有关字段和配置的更多信息，请参阅 [`system.query_log`](/zh/reference/system-tables/query_log)。
+
+<Tabs>
+  <Tab title="表格">
+    | 运行 | 查询版本        | 代表性耗时 | `read_rows` | `read_bytes` | 峰值内存占用 |
+    | -- | ----------- | ----- | ----------- | ------------ | ------ |
+    | A  | 原始查询        |       |             |              |        |
+    | B  | 分组 `count`  |       |             |              |        |
+    | C  | 未分组 `count` |       |             |              |        |
+  </Tab>
+
+  <Tab title="CSV">
+    ```csv title="query-comparison.csv"
+    Run,Query version,Representative duration,read_rows,read_bytes,Peak memory
+    A,Original query,,,,
+    B,Grouped count,,,,
+    C,Ungrouped count,,,,
+    ```
+  </Tab>
+</Tabs>
+
+<div id="run-progressively-simpler-queries">
+  ## 逐步简化查询并运行
+</div>
+
+为演示这三种比较，示例使用了分组的[日期范围工作负载](/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation)。您也可以将此方法应用于其他查询，无需遵循该完整示例。如果查询不包含 `GROUP BY`，请按下文说明跳过运行 B。
+
+<Steps>
+  <Step title="运行 A：测量原始查询" id="run-a-measure-the-original-query">
+    在不更改查询的过滤条件、分组、聚合表达式、排序或输出的情况下运行完整查询。由此建立耗时、读取行数和字节数以及峰值内存占用的基准。
+
+    此查询按支付类型对行程分组，并计算多个聚合值：
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count,
+        formatReadableQuantity(sum(trip_distance)) AS total_distance,
+        avg(total_amount) AS total_amount_avg,
+        avg(tip_amount) AS tip_amount_avg
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type
+    ORDER BY trip_count DESC;
+    ```
+
+    将查询的测量结果记录为运行 A。
+  </Step>
+
+  <Step title="运行 B：保留分组并使用 count" id="run-b-retain-grouping-with-count">
+    保留查询的 `FROM`、`JOIN`、`PREWHERE`、`WHERE` 和分组键。将聚合表达式替换为分组 `count`。移除聚合后的处理，包括原有的排序和输出表达式。
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type;
+    ```
+
+    运行 B 仍会扫描和过滤数据、执行所有 join 并构建分组。将其耗时与运行 A 比较，以估算原始聚合表达式和聚合后处理所占的开销。还应比较 `read_bytes`，因为移除聚合表达式可能会减少需要读取的列。
+
+    如果原始查询不包含 `GROUP BY`，则没有可单独分析的分组阶段。请跳过运行 B，直接将原始查询与运行 C 比较。
+  </Step>
+
+  <Step title="运行 C：移除分组" id="run-c-remove-grouping">
+    移除 `GROUP BY` 并返回单个 `count`。保持 `FROM`、`JOIN`、`PREWHERE` 和 `WHERE` 子句不变，以确保剩余操作具有可比性。
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01';
+    ```
+
+    运行 C 为其执行计划中保留的操作提供基准，而非对扫描或过滤的单独测量。将其与运行 B 比较，以估算分组所占的开销。还应比较 `read_bytes`，因为移除分组键可能会减少读取的列。返回的 `count` 显示经过保留的过滤条件和 join 后，有多少行进入聚合阶段。
+
+    在解读运行 C 前，请确认其执行计划读取的是预期的数据源，并应用了保留的过滤条件。基于 projection 或 metadata 的计数可能会改变实际执行的操作。若要获得基于扫描的基准，请在所有三次运行中禁用执行计划显示的优化：对于隐式投影，使用 `optimize_use_implicit_projections = 0`；对于显式 projection，使用 `optimize_use_projections = 0`；对于由表 metadata 提供的无过滤计数，使用 `optimize_trivial_count_query = 0`。
+
+    如果运行 C 仍然很慢，请检查其中保留的操作，首先从扫描和过滤入手。更改查询前，请使用查询日志和 `EXPLAIN` 验证疑似瓶颈。
+  </Step>
+</Steps>
+
+<div id="interpret-the-differences">
+  ## 解读差异
+</div>
+
+应比较多次运行中具有代表性的耗时，而非将两次单独的计时结果相减。显著且持续存在的差异表明下一步应从何处着手调查：
+
+| 观察结果           | 潜在瓶颈                           | 后续调查                                                                           |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------------ |
+| 运行 A 比运行 B 慢得多 | 聚合表达式、排序、聚合后的其他操作，或读取了额外的列     | 检查开销较大的聚合函数、表达式、`ORDER BY`、`read_bytes` 和峰值内存占用                                |
+| 运行 B 比运行 C 慢得多 | 分组、组基数，或读取分组键                  | 检查分组键、组数、`read_bytes` 和峰值内存占用                                                  |
+| 运行 C 仍然很慢      | 扫描、过滤、join，或运行 C 中保留的其他操作        | 检查读取的行数和字节数、主键使用情况、数据跳过索引和执行计划；然后验证疑似瓶颈                                        |
+| 三次运行的耗时相近      | 延迟来源可能是三个版本共有的，也可能是简化操作改变了执行计划 | 比较各次运行的 `read_rows`、`read_bytes` 和峰值内存占用。如果这些指标也相近，请调查运行 C 中保留的操作。否则，比较执行计划的差异 |
+
+<div id="compare-rows-read-with-count-result">
+  ### 将读取行数与 count 结果进行比较
+</div>
+
+将运行 C 的 `read_rows` 与其 `count` 返回的值进行比较。例如，如果 `read_rows` 为 1 亿，而 `count` 返回 100 万，则 ClickHouse 每统计一行，大约扫描了 100 行源数据。这表明过滤器排除了从表中读取的大多数行，但无法说明具体原因。此比率适用于简单的单表扫描。对于涉及多个数据源或投影的查询，应结合执行计划来解读 `read_rows`。
+
+对于 ClickHouse 25.9 及更高版本，在检查索引使用情况之前，请禁用查询条件缓存以及跳过索引的动态应用：
+
+```sql
+SET use_query_condition_cache = 0;
+SET use_skip_indexes_on_data_read = 0;
+```
+
+然后使用 [`EXPLAIN indexes = 1`](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) 查看 ClickHouse 使用了哪些索引，以及每个索引跳过了多少 parts 和粒度。如果 ClickHouse 选中的粒度多于预期，请检查过滤器是否与表的排序键匹配，以及是否可通过分区剪枝或数据跳过索引跳过更多粒度。如果执行计划中没有 `Indexes` 部分，说明 `EXPLAIN` 未显示该查询的索引剪枝信息。相比之下，全表分析查询通常会读取表中的大部分数据。
+
+<div id="validate-the-suspected-bottleneck">
+  ## 验证疑似瓶颈
+</div>
+
+比较结果指向可能的瓶颈后，请先进行验证，再修改 schema 或查询。应根据疑似的延迟来源收集相应证据：
+
+* 对于扫描或筛选瓶颈，请结合上述设置使用 `EXPLAIN indexes = 1`，查看 ClickHouse 使用了哪些索引，以及每个索引排除了多少 parts 和粒度。检查执行计划是否使用了隐式投影，而不是预期的扫描。
+* 对于分组或聚合瓶颈，请检查相关的查询 profile events 和峰值内存占用。
+* 如果运行 C 仍然较慢且包含 joins，请将其与每次移除一个 join 的诊断查询进行比较。耗时大幅降低表明被移除的 join 会带来大量工作。由于移除 join 会改变查询含义，因此此比较仅用于定位耗时；行数变化应单独解读。
+* 对于运行 C 中保留的其他操作所造成的瓶颈，请检查执行计划和相关的查询 profile events。
+
+有关 `EXPLAIN` 返回的索引信息，请参阅[慢查询诊断指南](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)。进行一项有针对性的更改后，在相同条件下重复运行 A、B 和 C。确认该更改减少了预期的工作量，且未将瓶颈转移到其他位置。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+继续阅读[优化方法](/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches)，针对疑似性能瓶颈采取一项或多项相应的优化措施。

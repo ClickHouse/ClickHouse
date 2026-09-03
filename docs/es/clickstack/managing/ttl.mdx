@@ -50,7 +50,7 @@ De forma predeterminada, los datos con TTL expirado se eliminan cuando ClickHous
 
 Para modificar TTL, puede optar por una de estas opciones:
 
-1. **Modificar los esquemas de la tabla (recomendado)**. Para ello, es necesario conectarse a la instancia de ClickHouse, por ejemplo, mediante [clickhouse-client](/es/concepts/features/interfaces/cli) o [Cloud SQL Console](/es/products/cloud/features/sql-console-features/sql-console). Por ejemplo, podemos modificar el TTL de la tabla `otel_logs` mediante el siguiente DDL:
+1. **Modificar los esquemas de la tabla (recomendado)**. Para ello, es necesario conectarse a la instancia de ClickHouse, por ejemplo, mediante [clickhouse-client](/es/concepts/features/interfaces/client) o [Cloud SQL Console](/es/products/cloud/features/sql-console-features/sql-console). Por ejemplo, podemos modificar el TTL de la tabla `otel_logs` mediante el siguiente DDL:
 
 ```sql
 ALTER TABLE default.otel_logs

@@ -45,7 +45,11 @@ Convierte una dirección de memoria virtual dentro del proceso del servidor de C
 Para habilitar esta función de introspección:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
-* Establezca la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
+* Establezca el SETTING [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -67,7 +71,7 @@ Devuelve el nombre de un archivo de código fuente y el número de línea, separ
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -106,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -136,6 +140,10 @@ Para habilitar esta función de introspección:
 * Instale el paquete `clickhouse-common-static-dbg`.
 * Establezca el ajuste [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -148,7 +156,7 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Valor devuelto**
 
-Devuelve un array cuyo primer elemento es el nombre del archivo de código fuente y el número de línea, separados por dos puntos. El segundo, tercer, etc. elemento enumera los nombres de archivo del código fuente, los números de línea y los nombres de las funciones inline. Si no se encuentra información de depuración, se devuelve un array con un único elemento igual al nombre del binario; en cambio, si la dirección no es válida, se devuelve un array vacío. [`Array(String)`](/es/reference/data-types/array)
+Devuelve un array cuyo primer elemento es el nombre del archivo de código fuente y el número de línea, separados por dos puntos. El segundo, tercer, etc. elemento enumera los nombres de archivo del código fuente, los números de línea y los nombres de las funciones en línea. Si no se encuentra información de depuración, se devuelve un array con un único elemento igual al nombre del binario; en cambio, si la dirección no es válida, se devuelve un array vacío. [`Array(String)`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -232,6 +240,10 @@ Introducido en: v20.1.0
 
 Convierte una dirección de memoria virtual dentro del proceso del servidor de ClickHouse en un símbolo de los archivos objeto de ClickHouse.
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -244,19 +256,19 @@ addressToSymbol(address_of_binary_instruction)
 
 **Valor devuelto**
 
-Devuelve el símbolo de los archivos de objetos de ClickHouse o una cadena vacía si la dirección no es válida. [`String`](/es/reference/data-types/string)
+Devuelve el símbolo de los archivos objeto de ClickHouse o una cadena vacía si la dirección no es válida. [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 
-**Selección de la primera cadena de texto de la tabla del sistema `trace_log`**
+**Selección de la primera cadena de la tabla del sistema `trace_log`**
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
--- El campo `trace` contiene la traza de pila en el momento del muestreo.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -286,14 +298,14 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- La función arrayMap permite procesar cada elemento individual del array trace mediante la función addressToSymbols.
--- El resultado de este procesamiento se muestra en la columna trace_symbols de la salida.
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -348,7 +360,7 @@ Devuelve el nombre de la función de C++, o una cadena vacía si el símbolo no 
 **Seleccionar la primera cadena de la tabla del sistema `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -368,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -389,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
