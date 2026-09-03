@@ -154,8 +154,8 @@ namespace
         const auto nullable_string = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
         const auto probe_header = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}});
 
-        /// On the server's own context, and only ever after the caller's grant check: the caller needs
-        /// no cluster grant of its own, and learns nothing it could not already see.
+        /// On the server's own context, and only ever after the caller's own grants are checked: a read
+        /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
         probe_context->setCurrentQueryId("");
@@ -279,6 +279,10 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// The shard-local table's own policy and filters are each shard's to check, in the selector.
     checkNoBypassedReadRestriction(
         storage_id, context, "A prometheus query over a Distributed table", "the read is rewritten to the shard-local TimeSeries tables");
+
+    /// Grant before existence: the probe below runs on the server's own context, so the grant the generated
+    /// cluster() call enforces only later is required here, before it can report on a shard-local target.
+    context->checkAccess(AccessType::READ, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::REMOTE));
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);

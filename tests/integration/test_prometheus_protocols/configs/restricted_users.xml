@@ -18,5 +18,25 @@
                 <query>GRANT SELECT ON *.*</query>
             </grants>
         </prom_no_insert>
+        <!-- May read the wrapper, but not the cluster() call the PromQL read is rewritten to. -->
+        <prom_no_remote>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+                <query>GRANT CREATE TEMPORARY TABLE ON *.*</query>
+            </grants>
+        </prom_no_remote>
+        <!-- May read the wrapper, but not call a table function that is not readonly. -->
+        <prom_no_temp_table>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT SELECT ON *.*</query>
+                <query>GRANT READ ON REMOTE</query>
+            </grants>
+        </prom_no_temp_table>
     </users>
 </clickhouse>

@@ -1,5 +1,6 @@
 """Every Prometheus surface of a Distributed target checks its grant (SELECT to read, INSERT
-to write) before it looks at the table, so a denied caller learns nothing else."""
+to write) before it looks at the table, so a denied caller learns nothing else. A read is
+denied for the grants the rewrite needs later too, before the shard probe speaks."""
 
 import json
 
@@ -13,6 +14,7 @@ from .prometheus_test_utils import (
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
+    execute_range_query_via_http_api,
     get_response_to_remote_read,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
@@ -37,14 +39,28 @@ DIST = "/dist/api/v1"
 BAD_ENGINE = "/bad_engine/api/v1"
 # A handler that sets neither database nor table: both come from the query parameters.
 DYNAMIC = "/dynamic/api/v1"
+# A wrapper the shard probe rejects, so its error is there to be leaked.
+COARSE = "/coarse/api/v1"
 
 NO_SELECT_USER = "prom_no_select"
 NO_INSERT_USER = "prom_no_insert"
+NO_REMOTE_USER = "prom_no_remote"
+NO_TEMP_TABLE_USER = "prom_no_temp_table"
 
 EVALUATION_TIME = 140
 
 HIDDEN_TABLE = "ts_dist"
 MISSING_TABLE = "no_such_table"
+COARSE_TABLE = "ts_coarse"
+
+# What the shard probe says, in the words no denied caller may see.
+SHARD_LOCAL_LEAK = [
+    "shard-local",
+    "ts_local",
+    "DateTime64",
+    "TYPE_MISMATCH",
+    "UNEXPECTED_TABLE_ENGINE",
+]
 
 # The table functions resolve their source table while their arguments are parsed, which is
 # where the grant is checked: DESCRIBE gets no further than SELECT does.
@@ -52,6 +68,12 @@ TABLE_FUNCTIONS = [
     f"prometheusQuery(ts_dist, 'm', {EVALUATION_TIME})",
     f"prometheusQueryRange(ts_dist, 'm', 0, {EVALUATION_TIME}, 10)",
     f"timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})",
+]
+
+# The same two functions over the wrapper the probe rejects.
+COARSE_TABLE_FUNCTIONS = [
+    f"prometheusQuery({COARSE_TABLE}, 'm', {EVALUATION_TIME})",
+    f"prometheusQueryRange({COARSE_TABLE}, 'm', 0, {EVALUATION_TIME}, 10)",
 ]
 
 INSERT_TEST_DATA = """
@@ -78,6 +100,13 @@ def start_cluster():
         # The same outer schema, so only the engine tells this table apart from `ts_dist`.
         node.query(
             "CREATE TABLE mt_not_ts AS shard_0.ts_local ENGINE = MergeTree ORDER BY tuple()"
+        )
+        # The same shards behind a wrapper declaring another `time_series` type: the shard probe
+        # refuses it, so an allowed caller is told about the shard-local tables.
+        node.query(
+            f"CREATE TABLE {COARSE_TABLE} (metric_name String, tags Map(String, String), "
+            "time_series Array(Tuple(DateTime64(0), Float64))) "
+            "ENGINE = Distributed(two_shards_dist, '', ts_local, cityHash64(tags['host']))"
         )
         node.query(INSERT_TEST_DATA, settings={"distributed_foreground_insert": 1})
         yield cluster
@@ -115,6 +144,40 @@ def query(handler, user=None, table=None, expect_error=False):
         params=params,
         expect_error=expect_error,
     )
+
+
+def coarse_query(endpoint, user=None):
+    """The error of the instant or range PromQL endpoint over the wrapper the probe rejects."""
+    params = as_user(user)
+    if endpoint == "query":
+        return execute_query_via_http_api(
+            node.ip_address,
+            9093,
+            f"{COARSE}/query",
+            "m",
+            EVALUATION_TIME,
+            params=params,
+            expect_error=True,
+        )
+    return execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        f"{COARSE}/query_range",
+        "m",
+        0,
+        EVALUATION_TIME,
+        "10",
+        params=params,
+        expect_error=True,
+    )
+
+
+def assert_denied_without_leaking(error, grant):
+    """The missing grant is all the caller is told: nothing the probe found on the shards."""
+    assert "Not enough privileges" in error, error
+    assert grant in error, error
+    for fragment in SHARD_LOCAL_LEAK:
+        assert fragment not in error, error
 
 
 def series_count(metric_name):
@@ -241,3 +304,35 @@ def test_selector_access_denied_precedes_the_engine_error():
     assert "Not enough privileges" in denied, denied
     assert "TimeSeries" not in denied, denied
     assert "Distributed" not in denied, denied
+
+
+@pytest.mark.parametrize("table_function", COARSE_TABLE_FUNCTIONS)
+@pytest.mark.parametrize(
+    "user, grant",
+    [
+        (NO_REMOTE_USER, "READ ON REMOTE"),
+        (NO_TEMP_TABLE_USER, "CREATE TEMPORARY TABLE"),
+    ],
+)
+def test_table_functions_deny_before_probing_the_shards(table_function, user, grant):
+    sql = f"SELECT count() FROM {table_function}"
+    # A caller holding every grant is told what the probe found behind the wrapper...
+    allowed = node.query_and_get_error(sql)
+    assert "shard-local target(s) named" in allowed, allowed
+
+    # ...while one missing a grant the call needs later learns only that it has no grant. The
+    # probe runs while the arguments are parsed, before either grant is asked for.
+    denied = node.query_and_get_error(sql, user=user).split("Stack trace:")[0]
+    assert_denied_without_leaking(denied, grant)
+
+
+@pytest.mark.parametrize("endpoint", ["query", "query_range"])
+def test_query_endpoints_deny_before_probing_the_shards(endpoint):
+    allowed = coarse_query(endpoint)
+    assert "shard-local target(s) named" in allowed, allowed
+
+    # The rewrite reads the shards through cluster(), which needs READ ON REMOTE; the probe runs
+    # before that call is ever made.
+    assert_denied_without_leaking(
+        coarse_query(endpoint, NO_REMOTE_USER), "READ ON REMOTE"
+    )

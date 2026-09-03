@@ -125,7 +125,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     /// Applied only when the query actually reads the table: '1 + 2' has no selector, so
     /// wrapper-only settings must not refuse it.
     if (distributed_target && prometheusQueryReadsTimeSeries(promql_query))
+    {
+        /// Grant before existence: this table function's own CREATE TEMPORARY TABLE is enforced when it
+        /// executes, which is after the check below would have reported on the shard-local targets.
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
         checkPrometheusQueryDistributedRead(*time_series_storage, context);
+    }
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
