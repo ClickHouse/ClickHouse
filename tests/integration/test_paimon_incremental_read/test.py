@@ -25,6 +25,7 @@ CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
 CH_TABLE_NAME_CONCURRENT = "paimon_inc_read_concurrent"
 CH_TABLE_NAME_EXPIRED = "paimon_inc_read_expired"
 CH_TABLE_NAME_HOLE = "paimon_inc_read_hole"
+CH_TABLE_NAME_EXPIRED_PREFIX = "paimon_inc_read_expired_prefix"
 CH_MV_PAIMON_TABLE = "paimon_mv_source"
 CH_MV_MERGETREE_TABLE = "paimon_mv_dest"
 CH_MV_NAME = "paimon_refresh_mv"
@@ -777,6 +778,72 @@ def test_paimon_incremental_read_expired_snapshot_is_skipped(started_cluster):
         zk.stop()
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_EXPIRED} SYNC;")
+
+
+def test_paimon_incremental_read_expired_prefix_is_skipped_in_one_step(started_cluster):
+    """An expired prefix costs one resolution, not one per missing id.
+
+    This is the shape the skip path exists for: a consumer that fell behind while Paimon
+    expired everything it had not consumed yet. Resolving `earliest` per missing id would
+    make the poll quadratic - a cursor at 1 with only ids 90000..100000 surviving would
+    issue a failed read plus a directory listing ~90000 times, and `max_consume_snapshots`
+    does not bound it because skipped ids never count towards the limit. Nothing below
+    `earliest` exists, so the whole prefix must be settled at once.
+
+    The prefix here is short enough to run quickly; what makes the test meaningful is the
+    log assertion, since walking the prefix would emit one line per missing id."""
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_expired_prefix"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{warehouse_dir}/test.db/test_table"
+    snapshot_dir = f"{table_path}/snapshot"
+    keeper_path = f"/clickhouse/paimon_expired_prefix_{uuid.uuid4().hex}"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        CH_TABLE_NAME_EXPIRED_PREFIX, table_path, keeper_path=keeper_path
+    )
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_EXPIRED_PREFIX}"
+    # Leaves the cursor at snapshot 1.
+    _drain_baseline(count_query, "1\n")
+
+    # Snapshots 2..6, then expire the prefix 1..5 the way Paimon does. The cursor is at 1,
+    # so ids 2, 3, 4 and 5 are all missing and only snapshot 6 survives to be delivered.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=5)
+    _warehouse_shell(
+        writer_container_id,
+        f"rm -f {snapshot_dir}/snapshot-1 {snapshot_dir}/snapshot-2 {snapshot_dir}/snapshot-3 "
+        f"{snapshot_dir}/snapshot-4 {snapshot_dir}/snapshot-5",
+    )
+    _warehouse_shell(writer_container_id, f"printf 6 > {snapshot_dir}/EARLIEST")
+
+    skip_marker = "were expired by Paimon"
+    skips_before = int(node.count_in_log(skip_marker))
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error, f"the expired prefix was treated as an error: {error!r}"
+        assert out == "10\n", f"expected only snapshot 6, got {out!r}"
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"6", (
+            "the watermark did not advance past the expired prefix"
+        )
+    finally:
+        zk.stop()
+
+    # One line for the whole prefix. Walking it id by id would log four.
+    skips_after = int(node.count_in_log(skip_marker))
+    assert skips_after - skips_before == 1, (
+        f"expected the prefix to be settled in one step, got {skips_after - skips_before} skips"
+    )
+    assert node.grep_in_log("Snapshot ids 2..5 were expired by Paimon"), (
+        "the skip did not cover the whole expired prefix"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_EXPIRED_PREFIX} SYNC;")
 
 
 def test_paimon_incremental_read_missing_snapshot_is_not_expiration(started_cluster):

@@ -779,15 +779,27 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     /// `earliest` is resolved on the failure path rather than before the loop so that a healthy
     /// read pays nothing for it - the EARLIEST hint may be absent, in which case resolving it
     /// means listing the whole snapshot directory.
-    auto was_expired_by_paimon = [&](Int64 id)
+    ///
+    /// When `id` was expired this returns the last id of the expired prefix, so the caller can
+    /// step over the prefix in one go. Walking it id by id would be quadratic in exactly the
+    /// case this path exists for - a consumer that fell far behind before expiration ran, say a
+    /// cursor at 1 with only ids 90000..100000 surviving, would pay one failed read plus one
+    /// directory listing for each of the ~90000 missing ids, and `max_snapshots_to_load` does
+    /// not bound that because skipped ids never reach `snapshots`. Nothing below `earliest`
+    /// exists, by definition of `earliest`, so a single resolution settles the whole prefix.
+    auto expired_prefix_end = [&](Int64 id) -> std::optional<Int64>
     {
         const auto earliest_snapshot_id = table_client->getEarliestSnapshotId();
         if (!earliest_snapshot_id || id >= *earliest_snapshot_id)
-            return false;
+            return std::nullopt;
 
-        LOG_INFO(log, "Snapshot_id={} was expired by Paimon (earliest available is {}), skipping",
-            id, *earliest_snapshot_id);
-        return true;
+        /// Concurrent expiration only moves `earliest` up, so a value resolved here can only be
+        /// behind the truth. That skips fewer ids and re-resolves on the next miss; it can never
+        /// skip a surviving snapshot.
+        const Int64 prefix_end = std::min(*earliest_snapshot_id - 1, to_snapshot_id);
+        LOG_INFO(log, "Snapshot ids {}..{} were expired by Paimon (earliest available is {}), skipping",
+            id, prefix_end, *earliest_snapshot_id);
+        return prefix_end;
     };
 
     /// Spelling out the cost is part of the instruction: moving the cursor past a snapshot
@@ -819,9 +831,11 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         }
         catch (Exception & e)
         {
-            if (was_expired_by_paimon(snapshot_id))
+            if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
-                last_scanned_snapshot_id = snapshot_id;
+                last_scanned_snapshot_id = *prefix_end;
+                /// The loop's ++ lands on the first surviving id.
+                snapshot_id = *prefix_end;
                 continue;
             }
 
@@ -839,9 +853,11 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         }
         catch (...)
         {
-            if (was_expired_by_paimon(snapshot_id))
+            if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
-                last_scanned_snapshot_id = snapshot_id;
+                last_scanned_snapshot_id = *prefix_end;
+                /// The loop's ++ lands on the first surviving id.
+                snapshot_id = *prefix_end;
                 continue;
             }
 
