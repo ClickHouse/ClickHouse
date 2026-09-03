@@ -7,10 +7,9 @@ doc_type: 'guide'
 ---
 
 ## Overview {#overview}
+Background queries allow clients to submit queries that execute independently of the client session by setting `run_query_in_background=1`. Once submitted, the ClickHouse server responds immediately to the client while the query still run to completion (either success or failure) on the server side
 
-Background queries let a client submit a query that continues running independently of the client connection.
-Enable this behavior with the [`run_query_in_background`](/reference/settings/session-settings/other#run_query_in_background) setting.
-After accepting the query, ClickHouse returns an empty successful result immediately and runs the query in the background.
+By decoupling query execution from the client network connection, background tasks are fully resilient to client-side disconnects or transient network failures.
 
 Background queries are mainly intended for long-running operations such as `INSERT ... SELECT`,
 `CREATE TABLE ... AS SELECT`, or `CREATE MATERIALIZED VIEW ... POPULATE` that must not stop if the
@@ -42,8 +41,8 @@ clickhouse-client --echo-query-id \
   -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
 ```
 
-The native protocol carries query settings separately from the SQL text. `clickhouse-client` parses most inline
-query settings and sends them in this settings section. Native-protocol drivers can instead pass
+The native protocol carries query settings separately from the SQL text. 
+`clickhouse-client` parses most inline query settings and sends them in this settings section. Native-protocol drivers can instead pass
 `run_query_in_background` in their per-query settings map, keeping the SQL text unchanged.
 
 The native protocol does not return a server-generated `query_id`. Native clients should generate a unique ID and
@@ -112,9 +111,9 @@ in `system.query_log` rather than returned over the original connection.
 
 ## Query log flush delay {#query-log-flush-delay}
 
-Entries are buffered before they appear in `system.query_log`. For self-managed ClickHouse, the example server
-configuration sets `query_log.flush_interval_milliseconds` to `7500`. ClickHouse Cloud entries can take up to
-30 seconds to appear. Account for this delay when monitoring short-running background queries.
+Entries are buffered before they appear in `system.query_log`. 
+For self-managed ClickHouse, the example server configuration sets `query_log.flush_interval_milliseconds` to `7500`. 
+ClickHouse Cloud entries can take up to 30 seconds to appear. Account for this delay when monitoring short-running background queries.
 
 On a self-managed server, users with sufficient privileges can force system logs to flush:
 
