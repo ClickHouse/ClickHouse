@@ -663,7 +663,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->hasCheapTotals()
+                                    if (auto total_rows = table.second->hasTotalsInMemory()
                                         ? table.second->totalRows(context)
                                         : std::nullopt)
                                         res_columns[res_index]->insert(*total_rows);
@@ -683,7 +683,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->hasCheapTotals()
+                                    if (auto total_bytes = table.second->hasTotalsInMemory()
                                         ? table.second->totalBytes(context)
                                         : std::nullopt)
                                         res_columns[res_index]->insert(*total_bytes);
@@ -948,7 +948,7 @@ protected:
                 {
                     try
                     {
-                        auto total_rows = table && table->hasCheapTotals()
+                        auto total_rows = table && table->hasTotalsInMemory()
                             ? table->totalRows(context_without_sequential_consistency)
                             : std::nullopt;
                         if (total_rows)
@@ -969,7 +969,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table && table->hasCheapTotals()
+                        auto total_bytes = table && table->hasTotalsInMemory()
                             ? table->totalBytes(context_without_sequential_consistency)
                             : std::nullopt;
                         if (total_bytes)

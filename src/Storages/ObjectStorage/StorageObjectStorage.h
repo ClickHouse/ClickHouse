@@ -164,8 +164,7 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
-    /// The totals come from the table metadata, which lives in the object storage.
-    bool hasCheapTotals() const override { return false; }
+    bool hasTotalsInMemory() const override { return false; }
 
     bool optimize(
         const ASTPtr & /*query*/,

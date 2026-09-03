@@ -793,10 +793,7 @@ public:
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
-    /// Whether `totalRows` and `totalBytes` are answered from memory, without reading the storage.
-    /// `system.tables` must never read the storage, so it reports unknown totals for the storages
-    /// that answer false here.
-    virtual bool hasCheapTotals() const { return true; }
+    virtual bool hasTotalsInMemory() const { return true; }
 
     /// Number of rows INSERTed since server start.
     ///
