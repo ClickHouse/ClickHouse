@@ -13,7 +13,6 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}
-  queue: max
 
 env:
   PYTHONUNBUFFERED: 1
