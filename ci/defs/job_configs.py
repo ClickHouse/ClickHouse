@@ -1671,12 +1671,15 @@ class JobConfigs:
                 "./utils/generate-system-tables-docs",
                 "./src/Common/AsynchronousMetricDocumentation.inc",
                 "./src/Common/AsynchronousMetrics.cpp",
+                "./src/Common/CurrentMetrics.cpp",
+                "./src/Common/ProfileEvents.cpp",
                 "./src/Coordination/KeeperAsynchronousMetrics.cpp",
                 "./src/Interpreters/BucketedMetricLog.h",
                 "./src/Interpreters/ServerAsynchronousMetrics.cpp",
                 "./src/Interpreters/SystemLog.h",
                 "./src/Interpreters/TransposedMetricLog.h",
                 "./src/Storages/System/StorageSystemAsynchronousMetrics.cpp",
+                "./src/Storages/System/StorageSystemDocumentation.cpp",
                 "./src/Storages/System/attachSystemTables.cpp",
                 # The source of truth for the generated Open source changelog
                 # page, so a change to it alone must still run this job.
@@ -1693,6 +1696,7 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
+        requires=[ArtifactNames.CH_ARM_BINARY],
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
