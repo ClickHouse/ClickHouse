@@ -478,7 +478,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         catch (...)
         {
             /// This is a failed attach table. Remove already created nested table.
-            DatabaseAtomic::dropTable(current_context, table_name, true);
+            DatabaseAtomic::dropTable(current_context, table_name, true, /* if_exists */ false);
             throw;
         }
     }
@@ -536,7 +536,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         {
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->makeQueryContext();
-            DatabaseAtomic::dropTable(current_context, table_name, true);
+            DatabaseAtomic::dropTable(current_context, table_name, true, /* if_exists */ false);
         }
         catch (Exception & e)
         {
@@ -602,12 +602,12 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 }
 
 
-void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
+void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync, bool if_exists)
 {
     FailPointInjection::pauseFailPoint(FailPoints::database_materialized_postgresql_pause_before_table_drop);
 
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
+    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync, if_exists);
 }
 
 

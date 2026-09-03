@@ -45,7 +45,7 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data, bool if_exists) const override;
 
 protected:
     /// Override the network primitives instead of `getAuthHeaders` so the SigV4 signer has

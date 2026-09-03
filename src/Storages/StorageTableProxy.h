@@ -89,6 +89,15 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    void prepareForDrop(ContextPtr query_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        /// Forwarded only to an already-resolved nested storage. A storage that receives no capture must
+        /// not infer a destructive action from a server-level default (see `StorageObjectStorage::drop`).
+        if (nested)
+            nested->prepareForDrop(query_context);
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};

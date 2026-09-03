@@ -2498,7 +2498,7 @@ void DatabaseReplicated::shutdown()
         std::rethrow_exception(first_error);
 }
 
-void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
+void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync, bool /*if_exists*/)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropTable");
     waitDatabaseStarted();

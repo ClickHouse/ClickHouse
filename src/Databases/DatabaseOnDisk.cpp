@@ -374,7 +374,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
 }
 
-void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/, bool /*if_exists*/)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::dropTable");
     waitDatabaseStarted();

@@ -67,7 +67,13 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+    bool createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const override;
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
@@ -80,7 +86,7 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call

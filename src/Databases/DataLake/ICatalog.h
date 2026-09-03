@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <IO/CompressionMethod.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -24,6 +25,7 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+std::string storageTypeToScheme(StorageType type);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -245,10 +247,24 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    /// Catalog-wide base location for new tables, e.g. `s3://warehouse/data`. Empty if unknown.
+    virtual String getDefaultBaseLocation() const { return ""; }
+
     /// Creates new table in catalog. Callers must ensure the namespace exists before
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.
-    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+    /// `metadata_compression_method` applies only to catalogs that write the initial metadata file
+    /// themselves (`new_metadata_path` is empty): they must name it `v1.<ext>.metadata.json` and compress
+    /// it accordingly, like `DB::IcebergMetadata::createInitial` does.
+    /// Returns `true` if this call created the table, `false` if `if_not_exists` is set and the shared
+    /// catalog reported that another client had already created it.
+    virtual bool createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method,
+        bool if_not_exists) const;
 
     /// Creates the namespace unless it already exists.
     virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
@@ -273,7 +289,8 @@ public:
         Int32 previous_schema_id) const;
 
     /// Drop table from catalog.
-    virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
+    /// If `purge`, the catalog is also asked to delete the underlying data files.
+    virtual void dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".

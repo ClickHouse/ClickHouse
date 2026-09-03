@@ -468,6 +468,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
+        if (table_id)
+            checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name));
+
         /// Substitute the database of the altered table into table functions that use the current database
         /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
         /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
