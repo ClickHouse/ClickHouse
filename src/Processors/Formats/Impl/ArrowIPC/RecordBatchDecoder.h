@@ -193,8 +193,15 @@ public:
 private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
+    /// The FieldNode `offset` nodes past the next one, without consuming anything.
+    const flatbuf::FieldNode & peekNode(size_t offset) const;
     /// Length of the next FieldNode without consuming it (for validating a child before decoding it).
     Int64 peekNextNodeLength() const;
+    /// Rejects the next FieldNode unless it declares exactly `expected` rows, BEFORE it is decoded: a
+    /// buffer-less field is sized by that length alone, so a forged length would otherwise drive an
+    /// allocation of that size before any post-decode size check could fire. `what` names the field in the
+    /// error, e.g. "struct field 'x'".
+    void expectNextNodeLength(size_t expected, const String & what) const;
 
     /// The row count the next FieldNode declares, clamped at zero (a negative length is rejected when the
     /// node is consumed). The child of a List/FixedSizeList/Map/Union field is the next node in the
@@ -218,9 +225,31 @@ private:
     /// forged metadata cannot drive an oversized allocation in a buffer-less child subtree (which is
     /// sized by that length alone; see `isBufferlessSubtree`). `prev` is the last referenced offset —
     /// the child row count the parent's offsets actually reference — and `what` names the parent field
-    /// in the errors ("list", "map"). Throws `INCORRECT_DATA` when a buffer-less child declares more
-    /// rows than are referenced, or when any child declares more rows than the body physically bounds.
+    /// in the errors ("list", "map"). Throws `INCORRECT_DATA` when a buffer-less child declares a length
+    /// other than the referenced count, or when any child declares more rows than the body physically
+    /// bounds.
     void checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const;
+
+    /// Whether the subtree starting at the next node decodes to a column determined by its size alone: it
+    /// is buffer-less (see `isBufferlessSubtree`) and none of its struct or fixed-size-list nodes declares
+    /// nulls, so every `null` leaf is all NULL and every struct row is valid. A buffer-less subtree that
+    /// does declare nulls carries a validity bitmap, which bounds its length physically, and decodes on the
+    /// ordinary path.
+    bool isSizeDeterminedSubtree(const ArrowField & field) const;
+    /// The recursive walk of `isSizeDeterminedSubtree` over the nodes of a buffer-less subtree. `node_offset`
+    /// is the subtree's first node relative to the next node and is advanced past the subtree.
+    bool bufferlessSubtreeDeclaresNulls(const ArrowField & field, size_t & node_offset) const;
+    /// Builds the column a size-determined subtree (see `isSizeDeterminedSubtree`) decodes to, at `rows`
+    /// rows instead of the rows its first node declares, consuming its nodes and the validity slots of its
+    /// struct and fixed-size-list nodes exactly as `decodeField` would. A parent that keeps only some of the
+    /// subtree's rows — an offsets parent dropping the ranges under invisible slots and the unreferenced
+    /// head and tail of a sliced list — builds just those, never materializing the declared length, however
+    /// large the offsets make it. Nested nodes are still checked against the lengths the decoding path
+    /// requires of them, so inconsistent metadata is rejected the same way on both paths; the caller has
+    /// validated the first node's length. `target_hint`, `path` and `list_depth` are the subtree's
+    /// requested-type position (see `decodeField`) and decide only whether a struct is wrapped in Nullable.
+    ColumnPtr buildSizeDeterminedColumn(
+        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth);
 
     /// Consumes and decodes the offsets buffer of a List/LargeList/Map field into ClickHouse array
     /// offsets (per-slot cumulative lengths relative to the first offset), validating that the first
@@ -268,6 +297,14 @@ private:
     ColumnPtr decodeDictionary(
         const ArrowField & field, size_t rows, bool allow_low_cardinality, const InvisibleRowsMask * invisible_rows);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
+    /// Whether the decoded column of a nullable field gets a Nullable wrapper. Array/Map cannot be inside
+    /// Nullable in ClickHouse, so (matching the Apache Arrow library reader) their outer validity is dropped.
+    /// A Struct (Tuple) is wrapped only when that is allowed: either `allow_experimental_nullable_tuple_type`
+    /// is on, or the requested type at this field (`effective_hint`) is already nullable, e.g. reading into
+    /// an existing `Nullable(Tuple)` column — mirroring the library reader's `allow_nullable_struct`.
+    /// Otherwise the struct is read as a plain Tuple, dropping the struct-level null map;
+    /// `decodeTopLevelColumn` reconciles the reported type to the column.
+    bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
