@@ -1,20 +1,48 @@
 -- { echo }
-select sum(key) from test_10m;
+select sum(key) from test_10m settings cluster_for_parallel_replicas='parallel_replicas';
 499999500000
-select sum(key) from test_10m where key = 1;
+select sum(key) from test_10m where key = 1 settings cluster_for_parallel_replicas='parallel_replicas';
+1
+select sum(key) from test_10m settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first';
+499999500000
+select sum(key) from test_10m where key = 1 settings cluster_for_parallel_replicas='parallel_replicas_unavailable_first';
 1
 Row 1:
 ──────
-q:                  select sum(key) from test_10m;
-not_blazingly_fast: 1
-missing_parts:      1
-replicas:           11
-failed_replicas:    1
+q:                   select sum(key) from test_10m settings cluster_for_parallel_replicas=?;
+cluster:             parallel_replicas
+not_blazingly_fast:  1
+missing_parts:       0
+replicas:            10
+replica_unavailable: 1
+replica_fallback:    0
 
 Row 2:
 ──────
-q:                  select sum(key) from test_10m where key = ?;
-not_blazingly_fast: 1
-missing_parts:      0
-replicas:           1
-failed_replicas:    0
+q:                   select sum(key) from test_10m where key = ? settings cluster_for_parallel_replicas=?;
+cluster:             parallel_replicas
+not_blazingly_fast:  1
+missing_parts:       0
+replicas:            1
+replica_unavailable: 1
+replica_fallback:    0
+
+Row 3:
+──────
+q:                   select sum(key) from test_10m settings cluster_for_parallel_replicas=?;
+cluster:             parallel_replicas_unavailable_first
+not_blazingly_fast:  1
+missing_parts:       0
+replicas:            10
+replica_unavailable: 1
+replica_fallback:    0
+
+Row 4:
+──────
+q:                   select sum(key) from test_10m where key = ? settings cluster_for_parallel_replicas=?;
+cluster:             parallel_replicas_unavailable_first
+not_blazingly_fast:  1
+missing_parts:       0
+replicas:            1
+replica_unavailable: 1
+replica_fallback:    0

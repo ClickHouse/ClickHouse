@@ -20,7 +20,7 @@ select format(
 from system.query_log
 where
   current_database = currentDatabase()
-  and event_date >= yesterday()
+  and event_date >= yesterday() AND event_time >= now() - 600
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and is_initial_query

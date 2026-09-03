@@ -1,0 +1,145 @@
+---
+sidebarTitle: 'Обзор'
+description: 'Без труда подключайте внешние источники данных к ClickHouse Cloud.'
+slug: /integrations/clickpipes
+title: 'Интеграция с ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'платформа ингестии данных', 'потоковые данные', 'интеграционная платформа', 'ClickHouse Cloud']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ClickPipesConnectors from '/snippets/ru/_clickpipes_connectors.mdx';
+
+<div id="overview">
+  ## Обзор
+</div>
+
+[ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая сводит ингестию данных из самых разных источников к нескольким нажатиям кнопок. Созданная для самых требовательных рабочих нагрузок, надёжная и масштабируемая архитектура ClickPipes обеспечивает стабильно высокую производительность и надёжность. ClickPipes можно использовать для непрерывной ингестии данных или одноразовой загрузки данных.
+
+ClickPipes можно развёртывать и управлять ими через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="clickpipes-connectors">
+  ## Коннекторы
+</div>
+
+<ClickPipesConnectors />
+
+В ClickPipes будут добавляться новые коннекторы; подробнее можно узнать, [связавшись с нами](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="aws-iam-database-authentication">
+  ## Аутентификация к базе данных через AWS IAM
+</div>
+
+ClickPipes поддерживает аутентификацию к базе данных через AWS IAM для Amazon RDS и Aurora. Конфигурация зависит от движка базы данных и сервиса AWS, поэтому выберите руководство по настройке источника, соответствующее вашей базе данных:
+
+| Движок базы данных | Сервис AWS    | Руководство по настройке                                                                                   |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL         | Amazon RDS    | [RDS для PostgreSQL](/ru/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL         | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ru/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL              | Amazon RDS    | [RDS для MySQL](/ru/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL              | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ru/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB            | Amazon RDS    | [RDS для MariaDB](/ru/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
+<div id="list-of-static-ips">
+  ## Список статических IP-адресов
+</div>
+
+Список статических NAT IP-адресов ClickPipes перенесён в [документацию по сетевому взаимодействию ClickPipes](/ru/integrations/clickpipes/networking/static-ips).
+
+<div id="adjusting-clickhouse-settings">
+  ## Настройка параметров ClickHouse
+</div>
+
+ClickHouse Cloud предоставляет оптимальные настройки по умолчанию для большинства сценариев использования. Однако если вам нужно изменить некоторые параметры ClickHouse для целевых таблиц ClickPipes, наиболее гибким решением будет отдельная роль для ClickPipes.
+Шаги:
+
+1. создайте пользовательскую роль `CREATE ROLE my_clickpipes_role SETTINGS ...`. Подробнее см. в разделе о синтаксисе [CREATE ROLE](/ru/reference/statements/create/role).
+2. добавьте пользовательскую роль пользователю ClickPipes на этапе `Details and Settings` при создании ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Назначение пользовательской роли" size="lg" border />
+
+<div id="clickpipes-advanced-settings">
+  ## Настройка расширенных настроек ClickPipes
+</div>
+
+ClickPipes предлагает разумные настройки по умолчанию, подходящие для большинства сценариев использования. Если в вашем случае требуется более тонкая настройка, вы можете изменить следующие параметры:
+
+<div id="clickpipes-advanced-settings-object-storage">
+  ### ClickPipes для объектного хранилища
+</div>
+
+| Настройка                            | Значение по умолчанию | Описание                                                                                                                                                      |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB                 | Количество байт, обрабатываемых в одном батче вставки.                                                                                                        |
+| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                         |
+| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings/max-threads#max_threads) для обработки файлов.                            |
+| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings/max-insert#max_insert_threads) для обработки файлов.              |
+| `Min insert block size bytes`        | 1 GB                  | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes), который можно вставить в таблицу.           |
+| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков скачивания](/ru/reference/settings/session-settings/max-download#max_download_threads).                            |
+| `Object storage polling interval`    | 30 s                  | Задаёт максимальный интервал ожидания перед вставкой данных в кластер ClickHouse.                                                                             |
+| `Parallel distributed insert select` | 2                     | [Параметр Parallel distributed insert select](/ru/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                              |
+| `Parallel view processing`           | false                 | Включает отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true                  | Определяет, следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                                    |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
+
+<div id="clickpipes-advanced-settings-streaming">
+  ### ClickPipes для стриминга
+</div>
+
+| Настройка                        | Значение по умолчанию | Описание                                                                       |
+| -------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
+| `Streaming max insert wait time` | 5 s                   | Задает максимальное время ожидания перед вставкой данных в кластер ClickHouse. |
+
+<div id="error-reporting">
+  ## Отчёт об ошибках
+</div>
+
+ClickPipes хранит ошибки в двух отдельных таблицах в зависимости от типа ошибки, возникшей во время ингестии.
+
+<Note>
+  В настоящее время это не относится к CDC-пайпам (Postgres, MySQL и MongoDB): для них журналы операций и ошибок доступны непосредственно в консоли ClickHouse Cloud.
+</Note>
+
+<div id="record-errors">
+  ### Ошибки записей
+</div>
+
+ClickPipes создаст рядом с вашей целевой таблицей таблицу с постфиксом `<destination_table_name>_clickpipes_error`. В этой таблице будут содержаться все ошибки, вызванные некорректными данными или несоответствием схемы, а также полное содержимое недопустимого сообщения. Для этой таблицы установлен [TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 7 дней.
+
+<div id="system-errors">
+  ### Системные ошибки
+</div>
+
+Ошибки, связанные с работой ClickPipe, будут храниться в таблице `system.clickpipes_log`. В ней будут храниться все прочие ошибки, связанные с работой вашего ClickPipe (сетевые ошибки, проблемы с подключением и т. д.). Для этой таблицы [TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) составляет 7 дней.
+
+Если ClickPipes не сможет подключиться к источнику данных в течение 15 минут или к пункту назначения в течение 1 часа, экземпляр ClickPipes будет остановлен, а в системной таблице ошибок будет сохранено соответствующее сообщение (при условии, что экземпляр ClickHouse доступен).
+
+<div id="monitoring">
+  ## Мониторинг
+</div>
+
+Помимо мониторинга в консоли, ClickPipes предоставляет метрики через [совместимую с Prometheus конечную точку](/ru/products/cloud/features/monitoring/prometheus) для сбора. Эти метрики публикуются вместе с другими метриками сервиса ClickHouse Cloud и позволяют интегрировать мониторинг ClickPipes с вашим существующим стеком обсервабилити (например, [Grafana](/ru/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/ru/products/cloud/features/monitoring/prometheus#integrating-with-datadog)). Полный список доступных метрик см. в разделе [Мониторинг ClickPipes](/ru/integrations/clickpipes/monitoring).
+
+<div id="faq">
+  ## FAQ
+</div>
+
+* **Что такое ClickPipes?**
+
+  ClickPipes — это возможность ClickHouse Cloud, которая упрощает подключение сервисов ClickHouse к внешним источникам данных, в частности к Kafka. С ClickPipes for Kafka вы можете легко организовать непрерывную загрузку данных в ClickHouse, делая их доступными для Real-time аналитики.
+
+* **Поддерживает ли ClickPipes преобразование данных?**
+
+  Да, ClickPipes поддерживает базовое преобразование данных, предоставляя доступ к созданию DDL. Затем по мере загрузки данных в целевую таблицу в сервисе ClickHouse Cloud вы можете применять к ним более сложные преобразования с помощью [возможности materialized view](/ru/concepts/features/materialized-views/cascading-materialized-views) ClickHouse.
+
+* **Влечет ли использование ClickPipes дополнительные расходы?**
+
+  ClickPipes тарифицируется по двум параметрам: принимаемые данные и Compute. Подробная информация о ценах доступна на [этой странице](/ru/products/cloud/reference/billing/clickpipes/index). Использование ClickPipes также может косвенно приводить к дополнительным затратам на compute и хранилище в целевом сервисе ClickHouse Cloud, как и любая рабочая нагрузка приёма данных.
+
+* **Есть ли способ обрабатывать ошибки или сбои при использовании ClickPipes for Kafka?**
+
+  Да, ClickPipes for Kafka автоматически выполняет повторные попытки при сбоях во время чтения данных из Kafka, вызванных любыми эксплуатационными проблемами, включая сетевые проблемы, проблемы с подключением и т. д. В случае некорректно сформированных данных или недопустимой схемы ClickPipes сохранит запись в таблицу record&#95;error и продолжит обработку.

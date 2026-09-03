@@ -1,7 +1,7 @@
 find_super_nodes
-/test-keeper-client-default/1	4
-/test-keeper-client-default/1/d	3
+/test-keeper-client-default/1/a	3
+/test-keeper-client-default/2	4
 find_big_family
-/test-keeper-client-default	10
+/test-keeper-client-default	15
 /test-keeper-client-default/1	9
-/test-keeper-client-default/1/d	4
+/test-keeper-client-default/1/a	7

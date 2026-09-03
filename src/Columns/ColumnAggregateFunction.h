@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -16,13 +17,13 @@ namespace ErrorCodes
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = std::vector<ConstArenaPtr>;
+using ConstArenas = VectorWithMemoryTracking<ConstArenaPtr>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -136,12 +137,16 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
+        /// Aggregate function states have no meaningful default representation, so they are never considered default.
+        /// This is consistent with getNumberOfDefaultRows returning 0.
+        return false;
     }
+
+    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t n) const override;
 
@@ -180,11 +185,17 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
     size_t byteSize() const override;
+
+    /// Uncompressed size of the states as serialized into a data part. byteSize() cannot be used for this
+    /// because it intentionally ignores states living in shared arenas (see byteSize()). Fixed-layout states
+    /// are sized from sizeOfData() without serializing; variable-size states are serialized exactly so the
+    /// figure never underestimates a skewed column. Used to honor index_granularity_bytes at write time.
+    size_t serializedSizeEstimate() const;
 
     size_t byteSizeAt(size_t n) const override;
 
@@ -215,7 +226,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
@@ -268,7 +279,7 @@ public:
         return data;
     }
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn &) const override;
 

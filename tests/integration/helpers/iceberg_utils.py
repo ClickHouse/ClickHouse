@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import uuid
 
 import pyspark
@@ -16,7 +17,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 from pyspark.sql.functions import expr
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
@@ -25,13 +26,14 @@ from helpers.s3_tools import (
     S3Downloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 from typing import Optional, Any
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("iceberg_utils")
         .config(
@@ -47,6 +49,14 @@ def get_spark():
         )
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.master("local").getOrCreate()
 
 
@@ -96,7 +106,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -398,6 +410,31 @@ def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
 
 
+def iceberg_local_interop_dir(node):
+    """Absolute Iceberg data dir for the local Spark<->ClickHouse interop tests.
+
+    The path is both a container path (ClickHouse) and a host path (Spark), and it
+    is written verbatim into Iceberg metadata, so the two engines must agree on one
+    string. Under the flaky check (-n 3 --dist=each) the whole module runs in several
+    xdist workers at once, so the string is namespaced by PYTEST_XDIST_WORKER to keep
+    each worker's host symlink and data dir distinct. It is also namespaced by
+    INTEGRATION_TESTS_RUN_ID (see conftest.py / cluster.py get_instances_dir) so two
+    independent harness runs on the same host, whose xdist workers both get e.g. "gw0",
+    do not share one path and clobber each other's host symlink. conftest and the tests
+    both call this, so they compute the same path within one worker process.
+
+    run_id comes from `pytest --run-id` and is later interpolated unescaped into SQL
+    (path = '...') and `bash -c` strings, so it is reduced to a safe path token
+    (non-alphanumerics -> _) before use: this stops values like `foo'bar` from breaking
+    SQL and `../../foo` from normalizing the host path out of the per-run namespace.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
+    safe_run_id = re.sub(r"[^A-Za-z0-9_]", "_", run_id)
+    suffix = f"_{safe_run_id}" if safe_run_id else ""
+    return f"/var/lib/clickhouse/user_files/iceberg_{worker}{suffix}_{node}"
+
+
 def create_iceberg_table(
     storage_type,
     node,
@@ -411,17 +448,13 @@ def create_iceberg_table(
     run_on_cluster=False,
     format="Parquet",
     order_by="",
+    settings=None,
     **kwargs,
 ):
-    if 'output_format_parquet_use_custom_encoder' in kwargs:
-        node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster = run_on_cluster, **kwargs),
-            settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
-        )
-    else:
-        node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
-        )
+    node.query(
+        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
+        settings=settings,
+    )
 
 
 def drop_iceberg_table(

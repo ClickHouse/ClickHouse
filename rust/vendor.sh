@@ -4,7 +4,7 @@ set -e
 
 # std is required for sanitizers builds
 # and we need to match toolchain version for std (to vendor proper dependencies)
-TOOLCHAIN=nightly-2025-07-07
+TOOLCHAIN=nightly-2026-03-22
 function cargo() { rustup run "$TOOLCHAIN" cargo "$@"; }
 function rustc() { rustup run "$TOOLCHAIN" rustc "$@"; }
 rustup component add --toolchain "$TOOLCHAIN" rust-src
@@ -38,6 +38,10 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 
 # chdig
 cd "$CH_TOP_DIR"/contrib/chdig || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
+# wasmtime
+cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
 # Just in case

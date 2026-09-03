@@ -5,6 +5,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -40,8 +41,8 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     const DataTypePtr& data_type = argument_types[0];
 
     if (!allowType(data_type))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-            data_type->getName(), name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
+            data_type->getName(), name, getNumericVariantSupertypeHint(data_type));
 
     AggregateFunctionPtr res;
 
@@ -88,6 +89,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 }
 }
 
+void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_avg = R"(
@@ -121,7 +123,7 @@ CREATE TABLE test (t UInt8) ENGINE = Memory;
 SELECT avg(t) FROM test;
         )",
         R"(
-┌─avg(x)─┐
+┌─avg(t)─┐
 │    nan │
 └────────┘
         )"
@@ -131,6 +133,6 @@ SELECT avg(t) FROM test;
     FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, parameters_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
 
-    factory.registerFunction("avg", {createAggregateFunctionAvg, {}, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("avg", {createAggregateFunctionAvg, documentation_avg}, AggregateFunctionFactory::Case::Insensitive);
 }
 }

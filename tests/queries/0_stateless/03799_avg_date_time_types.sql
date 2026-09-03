@@ -1,6 +1,7 @@
 SET enable_time_time64_type = 1;
 SET use_legacy_to_time = 0;
 SET session_timezone = 'UTC';
+SET optimize_syntax_fuse_functions = 0;
 
 SELECT '-- Original Time aggregate functions test';
 

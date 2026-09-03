@@ -1,4 +1,3 @@
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
@@ -58,7 +57,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString or array.';
+SELECT '-- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString, asciiCJK or array.';
 
 CREATE TABLE tab
 (
@@ -155,6 +154,26 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = array())
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT 'Test asciiCJK tokenizer.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = asciiCJK)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = asciiCJK())
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -497,6 +516,49 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT 'Test support_phrase_search argument.';
+
+SELECT '-- support_phrase_search argument is experimental';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_phrase_search = 1;
+
+DROP TABLE tab;
+
+SELECT '-- support_phrase_search argument is must be 0 or 1';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 2)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 'abc')
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+
 SELECT 'Types are incorrect.';
 
 CREATE TABLE tab
@@ -682,14 +744,17 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY key; -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    key UInt64,
-    n_str Nullable(String),
-    INDEX idx n_str TYPE text(tokenizer = 'splitByNonAlpha')
-)
-ENGINE = MergeTree
-ORDER BY key; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab (
+    id UInt32,
+    n Nullable(Int32),
+    INDEX idx(n) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab (
+    id UInt32,
+    arr Array(Nullable(Int32)),
+    INDEX idx(arr) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 SET allow_suspicious_low_cardinality_types = 1;
 

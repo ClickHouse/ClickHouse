@@ -22,6 +22,31 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    for (const auto & child : arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+        {
+            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
+            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
+        }
+    }
+}
+
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -93,12 +118,20 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
+    /// Without escaping the name becomes a part of the index file name as is, see `getIndexFileName`.
+    if (!escape_filenames && index_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_definition->name);
+
     auto index_type = index_definition->getType();
     if (!index_type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
+
+    if (index_definition->granularity == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
@@ -108,6 +141,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
+    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
@@ -123,7 +157,12 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+
+        if (result.type == TEXT_INDEX_NAME)
+            expandTextIndexTransformAliases(result.arguments, columns);
+    }
 
     return result;
 }
@@ -143,7 +182,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns};
+    ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
     expression_list_ast = expr_list->clone();
@@ -195,6 +234,14 @@ bool IndicesDescription::has(const String & name) const
     return false;
 }
 
+const IndexDescription & IndicesDescription::getByName(const String & name) const
+{
+    for (const auto & index : *this)
+        if (index.name == name)
+            return index;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no index with name '{}'", name);
+}
+
 bool IndicesDescription::hasType(const String & type) const
 {
     for (const auto & index : *this)
@@ -215,7 +262,7 @@ String IndicesDescription::explicitToString() const
             list.children.push_back(index.definition_ast);
     }
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 String IndicesDescription::allToString() const
@@ -227,7 +274,7 @@ String IndicesDescription::allToString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 
@@ -260,9 +307,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-Names IndicesDescription::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);

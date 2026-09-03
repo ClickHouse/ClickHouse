@@ -5,3 +5,42 @@ Pacific/Kwajalein	2020-01-02 03:04:05	2020-01-02 00:00:00	3
 Pacific/Apia	2020-01-02 03:04:05	2020-01-02 00:00:00	3
 Pacific/Enderbury	2020-01-02 03:04:05	2020-01-02 00:00:00	3
 Pacific/Fakaofo	2020-01-02 03:04:05	2020-01-02 00:00:00	3
+--- offset of zones that crossed the international date line
+Pacific/Kiritimati	50400
+Pacific/Apia	46800
+Pacific/Fakaofo	46800
+Pacific/Enderbury	46800
+Pacific/Kanton	46800
+Pacific/Kwajalein	43200
+Kwajalein	43200
+--- the same zones before their jump, and a +13:45 zone, must not move
+Pacific/Apia	-39600
+Pacific/Fakaofo	-39600
+Pacific/Chatham	49500
+Pacific/Chatham	45900
+--- negative offsets before the epoch
+Africa/Abidjan	-968
+Africa/Accra	-52
+Africa/Addis_Ababa	9320
+Europe/Moscow	9017
+--- parseDateTime agrees with toDateTime on an affected zone
+1
+1
+1
+1
+1
+1
+--- other consumers of the offset
+14	0
++1400
+2025-06-14 22:00:00	2025-06-16 02:00:00
+2025-06-14 22:00:00.500	2025-06-16 02:00:00.500
+--- consumers that reduce the offset modulo a day must be unaffected
+12:00:00	12:00:00.500
+12:00:00	2025-06-15 00:00:00	12	2025-06-15
+--- daylight saving transitions keep their sub-day offset
+-18000	-14400	-18000
+--- inside and outside the lookup table window report the same offset
+1
+--- every zone agrees with rendering the instant as local text and reading it back as UTC
+0

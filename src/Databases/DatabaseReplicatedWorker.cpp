@@ -1,8 +1,11 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/sleep.h>
 
 #include <filesystem>
+#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -10,7 +13,9 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
@@ -26,7 +31,7 @@ namespace Setting
 namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsBool check_consistency;
-    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
     extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
@@ -58,6 +63,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           context_,
           nullptr,
           {},
+          db->zookeeper_name,
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
@@ -139,6 +145,24 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 void DatabaseReplicatedDDLWorker::shutdown()
 {
     DDLWorker::shutdown();
+
+    /// Explicitly remove the active node before the destructor runs.
+    /// The EphemeralNodeHolder destructor also calls tryRemove, but if it fails
+    /// (e.g. due to a transient ZK connection issue), the exception is silently caught
+    /// and the ephemeral node persists until the shared ZK session expires.
+    /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
+    if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
+    {
+        String active_path = fs::path(database->replica_path) / "active";
+        active_node_holder_zookeeper->tryRemove(active_path);
+    }
+
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
+    active_node_holder.reset();
+    active_node_holder_zookeeper.reset();
+
     wait_current_task_change.notify_all();
 }
 
@@ -170,12 +194,19 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity (`czxid`
+    /// of the node) here and forward it to `recoverLostReplica`. Without this, a `DROP`+recreate
+    /// at the same Keeper path between this read and the snapshot read inside
+    /// `getConsistentMetadataSnapshotImpl` can advance both the value and the `czxid` to the new
+    /// database, after which the in-function identity checks compare new-to-new and silently
+    /// substitute metadata from the recreated database during recovery.
+    Coordination::Stat max_log_ptr_stat;
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    UInt64 digest;
+    UInt64 digest = 0;
     String digest_str;
-    UInt64 local_digest;
+    UInt64 local_digest = 0;
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
@@ -205,7 +236,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
 
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid);
 
         fiu_do_on(FailPoints::database_replicated_delay_recovery,
         {
@@ -257,6 +288,18 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
+void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
+{
+    DDLWorker::scheduleTasks(reinitialized);
+    if (need_update_cached_cluster)
+    {
+        database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+        need_update_cached_cluster = false;
+    }
+}
+
 void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 {
     if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
@@ -294,13 +337,14 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries");
+    auto zookeeper = getZooKeeperFromContext();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
@@ -318,7 +362,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     {
         std::unique_lock lock{mutex};
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedMilliseconds(timeout_ms), [&]()
         {
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
@@ -409,7 +453,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
     UInt32 our_log_ptr = getLogPointer();
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
@@ -425,7 +469,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->entry = entry;
     task->parseQueryFromEntry(context);
     chassert(!task->entry.query.empty());
-    assert(!zookeeper->exists(task->getFinishedNodePath()));
+    chassert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
@@ -435,9 +479,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     {
         std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedSeconds(timeout), [&]()
         {
-            assert(zookeeper->expired() || current_task <= entry_name);
+            chassert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
             {
@@ -484,7 +528,8 @@ static bool getRMVCoordinationInfo(
     const ZooKeeperPtr & zookeeper,
     UUID parent_uuid,
     Coordination::Stat & stats,
-    RefreshTask::CoordinationZnode & coordination_znode)
+    RefreshTask::CoordinationZnode & coordination_znode,
+    ContextPtr context)
 {
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
@@ -492,7 +537,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;
@@ -509,7 +554,7 @@ static bool getRMVCoordinationInfo(
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
-        coordination_znode.parse(data);
+        coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
         return true;
     }
     catch (...)
@@ -528,7 +573,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
@@ -536,7 +581,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
+    // It is possible the temporary table is created and replicated before the coordination info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -547,7 +592,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     StorageID storage_id{rename_from_table};
@@ -654,8 +699,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
-        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        chassert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        chassert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
@@ -667,9 +712,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (task->entry.query.empty())
     {
         /// Some replica is added or removed, let's update cached cluster
-        database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+        need_update_cached_cluster = true;
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

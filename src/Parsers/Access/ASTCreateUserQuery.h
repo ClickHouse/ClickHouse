@@ -61,6 +61,7 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
@@ -69,6 +70,9 @@ public:
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
 
     ASTPtr global_valid_until;
+    /// If true, `global_valid_until` holds an interval expression coming from `VALID FOR <interval>`
+    /// (the deadline is `now` plus the interval); otherwise it holds a `VALID UNTIL` value.
+    bool global_valid_until_is_interval = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;
@@ -78,6 +82,7 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

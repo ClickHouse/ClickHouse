@@ -12,6 +12,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# Always disable the failpoints on exit. Under `set -e` an early exit would otherwise leave the
+# merge selecting task paused at rmt_merge_selecting_task_pause_when_scheduled, which blocks the
+# table's shutdown/DROP (deactivate() waits on the paused task holding exec_mutex).
+trap '$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+" 2>/dev/null || true' EXIT
+
 # disable fault injection; part ids are non-deterministic in case of insert retries
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0;
@@ -90,6 +99,18 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
+"
+
+# Wait for the mutation to be pulled from ZooKeeper into the in-memory queue,
+# otherwise the merge selecting task may not see it in countMutations().
+for _ in {1..300}; do
+    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'rmt' AND NOT is_done") -gt 0 ]]; then
+        break
+    fi
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
@@ -114,6 +135,17 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     ALTER TABLE rmt UPDATE num = num + 2 WHERE 1;
     ALTER TABLE rmt UPDATE num = num + 3 WHERE 1;
+"
+
+# Wait for both mutations to be pulled from ZooKeeper into the in-memory queue.
+for _ in {1..300}; do
+    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'rmt' AND NOT is_done") -ge 2 ]]; then
+        break
+    fi
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;

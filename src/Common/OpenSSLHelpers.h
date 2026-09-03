@@ -55,6 +55,7 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
 
 std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data);
 bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature);
+bool ecdsaP256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature);
 
 /// Generate Certificate Signing Request with given `subject(s)` and private key.
 std::string generateCSR(std::vector<std::string>, EVP_PKEY * pkey);

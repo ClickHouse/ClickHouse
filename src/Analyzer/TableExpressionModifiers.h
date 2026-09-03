@@ -1,9 +1,19 @@
 #pragma once
 
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
+
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
@@ -17,10 +27,12 @@ public:
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
-        std::optional<Rational> sample_offset_ratio_)
+        std::optional<Rational> sample_offset_ratio_,
+        std::optional<StreamSettings> stream_settings_ = {})
         : has_final(has_final_)
         , sample_size_ratio(sample_size_ratio_)
         , sample_offset_ratio(sample_offset_ratio_)
+        , stream_settings(std::move(stream_settings_))
     {}
 
     /// Returns true if final is specified, false otherwise
@@ -59,6 +71,18 @@ public:
         return sample_offset_ratio;
     }
 
+    /// Returns true if STREAM modifier is specified
+    bool hasStream() const
+    {
+        return stream_settings.has_value();
+    }
+
+    /// Get stream settings
+    const std::optional<StreamSettings> & getStreamSettings() const
+    {
+        return stream_settings;
+    }
+
     /// Dump into buffer
     void dump(WriteBuffer & buffer) const;
 
@@ -72,11 +96,21 @@ private:
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
+    std::optional<StreamSettings> stream_settings;
 };
+
+void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
+TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
+
+/// Returns metadata extended according to table expression modifiers.
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
-    return lhs.hasFinal() == rhs.hasFinal() && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio() && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio();
+    return lhs.hasFinal() == rhs.hasFinal()
+        && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio()
+        && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio()
+        && lhs.getStreamSettings() == rhs.getStreamSettings();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

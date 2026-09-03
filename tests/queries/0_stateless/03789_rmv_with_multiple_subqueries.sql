@@ -24,4 +24,4 @@ SYSTEM REFRESH VIEW 03789_rmv_mv;
 SYSTEM WAIT VIEW 03789_rmv_mv;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT uniqExact(query) FROM system.query_log WHERE has(databases, currentDatabase()) AND query LIKE '%INSERT%SELECT%' AND type = 'QueryFinish';
+SELECT uniqExact(query) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND has(databases, currentDatabase()) AND query LIKE '%INSERT%SELECT%' AND type = 'QueryFinish';

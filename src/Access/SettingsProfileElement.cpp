@@ -2,6 +2,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
+#include <Access/resolveSetting.h>
 #include <Core/Settings.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -21,6 +22,19 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+    /// ParserSettingsProfileElement accepts only scalar literals, so a Map is emitted as a quoted
+    /// string holding the setting's canonical text. Custom settings are excluded: castValueUtil
+    /// returns their value unchanged, so a string would stay a String instead of becoming a Map.
+    std::optional<Field> settingValueToASTField(const String & setting_name, const std::optional<Field> & value)
+    {
+        if (!value || value->getType() != Field::Types::Map || !Settings::hasBuiltin(setting_name))
+            return value;
+        return Field(Settings::valueToStringUtil(setting_name, *value));
+    }
+}
+
 
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
@@ -38,7 +52,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         if (id_mode)
             return parse<UUID>(name_);
-        assert(access_control);
+        chassert(access_control);
         return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
     };
 
@@ -92,9 +106,9 @@ boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() 
         ast->parent_profile = ::DB::toString(*parent_profile);
 
     ast->setting_name = setting_name;
-    ast->value = value;
-    ast->min_value = min_value;
-    ast->max_value = max_value;
+    ast->value = settingValueToASTField(setting_name, value);
+    ast->min_value = settingValueToASTField(setting_name, min_value);
+    ast->max_value = settingValueToASTField(setting_name, max_value);
     ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
@@ -114,9 +128,9 @@ boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWit
     }
 
     ast->setting_name = setting_name;
-    ast->value = value;
-    ast->min_value = min_value;
-    ast->max_value = max_value;
+    ast->value = settingValueToASTField(setting_name, value);
+    ast->min_value = settingValueToASTField(setting_name, min_value);
+    ast->max_value = settingValueToASTField(setting_name, max_value);
     ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
@@ -287,9 +301,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
+UUIDs SettingsProfileElements::toProfileIDs() const
 {
-    std::vector<UUID> res;
+    UUIDs res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)
@@ -356,7 +370,8 @@ void SettingsProfileElements::normalize()
         for (auto it = settings_begin; it != settings_end; ++it)
         {
             auto & element = *it;
-            auto first = setting_name_to_first_encounter.emplace(element.setting_name, it).first->second;
+            /// Under whichever name: both names of a `MergeTree` setting are one setting.
+            auto first = setting_name_to_first_encounter.emplace(canonicalSettingName(element.setting_name), it).first->second;
             if (it != first)
             {
                 auto & first_element = *first;
@@ -463,7 +478,7 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
     {
         for (auto & element : *this)
         {
-            if (element.setting_name == setting_name)
+            if (canonicalSettingName(element.setting_name) == canonicalSettingName(setting_name))
                 element.setting_name.clear();
         }
     };

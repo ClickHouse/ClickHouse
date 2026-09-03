@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -16,8 +17,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
-#include <memory>
 
+#include <memory>
 
 namespace DB
 {
@@ -25,41 +26,18 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int LOGICAL_ERROR;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
 
-ColumnPtr mergeNullMaps(const ColumnPtr & left, const ColumnPtr & right)
-{
-    if (!left)
-        return right;
-
-    if (!right)
-        return left;
-
-    const auto & left_data = assert_cast<const ColumnUInt8 &>(*left).getData();
-    const auto & right_data = assert_cast<const ColumnUInt8 &>(*right).getData();
-
-    if (left_data.size() != right_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
-
-    auto merged_column = ColumnUInt8::create(left_data.size());
-    auto & merged_data = merged_column->getData();
-
-    for (size_t i = 0; i < merged_data.size(); ++i)
-        merged_data[i] = left_data[i] || right_data[i];
-
-    return merged_column;
-}
-
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   * The logic of qbitElement is integrated into this function because AST makes any dot syntax (vec.i) a tupleElement(vec, i) call.
   */
-class FunctionTupleElement : public IFunction
+class FunctionTupleElement final : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";
@@ -71,6 +49,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// Keep nested LowCardinality element types intact: the default implementation would strip them via
+    /// `recursiveRemoveLowCardinality` before extraction, making `tupleElement(t, 'a')` disagree with the
+    /// subcolumn path `t.a` (which preserves `LowCardinality(...)`). tupleElement only extracts a column, so
+    /// it is naturally correct for any element type without the framework's LowCardinality unwrapping.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -106,8 +89,11 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
-                    element_type = std::make_shared<DataTypeNullable>(element_type);
+                /// For a Nullable(Tuple(...)) input, promote the element so it can represent the outer NULLs,
+                /// using the same rule as the subcolumn path (`t.a`): `Nullable(T)` for wrappable types and
+                /// `LowCardinality(Nullable(T))` for a non-nullable `LowCardinality(T)` element.
+                if (is_input_type_nullable)
+                    element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
             }
@@ -151,7 +137,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            return wrapInArrays(object->getSubcolumnType(subcolumn_name), count_arrays);
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
+            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
         }
 
         throw Exception(
@@ -210,26 +198,30 @@ public:
 
             if (null_map_column)
             {
-                DataTypePtr element_type = input_type_as_tuple->getElements()[index.value()];
+                const DataTypePtr & element_type = input_type_as_tuple->getElements()[index.value()];
 
-                if (const auto * res_nullable = typeid_cast<const ColumnNullable *>(res.get()))
+                if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
                 {
-                    ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
-                    res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
-                }
-                else if (element_type->canBeInsideNullable())
-                {
-                    res = ColumnNullable::create(res, null_map_column);
+                    /// The element can represent NULL: fold the outer `Nullable(Tuple(...))` null map in with
+                    /// the exact same logic as the subcolumn path (`t.a`) -- wrap wrappable elements in
+                    /// `ColumnNullable`, OR the mask into an element that already carries NULLs (Nullable /
+                    /// LowCardinality(Nullable) / Dynamic / Variant), and promote a non-nullable
+                    /// `LowCardinality(T)` element to `LowCardinality(Nullable(T))` first. Keeps the
+                    /// (type, column) pair consistent with `getReturnTypeImpl` and the subcolumn reader.
+                    res = NullableSubcolumnCreator(null_map_column).create(res);
                 }
                 else
                 {
+                    /// The element (e.g. Map, Array) can neither be wrapped in `Nullable` nor carry NULL
+                    /// itself, so it has no NULL representation. Write the element's default for outer-NULL
+                    /// rows -- matching `NestedUtils::unwrapNullableTuple` and the stored subcolumn -- instead
+                    /// of leaking whatever payload sits under the null map in the hidden nested column.
                     const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                     auto result_column = element_type->createColumn();
                     result_column->reserve(res->size());
 
                     Field default_field = element_type->getDefault();
-
                     for (size_t i = 0; i < res->size(); ++i)
                     {
                         if (null_map[i])
@@ -281,7 +273,7 @@ public:
                     input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            res = input_type_as_object->getSubcolumn(subcolumn_name, input_col->getPtr());
+            res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
         }
         else
         {
@@ -314,7 +306,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -331,7 +323,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -344,7 +336,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -357,11 +349,13 @@ private:
         {
             const size_t index = index_column->getUInt(0);
 
-            if (index > 0 && index <= qbit.getElementSize())
+            /// The tuple holds element_size bit planes per stride group, grouped as [group][bit]. Index N (1-based) addresses
+            /// bit plane (N-1) % element_size of stride group (N-1) / element_size.
+            if (index > 0 && index <= qbit.getElementSize() * qbit.getNumStrides())
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }
@@ -374,6 +368,15 @@ private:
             nested_type = std::make_shared<DataTypeArray>(nested_type);
 
         return nested_type;
+    }
+
+    ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
+    {
+        /// Use combined `@` subcolumn that merges literal value and sub-object.
+        /// For rows with a literal at requested path we return the literal, for rows with a nested object
+        /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
+        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        return object_type.getSubcolumn(combined_name, object_column);
     }
 };
 

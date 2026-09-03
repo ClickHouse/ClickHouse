@@ -1,7 +1,5 @@
 -- Test that text index direct read optimization works correctly with nullable needles.
 
-SET enable_full_text_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

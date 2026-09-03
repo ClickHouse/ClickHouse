@@ -56,12 +56,19 @@ struct ConditionList
     }
 };
 
-/// Check if the whole subgraph that calculates the node only uses columns from the list
+/// Check if the whole subgraph that calculates the node only uses columns from the list.
+/// Also rejects subgraphs containing ARRAY_JOIN, because pushing such predicates below
+/// a JOIN would cause the array expansion to execute twice (once in the pushed-down filter
+/// and once in the original filter above the JOIN), producing duplicate rows.
 bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
     if (node.type == ActionsDAG::ActionType::INPUT)
     {
         return available_columns.contains(node.result_name);
+    }
+    else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+    {
+        return false;
     }
     else
     {
@@ -164,6 +171,10 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
+    const Names & available_columns);
+std::optional<ActionsDAG> tryToExtractPartialPredicate(
+    const ActionsDAG & original_dag,
+    const std::string & filter_name,
     const Names & available_columns)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
@@ -187,9 +198,19 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     full_dag.addOrReplaceInOutputs(*predicate_node);
     full_dag.removeUnusedActions();
 
+    /// removeUnusedActions unconditionally keeps ARRAY_JOIN nodes because they change
+    /// the number of rows. This can bring back INPUT nodes from the other side of the
+    /// JOIN that are not available in the target stream. Since extractPartialPredicate
+    /// already correctly rejects predicates depending on ARRAY_JOIN (via
+    /// onlyDependsOnAvailableColumns), any ARRAY_JOIN surviving here is an artifact
+    /// and pushing it below a JOIN would cause duplicate rows.
+    if (full_dag.hasArrayJoin())
+        return {};
+
     return full_dag;
 }
 
+void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag)
 {
     auto & new_filter_node = nodes.emplace_back();

@@ -55,7 +55,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/sort'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -72,7 +72,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/aggregation'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -89,7 +89,7 @@ SELECT
         'fail: ' || toString(ProfileEvents) || ' ' || log_comment
     )
     FROM system.query_log
-    WHERE current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment like '02402_external_disk_mertrics/%join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -100,5 +100,6 @@ SELECT
     CurrentMetric_TemporaryFilesForJoin,
     CurrentMetric_TemporaryFilesForSort
 FROM system.metric_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time DESC LIMIT 5
 FORMAT Null;

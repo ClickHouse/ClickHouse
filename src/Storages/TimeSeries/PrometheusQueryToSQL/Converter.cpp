@@ -2,19 +2,17 @@
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperator.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperator.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
-
-
-namespace DB::ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -26,52 +24,83 @@ namespace
     {
         switch (node->node_type)
         {
+            case NodeType::Scalar:
+            {
+                const auto * scalar_node = static_cast<const PrometheusQueryTree::Scalar *>(node);
+                return fromLiteral(scalar_node, context);
+            }
+
+            case NodeType::StringLiteral:
+            {
+                const auto * string_node = static_cast<const PrometheusQueryTree::StringLiteral *>(node);
+                return fromLiteral(string_node, context);
+            }
+
             case NodeType::InstantSelector:
             {
-                const auto * instant_selector = static_cast<const PQT::InstantSelector *>(node);
+                const auto * instant_selector = static_cast<const PrometheusQueryTree::InstantSelector *>(node);
                 return fromSelector(instant_selector, context);
             }
 
             case NodeType::RangeSelector:
             {
-                const auto * range_selector = static_cast<const PQT::RangeSelector *>(node);
+                const auto * range_selector = static_cast<const PrometheusQueryTree::RangeSelector *>(node);
                 return fromSelector(range_selector, context);
             }
 
             case NodeType::Subquery:
             {
-                const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
+                const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
                 SQLQueryPiece expression = visitNode(subquery_node->getExpression(), context);
                 return applySubquery(subquery_node, std::move(expression), context);
             }
 
             case NodeType::Offset:
             {
-                const auto * offset_node = static_cast<const PQT::Offset *>(node);
+                const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(node);
                 SQLQueryPiece expression = visitNode(offset_node->getExpression(), context);
                 return applyOffset(offset_node, std::move(expression), context);
             }
 
             case NodeType::Function:
             {
-                const auto * function = static_cast<const PQT::Function *>(node);
+                const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
                 std::vector<SQLQueryPiece> arguments;
                 for (const auto * arg_node : function->getArguments())
                 {
                     arguments.push_back(visitNode(arg_node, context));
                 }
-
-                if (isFunctionOverRange(function->function_name))
-                    return applyFunctionOverRange(node, function->function_name, std::move(arguments), context);
-                else
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function->function_name);
+                return applyFunction(function, std::move(arguments), context);
             }
 
-            default:
+            case NodeType::UnaryOperator:
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prometheus query node type {} is not implemented", node->node_type);
+                const auto * unary_operator = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
+                SQLQueryPiece argument = visitNode(unary_operator->getArgument(), context);
+                return applyUnaryOperator(unary_operator, std::move(argument), context);
+            }
+
+            case NodeType::BinaryOperator:
+            {
+                const auto * binary_operator = static_cast<const PrometheusQueryTree::BinaryOperator *>(node);
+                SQLQueryPiece left_argument = visitNode(binary_operator->getLeftArgument(), context);
+                SQLQueryPiece right_argument = visitNode(binary_operator->getRightArgument(), context);
+                return applyBinaryOperator(binary_operator, std::move(left_argument), std::move(right_argument), context);
+            }
+
+            case NodeType::AggregationOperator:
+            {
+                const auto * aggregation_operator = static_cast<const PrometheusQueryTree::AggregationOperator *>(node);
+                std::vector<SQLQueryPiece> arguments;
+                for (const auto * arg_node : aggregation_operator->getArguments())
+                {
+                    arguments.push_back(visitNode(arg_node, context));
+                }
+                return applyAggregationOperator(aggregation_operator, std::move(arguments), context);
             }
         }
+
+        UNREACHABLE();
     }
 }
 

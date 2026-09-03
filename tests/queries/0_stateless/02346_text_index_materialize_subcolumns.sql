@@ -1,7 +1,5 @@
 -- Tests that text indexes can be created and used on subcolumns
 
-SET enable_full_text_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (data JSON(a String)) ENGINE = MergeTree ORDER BY tuple();
@@ -24,7 +22,7 @@ DROP TABLE tab;
 
 -- Test the same, but for compact parts
 
-CREATE TABLE tab (id UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 100000000;
+CREATE TABLE tab (id UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 100000000, enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO tab (id) VALUES (1);
 

@@ -31,9 +31,12 @@ ${CLICKHOUSE_CLIENT} --query "grant backup on *.* to ${user_name}"
 ${CLICKHOUSE_CLIENT} --user ${user_name} --query "${backup_query}" 2>&1 >/dev/null | (grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED error is not expected")
 
 ${CLICKHOUSE_CLIENT} --query "system flush logs query_log"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${backup_query_prefix}%' and type = 'ExceptionBeforeStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${backup_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${backup_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() order by event_time desc limit 1"
+# is_initial_query excludes parallel-replica sub-queries: with enable_parallel_replicas=1, the backup spawns
+# sub-queries that share the same current_database and query text but have a later event_time, causing
+# ORDER BY event_time DESC LIMIT 1 to pick them up instead of the top-level backup query.
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'ExceptionBeforeStart' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${backup_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
 
 ${CLICKHOUSE_CLIENT} --query "drop table ${table_name}"
 
@@ -45,9 +48,10 @@ ${CLICKHOUSE_CLIENT} --query "grant create, insert on *.* to ${user_name}"
 ${CLICKHOUSE_CLIENT} --user ${user_name} --query "${restore_query}" 2>&1 >/dev/null | (grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED error is not expected")
 
 ${CLICKHOUSE_CLIENT} --query "system flush logs query_log"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${restore_query_prefix}%' and type = 'ExceptionBeforeStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${restore_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() order by event_time desc limit 1"
-${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where query ilike '${restore_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() order by event_time desc limit 1"
+# Same is_initial_query filter as above, for the same reason.
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${restore_query_prefix}%' and type = 'ExceptionBeforeStart' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${restore_query_prefix}%' and type = 'QueryStart' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
+${CLICKHOUSE_CLIENT} --query "select used_privileges, missing_privileges from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query ilike '${restore_query_prefix}%' and type = 'QueryFinish' and current_database = currentDatabase() and is_initial_query order by event_time desc limit 1"
 
 ${CLICKHOUSE_CLIENT} --query "drop table ${table_name}"
 ${CLICKHOUSE_CLIENT} --query "drop user ${user_name}"

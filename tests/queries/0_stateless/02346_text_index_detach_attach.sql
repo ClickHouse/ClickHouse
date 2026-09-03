@@ -1,7 +1,5 @@
 -- Test that detaching and attaching parts with a text index works
 
-SET enable_full_text_index = 1;
-
 CREATE TABLE tab
 (
     key UInt64,

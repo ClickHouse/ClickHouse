@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 

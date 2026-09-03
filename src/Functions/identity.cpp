@@ -1,5 +1,6 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
@@ -25,12 +26,12 @@ This function returns the argument you pass to it, which is useful for debugging
 
 REGISTER_FUNCTION(ScalarSubqueryResult)
 {
-    factory.registerFunction("__scalarSubqueryResult", [](ContextPtr){ return FunctionIdentityBase::create({}, "__scalarSubqueryResult", false); });
+    factory.registerFunction("__scalarSubqueryResult", [](ContextPtr){ return FunctionIdentityBase::create({}, "__scalarSubqueryResult", false); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 REGISTER_FUNCTION(ActionName)
 {
-    factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); });
+    factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

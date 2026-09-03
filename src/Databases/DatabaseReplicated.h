@@ -33,16 +33,16 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 
 struct ReplicaInfo
 {
-    bool is_active;
-    bool unsynced_after_recovery;
+    bool is_active{};
+    bool unsynced_after_recovery{};
     std::optional<UInt32> replication_lag;
-    UInt64 recovery_time;
+    UInt64 recovery_time{};
 };
 
 struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog;
+    bool replicas_belong_to_shared_catalog = false;
 };
 
 class DatabaseReplicated : public DatabaseAtomic
@@ -56,20 +56,21 @@ public:
     /** For the system table database replicas. */
     struct ReplicatedStatus
     {
-        bool is_readonly;
-        bool is_session_expired;
-        UInt32 max_log_ptr;
+        bool is_readonly{};
+        bool is_session_expired{};
+        UInt32 max_log_ptr{};
         String replica_name;
         String replica_path;
         String zookeeper_path;
         String shard_name;
-        UInt32 log_ptr;
-        UInt32 total_replicas;
+        UInt32 log_ptr{};
+        UInt32 total_replicas{};
         String zookeeper_exception;
     };
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
-                       const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
+                       const String & zookeeper_name_, const String & zookeeper_path_,
+                       const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
                        ContextPtr context);
 
@@ -92,6 +93,24 @@ public:
 
     bool canExecuteReplicatedMetadataAlter() const override;
 
+    /// RAII guard to suppress digest checks during SYSTEM RESTART REPLICA.
+    /// The table is temporarily removed from the in-memory tables map during restart,
+    /// making it inconsistent with tables_metadata_digest (which remains correct).
+    struct RestartReplicaGuard
+    {
+        explicit RestartReplicaGuard(DatabaseReplicated & db_) : db(db_) { db.tables_being_restarted.fetch_add(1); }
+        ~RestartReplicaGuard() { db.tables_being_restarted.fetch_sub(1); }
+        RestartReplicaGuard(const RestartReplicaGuard &) = delete;
+        RestartReplicaGuard & operator=(const RestartReplicaGuard &) = delete;
+    private:
+        DatabaseReplicated & db;
+    };
+
+    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
+    /// Adjusts tables_metadata_digest to account for the table being absent
+    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
+    void adjustDigestOnTableLostFromRestart(const String & table_name);
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
@@ -103,6 +122,7 @@ public:
     static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
+    const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
@@ -124,7 +144,13 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
+    static void dropReplica(
+        DatabaseReplicated * database,
+        const String & zookeeper_name,
+        const String & database_zookeeper_path,
+        const String & shard,
+        const String & replica,
+        bool throw_if_noop);
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
@@ -164,18 +190,32 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
-    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+    void fillClusterAuthInfo(String collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it observed in the
+    /// pre-read of `/max_log_ptr` (in `DatabaseReplicatedWorker`) so that a `DROP`+recreate at the
+    /// same Keeper path between that read and the snapshot inside this call is rejected with
+    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` instead of silently substituting metadata from a
+    /// different database instance. Pass `0` from callers that have not pre-observed an identity.
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
+                            int64_t expected_max_log_ptr_czxid = 0);
 
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
+                                                              int64_t expected_max_log_ptr_czxid = 0) const;
 
+    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it
+    /// observed before this call: if it is non-zero, the snapshot is aborted with
+    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` when the `czxid` of `/max_log_ptr`
+    /// at function entry differs (the database was dropped and recreated at the same
+    /// Keeper path between the caller's read and the snapshot). Pass `0` from
+    /// callers that have not pre-observed an identity.
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr) const;
+                                                               size_t max_retries, UInt32 & max_log_ptr,
+                                                               int64_t expected_max_log_ptr_czxid = 0) const;
 
     static ASTPtr parseQueryFromMetadata(
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
@@ -213,9 +253,15 @@ private:
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
 
-    static BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait, DDLGuardPtr && database_guard);
+    static BlockIO getQueryStatus(
+        const String & zookeeper_name,
+        const String & node_path,
+        const String & replicas_path,
+        ContextPtr context,
+        const Strings & hosts_to_wait,
+        DDLGuardPtr && database_guard);
 
+    const String zookeeper_name;
     const String zookeeper_path;
     const String shard_name;
     const String replica_name;
@@ -242,6 +288,12 @@ private:
     /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
     /// It allows to detect if metadata is broken and recover replica.
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
+
+    /// Counter for tables currently being restarted by SYSTEM RESTART REPLICA.
+    /// During restart, the table is temporarily removed from the in-memory tables map,
+    /// making it inconsistent with tables_metadata_digest. We skip digest checks
+    /// while any restart is in progress to avoid false LOGICAL_ERROR exceptions in debug builds.
+    std::atomic<int> tables_being_restarted{0};
 
     mutable ClusterPtr cluster;
     mutable ClusterPtr cluster_all_groups;

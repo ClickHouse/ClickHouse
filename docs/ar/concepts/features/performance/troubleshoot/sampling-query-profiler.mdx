@@ -1,0 +1,335 @@
+---
+description: 'توثيق أداة أخذ العينات لتنميط الاستعلامات في ClickHouse'
+sidebarTitle: 'تنميط الاستعلامات'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: 'أداة أخذ العينات لتنميط الاستعلامات'
+doc_type: 'reference'
+---
+
+يشغّل ClickHouse أداة تنميط تعتمد على أخذ العينات تتيح تحليل تنفيذ الاستعلامات.
+وباستخدام أداة التنميط، يمكنك العثور على إجراءات الشيفرة المصدرية الأكثر استخدامًا أثناء تنفيذ الاستعلام.
+يمكنك تتبّع وقت CPU والوقت الفعلي المنقضي، بما في ذلك وقت الخمول.
+
+يتم تمكين أداة تنميط الاستعلامات تلقائيًا في ClickHouse Cloud.
+يعثر مثال الاستعلام التالي على تتبعات المكدس الأكثر تكرارًا لاستعلام خضع للتنميط، مع أسماء الدوال بعد حلّ الرموز ومواضعها في الشيفرة المصدرية.
+
+افتراضيًا، تحلّ أداة التنميط رموز تتبعات المكدس وقت جمعها وتخزّن النتائج في العمودين `symbols` و`lines` من [`system.trace_log`](/ar/reference/system-tables/trace_log)، لذا تقرأ الأمثلة أدناه هذين العمودين مباشرةً ولا تتطلب دوال الاستبطان. ويجري التحكم في حلّ الرموز عبر الإعداد `symbolize` في قسم تهيئة الخادم `trace_log` (وهو مفعّل افتراضيًا)، وهو مدعوم على منصات ELF (مثل Linux) وmacOS؛ أما على FreeBSD، فيكون العمودان `symbols` و`lines` فارغين دائمًا. تأتي أسماء الدوال في `symbols` من جدول رموز الملف الثنائي وهي متاحة افتراضيًا. أما مواضع الشيفرة المصدرية في `lines` فهي تُوفَّر بأفضل جهد: إذ تتطلب معلومات تصحيح الأخطاء (وفي macOS، حزمة `.dSYM` بجوار الملف الثنائي)، وعلى منصات ELF لا تُحل إلا الإطارات الموجودة داخل الملف الثنائي الرئيسي لـ ClickHouse، لذلك تُترك الإدخالات الخاصة بالإطارات التي لا يمكن حلّها (مثل تلك الموجودة في المكتبات المشتركة) فارغة. إذا كان حلّ الرموز معطّلًا، فاستخدم دوال الاستبطان `addressToSymbol` و`demangle` و`addressToLine` [دوال الاستبطان](/ar/reference/functions/regular-functions/introspection) لحلّ العناوين الأولية في العمود `trace` بدلًا من ذلك. تتوفر هذه الدوال على المنصات نفسها التي يدعمها حلّ الرموز (منصات ELF مثل Linux وmacOS)؛ أما على FreeBSD، فهي غير مُصرَّفة أيضًا، لذا يجب حلّ العناوين في `trace` خارج الخادم.
+
+<Tip>
+  استبدل قيمة `query_id` بمعرّف الاستعلام الذي تريد تنميطه.
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    في ClickHouse Cloud، يمكنك الحصول على معرّف الاستعلام بالنقر على **&quot;...&quot;** في أقصى يمين الشريط أعلى جدول نتائج الاستعلام (بجوار مفتاح التبديل table/chart). سيؤدي ذلك إلى فتح قائمة سياق يمكنك من خلالها النقر على **&quot;Copy query ID&quot;**.
+
+    استخدم `clusterAllReplicas(default, system.trace_log)` للاختيار من جميع عُقد الـ cluster:
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    ```
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## استخدام أداة تنميط الاستعلامات في عمليات النشر المُدارة ذاتيًا
+</div>
+
+في عمليات النشر المُدارة ذاتيًا، لاستخدام أداة تنميط الاستعلامات اتبع الخطوات التالية:
+
+<Steps>
+  <Step title="ثبّت ClickHouse مع معلومات تصحيح الأخطاء" id="debug-info">
+    ثبّت الحزمة `clickhouse-common-static-dbg`:
+
+    1. اتبع التعليمات في الخطوة [&quot;إعداد مستودع Debian&quot;](/ar/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
+    2. شغّل `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg` لتثبيت الملفات الثنائية المترجمة لـ ClickHouse مع معلومات تصحيح الأخطاء
+    3. شغّل `sudo service clickhouse-server start` لبدء تشغيل الخادم
+    4. شغّل `clickhouse-client`. سيلتقط الخادم تلقائيًا رموز تصحيح الأخطاء من `clickhouse-common-static-dbg` — ولا تحتاج إلى القيام بأي إجراء خاص لتمكينها
+  </Step>
+
+  <Step title="تحقّق من إعدادات الخادم" id="server-config">
+    تأكد من إعداد قسم [`trace_log`](/ar/reference/settings/server-settings/settings/other#trace_log) في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files). وهو مُمكَّن افتراضيًا:
+
+    ```xml
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    يضبط هذا القسم الجدول النظامي [trace&#95;log](/ar/reference/system-tables/trace_log) الذي يحتوي على نتائج عمل أداة التنميط.
+    يؤدي الخيار `symbolize` (المُمكَّن افتراضيًا) إلى أن يحلّل ClickHouse كل إطار مكدس وقت جمع البيانات ويخزّن أسماء الدوال بعد فكّ تشويهها ومواقع المصدر في العمودين `symbols` و`lines`.
+    تأتي أسماء الدوال في `symbols` من جدول الرموز وتكون متاحة افتراضيًا، بينما تتطلب مواقع المصدر في `lines` معلومات تصحيح الأخطاء (حزمة `.dSYM` على macOS)، ولا تُحلّ على منصات ELF إلا للإطارات الموجودة داخل الملف الثنائي الرئيسي لـ ClickHouse؛ وتحتوي الإطارات غير المحلولة على إدخالات `lines` فارغة.
+
+    لاحظ أن العناوين الخام في العمود `trace` أقل استقرارًا عبر عمليات إعادة التشغيل والترقيات من الأعمدة التي رُمّزت مسبقًا.
+    على منصات ELF باستثناء FreeBSD، تُخزَّن الإطارات الموجودة في الملف الثنائي الرئيسي لـ ClickHouse كإزاحات فعلية داخل الملف، لذا تظل قابلة للحل عبر عمليات إعادة التشغيل ما دام الملف الثنائي لم يتغير؛ أما على macOS وFreeBSD فتُخزَّن كعناوين افتراضية وقت التشغيل قد تصبح غير صالحة بعد إعادة التشغيل.
+    تُخزَّن الإطارات خارج الملف الثنائي الرئيسي (مثل تلك الموجودة في المكتبات المشتركة) دائمًا كعناوين افتراضية وقت التشغيل قد تصبح غير صالحة بعد إعادة التشغيل، ويصبح أي عنوان خام غير قابل للحل بعد ترقية الملف الثنائي لأن تخطيط الشيفرة يتغير.
+    لا ينظّف ClickHouse الجدول عند إعادة التشغيل، لذا قد تبقى العناوين الخام المتقادمة.
+    أما العمودان `symbols` و`lines` اللذان رُمّزا مسبقًا فيظلان صالحين عبر عمليات إعادة التشغيل والترقيات، لذا فضّلهما عند تحليل البيانات التاريخية.
+  </Step>
+
+  <Step title="اضبط مؤقتات التحليل" id="configure-profile-timers">
+    أعِد الإعدادين [`query_profiler_cpu_time_period_ns`](/ar/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) أو [`query_profiler_real_time_period_ns`](/ar/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
+    يمكن استخدام كلا الإعدادين في الوقت نفسه.
+
+    تتيح لك هذه الإعدادات ضبط مؤقتات أداة التحليل.
+    وبما أنها إعدادات جلسة، يمكنك استخدام تردد أخذ العينات مختلف للخادم بالكامل، أو للمستخدمين الأفراد أو ملفات تعريف المستخدمين، أو لجلسة العمل التفاعلية الخاصة بك، أو لكل query على حدة.
+
+    تردد أخذ العينات الافتراضي هو عينة واحدة في الثانية، كما أن مؤقتَي CPU والوقت الفعلي مُمكَّنان.
+    ويتيح لك هذا التردد جمع معلومات كافية عن ClickHouse cluster لديك من دون التأثير في أداء الخادم.
+    إذا كنت بحاجة إلى تحليل كل query على حدة، فاستخدم تردد أخذ العينات أعلى.
+  </Step>
+
+  <Step title={<>حلّل الجدول النظامي <code>trace_log</code></>} id="analyze-trace-log-system-table">
+    وللحصول على profile لاستعلام معيّن، تحتاج إلى تجميع البيانات من الجدول `trace_log`.
+    ويمكنك تجميع البيانات بحسب الدوال الفردية أو بحسب تتبعات المكدس كاملة.
+
+    عند تمكين ترميز الرموز (وهو الإعداد الافتراضي)، تكون أسماء الدوال بعد فك تشويهها ومواضعها في المصدر متاحة بالفعل في العمودين `symbols` و`lines`، لذا لا يلزم إجراء إعداد إضافي. لا يُدعم ترميز الرموز على FreeBSD، حيث تكون هذه الأعمدة فارغة دائمًا. قد تكون إدخالات `lines` فارغة للإطارات التي تفتقر إلى معلومات تصحيح الأخطاء أو التي تقع خارج الملف الثنائي الرئيسي لـ ClickHouse (راجع [أعلاه](#server-config)).
+
+    إذا كان ترميز الرموز معطّلًا، أو كنت تريد تحليل العناوين الأولية في العمود `trace` عند الحاجة (على سبيل المثال، لتوسيع الإطارات المضمنة)، فاسمح باستخدام دوال الاستبطان عبر الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions):
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      لدواعٍ أمنية، تكون دوال الاستبطان معطّلة افتراضيًا
+    </Note>
+
+    استخدم [دوال الاستبطان](/ar/reference/functions/regular-functions/introspection) `addressToLine` و`addressToLineWithInlines` و`addressToSymbol` و`demangle` للحصول على أسماء الدوال ومواضعها في شيفرة ClickHouse. وكما في ترميز الرموز، تتوفر هذه الدوال على منصات ELF (مثل Linux) وmacOS، ولكن ليس على FreeBSD.
+
+    <Tip>
+      إذا كنت بحاجة إلى تصوّر معلومات `trace_log`، فجرّب [flamegraph](/ar/integrations/connectors/tools/gui#clickhouse-flamegraph) و[speedscope](https://www.speedscope.app).
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## إنشاء مخططات اللهب باستخدام الدالة `flameGraph`
+</div>
+
+يوفّر ClickHouse الدالة التجميعية [`flameGraph`](/ar/reference/functions/aggregate-functions/flame_graph) التي تُنشئ مخطط اللهب مباشرةً من تتبعات المكدس المخزّنة في `trace_log`.
+ويكون الناتج مصفوفة من السلاسل النصية بتنسيق متوافق مع [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
+
+**البنية:**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**الوسائط:**
+
+* `traces` — تتبّع مكدس الاستدعاءات. [`Array(UInt64)`](/ar/reference/data-types/array).
+* `size` — حجم التخصيص لتنميط الذاكرة. [`Int64`](/ar/reference/data-types/int-uint).
+* `ptr` — عنوان التخصيص. [`UInt64`](/ar/reference/data-types/int-uint).
+
+عندما تكون قيمة `ptr` غير صفرية، فإن `flameGraph` يطابق بين التخصيصات (`size > 0`) وعمليات إلغاء التخصيص (`size < 0`) التي لها الحجم والمؤشر نفسيهما.
+ولا تُعرض إلا التخصيصات التي لم تُحرَّر.
+وتُتجاهل عمليات إلغاء التخصيص غير المطابقة.
+
+<div id="cpu-flame-graph">
+  ### مخطط اللهب للـ CPU
+</div>
+
+<Note>
+  تتطلب الاستعلامات أدناه أن يكون [flamegraph.pl](https://github.com/brendangregg/FlameGraph) مثبّتًا على جهازك.
+
+  يمكنك القيام بذلك بتشغيل:
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # ثم استخدمه على النحو التالي:
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  استبدل `flamegraph.pl` في الاستعلامات التالية بالمسار الذي يوجد فيه `flamegraph.pl` على جهازك.
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+نفّذ الاستعلام، ثم أنشئ مخطط اللهب:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### مخطط اللهب للذاكرة — جميع عمليات تخصيص الذاكرة
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+شغّل استعلامك، ثم أنشئ مخطط اللهب:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### مخطط اللهب للذاكرة — التخصيصات غير المُحرَّرة
+</div>
+
+يطابق هذا النمط عمليات التخصيص مع عمليات تحرير الذاكرة بحسب المؤشر، ويعرض فقط الذاكرة التي لم تُحرَّر أثناء الاستعلام.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+نفّذ الاستعلام التالي لإنشاء مخطط اللهب:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### مخطط اللهب للذاكرة — التخصيصات النشطة في لحظة زمنية معيّنة
+</div>
+
+يتيح لك هذا الأسلوب تحديد ذروة استخدام الذاكرة وتصور ما كان مخصصًا في تلك اللحظة.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### تتبّع استخدام الذاكرة بمرور الوقت
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### حدِّد النقطة الزمنية ذات أعلى استخدام للذاكرة
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### أنشئ مخطط اللهب لتخصيصات الذاكرة النشطة عند تلك اللحظة الزمنية
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### أنشئ مخطط مخطط اللهب لعمليات تحرير الذاكرة بعد تلك النقطة الزمنية (لفهم ما الذي حُرِّر لاحقًا)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## مثال
+</div>
+
+مقتطف الشيفرة أدناه:
+
+* يصفّي بيانات `trace_log` بحسب معرّف الاستعلام والتاريخ الحالي.
+* يقرأ العمودين `symbols` و`lines` المرمّزين مسبقًا لإنشاء تقرير يتضمن:
+  * أسماء الرموز ودوال الشيفرة المصدرية المقابلة لها.
+  * مواضع هذه الدوال في الشيفرة المصدرية.
+* يُجمّع حسب تتبع المكدس الخام (العمود `trace`)، مع استخدام الأعمدة المرمّزة للعرض فقط، لضمان عدم دمج تتبعات المكدس المتميزة مطلقًا نتيجة حلّ الرموز بأفضل جهد.
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

@@ -1,8 +1,9 @@
 -- Tags: no-parallel-replicas, long
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -509,7 +510,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 10000000)
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -725,7 +726,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 10000000)
 )
 ENGINE = MergeTree
 ORDER BY (id)

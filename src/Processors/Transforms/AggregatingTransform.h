@@ -1,4 +1,6 @@
 #pragma once
+#include <optional>
+
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
@@ -6,18 +8,10 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
-}
 
 namespace DB
 {
@@ -49,27 +43,30 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    Block header;
 
-    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header_, params))
         , final(final_)
+        , header(*header_)
     {
     }
 
     AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        const Block & header_, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header_, params))
         , final(final_)
+        , header(header_)
     {
     }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
@@ -77,52 +74,24 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    /// The number of producers that have to reach the finish barrier in
+    /// `AggregatingTransform::initGenerate`, fixed at construction time.
+    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
+    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
+    /// that is concurrently grown is a data race.
+    const size_t num_producers;
+
+    /// Set when the adaptive aggregation is enabled for this aggregation (see
+    /// `AdaptiveAggregationSession`); shared by all the participating transforms.
+    AdaptiveAggregationSessionPtr adaptive_session;
+
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
     }
 
-    ~ManyAggregatedData()
-    {
-        try
-        {
-            if (variants.size() <= 1)
-                return;
-
-            // Aggregation states destruction may be very time-consuming.
-            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::DestroyAggregatesThreads,
-                CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
-                variants.size());
-
-            for (auto && variant : variants)
-            {
-                if (variant->size() < 100'000) // some seemingly reasonable constant
-                    continue;
-
-                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-                if (variant->aggregator)
-                {
-                    pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
-                        {
-                            ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
-                            my_variant.reset();
-                        });
-                }
-            }
-
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    ~ManyAggregatedData();
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -165,13 +134,16 @@ public:
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+    void onCancel() noexcept override;
 
 protected:
     void consume(Chunk chunk);
 
 private:
+    size_t getGeneratingStepGroup() const;
+
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -190,6 +162,12 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+
+    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
+    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
+    /// included header (see `AdaptiveAggregationImpl.h`).
+    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
+
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

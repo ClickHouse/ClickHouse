@@ -1,4 +1,5 @@
 #include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Common/futex.h>

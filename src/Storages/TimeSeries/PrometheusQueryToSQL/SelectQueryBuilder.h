@@ -18,6 +18,7 @@ public:
     ASTPtr from_table_function;
     ASTPtr where;
     ASTs group_by;
+    ASTPtr having;
     ASTs order_by;
     std::optional<size_t> limit;
     int order_direction = 0; /// 1 for ASC, -1 for DESC

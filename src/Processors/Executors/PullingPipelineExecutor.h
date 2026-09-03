@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Processors/Executors/PipelineExecutionStatus.h>
 #include <atomic>
 #include <memory>
 
@@ -10,10 +11,10 @@ namespace DB
 class Block;
 class Chunk;
 class QueryPipeline;
-class PipelineExecutor;
 class PullingOutputFormat;
 struct ProfileInfo;
 
+class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 /// Pulling executor for QueryPipeline. Always execute pipeline in single thread.
@@ -50,6 +51,11 @@ public:
 
     /// Get query profile info.
     ProfileInfo & getProfileInfo();
+
+    /// Returns the final state of the internal `PipelineExecutor`. Use this after `pull` returned `false`
+    /// to distinguish normal end-of-stream (the status stays `Executing`)
+    /// from cancellation (`CancelledByTimeout` / `CancelledByUser`).
+    PipelineExecutionStatus getExecutionStatus() const;
 
 private:
     std::atomic_bool has_data_flag = false;

@@ -1,12 +1,12 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
@@ -18,7 +18,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -184,8 +183,14 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     callback(*res);
     res->forEachMutableSubcolumnRecursively(callback);
 
+    /// Use `insertMergeResultInto` so every State-combinator state is copied into
+    /// `res`'s own arena. The pointer-sharing `insertResultInto` path is unsafe
+    /// here: a flag=0 row in `-OrFill` calls `res.insertDefault` ->
+    /// `res.ensureOwnership` which resets `res.src`, so any later flag=1 row would
+    /// dangle once the source column is destroyed (issue #105742). For non-State
+    /// functions `insertMergeResultInto` just delegates to `insertResultInto`.
     for (auto * val : data)
-        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertMergeResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }
@@ -434,7 +439,7 @@ ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) 
 template <typename Type>
 ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     auto res = createView();
 
     res->data.resize_exact(limit);
@@ -454,23 +459,19 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-WeakHash32 ColumnAggregateFunction::getWeakHash32() const
+void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
-    auto & hash_data = hash.getData();
-
-    std::vector<UInt8> v;
-    for (size_t i = 0; i < s; ++i)
+    VectorWithMemoryTracking<UInt8> v;
+    for (size_t i = row_begin; i < row_end; ++i)
     {
         {
-            WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+            WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> wbuf(v);
             func->serialize(data[i], wbuf, version);
         }
-        hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
+        const UInt32 value = ::updateWeakHash32(v.data(), v.size(), WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
     }
-
-    return hash;
 }
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
@@ -488,6 +489,36 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 size_t ColumnAggregateFunction::byteSize() const
 {
     return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
+}
+
+size_t ColumnAggregateFunction::serializedSizeEstimate() const
+{
+    const size_t rows = data.size();
+    if (rows == 0)
+        return 0;
+
+    const size_t ptr_bytes = rows * sizeof(data[0]);
+
+    /// Fixed-layout states (trivial destructor, no arena) keep all their data in the sizeOfData() blob,
+    /// so size them from it without serializing. hasTrivialDestructor() reflects the combinator-wrapped
+    /// Data, so combinators are handled too.
+    if (func->hasTrivialDestructor() && !func->allocatesMemoryInArena())
+        return ptr_bytes + rows * func->sizeOfData();
+
+    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
+    /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
+    /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
+    /// Sum the exact serialized size of every state instead. States are immutable on the write path, so
+    /// serializing them here is safe even if they live in shared arenas.
+    size_t total_serialized = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        NullWriteBuffer out;
+        func->serialize(data[i], out, version);
+        total_serialized += out.count();
+    }
+
+    return ptr_bytes + total_serialized;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const
@@ -529,7 +560,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
     {
@@ -537,8 +568,6 @@ DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnS
         func->serialize(data[n], buffer, version);
         writeQuoted(buffer.str(), name_buf);
     }
-
-    return DataTypeFactory::instance().get(type_string);
 }
 
 std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
@@ -721,21 +750,20 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
-    MutableColumns columns(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
         column = createView();
 
     size_t num_rows = size();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / static_cast<double>(num_columns) * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -755,7 +783,7 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
                                             size_t, int, Permutation &, EqualRanges&) const {}
 
-void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
+void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const
 {
     /// Place serialized default values into min/max.
 

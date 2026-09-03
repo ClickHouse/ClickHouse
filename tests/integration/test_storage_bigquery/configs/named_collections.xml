@@ -1,0 +1,11 @@
+<clickhouse>
+    <named_collections>
+        <bq_mock>
+            <project>test-project</project>
+            <dataset>test_dataset</dataset>
+            <table>test_types</table>
+            <access_token>test-static-token</access_token>
+            <base_url>http://localhost:8938</base_url>
+        </bq_mock>
+    </named_collections>
+</clickhouse>

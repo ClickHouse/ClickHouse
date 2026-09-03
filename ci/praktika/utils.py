@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import shutil
 import tempfile
 import textwrap
 import time
@@ -19,11 +20,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from shlex import quote
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, List, Optional, Type, TypeVar, Union
 
-T = TypeVar("T", bound="Serializable")
+T = TypeVar("T", bound="MetaClasses.Serializable")
 
 
 class MetaClasses:
@@ -174,24 +175,31 @@ class Shell:
         return cls.get_output(command, verbose=verbose, strict=True).strip()
 
     @classmethod
-    def get_output(cls, command, strict=False, verbose=False):
+    def get_output(cls, command, strict=False, verbose=False, retries=1, delay=2):
         if verbose:
             print(f"Run command [{command}]")
-        res = subprocess.run(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            executable="/bin/bash",
-            errors="ignore",
-        )
-        if res.stderr:
-            print(f"WARNING: stderr: {res.stderr.strip()}")
-        if strict and res.returncode != 0:
-            raise RuntimeError(
-                f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+        for attempt in range(retries):
+            res = subprocess.run(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                executable="/bin/bash",
+                errors="ignore",
             )
+            if res.stderr:
+                print(f"WARNING: stderr: {res.stderr.strip()}")
+            if strict and res.returncode != 0:
+                raise RuntimeError(
+                    f"command failed with, exit_code {res.returncode}, stderr:\n>>>\n{res.stderr.strip()}\n<<<"
+                )
+            if res.returncode == 0:
+                return res.stdout.strip()
+            if attempt < retries - 1:
+                print(f"WARNING: command failed (attempt {attempt + 1}/{retries}), retrying in {delay}s...")
+                time.sleep(delay)
+                delay = min(2 * delay, 60)
         return res.stdout.strip()
 
     @classmethod
@@ -273,10 +281,14 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, finished) -> None:
         if not timeout:
             return
-        time.sleep(timeout)
+        # Waits on the caller being done with the process, not on the leader exiting: a background
+        # descendant holding stdout keeps the reader threads blocked past the leader's exit, and
+        # that group is exactly what the timeout has to reach.
+        if finished.wait(timeout):
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -297,7 +309,7 @@ class Shell:
 
         # Force kill if still running
         if process.poll() is None:
-            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -315,6 +327,7 @@ class Shell:
         timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        on_retry=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -334,7 +347,16 @@ class Shell:
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        delay = 1
+
         for retry in range(retries):
+
+            if retry > 0:
+                delay = min(2 * delay, 60)
+                if verbose:
+                    print(f"Retrying in {delay}s...")
+                time.sleep(delay)
+
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -352,8 +374,11 @@ class Shell:
                     )
 
                     # Start the timeout thread if specified
+                    finished = Event()
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout, args=(timeout, proc, finished)
+                        )
                         t.daemon = True
                         t.start()
 
@@ -365,7 +390,8 @@ class Shell:
                     # Process both stdout and stderr in real-time
                     def stream_output(stream, output_fp, output=None):
                         for line in iter(stream.readline, ""):
-                            sys.stdout.write(line)
+                            if verbose:
+                                sys.stdout.write(line)
                             output_fp.write(line)
                             if output is not None:
                                 output.append(line)
@@ -381,53 +407,89 @@ class Shell:
                     stdout_thread.start()
                     stderr_thread.start()
 
-                    stdout_thread.join()
-                    stderr_thread.join()
+                    try:
+                        stdout_thread.join()
+                        stderr_thread.join()
 
-                    proc.wait()  # Wait for the process to finish
+                        proc.wait()  # Wait for the process to finish
+                        # Close the pipe FDs Popen opened so the GC doesn't
+                        # log ResourceWarning for "unclosed file" later.
+                        proc.stdout.close()
+                        proc.stderr.close()
+                        if proc.stdin is not None:
+                            proc.stdin.close()
+                    finally:
+                        # Only here: the readers return when the last writer closes the pipe, so
+                        # setting this at the leader's exit would retire the watchdog while a
+                        # descendant it must still reach keeps this call blocked.
+                        finished.set()
 
-                    if proc.returncode == 0:
-                        break  # Exit retry loop if success
-                    else:
-                        if verbose:
-                            print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
-                            )
-                        should_retry = not retry_errors
-                        if retry_errors:
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
-                        if should_retry and retry < retries - 1:
-                            delay = min(2 ** (retry + 1), 60)
-                            print(f"Retrying in {delay}s...")
-                            time.sleep(delay)
-            except Exception as e:
+                if proc.returncode == 0:
+                    return 0
+
+                if verbose and retries > 1:
+                    print(
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                    )
+
+                if not retry_errors:
+                    continue  # No retry errors specified, just retry on any failure
+
+                if not any(
+                    err in err_line for err_line in err_output for err in retry_errors
+                ):
+                    if verbose:
+                        print("No retryable errors found, stopping retries")
+                    break
+
+                matched = next(
+                    (
+                        err
+                        for err in retry_errors
+                        if any(err in line for line in err_output)
+                    ),
+                    "",
+                )
                 if verbose:
                     print(
-                        f"ERROR: command failed, exception: {e}, retry: {retry}/{retries}"
+                        f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
+                if on_retry and retry < retries - 1:
+                    # Only where another attempt actually follows: the last iteration
+                    # matches too, but nothing is retried after it. Never lets a
+                    # reporting failure fail the command the retry is rescuing.
+                    try:
+                        on_retry(matched, retry + 1, retries - 1)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"WARNING: on_retry callback failed, ex [{e}]")
+            except Exception as e:
+                if verbose:
+                    if retries == 1:
+                        print(f"ERROR: exception {e}")
+                    else:
+                        print(f"Retry {retry+1}/{retries}: exception {e}")
+                        if retry == retries - 1:
+                            print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
-                if strict and retry == retries - 1:
-                    raise e
+                if retry == retries - 1:
+                    if strict:
+                        raise
+                    else:
+                        return 1  # Return non-zero for failure
 
-        if strict and (not proc or proc.returncode != 0):
+        if verbose:
+            print(
+                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+            )
+
+        if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
                 f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode if proc else 1  # Return 1 if the process never started
+        return proc.returncode
 
     @classmethod
     def run_async(
@@ -587,8 +649,9 @@ class Utils:
         return False
 
     @staticmethod
-    def clear_dmesg():
-        Shell.check("sudo dmesg --clear", verbose=True)
+    def clear_dmesg() -> bool:
+        """True when the ring buffer was cleared, so a later read holds only this run's records."""
+        return Shell.check("sudo dmesg --clear", verbose=True)
 
     @staticmethod
     def to_base64(value):
@@ -597,6 +660,11 @@ class Utils:
         base64_bytes = base64.b64encode(string_bytes)
         base64_string = base64_bytes.decode("utf-8")
         return base64_string
+
+    @staticmethod
+    def from_base64(value):
+        assert isinstance(value, str), f"TODO: not supported for {type(value)}"
+        return base64.b64decode(value.encode("utf-8")).decode("utf-8")
 
     @staticmethod
     def is_hex(s):
@@ -758,8 +826,37 @@ class Utils:
                 )
         return path_out
 
+    @staticmethod
+    def fix_ownership_after_docker(path, docker_image: str) -> None:
+        uid = os.getuid()
+        gid = os.getgid()
+        Shell.run(
+            f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
+            verbose=True,
+        )
+
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
+    def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 or a leading newline, which breaks
+        # openssl enc -pass file: (it reads only the first line as the password).
+        if not Path(f"{aes_key_path}.rsa").exists():
+            Shell.run(f"""
+openssl rand -base64 32 >{aes_key_path}
+openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
+    -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+""")
+
+        Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
+        return f"{path}.enc"
+
+    @classmethod
+    def compress_files_gz(cls, files, archive_name, timeout=None, strict=True):
+        """Archive `files` into `archive_name`, returning the path, or `None` if it did not.
+
+        `timeout` bounds the `tar`; `strict=False` turns a failed archive into that `None` instead
+        of raising. A caller whose job is already being torn down wants both: an archive it cannot
+        finish is worth abandoning, and abandoning it must not lose the caller's remaining work.
+        """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
@@ -769,11 +866,13 @@ class Utils:
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
             f.flush()
-            Shell.check(
+            if not Shell.check(
                 f"tar -cf - -T {f.name} | gzip > {archive_name}",
                 verbose=True,
-                strict=True,
-            )
+                strict=strict,
+                timeout=timeout,
+            ):
+                return None
         return archive_name
 
     @classmethod
@@ -949,6 +1048,17 @@ class Utils:
         def __exit__(self, exc_type, exc_val, exc_tb):
             sys.stdout = self.original_stdout
 
+    @staticmethod
+    def link(src: Path, dst: Path) -> None:
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(src)
+
+    @staticmethod
+    def clean_dir(path: Path) -> None:
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
+
 
 class TeePopen:
     def __init__(
@@ -972,20 +1082,28 @@ class TeePopen:
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
         self.preserve_stdio = preserve_stdio
+        self.finished = Event()
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
-        time.sleep(self.timeout)
+        if self.finished.wait(self.timeout):
+            return
+        if self.process.poll() is not None:
+            return
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
-        if self.timeout_shell_cleanup:
-            Shell.check(self.timeout_shell_cleanup, verbose=True)
-            return
-
         self.send_signal(signal.SIGTERM)
         print(f"Send SIGTERM to [{self.process.pid}]")
+
+        if self.timeout_shell_cleanup:
+            Thread(
+                target=Shell.check,
+                args=(self.timeout_shell_cleanup,),
+                kwargs={"verbose": True, "timeout": 120},
+                daemon=True,
+            ).start()
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 100:
@@ -1047,15 +1165,18 @@ class TeePopen:
             self.log_file.close()
 
     def wait(self) -> int:
-        # If preserving stdio, we don't have our own stdout pipe; just wait
-        if not self.preserve_stdio and self.process.stdout is not None:
-            for line in self.process.stdout:
-                sys.stdout.write(line)
+        try:
+            # If preserving stdio, we don't have our own stdout pipe; just wait
+            if not self.preserve_stdio and self.process.stdout is not None:
+                for line in self.process.stdout:
+                    sys.stdout.write(line)
 
-                if self.log_file:
-                    self.log_file.write(line)
-                self.log_rolling_buffer.append(line)
-        return self.process.wait()
+                    if self.log_file:
+                        self.log_file.write(line)
+                    self.log_rolling_buffer.append(line)
+            return self.process.wait()
+        finally:
+            self.finished.set()
 
     def poll(self):
         return self.process.poll()

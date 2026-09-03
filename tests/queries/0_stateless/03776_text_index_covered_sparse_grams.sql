@@ -1,6 +1,5 @@
-SET enable_full_text_index = 1;
-
 -- Tsts that covered sparse grams are filtered out.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

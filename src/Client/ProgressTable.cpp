@@ -1,4 +1,5 @@
 #include <Client/ProgressTable.h>
+#include <base/sort.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
@@ -62,13 +63,18 @@ std::string formatReadableValue(ProfileEvents::ValueType value_type, double valu
 const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameToEvent()
 {
     /// TODO: MemoryTracker::USAGE_EVENT_NAME and PEAK_USAGE_EVENT_NAME
-    static std::unordered_map<std::string_view, ProfileEvents::Event> event_name_to_event;
-
-    if (!event_name_to_event.empty())
-        return event_name_to_event;
-
-    for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
-        event_name_to_event.emplace(ProfileEvents::getName(event), event);
+    /// Use a lambda for static initialization so the entire filling is part of the
+    /// thread-safe static initialization (C++ guarantees exactly-once, thread-safe
+    /// initialization of static locals). Without this, multiple SSH embedded client
+    /// threads could race on the manual fill, corrupting the hash table.
+    static const std::unordered_map<std::string_view, ProfileEvents::Event> event_name_to_event = []()
+    {
+        std::unordered_map<std::string_view, ProfileEvents::Event> result;
+        result.reserve(ProfileEvents::end());
+        for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+            result.emplace(ProfileEvents::getName(event), event);
+        return result;
+    }();
 
     return event_name_to_event;
 }
@@ -231,7 +237,7 @@ void ProgressTable::writeTable(
         sorted_metrics.emplace_back(&elem);
     }
 
-    std::stable_sort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
+    ::stableSort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
     {
         return std::tuple(a->second.getDisplayPriority(), std::floor(std::log10(1 + a->second.getSummaryValue())))
             > std::tuple(b->second.getDisplayPriority(), std::floor(std::log10(1 + b->second.getSummaryValue())));

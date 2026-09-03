@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class SQLiteSource : public ISource
+class SQLiteSource final : public ISource
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -33,6 +33,8 @@ private:
     };
 
     Chunk generate() override;
+
+    void onCancel() noexcept override;
 
     void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type);
 

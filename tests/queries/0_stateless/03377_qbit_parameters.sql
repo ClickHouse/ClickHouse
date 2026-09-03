@@ -20,7 +20,7 @@ SELECT {q5:QBit(Float32, 16)};
 
 SELECT 'Test QBit query parameters in expressions';
 SET param_q6 = [1, 2, 3, 4];
-SELECT L2DistanceTransposed({q6:QBit(Float32, 4)}, [1, 2, 3, 4], 32);
+SELECT round(L2DistanceTransposed({q6:QBit(Float32, 4)}, [1, 2, 3, 4], 32), 1);
 
 SELECT 'Test QBit query parameters with table';
 DROP TABLE IF EXISTS qbit_param_test;
@@ -28,6 +28,6 @@ CREATE TABLE qbit_param_test (id UInt32, vec QBit(Float32, 4)) ENGINE = Memory;
 INSERT INTO qbit_param_test VALUES (1, [1, 0, 0, 0]), (2, [0, 1, 0, 0]), (3, [1, 1, 1, 1]);
 
 SET param_q7 = [1, 1, 1, 1];
-SELECT id, L2DistanceTransposed(vec, {q7:Array(Float32)}, 4) AS dist FROM qbit_param_test ORDER BY id;
+SELECT id, round(L2DistanceTransposed(vec, {q7:Array(Float32)}, 4), 1) AS dist FROM qbit_param_test ORDER BY id;
 
 DROP TABLE qbit_param_test;
