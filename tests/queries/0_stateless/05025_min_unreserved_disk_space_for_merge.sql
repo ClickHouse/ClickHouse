@@ -67,11 +67,12 @@ CREATE TABLE t_min_unreserved_rep_final (x UInt64)
 INSERT INTO t_min_unreserved_rep_final VALUES (1);
 INSERT INTO t_min_unreserved_rep_final VALUES (2);
 
--- On this very table a background merge is never even assigned under the huge headroom
--- (the leader derives its assignment limit with the headroom), so the parts stay separate;
--- only an explicitly ordered OPTIMIZE entry may merge them. This is the distinction the
--- queue has to keep: background entries respect the headroom, user-forced ones bypass it.
-SYSTEM SYNC REPLICA t_min_unreserved_rep_final;
+-- The leader derives its assignment limit with the headroom too, so no background merge is ever
+-- assigned here: an entry that was assigned and then postponed forever would show up below.
+SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND type = 'MERGE_PARTS';
+
+-- Plain OPTIMIZE derives that same limit synchronously, which is the proof that it refuses.
+OPTIMIZE TABLE t_min_unreserved_rep_final; -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_min_unreserved_rep_final' AND active;
 
 OPTIMIZE TABLE t_min_unreserved_rep_final PARTITION tuple();
