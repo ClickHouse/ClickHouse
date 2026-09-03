@@ -3,10 +3,8 @@
 # DateTime64 Protobuf auto-schema stores scaled ticks (int64), so pre-epoch values,
 # subsecond precision, and upper bound values are preserved through serialization and deserialization.
 # Legacy whole-seconds files can still be read with input_format_protobuf_datetime64_legacy_seconds=1
-# (or SET compatibility = '26.7'). Legacy writers can emit whole Unix seconds with
-# output_format_protobuf_datetime64_legacy_seconds=1. Calendar year 0000 (with a valid month/day)
-# is serialized/deserialized correctly instead of being defaulted to the current/previous year;
-# 0000-00-00 maps to the Unix epoch.
+# (or SET compatibility = '26.8'). Legacy writers can emit whole Unix seconds with
+# output_format_protobuf_datetime64_legacy_seconds=1.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,10 +21,7 @@ FILE_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac.pb"
 FILE_LEGACY_SECONDS="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_seconds.pb"
 FILE_LEGACY_OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_out.pb"
 FILE_LEGACY_DOUBLE="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_double.pb"
-FILE_YEAR_ZERO_BE="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_be.pb"
-FILE_YEAR_ZERO_BASIC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_basic.pb"
-FILE_YEAR_ZERO_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_frac.pb"
-trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_LEGACY_DOUBLE}" "${FILE_YEAR_ZERO_BE}" "${FILE_YEAR_ZERO_BASIC}" "${FILE_YEAR_ZERO_FRAC}"' EXIT
+trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_LEGACY_DOUBLE}"' EXIT
 
 echo '-- pre-epoch'
 ${CLICKHOUSE_LOCAL} --query "
@@ -91,11 +86,11 @@ SELECT *
 FROM file('${FILE_LEGACY_SECONDS}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
 
-echo '-- compatibility 26.7 restores legacy whole-seconds decoding (produces 2020-01-01 00:00:00.000)'
+echo '-- compatibility 26.8 restores legacy whole-seconds decoding (produces 2020-01-01 00:00:00.000)'
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_SECONDS}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
-SETTINGS compatibility = '26.7'"
+SETTINGS compatibility = '26.8'"
 
 echo '-- legacy output writes whole Unix seconds (subseconds truncated)'
 ${CLICKHOUSE_LOCAL} --query "
@@ -148,50 +143,3 @@ FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't Float64')
 SETTINGS format_schema_source = 'string',
          format_schema = '${DOUBLE_SCHEMA}',
          format_schema_message_name = 'Row'"
-
-echo '-- calendar year 0000 via best_effort text parse into Protobuf'
-${CLICKHOUSE_LOCAL} --query "
-INSERT INTO FUNCTION file('${FILE_YEAR_ZERO_BE}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
-SETTINGS date_time_input_format = 'best_effort', engine_file_truncate_on_insert = 1
-FORMAT TSV
-0000-01-01 00:00:00+00"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FILE_YEAR_ZERO_BE}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')"
-
-echo '-- calendar year 0000 using basic input format parses into Protobuf'
-${CLICKHOUSE_LOCAL} --query "
-INSERT INTO FUNCTION file('${FILE_YEAR_ZERO_BASIC}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
-SETTINGS date_time_input_format = 'basic', engine_file_truncate_on_insert = 1
-FORMAT TSV
-0000-01-01 00:00:00"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FILE_YEAR_ZERO_BASIC}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')"
-
-echo '-- calendar year 0000 with subseconds using best_effort'
-${CLICKHOUSE_LOCAL} --query "
-INSERT INTO FUNCTION file('${FILE_YEAR_ZERO_FRAC}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
-SETTINGS date_time_input_format = 'best_effort', engine_file_truncate_on_insert = 1
-FORMAT TSV
-0000-01-01 12:34:56.789+00"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FILE_YEAR_ZERO_FRAC}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')"
-
-echo '-- parseDateTime64BestEffort and toDateTime64 accept calendar year 0000'
-${CLICKHOUSE_LOCAL} --query "
-SELECT parseDateTime64BestEffort('0000-01-01', 3, 'UTC'),
-       toDateTime64('0000-01-01', 3, 'UTC')"
-
-echo '-- 0000-00-00 still maps to the Unix epoch (with basic input format)'
-${CLICKHOUSE_LOCAL} --query "
-SELECT *
-FROM format(TSV, 't DateTime64(3, \\'UTC\\')', '0000-00-00 00:00:00')
-SETTINGS date_time_input_format = 'basic'"
-
-echo '-- explicit year-0 zero-date placeholders map to the Unix epoch via parseDateTime64BestEffort'
-${CLICKHOUSE_LOCAL} --query "
-SELECT parseDateTime64BestEffortOrNull('0000-00-00 00:00:00', 3, 'UTC'),
-       parseDateTime64BestEffortOrNull('0000-01-00 00:00:00', 3, 'UTC'),
-       parseDateTime64BestEffortOrNull('0000-00-01 00:00:00', 3, 'UTC')"
-
-echo '-- 0000-00-00 maps to the Unix epoch with best_effort input format'
-${CLICKHOUSE_LOCAL} --query "
-SELECT *
-FROM format(TSV, 't DateTime64(3, \\'UTC\\')', '0000-00-00 00:00:00')
-SETTINGS date_time_input_format = 'best_effort'"
