@@ -25,6 +25,7 @@ class Job:
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
         command: Optional[str] = None
+        digest_config: Optional["Job.CacheDigestConfig"] = None
 
     @dataclass
     class Config:
@@ -137,6 +138,8 @@ class Job:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:
                     obj.timeout = param_set.timeout
+                if param_set.digest_config:
+                    obj.digest_config = param_set.digest_config
                 if param_set.provides:
                     assert (
                         not obj.provides
