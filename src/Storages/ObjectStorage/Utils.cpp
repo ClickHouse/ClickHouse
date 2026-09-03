@@ -148,6 +148,39 @@ void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string
     }
 }
 
+std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    std::string_view key = path;
+    if (key.starts_with("/"))
+        key.remove_prefix(1);
+    return fs::path(prefix) / key;
+}
+
+std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    return fs::relative(path, prefix).string();
+}
+
+Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    auto relative_path = relativizePathUnderPrefix(prefix, path);
+    if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
+        return {std::move(relative_path)};
+
+    /// A key that keeps a leading separator renders to the same value as the same key without it,
+    /// so both spellings are possible originals of `path`.
+    Strings candidates;
+    candidates.push_back("/" + relative_path);
+    candidates.push_back(std::move(relative_path));
+    return candidates;
+}
+
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
 {
     ASTs::iterator first_key_value_arg_it = args.end();

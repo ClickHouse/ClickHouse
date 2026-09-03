@@ -26,9 +26,9 @@ Returns the query string of a URL without the initial question mark, `#` and eve
 SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
         )",
         R"(
-┌─queryString(⋯3#section')─┐
-│ query=value&param=123    │
-└──────────────────────────┘
+┌─queryString('https://clickhouse.com/docs?query=value&param=123#section')─┐
+│ query=value&param=123                                                    │
+└──────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
