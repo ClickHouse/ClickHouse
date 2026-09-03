@@ -94,3 +94,11 @@ SELECT timeSeriesTimestampToGrid(100, 150, 0, 50)(timestamp, value) AS res FROM 
 -- epoch values at current dates lost precision (they exceed Float32's 24-bit exact-integer range).
 SELECT toTypeName(timeSeriesTimestampToGrid(0, 0, 0, 0)(toDateTime(0, 'UTC'), 1::Float32));
 SELECT toTypeName(timeSeriesTimestampToGrid(0, 0, 0, 0)(toDateTime(0, 'UTC'), 1::Float64));
+
+-- The single-argument samples form, Array(Tuple(timestamp, value)), reads the value column through separate
+-- code, so check it also returns exact Float64 timestamps and agrees with the two-argument form.
+SELECT
+    toTypeName(timeSeriesTimestampToGrid(100, 200, 10, 15)(samples)) AS type,
+    timeSeriesTimestampToGrid(100, 200, 10, 15)(samples) AS res,
+    res = (SELECT timeSeriesTimestampToGrid(100, 200, 10, 15)(timestamp::DateTime64(3, 'UTC'), value::Float32) FROM ts_data) AS matches_two_argument_form
+FROM (SELECT groupArraySorted(30)((timestamp::DateTime64(3, 'UTC'), value::Float32)) AS samples FROM ts_data);

@@ -22,3 +22,4 @@ timeSeriesTimestampToGrid(100, 200, 10, 15):
 [NULL,NULL,127,135]
 Array(Nullable(Float64))
 Array(Nullable(Float64))
+Array(Nullable(Float64))	[89,104,120,127,135,NULL,151,NULL,NULL,NULL,NULL]	1
