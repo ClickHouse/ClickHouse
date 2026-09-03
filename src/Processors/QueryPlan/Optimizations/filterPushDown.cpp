@@ -47,6 +47,20 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
+/// Evaluating a predicate once per branch instead of once above a step that drops rows selects
+/// different rows in each branch unless the predicate is deterministic within the query. This is
+/// the criterion `splitFilter` applies to every row-dropping step.
+static bool filterIsDeterministicInScopeOfQuery(const FilterStep & filter)
+{
+    for (const auto & node : filter.getExpression().getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
 /// The branch input column this DAG output carries through, renamed through alias nodes only, or null
 /// if the output is a computed value rather than an input.
 static const ActionsDAG::Node * resolvePassThroughInput(const ActionsDAG::Node * node)
@@ -1423,6 +1437,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// TODO(#117559): unlike `UNION ALL`, `INTERSECT`/`EXCEPT` eliminate rows, so a pushed-down
         /// filter also runs on branch rows the set operation removes, and a predicate that throws on
         /// some values then surfaces an error the unoptimized plan does not. `JOIN` has the same gap.
+        if (!filterIsDeterministicInScopeOfQuery(*filter))
+            return 0;
 
         /// A pushed-down filter can leave a branch main port constant-folded while its totals port
         /// stays full, and a downstream Main-only transform then aborts on the mismatch.

@@ -4,6 +4,7 @@ EXCEPT ALL	2
 EXCEPT DISTINCT	2
 no top filter EXCEPT ALL	0
 top filter EXCEPT ALL off	1
+nondeterministic top filter	1
 granules on	2
 granules off	2
 res INTERSECT ALL	5
