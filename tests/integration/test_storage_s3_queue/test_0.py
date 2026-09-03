@@ -889,11 +889,15 @@ def test_move_retry_recognizes_committed_copy(
         assert metadata["owner"] == "queue"
 
 
-@pytest.mark.parametrize("destination_version", [None, "foreign-version"])
-def test_move_versioned_source_requires_matching_provenance(
-    started_cluster, destination_version
+@pytest.mark.parametrize(
+    "destination_version, expect_move",
+    [(None, True), ("foreign-version", False)],
+    ids=["pre_upgrade_destination", "foreign_destination"],
+)
+def test_move_versioned_source_provenance(
+    started_cluster, destination_version, expect_move
 ):
-    """A versioned source must not match missing or foreign destination provenance."""
+    """A destination with no version attribute was written before the upgrade and is still ours."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
@@ -909,6 +913,7 @@ def test_move_versioned_source_requires_matching_provenance(
     put_s3_file_content(started_cluster, source_key, data, bucket=bucket)
 
     source = client.stat_object(bucket, source_key)
+    assert source.version_id, "the source must carry a version id"
     metadata = {
         "clickhouse_move_source_path": source_key,
         "clickhouse_move_source_etag": f'"{source.etag}"',
@@ -940,9 +945,64 @@ def test_move_versioned_source_requires_matching_provenance(
     create_mv(node, table_name, f"{table_name}_dst")
 
     wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
-    wait_until(lambda: move_collisions(node) > collisions_before)
-    assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    if expect_move:
+        wait_until(
+            lambda: count_minio_objects(started_cluster, bucket, files_path) == 0
+        )
+        assert move_collisions(node) == collisions_before
+    else:
+        wait_until(lambda: move_collisions(node) > collisions_before)
+        assert count_minio_objects(started_cluster, bucket, files_path) == 1
     assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+
+
+def test_move_after_processing_many_objects(started_cluster):
+    """Smoke test for the concurrent move path: every destination must hold its own source's bytes."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_many_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    files_num = 24
+    source_data = {
+        f"{files_path}/part_{i}.csv": f"{i},{i},{i}\n".encode()
+        for i in range(files_num)
+    }
+    for key, data in source_data.items():
+        put_s3_file_content(started_cluster, key, data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (files_num, 0),
+        timeout=120,
+    )
+    moved = {
+        obj.object_name: read_s3_object(
+            started_cluster, started_cluster.minio_bucket, obj.object_name
+        )
+        for obj in started_cluster.minio_client.list_objects(
+            started_cluster.minio_bucket, prefix=processed_prefix, recursive=True
+        )
+    }
+    assert moved == {
+        f"{processed_prefix}/{key.rsplit('/', 1)[1]}": data
+        for key, data in source_data.items()
+    }
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])

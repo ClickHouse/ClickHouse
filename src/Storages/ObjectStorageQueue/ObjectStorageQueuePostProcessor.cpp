@@ -105,13 +105,13 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
         if (expected == provenance->end() || actual == destination_attributes.end() || actual->second != expected->second)
             return false;
     }
+    /// Compared only when both sides carry one, so a destination stamped before this field existed
+    /// still completes its interrupted move after an upgrade.
     auto expected_version = provenance->find(move_source_version_id_attribute);
-    if (expected_version != provenance->end())
-    {
-        auto actual_version = destination_attributes.find(move_source_version_id_attribute);
-        if (actual_version == destination_attributes.end() || actual_version->second != expected_version->second)
-            return false;
-    }
+    auto actual_version = destination_attributes.find(move_source_version_id_attribute);
+    if (expected_version != provenance->end() && actual_version != destination_attributes.end()
+        && actual_version->second != expected_version->second)
+        return false;
     return true;
 }
 
@@ -348,23 +348,24 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                 reportMoveCollision(object_from, destination);
                 continue;
             }
+            /// The task outlives this iteration, so it takes its own copy of the source object.
             task_tracker.add(
-                [&, object_to = std::move(destination)]
+                [&, source_object = object_from, object_to = std::move(destination)]
                 {
                     try
                     {
                         auto copy_object = [&]
                         {
-                            LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                            LOG_TRACE(log, "Copying object {} to {}", source_object.remote_path, object_to.remote_path);
                             std::optional<ObjectAttributes> provenance;
                             if (!preserve_path)
                             {
                                 if (auto source_metadata
-                                    = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/false))
+                                    = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
                                 {
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
-                                        object_from.remote_path,
+                                        source_object.remote_path,
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
                                         source_metadata->version_id);
@@ -373,7 +374,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 
                             try
                             {
-                                object_storage->copyObject(object_from, object_to, read_settings, move_write_settings, provenance);
+                                object_storage->copyObject(source_object, object_to, read_settings, move_write_settings, provenance);
                             }
                             catch (const Exception & e)
                             {
@@ -386,9 +387,9 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                             }
                             return true;
                         };
-                        if (!copyAndRemoveObject(object_from, copy_object))
+                        if (!copyAndRemoveObject(source_object, copy_object))
                         {
-                            reportMoveCollision(object_from, object_to);
+                            reportMoveCollision(source_object, object_to);
                             return;
                         }
                         ++moved_objects;
@@ -398,7 +399,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         LOG_WARNING(
                             log,
                             "Failed to move object {} within its storage with exception: {}",
-                            object_from.remote_path,
+                            source_object.remote_path,
                             getExceptionMessage(std::current_exception(), /*with_stacktrace=*/false));
                     }
                 });
