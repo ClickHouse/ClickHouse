@@ -116,6 +116,22 @@ walk AS
 )
 SELECT uniqExact(v) FROM walk; -- { serverError UNSUPPORTED_METHOD }
 
+-- A helper CTE that is itself a UNION but does not reference itself is not recursive and may be
+-- MATERIALIZED like a plain SELECT helper.
+WITH RECURSIVE helper AS MATERIALIZED
+(
+    SELECT 1 AS n
+    UNION ALL
+    SELECT 2 AS n
+),
+search AS
+(
+    SELECT 1 AS x
+    UNION ALL
+    SELECT x + 1 FROM search WHERE x < 2 AND (x + 1) IN (SELECT n FROM helper)
+)
+SELECT * FROM search ORDER BY x;
+
 -- Without `enable_materialized_cte`, MATERIALIZED is only a hint and the helper is an ordinary CTE.
 SET enable_materialized_cte = 0;
 

@@ -7092,6 +7092,13 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             union_node_typed.formatASTForErrorMessage(),
             toString(union_node_typed.getUnionMode()));
 
+        /// The recursive evaluation itself cannot be materialized.
+        if (union_node_typed.isMaterialized())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "MATERIALIZED is not supported for the recursive CTE '{}' itself in recursive WITH. In scope {}",
+                union_node_typed.getCTEName(),
+                scope.scope_node->formatASTForErrorMessage());
+
         /// Materialized CTEs referenced from the recursive members are read once per recursion step, so they
         /// must stay materialized even with a single reference site; otherwise `inlineMaterializedCTEIfNeeded`
         /// would inline them and the subquery would be re-executed on every step. The snapshot is taken once,
