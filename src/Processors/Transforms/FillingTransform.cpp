@@ -763,7 +763,7 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
-                if (current_value.isNull() ? null_placement_decidable
+                if (current_value.isNull() ? (null_placement_decidable && filling_row.isConstraintsSatisfied())
                                            : less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
