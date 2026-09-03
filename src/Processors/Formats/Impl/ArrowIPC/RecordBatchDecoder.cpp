@@ -531,14 +531,6 @@ ColumnPtr RecordBatchDecoder::decodeInner(
     const DataTypePtr stripped_effective_hint = stripHint(effective_hint);
     const bool date32_as_number = stripped_effective_hint && (isNumber(stripped_effective_hint) || isDecimal(stripped_effective_hint));
 
-    auto child_path = [&](const String & child_name) -> String
-    {
-        String seg = child_name;
-        if (settings.arrow.case_insensitive_column_matching)
-            boost::to_lower(seg);
-        return path.empty() ? seg : path + "." + seg;
-    };
-
     switch (type.kind)
     {
         case TypeKind::Int:
@@ -819,7 +811,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             checkBufferSize(views, requiredBytes(rows, 16), "binary view");
             const Int64 num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
             ++variadic_index;
-            /// `num_data` is untrusted IPC metadata (already checked non-negative in `decodeColumns`). A forged
+            /// `num_data` is untrusted IPC metadata (already checked non-negative in `beginBatch`). A forged
             /// huge positive count would drive an oversized `reserve` before `nextBuffer` notices the batch has
             /// fewer buffers; cap it at the number of remaining buffers first.
             if (static_cast<size_t>(num_data) > buffer_slices.size() - buffer_index)
@@ -988,7 +980,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 ColumnPtr element = decodeField(
                     child, /*allow_low_cardinality=*/false,
                     tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    child_path(child.name), list_depth, invisible_rows);
+                    childPath(path, child.name), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1195,7 +1187,7 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
 
     /// Build the LowCardinality column directly from (keys, indexes): the dictionary is deduplicated
     /// once (a handful of values) and the per-row indexes are remapped with a cheap gather — no
-    /// materialization of the full column and no per-row hashing. `decodeColumns` reports the matching
+    /// materialization of the full column and no per-row hashing. `decodeTopLevelColumn` reports the matching
     /// LowCardinality type. A dictionary nested inside Array/Map/Tuple/Union is not wrapped as
     /// LowCardinality by `fieldToCHType` (only top-level fields are), so materialize those to the plain
     /// value column to keep the decoded column structure consistent with the declared type. For the rare
@@ -1519,7 +1511,8 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// wrapped when it is allowed: either `allow_experimental_nullable_tuple_type` is on, or the requested
     /// target type at this field is already nullable (e.g. reading into an existing `Nullable(Tuple)` column).
     /// This mirrors the library reader's `allow_nullable_struct`. Otherwise the struct is read as a plain
-    /// Tuple, dropping the struct-level null map. `decodeColumns` reconciles the reported type to this column.
+    /// Tuple, dropping the struct-level null map. `decodeTopLevelColumn` reconciles the reported type to
+    /// this column.
     const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
     const bool nullable_tuple_allowed = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()));
@@ -1660,11 +1653,50 @@ void RecordBatchDecoder::skipField(const ArrowField & field)
     }
 }
 
-RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
+RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
     const VectorWithMemoryTracking<char> * reachable_buffers)
+{
+    beginBatch(batch, body, reachable_buffers, target_types_);
+
+    DecodedColumns result;
+    result.reserve(schema.fields.size());
+    for (const ArrowField & field : schema.fields)
+    {
+        const String normalized_name = normalizedName(field.name);
+        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        {
+            /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
+            /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
+            skipField(field);
+            continue;
+        }
+        /// `normalized_name` seeds the recursive `date32` numeric type hint (looked up in `target_types`);
+        /// nested fields derive their hints from it as the decoder recurses. See decodeField/decodeInner.
+        result.push_back(decodeTopLevelColumn(field, /*target_hint=*/nullptr, normalized_name));
+    }
+
+    finishBatch();
+    return result;
+}
+
+RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeDictionaryValues(
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field, const DataTypePtr & value_hint)
+{
+    /// The hint arrives resolved, so no requested types are looked up by name for a dictionary batch; the
+    /// value field's nested fields derive their hints from it exactly as they would from an inline field's.
+    beginBatch(batch, body, /*reachable_buffers=*/nullptr, /*target_types_=*/nullptr);
+    DecodedColumn values = decodeTopLevelColumn(value_field, value_hint, normalizedName(value_field.name));
+    finishBatch();
+    return values;
+}
+
+void RecordBatchDecoder::beginBatch(
+    const flatbuf::RecordBatch & batch, const PODArray<char> & body,
+    const VectorWithMemoryTracking<char> * reachable_buffers,
+    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
 {
     target_types = target_types_;
     current_batch = &batch;
@@ -1687,73 +1719,59 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     /// The batch length is untrusted IPC metadata; reject a negative one before `prepareBuffers`, so a
     /// negative length on the dictionary-batch path is rejected before any (possibly large or compressed)
     /// buffer is allocated or decompressed from the batch metadata. Each top-level column's declared row
-    /// count is then checked against this length in the loop below, before the column is decoded.
+    /// count is then checked against this length (`decodeTopLevelColumn`) before the column is decoded.
     if (batch.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
-    const size_t batch_rows = static_cast<size_t>(batch.length());
 
     prepareBuffers(batch, body, reachable_buffers);
+}
 
-    const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
+RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeTopLevelColumn(
+    const ArrowField & field, const DataTypePtr & target_hint, const String & normalized_name)
+{
+    /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk` would
+    /// mix columns of different sizes (an internal inconsistency) instead of being rejected as bad data.
+    /// Reject a mismatch BEFORE decodeField: a buffer-less column (a `null`-typed field, or a
+    /// struct/fixed-size-list tree of them) is sized by its FieldNode length alone, so a forged length
+    /// would otherwise drive an allocation of that size before any consistency check fired.
+    const size_t batch_rows = static_cast<size_t>(current_batch->length());
+    const Int64 declared_rows = peekNextNodeLength();
+    if (declared_rows < 0 || static_cast<size_t>(declared_rows) != batch_rows)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC top-level column '{}' declares {} rows, expected the batch length {}",
+            field.name, declared_rows, batch_rows);
 
-    DecodedColumns result;
-    result.reserve(fields.size());
-    for (const ArrowField & field : fields)
+    DecodedColumn decoded;
+    decoded.name = field.name;
+    /// A dictionary-encoded field is declared by its registered value type — the type its dictionary batch
+    /// was decoded to under the field's requested type hint (see `DictionaryRegistry::Values`), which is
+    /// what `decodeDictionary` builds the column from — rather than by its natural type; at the top level
+    /// it decodes into a LowCardinality column of that value type.
+    if (field.dictionary)
     {
-        String normalized_name = field.name;
-        if (case_insensitive)
-            boost::to_lower(normalized_name);
-
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
-        {
-            /// Unrequested column: advance the node/buffer cursors past it without decoding, so a
-            /// SELECT of a subset of columns neither pays for nor fails on columns it did not request.
-            skipField(field);
-            continue;
-        }
-
-        /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk`
-        /// would mix columns of different sizes (an internal inconsistency) instead of being rejected as
-        /// bad data. Reject a mismatch BEFORE decodeField: a buffer-less column (a `null`-typed field,
-        /// or a struct/fixed-size-list tree of them) is sized by its FieldNode length alone, so a forged
-        /// length would otherwise drive an allocation of that size before any consistency check fired.
-        const Int64 declared_rows = peekNextNodeLength();
-        if (declared_rows < 0 || static_cast<size_t>(declared_rows) != batch_rows)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC top-level column '{}' declares {} rows, expected the batch length {}",
-                field.name, declared_rows, batch_rows);
-
-        DecodedColumn decoded;
-        decoded.name = field.name;
-        /// A dictionary-encoded field is declared by its registered value type — the type its dictionary
-        /// batch was decoded to under the field's requested type hint (see `DictionaryRegistry::Values`),
-        /// which is what `decodeDictionary` builds the column from — rather than by its natural type; at
-        /// the top level it decodes into a LowCardinality column of that value type.
-        if (field.dictionary)
-        {
-            decoded.type = registry.get(field.dictionary->id).type;
-            if (decoded.type->canBeInsideLowCardinality())
-                decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-        }
-        else
-            decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
-        /// `normalized_name` seeds the recursive `date32` numeric type hint (looked up in `target_types`);
-        /// nested fields derive their hints from it as the decoder recurses. See decodeField/decodeInner.
-        decoded.column = decodeField(
-            field,
-            /*allow_low_cardinality=*/true,
-            /*target_hint=*/nullptr,
-            normalized_name,
-            /*list_depth=*/0,
-            /*invisible_rows=*/nullptr /*a top-level field has no ancestors*/);
-        /// `decodeField` may wrap a struct in Nullable based on the requested type hint even when
-        /// `fieldToCHType` did not (setting off); reconcile the reported type with the decoded column so the
-        /// column/type pair stays consistent for the subsequent cast.
-        decoded.type = matchColumnNullability(decoded.type, decoded.column);
-        result.push_back(std::move(decoded));
+        decoded.type = registry.get(field.dictionary->id).type;
+        if (decoded.type->canBeInsideLowCardinality())
+            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
     }
+    else
+        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
+    decoded.column = decodeField(
+        field,
+        /*allow_low_cardinality=*/true,
+        target_hint,
+        normalized_name,
+        /*list_depth=*/0,
+        /*invisible_rows=*/nullptr /*a top-level field has no ancestors*/);
+    /// `decodeField` may wrap a struct in Nullable based on the requested type hint even when
+    /// `fieldToCHType` did not (setting off); reconcile the reported type with the decoded column so the
+    /// column/type pair stays consistent for the subsequent cast.
+    decoded.type = matchColumnNullability(decoded.type, decoded.column);
+    return decoded;
+}
 
+void RecordBatchDecoder::finishBatch()
+{
     /// Verify the layout math is exact: every FieldNode, buffer and variadic-buffer count the batch declares
     /// must have been consumed by the decoded-or-skipped fields. This must run whether or not columns were
     /// pruned: when pruning, a mismatch means `skipField` mis-counted a layout; when every column is decoded,
@@ -1772,7 +1790,20 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
     current_batch = nullptr;
     target_types = nullptr;
     buffer_slices.clear();
-    return result;
+}
+
+String RecordBatchDecoder::normalizedName(const String & name) const
+{
+    String normalized = name;
+    if (settings.arrow.case_insensitive_column_matching)
+        boost::to_lower(normalized);
+    return normalized;
+}
+
+String RecordBatchDecoder::childPath(const String & path, const String & child_name) const
+{
+    const String seg = normalizedName(child_name);
+    return path.empty() ? seg : path + "." + seg;
 }
 
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
@@ -1965,16 +1996,6 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     }
 }
 
-RecordBatchDecoder::DecodedColumns
-RecordBatchDecoder::decodeBatch(
-    const flatbuf::RecordBatch & batch, const PODArray<char> & body,
-    const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
-    const VectorWithMemoryTracking<char> * reachable_buffers)
-{
-    return decodeColumns(batch, body, schema.fields, keep_top_level_fields, target_types_, reachable_buffers);
-}
-
 VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
     const flatbuf::RecordBatch & batch, const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields)
 {
@@ -2007,16 +2028,12 @@ VectorWithMemoryTracking<char> RecordBatchDecoder::reachableTopLevelBuffers(
             }
         }
 
-        const bool case_insensitive = settings.arrow.case_insensitive_column_matching;
         for (const ArrowField & field : schema.fields)
         {
-            String normalized_name = field.name;
-            if (case_insensitive)
-                boost::to_lower(normalized_name);
             const size_t start = buffer_index;
             skipField(field);
             const size_t end = buffer_index;
-            if (keep_top_level_fields->contains(normalized_name))
+            if (keep_top_level_fields->contains(normalizedName(field.name)))
             {
                 for (size_t i = start; i < end && i < num_buffers; ++i)
                     reachable[i] = 1;

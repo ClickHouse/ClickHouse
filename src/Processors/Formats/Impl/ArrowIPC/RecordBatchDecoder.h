@@ -152,12 +152,14 @@ public:
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
-    /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
-    DecodedColumns decodeColumns(
-        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
-        const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
-        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
-        const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
+    /// Decodes the single value column of a `DictionaryBatch` — `value_field` describes the dictionary's
+    /// value type — under `value_hint`, the requested type hint `collectDictionaryValueHints` resolved for
+    /// that dictionary (null when it resolved none). The values get the same hint-driven decoding as
+    /// inline values in a record batch: a `date32` under a numeric target is read as the raw day number,
+    /// a binary leaf under an IPv6 / big-integer target is reinterpreted.
+    DecodedColumn decodeDictionaryValues(
+        const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field,
+        const DataTypePtr & value_hint);
 
     /// The buffers (indices into `batch.buffers()`) referenced by the requested top-level fields, as a
     /// 0/1 mask of length `batch.buffers()->size()`. Computed by the same cursor walk decoding uses
@@ -255,6 +257,29 @@ private:
     DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
+
+    /// Per-batch setup shared by `decodeBatch` and `decodeDictionaryValues`: points the node/buffer cursors
+    /// at `batch`, validates its variadic buffer counts and its length, and slices `body` into
+    /// `buffer_slices` (see `prepareBuffers`). `target_types_` are the requested types looked up by dotted
+    /// column name while this batch decodes (null: no lookups).
+    void beginBatch(
+        const flatbuf::RecordBatch & batch, const PODArray<char> & body,
+        const VectorWithMemoryTracking<char> * reachable_buffers,
+        const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_);
+    /// Decodes one top-level field of the current batch (its node is the next one) after checking that it
+    /// declares the batch's row count, and declares it by its ClickHouse type. `target_hint` and
+    /// `normalized_name` are the field's requested type hint and lookup path (see `decodeField`).
+    DecodedColumn decodeTopLevelColumn(const ArrowField & field, const DataTypePtr & target_hint, const String & normalized_name);
+    /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
+    /// per-batch state `beginBatch` set up.
+    void finishBatch();
+
+    /// A field name as the reader matches it against the header: lower-cased when column matching is
+    /// case-insensitive. The keys of `keep_top_level_fields` and `target_types` use the same normalization.
+    String normalizedName(const String & name) const;
+    /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
+    /// normalized name appended to its parent's path.
+    String childPath(const String & path, const String & child_name) const;
 
     const ArrowSchema & schema;
     const FormatSettings & settings;
