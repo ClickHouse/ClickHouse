@@ -35,7 +35,17 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         use_join_disjunctions_push_down = 1
 "
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, text_log"
+# The secondary queries reach `query_log` a little after the initiator's own row, so one flush can miss
+# them - and their absence would make the assertion below read zero replica-side push-downs for the wrong
+# reason. Wait for them; if they never arrive, `shipped_to_replicas` stays zero and the test fails.
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, text_log"
+    [ "$($CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM system.query_log
+        WHERE initial_query_id = '$query_id' AND NOT is_initial_query
+        SETTINGS enable_parallel_replicas = 0")" -gt 0 ] && break
+    sleep 0.1
+done
 
 # The initiator pushes the two partial predicates once while planning; the replicas, which receive that
 # plan already optimized, must add none. The other two columns keep a zero from being vacuous:
