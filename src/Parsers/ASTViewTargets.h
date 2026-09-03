@@ -33,17 +33,17 @@ struct ViewTarget
         /// The "samples" table for a TimeSeries table, contains samples.
         Samples,
 
+        /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
+        RecentSamples,
+
+        /// The optional "histograms" table of a TimeSeries table, contains native histogram samples.
+        Histograms,
+
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 
         /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
         Metrics,
-
-        /// The optional "recent samples" table of a TimeSeries table: a TTL'd copy of the newest samples, preferred for short range reads.
-        RecentSamples,
-
-        /// The optional "histograms" table for a TimeSeries table, contains native histogram samples.
-        Histograms,
     };
 
     explicit ViewTarget(Kind kind_);
@@ -121,6 +121,10 @@ public:
     /// Returns information about a target table.
     /// The function returns null if such target doesn't exist.
     const ViewTarget * tryGetTarget(ViewTarget::Kind kind) const;
+
+    /// Removes a target table with all its properties.
+    /// The function does nothing if such target doesn't exist.
+    void removeTarget(ViewTarget::Kind kind);
 
     String getID(char) const override { return "ViewTargets"; }
 
