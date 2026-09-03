@@ -237,15 +237,34 @@ TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
     EXPECT_FALSE(filter.getRecordedKeyRanges());
 }
 
-TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationIsIgnored)
+TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationFailsOpenForIndexMetadata)
 {
     const auto type = makeUInt64Type();
     auto lookup = createRuntimeFilterLookup();
 
-    /// Simulates the executor interleaving where `HashJoin::publishSharedRuntimeFilters` replaces the
-    /// lookup entry with a prebuilt shared fixed-hash-table filter before a late
-    /// `BuildRuntimeFilterTransform::finish()` registers its set filter: the late registration must be
-    /// ignored (the shared filter probes the complete hash table), not fail the query.
+    /// Register the first of two stream-local filters. It remains unfinished while one merge is
+    /// pending, so index analysis must not expose its partial exact values or range.
+    auto initial_filter = std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/1,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::ExactContains(
+            type,
+            /*bytes_limit_=*/1_MiB,
+            /*exact_values_limit_=*/100));
+    initial_filter->enableIndexAnalysis();
+    initial_filter->insert(makeUInt64Column({3, 7}));
+    lookup->add("runtime_filter", "runtime_filter", std::move(initial_filter));
+
+    auto incomplete_filter = lookup->find("runtime_filter");
+    ASSERT_TRUE(incomplete_filter);
+    auto recorded_key_range = incomplete_filter->getRecordedKeyRanges();
+    auto recorded_key_values = incomplete_filter->getRecordedKeyValues();
+    EXPECT_FALSE(recorded_key_range);
+    EXPECT_FALSE(recorded_key_values);
+
+    /// Simulate post-build publication. The probe sees the complete hash table, including key 1
+    /// whose stream-local filter has not registered yet. The unfinished filter contributes no
+    /// metadata, so read-side index analysis fails open instead of pruning by {3, 7}.
     auto shared_filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
@@ -257,9 +276,14 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationIsIgnored)
                 auto & result_data = result->getData();
                 result_data.resize(values.column->size());
                 for (size_t row = 0; row < values.column->size(); ++row)
-                    result_data[row] = values.column->getUInt(row) == 3 || values.column->getUInt(row) == 7;
+                {
+                    const auto value = values.column->getUInt(row);
+                    result_data[row] = value == 1 || value == 3 || value == 7;
+                }
                 return result;
-            }));
+            },
+            std::move(recorded_key_range),
+            std::move(recorded_key_values)));
     lookup->replace("runtime_filter", std::move(shared_filter));
 
     auto late_filter = std::make_unique<RuntimeFilter>(
@@ -269,13 +293,15 @@ TEST(RuntimeFilterLookup, LateAddAfterSharedFilterPublicationIsIgnored)
             type,
             /*bytes_limit_=*/1_MiB,
             /*exact_values_limit_=*/100));
+    late_filter->enableIndexAnalysis();
     late_filter->insert(makeUInt64Column({1}));
     EXPECT_NO_THROW(lookup->add("runtime_filter", "runtime_filter", std::move(late_filter)));
 
     auto filter = lookup->find("runtime_filter");
     ASSERT_TRUE(filter);
-    /// The shared filter stays authoritative: the late set filter's keys are dropped.
-    expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 7}, type)), {0, 1, 1});
+    expectMask(filter->find(makeUInt64ColumnWithType({1, 3, 7}, type)), {1, 1, 1});
+    EXPECT_FALSE(filter->getRecordedKeyValues());
+    EXPECT_FALSE(filter->getRecordedKeyRanges());
 }
 
 TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)

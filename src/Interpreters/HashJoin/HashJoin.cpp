@@ -2713,6 +2713,8 @@ void HashJoin::publishSharedRuntimeFilters()
             || target_which.isLowCardinality())
             continue;
 
+        /// Metadata accessors expose data only after all stream-local filters have merged. If publication races
+        /// a late registration, they return no partial metadata; copied metadata is therefore complete or absent.
         auto filter = std::make_unique<RuntimeFilter>(
             /*filters_to_merge_=*/0,
             existing->getConfig(),
