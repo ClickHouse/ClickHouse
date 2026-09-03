@@ -37,3 +37,11 @@ SELECT '---';
 SELECT number % 2 ? NULL : toNullable(toInt32(number)) AS x
 FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1 TO 3
 SETTINGS use_with_fill_by_sorting_prefix = 0;
+SELECT '---';
+-- `WITH FILL` fills the half-open range [FROM, TO), so equal bounds fill nothing. A range whose
+-- first row holds `NULL` in the fill key is no exception.
+SELECT if(number < 100, NULL, toNullable(toInt32(number))) AS x
+FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1 TO 1;
+SELECT '---';
+SELECT if(number < 100, NULL, toNullable(toInt32(number))) AS x
+FROM numbers(2) ORDER BY x DESC WITH FILL FROM 1 TO 1;
