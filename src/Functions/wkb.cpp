@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -31,7 +32,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// `Ring` is the one geometry kind with no WKB representation; everything else the dispatch
+        /// reads has one. Stated here so it is refused during analysis, like every other geometry
+        /// function, rather than only once a row reaches `executeImpl`.
+        checkGeometryArgumentType<CartesianPoint, GeoKindRing>(
+            arguments[0], getName(), "{0} function is not supported for type {1}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeString>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
