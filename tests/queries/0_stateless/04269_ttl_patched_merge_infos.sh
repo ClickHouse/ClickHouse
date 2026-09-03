@@ -281,3 +281,118 @@ done
 echo "$rows_where_left"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_rows_where;"
 
+# -------------------------------------------------------------------
+# Case 22: an unblocked patch moving every row into the future keeps the bound
+#
+# Case 21's mirror on the ordinary path: there the TTL blocker is on, here the TTL
+# step runs. TTLAggregationAlgorithm marks its entry finished off the pre-patch
+# `max`, and with every row patched forward it aggregates nothing, so `finalize`
+# writes that untouched entry out and the merged part is left with a zero bound.
+# -------------------------------------------------------------------
+echo "-- Case 22: an unblocked patch moving every row into the future keeps the bound"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by_all_future
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+    SETTINGS
+        -- A budget of 0 starves background TTL merges, leaving the OPTIMIZE below as the only
+        -- merge: a second one rebuilds the entry from the merged infos and would hide the bug.
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_all_future;
+
+    INSERT INTO t_ttl_patch_group_by_all_future SELECT number, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    -- Every row, not just some of them.
+    UPDATE t_ttl_patch_group_by_all_future SET event_time = now() + INTERVAL 5 DAY WHERE TRUE
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    -- TTL merges stay enabled, so the merge takes the ordinary path, not the blocked one.
+    SYSTEM START MERGES t_ttl_patch_group_by_all_future;
+    OPTIMIZE TABLE t_ttl_patch_group_by_all_future FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_all_future;"
+
+# No row is due any more, so the bound must follow them into the future - not collapse to zero.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT min(group_by_ttl_info.min[1]) > now()
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_ttl_patch_group_by_all_future' AND active
+      AND partition_id NOT LIKE 'patch-%';
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_all_future;"
+
+# -------------------------------------------------------------------
+# Case 23: an unblocked patched merge leaves the GROUP BY entry schedulable
+#
+# When only some rows move forward the rebuilt bounds look right, and the pre-patch
+# `ttl_finished` the algorithm carried over is the only thing that is wrong. No
+# system.parts column shows it; the TTL selectors do, because they gate on
+# hasAnyNonFinishedTTLs() before looking at the bound - so once the patched rows do
+# fall due, nothing ever schedules the roll-up they need.
+# -------------------------------------------------------------------
+echo "-- Case 23: an unblocked patched merge leaves the GROUP BY entry schedulable"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_patch_group_by_live
+    (
+        id UInt64,
+        event_time DateTime,
+        value UInt64
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time GROUP BY id SET value = max(value)
+    SETTINGS
+        -- As in Case 22, 0 keeps the OPTIMIZE the only merge; it is raised once that part exists.
+        max_number_of_merges_with_ttl_in_pool = 0,
+        merge_with_ttl_timeout = 0,
+        apply_patches_on_merge = 1,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_patch_group_by_live;
+
+    -- Ten rows per key, all expired, so a roll-up that runs is visible as a row drop.
+    INSERT INTO t_ttl_patch_group_by_live SELECT number % 10, now() - INTERVAL 2 DAY, number FROM numbers(100);
+
+    -- A lightweight update moves two keys' worth of rows just past the merge.
+    UPDATE t_ttl_patch_group_by_live SET event_time = now() + INTERVAL 10 SECOND WHERE id < 2
+    SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+    SYSTEM START MERGES t_ttl_patch_group_by_live;
+    OPTIMIZE TABLE t_ttl_patch_group_by_live FINAL;
+"
+
+# Eighty expired rows collapse to eight; the twenty the patch moved forward pass through.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_live;"
+
+# Those twenty fall due 10 seconds after the UPDATE, so wait past that deadline once before
+# opening the pool - the retries below only absorb a slow merge, not the wait.
+sleep 11
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ttl_patch_group_by_live MODIFY SETTING max_number_of_merges_with_ttl_in_pool = 100;"
+
+# They must now roll up to one row per key. A finished entry hides the part from
+# TTLRowDeleteMergeSelector::canConsiderPart and the count sits at 28 forever; a visible one only
+# needs the pool to get to it, which under sanitizers can take minutes - poll long, break early.
+for _ in $(seq 1 120); do
+    live_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_patch_group_by_live;")
+    [[ "$live_rows" -lt 28 ]] && break
+    sleep 1
+done
+echo "rolled up after the unblocked patched merge: $([[ "$live_rows" -lt 28 ]] && echo 1 || echo 0)"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_patch_group_by_live;"

@@ -129,8 +129,9 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
-    if (isMaxTTLExpired())
-        new_ttl_info.ttl_finished = true;
+    /// Retired until a row says otherwise: taking this from the pre-merge `old_ttl_info.max`
+    /// instead would retire the rule on rows a patch applied by this merge moved past the TTL.
+    new_ttl_info.ttl_finished = true;
 }
 
 void TTLAggregationAlgorithm::execute(Block & block)
@@ -219,6 +220,14 @@ void TTLAggregationAlgorithm::execute(Block & block)
             }
             else
             {
+                /// A row the rule leaves in place: it is not expired, so the rule is not retired
+                /// and the bounds must cover it even when this block aggregates nothing.
+                if (where_filter_passed)
+                {
+                    new_ttl_info.update(cur_ttl);
+                    new_ttl_info.ttl_finished = false;
+                }
+
                 for (const auto & name : column_names)
                 {
                     const IColumn * values_column = block.getByName(name).column.get();
@@ -332,14 +341,11 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    if (new_ttl_info.finished())
-    {
-        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
-        return;
-    }
-    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info);
+    /// The recomputed info covers every row this merge writes; it stays empty only when no row
+    /// reached the rule, and then the pre-merge info is all there is.
+    const auto & ttl_info = new_ttl_info.initialized() ? new_ttl_info : old_ttl_info;
+    data_part->ttl_infos.group_by_ttl[description.result_column] = ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 }

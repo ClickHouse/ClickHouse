@@ -662,9 +662,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// on the merged part. The maxima are reset; the rows-WHERE entries are dropped wholesale,
     /// because their ttl_finished bit survives recalculation (TTLDeleteAlgorithm marks finished
     /// off the old max and update() never clears it, hiding the part from later TTL passes).
-    /// GROUP BY entries are deliberately left alone: TTLAggregationAlgorithm keeps the old info
-    /// whenever the recomputed one is not finished, so clearing them yields a part with no
-    /// GROUP BY bound at all - the infinite-rollup shape 04501 pins. The TTL step is forced even
+    /// GROUP BY entries are deliberately left alone: TTLAggregationAlgorithm falls back to the old
+    /// info when no row reaches the rule, so clearing them can yield a part with no GROUP BY bound
+    /// at all - the infinite-rollup shape 04501 pins. The TTL step is forced even
     /// for a part that did not look due before the patch; when the TTL blocker is active the rows
     /// must survive, so the pipeline recalculates the infos instead. Recompression/move infos are
     /// likewise ignored where they drive the output codec and the reserved destination.
@@ -2428,9 +2428,8 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     /// The recalculation step rebuilds GROUP BY bounds like every other family, but it can never
     /// set `ttl_finished`, so only that flag is carried over from before the patch. Restoring the
     /// whole entry instead would keep a pre-patch `max` that no row satisfies any more: a patch
-    /// moving every row into the future would still look due, and the next real TTL merge seeds
-    /// `ttl_finished` from that expired `max` (TTLAggregationAlgorithm), finding nothing to roll
-    /// up and marking the rule finished - after which the part is never selected for it again.
+    /// moving every row into the future would still look due, and every merge until the rollup
+    /// actually runs would carry that stale bound forward.
     if (global_ctx->preserved_group_by_ttl)
     {
         auto & group_by_ttl = global_ctx->new_data_part->ttl_infos.group_by_ttl;
@@ -3613,8 +3612,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (ctx->need_remove_expired_values
         || (!global_ctx->merging_columns_expired_by_ttl.empty() && !ctx->recalculate_ttl_for_patches))
     {
-        /// TTLAggregationAlgorithm decides `ttl_finished` itself on this path, from the rows it
-        /// actually aggregated, so the carried flag must not be put back over its answer.
+        /// TTLAggregationAlgorithm decides `ttl_finished` itself on this path, from the rows the
+        /// merge writes rather than from pre-patch infos, so the carried flag must not be put back.
         global_ctx->preserved_group_by_ttl.reset();
 
         auto ttl_step = std::make_unique<TTLStep>(
