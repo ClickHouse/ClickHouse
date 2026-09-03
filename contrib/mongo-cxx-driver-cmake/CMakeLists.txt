@@ -66,6 +66,12 @@ configure_file(
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/private/config/config.hh.in
         ${BSONCXX_BINARY_DIR}/lib/bsoncxx/private/config/config.hh
 )
+# As of r4.5.0 the v_noabi config header is generated rather than shipped in
+# `include/`, so it has to be configured like the v1 headers above.
+configure_file(
+        ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp.in
+        ${BSONCXX_BINARY_DIR}/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp
+)
 
 # Aggregate forward-declaration headers. Upstream generates these by globbing
 # all `*-fwd.hpp` files and concatenating them into a single `fwd.hpp` umbrella.
@@ -351,6 +357,12 @@ configure_file(
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/private/config/config.hh.in
         ${MONGOCXX_BINARY_DIR}/lib/mongocxx/private/config/config.hh
+)
+# As of r4.5.0 the v_noabi config header is generated rather than shipped in
+# `include/`, so it has to be configured like the v1 headers above.
+configure_file(
+        ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in
+        ${MONGOCXX_BINARY_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp
 )
 
 # Aggregate forward-declaration headers, mirroring upstream's umbrella `fwd.hpp`.
