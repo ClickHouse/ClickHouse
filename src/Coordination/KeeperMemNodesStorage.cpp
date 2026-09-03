@@ -662,13 +662,10 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
 
         std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> processed_uncommitted_children;
 
-        /// Add uncommitted children to queue. Sorted by path so the visit order is deterministic.
+        /// Add uncommitted children to queue. Nothing in this loop changes uncommitted_children_by_parent.
         if (auto children_it = uncommitted_children_by_parent.find(path); children_it != uncommitted_children_by_parent.end())
         {
-            std::vector<UncommittedNodesIterator> uncommitted_children(children_it->second.begin(), children_it->second.end());
-            std::ranges::sort(uncommitted_children, {}, [](UncommittedNodesIterator it) { return std::string_view{it->first}; });
-
-            for (auto uncommitted_node_it : uncommitted_children)
+            for (auto uncommitted_node_it : children_it->second)
             {
                 std::string_view node_path = uncommitted_node_it->first;
                 processed_uncommitted_children.insert(node_path);
