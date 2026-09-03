@@ -463,7 +463,8 @@ DECLARE_MD5_TARGET_CODE(
     }
 
     /// How many windows the column-level screen scores. A whole window holds every phase of every
-    /// period up to its own length, so scoring one cannot be misled by periodic row lengths.
+    /// period up to its own length, so scoring one cannot be misled by periodic row lengths. Which
+    /// windows those are is bounded by MD5_GROUP_DECLINE_BUDGET, not by this count alone.
     constexpr size_t MD5_GROUP_PROBE_WINDOWS = 2;
 
     /// A window that declines has still paid for its own scoring pass, and the column screen only
@@ -486,7 +487,11 @@ DECLARE_MD5_TARGET_CODE(
 
         for (size_t p = 0; p < MD5_GROUP_PROBE_WINDOWS; ++p)
         {
-            const size_t window_base = (p * whole_windows / MD5_GROUP_PROBE_WINDOWS) * MD5_GROUP_WINDOW;
+            /// Window w is entered with at most w declines behind it, so the driver's decline budget
+            /// cannot skip a window at or below it; probing further certifies one it may never score.
+            const size_t window_base
+                = std::min(p * whole_windows / MD5_GROUP_PROBE_WINDOWS, MD5_GROUP_DECLINE_BUDGET)
+                * MD5_GROUP_WINDOW;
 
             uint32_t histogram[MD5_GROUP_MAX_KEY + 1] = {};
             size_t work_in_order = 0;
