@@ -236,12 +236,21 @@ static SortDescription deduplicateSortDescription(const SortDescription & sort_d
     return result;
 }
 
-/// A `NULL` is unordered for the `Field` comparison `FillingRow` uses but has a definite position
-/// under `nulls_direction`, and placing a generated row relative to it is decidable only for a
-/// single fill key: with more, partial-`NULL` rows sort between the all-real and all-`NULL` rows.
-static bool isSingleNullsLastFillKey(const SortDescription & fill_description)
+/// A `NULL` is unordered for the `Field` comparison `FillingRow` uses but has a definite position under
+/// `nulls_direction`, so a generated row's place relative to it is decidable given one fill key (with more,
+/// partial-`NULL` rows sort in between) and no preceding `ORDER BY` key that the row would default.
+static bool isSingleNullsLastFillKey(
+    const SortDescription & sort_description,
+    const SortDescription & fill_description,
+    bool use_with_fill_by_sorting_prefix)
 {
-    return fill_description.size() == 1 && fill_description[0].nulls_direction == fill_description[0].direction;
+    if (fill_description.size() != 1 || fill_description[0].nulls_direction != fill_description[0].direction)
+        return false;
+
+    /// Without the sorting prefix an `ORDER BY` key before the fill key is an ordinary column, so a
+    /// generated row carries its default value and that key, not the fill key, decides the row's place.
+    return use_with_fill_by_sorting_prefix || sort_description.empty()
+        || sort_description[0].column_name == fill_description[0].column_name;
 }
 
 FillingTransform::FillingTransform(
@@ -258,7 +267,7 @@ FillingTransform::FillingTransform(
     , filling_row(fill_description_)
     , next_row(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
-    , single_nulls_last_fill_key(isSingleNullsLastFillKey(fill_description_))
+    , single_nulls_last_fill_key(isSingleNullsLastFillKey(sort_description_, fill_description_, use_with_fill_by_sorting_prefix_))
     , process_list_element(std::move(process_list_element_))
 {
     if (interpolate_description)

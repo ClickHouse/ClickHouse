@@ -24,3 +24,9 @@ SELECT DISTINCT * FROM
     FROM numbers(2) ORDER BY p ASC, x ASC WITH FILL FROM 1 TO 3
 )
 SETTINGS optimize_distinct_in_order = 1;
+SELECT '---';
+-- With `use_with_fill_by_sorting_prefix = 0` an `ORDER BY` key before the fill key is an ordinary
+-- column, so a generated row defaults it and that key, not the fill key, decides the row's position.
+SELECT toInt32(number) - 2 AS p, number % 2 ? NULL : toNullable(toInt32(number)) AS x
+FROM numbers(2) ORDER BY p ASC, x ASC NULLS LAST WITH FILL FROM 1 TO 2
+SETTINGS use_with_fill_by_sorting_prefix = 0;
