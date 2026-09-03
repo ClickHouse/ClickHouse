@@ -34,7 +34,6 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
-#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -161,6 +160,7 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <glibc-rseq/rseq.h>
 #endif
 
 #if USE_SSL
@@ -883,7 +883,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
-    if (!PerCPU::haveRSeq())
+    if (rseq_cpu_id() < 0)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
             PreformattedMessage::create(
