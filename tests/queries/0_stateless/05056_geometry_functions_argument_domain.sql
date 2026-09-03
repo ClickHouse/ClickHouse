@@ -50,8 +50,12 @@ EXPLAIN SELECT polygonsUnionCartesian(CAST((0., 0.) AS Point), poly) FROM test_g
 EXPLAIN SELECT polygonsDistanceCartesian(poly, CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 EXPLAIN SELECT polygonConvexHullCartesian(CAST((0., 0.) AS Point)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- `wkb` refuses only `Ring`, the one geometry kind it has no WKB representation for.
+-- `wkb` serializes exactly the six named geometry types it has a WKB transform for. `Ring` has no
+-- WKB representation, and neither do the anonymous structural types the geometry dispatch otherwise
+-- reads, so both are refused -- during analysis, by the same predicate `executeImpl` uses.
 EXPLAIN SELECT wkb(CAST([(0., 0.), (1., 1.), (0., 1.)] AS Ring)) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SELECT wkb(CAST([[(0., 0.), (1., 0.), (1., 1.)]] AS Array(Array(Tuple(Float64, Float64))))) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SELECT wkb(CAST([(0., 0.), (1., 1.)] AS Array(Tuple(Float64, Float64)))) FROM test_geometry_argument_domain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- A `Variant` argument keeps the uniform `Variant` semantics: an alternative the function refuses
 -- is skipped, rather than turning the query into an analysis error. That works only while every
