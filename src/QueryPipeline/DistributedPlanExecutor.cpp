@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace ErrorCodes
@@ -839,6 +840,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+
+        /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
+        /// so both come from the query's settings.
+        query_plan.setMaxThreads(pipeline_settings.max_threads);
+        query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
         auto builder = query_plan.buildQueryPipeline(
                 optimization_settings,
@@ -1975,18 +1981,20 @@ void DistributedQueryPlanExecutor::start()
 
 bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
 {
-    if (running_stages.empty())
-        return true;
-
-    auto & stage_name = running_stages.front();
-    bool stage_finished = waitForStage(stage_name, poll_timeout_ms);
-    if (stage_finished)
+    /// Multiple stages could have finished already: drain them until the first unfinished one.
+    /// Only the first wait may block; the rest are non-blocking checks.
+    while (!running_stages.empty())
     {
+        auto & stage_name = running_stages.front();
+        if (!waitForStage(stage_name, poll_timeout_ms))
+            return false;
+
         LOG_DEBUG(logger, "Stage '{}' finished", stage_name);
         running_stages.pop_front();
+        poll_timeout_ms = 0;
     }
 
-    return false;
+    return true;
 }
 
 std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
