@@ -184,6 +184,13 @@ private:
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
+    /// Condition hash and human-readable condition under which granules fully filtered out by
+    /// PREWHERE are recorded in the query condition cache. Computed once at construction: the hash
+    /// of the PREWHERE condition if it is deterministic, or the hash of the deterministic condition
+    /// derived from it when it involves the current time (issue #115504). Empty when neither
+    /// applies; then PREWHERE results are not cached.
+    std::optional<std::pair<UInt64, String>> prewhere_condition_for_query_condition_cache;
+
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().

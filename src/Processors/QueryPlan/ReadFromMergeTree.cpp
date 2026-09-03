@@ -19,6 +19,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
@@ -296,6 +297,8 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -3557,12 +3560,35 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
             /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
-            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
+            if (outputs.size() == 1 && !skip_top_k)
             {
-                size_t hash = outputs.front()->getHash();
-                if (top_k_filter_info)
-                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
-                condition_hash = hash;
+                std::optional<size_t> hash;
+                if (isDeterministicAllowingTopKFilter(outputs.front()))
+                {
+                    hash = outputs.front()->getHash();
+                }
+                else if (settings[Setting::use_query_condition_cache_for_time_conditions])
+                {
+                    /// A condition involving the current time can be cached under the deterministic
+                    /// condition derived by rounding its time constants onto a grid (issue #115504).
+                    /// This is a write side, so the derived condition must *strengthen* the original
+                    /// one: index analysis proved that no rows of the excluded granules match the
+                    /// condition, hence none match the (stricter) derived condition either.
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            outputs.front(),
+                            TimeConditionRounding::Strengthen,
+                            static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                            time(nullptr),
+                            /*allow_top_k_filter=*/true))
+                        hash = derived->hash;
+                }
+
+                if (hash)
+                {
+                    if (top_k_filter_info)
+                        boost::hash_combine(*hash, top_k_filter_info->condition_hash);
+                    condition_hash = hash;
+                }
             }
         }
 

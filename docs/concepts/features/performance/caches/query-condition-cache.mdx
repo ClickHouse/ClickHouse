@@ -52,6 +52,18 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### Conditions involving the current time {#time-conditions}
+
+A condition like `WHERE time >= now() - INTERVAL 10 DAY` is non-deterministic: the folded value of `now()` changes with every query, so such conditions cannot be cached directly.
+Instead, ClickHouse derives a deterministic condition from them by rounding the current-time constant onto a time grid, e.g. `time >= '2026-08-09 12:34:56'` is cached as `time >= '2026-08-09 00:00:00'` (rounded down when the cache is read and up when it is written, which keeps the cached information correct).
+The grid step is proportional to the distance between the constant and the current time - one day for a condition looking back ten days, one hour for a condition looking back ninety minutes - and is capped at one day; the proportionality factor can be configured with the setting `query_condition_cache_time_condition_grid_factor` (default: 1.0).
+
+If the constant is already aligned to the grid, for example in `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now()) - INTERVAL 10 DAY`, the very next query can already reuse the cache, and the cache stays effective until the constant changes (e.g. until the end of the day).
+For an unaligned constant as in `WHERE time >= now() - INTERVAL 10 DAY`, cache entries written during one grid cell serve the queries of the next one: yesterday's queries prime the cache for today's.
+
+The derivation can be disabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.
