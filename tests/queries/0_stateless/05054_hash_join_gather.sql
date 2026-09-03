@@ -1,3 +1,7 @@
+-- Tags: long
+-- The flaky check runs one copy of the changed test per core. This test is heavy enough that the
+-- self-contention alone puts it over the 180 second cap.
+
 -- Every right-side encoding has exactly one emit kernel, and the four emit builders - by blocks, by
 -- ref lists, by limit and offset, and the not-joined scan - all have to produce the same values
 -- through it. Every arm pins the settings that select the builder, because the test runner randomizes
