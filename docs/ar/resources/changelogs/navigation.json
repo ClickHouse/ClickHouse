@@ -7,7 +7,7 @@
         "ar/resources/changelogs/cloud/index",
         "ar/resources/changelogs/cloud/2026",
         {
-          "group": "الأرشيف",
+          "group": "Archive",
           "pages": [
             "ar/resources/changelogs/cloud/archive/2025",
             "ar/resources/changelogs/cloud/archive/2024",
@@ -17,7 +17,7 @@
         },
         "ar/resources/changelogs/cloud/release-status",
         {
-          "group": "سجل تغييرات إصدارات قاعدة بيانات Cloud",
+          "group": "Cloud database release changelog",
           "pages": [
             "ar/resources/changelogs/cloud/release-notes-index",
             {
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "dropdown": "مفتوح المصدر",
+      "dropdown": "Open source",
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "ar/resources/changelogs/oss/2026",
         {
           "expanded": false,
-          "group": "الأرشيف",
+          "group": "Archive",
           "pages": [
             "ar/resources/changelogs/oss/2025",
             "ar/resources/changelogs/oss/2024",
@@ -77,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "سجلات التغييرات"
+  "item": "Changelogs"
 }

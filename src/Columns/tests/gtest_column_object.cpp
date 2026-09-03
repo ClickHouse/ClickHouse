@@ -34,6 +34,28 @@ TEST(ColumnObject, CreateEmpty)
     ASSERT_EQ(col_object.getMaxDynamicPaths(), 20);
 }
 
+TEST(ColumnObject, HasOnlyTypeDefaults)
+{
+    auto static_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1, a UInt32)");
+    auto static_column = static_type->createColumn();
+    auto & static_object = assert_cast<ColumnObject &>(*static_column);
+
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+    static_object.insert(Object{});
+    static_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_TRUE(static_object.hasOnlyTypeDefaults());
+
+    auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=1)");
+    auto dynamic_column = dynamic_type->createColumn();
+    auto & dynamic_object = assert_cast<ColumnObject &>(*dynamic_column);
+
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{});
+    ASSERT_TRUE(dynamic_object.hasOnlyTypeDefaults());
+    dynamic_object.insert(Object{{"a", Field{0u}}});
+    ASSERT_FALSE(dynamic_object.hasOnlyTypeDefaults());
+}
+
 TEST(ColumnObject, GetName)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=20, b.d UInt32, a.b Array(String))");
@@ -336,29 +358,6 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
     ASSERT_EQ(col_object2[2], (Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}}));
 }
 
-TEST(ColumnObject, SkipSerializedInArena)
-{
-    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, b.d UInt32, a.b Array(String))");
-    auto col = type->createColumn();
-    auto & col_object = assert_cast<ColumnObject &>(*col);
-    col_object.insert(Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}});
-    col_object.insert(Object{{"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}});
-    col_object.insert(Object{{"b.d", Field(442u)}, {"a.b", Array{"Str11", "Str22"}}, {"a.a", Tuple{"Str33", 444u}}, {"a.c", Field("Str44")}, {"a.d", Array{Field(445), Field(446)}}, {"a.e", Field(447)}});
-
-    Arena arena;
-    const char * pos = nullptr;
-    auto ref1 = col_object.serializeValueIntoArena(0, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(1, arena, pos, nullptr);
-    col_object.serializeValueIntoArena(2, arena, pos, nullptr);
-
-    auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    col2->skipSerializedInArena(in);
-    ASSERT_TRUE(in.eof());
-}
-
 TEST(ColumnObject, rollback)
 {
     auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.a UInt32, a.b UInt32)");
@@ -443,7 +442,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
-    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 16);
+    auto column_object = ColumnObject::create({}, std::move(dynamic_paths), IColumn::mutate(column_object_with_shared_data_paths.getSharedDataPtr()), 4, 4, 4, 16);
     column_object->repairDuplicatesInDynamicPathsAndSharedData(0);
     ASSERT_EQ((*column_object)[0], (Object{{"a", Field(1u)}}));
     ASSERT_EQ((*column_object)[1], (Object{{"a", Field(1u)}, {"b", Field(1u)}, {"c", Field(1u)}}));

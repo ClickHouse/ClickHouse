@@ -189,6 +189,103 @@ bool isFullPageDescription(std::string_view description)
     return false;
 }
 
+std::string_view trimMarkdownLine(std::string_view line)
+{
+    while (!line.empty() && isWhitespaceASCII(line.front()))
+        line.remove_prefix(1);
+    while (!line.empty() && isWhitespaceASCII(line.back()))
+        line.remove_suffix(1);
+    return line;
+}
+
+std::string_view trimMarkdownSectionLabel(std::string_view line)
+{
+    line = trimMarkdownLine(line);
+
+    const size_t hashes = line.find_first_not_of('#');
+    if (hashes != 0 && hashes != std::string_view::npos)
+        line = trimMarkdownLine(line.substr(hashes));
+
+    const size_t anchor = line.find(" {#");
+    if (anchor != std::string_view::npos && line.ends_with('}'))
+        line = trimMarkdownLine(line.substr(0, anchor));
+
+    if (line.size() >= 4 && line.starts_with("**") && line.ends_with("**"))
+        line = trimMarkdownLine(line.substr(2, line.size() - 4));
+
+    if (line.ends_with(':'))
+        line = trimMarkdownLine(line.substr(0, line.size() - 1));
+
+    return line;
+}
+
+bool isSyntaxSectionLabel(std::string_view line)
+{
+    return equalsCaseInsensitive(trimMarkdownSectionLabel(line), "syntax");
+}
+
+bool isRelatedSectionLabel(std::string_view line)
+{
+    line = trimMarkdownSectionLabel(line);
+    return equalsCaseInsensitive(line, "related")
+        || equalsCaseInsensitive(line, "related content")
+        || equalsCaseInsensitive(line, "related statements")
+        || equalsCaseInsensitive(line, "see also");
+}
+
+/// Detects syntax which is already documented by a Markdown section or by prose immediately introducing an SQL block.
+bool descriptionDocumentsSyntax(std::string_view description)
+{
+    bool in_code_block = false;
+    bool syntax_block_follows = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+        {
+            const bool is_sql_fence = equalsCaseInsensitive(line, "```sql");
+            if (!in_code_block && syntax_block_follows && is_sql_fence)
+                return true;
+            in_code_block = !in_code_block;
+            syntax_block_follows = false;
+        }
+        else if (!in_code_block && !line.empty())
+        {
+            if (isSyntaxSectionLabel(line))
+                return true;
+            syntax_block_follows = toLowerCopyASCII(line).ends_with("syntax:");
+        }
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
+/// Detects an existing cross-reference section, whose entries should remain the source of truth for the page.
+bool descriptionDocumentsRelated(std::string_view description)
+{
+    bool in_code_block = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+            in_code_block = !in_code_block;
+        else if (!in_code_block && isRelatedSectionLabel(line))
+            return true;
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
 /// Assembles the individual structured parts of an entity's embedded documentation into a single Markdown document,
 /// in the same shape as it appears on the website. Empty parts are omitted.
 String composeMarkdown(
@@ -220,7 +317,11 @@ String composeMarkdown(
             result += trimmed;
     };
 
-    add_block("Syntax", syntax, /*as_code=*/ true);
+    const String trimmed_syntax = boost::algorithm::trim_copy(syntax);
+    /// Do not append structured syntax when the description already documents it, whether verbatim or as a
+    /// dedicated Markdown section whose formatting or punctuation differs from the structured representation.
+    if (!trimmed_syntax.empty() && !descriptionDocumentsSyntax(result) && !result.contains(trimmed_syntax))
+        add_block("Syntax", trimmed_syntax, /*as_code=*/ true);
     add_block("Arguments", arguments, /*as_code=*/ false);
     add_block("Parameters", parameters, /*as_code=*/ false);
     add_block("Returned value", returned_value, /*as_code=*/ false);
@@ -242,7 +343,7 @@ String composeMarkdown(
         result += "**Part of:** `" + enclosing + "`";
     }
 
-    if (!related.empty())
+    if (!related.empty() && !descriptionDocumentsRelated(result))
     {
         String related_str;
         for (const auto & name : related)
@@ -360,24 +461,6 @@ void addDocumented(MutableColumns & res_columns, EntityType type, const Factory 
     {
         const auto & documentation = factory.getDocumentation(name);
         addRow(res_columns, type, name, renderDoc(documentation), makeRepoRelative(documentation.source));
-    }
-}
-
-/// For factories whose `Documentation::description` is always the complete reference page.
-/// Structured fields such as `syntax` remain available through the component-specific system table, but appending
-/// them here would duplicate sections already present in the page body.
-template <typename Factory>
-void addFullPageDocumented(MutableColumns & res_columns, EntityType type, const Factory & factory)
-{
-    for (const auto & name : factory.getAllRegisteredNames())
-    {
-        const auto & documentation = factory.getDocumentation(name);
-        addRow(
-            res_columns,
-            type,
-            name,
-            boost::algorithm::trim_copy(documentation.description),
-            makeRepoRelative(documentation.source));
     }
 }
 
@@ -975,7 +1058,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     }
 
     /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addFullPageDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
     /// System tables document themselves with their table comment, authored at the attachment site.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
