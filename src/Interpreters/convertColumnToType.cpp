@@ -80,9 +80,9 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 /// active alternative to the nested column's field, and for an ambiguous variant (e.g.
 /// `Variant(Bool, UInt8)`) the reconstructed `Field` no longer says which alternative was active, so it
 /// cannot be recovered structurally here - a `ColumnVariant`-aware path before `get` would be needed.
-/// See the header for why this is acceptable (no caller needs it; the legacy `Field` path has the same
-/// limitation). Other tag-sensitive types (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types
-/// and round-trip through `get` already.
+/// See the header for why this is acceptable (no caller needs that textual conversion, and on this
+/// delegated path the legacy `Field` path has the same limitation). Other tag-sensitive types
+/// (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types and round-trip through `get` already.
 void retagBoolInField(Field & field, const DataTypePtr & type)
 {
     if (field.isNull())
@@ -145,8 +145,9 @@ ColumnPtr convertColumnToTypeOrNull(
     const ColumnPtr full = value.convertToFullColumnIfConst();
 
     /// An identity conversion must not round-trip through a `Field`: a `Field` cannot record which
-    /// `Variant` alternative a value occupies. Both tests are needed - `equals` ignores custom names
-    /// (`Bool` is a named `UInt8`), and a shared name does not pin an `AggregateFunction`'s state layout.
+    /// `Variant` alternative a value occupies, so rebuilding the column re-selects one. The type names
+    /// must match as well as the types: `IDataType::equals` ignores an `AggregateFunction`'s
+    /// serialization version, which `ColumnAggregateFunction` insertion enforces through the type string.
     if (from->equals(*to) && from->getName() == to->getName())
         return full;
 

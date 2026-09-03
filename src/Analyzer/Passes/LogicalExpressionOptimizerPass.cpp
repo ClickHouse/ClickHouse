@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
@@ -440,11 +441,36 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     }
 }
 
+/// A value of such a type does not survive a `Field`: which alternative it occupies is not recorded.
+static bool alternativeIsNotRecoverableFromField(const DataTypePtr & type)
+{
+    if (type->hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        if (const auto * variant = typeid_cast<const DataTypeVariant *>(&nested))
+            result |= variant->getVariants().size() > 1;
+    };
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
 /// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
 static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
 {
     const auto & from_type = constant_node->getResultType();
+
+    /// The conversion below and its reversibility check both go through a `Field`, which does not record
+    /// which `Variant` alternative a value occupies, so neither can keep nor detect a re-selection.
+    /// `IDataType::equals` alone does not establish identity here: it ignores a `DateTime` timezone and
+    /// custom names such as `Bool`, which the alternative selection depends on.
+    if ((alternativeIsNotRecoverableFromField(from_type) || alternativeIsNotRecoverableFromField(expr_type))
+        && !(from_type->equals(*expr_type) && from_type->getName() == expr_type->getName()))
+        return std::nullopt;
 
     if (from_type->equals(*expr_type))
         return constant_node->getValue();

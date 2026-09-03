@@ -150,3 +150,29 @@ SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_var_disc) WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
 
 DROP TABLE t_var_disc;
+
+-- Keeping the constants' types is only enough when the constant already carries the expression's type.
+-- Where the conversion into (or out of) a multi-alternative Variant is not a named identity, the set
+-- element is rebuilt from a Field and the rewrite changes the answer, so the chain must be kept instead.
+-- Each result is asserted against the un-rewritten form at chain length 100 as ground truth.
+
+-- The constants are UInt8, so the set element a Field rebuilds occupies Date, not the UInt64 the row holds.
+SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7;
+SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... asserted on the plan too, so the refusal itself is pinned and not just the answer:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7) WHERE explain ILIKE '%function_name: in%';
+
+-- Equal types are not enough either: these two Variant types are equal to IDataType::equals, which
+-- ignores a DateTime timezone, but the alternative is selected by the type name the constant spells.
+SELECT count() FROM (SELECT materialize([1::UInt64]::Variant(Array(DateTime('UTC')), Array(UInt64))) AS v)
+WHERE v = [1::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [5::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [7::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64));
+SELECT count() FROM (SELECT materialize([1::UInt64]::Variant(Array(DateTime('UTC')), Array(UInt64))) AS v)
+WHERE v = [1::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [5::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [7::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+
+-- The erasure is symmetric, and on the constant's side it admits a row instead of dropping one: a Date
+-- alternative's day number reads as seconds once the Field is converted to the DateTime column's type.
+SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64);
+SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64)
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
