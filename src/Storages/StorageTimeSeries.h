@@ -52,14 +52,14 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
+    /// Whether this table has a target of the given kind (the RecentSamples and Histograms targets are optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// Returns all possible target kinds: Samples, RecentSamples, Histograms, Tags, and Metrics.
+    /// A concrete table can have no RecentSamples or Histograms target (see hasTarget).
+    static constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Histograms, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
     void readImpl(
