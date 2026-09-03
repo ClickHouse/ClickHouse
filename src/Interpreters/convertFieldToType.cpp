@@ -402,6 +402,32 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if (which_type.isDateTime() && src.getType() == Field::Types::Decimal64)
+        {
+            /// A `DateTime64` narrowed back to whole seconds. This is the reverse of the `DateTime64`
+            /// branch below, and `LogicalExpressionOptimizerPass` round-trips through both to check that
+            /// widening a `DateTime` constant to a `DateTime64` column lost nothing. Without this branch
+            /// the reverse direction fell through to the type mismatch at the end of this function, so
+            /// the check could only ever fail - and it failed by throwing, which is recorded in
+            /// `system.errors` even though the caller discards the exception.
+            const auto & from_value = src.safeGet<Decimal64>();
+            const UInt32 from_scale = from_value.getScale();
+
+            /// A sub-second part is not representable as `DateTime`, which is exactly the lossiness the
+            /// round trip is looking for. Report it as unconvertible instead of truncating silently.
+            if (strict && DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+                return {};
+
+            const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
+
+            /// `DateTime` holds a `UInt32`; reject anything outside that window rather than let the
+            /// serializer truncate it downstream, as the `Date` and `Date32` branches above do.
+            if (whole < 0 || whole > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return {};
+
+            return Field(static_cast<UInt64>(whole));
+        }
+
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
             /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
