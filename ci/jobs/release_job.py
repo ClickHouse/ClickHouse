@@ -300,10 +300,7 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # A "new" release cuts from `master` via `checkout("master")`, but the PR
-    # dry-run check runs on a detached merge ref with no local `master`. Create
-    # it from origin. Skipped on a real release, which is already on `master`
-    # (`git branch -f` refuses the current branch).
+    # "new" cuts from `master`, but the PR dry-run runs on a detached ref with no local `master`; recreate it from origin (a real release is already on `master`, where `git branch -f` would refuse).
     if (
         ok
         and args.release_type == "new"
@@ -330,9 +327,7 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Resolve the patch dry-run sentinel refs (the PR checks) now that the fetch
-    # above made every release branch and tag local. No candidate is a pass, not
-    # a failure — there is simply no commit in that state to rehearse against.
+    # Resolve the patch dry-run sentinel refs now the fetch made every branch/tag local; no candidate is a pass (nothing in that state to rehearse), not a failure.
     _dry_run_ref_selectors = {
         "auto": lambda: _select_patch_dry_run_ref(args.max_candidates),
         "recovery-auto": _select_recovery_dry_run_ref,

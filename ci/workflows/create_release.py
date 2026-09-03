@@ -19,16 +19,7 @@ release_job = Job.Config(
     secrets=[robot_token_secret],
 )
 
-# PR check: rehearse the release pipeline in --dry-run so a change to the release
-# code is exercised before it can break a real release. Digest-gated to the
-# release code (runs only when it changes) and on the small PR pool, not
-# amd-release-maker (the PR workflow's `pr-` label prefix cannot resolve it). No
-# robot PAT: a dry run pushes nothing and gh reads use the minted PR token
-# (enable_gh_auth). A dry run never publishes and never skips a validation, so
-# the recovery-ref guard stays active — the recovery/out-of-order/misuse cases
-# below drive prepare() into each of its states. "new" cuts from master;
-# release_job.py makes master a local branch when the checkout is detached (the
-# PR case) so its checkout("master") resolves.
+# PR check: rehearse the release pipeline in --dry-run on the small PR pool (no release-maker creds, no robot PAT — gh reads use the minted PR token); it publishes nothing but keeps every validation, so the recovery-ref guard still drives prepare() through its states.
 _release_dry_run_digest = Job.CacheDigestConfig(
     include_paths=[
         "./.github/workflows/create_release.yml",
@@ -37,8 +28,7 @@ _release_dry_run_digest = Job.CacheDigestConfig(
         "./ci/jobs/scripts/create_release.py",
         "./ci/jobs/scripts/clickhouse_version.py",
         "./ci/jobs/scripts/expect_release_refusal.py",
-        # Other release-pipeline entrypoints the patch dry run invokes directly;
-        # a change here must invalidate the cache or the guard would miss it.
+        # Other release entrypoints the dry run invokes directly; a change must invalidate the cache or the guard would miss it.
         "./tests/ci/changelog.py",
         "./ci/jobs/scripts/artifactory.py",
         "./ci/jobs/scripts/release_packages.py",
@@ -57,14 +47,7 @@ def _dry_run_job(name: str, job_args: str) -> Job.Config:
     )
 
 
-# "new" cuts a fresh release branch from master (release_job.py recreates a local
-# master from origin on the detached PR checkout), whose version file and
-# vX.Y.1.1-new tag are the state prepare() expects. "patch" (--ref auto) creates a
-# new patch from the newest unreleased release-branch commit and, without
-# --skip-repo, exercises the artifact-download path (which tolerates absent
-# artifacts on a dry run). "recovery" re-publishes an already-tagged release
-# (--ref recovery-auto resolves to a published tag) with --skip-repo --skip-docker,
-# the one mode where those flags are valid.
+# "new" cuts from master (its vX.Y.1.1-new tag is the state prepare() expects); "patch" (--ref auto) rehearses a fresh patch and the artifact-download path; "recovery" (--ref recovery-auto) re-publishes a tagged release with --skip-repo --skip-docker, the one mode those flags are valid.
 _RELEASE_DRY_RUN_POSITIVE = [
     _dry_run_job(
         "Release Dry Run (new)",
@@ -81,11 +64,7 @@ _RELEASE_DRY_RUN_POSITIVE = [
     ),
 ]
 
-# Negative checks: prepare() must *refuse* these. expect_release_refusal.py scores
-# a refusal (non-zero exit carrying the expected message) as a pass. "out of
-# order" targets a commit behind a branch's latest release; "recovery misuse"
-# passes --skip-repo --skip-docker against an untagged (--ref auto) commit, which
-# only a recovery may do, so the recovery-ref guard rejects it.
+# Negative checks: prepare() must refuse these — "out of order" (a commit behind the branch's latest release) and "recovery misuse" (--skip-repo/--skip-docker on an untagged --ref auto); expect_release_refusal.py scores the refusal as a pass.
 _RELEASE_DRY_RUN_NEGATIVE = [
     _dry_run_job(
         "Release Dry Run (out of order)",

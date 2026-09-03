@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Run release_job.py and score a dry-run negative check three ways.
-
-The out-of-order and recovery-misuse dry-run PR checks assert that prepare()
-*rejects* an invalid dispatch. A pass is either: the sentinel selector found no
-candidate in the live release state (release_job.py exits 0 with
-"No commit to ...; skipping"), so there is nothing to rehearse; or prepare()
-refused with the expected message and every other step is clean. Everything
-else — an unrefused success, the wrong refusal message, or a non-refusal step
-failure (Checkout Back, Post Slack Message, cleanup) — is a real failure."""
+"""Run release_job.py and pass a dry-run negative check on a no-candidate skip or an expected prepare() refusal with clean follow-up; fail on anything else."""
 import json
 import subprocess
 import sys
@@ -46,8 +38,7 @@ def _score_expected_refusal(expected: str) -> int:
         print(f"ERROR: release refused as expected, but other steps failed: {other_failures}")
         return 1
 
-    # The job's own verdict is a pass (it refused as required); Mergeable Check
-    # blocks on any non-OK top-level status, so mark it OK, not XFAIL.
+    # The job passed (it refused as required); Mergeable Check blocks any non-OK top-level status, so mark it OK, not XFAIL.
     result["status"] = "OK"
     result["info"] = f"Refused as expected with [{expected}]"
     with open(path, "w", encoding="utf-8") as f:
