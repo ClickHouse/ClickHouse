@@ -240,7 +240,7 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 23> optimizations = {{
+    static const std::array<Optimization, 24> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
