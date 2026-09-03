@@ -11,6 +11,7 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -131,7 +132,8 @@ namespace
                 if (database_name && table_name.first != *database_name)
                     throw Exception(
                         ErrorCodes::SYNTAX_ERROR,
-                        "Database name in EXCEPT DATA FROM TABLES clause doesn't match the database name in DATABASE clause: {} != {}",
+                        "Database name in EXCEPT DATA FROM TABLE/TABLES clause doesn't match the database name of the "
+                        "backup element it is written on: {} != {}",
                         table_name.first,
                         *database_name
                     );
@@ -145,6 +147,48 @@ namespace
             except_data_tables = std::move(result);
             return true;
         });
+    }
+
+    /// Parses `EXCEPT DATA FROM {TABLE|TABLES}` written on a single-object element (TABLE, DICTIONARY, VIEW,
+    /// TEMPORARY TABLE) and reduces it to a flag on that element.
+    ///
+    /// Such an element selects exactly one object, so its own object is the only one the clause can refer to.
+    /// Any other name is out of the element's scope: it cannot be excluded here, because a data exclusion is
+    /// element-scoped and must not reach the tables selected by the other elements of the same query. Reject
+    /// it instead of accepting a clause which would do nothing (or, worse, something the user didn't write).
+    bool parseExceptDataFromThisTable(
+        IParser::Pos & pos,
+        Expected & expected,
+        const std::optional<String> & database_name,
+        const String & table_name,
+        bool & except_data)
+    {
+        std::set<DatabaseAndTableName> except_data_tables;
+        if (!parseExceptDataTables(pos, expected, database_name, except_data_tables))
+            return false;
+
+        /// A temporary table has no database, so an empty database name is what its own name looks like.
+        const String & this_database_name = database_name.value_or("");
+        for (const auto & except_data_table : except_data_tables)
+        {
+            if ((except_data_table.first == this_database_name) && (except_data_table.second == table_name))
+                continue;
+
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR,
+                "EXCEPT DATA FROM TABLE clause of a single-object BACKUP element can only name that element's own "
+                "object {}, but {} was specified. To exclude the data of another table, back it up as its own element "
+                "with its own clause (BACKUP TABLE t1, TABLE t2 EXCEPT DATA FROM TABLE t2), or exclude it at the "
+                "database level (BACKUP DATABASE db EXCEPT DATA FROM TABLE db.t2)",
+                this_database_name.empty() ? backQuoteIfNeed(table_name)
+                                           : backQuoteIfNeed(this_database_name) + "." + backQuoteIfNeed(table_name),
+                except_data_table.first.empty()
+                    ? backQuoteIfNeed(except_data_table.second)
+                    : backQuoteIfNeed(except_data_table.first) + "." + backQuoteIfNeed(except_data_table.second));
+        }
+
+        except_data = !except_data_tables.empty();
+        return true;
     }
 
     bool parseElement(IParser::Pos & pos, Expected & expected, Element & element, Kind kind)
@@ -170,7 +214,7 @@ namespace
 
                 if (kind == Kind::BACKUP)
                 {
-                    parseExceptDataTables(pos, expected, element.database_name, element.except_data_tables);
+                    parseExceptDataFromThisTable(pos, expected, element.database_name, element.table_name, element.except_data);
                 }
                 else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
                          ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))
@@ -201,7 +245,8 @@ namespace
 
                 if (kind == Kind::BACKUP)
                 {
-                    parseExceptDataTables(pos, expected, {}, element.except_data_tables);
+                    /// A temporary table has no database, so no database name may be given in the clause either.
+                    parseExceptDataFromThisTable(pos, expected, {}, element.table_name, element.except_data);
                 }
                 else if (ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLE).checkWithoutMoving(pos, expected) ||
                          ParserKeyword(Keyword::EXCEPT_DATA_FROM_TABLES).checkWithoutMoving(pos, expected))

@@ -317,8 +317,10 @@ def test_except_data_from_table_formatting():
 
     backup_name = new_backup_name()
     # This exercises the TABLE element's formatElement() path with EXCEPT DATA FROM.
-    # Both tables are backed up (structure); only t1's data is excluded.
-    instance.query(f"BACKUP TABLE test.t1, TABLE test.t2 EXCEPT DATA FROM TABLE test.t1 TO {backup_name}")
+    # Both tables are backed up (structure); only t1's data is excluded. The clause is
+    # written on the t1 element, because on a single-table element it can only name that
+    # element's own table.
+    instance.query(f"BACKUP TABLE test.t1 EXCEPT DATA FROM TABLE test.t1, TABLE test.t2 TO {backup_name}")
 
     instance.query("DROP TABLE test.t1, test.t2")
     instance.query(f"RESTORE TABLE test.t1, TABLE test.t2 FROM {backup_name}")
@@ -389,6 +391,142 @@ def test_restore_except_tables_works():
     assert instance.query("SELECT count() FROM test.t2") == "1\n"
 
     instance.query("DROP DATABASE test")
+
+
+def test_except_data_from_table_rejects_other_table_in_same_element():
+    """A single-table element's clause may only name that element's own table.
+
+    Regression test for cross-element contamination: the clause used to be merged into a
+    database-wide exclusion set, so `BACKUP TABLE test.a EXCEPT DATA FROM TABLE test.b`
+    was accepted and could take the data away from a `test.b` element of the same query
+    (or silently do nothing when `test.b` wasn't part of the backup at all).
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.a, test.b")
+    instance.query("CREATE TABLE test.a (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.b (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.a VALUES (1)")
+    instance.query("INSERT INTO test.b VALUES (2)")
+
+    # The clause names a table which is in the backup, but as a different element.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE test.b, TABLE test.a EXCEPT DATA FROM TABLE test.b TO {new_backup_name()}"
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    # The clause names a table which is not part of the backup at all: this used to be
+    # accepted and silently do nothing.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE test.a EXCEPT DATA FROM TABLE test.b TO {new_backup_name()}"
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    # Same for a list: every name in it must be the element's own table.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE test.a EXCEPT DATA FROM TABLES test.a, test.b TO {new_backup_name()}"
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
+
+    instance.query("DROP DATABASE test")
+
+
+def test_except_data_from_table_no_cross_element_contamination():
+    """The clause of one single-table element must not touch another element's data.
+
+    This is the accepted form of the query rejected above: each element carries its own
+    clause, so only the data of the element that carries it is excluded.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.a, test.b")
+    instance.query("CREATE TABLE test.a (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.b (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.a VALUES (1), (2), (3)")
+    instance.query("INSERT INTO test.b VALUES (4), (5)")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.b, TABLE test.a EXCEPT DATA FROM TABLE test.a TO {backup_name}"
+    )
+
+    instance.query("DROP TABLE test.a, test.b")
+    instance.query(f"RESTORE TABLE test.a, TABLE test.b FROM {backup_name}")
+
+    # Only test.a lost its data; test.b was backed up by an element with no clause.
+    assert instance.query("SELECT count() FROM test.a") == "0\n"
+    assert instance.query("SELECT count() FROM test.b") == "2\n"
+
+    instance.query("DROP DATABASE test")
+
+
+def test_except_data_explicit_table_element_keeps_its_data():
+    """An element asking for a table keeps its data even if a wider element excludes it.
+
+    `EXCEPT DATA FROM TABLES t1` on the DATABASE element must not take the data away from
+    the `TABLE test.t1` element of the same query, the same way `EXCEPT TABLES` doesn't
+    remove a table which another element names explicitly. Data the user asked for is
+    never dropped silently.
+    """
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.t1, test.t2")
+    instance.query("CREATE TABLE test.t1 (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.t2 (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO test.t1 VALUES (1), (2)")
+    instance.query("INSERT INTO test.t2 VALUES (3)")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE test EXCEPT DATA FROM TABLES t1, TABLE test.t1 TO {backup_name}"
+    )
+
+    instance.query("DROP DATABASE test")
+    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
+
+    assert instance.query("SELECT count() FROM test.t1") == "2\n"
+    assert instance.query("SELECT count() FROM test.t2") == "1\n"
+
+    instance.query("DROP DATABASE test")
+
+
+def test_except_data_database_element_scoped_to_its_own_database():
+    """A DATABASE element's clause only affects the tables of that element's database."""
+    instance.query("CREATE DATABASE IF NOT EXISTS db1")
+    instance.query("CREATE DATABASE IF NOT EXISTS db2")
+    instance.query("DROP TABLE IF EXISTS db1.t, db2.t")
+    instance.query("CREATE TABLE db1.t (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE db2.t (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("INSERT INTO db1.t VALUES (1)")
+    instance.query("INSERT INTO db2.t VALUES (2)")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE db1 EXCEPT DATA FROM TABLE t, DATABASE db2 TO {backup_name}"
+    )
+
+    instance.query("DROP DATABASE db1")
+    instance.query("DROP DATABASE db2")
+    instance.query(f"RESTORE DATABASE db1, DATABASE db2 FROM {backup_name}")
+
+    assert instance.query("SELECT count() FROM db1.t") == "0\n"
+    assert instance.query("SELECT count() FROM db2.t") == "1\n"
+
+    instance.query("DROP DATABASE db1")
+    instance.query("DROP DATABASE db2")
+
+
+def test_except_data_temporary_table_rejects_database_qualified_name():
+    """A temporary table has no database, so a qualified name in the clause is rejected.
+
+    It used to be accepted and silently ignored, because the collector only looked at
+    exclusions whose database name matched `_temporary_and_external_tables`.
+    """
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TEMPORARY TABLE tmp EXCEPT DATA FROM TABLE test.tmp TO {new_backup_name()}"
+        )
+    assert "own object" in str(exc_info.value), str(exc_info.value)
 
 
 # Note: JSON deserialization path (ASTBackupQuery::readJSON) validation is not

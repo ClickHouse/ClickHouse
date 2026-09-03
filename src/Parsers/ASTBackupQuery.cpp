@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 #include <algorithm>
 
@@ -95,6 +94,21 @@ namespace
         }
     }
 
+    /// Formats the `EXCEPT DATA FROM TABLE` clause of a single-object element. The clause always names the
+    /// element's own object, so it is regenerated from the element itself: what the parser reduced to a flag
+    /// round-trips back to exactly the name that flag was derived from (this matters for ON CLUSTER queries,
+    /// which are formatted on the initiator and parsed again on every worker host).
+    void formatExceptDataFromThisTable(const Element & element, WriteBuffer & ostr, bool with_database_name)
+    {
+        if (!element.except_data)
+            return;
+
+        ostr << " EXCEPT DATA FROM TABLE ";
+        if (with_database_name && !element.database_name.empty())
+            ostr << backQuoteIfNeed(element.database_name) << ".";
+        ostr << backQuoteIfNeed(element.table_name);
+    }
+
     void formatElement(const Element & element, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
         switch (element.type)
@@ -117,7 +131,7 @@ namespace
 
                 if (element.partitions)
                     formatPartitions(*element.partitions, ostr, format);
-                formatExceptDataTables(element.except_data_tables, ostr, format);
+                formatExceptDataFromThisTable(element, ostr, /*with_database_name=*/true);
                 break;
             }
 
@@ -131,7 +145,7 @@ namespace
                     ostr << " AS ";
                     ostr << backQuoteIfNeed(element.new_table_name);
                 }
-                formatExceptDataTables(element.except_data_tables, ostr, format);
+                formatExceptDataFromThisTable(element, ostr, /*with_database_name=*/false);
                 break;
             }
 
@@ -248,42 +262,15 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
     if (current_database.empty())
         return;
 
+    /// TABLE and TEMPORARY TABLE elements need nothing done for `EXCEPT DATA FROM TABLE`: the clause is held
+    /// as the `except_data` flag, which refers to the element's own object and therefore follows the element's
+    /// database name wherever it is resolved.
     if (type == ASTBackupQuery::TABLE)
     {
         if (database_name.empty())
             database_name = current_database;
         if (new_database_name.empty())
             new_database_name = current_database;
-
-        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
-        {
-            const auto & except_data_table = *it;
-            if (except_data_table.first.empty())
-            {
-                except_data_tables.emplace(DatabaseAndTableName{current_database, except_data_table.second});
-                it = except_data_tables.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-    else if (type == ASTBackupQuery::TEMPORARY_TABLE)
-    {
-        for (auto it = except_data_tables.begin(); it != except_data_tables.end();)
-        {
-            const auto & except_data_table = *it;
-            if (except_data_table.first.empty())
-            {
-                except_data_tables.emplace(DatabaseAndTableName{DatabaseCatalog::TEMPORARY_DATABASE, except_data_table.second});
-                it = except_data_tables.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
     }
     else if (type == ASTBackupQuery::ALL)
     {
@@ -332,6 +319,7 @@ ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
             /*partitions*/ {},
             element.except_tables,
             /*except_data_tables*/ {},
+            /*except_data*/ false,
             element.except_databases});
     if (query.snapshot_destination)
         res->set(res->backup_name, query.snapshot_destination->clone());
@@ -499,6 +487,8 @@ namespace
             }
             out << ']';
         }
+        if (e.except_data)
+            out << ",\"except_data\":true";
         if (!e.except_databases.empty())
         {
             out << ",\"except_databases\":[";
@@ -596,6 +586,7 @@ namespace
                 e.except_data_tables.emplace(std::move(db), std::move(tbl));
             }
         }
+        e.except_data = elem_reader.getBool("except_data");
         if (elem_obj.has("except_databases"))
         {
             auto arr = elem_obj.getArray("except_databases");
@@ -628,20 +619,25 @@ namespace
         switch (e.type)
         {
             case ElementType::TABLE:
-                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions, except_data_tables.
+                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions, except_data.
+                /// `except_data_tables` is rejected: a single-object element can only exclude the data of its own
+                /// object, which is what `except_data` says. A list here would let `clickhouse_json` name a table
+                /// outside this element's scope - the shape the parser refuses and `formatElement` cannot produce.
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("except_tables", "TABLE");
+                reject_field("except_data_tables", "TABLE");
                 reject_field("except_databases", "TABLE");
                 break;
             case ElementType::TEMPORARY_TABLE:
-                /// Valid: table_name, new_table_name, except_data_tables. A temporary table has no database.
+                /// Valid: table_name, new_table_name, except_data. A temporary table has no database.
                 if (e.table_name.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
                 reject_field("database_name", "TEMPORARY_TABLE");
                 reject_field("new_database_name", "TEMPORARY_TABLE");
                 reject_field("partitions", "TEMPORARY_TABLE");
                 reject_field("except_tables", "TEMPORARY_TABLE");
+                reject_field("except_data_tables", "TEMPORARY_TABLE");
                 reject_field("except_databases", "TEMPORARY_TABLE");
                 break;
             case ElementType::DATABASE:
@@ -651,6 +647,7 @@ namespace
                 reject_field("table_name", "DATABASE");
                 reject_field("new_table_name", "DATABASE");
                 reject_field("partitions", "DATABASE");
+                reject_field("except_data", "DATABASE");
                 reject_field("except_databases", "DATABASE");
                 break;
             case ElementType::ALL:
@@ -660,6 +657,7 @@ namespace
                 reject_field("new_table_name", "ALL");
                 reject_field("new_database_name", "ALL");
                 reject_field("partitions", "ALL");
+                reject_field("except_data", "ALL");
                 break;
         }
 
@@ -778,6 +776,10 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
             if (!elements[i].except_data_tables.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'except_data_tables' (EXCEPT DATA FROM TABLE/TABLES) is only valid for BACKUP, not RESTORE, "
+                    "at element index {} during AST JSON deserialization", i);
+            if (elements[i].except_data)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'except_data' (EXCEPT DATA FROM TABLE) is only valid for BACKUP, not RESTORE, "
                     "at element index {} during AST JSON deserialization", i);
         }
     }

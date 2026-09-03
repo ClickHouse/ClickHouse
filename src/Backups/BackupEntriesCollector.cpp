@@ -115,6 +115,37 @@ namespace
 
         return system_tables_with_entity_backup.contains(table_name);
     }
+
+    /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
+    void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
+    {
+        /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
+        /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
+        if (BackupUtils::isInnerTable(database_name, table_name))
+        {
+            throw Exception(
+                ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+                "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                "Table: {}.{}. Use the outer table name instead.",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
+        }
+
+        /// These system tables are put in a backup as entities (users, roles, functions), not as table data,
+        /// so there is no data to exclude and the clause would silently do nothing.
+        if (isSystemTableWithEntityBackup(database_name, table_name))
+        {
+            throw Exception(
+                ErrorCodes::SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION,
+                "System table {}.{} cannot be specified in EXCEPT DATA FROM TABLE clause because its backup "
+                "contains entities (users, roles, functions), not table data. Use EXCEPT TABLE {}.{} instead, "
+                "or omit the exclusion clause entirely.",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name),
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
+        }
+    }
 }
 
 
@@ -389,9 +420,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
                     /* except_table_names= */ {},
-                    /* except_data_table_names= */ element.except_data_tables);
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -404,9 +436,10 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     element.table_name,
                     /* throw_if_table_not_found= */ true,
                     element.partitions,
+                    /* exclude_table_data= */ element.except_data,
                     /* all_tables= */ false,
                     /* except_table_names= */ {},
-                    /* except_data_table_names= */ element.except_data_tables);
+                    /* except_data_table_names= */ {});
                 break;
             }
 
@@ -419,6 +452,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                     /* table_name= */ {},
                     /* throw_if_table_not_found= */ false,
                     /* partitions= */ {},
+                    /* exclude_table_data= */ false,
                     /* all_tables= */ true,
                     /* except_table_names= */ element.except_tables,
                     /* except_data_table_names= */ element.except_data_tables);
@@ -438,6 +472,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
                             /* table_name= */ {},
                             /* throw_if_table_not_found= */ false,
                             /* partitions= */ {},
+                            /* exclude_table_data= */ false,
                             /* all_tables= */ true,
                             /* except_table_names= */ element.except_tables,
                             /* except_data_table_names= */ element.except_data_tables);
@@ -456,6 +491,7 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::optional<String> & table_name,
     bool throw_if_table_not_found,
     const std::optional<ASTs> & partitions,
+    bool exclude_table_data,
     bool all_tables,
     const std::set<DatabaseAndTableName> & except_table_names,
     const std::set<DatabaseAndTableName> & except_data_table_names)
@@ -523,7 +559,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     if (table_name)
     {
-        auto & table_params = database_info.tables[*table_name];
+        if (exclude_table_data)
+            checkTableCanHaveDataExcluded(database_name, *table_name);
+
+        auto [table_it, inserted] = database_info.tables.try_emplace(*table_name);
+        auto & table_params = table_it->second;
         if (throw_if_table_not_found)
             table_params.throw_if_table_not_found = true;
         if (partitions)
@@ -531,40 +571,13 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
             table_params.partitions.emplace();
             insertAtEnd(*table_params.partitions, *partitions);
         }
+
+        /// The exclusion is scoped to the element being processed: it applies to this table only, and only
+        /// while no other element asks for the same table without excluding its data (such an element wants
+        /// the data, so it wins - see `DatabaseInfo::TableParams::except_data`).
+        table_params.except_data = inserted ? exclude_table_data : (table_params.except_data && exclude_table_data);
+
         database_info.except_table_names.emplace(*table_name);
-    }
-
-    for (const auto & except_data_table_name : except_data_table_names)
-    {
-        if (except_data_table_name.first == database_name)
-        {
-            /// Validate that no inner table names were provided in EXCEPT DATA FROM TABLE
-            if (BackupUtils::isInnerTable(except_data_table_name.first, except_data_table_name.second))
-            {
-                throw Exception(
-                    ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
-                    "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
-                    "Table: {}.{}. Use the outer table name instead.",
-                    backQuoteIfNeed(except_data_table_name.first),
-                    backQuoteIfNeed(except_data_table_name.second));
-            }
-
-            /// Validate that system tables with entity backup are not used in EXCEPT DATA FROM TABLE
-            if (isSystemTableWithEntityBackup(except_data_table_name.first, except_data_table_name.second))
-            {
-                throw Exception(
-                    ErrorCodes::SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION,
-                    "System table {}.{} cannot be specified in EXCEPT DATA FROM TABLE clause because its backup "
-                    "contains entities (users, roles, functions), not table data. Use EXCEPT TABLE {}.{} instead, "
-                    "or omit the exclusion clause entirely.",
-                    backQuoteIfNeed(except_data_table_name.first),
-                    backQuoteIfNeed(except_data_table_name.second),
-                    backQuoteIfNeed(except_data_table_name.first),
-                    backQuoteIfNeed(except_data_table_name.second));
-            }
-
-            database_info.except_data_table_names.emplace(except_data_table_name.second);
-        }
     }
 
     if (all_tables)
@@ -573,37 +586,16 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         for (const auto & except_table_name : except_table_names)
             if (except_table_name.first == database_name)
                 database_info.except_table_names.emplace(except_table_name.second);
+
+        /// Only a DATABASE or ALL element can name other tables in EXCEPT DATA FROM TABLE/TABLES, and it can
+        /// only name tables it selects itself, i.e. tables of the databases it enumerates.
         for (const auto & except_data_table_name : except_data_table_names)
         {
-            if (except_data_table_name.first == database_name)
-            {
-                /// Validate that no inner table names were provided in EXCEPT DATA FROM TABLE
-                if (BackupUtils::isInnerTable(except_data_table_name.first, except_data_table_name.second))
-                {
-                    throw Exception(
-                        ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
-                        "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
-                        "Table: {}.{}. Use the outer table name instead.",
-                        backQuoteIfNeed(except_data_table_name.first),
-                        backQuoteIfNeed(except_data_table_name.second));
-                }
+            if (except_data_table_name.first != database_name)
+                continue;
 
-                /// Validate that system tables with entity backup are not used in EXCEPT DATA FROM TABLE
-                if (isSystemTableWithEntityBackup(except_data_table_name.first, except_data_table_name.second))
-                {
-                    throw Exception(
-                        ErrorCodes::SYSTEM_TABLE_NOT_ALLOWED_IN_BACKUP_DATA_EXCLUSION,
-                        "System table {}.{} cannot be specified in EXCEPT DATA FROM TABLE clause because its backup "
-                        "contains entities (users, roles, functions), not table data. Use EXCEPT TABLE {}.{} instead, "
-                        "or omit the exclusion clause entirely.",
-                        backQuoteIfNeed(except_data_table_name.first),
-                        backQuoteIfNeed(except_data_table_name.second),
-                        backQuoteIfNeed(except_data_table_name.first),
-                        backQuoteIfNeed(except_data_table_name.second));
-                }
-
-                database_info.except_data_table_names.emplace(except_data_table_name.second);
-            }
+            checkTableCanHaveDataExcluded(except_data_table_name.first, except_data_table_name.second);
+            database_info.except_data_table_names.emplace(except_data_table_name.second);
         }
     }
 }
@@ -1006,6 +998,15 @@ bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & tabl
         return false;
 
     const auto & database_info = it->second;
+
+    /// A table named by an element of its own is governed by those elements alone: EXCEPT DATA FROM TABLE
+    /// written on a DATABASE or ALL element must not take the data away from an element which asks for the
+    /// table itself. This is the same precedence `findTablesInDatabase` applies to EXCEPT TABLES, where a
+    /// table named explicitly is backed up even though a wider element excluded it.
+    auto table_it = database_info.tables.find(table_name.table);
+    if (table_it != database_info.tables.end())
+        return table_it->second.except_data;
+
     return database_info.except_data_table_names.contains(table_name.table);
 }
 
