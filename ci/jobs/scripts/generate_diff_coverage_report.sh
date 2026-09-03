@@ -29,7 +29,10 @@ IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 FOUND=0
 FIRST_BASE_COMMIT=""
 for TEST_COMMIT in "${COMMITS[@]}"; do
-COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
+# Artifacts live under the normalized workflow name; the baseline coverage is
+# produced by the MasterCI workflow:
+#   REFs/master/<sha>/masterci/llvm_coverage/llvm_coverage.info
+COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/masterci/llvm_coverage/llvm_coverage.info"
 echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
