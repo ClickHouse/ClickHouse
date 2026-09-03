@@ -60,7 +60,6 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
-#include <cctype>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1078,6 +1077,16 @@ namespace
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
+
+/// Range headers are not allowed for URL storages: schema inference and reads must not run against a
+/// partial-content response. Matched on already-normalized names (case-insensitive), so a padded or
+/// mixed-case spelling like "R ange" that normalizes to "Range" is rejected too.
+void rejectRangeHeaders(const HTTPHeaderEntries & headers)
+{
+    for (const auto & entry : headers)
+        if (boost::to_lower_copy(entry.name) == "range")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
+}
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromDataImpl(
@@ -1093,8 +1102,11 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. checkAndNormalizeHeaders returns the normalized headers, so
-    /// send that normalized copy — the normalized names are what reach the wire.
+    /// send that normalized copy — the normalized names are what reach the wire. Ban "Range" on the
+    /// normalized names (a padded spelling normalizes to "Range") so inference never reads a partial
+    /// response; this is the table-function path, which does not go through StorageURL::getConfiguration.
     const auto headers_to_check = context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    rejectRangeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1607,6 +1619,7 @@ StorageURL::StorageURL(
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     headers = context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers));
+    rejectRangeHeaders(headers);
 }
 
 
@@ -2246,18 +2259,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 
     for (const auto & [header, value] : configuration.headers)
     {
-        /// The name is normalized (whitespace/control stripped, per HTTPHeaderFilter) and matched
-        /// case-insensitively before it is sent, so ban "Range" on that normalized form: otherwise
-        /// a padded or mixed-case spelling such as "R ange" would slip past here, normalize to
-        /// "Range", and reach the wire — letting schema inference read a partial-content response.
-        std::string normalized_name = header;
-        normalized_name.erase(
-            std::remove_if(
-                normalized_name.begin(),
-                normalized_name.end(),
-                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
-            normalized_name.end());
-        if (boost::to_lower_copy(normalized_name) == "range")
+        if (header == "Range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
     }
 
