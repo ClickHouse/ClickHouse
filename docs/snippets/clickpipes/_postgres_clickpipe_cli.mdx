@@ -27,13 +27,13 @@ CH_ID=$(clickhousectl cloud service list --json \
   | jq -r '.[] | select(.name=="my-service") | .id')
 ```
 
-Collect the source connection details from the prerequisites step into variables. This walkthrough replicates a single table, `public.orders`:
+Collect the source connection details from the prerequisites step into variables. This walkthrough replicates a single table, `public.orders` — substitute this name, and every later reference to it (including the column names in the verification steps), with your own table:
 
 ```bash
 PG_HOST=postgres.example.com
 PG_DATABASE=postgres
 PG_USERNAME=clickpipes_user
-PG_PASSWORD=<your-password>
+PG_PASSWORD='<your-password>'
 ```
 
 ## Create the ClickPipe {#create-the-clickpipe}
@@ -93,7 +93,8 @@ Notes:
 
 - One of `--table-mapping` or `--table-mapping-json` is required. `--table-mapping` is repeatable, one `schema.table:target_table` per source table, and leaves every other per-table option at its default. The replicated tables land in the `default` database on the ClickHouse service, named by the mapping targets — mapping to a different target name is how you rename a table during replication
 - One command serves the whole Postgres family: pass `--postgres-type` for a managed provider (`supabase`, `neon`, `alloydb`, `planetscale`, `rdspostgres`, `aurorapostgres`, `cloudsqlpostgres`, `azurepostgres`, `crunchybridge`, `tigerdata`); the default is `postgres`
-- The publication and replication slot are created automatically, with the publication scoped to the mapped tables. Pass `--publication-name` and `--replication-slot-name` to use ones you created yourself in the prerequisites step
+- The publication and replication slot are created automatically, with the publication scoped to the mapped tables. Pass `--publication-name` to use a publication you created yourself in the prerequisites step
+- `--replication-slot-name` reuses a slot you created yourself, and is only accepted together with `--replication-mode cdc_only`
 - `--replication-mode` selects `cdc` (initial snapshot plus continuous replication, the default), `snapshot` (one-time copy), or `cdc_only` (skip the initial snapshot)
 
 ### Shaping the destination tables {#shaping-the-destination-tables}
@@ -249,8 +250,10 @@ Provisioning Query API endpoint + key for service 'my-service'...
 
 Changes on the source replicate continuously at the sync interval — 60 seconds by default, or whatever `--sync-interval-seconds` was set to at create time. Insert a row on the source and poll until it arrives:
 
+Pass the password via `PGPASSWORD` rather than a connection URI, so special characters in it need no escaping:
+
 ```bash
-psql "postgres://$PG_USERNAME:$PG_PASSWORD@$PG_HOST:5432/$PG_DATABASE" \
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_USERNAME" -d "$PG_DATABASE" \
   -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
 
 while [ "$(clickhousectl cloud service query --id "$CH_ID" \
