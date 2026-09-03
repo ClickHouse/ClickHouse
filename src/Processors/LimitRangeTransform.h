@@ -1,10 +1,12 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/Transforms/ChunkRowRange.h>
 
 namespace DB
 {
@@ -44,21 +46,20 @@ public:
     }
 
 private:
-    /// Find first row where condition column is true (non-zero). Returns num_rows if none.
-    static size_t findFirstTrue(const ColumnPtr & column, size_t num_rows);
-
-    /// Slice chunk to rows [start_row, end_row)
-    static void sliceChunk(Chunk & chunk, size_t start_row, size_t end_row);
-
-    /// Filter chunk by arbitrary subset of rows.
-    static void filterChunk(Chunk & chunk, const IColumn::Filter & filter, size_t filtered_rows);
-
     void transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col);
+
+    /// Selects the rows `[begin, end)` of the current chunk for output, extending the last slice when they
+    /// continue it; an empty range selects nothing.
+    void appendOutputRows(size_t begin, size_t end);
+
+    /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
+    void setDone();
 
     /// Expression that evaluates the AFTER condition per row.
     ExpressionActionsPtr start_expression;
     /// Expression that evaluates the UNTIL condition per row.
     ExpressionActionsPtr end_expression;
+
     /// ALL mode: emit the union of all windows opened by AFTER matches.
     bool start_all = false;
     /// Maximum number of rows per window (nullopt = unlimited).
@@ -87,8 +88,8 @@ private:
     /// Position of the end condition column in the block after executing end_expression.
     size_t end_column_position = 0;
 
-    /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
-    void setDone();
+    /// Rows of the current chunk selected for output; reused across chunks.
+    std::vector<ChunkRowRange> output_slices;
 };
 
 }

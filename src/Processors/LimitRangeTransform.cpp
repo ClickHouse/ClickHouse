@@ -1,6 +1,8 @@
 #include <Processors/LimitRangeTransform.h>
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
+#include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
 #include <base/arithmeticOverflow.h>
@@ -9,16 +11,16 @@
 namespace DB
 {
 
-static UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
+namespace
+{
+
+UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
 {
     UInt64 result = 0;
     if (common::addOverflow(lhs, rhs, result))
         return std::numeric_limits<UInt64>::max();
     return result;
 }
-
-namespace
-{
 
 /// Per-chunk view of a boundary condition column: the constant verdict or the byte mask is resolved
 /// once per chunk via FilterDescription instead of dispatching on the column type for every row.
@@ -54,6 +56,24 @@ struct BoundaryColumnView
         if (always_true)
             return true;
         return (*mask->data)[row_num];
+    }
+
+    /// The first row in `[begin, end)` where the condition is true, or `end`.
+    size_t findTrue(size_t begin, size_t end) const
+    {
+        if (always_false)
+            return end;
+        if (always_true)
+            return begin;
+
+        /// Skip zero-filled blocks with the memcmp-based check, then finish byte by byte.
+        const UInt8 * data = mask->data->data();
+        constexpr size_t block_size = 64;
+        while (begin + block_size <= end && memoryIsZero(data, begin, begin + block_size))
+            begin += block_size;
+        while (begin < end && !data[begin])
+            ++begin;
+        return begin;
     }
 };
 
@@ -95,80 +115,51 @@ LimitRangeTransform::LimitRangeTransform(
     }
 }
 
-size_t LimitRangeTransform::findFirstTrue(const ColumnPtr & column, size_t num_rows)
+void LimitRangeTransform::appendOutputRows(size_t begin, size_t end)
 {
-    if (!column || num_rows == 0)
-        return num_rows;
-
-    BoundaryColumnView view(column);
-    if (view.always_false)
-        return num_rows;
-    if (view.always_true)
-        return 0;
-
-    const auto & data = *view.mask->data;
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        if (data[i])
-            return i;
-    }
-    return num_rows;
-}
-
-void LimitRangeTransform::sliceChunk(Chunk & chunk, size_t start_row, size_t end_row)
-{
-    if (start_row >= end_row)
-    {
-        chunk.clear();
+    if (begin >= end)
         return;
-    }
-    size_t length = end_row - start_row;
-    auto columns = chunk.detachColumns();
-    for (auto & col : columns)
-        col = col->cut(start_row, length);
-    chunk.setColumns(std::move(columns), length);
-}
 
-void LimitRangeTransform::filterChunk(Chunk & chunk, const IColumn::Filter & filter, size_t filtered_rows)
-{
-    auto columns = chunk.detachColumns();
-    for (auto & col : columns)
-    {
-        if (isColumnConst(*col))
-            col = col->cut(0, filtered_rows);
-        else
-            col = col->filter(filter, filtered_rows);
-    }
-
-    chunk.setColumns(std::move(columns), filtered_rows);
+    if (!output_slices.empty() && output_slices.back().start + output_slices.back().length == begin)
+        output_slices.back().length += end - begin;
+    else
+        output_slices.push_back({begin, end - begin});
 }
 
 void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_col, const ColumnPtr & end_col)
 {
     const size_t num_rows = chunk.getNumRows();
-    IColumn::Filter filter(num_rows, 0);
-    size_t filtered_rows = 0;
+    output_slices.clear();
 
     const BoundaryColumnView start_view(start_col);
     const BoundaryColumnView end_view(end_col);
 
-    /// Track contiguous ranges so we can use IColumn::cut when possible.
-    size_t range_begin = num_rows; /// sentinel: no range open
-    size_t num_ranges = 0;
-    size_t first_range_begin = 0;
-    size_t first_range_end = 0;
-
-    for (size_t row = 0; row < num_rows; ++row)
+    /// Rows where neither boundary matches only continue the current window, so they are handled in bulk:
+    /// the loop jumps from one matching row to the next and selects the rows in between as one slice.
+    size_t row = 0;
+    while (row < num_rows)
     {
-        const UInt64 current_row = rows_read + row;
-        const bool end_match = end_view.isTrueAt(row);
+        const size_t next_start = start_view.findTrue(row, num_rows);
+        const size_t next_end = end_view.findTrue(row, std::min(next_start + 1, num_rows));
+        const size_t event = std::min(next_start, next_end);
+
+        if (has_repeated_unbounded_window)
+            appendOutputRows(row, event);
+        else if (limit && rows_read + row < repeated_window_end)
+            appendOutputRows(row, static_cast<size_t>(std::min<UInt64>(event, repeated_window_end - rows_read)));
+
+        if (event == num_rows)
+            break;
+
+        const UInt64 current_row = rows_read + event;
+        const bool end_match = end_view.isTrueAt(event);
         if (end_match)
         {
             has_repeated_unbounded_window = false;
             repeated_window_end = current_row;
         }
 
-        const bool start_match = start_view.isTrueAt(row);
+        const bool start_match = start_view.isTrueAt(event);
         if (start_match && !end_match)
         {
             if (limit)
@@ -177,55 +168,21 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
                 has_repeated_unbounded_window = true;
         }
 
-        const bool should_emit = has_repeated_unbounded_window || (limit && current_row < repeated_window_end);
-        if (should_emit)
-        {
-            filter[row] = 1;
-            ++filtered_rows;
-            if (range_begin == num_rows)
-                range_begin = row;
-        }
-        else if (range_begin != num_rows)
-        {
-            if (num_ranges == 0)
-            {
-                first_range_begin = range_begin;
-                first_range_end = row;
-            }
-            ++num_ranges;
-            range_begin = num_rows;
-        }
-    }
+        if (has_repeated_unbounded_window || (limit && current_row < repeated_window_end))
+            appendOutputRows(event, event + 1);
 
-    if (range_begin != num_rows)
-    {
-        if (num_ranges == 0)
-        {
-            first_range_begin = range_begin;
-            first_range_end = num_rows;
-        }
-        ++num_ranges;
+        row = event + 1;
     }
 
     rows_read += num_rows;
 
-    if (filtered_rows == 0)
+    if (output_slices.empty())
     {
         chunk.clear();
         return;
     }
 
-    if (filtered_rows == num_rows)
-        return;
-
-    /// Single contiguous range: IColumn::cut is cheaper than IColumn::filter.
-    if (num_ranges == 1)
-    {
-        sliceChunk(chunk, first_range_begin, first_range_end);
-        return;
-    }
-
-    filterChunk(chunk, filter, filtered_rows);
+    materializeSlicesIntoChunk(chunk, chunk.detachColumns(), num_rows, output_slices);
 }
 
 void LimitRangeTransform::setDone()
@@ -274,8 +231,6 @@ void LimitRangeTransform::transform(Chunk & chunk)
     }
 
     const size_t num_rows = chunk.getNumRows();
-    size_t output_start = 0;
-    size_t output_end = num_rows;
 
     ColumnPtr start_col;
     if (start_expression && (start_all || !started))
@@ -306,26 +261,28 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     rows_read += num_rows;
 
-    /// end_in_chunk caches the result of findFirstTrue(end_col) when it is computed
-    /// inside the !started block, to avoid a redundant second scan below.
-    size_t end_in_chunk = num_rows;
-    bool end_searched = false;
+    const BoundaryColumnView start_view(start_col);
+    const BoundaryColumnView end_view(end_col);
+
+    size_t output_start = 0;
+    size_t output_end = num_rows;
+    /// The first `UNTIL` match of the chunk, once it has been looked for.
+    std::optional<size_t> first_end;
 
     if (!started)
     {
         if (start_col)
         {
-            const size_t first_start = findFirstTrue(start_col, num_rows);
+            const size_t first_start = start_view.findTrue(0, num_rows);
 
             if (end_col)
             {
-                end_in_chunk = findFirstTrue(end_col, num_rows);
-                end_searched = true;
+                first_end = end_view.findTrue(0, num_rows);
                 /// UNTIL fired at or before AFTER (covers: AFTER not found, UNTIL at same row,
                 /// UNTIL precedes AFTER).  The window is permanently closed.
-                if (end_in_chunk <= first_start)
+                if (*first_end <= first_start)
                 {
-                    if (end_in_chunk < num_rows)
+                    if (*first_end < num_rows)
                         setDone();
                     chunk.clear();
                     return;
@@ -349,9 +306,10 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     if (end_col && output_end > output_start)
     {
-        const size_t first_end = end_searched ? end_in_chunk : findFirstTrue(end_col, num_rows);
-        if (first_end < num_rows)
-            output_end = first_end;
+        if (!first_end)
+            first_end = end_view.findTrue(0, num_rows);
+        if (*first_end < num_rows)
+            output_end = *first_end;
     }
 
     if (output_end <= output_start)
@@ -373,8 +331,8 @@ void LimitRangeTransform::transform(Chunk & chunk)
             output_end = output_start + remaining;
     }
 
-    sliceChunk(chunk, output_start, output_end);
-    rows_output += chunk.getNumRows();
+    output_slices.assign(1, ChunkRowRange{output_start, output_end - output_start});
+    rows_output += materializeSlicesIntoChunk(chunk, chunk.detachColumns(), num_rows, output_slices);
 
     if (limit && rows_output >= *limit)
         setDone();
