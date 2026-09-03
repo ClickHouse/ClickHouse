@@ -1920,6 +1920,69 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
     )
 
 
+def test_learned_query_id_does_not_block_the_next_statement(started_cluster):
+    """A query id may be held by one query at a time server-wide, and PostgreSQL query ids are
+    published by `system.processes` and `system.query_log` while the cancellation secret is not. So
+    the id is the part an observer can learn, and an id that outlived its statement would let
+    whoever read it keep that connection's next statement out of the process list from any other
+    interface, without holding `KILL QUERY`."""
+    node = started_cluster.instances["node"]
+
+    backend_key = {}
+    sock, read_until_ready = _pg_raw_extended_query_session(node, backend_key)
+    with sock:
+        sock.sendall(_fe("Q", b"SELECT 'pg_first_statement_20250903'\x00"))
+        assert "Z" in read_until_ready()
+        assert backend_key, "the server did not send BackendKeyData"
+        first_id = _pg_query_id_from_log(node, "pg_first_statement_20250903")
+        assert first_id.startswith(f"postgres:{backend_key['pid']}:"), first_id
+
+        # Hold the learned id on another interface for longer than the next statement takes.
+        held = {}
+
+        def hold_the_learned_id():
+            try:
+                # Consume `sleepEachRow` so optimization cannot remove the delay.
+                held["output"] = node.http_query(
+                    "SELECT sum(sleepEachRow(0.3) + number) FROM numbers(60)",
+                    params={"query_id": first_id, "max_block_size": "1"},
+                    user="default",
+                    password="123",
+                )
+            except Exception as e:
+                held["error"] = str(e)
+
+        thread = threading.Thread(target=hold_the_learned_id)
+        thread.start()
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if (
+                    node.http_query(
+                        f"SELECT count() FROM system.processes WHERE query_id = '{first_id}'",
+                        user="default",
+                        password="123",
+                    ).strip()
+                    == "1"
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                raise AssertionError(f"the holding query did not start: {held}")
+
+            sock.sendall(_fe("Q", b"SELECT 'pg_second_statement_20250903'\x00"))
+            types = read_until_ready(timeout=30.0)
+            assert "E" not in types, types
+            assert types[-1] == "Z", types
+        finally:
+            node.query(f"KILL QUERY WHERE query_id = '{first_id}' SYNC", password="123")
+            thread.join()
+
+    second_id = _pg_query_id_from_log(node, "pg_second_statement_20250903")
+    assert second_id.startswith(f"postgres:{backend_key['pid']}:"), second_id
+    assert second_id != first_id, (first_id, second_id)
+
+
 def test_connection_ids_are_unique_across_listeners(started_cluster):
     """The connection id is the query id of every statement of its connection, and the id a
     CancelRequest resolves to, so it has to be unique across the whole server. Each endpoint is

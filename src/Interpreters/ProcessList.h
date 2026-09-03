@@ -401,7 +401,7 @@ public:
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
     /// query_id -> User
     using QueriesToUser = std::unordered_map<String, String>;
-    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id its statements run under
+    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id of its current statement
     using PostgreSQLCancellationKeys = std::map<std::pair<Int32, UInt32>, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
@@ -564,7 +564,7 @@ public:
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
-    /// connection, and the query ID its statements run under.
+    /// connection, and the query ID of its current statement. Call again when that ID changes.
     void registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id);
     void unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key);
 

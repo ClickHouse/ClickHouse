@@ -69,7 +69,7 @@ private:
     bool secure_required = false;
     Int32 connection_id = 0;
     UInt32 secret_key = 0;
-    /// The public random component of this connection's query ID.
+    /// The public random component of the current statement's query ID.
     UInt32 query_id_token = 0;
 
     /// Emit one `ReadyForQuery` at the next protocol boundary.
@@ -105,9 +105,12 @@ private:
 
     void cancelRequest();
 
-    /// The query id every statement of this connection runs under, which a cancel request resolves to.
+    /// The query id the current statement runs under, which a cancel request resolves to.
     String currentQueryId() const;
     static String queryIdFor(Int32 connection_id_, UInt32 query_id_token_);
+
+    /// Give the statement that is about to run its own query id, and point cancellation at it.
+    void assignStatementQueryId(ContextMutablePtr query_context);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 

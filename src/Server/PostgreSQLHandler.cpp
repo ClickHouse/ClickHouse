@@ -679,6 +679,18 @@ String PostgreSQLHandler::currentQueryId() const
     return queryIdFor(connection_id, query_id_token);
 }
 
+void PostgreSQLHandler::assignStatementQueryId(ContextMutablePtr query_context)
+{
+    /// One statement, one query ID: a query ID may be held by only one query at a time across the
+    /// whole server, so an ID that outlived its statement would keep the next one from starting.
+    query_id_token = generateRandomUInt32();
+
+    const String query_id = currentQueryId();
+    query_context->setCurrentQueryId(query_id);
+    /// `CancelRequest` names the connection, so its entry has to follow the current statement.
+    server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, query_id);
+}
+
 void PostgreSQLHandler::cancelRequest()
 {
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
@@ -807,7 +819,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
         QueryScope query_scope = QueryScope::create(query_context);
 
         String columns_to_insert;
@@ -903,7 +915,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         QueryScope query_scope = QueryScope::create(query_context);
 
@@ -991,7 +1003,7 @@ void PostgreSQLHandler::processQuery()
             return;
 
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         if (should_init_system_tables)
         {
@@ -1015,7 +1027,7 @@ void PostgreSQLHandler::processQuery()
 
         for (auto & sql_query : queries)
         {
-            query_context->setCurrentQueryId(currentQueryId());
+            assignStatementQueryId(query_context);
 
             QueryScope query_scope = QueryScope::create(query_context);
 
@@ -1237,7 +1249,7 @@ void PostgreSQLHandler::processExecuteQuery()
                 "got portal name '{}'", query->portal_name);
 
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(currentQueryId());
+        assignStatementQueryId(query_context);
 
         if (should_init_system_tables)
         {
