@@ -1,0 +1,30 @@
+# Decimal time series (delta-friendly)
+30000	0
+30000	0
+# Decimal series with exceptions (occasional high-precision values)
+30000	0
+30000	0
+# Real doubles (XOR path)
+30000	0
+30000	0
+# Arbitrary bit patterns, including NaN payloads, infinities, denormals
+30000	0
+30000	0
+# Constant and repeated values, signed zeros
+30000	0
+# Special values in tiny parts
+0	3.14
+1	nan
+2	inf
+3	-inf
+4	-0
+5	1.5e-300
+0	3.14
+1	nan
+2	inf
+3	-inf
+4	-0
+5	1.5e-30
+# Compression is effective on a decimal time series
+1
+# Wallaby is not applicable to non-float types and takes no arguments

@@ -25,3 +25,6 @@ if (TARGET ch_contrib::sz3)
     clickhouse_add_executable (sz3_decompress_fuzzer sz3_decompress_fuzzer.cpp)
     target_link_libraries (sz3_decompress_fuzzer PRIVATE dbms)
 endif ()
+
+clickhouse_add_executable (wallaby_decompress_fuzzer wallaby_decompress_fuzzer.cpp)
+target_link_libraries (wallaby_decompress_fuzzer PRIVATE dbms)

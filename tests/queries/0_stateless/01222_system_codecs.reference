@@ -13,9 +13,10 @@ NONE	2	0	0	0	0	0	Production	No compression. Can be used on columns that can not 
 Quantized	158	0	0	0	0	1	Experimental	Stores a compact quantized companion stream of a dense vector column for fast nearest-neighbour search; the full-precision data is stored uncompressed.
 SZ3	157	1	0	0	1	1	Experimental	SZ3 is a lossy compressor for floating-point data with error bounds.
 T64	147	1	0	0	0	0	Production	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
+Wallaby	160	1	0	0	1	1	Experimental	Adaptive floating-point codec that picks per block between integerization with delta or frame-of-reference packing and windowed XOR; suitable for time series data.
 ZSTD	144	1	1	0	0	0	Production	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.
 ZXC	159	1	1	0	0	1	Experimental	Asymmetric LZ codec (zxc): slow compression, very fast decompression, ratio between LZ4 and ZSTD. Levels 1..7.
-17
+18
 name
 method_byte
 is_compression

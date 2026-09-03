@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/FFOR.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -17,12 +18,14 @@
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>
+#include <bit>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <typeinfo>
@@ -536,9 +539,10 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
-    /// Gorilla and ALP can only be applied to floating point columns
+    /// Gorilla, ALP and Wallaby can only be applied to floating point columns
     const auto & codec_statement = std::get<0>(GetParam()).codec_statement;
-    const bool codec_is_float_point = codec_statement.contains("Gorilla") || codec_statement.contains("ALP");
+    const bool codec_is_float_point
+        = codec_statement.contains("Gorilla") || codec_statement.contains("ALP") || codec_statement.contains("Wallaby");
     const WhichDataType which(std::get<1>(GetParam()).data_type.get());
     const bool data_is_float = which.isFloat();
     if (codec_is_float_point && !data_is_float)
@@ -839,7 +843,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("ALP(STD), ZSTD"),
     Codec("ALP(RD)"),
     Codec("ALP(RD), LZ4"),
-    Codec("ALP(RD), ZSTD")
+    Codec("ALP(RD), ZSTD"),
+    Codec("Wallaby"),
+    Codec("Wallaby, LZ4"),
+    Codec("Wallaby, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -943,7 +950,10 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(std::numbers::e_v<Float32>))),
@@ -967,7 +977,10 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-std::numbers::e_v<Float32>))),
@@ -1027,7 +1040,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(std::numbers::e_v<Float32>))),
@@ -1051,7 +1067,10 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("ALP(STD), ZSTD"),
             Codec("ALP(RD)"),
             Codec("ALP(RD), LZ4"),
-            Codec("ALP(RD), ZSTD")
+            Codec("ALP(RD), ZSTD"),
+            Codec("Wallaby"),
+            Codec("Wallaby, LZ4"),
+            Codec("Wallaby, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-std::numbers::e_v<Float32>))),
@@ -2770,6 +2789,1014 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTrailingBytesAfterValidPayload)
     source.insert(source.end(), trailing_bytes.begin(), trailing_bytes.end());
 
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, stream size mismatch");
+}
+
+class WallabyTest : public ::testing::Test
+{
+protected:
+    static std::vector<UInt8> constructSourceWithHeader(const std::vector<UInt8> & source, UInt32 dest_size)
+    {
+        UInt32 source_size = static_cast<UInt32>(source.size());
+
+        std::vector<UInt8> data = {
+            // General codec header
+            static_cast<UInt8>(CompressionMethodByte::Wallaby), // method byte
+            static_cast<UInt8>(source_size & 0xFF),             // compressed size (byte 0)
+            static_cast<UInt8>((source_size >> 8) & 0xFF),      // compressed size (byte 1)
+            static_cast<UInt8>((source_size >> 16) & 0xFF),     // compressed size (byte 2)
+            static_cast<UInt8>((source_size >> 24) & 0xFF),     // compressed size (byte 3)
+            static_cast<UInt8>(dest_size & 0xFF),               // decompressed size (byte 0)
+            static_cast<UInt8>((dest_size >> 8) & 0xFF),        // decompressed size (byte 1)
+            static_cast<UInt8>((dest_size >> 16) & 0xFF),       // decompressed size (byte 2)
+            static_cast<UInt8>((dest_size >> 24) & 0xFF),       // decompressed size (byte 3)
+        };
+        data.append_range(source);
+
+        return data;
+    }
+
+    /// Prepends the Wallaby codec header (version, float width, uncompressed byte size)
+    /// to a sequence of encoded vectors.
+    template <typename FloatType>
+    static std::vector<UInt8> constructCodecPayload(const std::vector<UInt8> & vectors, UInt32 values_count, UInt32 trailing_bytes = 0)
+    {
+        const UInt32 uncompressed_size = values_count * sizeof(FloatType) + trailing_bytes;
+        std::vector<UInt8> payload = {
+            0x01,                                                 // version
+            static_cast<UInt8>(sizeof(FloatType)),                // float width
+            static_cast<UInt8>(uncompressed_size & 0xFF),         // uncompressed size (byte 0)
+            static_cast<UInt8>((uncompressed_size >> 8) & 0xFF),  // uncompressed size (byte 1)
+            static_cast<UInt8>((uncompressed_size >> 16) & 0xFF), // uncompressed size (byte 2)
+            static_cast<UInt8>((uncompressed_size >> 24) & 0xFF), // uncompressed size (byte 3)
+        };
+        payload.append_range(vectors);
+
+        return payload;
+    }
+
+    template <typename FloatType>
+    static std::vector<FloatType> decompressAs(const std::vector<UInt8> & payload, UInt32 values_count)
+    {
+        using DataType = std::conditional_t<std::is_same_v<FloatType, Float64>, DataTypeFloat64, DataTypeFloat32>;
+
+        const UInt32 dest_size = values_count * sizeof(FloatType);
+        const std::vector<UInt8> data = constructSourceWithHeader(payload, dest_size);
+        const auto codec = makeCodec("Wallaby", std::make_shared<DataType>());
+
+        std::vector<FloatType> dest(values_count);
+        codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), reinterpret_cast<char *>(dest.data()));
+        return dest;
+    }
+
+    /// Appends a `FFOR` bit-packed lane block for the given per-lane values, using the encoder's
+    /// own packer so the forged payload does not depend on the packing layout.
+    static void appendPackedLanes(std::vector<UInt8> & payload, UInt8 bits, const std::map<UInt16, UInt64> & lanes)
+    {
+        std::vector<UInt64> values(DB::Compression::FFOR::DEFAULT_VALUES, 0);
+        for (const auto & [index, value] : lanes)
+            values[index] = value;
+        std::vector<UInt64> packed(DB::Compression::FFOR::DEFAULT_VALUES, 0);
+        DB::Compression::FFOR::bitPack(values.data(), packed.data(), bits, UInt64{0});
+        const auto * bytes = reinterpret_cast<const UInt8 *>(packed.data());
+        payload.insert(payload.end(), bytes, bytes + DB::Compression::FFOR::calculateBitpackedBytes(bits));
+    }
+
+    template <typename T = DataTypeFloat64>
+    static void verifyDecompressExpectedException(const std::vector<UInt8> & payload, const std::string & expected_message, UInt32 dest_size)
+    {
+        try
+        {
+            const std::vector<UInt8> data = constructSourceWithHeader(payload, dest_size);
+            const auto codec = makeCodec("Wallaby", std::make_shared<T>());
+            std::vector<char> dest(dest_size);
+
+            codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), dest.data());
+
+            FAIL() << "Expected Exception with message: " << expected_message;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(expected_message, e.message());
+        }
+    }
+};
+
+/** A fixed compressed vector produced by the version-1 encoder for the value sequence returned
+  * by wallabyGoldenXorValues. It exercises the XOR vector mode: the raw first value, the EQUAL
+  * branch, runs and the XOR branches. These bytes are part of the persisted on-disk format:
+  * they must stay decodable no matter how the encoder heuristics evolve, and an incompatible
+  * change of the format requires a version bump instead.
+  */
+std::vector<UInt8> wallabyGoldenXorVectors()
+{
+    return {
+        0x03,                                           // mode = XOR
+        0x2E, 0x00, 0x00, 0x00,                         // payload size = 46 bytes
+        0x01,                                           // flags: trailing-zero field omitted
+        0x40, 0x09, 0x21, 0xFB, 0x54, 0x44, 0x2D, 0x18, // first value: pi, stored raw
+        0x2B, 0x27, 0xBC, 0x77, 0xD4, 0x1E, 0x9C, 0x40, 0x00, 0x01, 0x00, 0x40,
+        0x0C, 0x02, 0x00, 0x50, 0x0C, 0x01, 0xC0, 0x40, 0x09, 0x01, 0x40, 0x2C,
+        0x06, 0x00, 0xD8, 0x0C, 0x48, 0xE4, 0xF7, 0x8E, 0xFA, 0x83, 0xD3, 0x88,
+        0x0E
+    };
+}
+
+std::vector<Float64> wallabyGoldenXorValues()
+{
+    constexpr Float64 pi = std::numbers::pi;
+    constexpr Float64 e = std::numbers::e;
+
+    std::vector<Float64> values;
+    for (size_t i = 0; i < 8; ++i)
+    {
+        values.push_back(pi);
+        values.push_back(e);
+    }
+    for (size_t i = 0; i < 6; ++i)
+        values.push_back(e);
+    values.push_back(2 * pi);
+    values.push_back(pi);
+    return values;
+}
+
+TEST_F(WallabyTest, DecodesConstVector)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                                           // mode = CONST
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x3F  // 1.5 (little endian)
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 3), 3);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1.5, 1.5, 1.5}));
+}
+
+TEST_F(WallabyTest, DecodesConstVectorFloat32)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                  // mode = CONST
+        0x00, 0x00, 0xC0, 0x3F // 1.5f (little endian)
+    };
+    const auto decoded = decompressAs<Float32>(constructCodecPayload<Float32>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float32>{1.5f, 1.5f}));
+}
+
+TEST_F(WallabyTest, DecodesDecimalForVectorWithException)
+{
+    /// DECIMAL_FOR with bits = 0: every quantized value equals the base, so the packed part
+    /// is empty; the value at position 1 is patched from the exception list.
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x21,                                           // biased scale 33: alpha = 1 decimal place
+        0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
+        0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25 -> 2.5
+        0x01, 0x00,                                     // exception_count = 1
+        0x01, 0x00,                                     // exception position = 1
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x40  // raw exception value 3.25
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float64>{2.5, 3.25}));
+}
+
+TEST_F(WallabyTest, DecodesDecimalDeltaVector)
+{
+    /// DECIMAL_DELTA with bits = 0: all zigzag deltas are zero, so every value equals first_q.
+    const std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x22,                                           // biased scale 34: alpha = 2 decimal places
+        0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
+        0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 123 -> 1.23
+        0x00, 0x00                                      // exception_count = 0
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 4), 4);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1.23, 1.23, 1.23, 1.23}));
+}
+
+TEST_F(WallabyTest, DecodesRawVectorAndTrailingBytes)
+{
+    const std::vector<UInt8> vectors = {
+        0x04,                                           // mode = RAW
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // 1.0
+        0x18, 0x2D, 0x44, 0x54, 0xFB, 0x21, 0x09, 0x40, // pi
+        0xAA, 0xBB, 0xCC                                // trailing bytes stored verbatim
+    };
+    const std::vector<UInt8> data = constructSourceWithHeader(constructCodecPayload<Float64>(vectors, 2, 3), 19);
+    const auto codec = makeCodec("Wallaby", std::make_shared<DataTypeFloat64>());
+
+    std::vector<char> dest(19);
+    codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), dest.data());
+
+    Float64 values[2];
+    memcpy(values, dest.data(), sizeof(values));
+    EXPECT_EQ(values[0], 1.0);
+    EXPECT_EQ(values[1], 0x1.921fb54442d18p+1);
+    EXPECT_EQ(static_cast<UInt8>(dest[16]), 0xAA);
+    EXPECT_EQ(static_cast<UInt8>(dest[17]), 0xBB);
+    EXPECT_EQ(static_cast<UInt8>(dest[18]), 0xCC);
+}
+
+TEST_F(WallabyTest, DecodesXorVectorGoldenBytes)
+{
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(wallabyGoldenXorVectors(), 24), 24);
+    EXPECT_EQ(decoded, wallabyGoldenXorValues());
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTooSmallHeader)
+{
+    verifyDecompressExpectedException({0x01, 0x08}, "Cannot decompress Wallaby-encoded data, source is too small", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnsupportedVersion)
+{
+    std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    payload[0] = 0x02; // version = 2
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, unsupported version 2", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputSizeMismatch)
+{
+    /// The stored uncompressed size says 8 bytes while the generic header says 16.
+    const std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, size mismatch", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnsupportedFloatWidth)
+{
+    std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    payload[1] = 0x02; // float width = 2
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, unsupported float width 2", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnknownVectorMode)
+{
+    const std::vector<UInt8> vectors = {0x05}; // mode = 5, one past RAW
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, unknown vector mode 5", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTruncatedVector)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                  // mode = CONST
+        0x00, 0x00, 0x00, 0x00 // only 4 of the 8 value bytes
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, source is truncated", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
+{
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x33,                                           // biased scale 51: alpha = 19, above the Float64 maximum of 18
+        0x00,                                           // bits = 0
+        0x00,                                           // adjustment_bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 0
+        0x00, 0x00                                      // exception_count = 0
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalAdjustmentWidth)
+{
+    /// The Float32 encoder limits zigzag ULP adjustments to 16 bits. A 31-bit adjustment
+    /// could wrap the ordered-float representation during reconstruction.
+    const std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x21,                         // alpha = 1
+        0x00,                         // bits = 0
+        0x1F,                         // adjustment_bits = 31, above the encoder limit
+        0x19, 0x00, 0x00, 0x00,       // base = 25 -> 2.5f
+        0x00, 0x00                    // exception_count = 0
+    };
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 4);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalForReconstructionOverflow)
+{
+    /// `base = INT32_MAX` plus a packed offset of one must not wrap to `INT32_MIN`.
+    std::vector<UInt8> vectors = {
+        0x01,                         // mode = DECIMAL_FOR
+        0x20,                         // alpha = 0
+        0x01,                         // bits = 1
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // base = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 128, 0x00);
+    vectors[10] = 0x01; // first packed offset = 1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 1), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 4);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDecimalDeltaReconstructionOverflow)
+{
+    /// `first_q = INT32_MAX` followed by a zigzag-encoded delta of one must not wrap.
+    std::vector<UInt8> vectors = {
+        0x02,                         // mode = DECIMAL_DELTA
+        0x20,                         // alpha = 0
+        0x02,                         // bits = 2
+        0x00,                         // adjustment_bits = 0
+        0xFF, 0xFF, 0xFF, 0x7F,       // first_q = INT32_MAX
+        0x00, 0x00                    // exception_count = 0
+    };
+    vectors.resize(vectors.size() + 256, 0x00);
+    vectors[14] = 0x02; // second strided packed zigzag delta = 2, decoding to +1
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float32>(vectors, 2), "Cannot decompress Wallaby-encoded data, decimal reconstruction overflows", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
+{
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x21,                                           // biased scale 33: alpha = 1
+        0x00,                                           // bits = 0
+        0x00,                                           // adjustment_bits = 0
+        0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25
+        0x01, 0x00,                                     // exception_count = 1
+        0x05, 0x00,                                     // exception position = 5, beyond the 2 values
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x40  // raw exception value
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 2), "Cannot decompress Wallaby-encoded data, corrupt exception position", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaAtNonQuantizableException)
+{
+    /// A DECIMAL_DELTA exception that cannot be quantized at alpha = 0 has a zero lane: the
+    /// encoder leaves the chain unchanged before patching its raw value. A non-zero lane would
+    /// otherwise silently alter the values after the exception.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x01,                                           // bits = 1
+        0x00,                                           // adjustment_bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// Set the lane at position 1 to one, which a valid encoder cannot emit for the NaN
+    /// exception below.
+    appendPackedLanes(vectors, 1, {{1, 1}});
+    vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x7F}); // quiet NaN
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, non-zero delta at a non-quantizable exception", 24);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptDeltaAtQuantizableException)
+{
+    /// A `DECIMAL_DELTA` exception that is quantizable at the vector scale is either a
+    /// delta-cap exception with a zero lane, or an adjustment-cap exception whose lane reaches
+    /// the raw value's quantized integer. This forged lane reaches one instead of the patched
+    /// value 1000, so accepting it would bias the accumulator used by the final value.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x02,                                           // bits = 2
+        0x00,                                           // adjustment_bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// The lane at position 1 is zigzag value two, which decodes to +1 instead of the raw
+    /// exception's quantized 1000.
+    appendPackedLanes(vectors, 2, {{1, 2}});
+    vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception", 24);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputDeltaBeforeTheDecimalChainStart)
+{
+    /// `base` is the quantized value of the position the delta chain started from, so a
+    /// leading exception may only be followed by a non-zero delta when it is that chain start
+    /// itself, exiled by the adjustment cap — and then its own value reconstructs the base.
+    /// Here position zero is patched with `1000.0` while the base is one, so the delta of one
+    /// at position one advances the accumulator before any chain exists.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x02,                                           // bits = 2
+        0x00,                                           // adjustment_bits = 0
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 1
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// The lane at position 1 is zigzag value two, decoding to +1.
+    appendPackedLanes(vectors, 2, {{1, 2}});
+    vectors.insert(vectors.end(), {0x00, 0x00}); // exception position = 0
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, delta before the decimal chain start", 24);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)
+{
+    /// The declared XOR payload size is cut below the 72 bits the flags byte and the raw first
+    /// value require, so the bit reader runs out inside the vector.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[1] = 0x08; // payload size = 8
+    vectors.resize(5 + 8);
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, XOR payload is truncated", 192);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTrailingGarbageInXorPayload)
+{
+    /// The payload size is inflated by one byte of garbage appended after the encoded values.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[1] = 0x2F; // payload size = 47
+    vectors.push_back(0xFF);
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, trailing garbage in XOR payload", 192);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptRunLength)
+{
+    /// Bits after the raw first value: a run selector followed by run length 1023, which
+    /// exceeds the 3 values that remain in the vector.
+    const std::vector<UInt8> vectors = {
+        0x03,                                           // mode = XOR
+        0x0B, 0x00, 0x00, 0x00,                         // payload size = 11
+        0x00,                                           // flags: trailing-zero field present
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first value: 0.0, stored raw
+        0xFF, 0xE0                                      // run of length 1023
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 4), "Cannot decompress Wallaby-encoded data, corrupt run length", 32);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptCenterLength)
+{
+    /// Bits after the raw first value: a single value in the XOR_PREV branch with lead class 7
+    /// (44 leading zeros) and 63 trailing zeros, an impossible combination for 64-bit values.
+    const std::vector<UInt8> vectors = {
+        0x03,                                           // mode = XOR
+        0x0B, 0x00, 0x00, 0x00,                         // payload size = 11
+        0x00,                                           // flags: trailing-zero field present
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first value: 0.0, stored raw
+        0x3F, 0xF0                                      // XOR_PREV, lead class 7, 63 trailing zeros
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 2), "Cannot decompress Wallaby-encoded data, corrupt center length", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTrailingGarbageAfterStream)
+{
+    /// A byte appended after a complete stream must be rejected by the outer size check.
+    const std::vector<UInt8> vectors = {
+        0x00,                                            // mode = CONST
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x3F, // 1.5
+        0xFF                                             // garbage
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, source size does not match the encoded stream", 24);
+}
+
+/// Compresses a Float64 sequence with the Wallaby codec, verifies the bit-exact round trip
+/// and returns the compressed size including all headers.
+UInt32 wallabyCompressedSize(const std::vector<Float64> & values)
+{
+    const auto codec = makeCodec("Wallaby", std::make_shared<DataTypeFloat64>());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    std::vector<char> compressed(codec->getCompressedReserveSize(source_size));
+    const UInt32 compressed_size
+        = codec->compress(reinterpret_cast<const char *>(values.data()), source_size, compressed.data());
+
+    std::vector<Float64> decompressed(values.size());
+    codec->decompress(compressed.data(), compressed_size, reinterpret_cast<char *>(decompressed.data()));
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(std::bit_cast<UInt64>(decompressed[i]), std::bit_cast<UInt64>(values[i])) << "at position " << i;
+
+    return compressed_size;
+}
+
+TEST_F(WallabyTest, CompressesSparsePeriodicExceptionsAsDecimal)
+{
+    /// A NaN in every 32nd slot of a 0, 1, 2, ... ramp must not knock out the decimal modes:
+    /// the pattern aliased with the fixed sampling stride of an earlier encoder revision, which
+    /// abandoned the decimal candidate even though 32 exceptions are well within the budget.
+    /// The decimal-delta encoding takes ~700 bytes here while XOR and RAW need several kilobytes.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1000u);
+}
+
+TEST_F(WallabyTest, ReusesExceptionPositionsAcrossDecimalVectors)
+{
+    /// Exception positions are local to each 1024-value vector. Reusing the same positions in
+    /// a second vector must round-trip instead of being rejected as duplicate exceptions.
+    std::vector<Float64> values(2048);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 2000u);
+}
+
+TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
+{
+    /// A single sampled high-precision value (0.01 needs two decimal places) must not force
+    /// a wide scale onto a vector of integers: alpha = 0 with one exception packs the +1 deltas
+    /// into 2 bits (~300 bytes), while alpha = 2 packs deltas of 100 into 8 bits (~1050 bytes).
+    std::vector<Float64> values(1024);
+    values[0] = 0.01;
+    for (size_t i = 1; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 600u);
+}
+
+TEST_F(WallabyTest, ChoosesInteriorAlphaOnMixedPrecisionData)
+{
+    /// The cheapest legal decimal scale can be an interior sampled alpha, not just the
+    /// smallest, median or largest one. The bulk of this vector are pseudo-random values
+    /// in [100.0000, 100.9999] with four decimal places (ten thousand distinct values
+    /// with random mantissas make both the XOR residues and the XOR ring's EQUAL branch
+    /// expensive), 128 values in the same range need alpha = 7, and 64 sparse values
+    /// around 1e-13 need alpha = 13 and flip the exponent under XOR. alpha <= 4 stores
+    /// at least 192 values as exceptions (~2 KiB of exceptions on top of the lanes);
+    /// alpha = 13 packs 50-bit lanes (~6.4 KiB, and XOR costs ~5 KiB); alpha = 7 keeps
+    /// every quantized value within a span of 1e7, packing 24-bit lanes with 64 exceptions
+    /// (~3.7 KiB). An earlier encoder revision evaluated only the {min, median, max}
+    /// sampled alphas, missing the interior alpha = 7.
+    std::vector<Float64> values(1024);
+    UInt64 state = 42;
+    const auto next = [&state]
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return state >> 33;
+    };
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (i % 16 == 4)
+            values[i] = static_cast<Float64>(next() % 9 + 1) / 1e13;
+        else if (i % 8 == 3)
+        {
+            UInt64 q = 1000000000 + next() % 10000000;
+            q += q % 10 == 0;
+            values[i] = static_cast<Float64>(q) / 1e7;
+        }
+        else
+            values[i] = static_cast<Float64>(1000000 + next() % 10000) / 10000.0;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 4300u);
+}
+
+TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
+{
+    /// A 3-decimal ramp with a 7-decimal value in every 8th slot. alpha = 3 stores the
+    /// 128 high-precision values as exceptions (~1.3 KiB) next to 17-bit delta lanes and
+    /// stays clearly cheaper than both alpha = 7 (~24-bit lanes for every value) and the
+    /// XOR mode (~6 KiB: the mixed-precision values break the XOR residue structure).
+    /// An earlier encoder revision abandoned any decimal candidate at a fixed count of
+    /// 96 exceptions, so this vector fell through to the XOR mode; the exception budget
+    /// is size-based now.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (i % 8 == 0)
+        {
+            const size_t band = i / 8;
+            values[i] = 100.0 + static_cast<Float64>(10 * band + 1) / 1e7;
+        }
+        else
+            values[i] = 100.0 + static_cast<Float64>(i) / 1000;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3500u);
+}
+
+TEST_F(WallabyTest, AbsorbsNearDecimalValuesWithAdjustments)
+{
+    /// Two-decimal values disturbed by a few dozen ULPs each (the shape of decimals that went
+    /// through lossy arithmetic or a float32 round trip): no value is bit-exact at any scale,
+    /// so the old encoder fell through to the XOR mode (~6 KiB); the adjustment lanes absorb
+    /// the disturbance at a few bits per value next to the narrow quantized lanes.
+    std::vector<Float64> values(1024);
+    UInt64 state = 7;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        const Float64 exact = static_cast<Float64>(1000 + (i % 500)) / 100;
+        const Int64 ulps = static_cast<Int64>((state >> 33) % 64) - 32;
+        values[i] = std::bit_cast<Float64>(std::bit_cast<Int64>(exact) + ulps);
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
+TEST_F(WallabyTest, DecodesNegativeScaleVector)
+{
+    /// A negative scale multiplies the quantized values by a power of ten at reconstruction:
+    /// alpha = -2 with first_q = 12 reconstructs 1200.
+    const std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x1E,                                           // biased scale 30: alpha = -2
+        0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
+        0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 12 -> 1200
+        0x00, 0x00                                      // exception_count = 0
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1200.0, 1200.0}));
+}
+
+TEST_F(WallabyTest, ShrinksTrailingZeroIntegersWithNegativeScale)
+{
+    /// Integers that all end in two decimal zeros (e.g. money in cents stored as scaled floats,
+    /// or millisecond timestamps holding whole seconds) pack two orders of magnitude narrower
+    /// at alpha = -2 than at alpha = 0: a ramp of multiples of 100 up to 10^7 takes 17-bit
+    /// lanes instead of 24-bit ones.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>((i + 100000) * 100);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
+}
+
+TEST_F(WallabyTest, ReachesNegativeScaleBeyondTheIntegerDomain)
+{
+    /// Integers scaled past the Int64 domain: 10^19-magnitude multiples of 10^15 overflow the
+    /// quantization at every scale >= 0, so only the division of a negative scale can represent
+    /// them. The scan must not stop at the domain failure of scale 0: alpha = -15 packs the
+    /// 17-bit cofactors (~2.2 KiB) where the XOR mode needs ~6 KiB.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i * 97 % 90000 + 10000) * 1e15;
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
+TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
+{
+    /// A two-decimal ramp with a single enormous outlier. Packing the whole vector at the
+    /// outlier's width takes ~34-bit lanes (~4.4 KiB); exiling the outlier to a patched
+    /// exception packs 10-bit lanes (~1.3 KiB) plus one 10-byte exception.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i) / 100;
+    values[512] = 1e7;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
+}
+
+TEST_F(WallabyTest, CapsFullWidthDecimalRange)
+{
+    /// A sign-crossing outlier makes the uncapped Frame-of-Reference range exactly 64 bits,
+    /// but it must not suppress the capped search. Exiling that one value leaves a 20-bit
+    /// range for the remaining values, much smaller than the RAW or XOR encodings.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i + 1 < values.size(); ++i)
+    {
+        const auto index = static_cast<UInt64>(i);
+        const auto offset = static_cast<Int64>((index * 977 % 1023) * 1024);
+        values[i] = static_cast<Float64>(-(Int64{1} << 62) + offset);
+    }
+    values.back() = static_cast<Float64>(Int64{1} << 62);
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
+TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
+{
+    /// A 1-decimal bulk with a 7-decimal minority of 384 values placed only at positions
+    /// the 32-position multiplicative sample never visits, so the sampled alphas are {1}
+    /// and no sampled candidate can absorb the minority into the packed lanes. The encoder
+    /// must discover alpha = 7 from the exception values of the alpha = 1 evaluation:
+    /// alpha = 7 packs every value into ~29-bit lanes (~3.7 KiB), while alpha = 1 pays
+    /// ~3.8 KiB for the exceptions alone and the XOR mode needs ~5 KiB on this mixture.
+    std::array<bool, 1024> is_sampled_position{};
+    for (UInt32 i = 0; i < 32; ++i)
+        is_sampled_position[static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % 1024)] = true;
+
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 100.0 + static_cast<Float64>((i * 7) % 400) / 10;
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size() && placed < 384; ++i)
+    {
+        if (!is_sampled_position[i] && i % 2 == 0)
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(10 * placed + 1) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 4200u);
+}
+
+/// The 32 positions the encoder samples to collect candidate decimal scales. They are
+/// deterministic, so a block can place its whole non-decimal minority exactly on them; the
+/// encoder must still measure the decimal candidates on the full vector.
+std::array<bool, 1024> wallabySampledPositions()
+{
+    std::array<bool, 1024> is_sampled_position{};
+    for (UInt32 i = 0; i < 32; ++i)
+        is_sampled_position[static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % 1024)] = true;
+    return is_sampled_position;
+}
+
+TEST_F(WallabyTest, KeepsDecimalModeWhenEveryFailureSitsOnASampledPosition)
+{
+    /// A 0, 1, 2, ... ramp with a NaN on every sampled position and nowhere else: not a single
+    /// sample quantizes. An encoder revision that rejected the decimal modes on sampled failures
+    /// alone fell through to the XOR mode (~2 KiB) even though alpha = 0 needs only 32 exceptions
+    /// next to 3-bit delta lanes (~700 bytes). Sampling only guides the candidate set now.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = is_sampled_position[i] ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1200u);
+}
+
+TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityOnAllSampledPositions)
+{
+    /// The mirror image of the previous case: the high-precision minority is not missed by the
+    /// sample, it *is* the sample. Every sampled value needs alpha = 13, the bulk needs alpha = 1,
+    /// and alpha = 1 with 32 exceptions is the cheapest encoding of the vector (~1.6 KiB against
+    /// ~6.3 KiB for alpha = 13 and ~3.8 KiB for XOR). An encoder revision that extrapolated the
+    /// sampled failure count to the whole vector estimated 960 exceptions for alpha = 1 and
+    /// pruned it before measuring; the estimate counts only the sampled failures themselves now,
+    /// which is a genuine lower bound.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(10 * placed + 1) / 1e13;
+        }
+        else
+            values[i] = 100.0 + static_cast<Float64>((i * 97) % 992) / 10;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 2600u);
+}
+
+TEST_F(WallabyTest, FindsTheWinningScaleBehindTheFirstExceptions)
+{
+    /// Candidate discovery from exception values must not depend on which exceptions come first.
+    /// The sample sees only the 3-decimal bulk; the first eight exceptions of the alpha = 3
+    /// evaluation are ~1e-13 outliers that point at alpha = 13, and 256 further exceptions are
+    /// 7-decimal values around 100 that point at the actual winner alpha = 7 (~3.2 KiB of 24-bit
+    /// lanes with 8 exceptions, against ~3.9 KiB for alpha = 3 and ~6.7 KiB for XOR). An encoder
+    /// revision that probed only the first eight exception positions never measured alpha = 7;
+    /// the probes are spread over the whole exception list now.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 100.0 + static_cast<Float64>((i * 13) % 1000) / 1000;
+
+    size_t outliers = 0;
+    size_t high_precision = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (is_sampled_position[i])
+            continue;
+        if (outliers < 8)
+        {
+            ++outliers;
+            values[i] = static_cast<Float64>(outliers) / 1e13;
+        }
+        else if (high_precision < 256)
+        {
+            ++high_precision;
+            values[i] = 100.0 + static_cast<Float64>((high_precision * 7919) % 9999999 + 1) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3600u);
+}
+
+TEST_F(WallabyTest, PrefersAWiderScaleThatCollapsesTheLanes)
+{
+    /// A wider scale can be dramatically cheaper than a narrower one, so nothing in the chooser
+    /// may assume that widening costs bits: 500 distinct 7-decimal values in a span of 5e-5 around
+    /// a constant 100.0 pack into 9-bit lanes with no exceptions at all (~1.2 KiB), while alpha = 0
+    /// has to except every one of them (~5 KiB) and the XOR mode pays ~30 bits per value of the
+    /// minority. The minority sits off the sampled positions, so alpha = 7 is discovered from the
+    /// exception probes rather than from the sample. This is a guard rather than a regression:
+    /// the previous encoder also picked alpha = 7 here (its unsound widening estimate never got
+    /// the chance to prune it, because the tight `size_to_beat` from the XOR mode makes the
+    /// alpha = 0 reference abandon its scan first), but the property is what the pruning bound is
+    /// now required to preserve by construction.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 100.0);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size() && placed < 500; ++i)
+    {
+        if (!is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(placed) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 1400u);
+}
+
+TEST_F(WallabyTest, TerminatesOnAPartialPowerOfTwoVector)
+{
+    /// A partial trailing vector of 64 values has a growable sample (the count is a power of
+    /// two above 32), but the sample saturates at the vector size - far below the 256-sample
+    /// maximum. A quarter-step ramp votes three different scales (x.25 -> 2, x.5 -> 1,
+    /// integers -> 0 and below), so the narrower candidates pass the pruning gate with a weak
+    /// bound and ask for a stronger sample. An encoder revision that only stopped growing at
+    /// the 256-sample maximum spun forever here, hanging the insert; the sample cannot say
+    /// more than the whole vector.
+    std::vector<Float64> values(64);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i) * 0.25;
+
+    EXPECT_LT(wallabyCompressedSize(values), 600u);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputReservedXorFlagBit)
+{
+    /// Bit 0 is the only XOR flag the version-1 encoder emits; a payload with any reserved
+    /// bit set is malformed and must throw rather than decode as if the bit were clear.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[5] = 0x81; // flags: bit 7 is reserved and must be zero
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, unknown XOR flags", 192);
+}
+
+TEST_F(WallabyTest, RecoversTheWinningScaleFromABudgetAbortedScan)
+{
+    /// The exceptions recorded by a scan that hits its size budget still identify the scale the
+    /// data needs. Every sampled position holds 100.0, so the only initial candidate is its exact
+    /// scale alpha = -2. The 4-decimal majority elsewhere sits ~7e9 ULPs away from 100.0 - beyond
+    /// the 2^32-ULP adjustment threshold - so each of its values is a hard exception of that scan,
+    /// which aborts on the exception budget long before finishing. The winner alpha = 4 (10-bit
+    /// Frame-of-Reference lanes over 1000000..1000992, ~1.3 KiB, no exceptions) is discoverable
+    /// only from the values the aborted scan excepted; the XOR mode needs ~4 KiB on the ~34
+    /// differing mantissa bits of every adjacency. An encoder revision that probed exceptions
+    /// only after a completed scan dropped them on the abort path and fell through to XOR.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 100.0);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (!is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(placed) / 1e4;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 800u);
+}
+
+TEST_F(WallabyTest, FindsTheDeltaCapBehindAnExiledSpike)
+{
+    /// The adjacent-delta histogram double-counts a spike: the jump and the return are two wide
+    /// deltas, but exiling the spike costs one exception, after which the chain re-synchronizes
+    /// with an in-lane delta of +6. On a 3-per-step ramp with a spike every 16th position the
+    /// histogram therefore proposes a 3-bit cap, whose exact chain walk explodes (the +6
+    /// post-spike deltas do not fit either), while the actual winner is the 4-bit cap: 63 exiled
+    /// spikes next to 4-bit lanes (~1.3 KiB against ~2.2 KiB for both capped Frame-of-Reference
+    /// and the uncapped 18-bit delta lanes, and ~1.4 KiB for the XOR lower bound). An encoder
+    /// revision that verified only the single proposed width missed it; every cap that the lower
+    /// bound does not rule out is now walked exactly.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(3 * i);
+    for (size_t i = 16; i < values.size(); i += 16)
+        values[i] = static_cast<Float64>(100000 + 3 * i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1400u);
+}
+
+TEST_F(WallabyTest, TakesADeltaCapWinSmallerThanAVectorOfLanes)
+{
+    /// A cap can win by less than the cost of a handful of exceptions, and the encoder must still
+    /// take it. These integers walk a +7 ramp into which every 128th position inserts a value 9
+    /// above its predecessor, so that the ramp resumes with a delta of -2: the deltas are +7
+    /// everywhere except 8 isolated `(+9, -2)` pairs. The widest delta needs 5 bits, but capping
+    /// at 4 bits exiles exactly the 8 inserted values, and the chain re-synchronizes immediately
+    /// because the delta across an exiled value is back to +7. That trades 128 bytes of lanes for
+    /// 8 exceptions of 10 bytes, making the capped payload 48 bytes smaller than the uncapped
+    /// 640-byte one - a real but small win, which an encoder revision that required the histogram
+    /// estimate to beat the best payload by a fixed 64-byte margin threw away.
+    std::vector<Float64> values;
+    values.reserve(1024);
+    Float64 ramp = 0;
+    while (values.size() < 1024)
+    {
+        if (values.size() % 128 == 127)
+        {
+            values.push_back(ramp + 2);
+            continue;
+        }
+        values.push_back(ramp);
+        ramp += 7;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 640u);
+}
+
+TEST_F(WallabyTest, StartsTheDeltaChainAfterALeadingOutlierPrefix)
+{
+    /// The delta chain is anchored on the first value by default, so a prefix of several
+    /// outliers cannot be exiled the way an interior one is - the chain would stay on the first
+    /// outlier and every later delta would span the whole distance back to it, turning almost
+    /// the entire vector into exceptions and forcing a multi-KiB Frame-of-Reference or raw
+    /// fallback. Exiling both leading values and anchoring the chain on the third keeps the +1
+    /// ramp in 2-bit lanes with just two exceptions (~290 bytes). An encoder revision whose
+    /// chain-start search looked only one position ahead missed every prefix longer than one.
+    std::vector<Float64> values(1024);
+    values[0] = 1e12;
+    values[1] = -1e12;
+    for (size_t i = 2; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i - 2);
+
+    EXPECT_LT(wallabyCompressedSize(values), 400u);
+}
+
+TEST_F(WallabyTest, StartsTheDeltaChainAfterALongOutlierPrefix)
+{
+    /// The same chain-start search, but with a prefix longer than the fixed 32-slot window an
+    /// earlier revision searched. 33 arbitrary head outliers are followed by a smooth `0, 1,
+    /// 2, ...` ramp: anchoring the chain at slot 33 stores 33 exceptions and keeps the other
+    /// 991 values in 2-bit delta lanes (615 bytes), while the window cut the search off before
+    /// that anchor and left the vector to `XOR`, whose own lower bound here is ~1416 bytes. The
+    /// search now stops on the exception budget, so any prefix that can still win is reachable.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < 33; ++i)
+        values[i] = static_cast<Float64>((i % 2 == 0 ? 1 : -1)) * 1e12 * static_cast<Float64>(i + 1);
+    for (size_t i = 33; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i - 33);
+
+    EXPECT_LT(wallabyCompressedSize(values), 800u);
+}
+
+TEST_F(WallabyTest, KeepsTheExactSampledScaleWhenTheTolerantScaleSucceeds)
+{
+    /// Every sampled value votes the tolerant scale `alpha = 0` (the values are all `100.0` up
+    /// to a few ULPs) while its exact scale is 13. The tolerant scan completes with no
+    /// exceptions and its adjustments stay tiny, so neither the aborted-scan fallback nor the
+    /// widest-adjustment probe reintroduces the exact scale: an encoder revision that dropped
+    /// the sampled exact scales on a successful candidate settled for ~780 bytes of adjustment
+    /// lanes, even though `alpha = 13` packs the same vector into 2-bit Frame-of-Reference
+    /// lanes (285 bytes) and `XOR`'s own lower bound is ~1416 bytes.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 100.0 + static_cast<Float64>(i % 4) * 1e-13;
+
+    EXPECT_LT(wallabyCompressedSize(values), 400u);
+}
+
+TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
+{
+    /// The Frame-of-Reference cap and the adjustment cap cannot be chosen one after the other:
+    /// exiling a wide-offset value also removes the adjustment it forces. Here the majority is the
+    /// exact integers 0..255, while every 64th position holds 511.0000001, which quantizes to 511
+    /// with an adjustment of ~9e5 ULPs. Scored on lanes and exceptions alone, the 9-bit cap that
+    /// keeps those 16 values in the lanes looks cheaper than the 8-bit cap that exiles them
+    /// (1152 against 1024 + 16 * 10 bytes), but their 21-bit adjustments are then far too wide to
+    /// pack, so the adjustment planner exiles them anyway and the 9-bit payload pays for both. The
+    /// 8-bit cap makes them ordinary Frame-of-Reference exiles, the adjustment lanes disappear
+    /// entirely, and the payload drops from ~1325 to ~1197 bytes - below the XOR lower bound of
+    /// 8 + 64 + 1023 * 11 bits (~1416) and the ~1453 bytes of the delta lanes. An encoder revision
+    /// that froze the lane cap before pricing the adjustment lanes kept the 9-bit one.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i % 256);
+    for (size_t i = 0; i < values.size(); i += 64)
+        values[i] = 511.0000001;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1250u);
+}
+
+TEST_F(WallabyTest, ChoosesScaleAfterCappingWideAdjustmentOutlier)
+{
+    /// The scale chooser must compare the complete capped adjustment plan for every candidate.
+    /// Here alpha 2 quantizes the column into three cent buckets. Most values need a 9-bit ULP
+    /// adjustment, while one value needs 26 bits. The uncapped price incorrectly favors alpha 8,
+    /// but capping the adjustment lanes at 9 bits and exiling that one outlier makes alpha 2
+    /// substantially smaller.
+    std::vector<Float64> values(1024);
+    constexpr std::array<Float64, 3> offsets{0.00000003, 0.01000003, 0.02000003};
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 1000000.0 + offsets[i % offsets.size()];
+    values[512] = 1000000.01490003;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1600u);
+}
+
+TEST_F(WallabyTest, DoesNotAbortScaleBeforeCappingAnEarlyOutlier)
+{
+    /// A high-scale candidate has one early wide value, but capping the delta lanes can exile
+    /// it and leave the rest of the vector in narrow lanes. An uncapped prefix-size abort would
+    /// discard this candidate before the capped packing search gets to evaluate it.
+    std::vector<Float64> values(1024);
+    values[0] = 10000000000.01;
+    for (size_t i = 1; i < values.size(); ++i)
+        values[i] = 1000.0 + static_cast<Float64>(i) + (i % 2 == 0 ? 0.01 : 0.0);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
 }
 
 }
