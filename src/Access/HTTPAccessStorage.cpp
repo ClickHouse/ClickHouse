@@ -451,13 +451,9 @@ std::optional<AuthResult> HTTPAccessStorage::authenticateImpl(
             result.user_name = user_name;
             result.settings = std::move(settings);
             result.external_roles = std::move(external_role_ids);
-
             /// Rides the existing per-authentication expiry machinery
-
             /// (Session::checkIfUserIsStillValid enforces it per query).
-
             result.authentication_data = makeAuthenticationData(response.valid_until);
-
             return result;
         }
     }
