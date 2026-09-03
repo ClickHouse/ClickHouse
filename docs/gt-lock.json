@@ -7,36 +7,36 @@
       "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-03T12:05:19.744Z",
+          "updatedAt": "2026-09-03T18:01:22.307Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-03T12:05:19.901Z",
+          "updatedAt": "2026-09-03T18:01:22.466Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-03T12:05:20.184Z",
+          "updatedAt": "2026-09-03T18:01:22.798Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-03T12:05:20.474Z",
+          "updatedAt": "2026-09-03T18:01:23.104Z",
           "fileName": "docs.json",
           "postProcessHash": "d4a19ff40efd243fd7c7a2eb9531a27635e8a48c7fb7dfa191faebf5f28cdace"
         },
         "es": {
-          "updatedAt": "2026-09-03T12:05:19.406Z",
+          "updatedAt": "2026-09-03T18:01:21.939Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-03T12:05:20.330Z",
+          "updatedAt": "2026-09-03T18:01:22.950Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-03T12:05:20.039Z",
+          "updatedAt": "2026-09-03T18:01:22.626Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-03T12:05:19.591Z",
+          "updatedAt": "2026-09-03T18:01:22.163Z",
           "fileName": "docs.json"
         }
       },
@@ -136646,47 +136646,47 @@
     },
     {
       "fileId": "b63755faaa0622aa7bbb0ee8f86b7bb3df206686a2bbbecaa991f705431091a2",
-      "versionId": "f1fea94672df50c132391f81f45872db0d711f7adb78ebbf47e6237cb8092bbb",
+      "versionId": "a6790c0bcaf5321dc38c317fef646b3b4f13e5ca60d883e8f400d5b00957ea50",
       "translations": {
-        "ko": {
-          "updatedAt": "2026-08-27T18:24:14.817Z",
-          "fileName": "ko/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "a7b04792eaaad88de50ef7629ca66eabec7b1fdb661479ac072403b0492aa6ab"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-27T18:24:14.820Z",
-          "fileName": "pt-BR/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "febba720b78ba2b13b314efb100d75d3b64368f3558fcfe5b75a1d4c704d9e09"
-        },
-        "ar": {
-          "updatedAt": "2026-08-27T18:24:14.822Z",
-          "fileName": "ar/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "efb4c4ae5fda021c59e253aa4e4a430c7f26d18cf05d23682307c5db9b763dc5"
+        "ru": {
+          "updatedAt": "2026-09-03T18:01:27.622Z",
+          "fileName": "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "ad298b07395940ff57ac2d8b0751badd1be25c3c5191672e0b8e1456b6a7bb91"
         },
         "zh": {
-          "updatedAt": "2026-08-27T18:24:15.386Z",
+          "updatedAt": "2026-09-03T18:01:27.622Z",
           "fileName": "zh/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "542a3647481900a4e537be7c8b3f6bebae1d280cb835ce8412a456ab4059e026"
-        },
-        "ru": {
-          "updatedAt": "2026-08-27T18:24:15.634Z",
-          "fileName": "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "b85108666d4854d04d8e732a962ea291a4791a175500e91eda738088b0065890"
-        },
-        "ja": {
-          "updatedAt": "2026-08-27T18:24:16.197Z",
-          "fileName": "ja/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "573167d8c44c8a523f136f3df334f0fba9cf9b118ce1e36ba7abb611df4246aa"
-        },
-        "es": {
-          "updatedAt": "2026-08-27T18:24:16.202Z",
-          "fileName": "es/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "ee26bd766fd0857107d6772a6ad9f425db473f8a665985e1e3703f677844219b"
+          "postProcessHash": "36c0f4d6923cc7e2bf1ab0b3995dd041a6d5405e6e6d735321642181bb6c9c5a"
         },
         "fr": {
-          "updatedAt": "2026-08-27T18:24:16.206Z",
+          "updatedAt": "2026-09-03T18:01:27.623Z",
           "fileName": "fr/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
-          "postProcessHash": "317f413f7090e9c64e6687cca2359272c9d005edc333552e67e94e4bd1b94749"
+          "postProcessHash": "b1205ac74f027a2691145ab43f7b22069f3ec5904e0c6534d634074891903cc7"
+        },
+        "es": {
+          "updatedAt": "2026-09-03T18:01:27.623Z",
+          "fileName": "es/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "e189ed5070e3c8a3a75841e8a4ebf014b89b4d6052ba5024036dad4f76c68526"
+        },
+        "ja": {
+          "updatedAt": "2026-09-03T18:01:27.624Z",
+          "fileName": "ja/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "fc64d86d4e50008acc0295403195aafec1868402f9c318909c7ef9b5282becdd"
+        },
+        "ko": {
+          "updatedAt": "2026-09-03T18:01:27.625Z",
+          "fileName": "ko/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "771a161ef81c0b7a5b64da9ba72219733a255d6fc05cfef06e53a7faa054f08c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-03T18:01:27.625Z",
+          "fileName": "pt-BR/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "32a7704b91adaecfc419e39ce581eb67d99207b9e926bed0e6080d9e9e55b695"
+        },
+        "ar": {
+          "updatedAt": "2026-09-03T18:01:27.626Z",
+          "fileName": "ar/integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx",
+          "postProcessHash": "b22d2a87aa3cc4f4f8e5028983788f5c6c9024be8368640c840138d25759e210"
         }
       },
       "fileName": "integrations/connectors/data-integrations/integrations/microsoft-fabric.mdx"
