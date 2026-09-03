@@ -250,6 +250,7 @@ add_contrib (ulid-c-cmake ulid-c)
 add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+add_contrib (substrait-cmake substrait) # requires: google-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
@@ -284,6 +285,7 @@ add_contrib (bech32)
 
 add_contrib (libcotp-cmake libcotp)
 
+add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
 add_contrib (librseq-cmake librseq)
