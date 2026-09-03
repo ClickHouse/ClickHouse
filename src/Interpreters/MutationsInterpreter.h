@@ -298,6 +298,10 @@ private:
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
+    /// Derives what `updated_header` holds from the finished pipeline and the complete set of
+    /// stages. Only `execute` can call it meaningfully; see `updated_header`.
+    Block getWrittenColumns(const Block & pipeline_header) const;
+
     /// The columns this mutation writes into the new part: the pipeline header minus the columns
     /// that only a readonly stage supplies. Assigned once at the end of `execute`, where every
     /// stage exists, and never earlier - a header taken while `stages` is still being built
