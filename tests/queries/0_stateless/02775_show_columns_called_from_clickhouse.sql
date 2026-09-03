@@ -69,6 +69,7 @@ CREATE TABLE tab
     ns            Nullable(String),
     nfs           Nullable(FixedString(3)),
     ndec32        Nullable(Decimal32(2)),
+    ndec256_text  Nullable(Decimal(66, 2)),
     ndt64         Nullable(DateTime64(3)),
     ndt64_tz      Nullable(DateTime64(3, 'Asia/Shanghai')),
     ls            LowCardinality(String),
