@@ -2043,24 +2043,22 @@ private:
             if (token.type != TokenType::BareWord || text.size() <= 1 || text[0] != '$')
                 continue;
             size_t index = 0;
-            bool is_placeholder = true;
             for (size_t i = 1; i < text.size(); ++i)
             {
                 if (text[i] < '0' || text[i] > '9')
                 {
-                    is_placeholder = false;
+                    index = 0;
                     break;
                 }
                 /// An overflowing index cannot reference a supplied argument.
                 if (index > (std::numeric_limits<size_t>::max() - 9) / 10)
                 {
-                    is_placeholder = false;
+                    index = 0;
                     break;
                 }
                 index = index * 10 + static_cast<size_t>(text[i] - '0');
             }
-            if (is_placeholder && index >= 1)
-                max_index = std::max(max_index, index);
+            max_index = std::max(max_index, index);
         }
         return max_index;
     }
@@ -2074,48 +2072,47 @@ private:
     /// Match one decimal literal: `[sign] digits [. digits] [(e|E) [sign] digits]`.
     static bool isSingleNumericLiteral(const String & value)
     {
-        const char * p = value.data();
-        const char * const end = p + value.size();
-        if (p == end)
+        std::string_view remaining = value;
+        if (remaining.empty())
             return false;
 
-        if (*p == '+' || *p == '-')
-            ++p;
+        if (remaining[0] == '+' || remaining[0] == '-')
+            remaining.remove_prefix(1);
 
         bool has_mantissa_digit = false;
-        while (p != end && *p >= '0' && *p <= '9')
+        while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
         {
             has_mantissa_digit = true;
-            ++p;
+            remaining.remove_prefix(1);
         }
-        if (p != end && *p == '.')
+        if (!remaining.empty() && remaining[0] == '.')
         {
-            ++p;
-            while (p != end && *p >= '0' && *p <= '9')
+            remaining.remove_prefix(1);
+            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
             {
                 has_mantissa_digit = true;
-                ++p;
+                remaining.remove_prefix(1);
             }
         }
         if (!has_mantissa_digit)
             return false;
 
-        if (p != end && (*p == 'e' || *p == 'E'))
+        if (!remaining.empty() && (remaining[0] == 'e' || remaining[0] == 'E'))
         {
-            ++p;
-            if (p != end && (*p == '+' || *p == '-'))
-                ++p;
+            remaining.remove_prefix(1);
+            if (!remaining.empty() && (remaining[0] == '+' || remaining[0] == '-'))
+                remaining.remove_prefix(1);
             bool has_exponent_digit = false;
-            while (p != end && *p >= '0' && *p <= '9')
+            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
             {
                 has_exponent_digit = true;
-                ++p;
+                remaining.remove_prefix(1);
             }
             if (!has_exponent_digit)
                 return false;
         }
 
-        return p == end;
+        return remaining.empty();
     }
 
     /// Maximum `Decimal256` precision.
@@ -2128,49 +2125,50 @@ private:
     /// Return `std::nullopt` if it exceeds `Decimal256`.
     static std::optional<std::pair<String, UInt32>> normalizeDecimal(const String & value)
     {
-        const char * p = value.data();
-        const char * const end = p + value.size();
+        std::string_view remaining = value;
+        if (remaining.empty())
+            return std::nullopt;
 
-        bool negative = false;
-        if (p != end && (*p == '+' || *p == '-'))
-        {
-            negative = (*p == '-');
-            ++p;
-        }
+        bool negative = remaining[0] == '-';
+        if (remaining[0] == '+' || negative)
+            remaining.remove_prefix(1);
 
         /// Collect mantissa digits and scale.
         String digits;
         Int64 point_from_right = 0;
         bool seen_point = false;
-        for (; p != end && ((*p >= '0' && *p <= '9') || *p == '.'); ++p)
+        while (!remaining.empty() && ((remaining[0] >= '0' && remaining[0] <= '9') || remaining[0] == '.'))
         {
-            if (*p == '.')
+            if (remaining[0] == '.')
             {
                 seen_point = true;
+                remaining.remove_prefix(1);
                 continue;
             }
-            digits += *p;
+            digits += remaining[0];
             if (seen_point)
                 ++point_from_right;
+            remaining.remove_prefix(1);
         }
 
         /// Shift the decimal point by the exponent.
-        if (p != end && (*p == 'e' || *p == 'E'))
+        if (!remaining.empty() && (remaining[0] == 'e' || remaining[0] == 'E'))
         {
-            ++p;
+            remaining.remove_prefix(1);
             bool exp_negative = false;
-            if (p != end && (*p == '+' || *p == '-'))
+            if (!remaining.empty() && (remaining[0] == '+' || remaining[0] == '-'))
             {
-                exp_negative = (*p == '-');
-                ++p;
+                exp_negative = (remaining[0] == '-');
+                remaining.remove_prefix(1);
             }
             Int64 exp = 0;
-            for (; p != end && *p >= '0' && *p <= '9'; ++p)
+            while (!remaining.empty() && remaining[0] >= '0' && remaining[0] <= '9')
             {
-                exp = exp * 10 + (*p - '0');
+                exp = exp * 10 + (remaining[0] - '0');
                 /// Bound work and prevent exponent overflow.
                 if (exp > MAX_ABS_EXPONENT)
                     return std::nullopt;
+                remaining.remove_prefix(1);
             }
             point_from_right += exp_negative ? exp : -exp;
         }
@@ -2202,11 +2200,12 @@ private:
         if (negative)
             plain += '-';
         const size_t int_len = digits.size() - scale;
-        plain += digits.substr(0, int_len);
+        const std::string_view digits_view{digits};
+        plain += digits_view.substr(0, int_len);
         if (scale > 0)
         {
             plain += '.';
-            plain += digits.substr(int_len);
+            plain += digits_view.substr(int_len);
         }
         return std::make_pair(std::move(plain), scale);
     }
@@ -2260,20 +2259,13 @@ private:
     /// Match only the case-insensitive boolean keywords `true` and `false`.
     static bool isBooleanLiteral(const String & value)
     {
-        static constexpr std::string_view t = "true";
-        static constexpr std::string_view f = "false";
-        if (value.size() != t.size() && value.size() != f.size())
-            return false;
-        auto ci_equals = [](const String & v, std::string_view kw)
+        auto ci_equals = [](std::string_view input, std::string_view keyword)
         {
-            if (v.size() != kw.size())
-                return false;
-            for (size_t i = 0; i < kw.size(); ++i)
-                if ((v[i] | 0x20) != kw[i])
-                    return false;
-            return true;
+            const auto [input_it, keyword_it] = std::ranges::mismatch(
+                input, keyword, [](char character, char expected) { return character == expected || character == expected - 'a' + 'A'; });
+            return input_it == input.end() && keyword_it == keyword.end();
         };
-        return ci_equals(value, t) || ci_equals(value, f);
+        return ci_equals(value, "true") || ci_equals(value, "false");
     }
 
     /// Preserve unambiguous numeric and boolean literals for OID 0 inference.
@@ -2306,17 +2298,16 @@ private:
             {
                 /// Reject non-digits and stop before the index can overflow.
                 size_t index = 0;
-                bool is_placeholder = true;
                 for (size_t i = 1; i < text.size(); ++i)
                 {
                     if (text[i] < '0' || text[i] > '9' || index > arguments.size())
                     {
-                        is_placeholder = false;
+                        index = 0;
                         break;
                     }
                     index = index * 10 + static_cast<size_t>(text[i] - '0');
                 }
-                if (is_placeholder && index >= 1 && index <= arguments.size())
+                if (index >= 1 && index <= arguments.size())
                 {
                     result += arguments[index - 1];
                     continue;
