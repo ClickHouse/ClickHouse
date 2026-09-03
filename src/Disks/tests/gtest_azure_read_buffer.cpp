@@ -24,6 +24,7 @@ namespace DB::ErrorCodes
 {
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 namespace
@@ -75,6 +76,23 @@ void assertCountsUpFromZero(const std::string & data)
         ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(i)) << "at position " << i;
 }
 
+/// How the endpoint handles the generation of the object across the several requests of one
+/// logical read: which `ETag` it reports, whether that tag changes under the reader, and whether
+/// it evaluates the `If-Match` precondition the way a real endpoint does.
+struct ETagBehaviour
+{
+    static constexpr const char * first_generation = "\"0x8DA000000000000\"";
+    static constexpr const char * second_generation = "\"0x8DA111111111111\"";
+
+    /// The `ETag` reported by the first response.
+    std::string etag = first_generation;
+    /// The `ETag` reported from the second response on. Empty means the object never changes.
+    std::string etag_after_first;
+    /// A real endpoint answers `412 Precondition Failed` when `If-Match` does not hold; one that
+    /// ignores the precondition serves the new generation instead.
+    bool honour_if_match = false;
+};
+
 /// Serves a blob whose every byte holds the low 8 bits of its position, but misbehaves in the
 /// two ways a remote endpoint can: every response carries at most `max_response_size` bytes no
 /// matter how much was requested (an endpoint that caps or truncates its ranged responses), and
@@ -92,18 +110,37 @@ public:
         size_t blob_size_,
         bool send_etag_,
         std::optional<int64_t> reported_length_ = {},
-        bool ignore_range_ = false)
+        bool ignore_range_ = false,
+        ETagBehaviour etags_ = {})
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
         , send_etag(send_etag_)
         , reported_length(reported_length_)
         , ignore_range(ignore_range_)
+        , etags(std::move(etags_))
     {
     }
 
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
+        const std::string & current_etag = (responses_sent == 0 || etags.etag_after_first.empty())
+            ? etags.etag
+            : etags.etag_after_first;
+        ++responses_sent;
+
+        if (etags.honour_if_match)
+        {
+            if (auto if_match = request.GetHeader("if-match"); if_match.HasValue() && if_match.Value() != current_etag)
+            {
+                auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
+                    1, 1, Azure::Core::Http::HttpStatusCode::PreconditionFailed, "The condition specified using HTTP conditional header(s) is not met.");
+                failure->SetHeader("Content-Length", "0");
+                failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+                return failure;
+            }
+        }
+
         /// "x-ms-range: bytes=<start>-<end>", where "-<end>" is optional.
         size_t range_start = 0;
         if (auto range = request.GetHeader("x-ms-range"); range.HasValue() && !ignore_range)
@@ -134,7 +171,7 @@ public:
                 "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
-            response->SetHeader("ETag", "\"0x8DA000000000000\"");
+            response->SetHeader("ETag", current_etag);
         response->SetBodyStream(std::make_unique<LyingBodyStream>(countingBytes(range_start, response_size), length_to_report));
 
         return response;
@@ -147,6 +184,8 @@ private:
     bool send_etag;
     std::optional<int64_t> reported_length;
     bool ignore_range;
+    ETagBehaviour etags;
+    size_t responses_sent = 0;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -196,7 +235,8 @@ std::string readWithoutRightBound(
     size_t buffer_size,
     int64_t reported_length,
     size_t max_read_retries = 1,
-    std::optional<size_t> served_size = {})
+    std::optional<size_t> served_size = {},
+    std::optional<size_t> known_object_size = {})
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
@@ -214,11 +254,86 @@ std::string readWithoutRightBound(
         "blob",
         read_settings,
         max_read_retries,
-        /* max_single_download_retries */ 1);
+        /* max_single_download_retries */ 1,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ 0,
+        /* blob_storage_log */ {},
+        /* container_for_logging */ {},
+        known_object_size);
 
     std::string result;
     DB::readStringUntilEOF(result, buffer);
     return result;
+}
+
+/// Reads a whole blob through an endpoint whose object generation behaves as `etags` says, with
+/// the read pinned to `expected_etag`.
+std::string readPinnedToETag(
+    size_t max_response_size,
+    size_t blob_size,
+    size_t buffer_size,
+    const std::string & expected_etag,
+    const ETagBehaviour & etags,
+    size_t max_read_retries = 4)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
+        max_response_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, etags);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = buffer_size;
+
+    DB::ReadBufferFromAzureBlobStorage buffer(
+        container_client,
+        "blob",
+        read_settings,
+        max_read_retries,
+        /* max_single_download_retries */ 1,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ 0,
+        /* blob_storage_log */ {},
+        /* container_for_logging */ {},
+        blob_size,
+        expected_etag);
+
+    std::string result;
+    DB::readStringUntilEOF(result, buffer);
+    return result;
+}
+
+/// A positioned-read buffer pinned to `expected_etag` over an endpoint that reports `etags`.
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBufferPinnedToETag(
+    size_t blob_size, const std::string & expected_etag, const ETagBehaviour & etags)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
+        blob_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, etags);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+        container_client,
+        "blob",
+        DB::ReadSettings{},
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ 0,
+        /* blob_storage_log */ DB::BlobStorageLogWriterPtr{},
+        /* container_for_logging */ std::string{},
+        blob_size,
+        expected_etag);
 }
 
 /// A buffer over an endpoint that serves a blob of `blob_size` bytes, `max_response_size` bytes
@@ -526,6 +641,124 @@ TEST(AzureReadUntilPosition, RangeIgnoredOnReopen)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE);
     }
+}
+
+/// The size of the object is known locally, from the `LIST` or `HEAD` that produced the
+/// `StoredObject`, while the endpoint caps every open-ended request to 40 bytes and claims in its
+/// `Content-Range` that the whole object is 40 bytes long. The locally known size wins: the reader
+/// must reopen the download and reassemble all 100 bytes instead of accepting the size that the
+/// very response it is validating advertises.
+TEST(AzureReadWithoutRightBound, KnownSizeShortFirstResponse)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readWithoutRightBound(
+        /* max_response_size */ 40, /* blob_size */ 40, /* buffer_size */ 64, /* reported_length */ 40,
+        /* max_read_retries */ 4, /* served_size */ 100, /* known_object_size */ 100));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// The same, except that the endpoint really has only 40 bytes to serve while the size known
+/// locally is 100. Reopening does not help, and the read must fail rather than report a file that
+/// is shorter than the caller already knows it to be.
+TEST(AzureReadWithoutRightBound, KnownSizeTruncatedObject)
+{
+    try
+    {
+        readWithoutRightBound(
+            /* max_response_size */ 40, /* blob_size */ 40, /* buffer_size */ 64, /* reported_length */ 40,
+            /* max_read_retries */ 3, /* served_size */ 40, /* known_object_size */ 100);
+        FAIL() << "Expected an exception on a response that ends before the locally known size of the object";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    }
+}
+
+/// A read of an object whose generation does not change must not be disturbed by the `If-Match`
+/// precondition or by the check of the `ETag` of the response.
+TEST(AzureReadPinnedToETag, UnchangedObject)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readPinnedToETag(
+        /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+        ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// The blob is overwritten in place after the first response, and the endpoint evaluates
+/// `If-Match`, so the reopened download is rejected with `412 Precondition Failed`. That must be
+/// reported as the object having changed - and not retried, since it never becomes true again.
+TEST(AzureReadPinnedToETag, PreconditionFailedOnReopen)
+{
+    try
+    {
+        readPinnedToETag(
+            /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = true});
+        FAIL() << "Expected an exception on a blob overwritten between two requests of one read";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// The same overwrite, against an endpoint that ignores `If-Match` and serves the new generation
+/// anyway. The `ETag` of the response must still be compared with the expected one, otherwise the
+/// caller receives one logical file stitched together from two generations of the blob.
+TEST(AzureReadPinnedToETag, ETagChangedOnReopen)
+{
+    try
+    {
+        readPinnedToETag(
+            /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false});
+        FAIL() << "Expected an exception on a response that carries a different ETag than the read is pinned to";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// A positioned read is pinned to the generation of the object as well: `readBigAt` is used for
+/// column chunks of the same file, and mixing generations between them is just as wrong.
+TEST(AzureReadBigAt, ETagChanged)
+{
+    auto buffer = makeFreshBufferPinnedToETag(
+        /* blob_size */ 100, ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = false});
+
+    std::string destination(16, '\0');
+    try
+    {
+        buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {});
+        FAIL() << "Expected an exception on a positioned read of a different generation of the blob";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// A positioned read of the generation it is pinned to must succeed.
+TEST(AzureReadBigAt, ETagUnchanged)
+{
+    auto buffer = makeFreshBufferPinnedToETag(
+        /* blob_size */ 100, ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+
+    std::string destination(16, '\0');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {}));
+
+    ASSERT_EQ(bytes_read, destination.size());
+    assertCountsUpFromZero(destination);
 }
 
 #endif

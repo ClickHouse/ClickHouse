@@ -41,7 +41,9 @@ public:
         bool restricted_seek_ = false,
         size_t read_until_position_ = 0,
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        String container_for_logging_ = {});
+        String container_for_logging_ = {},
+        std::optional<size_t> known_object_size_ = {},
+        String expected_etag_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -75,6 +77,10 @@ public:
 
 private:
     void initialize(size_t attempt);
+
+    /// The offset just past the last byte of the data that the read is expected to deliver.
+    size_t getEndOfData() const;
+
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
@@ -98,9 +104,22 @@ private:
     off_t offset = 0;
     size_t total_size{};
 
+    /// The size of the object as it was known locally before the read started (from the `LIST` or
+    /// `HEAD` that produced the `StoredObject`). It does not come from the response that is being
+    /// validated, so - just like `read_until_position` - it is authoritative: when it is set, it,
+    /// and not the size advertised by the download response, decides where an unbounded read ends.
+    std::optional<size_t> known_object_size;
+
+    /// The `ETag` of the object generation selected at read setup. When it is not empty, every
+    /// `Download` (including a reopen after a premature end of the response) is pinned to it with
+    /// `If-Match`, and the `ETag` of the response is compared with it as defence in depth, so that
+    /// one logical read cannot be stitched together from two generations of the blob.
+    String expected_etag;
+
     /// The size of the whole object as advertised by the `Content-Range` of the last download
-    /// response. It is only used as a lower bound for an unbounded read: a response body that ends
-    /// before it is a premature end of the response rather than the end of the file.
+    /// response. It is remote data, so it is only consulted for an unbounded read whose size is
+    /// not known locally, and only as a lower bound: a response body that ends before it is a
+    /// premature end of the response rather than the end of the file.
     size_t reported_object_size = 0;
 
     bool initialized = false;
