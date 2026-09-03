@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, use-rocksdb
+# Tags: no-fasttest, use-rocksdb, no-replicated-database
 # no-fasttest: EmbeddedRocksDB requires libraries
-# use-rocksdb: under --replicated-database every test database shares one user_files directory
+# no-replicated-database: on a replicated / shared-catalog database the DDL runs with no user, so the
+# in-storage FILE check every denied arm here relies on is a no-op and the deny path silently allows.
+# Blocked on https://github.com/ClickHouse/ClickHouse/issues/111561 - re-enable when fixed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
