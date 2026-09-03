@@ -763,7 +763,11 @@ void FillingTransform::transformRange(
             {
                 filling_row.initUsingFrom(i);
                 filling_row_inserted = false;
-                if (current_value.isNull() ? (null_placement_decidable && filling_row.isConstraintsSatisfied())
+                /// A range with no `TO` and no staleness border ends at the last original value, and a
+                /// `NULL` is not one, so it has no generated rows in front of it. `isConstraintsSatisfied`
+                /// alone is vacuously true there, hence the explicit `hasSomeConstraints`.
+                if (current_value.isNull() ? (null_placement_decidable && filling_row.hasSomeConstraints()
+                                              && filling_row.isConstraintsSatisfied())
                                            : less(fill_from, current_value, filling_row.getDirection(i)))
                 {
                     interpolate(result_columns, interpolate_block);
@@ -809,7 +813,9 @@ void FillingTransform::transformRange(
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
         if (should_insert_first
-            && (filling_row < next_row || (next_row.isNull() && !filling_row.isNull() && null_placement_decidable))
+            && (filling_row < next_row
+                || (next_row.isNull() && !filling_row.isNull() && null_placement_decidable
+                    && filling_row.hasSomeConstraints()))
             && filling_row.isConstraintsSatisfied())
         {
             interpolate(result_columns, interpolate_block);

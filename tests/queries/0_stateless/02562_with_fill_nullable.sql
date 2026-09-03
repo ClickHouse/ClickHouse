@@ -45,3 +45,11 @@ FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1 TO 1;
 SELECT '---';
 SELECT if(number < 100, NULL, toNullable(toInt32(number))) AS x
 FROM numbers(2) ORDER BY x DESC WITH FILL FROM 1 TO 1;
+SELECT '---';
+-- An omitted `TO` bounds the range at the maximum `ORDER BY` value, which a `NULL` never is, so a
+-- trailing `NULL` gets no generated rows in front of it.
+SELECT number % 2 ? NULL : toNullable(toInt32(number)) AS x
+FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1;
+SELECT '---';
+SELECT if(number < 100, NULL, toNullable(toInt32(number))) AS x
+FROM numbers(2) ORDER BY x ASC WITH FILL FROM 1;
