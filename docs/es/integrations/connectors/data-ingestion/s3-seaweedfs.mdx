@@ -47,8 +47,10 @@ A continuación, inicie toda la pila de SeaweedFS en un contenedor; el indicador
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
 ```
+
+`-admin.port=12646` mantiene el puerto gRPC de administración que SeaweedFS deriva de él por debajo del rango de puertos efímeros de Linux, donde, de lo contrario, una conexión de inicio podría ocuparlo antes.
 
 El endpoint de S3 está a la escucha en el puerto 8333; espere a que responda antes de continuar:
 
