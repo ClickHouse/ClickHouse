@@ -1,6 +1,6 @@
 export const SampleDatasetExplorer = ({ categories }) => {
   const ACCENT = "#FAFF69"
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // Chaque catégorie : id, title (affiché sous l'image de bannière), une icône utilisée pour
@@ -235,18 +235,23 @@ export const SampleDatasetExplorer = ({ categories }) => {
   const [selectedId, setSelectedId] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
 
-  // Theme visibility is handled by explicit `.dark` descendant selectors in the
-  // <style> block below (Mintlify's class strategy — same approach as
-  // IntegrationGrid). Tailwind `dark:` utilities are NOT reliable here: they
-  // compile against the OS media query, so they'd ignore the in-app light/dark
-  // toggle. Note the reversed-colour scheme: light mode shows the *dark* (black)
-  // banner art, dark mode shows the *light* (yellow) art.
-  const Banner = ({ cat, className }) => (
-    <>
-      <img className={`sde-img-dark ${className || ""}`} src={withBase(cat.imgDark)} alt={cat.title} />
-      <img className={`sde-img-light ${className || ""}`} src={withBase(cat.imgLight)} alt={cat.title} />
-    </>
+  // The colour scheme is intentionally reversed: light mode shows the dark
+  // artwork and dark mode shows the light artwork. CSS keys directly off the
+  // docs theme class during SSR and only resolves the active custom-property
+  // URL, so a theme override cannot cause both variants to download.
+  const webpFor = (path) => withBase(path.replace(/\.jpg$/, ".webp"))
+  const ThemeImage = ({ item, className }) => (
+    <span
+      className={`sde-theme-image ${className || ""}`}
+      role="img"
+      aria-label={item.title}
+      style={{
+        "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+      }}
+    />
   )
+  const Banner = ({ cat, className }) => <ThemeImage item={cat} className={className} />
 
   return (
     <div className="sde-root my-8">
@@ -262,12 +267,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           to   { opacity: 1; }
         }
         .sde-view { animation: sde-fade 0.25s ease both; }
-        /* Reversed scheme: dark (black) art in light mode, light (yellow) art in dark mode.
-           Use explicit .dark selectors — Tailwind dark: utilities follow the OS here. */
-        .sde-root .sde-img-dark { display: block; }
-        .sde-root .sde-img-light { display: none; }
-        .dark .sde-root .sde-img-dark { display: none; }
-        .dark .sde-root .sde-img-light { display: block; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -295,12 +294,17 @@ export const SampleDatasetExplorer = ({ categories }) => {
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
-        .sde-tile img {
+        .sde-theme-image {
+          display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          margin: 0;
+          background-image: var(--sde-image-light-mode);
+          background-position: center;
+          background-size: cover;
           pointer-events: none;
+        }
+        .dark .sde-root .sde-theme-image {
+          background-image: var(--sde-image-dark-mode);
         }
         /* hover hint: translucent strip along the bottom of the image */
         .sde-tile-hint {
@@ -376,7 +380,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explorer les jeux de données de ${cat.title}`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -384,7 +388,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
                       {cat.datasets.length} jeu{cat.datasets.length === 1 ? "" : "x"} de données
                     </span>
                     <span className="sde-explore">
-                      Explore
+                      Explorer
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -411,10 +415,9 @@ export const SampleDatasetExplorer = ({ categories }) => {
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {selected.datasets.map((ds, i) => (
-              <a key={ds.href} href={ds.href} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
+              <a key={ds.href} href={withBase(ds.href)} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="sde-tile-media">
-                  {ds.imgDark && <img className="sde-img-dark" src={withBase(ds.imgDark)} alt={ds.title} />}
-                  {ds.imgLight && <img className="sde-img-light" src={withBase(ds.imgLight)} alt={ds.title} />}
+                  {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">
                     <span className="sde-explore">
                       Voir le jeu de données

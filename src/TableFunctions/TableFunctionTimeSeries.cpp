@@ -328,7 +328,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile`, `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev`, `histogram_stdvar` |
-| Other | `time`, `pi` |
+| Other | `time`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label) and exponential interpolation on native histograms (linear interpolation for custom buckets and the zero bucket). `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev` and `histogram_stdvar` work on native histograms only; float samples and classic buckets are skipped. The `phi` argument of `histogram_quantile` and the `lower`/`upper` arguments of `histogram_fraction` must be constant scalars. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
@@ -342,13 +342,11 @@ Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
+`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ### Not yet supported {#not-yet-supported}
 
-- Aggregation operator `count_values`
 - Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
-- Function `absent`
 
 ## Example {#example}
 
@@ -405,7 +403,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile`, `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev`, `histogram_stdvar` |
-| Other | `time`, `pi` |
+| Other | `time`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label) and exponential interpolation on native histograms (linear interpolation for custom buckets and the zero bucket). `histogram_fraction`, `histogram_count`, `histogram_sum`, `histogram_avg`, `histogram_stddev` and `histogram_stdvar` work on native histograms only; float samples and classic buckets are skipped. The `phi` argument of `histogram_quantile` and the `lower`/`upper` arguments of `histogram_fraction` must be constant scalars. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
@@ -419,13 +417,11 @@ Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
+`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ### Not yet supported {#not-yet-supported}
 
-- Aggregation operator `count_values`
 - Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
-- Function `absent`
 
 ## Example {#example}
 

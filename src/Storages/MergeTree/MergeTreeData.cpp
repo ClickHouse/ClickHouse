@@ -57,6 +57,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -792,15 +793,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -5959,6 +5953,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -5975,8 +5985,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6358,15 +6366,8 @@ void MergeTreeData::changeSettings(
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
@@ -12123,6 +12124,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
 
     return true;
 }

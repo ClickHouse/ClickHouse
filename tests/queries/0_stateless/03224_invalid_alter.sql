@@ -55,8 +55,7 @@ ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN valid_column_2 Stri
 INSERT INTO test3(str, column_with_codec) VALUES ('test3', 'test32');
 SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM test3;
 
--- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
-DROP TABLE test3 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE test3;
 
 -- {CLICKHOUSE_DATABASE} must not be re-engined: with --database it is shared by every test in
 -- the client. {CLICKHOUSE_DATABASE_2} is shared too, so both DROPs are required.

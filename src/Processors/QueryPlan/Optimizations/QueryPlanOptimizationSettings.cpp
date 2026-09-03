@@ -61,6 +61,8 @@ namespace Setting
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool query_plan_fuse_filter_into_array_join;
+    extern const SettingsBool query_plan_lower_array_join_function;
+    extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
@@ -181,6 +183,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
+    lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
+    enable_lazy_columns_replication = from[Setting::enable_lazy_columns_replication];
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
