@@ -77,7 +77,7 @@ struct ConvertToASTOptions
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
 
-    /// Render a DateTime constant as its raw Unix timestamp instead of local date-time text, which two
+    /// Render a `DateTime` constant as its raw Unix timestamp instead of local date-time text, which two
     /// instants share across a DST overlap. Valid wherever the consumer re-applies the literal's declared
     /// type; clear it for a consumer that parses the text itself, such as an external database.
     bool date_time_constants_as_numbers = true;

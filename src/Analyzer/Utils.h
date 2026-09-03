@@ -243,7 +243,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 
-/// With `date_time_as_numbers`, a DateTime leaf becomes its raw Unix timestamp instead of local date-time
+/// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
 /// text; valid only where the literal's declared type is re-applied to it.
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
 

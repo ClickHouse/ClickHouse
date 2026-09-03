@@ -1367,7 +1367,7 @@ namespace
 /// serialization (columnConstantToExactLiteralAST). When set, typed DateTime64/Time64 leaves are
 /// rendered as a bare number instead of local date-time text, which round-trips losslessly and is
 /// unambiguous across DST overlaps: the shard reads the number back through the leaf's declared type
-/// (SerializationDateTime64/SerializationTime64::deserializeTextJSON). The two types read a bare
+/// (`JSONExtractTree`'s `DateTime64Node`/`Time64Node`). The two types read a bare
 /// number differently - a DateTime64 path reads a Unix timestamp in seconds, a Time64 path reads the
 /// raw scaled ticks - so each leaf is written in the form its own parser expects. Reading a DateTime64
 /// number as ticks again is only possible under the legacy `input_format_read_datetime_number_as_raw_value`
@@ -1377,7 +1377,7 @@ namespace
 ///
 /// `date_time_as_numbers` is the same answer for a plain `DateTime` leaf, and it is set for every consumer
 /// that re-applies the leaf's declared type. It is cleared wherever the value's type is inferred from the
-/// literal instead: `Variant`, `Dynamic`, dynamic JSON paths, shared data and JSON object names.
+/// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
     if (isColumnConst(*column))
@@ -1415,7 +1415,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             return Field(buf.str());
         }
         case TypeIndex::DateTime:
-            /// A DateTime is backed by a Unix timestamp, which its declared type reads back exactly, while
+            /// A `DateTime` is backed by a Unix timestamp, which its declared type reads back exactly, while
             /// local date-time text is shared by two instants across a DST overlap.
             if (date_time_as_numbers)
                 return (*column)[row];
@@ -1423,7 +1423,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32:
         {
-            /// Date/Date32 text is unambiguous, so it round-trips exactly.
+            /// `Date`/`Date32` text is unambiguous, so it round-trips exactly.
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());

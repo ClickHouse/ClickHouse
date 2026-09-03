@@ -33,3 +33,8 @@ select arrayMap(x -> toUnixTimestamp(x), [toDateTime(1698541800, 'Europe/Berlin'
 select arrayMap(x -> toUnixTimestamp(x), [toDateTime(1698538200, 'Europe/Berlin')]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
 select arrayMap(x -> toUnixTimestamp(x.a), ['{"a":1698541800}'::JSON(a DateTime('Europe/Berlin'))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
 select arrayMap(x -> toUnixTimestamp(x.1), [tuple(toDateTime(1698541800, 'Europe/Berlin'), toDecimal64(1.5, 2))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
+-- The three disjuncts become one `in` whose right operand is a bare tuple with no `_CAST` around it, so
+-- the shard takes the set element type from the left side; `x in (<const>)` goes out the `_CAST` exit.
+select arrayMap(x -> toDateTime(x, 'Europe/Berlin') = toDateTime(1698541800, 'Europe/Berlin') or toDateTime(x, 'Europe/Berlin') = toDateTime(1698000000, 'Europe/Berlin') or toDateTime(x, 'Europe/Berlin') = toDateTime(1699000000, 'Europe/Berlin'), [1698538200, 1698541800]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0, optimize_min_equality_disjunction_chain_length = 3;
+select arrayMap(x -> (toUnixTimestamp(x.a), x.b), ['{"a":1698541800,"b":1.5}'::JSON(a DateTime('Europe/Berlin'), b Decimal64(2))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
+select arrayMap(x -> toUnixTimestamp(variantElement(x, 'DateTime(\'Europe/Berlin\')')), [toDateTime(1698541800, 'Europe/Berlin')::Variant(DateTime('Europe/Berlin'), Decimal64(2))]) from remote('127.0.0.1', 'system.one') settings prefer_localhost_replica = 0;
