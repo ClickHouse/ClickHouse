@@ -2,8 +2,8 @@ describe with SHOW COLUMNS on both tables
 id	UInt64					
 timestamp	DateTime64(3)					
 value	Float64					
-denial for a File target names the target, not its source privilege
-0
+File target: denial names the target
+File target: no source privilege named
 select with SELECT on both tables
 1	42
 selector, prometheusQuery and the persistent table over the selector

@@ -114,8 +114,11 @@ ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_via_alias) FORMAT Null; -- 
 # before that engine is read: nothing here ever grants on f_samples, and the denial names it rather than
 # the source privilege its File engine would ask for.
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.ts_file TO $user"
-echo 'denial for a File target names the target, not its source privilege'
-${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_file) FORMAT Null" 2>&1 | grep -c 'READ ON FILE' || true
+file_denial=$(${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_file) FORMAT Null" 2>&1)
+echo "$file_denial" | grep -q "SHOW COLUMNS ON $db.f_samples" \
+    && echo 'File target: denial names the target' || echo "File target: UNEXPECTED [$file_denial]"
+echo "$file_denial" | grep -q 'READ ON FILE' \
+    && echo "File target: UNEXPECTED source privilege [$file_denial]" || echo 'File target: no source privilege named'
 
 # With both tables granted, every function works as before.
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.ts_samples TO $user"
@@ -136,7 +139,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY $policy ON $db.ts"
 echo 'select again after the row policy is dropped'
 ${CLIENT_USER} -q "SELECT id, value FROM timeSeriesSamples($db.ts) ORDER BY id FORMAT TSV"
 
-# The write direction needs INSERT on both tables.
+# The write direction needs INSERT on both tables. Holding SELECT on the target and INSERT on the
+# TimeSeries table only is not enough, which is what separates the two directions.
+${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7); -- { serverError ACCESS_DENIED }"
 ${CLICKHOUSE_CLIENT} -q "GRANT INSERT ON $db.ts_samples TO $user"
 ${CLIENT_USER} -q "INSERT INTO FUNCTION timeSeriesSamples($db.ts) SELECT toUInt64(2), toDateTime64('2026-01-01 00:00:02.000', 3), toFloat64(7)"
 echo 'rows after the insert'
