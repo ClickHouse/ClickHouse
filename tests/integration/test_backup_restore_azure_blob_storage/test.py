@@ -591,19 +591,24 @@ def test_incremental_backup_restore_on_log(cluster, max_single_part_upload_size)
 
 
 def test_incremental_backup_restore_on_log_with_native_copy(cluster):
-    # An incremental backup of an append-only file writes only its tail, i.e. `start_pos` is non-zero.
-    # An Azure-to-Azure copy (`CopyFromUri` / `StartCopyFromUri`) carries no byte range and always
-    # transfers the whole source blob, so the backup writer must not take that route for a range, or
-    # the incremental backup silently stores the whole file where only the tail belongs.
+    # An incremental backup of an append-only file writes only its tail, i.e. `base_size` is non-zero
+    # and the writer uploads a range of the source file. On this node `allow_azure_native_copy` is on
+    # and the table lives on an Azure disk, so the range is read from Azure and written back to Azure:
+    # the restored table must be the same as from a local disk, and the setting must not make the
+    # writer store the whole blob where only the tail belongs.
     #
-    # Reaching that route needs an append-only file that is a single object and whose prefix is in the
-    # base backup. `allow_checksums_from_remote_paths = 0` is what makes the prefix match possible at
-    # all: an Azure disk hands out random blob paths, so by default the checksum of a file comes from
-    # its remote path and no prefix checksum can be computed, which leaves `base_size` at 0. And a
-    # `Log` data file normally gets one object per `INSERT`, while a multi-object source is already
-    # excluded from the native copy, so the table is truncated and refilled by one `INSERT` that writes
-    # the same blocks: `max_block_size = 1` keeps every row in its own compressed block, so the first
-    # block stays byte-identical to the one the base backup holds and the whole file is one blob.
+    # A `Log` table backs its data files with `BackupEntryFromAppendOnlyFile`, and `BackupImpl` hands
+    # only immutable-file entries to `copyFileFromDisk`, so this backup goes through `copyDataToFile`,
+    # i.e. the ranged buffered upload. The whole-object guard in
+    # `BackupWriterAzureBlobStorage::copyFileFromDisk` is not reached here: no backup entry that can
+    # have a partial range is dispatched to it today.
+    #
+    # `allow_checksums_from_remote_paths = 0` is what makes a non-zero `base_size` possible at all: an
+    # Azure disk hands out random blob paths, so by default the checksum of a file comes from its
+    # remote path and no prefix checksum can be computed, which leaves `base_size` at 0. The table is
+    # truncated and refilled by one `INSERT` that writes the same blocks: `max_block_size = 1` keeps
+    # every row in its own compressed block, so the first block stays byte-identical to the one the
+    # base backup holds and the prefix of the data file matches.
     node = cluster.instances["node_native_copy"]
     one_row_per_block = {
         "max_block_size": 1,
