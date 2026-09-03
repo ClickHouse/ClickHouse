@@ -1448,6 +1448,8 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
@@ -1495,6 +1497,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/find_symbols.py",
                 "./ci/jobs/scripts/find_tests.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
@@ -1527,6 +1531,8 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/log_parser.py",
+                # `run-fuzzer.sh` runs `clickhouse_proc.py logs_export_*`
+                "./ci/jobs/scripts/clickhouse_proc.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
