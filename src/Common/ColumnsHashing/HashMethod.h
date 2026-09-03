@@ -1,8 +1,11 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Prefetching.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <array>
 #include <bit>
 #include <limits>
 #include <Columns/ColumnFixedString.h>
@@ -62,10 +65,15 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
   *
   * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
   * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
-  * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
-  * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
-  * aggregation-side reasoning says nothing about. Only the aggregator reads
-  * `has_cheap_key_holder`.
+  * same hash methods). It answers the same question for that loop: may it ask for the look-ahead
+  * row's key purely to prefetch the cell that row will land in?
+  *
+  * The JOIN probe answers it more readily than aggregation does, because its miss is bigger: it
+  * looks the row up in a table built from a whole other table, which for anything but a small
+  * build side means a load from memory that nothing else covers. A string key profits even though
+  * the prefetch hashes it a second time, and a method that cannot afford to build its key twice
+  * can still say `true` if it keeps what it built for the look-ahead row until the loop arrives
+  * there, which is what `HashMethodHashed` does below.
   */
 
 /// For the case when there is one numeric key.
@@ -217,7 +225,9 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
-    static constexpr bool has_cheap_key_calculation = false;
+    /// Building the key is free and the JOIN probe loop hides a whole memory access with it; that
+    /// the prefetch hashes the string a second time costs far less than the miss.
+    static constexpr bool has_cheap_key_calculation = true;
     /// A `string_view` over the column's own chars; the arena copy only happens on persist.
     static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
@@ -380,7 +390,8 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
-    static constexpr bool has_cheap_key_calculation = false;
+    /// As for `HashMethodString`: free to build, and worth building twice to hide the probe's miss.
+    static constexpr bool has_cheap_key_calculation = true;
     /// A `string_view` over the column's own chars; the arena copy only happens on persist.
     static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
@@ -681,6 +692,100 @@ private:
     bool usable = false;
 };
 
+/// Lays a row's key columns out contiguously and hashes it with a single hash call.
+///
+/// `hash128` walks the key columns of a row and lets each one update the hash with the pieces of
+/// its value - for a `String` that is three `SipHash::update` calls per column per row, each
+/// re-entering the buffering the hash does for a partial word. A column that serializes to exactly
+/// the bytes it hashes can instead be written into a buffer holding the whole row, which is then
+/// hashed in one call: the very same 128-bit value for less work.
+///
+/// The buffer holds one row and is reused by all of them, so it stays in L1. Laying out a whole
+/// block of keys at once would be cheaper per row, but the layout is read back exactly once, and
+/// for anything but the narrowest keys it would leave the cache before that happens.
+class ContiguousRowHasher
+{
+public:
+    /// `updateHashWithValue` of a `String` hashes the trailing zero byte, so the serialized form
+    /// has to carry it as well.
+    static constexpr IColumn::SerializationSettings serialization_settings{.serialize_string_with_zero_byte = true};
+
+    /// The buffer grows to the widest row it has seen, so a bound is needed on how much of a key
+    /// is worth holding on to. A row past it is hashed piece by piece, exactly as before.
+    static constexpr size_t max_row_bytes = 64 * 1024;
+
+    bool ALWAYS_INLINE isEnabled() const { return !columns.empty(); }
+
+    /// Enabled when every key column serializes to the bytes it hashes, and at least one of them
+    /// is of variable width.
+    void prepare(const ColumnRawPtrs & key_columns)
+    {
+        bool has_variable_size_column = false;
+        for (const auto * column : key_columns)
+        {
+            if (!column->serializedValueMatchesHashStream())
+                return;
+            has_variable_size_column |= !column->valuesHaveFixedSize();
+        }
+
+        /// A row of fixed-width values is already hashed in one call per column over a piece the
+        /// hash can take whole, so laying it out first only adds a copy. What the layout is for is
+        /// a row that reaches the hash as a length, then characters, then a terminator, per column.
+        if (!has_variable_size_column)
+            return;
+
+        columns = key_columns;
+
+        /// A fixed-width column serializes to `sizeOfValueIfFixed` bytes in every row, so its size
+        /// is worth having up front rather than asking for it a row at a time.
+        fixed_sizes.resize(columns.size());
+        for (size_t i = 0; i < columns.size(); ++i)
+            fixed_sizes[i] = columns[i]->isFixedAndContiguous() ? columns[i]->sizeOfValueIfFixed() : 0;
+    }
+
+    UInt128 hash(size_t row) const
+    {
+        size_t row_size = 0;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            if (fixed_sizes[i] != 0)
+            {
+                row_size += fixed_sizes[i];
+                continue;
+            }
+
+            /// A column that does not know its serialized size up front cannot be laid out. The
+            /// hash of the row is the same whichever way it is computed.
+            auto column_size = columns[i]->getSerializedValueSize(row, &serialization_settings);
+            if (!column_size)
+                return hash128(row, columns.size(), columns);
+            row_size += *column_size;
+        }
+
+        if (row_size > max_row_bytes)
+            return hash128(row, columns.size(), columns);
+
+        if (buffer.size() < row_size)
+            buffer.resize(row_size);
+
+        char * pos = buffer.data();
+        for (const auto * column : columns)
+            pos = column->serializeValueIntoMemory(row, pos, &serialization_settings);
+        chassert(pos == buffer.data() + row_size);
+
+        SipHash hash;
+        hash.update(buffer.data(), row_size);
+        return hash.get128();
+    }
+
+private:
+    ColumnRawPtrs columns;
+    /// Per column, the width every one of its rows serializes to, or zero when that has to be
+    /// asked for a row at a time.
+    std::vector<size_t> fixed_sizes;
+    mutable PODArray<char> buffer;
+};
+
 /// For the case when the key is a 128-bit hash of all key columns (the fallback method for
 /// keys with no fixed-width packed representation, e.g. a `Tuple` column).
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
@@ -691,12 +796,18 @@ struct HashMethodHashed
     using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
-    static constexpr bool has_cheap_key_calculation = false;
+    /// Building the key is anything but cheap - see `has_cheap_key_holder` below - but the probe
+    /// loop asks for a row's key twice, once to prefetch and once on arrival, and the second ask
+    /// is answered from `key_cache`.
+    static constexpr bool has_cheap_key_calculation = true;
     /// `hash128` SipHashes every key column through a virtual `IColumn::updateHashWithValue`.
+    /// The aggregation prefetch pipeline has no cache to answer the second call from.
     static constexpr bool has_cheap_key_holder = false;
     static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
+
+    ContiguousRowHasher contiguous_row_hasher;
 
     /// The consecutive-keys cache alone cannot skip the key calculation for this method: its
     /// check needs the key, and here the key is the hash itself. Clustered inputs (e.g. sorted
@@ -707,16 +818,45 @@ struct HashMethodHashed
     static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
     size_t last_row = no_last_row;
 
+    /// A caller that prefetches asks for the key of a row ahead of the one it is working on, to
+    /// start the load of the cell that row will land in, and asks for the same key again when it
+    /// gets there. Hashing the row twice would cost more than the miss the prefetch hides, so the
+    /// keys computed for the look-ahead rows are kept until the caller arrives at them. Rows are
+    /// visited in order and the look-ahead is bounded, so a ring one look-ahead long covers it;
+    /// the row a slot holds is kept beside the key, so a caller reading rows in some other order
+    /// merely misses the cache instead of being handed the wrong key.
+    static constexpr size_t key_cache_size = 64;
+    static_assert(key_cache_size > PrefetchingHelper::getMaxLookAheadValue());
+
+    mutable std::array<Key, key_cache_size> key_cache{};
+    /// The row each slot holds, plus one, so that a zeroed cache holds no row.
+    mutable std::array<size_t, key_cache_size> key_cache_rows{};
+
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_))
     {
         if constexpr (use_cache)
             key_slices = FixedSizeKeySlices(key_columns);
+        contiguous_row_hasher.prepare(key_columns);
+    }
+
+    ALWAYS_INLINE Key computeKey(size_t row) const
+    {
+        if (contiguous_row_hasher.isEnabled())
+            return contiguous_row_hasher.hash(row);
+        return hash128(row, key_columns.size(), key_columns);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
-        return hash128(row, key_columns.size(), key_columns);
+        const size_t slot = row % key_cache_size;
+        if (key_cache_rows[slot] == row + 1)
+            return key_cache[slot];
+
+        const Key key = computeKey(row);
+        key_cache_rows[slot] = row + 1;
+        key_cache[slot] = key;
+        return key;
     }
 
     template <typename Data>

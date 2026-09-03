@@ -97,6 +97,13 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
+    /// A nullable dictionary serializes a null flag byte in front of the value but does not hash
+    /// it, so only a dictionary without NULLs matches - there both go straight to the holder.
+    bool serializedValueMatchesHashStream() const override
+    {
+        return !is_nullable && column_holder->serializedValueMatchesHashStream();
+    }
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
