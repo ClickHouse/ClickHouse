@@ -34,8 +34,7 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (split_actions.first.trivial())
         return 0;
 
-    /// An `arrayJoin` that does not depend on this ARRAY JOIN is still not movable below it: the two expansions
-    /// would swap nesting and the cross product would come out in a different row order.
+    /// Moving an arrayJoin below another one swaps their nesting and changes the row order.
     if (split_actions.first.hasArrayJoin())
         return 0;
 
