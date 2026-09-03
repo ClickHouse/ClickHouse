@@ -29,6 +29,11 @@ SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRege
 FROM (SELECT if(number < 256, concat('ab', toString(number), 'cd'), concat('ab', toString(number % 4), 'cd')) AS h FROM numbers(2000))
 SETTINGS max_block_size = 2000;
 
+-- The same with a nine-value cycle, whose length shares no factor with the 32-row checkpoint stride.
+SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRegexpAll(h, materialize('([a-z]+)([0-9]+)'), '\\2:\\1'))
+FROM (SELECT if(number < 256, concat('ab', toString(number), 'cd'), concat('ab', toString(number % 9), 'cd')) AS h FROM numbers(2000))
+SETTINGS max_block_size = 2000;
+
 -- Alternating mostly-distinct and low-cardinality stretches: the map is dropped and rebuilt several times in one block.
 SELECT countIf(replaceRegexpAll(h, '([a-z]+)([0-9]+)', '\\2:\\1') != replaceRegexpAll(h, materialize('([a-z]+)([0-9]+)'), '\\2:\\1'))
 FROM (SELECT if(intDiv(number, 512) % 2 = 0, concat('ab', toString(number), 'cd'), concat('ab', toString(number % 4), 'cd')) AS h FROM numbers(4096))

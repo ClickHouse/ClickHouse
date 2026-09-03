@@ -406,6 +406,10 @@ struct ReplaceRegexpImpl
         /// written off as distinct before the first repeat can arrive.
         static constexpr size_t distinct_ratio_window = 256;
         static_assert(distinct_ratio_window % ratio_check_window == 0);
+        /// The number of rows following a sampled haystack that are compared against it, and so the
+        /// longest cycle of values the sample can catch.
+        static constexpr size_t sample_probe_rows = 32;
+        static_assert(sample_probe_rows < distinct_ratio_window);
 
         bool precheck_non_matching = false;
         size_t rows_in_window = 0;
@@ -418,14 +422,17 @@ struct ReplaceRegexpImpl
 
         /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
         /// rows equal to it are counted, so that a block whose remainder turns repetitive after a
-        /// mostly-distinct window is not stuck on the plain path for the rest of the block. Only one
-        /// row per ratio window is compared against the sample: a compare of distinct values runs to
+        /// mostly-distinct window is not stuck on the plain path for the rest of the block. Only the
+        /// rows right after the sample are compared against it: a compare of distinct values runs to
         /// the first differing byte, which for equal-length values sharing a long prefix (URLs that
         /// differ only in the tail) is about the cost of the copy every row pays anyway, so comparing
-        /// every row would slow the mostly-distinct blocks the guard exists to protect. The probes are
-        /// phase-aligned with the sample, so a cycle of a few values is caught within a few probes,
-        /// while an all-distinct block never re-enables the cache at all. A value that recurs only
-        /// after more than a window of rows escapes the sample just as it escapes the distinct ratio.
+        /// every row would slow the mostly-distinct blocks the guard exists to protect. Comparing the
+        /// consecutive rows that follow the sample rather than one row per ratio window catches every
+        /// cycle of up to `sample_probe_rows` values regardless of its length: probes spaced at a fixed
+        /// stride only ever land on the cycle positions the stride happens to reach (a stride of 32 never
+        /// meets a cycle of 9). An all-distinct block never re-enables the cache at all, and a value
+        /// that recurs only after more rows than the probes cover escapes the sample just as a value
+        /// that recurs after more than a window escapes the distinct ratio.
         std::string_view sample_haystack;
         size_t sample_hits = 0;
 
@@ -448,11 +455,6 @@ struct ReplaceRegexpImpl
             budget.charge();
 
             const std::string_view haystack = get_haystack(i);
-
-            /// Probed on the checkpoint rows against the previous window's sample, ahead of the
-            /// checkpoint that may replace it, so that the sampled row never counts as a repeat of itself.
-            if (!map_enabled && rows_in_window == ratio_check_window && haystack == sample_haystack)
-                ++sample_hits;
 
             /// The checkpoint runs ahead of every fast path below, so every row advances it and no
             /// `continue` can starve it: a block of pre-check rejects, of adjacent duplicates, or of
@@ -497,6 +499,13 @@ struct ReplaceRegexpImpl
                 matched_in_window = 0;
             }
             ++rows_in_window;
+
+            /// The sample is taken on the first row of a distinct-ratio window, so the probed rows are
+            /// the ones right after it and the sampled row never counts as a repeat of itself.
+            const size_t offset_in_distinct_window = i % distinct_ratio_window;
+            if (!map_enabled && offset_in_distinct_window != 0 && offset_in_distinct_window <= sample_probe_rows
+                && haystack == sample_haystack)
+                ++sample_hits;
 
             const UInt64 result_start = res_offset;
             bool row_matched = false;
