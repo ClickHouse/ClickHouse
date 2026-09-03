@@ -57,30 +57,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void recordInMemoryAggregationMergeInputs(const ManyAggregatedDataVariants & data, size_t keys_size)
+static bool recordInMemoryAggregationMergeInputs(const ManyAggregatedDataVariants & data, size_t keys_size)
 {
     if (keys_size == 0)
-        return;
+        return false;
 
-    size_t non_empty_variants = 0;
+    size_t non_empty_keyed_variants = 0;
     size_t two_level_variants = 0;
     size_t input_groups = 0;
     for (const auto & variant : data)
     {
-        if (variant->empty())
+        const size_t variant_groups = variant->sizeWithoutOverflowRow();
+        if (variant_groups == 0)
             continue;
 
-        ++non_empty_variants;
+        ++non_empty_keyed_variants;
         two_level_variants += variant->isTwoLevel();
-        input_groups += variant->sizeWithoutOverflowRow();
+        input_groups += variant_groups;
     }
 
-    if (non_empty_variants <= 1)
-        return;
+    if (non_empty_keyed_variants <= 1)
+        return false;
 
-    ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputVariants, non_empty_variants);
+    ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputVariants, non_empty_keyed_variants);
     ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputTwoLevelVariants, two_level_variants);
     ProfileEvents::increment(ProfileEvents::AggregationInMemoryMergeInputGroups, input_groups);
+    return true;
 }
 
 ManyAggregatedData::~ManyAggregatedData()
@@ -246,6 +248,15 @@ public:
 
     struct SharedData
     {
+        explicit SharedData(bool record_merge_profile_events_)
+            : record_merge_profile_events(record_merge_profile_events_)
+        {
+            for (auto & flag : is_bucket_processed)
+                flag = false;
+        }
+
+        const bool record_merge_profile_events;
+
         struct SourceStats
         {
             std::atomic<UInt64> elapsed_microseconds = 0;
@@ -267,12 +278,6 @@ public:
         /// frozen tables are bounded and the staged cardinality is unknown until the merge.
         /// The buckets partition the key space, so the sum counts every group exactly once.
         std::atomic<size_t> two_level_merged_groups = 0;
-
-        SharedData()
-        {
-            for (auto & flag : is_bucket_processed)
-                flag = false;
-        }
 
         void initializeMergeSources(size_t num_sources_)
         {
@@ -413,7 +418,7 @@ protected:
             params->aggregator.retireAdaptiveMergedBucket(*data->at(0), *adaptive_session, bucket_num);
 
         shared_data->is_bucket_processed[bucket_num] = true;
-        if (data->size() > 1 && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
+        if (shared_data->record_merge_profile_events && !shared_data->is_cancelled.load(std::memory_order_seq_cst))
             shared_data->recordSuccessfulBucket(source_index, bucket_watch.elapsedMicroseconds());
 
         return chunk;
@@ -649,11 +654,12 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        AdaptiveAggregationSessionPtr adaptive_session_,
+        bool record_merge_profile_events_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
-        , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
+        , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>(record_merge_profile_events_))
         , num_threads(num_threads_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
@@ -676,7 +682,7 @@ public:
             return;
         }
 
-        if (!merge_path_recorded && data->size() > 1 && params->params.keys_size > 0)
+        if (!merge_path_recorded && shared_data->record_merge_profile_events)
         {
             ProfileEvents::increment(
                 data->at(0)->isTwoLevel() ? ProfileEvents::AggregationInMemoryMergePathTwoLevel
@@ -1517,12 +1523,18 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            recordInMemoryAggregationMergeInputs(many_data->variants, params->params.keys_size);
+            const bool record_merge_profile_events = recordInMemoryAggregationMergeInputs(many_data->variants, params->params.keys_size);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
-                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
+            processors.emplace_back(
+                std::make_shared<ConvertingAggregatedToChunksTransform>(
+                    params,
+                    std::move(prepared_data_ptr),
+                    max_threads,
+                    updater,
+                    adaptive_engaged ? adaptive_context->session : nullptr,
+                    record_merge_profile_events));
         }
         else
         {

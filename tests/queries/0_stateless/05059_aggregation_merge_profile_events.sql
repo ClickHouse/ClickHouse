@@ -91,6 +91,34 @@ FROM
 )
 SETTINGS log_comment = '05059_aggregation_merge_single_variant';
 
+-- arrayJoin emits a zero-row chunk that initializes a second producer without adding keyed
+-- groups. It must not turn the one real two-level input into an observable fan-in merge.
+SELECT sum(c)
+FROM
+(
+    SELECT k, count() AS c
+    FROM
+    (
+        SELECT number AS k FROM numbers(100000)
+        UNION ALL
+        SELECT arrayJoin(emptyArrayUInt64()) AS k FROM numbers(1)
+    )
+    GROUP BY k
+    SETTINGS
+        max_threads = 2,
+        max_threads_min_free_memory_per_thread = 0,
+        max_block_size = 8192,
+        group_by_two_level_threshold = 1,
+        group_by_two_level_threshold_bytes = 0,
+        max_bytes_before_external_group_by = 0,
+        max_bytes_ratio_before_external_group_by = 0,
+        collect_hash_table_stats_during_aggregation = 0,
+        enable_adaptive_aggregator = 0
+)
+SETTINGS
+    collect_hash_table_stats_during_aggregation = 0,
+    log_comment = '05059_aggregation_merge_zero_row_variant';
+
 -- A no-key uniqExact with several large partial states takes stock master's existing parallel
 -- two-level merge wave.
 SELECT uniqExact(number)
@@ -172,6 +200,27 @@ WHERE
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND log_comment = '05059_aggregation_merge_single_variant';
+
+SELECT
+    argMax(
+        ProfileEvents['AggregationInMemoryMergeInputVariants']
+            + ProfileEvents['AggregationInMemoryMergeInputTwoLevelVariants']
+            + ProfileEvents['AggregationInMemoryMergeInputGroups']
+            + ProfileEvents['AggregationInMemoryMergePathSingleLevel']
+            + ProfileEvents['AggregationInMemoryMergePathTwoLevel']
+            + ProfileEvents['AggregationInMemoryMergeBuckets']
+            + ProfileEvents['AggregationInMemoryMergeBucketElapsedMicroseconds']
+            + ProfileEvents['AggregationInMemoryMergeBusiestBucketElapsedMicroseconds']
+            + ProfileEvents['AggregationInMemoryMergeSources']
+            + ProfileEvents['AggregationInMemoryMergeBusiestSourceElapsedMicroseconds'],
+        event_time_microseconds)
+        = 0
+FROM system.query_log
+WHERE
+    event_date >= yesterday()
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment = '05059_aggregation_merge_zero_row_variant';
 
 SELECT
     argMax(ProfileEvents['UniqExactMergeWaves'], event_time_microseconds) > 0,
