@@ -79,7 +79,7 @@ static bool needsDefaultDatabaseForBareDictionaryOnCluster(const ASTPtr & query_
     if (!system_query->table || system_query->database)
         return false;
 
-    return system_query->getTable().find('.') == String::npos;
+    return !system_query->getTable().contains('.');
 }
 
 
