@@ -1,0 +1,123 @@
+---
+description: 'Run queries independently of the client connection and monitor their execution.'
+sidebarTitle: 'Background queries'
+slug: /operations/background-queries
+title: 'Background queries'
+doc_type: 'guide'
+---
+
+## Overview {#overview}
+
+Background queries let a client submit a query that continues running independently of the client connection.
+Enable this behavior with the [`run_query_in_background`](/reference/settings/session-settings/other#run_query_in_background) setting.
+After accepting the query, ClickHouse returns an empty successful result immediately and runs the query in the background.
+
+Background queries are mainly intended for long-running operations such as `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, or `CREATE MATERIALIZED VIEW ... POPULATE` that must not stop if the
+client connection drops.
+
+:::important
+The result of a background query is discarded. It cannot be retrieved or attached to later.
+Use the query's `query_id` to monitor it in `system.processes` while it is running and in `system.query_log` after it finishes.
+:::
+
+A background query does not survive a server restart. Server shutdown behavior is controlled by
+`shutdown_wait_unfinished_queries` and `shutdown_wait_unfinished`.
+
+## Submit a background query {#submit-a-background-query}
+
+### Native TCP protocol {#native-tcp-protocol}
+
+With `clickhouse-client`, pass `run_query_in_background` as a command-line setting:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+You can also use an inline `SETTINGS` clause:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+The native protocol carries query settings separately from the SQL text. `clickhouse-client` parses most inline
+query settings and sends them in this settings section. Native-protocol drivers can instead pass
+`run_query_in_background` in their per-query settings map, keeping the SQL text unchanged.
+
+The native protocol does not return a server-generated `query_id`. Native clients should generate a unique ID and
+send it with the query. `clickhouse-client --echo-query-id` does this and prints the ID before submitting the query:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+For HTTP requests, pass `run_query_in_background` as a URL parameter:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+The response includes the generated query ID in the `X-ClickHouse-Query-Id` header:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+Unlike the native protocol, HTTP cannot enable background execution through an inline SQL `SETTINGS` clause:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+This request returns a `BAD_ARGUMENTS` exception. The HTTP handler must decide whether to create a detached query
+context before the request body is parsed. Pass the setting in the URL, or configure it at the user or profile level.
+
+## Monitor execution {#monitor-execution}
+
+Use the `query_id` to check whether a query is currently running:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+After the query finishes, inspect `system.query_log` for its final status:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+The submission request can succeed even if background execution later fails. In that case, the exception is recorded
+in `system.query_log` rather than returned over the original connection.
+
+## Query log flush delay {#query-log-flush-delay}
+
+Entries are buffered before they appear in `system.query_log`. For self-managed ClickHouse, the example server
+configuration sets `query_log.flush_interval_milliseconds` to `7500`. ClickHouse Cloud entries can take up to
+30 seconds to appear. Account for this delay when monitoring short-running background queries.
+
+On a self-managed server, users with sufficient privileges can force system logs to flush:
+
+```sql
+SYSTEM FLUSH LOGS;
+```
