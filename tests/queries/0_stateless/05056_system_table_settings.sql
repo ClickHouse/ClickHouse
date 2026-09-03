@@ -49,6 +49,12 @@ SELECT count()
 FROM system.table_settings
 WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg') AND is_masked;
 
+SELECT '-- a setting is findable by an alias, carrying the same values';
+SELECT name, value, source, alias_for FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'mt'
+  AND name IN ('index_granularity', 'allow_experimental_block_number_column', 'enable_block_number_column')
+ORDER BY name;
+
 SELECT '-- filtering by database reaches the scan';
 SELECT count() FROM system.table_settings WHERE database = 'database_that_does_not_exist';
 

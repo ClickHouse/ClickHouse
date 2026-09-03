@@ -10,6 +10,7 @@ source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'definitio
 is_masked	UInt8
 description	String
 type	String
+alias_for	String
 -- every engine reports what its definition states
 jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
@@ -24,5 +25,9 @@ kafka_sasl_password	[HIDDEN]	1
 0
 -- an engine with no secret settings masks nothing
 0
+-- a setting is findable by an alias, carrying the same values
+allow_experimental_block_number_column	0	default	enable_block_number_column
+enable_block_number_column	0	default	
+index_granularity	4096	definition	
 -- filtering by database reaches the scan
 0

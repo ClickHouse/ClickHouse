@@ -83,6 +83,9 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
             "Grant `displaySecretsInShowAndSelect` and enable `format_display_secrets_in_show_and_select` to see it."},
         {"description", std::make_shared<DataTypeString>(), "Setting description. Empty when the engine keeps no settings struct to describe it."},
         {"type", std::make_shared<DataTypeString>(), "Setting type. Empty when the engine keeps no settings struct."},
+        {"alias_for", std::make_shared<DataTypeString>(),
+            "Empty on a setting's own row. A setting writable under more than one name also gets a row per other name, "
+            "carrying the same values, with this naming the one it is declared under."},
     };
 }
 
@@ -140,8 +143,6 @@ protected:
 
             for (const auto & setting : table->getTableSettings(context))
             {
-                ++rows_count;
-
                 String value = setting.value;
                 bool is_masked = false;
                 if (!show_secrets)
@@ -153,31 +154,45 @@ protected:
                     }
                 }
 
-                size_t src_index = 0;
-                size_t res_index = 0;
+                /// A setting that answers to more than one name gets a row per name, as
+                /// `system.settings` does, so that looking it up by the name you happen to know
+                /// finds it. The rows carry the same values; `alias_for` tells them apart.
+                auto add_row = [&](std::string_view name, std::string_view alias_for)
+                {
+                    ++rows_count;
 
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(db_name);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(tbl_name);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(engine_name);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.name);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.default_value);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(value);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.origin != TableSettingOrigin::Default);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(static_cast<Int8>(setting.origin));
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(is_masked);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.description);
-                if (column_mask[src_index++])
-                    res_columns[res_index++]->insert(setting.type);
+                    size_t src_index = 0;
+                    size_t res_index = 0;
+
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(db_name);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(tbl_name);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(engine_name);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(name);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(setting.default_value);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(value);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(setting.origin != TableSettingOrigin::Default);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(static_cast<Int8>(setting.origin));
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(is_masked);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(setting.description);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(setting.type);
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(alias_for);
+                };
+
+                add_row(setting.name, "");
+                for (const auto alias : setting.aliases)
+                    add_row(alias, setting.name);
             }
         };
 
