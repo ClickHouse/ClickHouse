@@ -35,6 +35,7 @@ import sys
 import shlex
 import traceback
 import urllib.parse
+import uuid
 
 # for crc32
 import zlib
@@ -55,15 +56,31 @@ except ImportError:
     termcolor = None
 
 
-# Base path for per-process PGID files used by `--cleanup` to locate orphaned
-# test process groups.  Each worker process writes its own file named
-# ``_GROUP_PID_NAME.<pid>`` so no cross-process locking is needed.
+# Base path for the PGID files used by `--cleanup` to locate orphaned test process
+# groups.  One file per group, ``_GROUP_PID_NAME.<token>.<worker>.<pgid>``: the token
+# scopes a reap to one invocation, the worker pid to one worker, and the pgid keeps a
+# kept record from being overwritten.
 # The CI hook can invoke `clickhouse-test --cleanup` even if the parent was
 # killed with SIGKILL before its cleanup code ran.
 # `__file__` is `{repo}/tests/clickhouse-test`, so this resolves to
 # `{repo}/ci/tmp/clickhouse_test_group_pid`.
 _GROUP_PID_PATH = Path(__file__).resolve().parent.parent / "ci" / "tmp"
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
+# Identifies this INVOCATION, not this process.  Seeded through the environment, which
+# both start methods propagate: a `spawn` worker (selected for `aarch` checks, see
+# `__main__`) re-executes this module and would otherwise mint its own token, putting its
+# records outside the parent's reap scope.
+# A pid alone cannot scope a reap, being recyclable into a concurrent run's worker.
+_RUN_TOKEN = os.environ.setdefault(
+    "_CLICKHOUSE_TEST_RUN_TOKEN", f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+)
+if __name__ == "__main__" and not _RUN_TOKEN.startswith(f"{os.getpid()}-"):
+    # A nested invocation must not adopt the outer run's token, or its sweep would match
+    # the outer run's records.  Only a top-level invocation may re-mint: a `spawn` worker
+    # also sees a foreign pid prefix here and must keep what it inherited.
+    _RUN_TOKEN = os.environ["_CLICKHOUSE_TEST_RUN_TOKEN"] = (
+        f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    )
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -75,6 +92,39 @@ def write_text_atomic(path: Path, text: str) -> None:
         os.replace(tmp, path)
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
+
+
+def test_process_group_record(pgid: int) -> Path:
+    """Path of the record for one test process group."""
+    return _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{_RUN_TOKEN}.{os.getpid()}.{pgid}"
+
+
+def test_process_group_is_gone(pgid: int) -> bool:
+    """Whether the kernel no longer knows of any process in `pgid`.
+
+    One syscall. An unreaped zombie counts as present, so this can only be
+    pessimistic, which is the safe direction for deciding to keep a record.
+    """
+    try:
+        os.killpg(pgid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+    except OSError:
+        # EPERM and friends: not ours to judge, so keep the record.
+        return False
+
+
+def forget_test_process_group(pgid: int) -> None:
+    """Drop the record for `pgid`.
+
+    Only call this once the group is gone: the record is the only thing that can
+    lead a reaper to a live group, and a stale one would let a later `--cleanup`
+    signal an unrelated, PID-recycled group. Whenever the group may still be live
+    the record is kept, and the parent's abort-path reap is what consumes it.
+    """
+    test_process_group_record(pgid).unlink(missing_ok=True)
+
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
 # `stop_testing` and no more specific cause was claimed - an observed server death
@@ -739,9 +789,12 @@ def clickhouse_execute_json(
 CAPTURE_CLIENT_STACKTRACE = False
 
 
-def kill_process_group(pgid, fatal_log):
+def kill_process_group(pgid, fatal_log, diagnostics=True):
+    # `diagnostics=False` skips the evidence gathering: both delays (60 s + 10 s) and the
+    # per-group listing, whose `pgrep` shells out to an unbounded full `ps`. Walked serially
+    # per record, that is what `cleanup_test_groups` would otherwise pay.
     try:
-        if SANITIZED:
+        if SANITIZED and diagnostics:
             print(f"Processes left in process group {pgid}:")
             print(
                 '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
@@ -750,12 +803,13 @@ def kill_process_group(pgid, fatal_log):
             sleep(60)
 
         print(f"Killing process group {pgid}")
-        print(f"Processes in process group {pgid}:")
-        print(
-            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
-        )
+        if diagnostics:
+            print(f"Processes in process group {pgid}:")
+            print(
+                '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            )
 
-        if CAPTURE_CLIENT_STACKTRACE:
+        if CAPTURE_CLIENT_STACKTRACE and diagnostics:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
             stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
@@ -3299,13 +3353,42 @@ class TestCase:
         args = self.args
         kill_output = ""
         if proc:
-            if proc.returncode is None:
+            pgid = proc.pid  # `start_new_session=True`, so the leader's pid is the pgid
+            # Snapshot: anything that reaps the leader below sets `returncode`, and the
+            # classification further down must see the state the test really ended in.
+            timed_out = proc.returncode is None
+            if timed_out:
                 f = io.StringIO()
-                with redirect_stdout(f):
-                    kill_process_group(
-                        os.getpgid(proc.pid), self.fatal_sanitizer_prefix
-                    )
-                kill_output = f.getvalue()
+                try:
+                    with redirect_stdout(f):
+                        kill_process_group(
+                            os.getpgid(proc.pid), self.fatal_sanitizer_prefix
+                        )
+                except Exception as e:
+                    # An escaping exception returns UNKNOWN without stopping the run, so
+                    # the group would stay live and keep the stdout it inherited.
+                    print(f"Warning: could not kill the test group: {e}", file=sys.stderr)
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                finally:
+                    kill_output = f.getvalue()
+                    # Reap the leader we just killed, so its zombie does not keep the group
+                    # looking alive and strand the record below. Bounded, and only on the
+                    # timeout path. It sets `returncode`, hence the snapshot above.
+                    try:
+                        proc.wait(1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    # A returning `kill_process_group` does not rule out live members, and
+                    # a `BaseException` unwinds through here too (the runner's own
+                    # `Terminated`), so removal is gated on the group being gone.
+                    if test_process_group_is_gone(pgid):
+                        forget_test_process_group(pgid)
+            elif test_process_group_is_gone(pgid):
+                # The leader exited, but a backgrounded member can outlive it.
+                forget_test_process_group(pgid)
 
         description = ""
 
@@ -3422,7 +3505,7 @@ class TestCase:
             ).strip()
 
         if proc:
-            if proc.returncode is None:
+            if timed_out:
                 if stderr:
                     description += stderr
                 if debug_log:
@@ -3797,8 +3880,7 @@ class TestCase:
         proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
-        _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-        write_text_atomic(_gpid_file, f"{proc.pid}\n")
+        write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
         try:
             proc.wait(args.timeout)
@@ -3808,7 +3890,9 @@ class TestCase:
         finally:
             if cgroup_name:
                 cleanup_cgroup(cgroup_name)
-            _gpid_file.unlink(missing_ok=True)
+            # NOT the place to drop the PGID record: on a timeout the group is still
+            # running, and only that record can lead a reaper to it.
+            # `process_result_impl` drops it once the group is gone.
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -5448,189 +5532,192 @@ def do_run_tests(
     # `try_claim_stop_cause` before setting `stop_testing`, so the parent
     # re-raises with the cause detected first. 0 means unset.
     stop_exit_code = multiprocessing.Value('i', 0)
+    # PIDs of the workers this run started, so the abort-path reap only touches records
+    # written by them. Never pruned, unlike `processes`: a worker that already exited is
+    # exactly the one whose orphan needs reaping.
+    worker_pids = set()
+    # Bound before the `try` below, whose `finally` stops the workers: an exception
+    # raised before the pool is built must not turn into a `NameError` there.
+    processes = []
 
     if test_suite.parallel_tests:
-        tests_n = len(test_suite.parallel_tests)
-        jobs = min(jobs, tests_n)
+        # In a `finally`, so every exit reaps and not just the `stop_testing` branch. It
+        # stops the workers first: the reap walks the records once, so a worker still
+        # running could record a group after that walk. Idempotent, and it never raises.
+        try:
+            tests_n = len(test_suite.parallel_tests)
+            jobs = min(jobs, tests_n)
 
-        # If we don't do random shuffling then there will be always
-        # nearly the same groups of test suites running concurrently.
-        # Thus, if there is a test within group which appears to be broken
-        # then it will affect all other tests in a non-random form.
-        # So each time a bad test fails - other tests from the group will also fail
-        # and this process will be more or less stable.
-        # It makes it more difficult to detect real flaky tests,
-        # because the distribution and the amount
-        # of failures will be nearly the same for all tests from the group.
-        # TODO: add shuffle for sequential tests
-        if jobs > 1:
-            random.shuffle(test_suite.parallel_tests)
+            # If we don't do random shuffling then there will be always
+            # nearly the same groups of test suites running concurrently.
+            # Thus, if there is a test within group which appears to be broken
+            # then it will affect all other tests in a non-random form.
+            # So each time a bad test fails - other tests from the group will also fail
+            # and this process will be more or less stable.
+            # It makes it more difficult to detect real flaky tests,
+            # because the distribution and the amount
+            # of failures will be nearly the same for all tests from the group.
+            # TODO: add shuffle for sequential tests
+            if jobs > 1:
+                random.shuffle(test_suite.parallel_tests)
 
-        workers_to_shed = multiprocessing.Value('i', 0)
-        total_failures_shared = multiprocessing.Value('i', 0)
+            workers_to_shed = multiprocessing.Value('i', 0)
+            total_failures_shared = multiprocessing.Value('i', 0)
 
-        if args.no_self_parallel:
-            # Partition tests so that all copies of the same test go to the
-            # same worker.  This prevents the same test from running
-            # concurrently on multiple workers, avoiding conflicts when tests
-            # use shared resources (tables with fixed names, files, etc.).
-            worker_queues: List[List[str]] = [[] for _ in range(jobs)]
-            for test in test_suite.parallel_tests:
-                worker_queues[stringhash(test) % jobs].append(test)
-        else:
-            manager = multiprocessing.Manager()
-            shared_queue = manager.list()
-            shared_queue.extend(test_suite.parallel_tests)
-
-        batch_size = len(test_suite.parallel_tests) // jobs
-
-        processes = []
-        for i in range(jobs):
             if args.no_self_parallel:
-                queue = worker_queues[i]
-                queue_size = len(queue)
+                # Partition tests so that all copies of the same test go to the
+                # same worker.  This prevents the same test from running
+                # concurrently on multiple workers, avoiding conflicts when tests
+                # use shared resources (tables with fixed names, files, etc.).
+                worker_queues: List[List[str]] = [[] for _ in range(jobs)]
+                for test in test_suite.parallel_tests:
+                    worker_queues[stringhash(test) % jobs].append(test)
             else:
-                queue = shared_queue
-                queue_size = batch_size
-            process = multiprocessing.Process(
-                target=run_tests_process,
-                args=(
-                    (
-                        queue,
-                        queue_size,
-                        test_suite,
-                        True,
-                        args,
-                        exit_code,
-                        stop_testing,
-                        workers_to_shed,
-                        restarted_tests,
-                        i,  # process index
-                        total_failures_shared,
-                        progress_counter,
-                        total_tests,
-                        stop_exit_code,
+                manager = multiprocessing.Manager()
+                shared_queue = manager.list()
+                shared_queue.extend(test_suite.parallel_tests)
+
+            batch_size = len(test_suite.parallel_tests) // jobs
+
+            for i in range(jobs):
+                if args.no_self_parallel:
+                    queue = worker_queues[i]
+                    queue_size = len(queue)
+                else:
+                    queue = shared_queue
+                    queue_size = batch_size
+                process = multiprocessing.Process(
+                    target=run_tests_process,
+                    args=(
+                        (
+                            queue,
+                            queue_size,
+                            test_suite,
+                            True,
+                            args,
+                            exit_code,
+                            stop_testing,
+                            workers_to_shed,
+                            restarted_tests,
+                            i,  # process index
+                            total_failures_shared,
+                            progress_counter,
+                            total_tests,
+                            stop_exit_code,
+                        ),
                     ),
-                ),
-            )
-            processes.append(process)
-            process.start()
+                )
+                processes.append(process)
+                process.start()
+                worker_pids.add(process.pid)
 
-        # How often (seconds) to query server memory usage.
-        MEMORY_CHECK_INTERVAL = 5.0
-        # After shedding a worker, wait this long before the next check to give
-        # memory time to drop before potentially shedding another worker.
-        MEMORY_SHED_COOLDOWN = 30.0
-        # Fraction of max_server_memory_usage at which we start shedding workers.
-        MEMORY_PRESSURE_THRESHOLD = 0.8
-        last_memory_check = time()
+            # How often (seconds) to query server memory usage.
+            MEMORY_CHECK_INTERVAL = 5.0
+            # After shedding a worker, wait this long before the next check to give
+            # memory time to drop before potentially shedding another worker.
+            MEMORY_SHED_COOLDOWN = 30.0
+            # Fraction of max_server_memory_usage at which we start shedding workers.
+            MEMORY_PRESSURE_THRESHOLD = 0.8
+            last_memory_check = time()
 
-        while processes:
-            sleep(0.1)
-            sys.stdout.flush()
+            while processes:
+                sleep(0.1)
+                sys.stdout.flush()
 
-            # Periodically check memory pressure and reduce concurrency if needed.
-            # In normal mode workers share a single queue, so shedding one
-            # does not lose work.  In --flaky-check mode each worker has its
-            # own queue, so its remaining tests will not run — acceptable under
-            # memory pressure.
-            now = time()
-            if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
-                last_memory_check = now
-                memory_fraction = get_server_memory_fraction(args)
-                if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
-                    # Cap outstanding shed requests so we never drain the pool
-                    # to zero: only increment if the number of workers that will
-                    # still be running after all pending sheds is greater than 1.
-                    with workers_to_shed.get_lock():
-                        if len(processes) - workers_to_shed.value > 1:
-                            workers_to_shed.value += 1
+                # Periodically check memory pressure and reduce concurrency if needed.
+                # In normal mode workers share a single queue, so shedding one
+                # does not lose work.  In --flaky-check mode each worker has its
+                # own queue, so its remaining tests will not run — acceptable under
+                # memory pressure.
+                now = time()
+                if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
+                    last_memory_check = now
+                    memory_fraction = get_server_memory_fraction(args)
+                    if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
+                        # Cap outstanding shed requests so we never drain the pool
+                        # to zero: only increment if the number of workers that will
+                        # still be running after all pending sheds is greater than 1.
+                        with workers_to_shed.get_lock():
+                            if len(processes) - workers_to_shed.value > 1:
+                                workers_to_shed.value += 1
+                                print(
+                                    f"Server memory at {memory_fraction:.0%} of limit — "
+                                    f"signalling one worker to stop after its current test "
+                                    f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                )
+                        # Use a longer cooldown so memory has time to drop before
+                        # we consider shedding another worker.
+                        last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+
+                # Stop the whole run once the global time limit is reached. This is
+                # the *expected* stop condition for the flaky and targeted checks,
+                # which rerun the selected tests until the time budget is exhausted -
+                # distinct from a server death or a hung check below. It goes through
+                # the carrier like every other cause, so a worker that claimed while
+                # the event was still clear keeps precedence.
+                if args.stop_time and time() > args.stop_time:
+                    if try_claim_stop_cause(
+                        stop_exit_code, GLOBAL_TIME_LIMIT_EXIT_CODE
+                    ):
+                        print("Global time limit reached - stopping all tests gracefully.")
+                        # Ignore SIGTERM in the parent for the rest of the run: when we
+                        # terminate the workers below, each worker's KeyboardInterrupt
+                        # handler re-broadcasts SIGTERM to the whole process group via
+                        # `stop_tests()` -> `killpg`. Without this guard that signal
+                        # would hit the parent and exit it with 143 instead of the
+                        # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                        # timeout back into a "Server died" report).
+                        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                        stop_testing.set()
+
+                # Periodically check the server for hangs
+                # and stop all processes in this case. The probe takes 65-165 s to
+                # conclude, so it is not started once a stop is already pending.
+                if args.hung_check and not stop_testing.is_set():
+                    if not check_server_liveness(args):
+                        print("Hung check failed: server liveness check failed")
+                        # Claim before collecting: the sweep below can block ~30s per
+                        # server process.
+                        try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                        print_sql_stacktraces(args)
+                        print_c_stacktraces(args)
+                        stop_testing.set()
+
+                if stop_testing.is_set():
+                    # Mask SIGTERM during the cleanup: when we terminate a worker,
+                    # its `except KeyboardInterrupt` handler in `run_tests_array`
+                    # calls `stop_tests()`, which broadcasts SIGTERM to the whole
+                    # process group via `cleanup_child_processes`. Without this
+                    # mask the signal would reach us mid-join, `signal_handler`
+                    # would raise `Terminated`, and we would exit with 128+15=143
+                    # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
+                    # parser to misclassify the run as "terminated unexpectedly"
+                    # (`Result.Status.ERROR`) rather than synthesizing the
+                    # `Server died` FAIL leaf that bugfix validation needs.
+                    old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                    try:
+                        print("Stopping tests, terminating all processes...")
+                        # Wait briefly for test results to be written
+                        sleep(5)
+                        quiesce_workers_and_reap(processes, worker_pids)
+                    finally:
+                        signal.signal(signal.SIGTERM, old_sigterm_handler)
+                    raise_stop_from_carrier(stop_exit_code)
+
+                for p in processes[:]:
+                    if not p.is_alive():
+                        # Check if process was killed with exception
+                        if p.exitcode is not None and p.exitcode != 0:
                             print(
-                                f"Server memory at {memory_fraction:.0%} of limit — "
-                                f"signalling one worker to stop after its current test "
-                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                                f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
                             )
-                    # Use a longer cooldown so memory has time to drop before
-                    # we consider shedding another worker.
-                    last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
+                            runner_process_killed.set()
+                        processes.remove(p)
+        finally:
+            quiesce_workers_and_reap(processes, worker_pids)
 
-            # Stop the whole run once the global time limit is reached. This is
-            # the *expected* stop condition for the flaky and targeted checks,
-            # which rerun the selected tests until the time budget is exhausted -
-            # distinct from a server death or a hung check below. It goes through
-            # the carrier like every other cause, so a worker that claimed while
-            # the event was still clear keeps precedence.
-            if args.stop_time and time() > args.stop_time:
-                if try_claim_stop_cause(
-                    stop_exit_code, GLOBAL_TIME_LIMIT_EXIT_CODE
-                ):
-                    print("Global time limit reached - stopping all tests gracefully.")
-                    # Ignore SIGTERM in the parent for the rest of the run: when we
-                    # terminate the workers below, each worker's KeyboardInterrupt
-                    # handler re-broadcasts SIGTERM to the whole process group via
-                    # `stop_tests()` -> `killpg`. Without this guard that signal
-                    # would hit the parent and exit it with 143 instead of the
-                    # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
-                    # timeout back into a "Server died" report).
-                    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                    stop_testing.set()
-
-            # Periodically check the server for hangs
-            # and stop all processes in this case. The probe takes 65-165 s to
-            # conclude, so it is not started once a stop is already pending.
-            if args.hung_check and not stop_testing.is_set():
-                if not check_server_liveness(args):
-                    print("Hung check failed: server liveness check failed")
-                    # Claim before collecting: the sweep below can block ~30s per
-                    # server process.
-                    try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
-                    print_sql_stacktraces(args)
-                    print_c_stacktraces(args)
-                    stop_testing.set()
-
-            if stop_testing.is_set():
-                # Mask SIGTERM during the cleanup: when we terminate a worker,
-                # its `except KeyboardInterrupt` handler in `run_tests_array`
-                # calls `stop_tests()`, which broadcasts SIGTERM to the whole
-                # process group via `cleanup_child_processes`. Without this
-                # mask the signal would reach us mid-join, `signal_handler`
-                # would raise `Terminated`, and we would exit with 128+15=143
-                # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
-                # parser to misclassify the run as "terminated unexpectedly"
-                # (`Result.Status.ERROR`) rather than synthesizing the
-                # `Server died` FAIL leaf that bugfix validation needs.
-                old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
-                try:
-                    print("Stopping tests, terminating all processes...")
-                    # Wait briefly for test results to be written
-                    sleep(5)
-                    for p in processes:
-                        if p.is_alive():
-                            p.terminate()
-                    # Wait for processes to exit, then force-kill stragglers
-                    for p in processes:
-                        p.join(timeout=10)
-                        if p.is_alive():
-                            print(f"Force killing process {p.name} (pid {p.pid})")
-                            p.kill()
-                    for p in processes:
-                        p.join(timeout=5)
-                finally:
-                    signal.signal(signal.SIGTERM, old_sigterm_handler)
-                raise_stop_from_carrier(stop_exit_code)
-
-            for p in processes[:]:
-                if not p.is_alive():
-                    # Check if process was killed with exception
-                    if p.exitcode is not None and p.exitcode != 0:
-                        print(
-                            f"ERROR: Process {p.name} was killed with exit code {p.exitcode}"
-                        )
-                        runner_process_killed.set()
-                    processes.remove(p)
-
-        # The reap above is the loop's exit condition, so a cause claimed after
-        # the check at the top of the iteration is only observable here.
+        # Draining `processes` is the loop's exit condition, so a cause claimed
+        # after the check at the top of the iteration is only observable here.
         if stop_testing.is_set():
             raise_stop_from_carrier(stop_exit_code)
 
@@ -5638,24 +5725,29 @@ def do_run_tests(
         # Sequential runner shares the total_failures_shared counter with parallel workers
         # so that --max-failures counts failures from both groups combined.
         seq_total_failures = total_failures_shared if test_suite.parallel_tests else multiprocessing.Value('i', 0)
-        run_tests_array(
-            (
-                list(test_suite.sequential_tests),
-                len(test_suite.sequential_tests),
-                test_suite,
-                False,
-                args,
-                exit_code,
-                stop_testing,
-                multiprocessing.Value('i', 0),  # sequential runner is never shed
-                restarted_tests,
-                jobs + 1,
-                seq_total_failures,
-                progress_counter,
-                total_tests,
-                stop_exit_code,
+        # The sequential runner IS this process, so its records are written under our pid.
+        seq_worker_pids = worker_pids | {os.getpid()}
+        try:
+            run_tests_array(
+                (
+                    list(test_suite.sequential_tests),
+                    len(test_suite.sequential_tests),
+                    test_suite,
+                    False,
+                    args,
+                    exit_code,
+                    stop_testing,
+                    multiprocessing.Value('i', 0),  # sequential runner is never shed
+                    restarted_tests,
+                    jobs + 1,
+                    seq_total_failures,
+                    progress_counter,
+                    total_tests,
+                    stop_exit_code,
+                )
             )
-        )
+        finally:
+            reap_recorded_test_groups(seq_worker_pids)
 
     return total_tests
 
@@ -7043,20 +7135,93 @@ def parse_args():
     return parser.parse_args()
 
 
-def cleanup_test_groups():
-    """Kill all process groups recorded in per-worker PGID files.
+def cleanup_test_groups(diagnostics=True, worker_pids=None):
+    """Kill all process groups recorded in the PGID files.
+
+    Records are walked serially, so `diagnostics=False` (see `kill_process_group`) is
+    what keeps the total bounded when this runs on the abort path.
+
+    `worker_pids` restricts the sweep to records written by those workers. Records are
+    repo-wide, so a live run passes its own to avoid signalling a concurrent invocation's
+    tests; `--cleanup` passes nothing, being an orphan sweep run when nothing else is live.
     """
     for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
         if _pgid_file.name.endswith(".tmp"):
             continue
+        if worker_pids is not None:
+            try:
+                # `<token>.<worker>.<pgid>`: match the token too, or a worker pid the OS
+                # recycled into a concurrent run would put that run's live tests in scope.
+                suffix = _pgid_file.name[len(_GROUP_PID_NAME) + 1 :]
+                token, worker, _pgid = suffix.split(".", 2)
+                if token != _RUN_TOKEN or int(worker) not in worker_pids:
+                    continue
+            except ValueError:
+                continue
         try:
             pgid = int(_pgid_file.read_text())
-            kill_process_group(pgid, None)
+            kill_process_group(pgid, None, diagnostics=diagnostics)
         except Exception as e:
             print(f"Warning: could not read {_pgid_file}: {e}", file=sys.stderr)
             continue
         finally:
             _pgid_file.unlink(missing_ok=True)
+
+
+def quiesce_workers_and_reap(processes, worker_pids):
+    """Stop the workers, then reap the test groups they recorded.
+
+    The reap walks the record directory once, so it is only complete when no worker can
+    still add a record: a worker that writes its next `<token>.<worker>.<pgid>` after that
+    walk keeps its group alive holding the runner's stdout. Stopping the workers first is
+    what makes the single walk enough.
+
+    Every signal the runner handles is ignored throughout, because terminating a worker
+    makes it broadcast SIGTERM to the whole group via `stop_tests`.
+    """
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    previous = [(s, signal.signal(s, signal.SIG_IGN)) for s in handled]
+    try:
+        try:
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+            # Wait for processes to exit, then force-kill stragglers
+            for p in processes:
+                p.join(timeout=10)
+                if p.is_alive():
+                    print(f"Force killing process {p.name} (pid {p.pid})")
+                    p.kill()
+            for p in processes:
+                p.join(timeout=5)
+        except Exception as e:
+            # A worker left running only widens the reap's blind spot; it must not
+            # replace the exception the job side keys on.
+            print(f"Warning: could not stop all workers before the reap: {e}")
+        reap_recorded_test_groups(worker_pids)
+    finally:
+        for s, handler in previous:
+            signal.signal(s, handler)
+
+
+def reap_recorded_test_groups(worker_pids):
+    """Kill the test groups recorded by `worker_pids`, from a live run.
+
+    Never raises, including on a signal: `Terminated` is a `KeyboardInterrupt`, so it
+    escapes the `except` below and would replace the exception the job side keys on.
+    Every signal the runner handles is therefore ignored for the duration - here, so
+    that a new call site cannot miss the guard.  Main thread only, like the rest of the
+    runner's signal handling.
+    """
+    handled = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    previous = [(s, signal.signal(s, signal.SIG_IGN)) for s in handled]
+    try:
+        cleanup_test_groups(diagnostics=False, worker_pids=worker_pids)
+    except Exception as e:
+        print(f"Warning: could not reap test process groups: {e}")
+    finally:
+        for s, handler in previous:
+            signal.signal(s, handler)
 
 
 class Terminated(KeyboardInterrupt):
