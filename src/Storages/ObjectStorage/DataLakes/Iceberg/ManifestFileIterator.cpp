@@ -526,13 +526,13 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Bytes with no usable value in the column's type mean a malformed manifest, not a
-                    /// file that carries no statistics. Both end up without min/max pruning here, so only
-                    /// this warning tells them apart.
+                    /// A bound the column's type cannot hold, or with no widened form inside it, yields no
+                    /// usable range border. Neither does an absent bound, so only this warning tells a
+                    /// manifest that declares something unusable from one that declares nothing.
                     LOG_WARNING(
                         getLogger("ManifestFileIterator"),
-                        "Manifest file '{}' declares a bound with no usable value in the column type for "
-                        "column id {} of data file '{}'; skipping min/max pruning for this column",
+                        "Manifest file '{}' declares a bound that cannot be read as a usable range border "
+                        "for column id {} of data file '{}'; skipping min/max pruning for this column",
                         path_to_manifest_file,
                         column_id,
                         parsed_entry->file_path_key.serialize());
