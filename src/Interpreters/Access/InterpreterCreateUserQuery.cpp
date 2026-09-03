@@ -5,6 +5,7 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
@@ -245,8 +246,17 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
+    /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
+    /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
+    /// With `CREATE USER` alone its holder could reset the password of any user, including a privileged
+    /// one, and then log in as that user. `DROP USER` is required whether or not the user currently
+    /// exists, mirroring `REPLACE TABLE`, so that the check does not reveal which users exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_USER;
+
     for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+        access->checkAccess(required_access, name);
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
