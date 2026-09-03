@@ -990,30 +990,27 @@ def main():
             else:
                 print("WARNING: Could not find sync PR - skipping")
 
-    question = "CI status:\n"
-    if (
-        unknown_failures
-        or known_failures
-        or sync_known_failures
-        or sync_unknown_failures
-    ):
+    public_failed = known_failures or unknown_failures
+    sync_failed = sync_known_failures or sync_unknown_failures
+    if public_failed or sync_failed:
+        summary = "CI status:\n"
         if not_finished_jobs:
-            question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
+            summary += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
         if unknown_failures:
-            question += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
+            summary += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
         if known_failures:
-            question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
-        question += " - all other public checks passed\n"
+            summary += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
+        summary += " - all other public checks passed\n"
         if sync_status:
-            question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
-        if sync_known_failures or sync_unknown_failures:
-            question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
+            summary += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        if sync_failed:
+            summary += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
-        question = "All checks passed! Congratulations!\n"
+        summary = "All checks passed! Congratulations!\n"
+    print(f"\n{summary}")
 
-    if unknown_failures or known_failures:
-        question += "\nDo you want to update PR CI comment?"
-        if not UserPrompt.confirm(question):
+    if public_failed:
+        if not UserPrompt.confirm("Do you want to update PR CI comment?"):
             sys.exit(0)
 
         try:
@@ -1033,8 +1030,6 @@ def main():
         except Exception as e:
             print(f"ERROR: failed to post CI summary, ex: {e}")
             traceback.print_exc()
-    else:
-        print(f"\n{question}")
 
     if not UserPrompt.confirm(
         f"Add PR #{pr_number} to the merge queue (y - continue, n - exit)?"
