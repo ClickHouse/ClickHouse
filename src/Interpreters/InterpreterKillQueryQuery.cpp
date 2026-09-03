@@ -33,7 +33,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageValues.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -215,14 +214,12 @@ public:
 };
 
 
-/// Executes a `SELECT` written by this interpreter and returns its whole result as a single block.
-static Block runInternalSelect(
-    const String & select_query, ContextMutablePtr query_context, std::shared_ptr<const EnabledQuota> quota_override = nullptr)
+/// Executes a `SELECT` written by this interpreter and returns its whole result as a single block. One
+/// logical read can arrive as several blocks (per-row subquery, small `max_block_size`, parallel reads),
+/// so they are concatenated; asserting a single block here was issue #104857.
+static Block runInternalSelect(const String & select_query, ContextMutablePtr query_context)
 {
     auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-
-    if (quota_override)
-        io.pipeline.setQuota(std::move(quota_override));
 
     Blocks blocks;
     io.executeWithCallbacks([&]()
@@ -245,8 +242,8 @@ static Block runInternalSelect(
 }
 
 /// A `ColumnLowCardinality` produced by filtering keeps the dictionary of the column it was filtered
-/// from, so values that only removed rows referenced are still reachable through it (for example via
-/// `lowCardinalityKeys`). Rebuilding the column against a fresh dictionary drops them.
+/// from, so the index of a surviving row depends on which other rows the wider column held. Rebuilding
+/// against a fresh dictionary makes every index a function of the surviving rows alone.
 static void rebuildLowCardinalityDictionaries(Block & block)
 {
     for (auto & elem : block)
@@ -261,7 +258,7 @@ static void rebuildLowCardinalityDictionaries(Block & block)
 }
 
 /// Reads the queries the caller is allowed to kill, under a context with full access.
-static Block readKillableProcesses(const ContextPtr & context, const StoragePtr & storage, bool can_kill_foreign_queries)
+static Block readKillableProcesses(const ContextPtr & context, const StoragePtr & storage)
 {
     /// The predicate is evaluated against this block instead of the table, so every column it may name
     /// has to be here. `SELECT *` omits the ALIAS and the virtual columns, and its width depends on
@@ -282,8 +279,7 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
 
     /// `system.processes.user` and the ownership test in `extractQueriesExceptMeAndCheckAccess` are the
     /// same `ClientInfo::current_user` field, so this filter and that test accept the same rows.
-    if (!can_kill_foreign_queries)
-        select_query += " WHERE user = " + quoteString(context->getProcessListElement()->getClientInfo().current_user);
+    select_query += " WHERE user = " + quoteString(context->getProcessListElement()->getClientInfo().current_user);
 
     /// A copy of the global context has no bound user, so this read is not subject to a grant. The
     /// caller's settings are not replayed into it: the query text above is fixed, and
@@ -291,12 +287,11 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
     auto inner_context = Context::createCopy(context->getGlobalContext());
     inner_context->makeQueryContext();
     inner_context->setCurrentQueryId("");
-    inner_context->setProcessListElement(context->getProcessListElement());
     inner_context->setProgressCallback(context->getProgressCallback());
 
-    /// A context with no bound user also has no quota, so the caller's is attached explicitly: this is
-    /// the one read that touches the real table.
-    Block res = runInternalSelect(select_query, std::move(inner_context), context->getQuota());
+    /// No bound user also means no quota here. The caller is metered on the read that returns their
+    /// result rows instead, so one logical read is charged to them once.
+    Block res = runInternalSelect(select_query, std::move(inner_context));
     rebuildLowCardinalityDictionaries(res);
     return res;
 }
@@ -376,9 +371,8 @@ static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPt
 static Block getKillableProcesses(const ContextPtr & context, const ASTPtr & where_expression)
 {
     auto storage = DatabaseCatalog::instance().getTable(StorageID{"system", "processes"}, context);
-    bool can_kill_foreign_queries = context->getAccess()->isGranted(AccessType::KILL_QUERY);
 
-    Block block = readKillableProcesses(context, storage, can_kill_foreign_queries);
+    Block block = readKillableProcesses(context, storage);
     if (block.rows() == 0)
         return {};
 
@@ -635,35 +629,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
 
-    auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-
-    /// The pipeline can legitimately produce multiple blocks (e.g. when the
-    /// `WHERE` clause contains a per-row subquery that the planner splits into
-    /// chunks, when `max_block_size` is small, or when parallel reads are used).
-    /// Previously this code asserted "Expected one block from input stream",
-    /// which fired as a LOGICAL_ERROR for valid queries surfaced by the AST
-    /// fuzzer (issue #104857). Collect every produced block and concatenate
-    /// them — the result set is bounded by the size of `system.processes`,
-    /// `system.mutations`, `system.part_moves_between_shards` or
-    /// `system.transactions`, so this remains cheap.
-    Blocks blocks;
-    io.executeWithCallbacks([&]()
-    {
-        PullingPipelineExecutor executor(io.pipeline);
-        Block block;
-        while (executor.pull(block))
-        {
-            if (!block.empty())
-                blocks.push_back(std::move(block));
-        }
-    });
-
-    Block res = concatenateBlocks(blocks);
-
-    /// Materialize const columns, because callers use typeid_cast to concrete column types.
-    materializeBlockInplace(res);
-
-    return res;
+    return runInternalSelect(select_query, std::move(query_context));
 }
 
 
