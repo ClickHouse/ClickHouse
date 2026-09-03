@@ -966,6 +966,13 @@ hasPlanUnsupportedStepForDistributed(QueryPlan::Node & root, const QueryPlanOpti
             (*first_unallowed)->getName());
     }
 
+    /// Currently does not work with projections.
+    if (optimization_settings.force_use_projection || !optimization_settings.force_projection_name.empty())
+    {
+        return PreformattedMessage::create(
+            "make_distributed_plan creates a plan where projections are not used, hence falling back to the local execution");
+    }
+
     if (auto res = QueryPlanOptimizations::traversePlanForUnsupportedDistributedStep(root, optimization_settings); res.has_value())
     {
         return res;
