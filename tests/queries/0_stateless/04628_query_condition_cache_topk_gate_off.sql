@@ -109,8 +109,8 @@ SELECT '--- A TopK read with an existing PREWHERE must not reuse a plain PREWHER
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
--- A read that already has a `PREWHERE` cannot take dynamic filtering, so the plan is stamped as
--- TopK via the minmax skip index alone. The `PREWHERE` consult key in
+-- An explicit `PREWHERE` takes dynamic filtering as well as the minmax skip index, so the read is
+-- stamped as TopK by both arms. The `PREWHERE` consult key in
 -- `filterPartsByQueryConditionCache` is never TopK-salted, so without the read-side gate the TopK
 -- read would hit the entry primed by the plain `PREWHERE` query.
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_prime';

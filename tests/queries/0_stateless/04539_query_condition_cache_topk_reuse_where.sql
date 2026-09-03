@@ -65,9 +65,9 @@ SELECT '--- Forward, multi-conjunct: the TopK read reuses an entry primed by a t
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- Prime the cache with a plain WHERE. First touch of this predicate: cache miss, all granules read.
-SELECT v1 FROM tab WHERE v2 = 10000 AND id < 4294967295 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_prime';
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_prime';
 -- TopK read of the same predicate: reuses the predicate-only entry, so it hits and drops granules.
-SELECT v1 FROM tab WHERE v2 = 10000 AND id < 4294967295 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_topk';
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_topk';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -84,7 +84,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time_microseconds;
 
 SELECT '--- Multi-conjunct TopK still returns the planted row';
-SELECT v1 FROM tab WHERE v2 = 10000 AND id < 4294967295 ORDER BY v1 ASC LIMIT 5;
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 ORDER BY v1 ASC LIMIT 5;
 
 SELECT '--- Reverse: a TopK-salted entry must not be read by a plain WHERE';
 SYSTEM CLEAR QUERY CONDITION CACHE;

@@ -4351,14 +4351,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
-    /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
-    /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
-    /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
-    /// whose sorting step still shares the threshold tracker. Losing `top_k_filter_info` here would turn
-    /// the clone into an apparently plain read: it would consult and populate the query condition cache
-    /// under the unsalted condition hash even though its granule-skip decisions depend on the running
-    /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
-    /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
+    /// Carry over the TopK marker. `tryOptimizeTopK` stamps the read in the first optimization pass and
+    /// `installTopKDynamicFilter` merges `__topKFilter` into the PREWHERE in the second, so a clone taken
+    /// between the two carries only `dynamic_filter_pending` and a clone taken after it carries the
+    /// installed filter; in both states the sorting step already shares the threshold tracker. Losing
+    /// `top_k_filter_info` here would turn the clone into an apparently plain read: it would consult and
+    /// populate the query condition cache under the unsalted condition hash even though its granule-skip
+    /// decisions depend on the running TopK threshold. `condition_hash` already has the part-set salt
+    /// folded in by `setTopKColumn`, so copy the value instead of calling `setTopKColumn` again.
     cloned_step->top_k_filter_info = top_k_filter_info;
     /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
     /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can

@@ -12,6 +12,7 @@ SET use_skip_indexes_for_top_k = 0; -- exercise the dynamic-filter arm, not the 
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
+SET optimize_use_projections = 1; -- the projection section below needs the projection to be picked
 
 DROP TABLE IF EXISTS t_topk_prewhere;
 
@@ -60,3 +61,46 @@ SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere WHERE pred = 3 AND tag 
 SETTINGS use_top_k_dynamic_filtering = 1;
 
 DROP TABLE t_topk_prewhere;
+
+-- A TopK read served by a normal projection still carries the threshold filter, and returns the same
+-- rows as with the feature off. `a` is uncorrelated with the table's own sort key, so only the
+-- projection can prune `a < 2000`; `s` is unique, so the top-K has no ties.
+
+DROP TABLE IF EXISTS t_topk_proj;
+
+CREATE TABLE t_topk_proj (id UInt64, a UInt64, s UInt64,
+    PROJECTION p (SELECT id, a, s ORDER BY a))
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_topk_proj SELECT number, cityHash64(number) % 200000, 199999 - number FROM numbers(200000);
+OPTIMIZE TABLE t_topk_proj FINAL;
+
+SELECT count() > 0 FROM (
+    EXPLAIN projections = 1
+    SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN projections = 1
+    SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 10
+    SETTINGS optimize_use_projections = 0)
+WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 10
+    SETTINGS use_top_k_dynamic_filtering = 0)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT groupArray(id) FROM (SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 20)
+SETTINGS use_top_k_dynamic_filtering = 0;
+SELECT groupArray(id) FROM (SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 20)
+SETTINGS use_top_k_dynamic_filtering = 1;
+
+DROP TABLE t_topk_proj;
