@@ -18,16 +18,19 @@ mkdir -p "${FILES_DIR}"
 
 READER="reader_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 FS_DB="fsdb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+URL_DB="urldb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 RENAME="rename_files_after_processing='processed_%a'"
 
 # One input file per renaming scenario: a successful rename consumes the name.
-for name in direct_select wrapped_url cluster_initiator explain_pipeline explain_plan \
-            granted_write cached_armed_for_reader cached_armed_for_owner cached_unarmed; do
+for name in direct_select wrapped_url cluster_initiator cluster_no_setting cluster_granted \
+            explain_pipeline explain_plan granted_write urldb_denied urldb_granted \
+            cached_armed_for_reader cached_armed_for_owner cached_unarmed; do
     echo 7 > "${FILES_DIR}/${name}.csv"
 done
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP DATABASE IF EXISTS ${FS_DB};
+DROP DATABASE IF EXISTS ${URL_DB};
 DROP USER IF EXISTS ${READER};
 CREATE USER ${READER} IDENTIFIED WITH no_password;
 GRANT CREATE TEMPORARY TABLE ON *.* TO ${READER};
@@ -99,6 +102,13 @@ ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "SELECT * FROM file('${FILES_DIR}/cached_unarmed.csv', 'CSV', 'x UInt8')"
 file_state cached_unarmed
 
+echo '--- and neither is a fileCluster read without the setting'
+# The initiator check keys on the setting: made unconditional it would refuse every `fileCluster`
+# read to a user holding only `READ ON FILE`.
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_no_setting.csv', 'CSV', 'x UInt8')"
+file_state cluster_no_setting
+
 echo '--- a Filesystem database does not cache the rename rule for later queries'
 ${CLICKHOUSE_CLIENT} -q "
 CREATE DATABASE ${FS_DB} ENGINE = Filesystem('${FILES_DIR}');
@@ -127,14 +137,37 @@ file_state cached_unarmed
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${FS_DB}.\`cached_unarmed.csv\` SETTINGS ${RENAME}"
 file_state cached_unarmed
 
+echo '--- a URL database over file:// is gated the same way'
+# Its own resolution path: the delegate is built on a `Context::createCopy`, so the rule survives and
+# arms the storage, and the read reaches the gate through `StorageURLDatabaseTable::read`. The base
+# is empty and the table name is the absolute path, as in `04658_url_database_structure_read_grant`.
+${CLICKHOUSE_CLIENT} -q "
+CREATE DATABASE ${URL_DB} ENGINE = URL('file://');
+GRANT SELECT ON ${URL_DB}.* TO ${READER};
+"
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM ${URL_DB}.\`${FILES_DIR}/urldb_denied.csv\` SETTINGS ${RENAME}" 2>&1 |
+    grep -o -m1 'WRITE ON FILE'
+file_state urldb_denied
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${URL_DB}.\`${FILES_DIR}/urldb_granted.csv\` SETTINGS ${RENAME}"
+file_state urldb_granted
+
 echo '--- with WRITE ON FILE granted, the rename happens'
 ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${READER}"
 ${CLICKHOUSE_CLIENT} --user "${READER}" -q \
     "SELECT * FROM file('${FILES_DIR}/granted_write.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}"
 file_state granted_write
 
+echo '--- and the fileCluster workers still perform it once the initiator is authorized'
+# The initiator check is not the rename: it throws before any worker is contacted, so without this
+# arm the workers could stop applying the rule and every other `fileCluster` arm would still pass.
+${CLICKHOUSE_CLIENT} --user "${READER}" -q \
+    "SELECT * FROM fileCluster('test_shard_localhost', '${FILES_DIR}/cluster_granted.csv', 'CSV', 'x UInt8') SETTINGS ${RENAME}"
+file_state cluster_granted
+
 ${CLICKHOUSE_CLIENT} -q "
 DROP DATABASE IF EXISTS ${FS_DB};
+DROP DATABASE IF EXISTS ${URL_DB};
 DROP USER IF EXISTS ${READER};
 "
 rm -rf "${FILES_DIR}"
