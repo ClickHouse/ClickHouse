@@ -39,6 +39,22 @@ Cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, atualmente são executad
 
 O restante das condições e a restrição de amostragem `LIMIT` são executados no ClickHouse somente após a conclusão da consulta ao MySQL.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+As credenciais de uma conexão criptografada com o MySQL são fornecidas como chaves de coleção nomeada (ou como argumentos de chave-valor):
+
+| Parâmetro      | Descrição                                                                           |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `ssl_ca_pem`   | Conteúdo do certificado de CA usado para verificar o certificado do servidor MySQL. |
+| `ssl_cert_pem` | Conteúdo do certificado do cliente, para autenticação baseada em certificado.       |
+| `ssl_key_pem`  | Conteúdo da chave privada associada a `ssl_cert_pem`.                               |
+
+Os valores correspondem ao conteúdo dos respectivos arquivos PEM, que pode ser copiado para uma coleção nomeada ou para uma consulta. Eles são mascarados nos logs e em consultas `SHOW`, da mesma forma que as senhas.
+
+As mesmas credenciais também podem ser fornecidas como caminhos para arquivos no servidor, em `ssl_ca`, `ssl_cert` e `ssl_key` — mas **somente em uma coleção nomeada definida no arquivo de configuração do servidor**, e esse valor não pode ser substituído em uma consulta. O servidor abre esses arquivos com seus próprios privilégios. Portanto, aceitar um caminho via SQL permitiria que qualquer usuário capaz de definir uma fonte MySQL sondasse o sistema de arquivos local e se autenticasse com um certificado e uma chave que não tem permissão para ler.
+
 <div id="passing-a-query">
   ## Passando uma consulta em vez de um nome de tabela
 </div>
@@ -55,7 +71,7 @@ Isso é útil para executar junções, agregações ou qualquer outro processame
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada no dialeto do MySQL (identificadores entre crases) antes de ser enviada ao servidor. Portanto, ela deve ser um SQL válido do ClickHouse. Para passar sintaxe específica do MySQL que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao MySQL literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é enviado para execução na consulta fornecida — ele é aplicado no ClickHouse depois que todo o resultado da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse circundante **não** é enviado para execução na consulta fornecida — ele é aplicado no ClickHouse depois que todo o resultado da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
 </Note>
 
 Compatível com várias réplicas, que devem ser listadas com `|`. Por exemplo:
@@ -70,14 +86,14 @@ ou
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
 Um objeto de tabela com as mesmas colunas da tabela MySQL original.
 
 <Note>
-  Alguns tipos de dados do MySQL podem ser mapeados para diferentes tipos do ClickHouse — isso é controlado pela configuração em nível de consulta [mysql&#95;datatypes&#95;support&#95;level](/pt-BR/reference/settings/session-settings#mysql_datatypes_support_level)
+  Alguns tipos de dados do MySQL podem ser mapeados para diferentes tipos do ClickHouse — isso é controlado pela configuração em nível de consulta [mysql&#95;datatypes&#95;support&#95;level](/pt-BR/reference/settings/session-settings/mysql#mysql_datatypes_support_level)
 </Note>
 
 <Note>
@@ -206,9 +222,9 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 
 * [O motor de tabela &#39;MySQL&#39;](/pt-BR/reference/engines/table-engines/integrations/mysql)
 * [Usar o MySQL como origem de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mysql)
-* [mysql&#95;datatypes&#95;support&#95;level](/pt-BR/reference/settings/session-settings#mysql_datatypes_support_level)
-* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/pt-BR/reference/settings/session-settings#mysql_map_fixed_string_to_text_in_show_columns)
-* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/pt-BR/reference/settings/session-settings#mysql_map_string_to_text_in_show_columns)
-* [mysql&#95;max&#95;rows&#95;to&#95;insert](/pt-BR/reference/settings/session-settings#mysql_max_rows_to_insert)
+* [mysql&#95;datatypes&#95;support&#95;level](/pt-BR/reference/settings/session-settings/mysql#mysql_datatypes_support_level)
+* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/pt-BR/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
+* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/pt-BR/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
+* [mysql&#95;max&#95;rows&#95;to&#95;insert](/pt-BR/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
 
 {/*AUTOGENERATED_END*/}

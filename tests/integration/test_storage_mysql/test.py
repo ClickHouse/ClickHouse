@@ -1204,6 +1204,120 @@ def test_mysql_geometry(started_cluster):
     conn.close()
 
 
+def test_mysql_nullable_geometry(started_cluster):
+    # Regression test for #110933: a nullable MySQL spatial column must infer as Nullable(String)
+    # instead of throwing ILLEGAL_TYPE_OF_ARGUMENT (the geometric types cannot be inside Nullable).
+    table_name = "test_mysql_nullable_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring,
+            `pg` polygon,
+            `mls` multilinestring,
+            `mpg` multipolygon,
+            `mpt` multipoint,
+            `pt` point,
+            `geo` geometry,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        # One row with values and one row leaving every spatial column NULL.
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                mpt = ST_GeomFromText('MULTIPOINT(0 0, 1 1)'),
+                pt = ST_GeomFromText('POINT(1 2)'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)')
+        """
+        )
+        cursor.execute(f"INSERT INTO `clickhouse`.`{table_name}` SET id = 2")
+        cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+        assert cursor.fetchone()[0] == 2
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # Schema inference must succeed: every nullable spatial type falls back to `Nullable(String)`.
+    # Before the fix this DESCRIBE threw ILLEGAL_TYPE_OF_ARGUMENT.
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(mpt), toTypeName(geo) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "\t".join(["Nullable(String)"] * 6)
+    )
+
+    # `Point` is a Tuple and CAN be inside Nullable, so it must keep mapping to `Nullable(Point)`
+    # and read back as a point value: the fallback must not be over-broad.
+    assert (
+        node1.query(f"SELECT toTypeName(pt) FROM {table_function} LIMIT 1").strip()
+        == "Nullable(Point)"
+    )
+    assert (
+        node1.query(f"SELECT pt FROM {table_function} ORDER BY id").strip()
+        == "(1,2)\n\\N"
+    )
+
+    # The non-null row reads back the exact raw WKB of the stored geometry (leading SRID 0, then
+    # the little-endian WKB body), not a formatted geometry and not corrupted bytes.
+    assert (
+        node1.query(f"SELECT hex(ls) FROM {table_function} WHERE id = 1").strip()
+        == "0000000001020000000300000000000000000000000000000000000000000000000000F03F"
+        "000000000000F03F00000000000000400000000000000040"
+    )
+
+    # The all-NULL row must read back as NULL for every spatial column (not a silently-defaulted
+    # empty geometry): the nullable fallback preserves the MySQL NULL.
+    assert (
+        node1.query(
+            f"SELECT ls, pg, mls, mpg, mpt, geo FROM {table_function} WHERE id = 2"
+        ).strip()
+        == "\t".join(["\\N"] * 6)
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM {table_function} WHERE ls IS NULL AND geo IS NULL"
+        ).strip()
+        == "1"
+    )
+
+    # The MySQL table engine with inferred columns (the CREATE path) must also succeed and read back.
+    node1.query("DROP TABLE IF EXISTS test_nullable_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_nullable_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(geo) FROM test_nullable_geometry_inferred LIMIT 1"
+        ).strip()
+        == "Nullable(String)\tNullable(String)"
+    )
+    assert (
+        node1.query(
+            "SELECT count() FROM test_nullable_geometry_inferred WHERE id = 2 AND ls IS NULL"
+        ).strip()
+        == "1"
+    )
+    node1.query("DROP TABLE IF EXISTS test_nullable_geometry_inferred")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")
@@ -1554,6 +1668,62 @@ def test_mysql_ssl_empty_override_is_rejected(started_cluster):
         with pytest.raises(QueryRuntimeException) as exception:
             node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
         assert "cannot be overridden with an empty" in str(exception.value)
+
+    # The rejection must not depend on the form the collection stores the credential in: a
+    # collection carrying the contents (`ssl_ca_pem`) rather than a path is stripped of its CA by
+    # an empty override just the same. This used to slip through the empty-path fast path, which
+    # returned before the query-override check ran.
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_contents_nc")
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_ssl_contents_nc AS
+            user = 'ssl_user', password = '', host = 'mysql80', port = 3306,
+            database = 'clickhouse', table = 'test_table',
+            ssl_ca_pem = {quote_certificate("ca.pem")},
+            ssl_cert_pem = {quote_certificate("client-cert.pem")},
+            ssl_key_pem = {quote_certificate("client-key.pem")}
+        """
+    )
+    try:
+        for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+            with pytest.raises(QueryRuntimeException) as exception:
+                node1.query(
+                    f"SELECT count() FROM mysql(mysql_ssl_contents_nc, {key} = '')"
+                )
+            assert "cannot be overridden with an empty" in str(exception.value)
+
+        # The overrides of a dictionary created with a DDL query arrive as generated configuration
+        # keys rather than as an AST, and must be recognized as query-supplied all the same. The
+        # source of a dictionary is instantiated when it is loaded, so the load is what surfaces
+        # the rejection.
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
+        node1.query(
+            """
+            CREATE DICTIONARY mysql_ssl_empty_override_dictionary (id UInt32, name String)
+            PRIMARY KEY id
+            SOURCE(MYSQL(NAME mysql_ssl_contents_nc SSL_CA_PEM ''))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_empty_override_dictionary")
+        assert "cannot be overridden with an empty" in str(exception.value)
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
+        node1.query("DROP NAMED COLLECTION mysql_ssl_contents_nc")
+
+    # The rejection covers exactly the overrides that would drop a credential the collection
+    # carries. On a collection with no TLS keys at all there is nothing to drop, so an empty
+    # override stays the no-op it is for the direct arguments (`mysql1` stores no `ssl_*` keys).
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, "test_table")
+    create_mysql_table(conn, "test_table")
+    try:
+        for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+            assert node1.query(f"SELECT count() FROM mysql(mysql1, {key} = '')") == "0\n"
+    finally:
+        drop_mysql_table(conn, "test_table")
+        conn.close()
 
     # The table and database engines share `getSSLParams` with the table function; the engine form
     # is rejected when the storage is created. (The database engine cannot be exercised with

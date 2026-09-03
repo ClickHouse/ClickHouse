@@ -32,6 +32,13 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
         hash_input_types.push_back(header->getByPosition(column_number).type);
 }
 
+std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
+{
+    auto transform = std::make_shared<ScatterByPartitionTransform>(std::move(header), output_size_, ColumnNumbers{});
+    transform->round_robin_bucket = start_bucket % output_size_;
+    return transform;
+}
+
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
     auto & input = getInputs().front();
@@ -144,6 +151,14 @@ void ScatterByPartitionTransform::generateOutputChunks()
     const auto & columns = chunk.getColumns();
 
     output_chunks.resize(output_size);
+
+    if (round_robin_bucket)
+    {
+        /// The chunk is moved whole so its ChunkInfo (e.g. aggregation metadata) survives.
+        output_chunks[*round_robin_bucket] = std::move(chunk);
+        *round_robin_bucket = (*round_robin_bucket + 1) % output_size;
+        return;
+    }
 
     /// Special case for 0 key columns. It is an unlikely but still valid case.
     if (key_columns.empty())

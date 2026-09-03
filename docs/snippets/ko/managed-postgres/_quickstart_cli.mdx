@@ -38,7 +38,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ clickhousectl cloud postgres create \
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -88,7 +88,7 @@ done
 ```
 
 <div id="load-sample-data">
-  ### 샘플 데이터 로드
+  ### 샘플 데이터 Load
 </div>
 
 두 개의 테이블을 생성하고 `psql`을 사용해 이벤트 100만 건을 삽입합니다:
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-NVMe 스토리지 덕분에 `c6gd.large`(가장 작은 사양)에서는 100만 행 삽입이 약 7초 만에 완료됩니다. 쿼리로 확인하세요. 데이터는 `random()`으로 생성되므로 실행할 때마다 행 수가 달라집니다:
+NVMe 스토리지 덕분에 `m6gd.large`(가장 작은 사양)에서는 100만 행 삽입이 약 7초 만에 완료됩니다. 쿼리로 확인하세요. 데이터는 `random()`으로 생성되므로 실행할 때마다 행 수가 달라집니다:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ done
   ### 테이블을 ClickHouse로 복제
 </div>
 
-ClickHouse 서비스에서 Managed Postgres 호스트명을 대상으로 Postgres CDC ClickPipe를 생성하세요. 이 파이프는 기존 행을 복사한 후, 이후 발생하는 변경 사항도 반영하여 ClickHouse와 계속 동기화합니다:
+ClickHouse 서비스에서 ClickHouse Managed Postgres 호스트명을 대상으로 Postgres CDC ClickPipe를 생성하세요. 이 파이프는 기존 행을 복사한 후, 이후 발생하는 변경 사항도 반영하여 ClickHouse와 계속 동기화합니다:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 Heredoc은 의도적으로 따옴표로 감싸지 않았으므로, SQL이 Postgres에 전달되기 전에 셸이 `$CH_HOST`와 `$CH_PASSWORD`를 치환합니다. 이제 복제된 테이블이 `organization` 스키마의 외부 테이블(foreign table)로 표시되며, 해당 테이블에 대한 쿼리는 ClickHouse에서 실행됩니다.
 
-이 데이터셋을 사용해 `c6gd.large`에서 측정한 결과, 분석 쿼리는 외부 테이블을 통해 실행할 때 6~9배 더 빠르게 실행됩니다(예: 5개 집계 GROUP BY는 ClickHouse 경유 시 176ms, 로컬에서는 1,133ms이며, 집계가 포함된 JOIN은 298ms 대 2,764ms입니다).
+이 데이터셋을 사용해 `m6gd.large`에서 측정한 결과, 분석 쿼리는 외부 테이블을 통해 실행할 때 6~9배 더 빠르게 실행됩니다(예: 5개 집계 GROUP BY는 ClickHouse 경유 시 176ms, 로컬에서는 1,133ms이며, 집계가 포함된 JOIN은 298ms 대 2,764ms입니다).
 
 <div id="cleanup-resources">
   ## 정리
