@@ -428,6 +428,49 @@ RIGHT JOIN (
 ) AS i ON o.key = i.key
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1;
 
+-- A nested join written GLOBAL on the materialized side materializes its own side regardless of
+-- what the outer JOIN decides, so the ineligible table under it is never read by a replica and
+-- does not have to force the outer JOIN global. Only the locality distinguishes the two shapes:
+-- without the keyword nothing else materializes that branch, which is the control below.
+
+SELECT '-- explicit GLOBAL nested join on the materialized left: the local join is kept';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (
+        SELECT a.key AS key FROM t_mid AS a GLOBAL LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%';
+
+SELECT '-- explicit GLOBAL nested join on the materialized left: the nested side is materialized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (
+        SELECT a.key AS key FROM t_mid AS a GLOBAL LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL LEFT JOIN `_data_%';
+
+SELECT '-- local nested join on the materialized left: the outer JOIN is still globalized';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (
+        SELECT a.key AS key FROM t_mid AS a LEFT JOIN t_merge_left AS b ON a.key = b.key
+    ) AS l
+    RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%GLOBAL ALL RIGHT JOIN%' AND explain ILIKE '%_data_%';
+
+SELECT '-- explicit GLOBAL nested join on the materialized left: results are correct';
+SELECT r.key FROM (
+    SELECT a.key AS key FROM t_mid AS a GLOBAL LEFT JOIN t_merge_left AS b ON a.key = b.key
+) AS l
+RIGHT JOIN (SELECT key FROM t_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_prefer_local_join = 1;
+
 DROP VIEW v_left;
 DROP TABLE mv_left SYNC;
 DROP TABLE t_replicated_right SYNC;

@@ -1069,6 +1069,15 @@ public:
         }
     }
 
+    /// The materialized side of a GLOBAL join is read on the initiator and shipped as a temporary
+    /// table, so no replica ever reads the storages under it.
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        auto * join_node = parent->as<JoinNode>();
+        return !(join_node && join_node->getLocality() == JoinLocality::Global
+            && getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true) == child);
+    }
+
     std::vector<StoragePtr> storages;
     /// Parallel to `storages`; null where the storage came from a table function, which has no TableNode.
     std::vector<const TableNode *> table_nodes;
