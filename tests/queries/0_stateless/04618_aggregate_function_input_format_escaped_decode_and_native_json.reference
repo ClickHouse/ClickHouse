@@ -1,0 +1,16 @@
+=== TSV array mode: escape sequences inside elements are decoded before element parsing ===
+['610962','630A64']
+=== JSONEachRow value mode: string-wrapped object form for a JSON argument ===
+1	{"a":1}
+2	{"b":2}
+=== JSONEachRow value mode: quoted scalars parse to the same values as native ones ===
+1	42
+2	7
+=== JSONEachRow value mode: quoted String scalar with JSON escapes ===
+1	6865096C6C6F
+=== JSONEachRow value mode: legacy string-wrapped form still accepted for composite values ===
+1	[1,2,3]
+2	[4,5]
+=== JSONEachRow array mode: legacy string-wrapped form still accepted ===
+1	['x','y']
+2	['z']
