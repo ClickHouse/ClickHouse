@@ -7,36 +7,36 @@
       "versionId": "5e8eb2f148cc34089a58ef566bc0123f2ef0726c9083366bf4815bd39bf74645",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-03T19:03:20.214Z",
+          "updatedAt": "2026-09-03T19:43:13.478Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-03T19:03:20.316Z",
+          "updatedAt": "2026-09-03T19:43:13.596Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-03T19:03:20.554Z",
+          "updatedAt": "2026-09-03T19:43:13.834Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-03T19:03:20.772Z",
+          "updatedAt": "2026-09-03T19:43:14.070Z",
           "fileName": "docs.json",
           "postProcessHash": "a7ce0aefef5f845a7e9b1af32c5de5a9eee0919940a43b64b97b7b241650f838"
         },
         "es": {
-          "updatedAt": "2026-09-03T19:03:19.966Z",
+          "updatedAt": "2026-09-03T19:43:13.194Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-03T19:03:20.658Z",
+          "updatedAt": "2026-09-03T19:43:13.951Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-03T19:03:20.441Z",
+          "updatedAt": "2026-09-03T19:43:13.710Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-03T19:03:20.107Z",
+          "updatedAt": "2026-09-03T19:43:13.355Z",
           "fileName": "docs.json"
         }
       },
@@ -136828,47 +136828,47 @@
     },
     {
       "fileId": "2ed11a83f8e1ed0e0a854b7ea70380e411e62cd0c817e99d9d1e5f9b9daaf61e",
-      "versionId": "f58191849c89c9e7b9ad33059a786a975f07c8083fed9c2802a42ac1fb6700d1",
+      "versionId": "036322d38c531ba09641238af03bdb441919c20631f16949c0734c9b8159e1c4",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-08-27T18:24:14.799Z",
-          "fileName": "snippets/zh/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "4ce27efa2ff62af6ee77976b3f9b679310b4031056327558436b613ec3c7bf9a"
+        "es": {
+          "updatedAt": "2026-09-03T19:43:17.061Z",
+          "fileName": "snippets/es/quickstarts/_cloud_quickstart_cli.mdx",
+          "postProcessHash": "b5c554822d14ed783f9aac869e7af10f4b7351d0c5e15176263b0017146d9f79"
         },
         "fr": {
-          "updatedAt": "2026-08-27T18:24:14.807Z",
+          "updatedAt": "2026-09-03T19:43:17.061Z",
           "fileName": "snippets/fr/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "7e114b232a1bfcb6b28da8a9403efc4ed5e1c3f2118cb3fd30413e118024a0a6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-27T18:24:15.634Z",
-          "fileName": "snippets/ko/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "83af09a59190bf57befe660ecdedbe7e493f9bdd769f8ea364f6506351155580"
+          "postProcessHash": "80f0c3302671198779fbbfbb8754b1bf0d744b49556ba66b81e0ca02e1fe5191"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-27T18:24:15.886Z",
+          "updatedAt": "2026-09-03T19:43:17.062Z",
           "fileName": "snippets/pt-BR/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "cb981de0b0699e6c9ecef0129b76583b050d9c1b6241cf0ad9c047a2d906ce1f"
+          "postProcessHash": "09cdd499088029856bc209c3fce9cb660b9dfa370720882425b48e3dc668f9ad"
+        },
+        "zh": {
+          "updatedAt": "2026-09-03T19:43:17.062Z",
+          "fileName": "snippets/zh/quickstarts/_cloud_quickstart_cli.mdx",
+          "postProcessHash": "93116cf59158cd2bd6464a959f9e4be6f80f3bf2ab75f572475edeae9aed52d9"
         },
         "ru": {
-          "updatedAt": "2026-08-27T18:24:15.904Z",
+          "updatedAt": "2026-09-03T19:43:17.063Z",
           "fileName": "snippets/ru/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "4c2a279b524f60627418fa7e640a9644e7d5df69e10bbf59a6305736eb899892"
-        },
-        "es": {
-          "updatedAt": "2026-08-27T18:24:16.182Z",
-          "fileName": "snippets/es/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "c5c3b3ca84ac506563d314b3c74d904f374cc6b5e7ba7815e534544fb6ae6f77"
-        },
-        "ar": {
-          "updatedAt": "2026-08-27T18:24:16.226Z",
-          "fileName": "snippets/ar/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "fc149e47ac55f2aa0620f62bb489f26f87f65f8355fd56b140c0ffabc11cbaef"
+          "postProcessHash": "815d52439f85e5a6d87e6598fa570b307a13c664d6e69dbad66529bd0523ddab"
         },
         "ja": {
-          "updatedAt": "2026-08-27T18:24:16.232Z",
+          "updatedAt": "2026-09-03T19:43:17.063Z",
           "fileName": "snippets/ja/quickstarts/_cloud_quickstart_cli.mdx",
-          "postProcessHash": "7bf8c75e172c857150531e97a6a2092b0b197063d5bc92bddc8174a35fdfcbb4"
+          "postProcessHash": "ac7fa0c21bd7d296225884ae20eda9c6c6b98bcb987b0cd45c7cc746de4ae2e6"
+        },
+        "ko": {
+          "updatedAt": "2026-09-03T19:43:17.063Z",
+          "fileName": "snippets/ko/quickstarts/_cloud_quickstart_cli.mdx",
+          "postProcessHash": "cc1fb58155372935aaaa168a5738209e140c0de2e21f565b70dae096b4940d61"
+        },
+        "ar": {
+          "updatedAt": "2026-09-03T19:43:17.064Z",
+          "fileName": "snippets/ar/quickstarts/_cloud_quickstart_cli.mdx",
+          "postProcessHash": "4e11ff28c73b301b0794c1d00b6592cb0f42fb5ed6ef2283e4a333f547986f54"
         }
       },
       "fileName": "snippets/quickstarts/_cloud_quickstart_cli.mdx"
