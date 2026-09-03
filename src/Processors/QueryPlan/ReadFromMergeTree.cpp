@@ -6650,8 +6650,10 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
         unsupported_deferred_filters = false;
 #endif
-    return !query_info.input_order_info
-        && !unsupported_deferred_filters
+    /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
+    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
+    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
 }
@@ -6659,17 +6661,15 @@ bool ReadFromMergeTree::supportsBucketedRead() const
 
 void ReadFromMergeTree::verifyBucketedReadSupported() const
 {
-    /// A bucketed read is pinned to the coordinator's part list and cannot re-derive read-in-order,
-    /// a projection, or text index tasks. A non-bucket read reaches a node that re-plans it locally
-    /// and re-derives them (a full replica; reads the stateless worker cannot reproduce are routed to
-    /// a replica too). Deferred FINAL filters are gated in supportsBucketedRead (bucketed only for the
-    /// worker path) and rejected in serialize.
+    /// A bucketed read is pinned to the coordinator's part list and cannot re-derive a projection or
+    /// text index tasks. A non-bucket read reaches a node that re-plans it locally and re-derives them
+    /// (a full replica; reads the stateless worker cannot reproduce are routed to a replica too).
+    /// ReadInOrder is now supported, it's info is serialized and sent to the replicas. Deferred
+    /// FINAL filters are gated in supportsBucketedRead (bucketed only for the worker path) and rejected
+    /// in serialize.
     if (distributed_read_bucket_count == 0)
         return;
 
-    if (query_info.input_order_info)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support a read-in-order distributed read");
     if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read from a projection");
@@ -6757,6 +6757,24 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// Every distributed bucket's marks travel in its own per-read task parameter (set during fan-out),
     /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+
+    const bool ship_input_order_info = query_info.input_order_info != nullptr && distributed_read_bucket_count > 0;
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
+    {
+        writeVarUInt(ship_input_order_info ? 1 : 0, ctx.out);
+        if (ship_input_order_info)
+        {
+            writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
+            writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
+            writeVarUInt(query_info.input_order_info->limit, ctx.out);
+        }
+    }
+    else if (ship_input_order_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: a ReadInOrder distributed read requires query plan serialization "
+            "version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER);
     if (distributed_read_bucket_count > 0)
         writeStringBinary(distributed_read_param_name, ctx.out);
 }
@@ -6813,6 +6831,23 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
+
+    size_t input_order_prefix_size = 0;
+    Int8 input_order_direction = 1;
+    UInt64 input_order_limit = 0;
+    bool has_input_order_info = false;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
+    {
+        UInt64 flag = 0;
+        readVarUInt(flag, ctx.in);
+        has_input_order_info = flag != 0;
+        if (has_input_order_info)
+        {
+            readVarUInt(input_order_prefix_size, ctx.in);
+            readIntBinary(input_order_direction, ctx.in);
+            readVarUInt(input_order_limit, ctx.in);
+        }
+    }
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
     /// closed at the version boundary instead of misparsing the rest of the plan.
     if (distributed_read_bucket_count > 0 && ctx.version < 2)
@@ -6872,6 +6907,16 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+
+        /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
+        /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
+        /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
+        /// exchange pair collapses, which means the read was made distributed.
+        if (has_input_order_info
+            && !read_from_merge_tree_step->requestReadingInOrder(
+                input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Coordinator asked for a read-in-order distributed read that this node refused");
         read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 

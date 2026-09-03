@@ -22,6 +22,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -120,8 +124,42 @@ struct FindReadingStepContext
     bool allow_existing_order;
     bool read_in_order_through_join;
 
+    /// Whether an ORDER BY in a distributed plan may read in order at all, i.e. whether the exchange
+    /// steps below may be descended. Off by default; see distributed_plan_read_in_order.
+    bool distributed_plan_read_in_order = false;
+
+    /// Set while descending a keyless scatter whose pair was verified to collapse, so the gather half
+    /// below it may be descended too. A gather reached any other way is a real boundary.
+    bool inside_collapsing_exchange_pair = false;
+
     std::list<JoinStep *> joins_to_keep_in_order = {};
 };
+
+/// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
+/// the steps findReadingStep itself descends.
+GatherExchangeStep * findGatherOverRead(QueryPlan::Node & node, FindReadingStepContext & data)
+{
+    QueryPlan::Node * current = &node;
+    while (current->children.size() == 1)
+    {
+        current = current->children.front();
+        IQueryPlanStep * step = current->step.get();
+
+        if (auto * gather = typeid_cast<GatherExchangeStep *>(step))
+        {
+            if (!gather->getMaintainSortDescription().has_value() && current->children.size() == 1
+                && checkSupportedReadingStep(current->children.front()->step.get(), data.allow_existing_order) != nullptr)
+                return gather;
+            return nullptr;
+        }
+
+        /// Only a step optimizeExchanges lifts the gather through leaves the pair collapsible; anything
+        /// else keeps the scatter between the read and the sorting, where it destroys the read's order.
+        if (!canHoistGatherThroughStep(*step))
+            return nullptr;
+    }
+    return nullptr;
+}
 
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext & data)
 {
@@ -133,6 +171,26 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         return nullptr;
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+        return findReadingStep(*node.children.front(), data);
+
+    /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
+    /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
+    if (auto * scatter = typeid_cast<ScatterExchangeStep *>(step);
+        scatter && scatter->getKeys().empty() && data.distributed_plan_read_in_order)
+    {
+        auto * gather = findGatherOverRead(node, data);
+        if (gather && scatter->getResultBucketCount() == gather->getSourceBucketCount())
+        {
+            data.inside_collapsing_exchange_pair = true;
+            return findReadingStep(*node.children.front(), data);
+        }
+    }
+
+    /// The gather half of a pair the scatter branch above already verified collapses.
+    if (auto * gather = typeid_cast<GatherExchangeStep *>(step);
+        gather && data.distributed_plan_read_in_order && data.inside_collapsing_exchange_pair
+        && node.children.size() == 1
+        && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
@@ -1152,6 +1210,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1282,6 +1341,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1412,6 +1472,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1528,6 +1589,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1672,6 +1734,7 @@ static void preferMultipleStreamsForPushedDownLimitBy(
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1774,7 +1837,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                     child->step->getOutputHeader(),
                     info->sort_description_for_merging,
                     *max_sort_descr,
-                    sorting->getSettings().max_block_size,
+                    sorting->getSettings(),
                     0); /// TODO: support limit with ties
             }
 
