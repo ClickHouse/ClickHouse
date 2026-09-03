@@ -678,11 +678,15 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
         }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
-        for (size_t block_idx = 0; block_idx < current_segment->block_count; ++block_idx)
-        {
-            uint32_t block_last = current_segment->block_last_row_ids[block_idx];
+        const auto & block_last_row_ids = current_segment->block_last_row_ids;
+        const auto * first_block_it = std::lower_bound(block_last_row_ids.begin(), block_last_row_ids.end(), static_cast<uint32_t>(row_offset));
+        const size_t first_block_idx = static_cast<size_t>(first_block_it - block_last_row_ids.begin());
 
-            if (block_idx > 0 && current_segment->block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
+        for (size_t block_idx = first_block_idx; block_idx < current_segment->block_count; ++block_idx)
+        {
+            uint32_t block_last = block_last_row_ids[block_idx];
+
+            if (block_idx > 0 && block_last_row_ids[block_idx - 1] == std::numeric_limits<uint32_t>::max())
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data in lazy posting list cursor: previous block_last_row_id is UInt32::max "
@@ -691,11 +695,9 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
 
             uint32_t block_first = (block_idx == 0)
                 ? static_cast<uint32_t>(seg_begin)
-                : (current_segment->block_last_row_ids[block_idx - 1] + 1);
+                : (block_last_row_ids[block_idx - 1] + 1);
 
-            if (block_last < row_offset)
-                continue;
-
+            chassert(block_last >= row_offset);
             if (block_first >= row_offset + num_rows)
                 break;
 
@@ -717,7 +719,9 @@ void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t n
                 }
             }
 
-            decodeBlock(block_idx);
+            /// A block that straddles two consecutive windows is still decoded from the previous call.
+            if (block_idx != current_block || decoded_count == 0)
+                decodeBlock(block_idx);
 
             const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
             const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
