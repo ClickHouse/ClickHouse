@@ -46,6 +46,12 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
                 [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
             normalized_name.end());
 
+        /// A name that is empty after normalization is invalid: it cannot match a forbidden
+        /// entry and would be serialized as a bare ": value" line on the wire. Such a request
+        /// was always malformed, so rejecting it does not change the behaviour of any valid name.
+        if (normalized_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header name cannot be empty");
+
         /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
         /// entries are stored lower-cased, so lower-case the name for that lookup.
         const std::string lower_name = Poco::toLower(normalized_name);

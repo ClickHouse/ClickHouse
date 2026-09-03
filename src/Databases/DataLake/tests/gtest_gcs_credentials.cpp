@@ -106,4 +106,14 @@ TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
 }
 
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsNameEmptyAfterNormalization)
+{
+    /// A name that is only whitespace/control normalizes to "" and must be rejected rather than
+    /// serialized as a bare ": value" line.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({" \t ", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
 }
