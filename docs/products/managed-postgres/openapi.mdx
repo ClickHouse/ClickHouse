@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Control your ClickHouse Managed Postgres services with our OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries', 'server logs', 'logs']
 doc_type: 'guide'
 ---
 
@@ -79,12 +79,6 @@ like:
 
 Let's explore the lifecycle of a Postgres service.
 
-<Warning>
-**Credential redaction from July 31, 2026**
-
-As of **July 31, 2026**, the API no longer returns the `password` and `connectionString` properties in its responses. They appear only in the [create](#create) response and [password reset] response when the request contained no password. We recommend that you capture credentials from the [create](#create) response. If you manage services with Terraform, upgrade the provider to **v3.21.0 or later** before July 31, 2026 (see the [Terraform reference](/products/managed-postgres/terraform)).
-</Warning>
-
 ### Create {#create}
 
 First, create a new one
@@ -111,7 +105,9 @@ create_data='{
 ```
 
 Now use this data to create a new instance; note that it requires the content
-type header. Save the response in order to have access to the credentials it returns:
+type header. Save the response: it is the only one that includes the service
+credentials (the [password reset] response also returns them when the request
+does not supply a password):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -158,7 +154,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-The output will be similar to the JSON returned for creation (but without the `password` and `connectionString` properties after July 31, 2026), but keep an eye
+The output will be similar to the JSON returned for creation, minus the
+credentials, but keep an eye
 on the `state`; when it changes to `running`, the server is ready:
 
 ```bash
@@ -217,9 +214,7 @@ The returned data should include the new tags:
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
@@ -423,6 +418,56 @@ time, parallel workers, JIT, and WAL — the same counters the
 The example trims both objects for brevity; the API returns the complete
 counter set documented under [per-execution counters].
 
+## Server logs {#server-logs}
+
+The PostgreSQL server logs behind the logs viewer in the cloud console are also
+available programmatically. The [logs API] returns individual log entries for a
+service over a time window. As with query insights, the window is required, so
+pass `from_date` and `to_date` as RFC 3339 timestamps. The range must not exceed
+30 days, and `to_date` must be after `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Entries come back newest first; flip the direction with `sort_order` (`asc` or
+`desc`). Filter to a single severity with `severity` (for example `ERROR`,
+`WARNING`, or `LOG`), match a case-sensitive substring of the log body with
+`body_contains`, and page through the results with `limit` and `offset`.
+
+Each entry carries its `timestamp`, `severity`, and raw `body`. The body is
+always a string: structured log lines are returned JSON-encoded, plain lines
+verbatim:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+The endpoint pages with `limit` and `offset` rather than returning a total
+count; advance `offset` until a page returns fewer than `limit` entries.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 [API keys]: /products/cloud/features/admin-features/api/openapi "Managing API Keys"
@@ -459,3 +504,5 @@ counter set documented under [per-execution counters].
   "List Postgres slow query patterns"
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get
   "Get a Postgres slow query pattern with recent executions"
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list
+  "List Postgres server logs"

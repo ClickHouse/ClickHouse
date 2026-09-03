@@ -33,14 +33,8 @@ static std::string getOrCreateCustomDisk(
     bool attach,
     bool for_system_database)
 {
-    std::string default_path = "/etc/metrika.xml";
-
     const auto & server_config = context->getConfigRef();
-    std::string include_from_path;
-    if (server_config.has("include_from"))
-        include_from_path = server_config.getString("include_from");
-    else if (fs::exists(default_path))
-        include_from_path = default_path;
+    std::string include_from_path = server_config.getString("include_from", "");
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {

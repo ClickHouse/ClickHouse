@@ -72,7 +72,7 @@ Therefore, the function consumes `O(n)` memory, where `n` is a number of values 
 However, for a small number of values, the function is very effective.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileExact(level)(expr)
@@ -106,7 +106,7 @@ SELECT quantileExact(number) FROM numbers(10);
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
 
-This function is equivalent to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 To get exact values, all the passed values are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is the number of values passed.
     )";

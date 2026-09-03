@@ -24,12 +24,12 @@ doc_type: 'reference'
 
 노이즈(예: 로그 파일)가 포함될 수 있습니다. 해석할 키-값 쌍 포맷은 함수 인수를 통해 지정해야 합니다.
 
-키-값 쌍은 키, `key_value_delimiter`, 값 순서로 구성됩니다. 따옴표로 묶인 키와 값도 지원됩니다. 키-값 쌍은 쌍 구분 기호(pair delimiter)로 구분해야 합니다.
+키-값 쌍은 키 다음에 `key_value_delimiter`와 값이 오는 형태로 구성됩니다. 따옴표로 묶인 키와 값도 지원됩니다. 키-값 쌍은 쌍 구분 기호로 구분되어야 합니다.
 
 **구문**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **인수**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - 키와 값을 구분하는 데 사용하는 문자입니다. 기본값은 `:`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
 * `pair_delimiters` - 각 쌍을 구분하는 데 사용하는 문자 집합입니다. 기본값은 `\space`, `,`, `;`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
 * `quoting_character` - 인용 문자로 사용하는 문자입니다. 기본값은 `"`입니다. [String](/ko/reference/data-types/string) 또는 [FixedString](/ko/reference/data-types/fixedstring)입니다.
-* `unexpected_quoting_character_strategy` - `read_key` 및 `read_value` 단계에서 예상하지 못한 위치에 있는 인용 문자를 처리하는 전략입니다. 가능한 값은 `invalid`, `accept`, `promote`입니다. `invalid`는 키/값을 버리고 `WAITING_KEY` 상태로 다시 전환합니다. `accept`는 이를 일반 문자로 처리합니다. `promote`는 `READ_QUOTED_{KEY/VALUE}` 상태로 전환한 뒤 다음 문자부터 시작합니다. 기본값은 `INVALID`입니다.
+* `unexpected_quoting_character_strategy` - `read_key` 및 `read_value` 단계에서 예상하지 못한 위치에 있는 인용 문자를 처리하는 전략입니다. 가능한 값은 `invalid`, `accept`, `promote`입니다. `invalid`는 키/값을 버리고 `WAITING_KEY` 상태로 다시 전환합니다. `accept`는 이를 일반 문자로 처리합니다. `promote`는 `READ_QUOTED_{KEY/VALUE}` 상태로 전환한 뒤 다음 문자부터 시작합니다. 기본값은 `PROMOTE`입니다.
 
 **반환 값**
 
@@ -144,7 +144,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 └──────────────┘
 ```
 
-**이스케이프 시퀀스 지원이 없는 경우의 이스케이프 시퀀스**
+**이스케이프 시퀀스 지원 없이 사용하는 이스케이프 시퀀스**
 
 ```sql
 arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **구문**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **별칭**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **구문**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **인수**
@@ -293,14 +293,14 @@ SELECT mapAdd(map(1, 1), map(1, 1))
 {1:2}
 ```
 
-**Tuple 사용**
+**튜플 사용**
 
 ```sql title=Query
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))
 ```
 
 ```response title=Response
-([1, 2], [2, 2])
+([1,2],[2,2])
 ```
 
 <div id="mapAll">
@@ -530,7 +530,7 @@ SELECT mapContainsValue(map('k1', 'v1', 'k2', 'v2'), 'v1')
   ## mapContainsValueLike
 </div>
 
-도입된 버전: v25.5.0
+도입 버전: v25.5.0
 
 맵에 지정된 패턴과 `LIKE`로 일치하는 값이 포함되어 있는지 확인합니다.
 
@@ -564,10 +564,10 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 ```
 
 ```response title=Response
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="mapExists">
@@ -775,7 +775,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 ```
 
 ```response title=Response
-{1:('a', 1), 2:('b', 2), 3:('c', 3)}
+{1:('a',1),2:('b',2),3:('c',3)}
 ```
 
 <div id="mapKeys">
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 도입 버전: v21.2.0
 
 주어진 맵의 키를 반환합니다.
-이 함수는 설정 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns)을 활성화하면 최적화됩니다.
+이 함수는 설정 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)을 활성화하면 최적화됩니다.
 이 설정이 활성화되면 전체 맵 대신 `keys` 서브컬럼만 읽습니다.
 쿼리 `SELECT mapKeys(m) FROM table`는 `SELECT m.keys FROM table`로 변환됩니다.
 
@@ -927,7 +927,7 @@ SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)
 ```
 
 ```response title=Response
-{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}
+{1:10,2:0,3:0,4:0,5:20,6:0}
 ```
 
 **매핑된 배열 사용**
@@ -937,7 +937,7 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 ```
 
 ```response title=Response
-([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])
+([1,2,3,4,5],[11,22,0,44,0])
 ```
 
 <div id="mapReverseSort">
@@ -1046,14 +1046,14 @@ SELECT mapSubtract(map(1, 1), map(1, 1))
 {1:0}
 ```
 
-**Tuple 맵과 함께 사용**
+**튜플 맵과 함께 사용**
 
 ```sql title=Query
 SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))
 ```
 
 ```response title=Response
-([1, 2], [-1, 0])
+([1,2],[-1,0])
 ```
 
 <div id="mapUpdate">
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 도입 버전: v21.2.0
 
 주어진 맵의 값을 반환합니다.
-이 함수는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다.
+이 함수는 [`optimize_functions_to_subcolumns`](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 최적화할 수 있습니다.
 이 설정을 활성화하면 함수는 전체 맵 대신 `values` 서브컬럼만 읽습니다.
 쿼리 `SELECT mapValues(m) FROM table`는 `SELECT m.values FROM table`로 변환됩니다.
 

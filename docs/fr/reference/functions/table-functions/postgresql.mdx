@@ -23,19 +23,21 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
   ## Arguments
 </div>
 
-| Argument      | Description                                                                                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host:port`   | Adresse du serveur PostgreSQL.                                                                                                                                |
-| `database`    | Nom de la base de données distante.                                                                                                                           |
+| Argument      | Description                                                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port`   | Adresse du serveur PostgreSQL.                                                                                                                        |
+| `database`    | Nom de la base de données distante.                                                                                                                   |
 | `table`       | Nom de la table distante, ou une requête transmise à PostgreSQL telle quelle (voir [passer une requête au lieu d’un nom de table](#passing-a-query)). |
-| `user`        | Utilisateur PostgreSQL.                                                                                                                                       |
-| `password`    | Mot de passe de l&#39;utilisateur.                                                                                                                            |
-| `schema`      | Schéma de table autre que celui par défaut. Facultatif.                                                                                                       |
-| `on_conflict` | Stratégie de résolution des conflits. Exemple : `ON CONFLICT DO NOTHING`. Facultatif.                                                                         |
+| `user`        | Utilisateur PostgreSQL.                                                                                                                               |
+| `password`    | Mot de passe de l&#39;utilisateur.                                                                                                                    |
+| `schema`      | Schéma de table autre que celui par défaut. Facultatif.                                                                                               |
+| `on_conflict` | Stratégie de résolution des conflits. Exemple : `ON CONFLICT DO NOTHING`. Facultatif.                                                                 |
 
 Les arguments peuvent également être transmis à l&#39;aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, `host` et `port` doivent être indiqués séparément. Cette approche est recommandée en production.
 
-<div id="returned_value">
+Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être fournis sous forme de clés de collection nommée ou d’arguments clé-valeur ajoutés à la fin : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full` ; s’il n’est pas défini, la valeur par défaut `prefer` de `libpq` s’applique), ainsi que les certificats et la clé, sous l’une de deux formes. `sslrootcert` (certificat d’AC ou valeur spéciale `system`), `sslcert` (certificat client) et `sslkey` (clé privée du client) sont des chemins vers des fichiers locaux au serveur et ne peuvent être spécifiés que dans une collection nommée définie dans le fichier de configuration du serveur. `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent à la place le contenu littéral du fichier correspondant — par exemple, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — et sont masqués dans les journaux et les requêtes `SHOW`, comme un mot de passe.
+
+<div id="returned-value">
   ## Valeur renvoyée
 </div>
 
@@ -83,7 +85,7 @@ Cela est utile pour déléguer à PostgreSQL les jointures, les agrégations ou 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse puis re-sérialisée dans le dialecte PostgreSQL (quotage des identifiants PostgreSQL et échappement des littéraux de chaîne) avant d’être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe spécifique à PostgreSQL que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à PostgreSQL.
 
-  Toute clause externe `WHERE`, `LIMIT`, agrégation, etc. de la requête ClickHouse englobante n’est **pas** déléguée à la requête transmise — elle est appliquée dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis PostgreSQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings#external_table_strict_query), un filtre externe qui ne peut pas être délégué est rejeté avec une exception au lieu d’être appliqué localement.
+  Toute clause externe `WHERE`, `LIMIT`, agrégation, etc. de la requête ClickHouse englobante n’est **pas** déléguée à la requête transmise — elle est appliquée dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis PostgreSQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être délégué est rejeté avec une exception au lieu d’être appliqué localement.
 </Note>
 
 Les requêtes `INSERT` côté PostgreSQL s’exécutent sous la forme de `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` à l’intérieur d’une transaction PostgreSQL avec commit automatique après chaque instruction `INSERT`.
@@ -100,7 +102,7 @@ Prend en charge plusieurs répliques, qui doivent être séparées par `|`. Par 
 SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
 ```
 
-or
+ou
 
 ```sql
 SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');

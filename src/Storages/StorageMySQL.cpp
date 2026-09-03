@@ -22,6 +22,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <mysqlxx/Transaction.h>
@@ -188,7 +189,7 @@ void StorageMySQL::readImpl(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
+    MySQLStreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
     query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
         sample_block,
@@ -327,12 +328,161 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
+mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
+{
+    /// A path to a certificate or a key is only accepted from the server configuration file: the
+    /// server opens the file with its own privileges, so taking a path from SQL would let anyone who
+    /// can define a MySQL source probe the local filesystem, and authenticate with a client
+    /// certificate they are not allowed to read themselves.
+    const bool from_config = named_collection.getSourceId() == NamedCollection::SourceId::CONFIG;
+
+    auto get_path = [&](const std::string & key, const std::string & contents_key)
+    {
+        auto value = named_collection.getOrDefault<String>(key, "");
+
+        /// Checked before the empty fast path: overriding a configured path with the empty string
+        /// would silently drop the credential the operator configured, e.g. disable the verification
+        /// of the server certificate against `ssl_ca`.
+        if (named_collection.isQueryOverridden(key))
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden
+            /// or not, so the override rejection would name the wrong remedy.
+            if (!from_config)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    key, contents_key);
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden in a query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+        }
+
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
+        if (value.empty())
+            return value;
+
+        if (!from_config)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` can only be specified in a named collection defined in the server configuration file. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
+        /// The contents are the SQL-safe form of the same credential, so a query passing them replaces
+        /// the path inherited from the collection - that is the only way to override the credential
+        /// from SQL at all. Both forms coming from the collection definition itself remain ambiguous.
+        if (named_collection.isQueryOverridden(contents_key))
+        {
+            /// A credential the operator explicitly locked (`<ssl_ca overridable="false">`) cannot be
+            /// replaced through the contents form either.
+            if (!named_collection.isOverridable(key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+
+            return String{};
+        }
+
+        if (!named_collection.getOrDefault<String>(contents_key, "").empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
+
+        return value;
+    };
+
+    mysqlxx::SSLParams ssl_params;
+    ssl_params.ca_path = get_path("ssl_ca", "ssl_ca_pem");
+    ssl_params.cert_path = get_path("ssl_cert", "ssl_cert_pem");
+    ssl_params.key_path = get_path("ssl_key", "ssl_key_pem");
+    ssl_params.ca_pem = named_collection.getOrDefault<String>("ssl_ca_pem", "");
+    ssl_params.cert_pem = named_collection.getOrDefault<String>("ssl_cert_pem", "");
+    ssl_params.key_pem = named_collection.getOrDefault<String>("ssl_key_pem", "");
+    return ssl_params;
+}
+
+mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_)
+{
+    /// The TLS credentials may follow the positional arguments as `key = value` pairs. Only the
+    /// contents are accepted there: a path is taken from the server configuration file alone, for the
+    /// reason described at `getSSLParams`.
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> tls_keys
+        = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};
+
+    std::map<String, String> values;
+
+    size_t num_positional_arguments = arguments.size();
+    while (num_positional_arguments > 0)
+    {
+        const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            break;
+
+        const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+        if (!identifier)
+            break;
+
+        const String key = identifier->name();
+        bool is_contents_key = false;
+        for (const auto & [path_key, contents_key] : tls_keys)
+        {
+            if (key == path_key)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    path_key, contents_key);
+            if (key == contents_key)
+                is_contents_key = true;
+        }
+
+        /// Anything else is left in place, so that it is reported as an unexpected argument.
+        if (!is_contents_key)
+            break;
+
+        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
+        if (!values.emplace(key, checkAndGetLiteralArgument<String>(value, key)).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `{}` is specified more than once", key);
+
+        --num_positional_arguments;
+    }
+
+    arguments.resize(num_positional_arguments);
+
+    auto get = [&](const String & key)
+    {
+        auto it = values.find(key);
+        return it == values.end() ? String{} : it->second;
+    };
+
+    mysqlxx::SSLParams ssl_params;
+    ssl_params.ca_pem = get("ssl_ca_pem");
+    ssl_params.cert_pem = get("ssl_cert_pem");
+    ssl_params.key_pem = get("ssl_key_pem");
+    return ssl_params;
+}
+
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
+        = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -374,9 +524,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     }
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
-    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
-    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
-    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
+    configuration.ssl_params = getSSLParams(named_collection);
 
     storage_settings.loadFromNamedCollection(named_collection);
 
@@ -392,10 +540,13 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     }
     else
     {
+        configuration.ssl_params = extractSSLParamsFromArguments(engine_args, context_);
+
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
                             "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
-                            "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
+                            "'user', 'password'[, replace_query, 'on_duplicate_clause']"
+                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
@@ -436,7 +587,7 @@ ReadFromMySQLStep::ReadFromMySQLStep(
     const Block & sample_block_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
-    const StreamSettings & mysql_input_stream_settings_
+    const MySQLStreamSettings & mysql_input_stream_settings_
 )
     : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , pool(std::move(pool_))
@@ -517,7 +668,7 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the original MySQL table structure:
 
@@ -537,11 +688,37 @@ The table structure can differ from the original MySQL table structure:
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+## TLS/SSL {#tls-ssl}
+
+The credentials of an encrypted connection to MySQL are passed as named collection keys (or as key-value arguments):
+
+| Parameter | Description |
+|-----------|-------------|
+| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
+| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
+| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+
+The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+
+The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
+
+```xml
+<named_collections>
+    <mysql_creds>
+        <host>mysql-host</host>
+        <port>3306</port>
+        <user>mysql_user</user>
+        <password>****</password>
+        <ssl_ca>/etc/clickhouse-server/mysql-ca.crt</ssl_ca>
+    </mysql_creds>
+</named_collections>
+```
 
 ## Passing a query instead of a table name {#passing-a-query}
 
@@ -552,7 +729,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b F
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/reference/functions/table-functions/mysql) table function.
 
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
@@ -602,7 +779,7 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
-Or using [named collections](/operations/named-collections.md):
+Or using [named collections](/concepts/features/configuration/server-config/named-collections):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -729,7 +906,7 @@ SETTINGS enable_compression = 1;
 ## See also {#see-also}
 
 - [The mysql table function](/reference/functions/table-functions/mysql)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
+- [Using MySQL as a dictionary source](/reference/statements/create/dictionary/sources/mysql)
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",
         .related = {"PostgreSQL", "SQLite", "MongoDB"}});

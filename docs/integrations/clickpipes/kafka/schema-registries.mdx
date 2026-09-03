@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickPipes supports integrating with a schema registry to decode Avro- and Protobuf-encoded topics.
+ClickPipes supports integrating with a schema registry to decode Avro- and Protobuf-encoded record values and [structured Kafka keys](/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 ## Supported registries for Kafka ClickPipes {#supported-schema-registries}
 
@@ -38,7 +38,7 @@ To integrate with a schema registry during ClickPipes configuration, you must us
 
 ClickPipes connects to the schema registry over HTTPS at the URL you provide. The schema registry does not need to be publicly accessible.
 
-If your Kafka brokers are reached through a [reverse private endpoint](/integrations/clickpipes/aws-privatelink) (AWS PrivateLink or GCP Private Service Connect), the schema registry can use the same private connectivity. ClickPipes resolves the registry hostname through the reverse private endpoint's private DNS, so a registry hosted privately alongside your brokers is reachable as long as its hostname resolves to the reverse private endpoint's private IP addresses (via the endpoint's private DNS support or a [custom private DNS mapping](/integrations/clickpipes/aws-privatelink#custom-private-dns)).
+If your Kafka brokers are reached through a [reverse private endpoint](/integrations/clickpipes/networking/aws-privatelink) (AWS PrivateLink or GCP Private Service Connect), the schema registry can use the same private connectivity. ClickPipes resolves the registry hostname through the reverse private endpoint's private DNS, so a registry hosted privately alongside your brokers is reachable as long as its hostname resolves to the reverse private endpoint's private IP addresses (via the endpoint's private DNS support or a [custom private DNS mapping](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)).
 
 Keep the following in mind:
 
@@ -48,11 +48,13 @@ Keep the following in mind:
 ### How it works {#how-schema-registries-work}
 
 ClickPipes dynamically retrieves and applies the schema from the configured schema registry.
-- If there's a schema ID embedded in the message, it will use that to retrieve the schema.
-- If there's no schema ID embedded in the message, it will use the schema ID or subject name specified in the ClickPipe configuration to retrieve the schema.
-- If the message is written without an embedded schema ID, and no schema ID or subject name is specified in the ClickPipe configuration, then the schema will not be retrieved and the message will be skipped with a `SOURCE_SCHEMA_ERROR` logged in the ClickPipes error table.
-- If the message does not conform to the schema, then the message will be skipped with a `DATA_PARSING_ERROR` logged in the ClickPipes error table.
+- If there's a schema ID embedded in the record value, it will use that to retrieve the schema.
+- If there's no schema ID embedded in the record value, it will use the schema ID or subject name specified in the ClickPipe configuration to retrieve the schema.
+- If the record value is written without an embedded schema ID, and no schema ID or subject name is specified in the ClickPipe configuration, then the schema will not be retrieved and the message will be skipped with a `SOURCE_SCHEMA_ERROR` logged in the ClickPipes error table.
+- If the record value does not conform to the schema, then the message will be skipped with a `DATA_PARSING_ERROR` logged in the ClickPipes error table.
 - For Protobuf schemas only: ClickPipes will load any imported schemas defined as dependencies. Avro schemas with external references are not yet supported.
+
+When mappings for fields such as `_key.id` are configured, ClickPipes resolves the schema ID embedded in the Kafka key independently from the record value. The key can use a different schema ID, but it must use the same registry family and serialization format as the value. Resolved key schemas are cached and schema changes are detected automatically.
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
@@ -187,7 +189,7 @@ Paste the new role's ARN into the **IAM role ARN** field in the wizard.
 
 ## Schema mapping {#schema-mapping}
 
-The following rules apply to both Confluent-compatible registries and the AWS Glue Schema Registry. They govern the mapping between the retrieved schema and the ClickHouse destination table:
+The following rules apply to both Confluent-compatible registries and the AWS Glue Schema Registry. They govern the mapping between the retrieved value schema and the ClickHouse destination table, and also apply to record or message fields mapped from structured keys with the `_key.` prefix:
 
 - If the schema contains a field that is not included in the ClickHouse destination mapping, that field is ignored.
 - If the schema is missing a field defined in the ClickHouse destination mapping, the ClickHouse column will be populated with a "zero" value, such as 0 or an empty string. Note that `DEFAULT` expressions are not supported.

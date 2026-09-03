@@ -23,14 +23,6 @@ If INSERTs build and store skip indexes. If disabled, skip indexes will only be 
 
 See also [exclude_materialize_skip_indexes_on_insert](/reference/settings/session-settings/other#exclude_materialize_skip_indexes_on_insert).
 
-## materialize_statistics_on_insert {#materialize_statistics_on_insert}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Disable building statistics on INSERT by default, rely on merges instead"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "1"},{"label": "Added new setting to allow to disable materialization of statistics on insert"}]}]}/>
-
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
-
 ## materialize_ttl_after_modify {#materialize_ttl_after_modify}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
