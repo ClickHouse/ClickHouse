@@ -607,87 +607,73 @@ RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
-    data.accessWriteEnabled(
-        [](Data * filter_data)
-        {
-            filter_data->range_supported = typeSupportsMinMaxRange(filter_data->filter_column_target_type);
-            if (!filter_data->range_supported)
-                filter_data->has_range = false;
-        });
+    auto filter_data = data.getWriteEnabled();
+    filter_data->range_supported = typeSupportsMinMaxRange(filter_data->filter_column_target_type);
+    if (!filter_data->range_supported)
+        filter_data->has_range = false;
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
 {
-    data.accessWriteEnabled(
-        [&](Data * filter_data)
+    auto filter_data = data.getWriteEnabled();
+    std::visit(
+        [&](auto & filter)
         {
-            std::visit(
-                [&](auto & filter)
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (!FilterType::is_prebuilt)
+            {
+                filter_data->build_state.assertCanInsert();
+                if (filter_data->index_analysis_enabled && filter_data->range_supported && filter_data->range_positive && !values->empty())
                 {
-                    using FilterType = std::decay_t<decltype(filter)>;
-                    if constexpr (!FilterType::is_prebuilt)
+                    Field column_min;
+                    Field column_max;
+                    values->getExtremes(column_min, column_max, 0, values->size());
+                    if (!column_min.isNull() && !column_max.isNull())
                     {
-                        filter_data->build_state.assertCanInsert();
-                        if (filter_data->index_analysis_enabled && filter_data->range_supported && filter_data->range_positive
-                            && !values->empty())
+                        if (!filter_data->has_range)
                         {
-                            Field column_min;
-                            Field column_max;
-                            values->getExtremes(column_min, column_max, 0, values->size());
-                            if (!column_min.isNull() && !column_max.isNull())
-                            {
-                                if (!filter_data->has_range)
-                                {
-                                    filter_data->range_min = column_min;
-                                    filter_data->range_max = column_max;
-                                    filter_data->has_range = true;
-                                }
-                                else
-                                {
-                                    if (accurateLess(column_min, filter_data->range_min))
-                                        filter_data->range_min = column_min;
-                                    if (accurateLess(filter_data->range_max, column_max))
-                                        filter_data->range_max = column_max;
-                                }
-                            }
+                            filter_data->range_min = column_min;
+                            filter_data->range_max = column_max;
+                            filter_data->has_range = true;
                         }
-                        filter.insert(std::move(values));
+                        else
+                        {
+                            if (accurateLess(column_min, filter_data->range_min))
+                                filter_data->range_min = column_min;
+                            if (accurateLess(filter_data->range_max, column_max))
+                                filter_data->range_max = column_max;
+                        }
                     }
-                },
-                filter_data->filter);
-        });
+                }
+                filter.insert(std::move(values));
+            }
+        },
+        filter_data->filter);
 }
 
 void RuntimeFilter::finishInsert()
 {
-    data.accessWriteEnabled(
-        [&](Data * filter_data)
-        {
-            if (filter_data->build_state.hasPendingMerges())
-                return;
+    auto filter_data = data.getWriteEnabled();
+    if (filter_data->build_state.hasPendingMerges())
+        return;
 
-            std::visit([&](auto & filter) { filter.finishInsert(evaluation_state); }, filter_data->filter);
-            filter_data->build_state.finishInserts();
-        });
+    std::visit([&](auto & filter) { filter.finishInsert(evaluation_state); }, filter_data->filter);
+    filter_data->build_state.finishInserts();
 }
 
 ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
-    return data.accessReadOnly(
-        [&](const Data * filter_data) -> ColumnPtr
-        {
-            filter_data->build_state.assertCanFind();
+    auto filter_data = data.getReadOnly();
+    filter_data->build_state.assertCanFind();
 
-            const size_t rows_in_block = values.column->size();
-            if (evaluation_state.shouldSkip(rows_in_block))
-                return DataTypeUInt8().createColumnConst(rows_in_block, true);
+    const size_t rows_in_block = values.column->size();
+    if (evaluation_state.shouldSkip(rows_in_block))
+        return DataTypeUInt8().createColumnConst(rows_in_block, true);
 
-            std::optional<size_t> rows_passed;
-            auto result
-                = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, filter_data->filter);
-            evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
-            return result;
-        });
+    std::optional<size_t> rows_passed;
+    auto result = std::visit([&](const auto & filter) -> ColumnPtr { return filter.find(values, rows_passed); }, filter_data->filter);
+    evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
+    return result;
 }
 
 void RuntimeFilter::merge(const RuntimeFilter * source)
@@ -695,102 +681,89 @@ void RuntimeFilter::merge(const RuntimeFilter * source)
     if (!source)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    source->data.accessReadOnly(
-        [&](const Data * source_data)
+    auto source_data = source->data.getReadOnly();
+    auto destination_data = data.getWriteEnabled();
+
+    /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
+    /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
+    /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
+    /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter
+    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
+    /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
+    /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
+    if (std::holds_alternative<SharedFixedHashTable>(destination_data->filter))
+        return;
+
+    if (destination_data->filter.index() != source_data->filter.index())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+
+    std::visit(
+        [&](auto & destination_filter, const auto & source_filter)
         {
-            data.accessWriteEnabled(
-                [&](Data * destination_data)
+            using DestinationFilter = std::decay_t<decltype(destination_filter)>;
+            using SourceFilter = std::decay_t<decltype(source_filter)>;
+            if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
+            {
+                if constexpr (!DestinationFilter::is_prebuilt)
+                    destination_data->build_state.assertCanMerge();
+                destination_filter.mergeFrom(source_filter);
+                if (destination_data->index_analysis_enabled && destination_data->range_supported && destination_data->range_positive
+                    && source_data->has_range)
                 {
-                    /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
-                    /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
-                    /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
-                    /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter
-                    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
-                    /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
-                    /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
-                    if (std::holds_alternative<SharedFixedHashTable>(destination_data->filter))
-                        return;
-
-                    if (destination_data->filter.index() != source_data->filter.index())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-                    std::visit(
-                        [&](auto & destination_filter, const auto & source_filter)
-                        {
-                            using DestinationFilter = std::decay_t<decltype(destination_filter)>;
-                            using SourceFilter = std::decay_t<decltype(source_filter)>;
-                            if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
-                            {
-                                if constexpr (!DestinationFilter::is_prebuilt)
-                                    destination_data->build_state.assertCanMerge();
-                                destination_filter.mergeFrom(source_filter);
-                                if (destination_data->index_analysis_enabled && destination_data->range_supported
-                                    && destination_data->range_positive && source_data->has_range)
-                                {
-                                    if (!destination_data->has_range)
-                                    {
-                                        destination_data->range_min = source_data->range_min;
-                                        destination_data->range_max = source_data->range_max;
-                                        destination_data->has_range = true;
-                                    }
-                                    else
-                                    {
-                                        if (accurateLess(source_data->range_min, destination_data->range_min))
-                                            destination_data->range_min = source_data->range_min;
-                                        if (accurateLess(destination_data->range_max, source_data->range_max))
-                                            destination_data->range_max = source_data->range_max;
-                                    }
-                                }
-                                if constexpr (!DestinationFilter::is_prebuilt)
-                                    destination_data->build_state.finishMerge();
-                            }
-                            else
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-                            }
-                        },
-                        destination_data->filter,
-                        source_data->filter);
-                });
-        });
+                    if (!destination_data->has_range)
+                    {
+                        destination_data->range_min = source_data->range_min;
+                        destination_data->range_max = source_data->range_max;
+                        destination_data->has_range = true;
+                    }
+                    else
+                    {
+                        if (accurateLess(source_data->range_min, destination_data->range_min))
+                            destination_data->range_min = source_data->range_min;
+                        if (accurateLess(destination_data->range_max, source_data->range_max))
+                            destination_data->range_max = source_data->range_max;
+                    }
+                }
+                if constexpr (!DestinationFilter::is_prebuilt)
+                    destination_data->build_state.finishMerge();
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+            }
+        },
+        destination_data->filter,
+        source_data->filter);
 }
 
 void RuntimeFilter::enableIndexAnalysis()
 {
-    data.accessWriteEnabled(
-        [](Data * filter_data)
-        {
-            filter_data->build_state.assertCanInsert();
-            filter_data->index_analysis_enabled = true;
-        });
+    auto filter_data = data.getWriteEnabled();
+    filter_data->build_state.assertCanInsert();
+    filter_data->index_analysis_enabled = true;
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
-    return data.accessReadOnly(
-        [](const Data * filter_data) -> ColumnPtr
-        {
-            if (!filter_data->index_analysis_enabled || !filter_data->range_positive || !filter_data->build_state.isFinished())
-                return nullptr;
-            return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, filter_data->filter);
-        });
+    auto filter_data = data.getReadOnly();
+    if (!filter_data->index_analysis_enabled || !filter_data->range_positive || !filter_data->build_state.isFinished())
+        return nullptr;
+    return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, filter_data->filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
-    return data.accessReadOnly(
-        [](const Data * filter_data) -> std::optional<Range>
-        {
-            if (!filter_data->range_supported || !filter_data->range_positive || !filter_data->has_range
-                || !filter_data->build_state.isFinished() || filter_data->range_min.isNull() || filter_data->range_max.isNull())
-                return {};
-            return Range(filter_data->range_min, true, filter_data->range_max, true);
-        });
+    auto filter_data = data.getReadOnly();
+    if (!filter_data->range_supported || !filter_data->range_positive || !filter_data->has_range || !filter_data->build_state.isFinished()
+        || filter_data->range_min.isNull() || filter_data->range_max.isNull())
+        return {};
+    return Range(filter_data->range_min, true, filter_data->range_max, true);
 }
 
 DataTypePtr RuntimeFilter::getFilterColumnTargetType() const
 {
-    return data.accessReadOnly([](const Data * filter_data) { return filter_data->filter_column_target_type; });
+    auto filter_data = data.getReadOnly();
+    return filter_data->filter_column_target_type;
 }
 
 template class ExactSetRuntimeFilter<false>;
