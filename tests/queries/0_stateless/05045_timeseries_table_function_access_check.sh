@@ -79,9 +79,13 @@ ${CLIENT_USER} -q "DESCRIBE timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORM
 # so holding only the privilege that creating it needed does not make it readable.
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE ON $db.* TO $user"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.sel_dst TO $user"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.pq_dst TO $user"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.ts TO $user"
 ${CLIENT_USER} -q "CREATE TABLE $db.sel_dst AS timeSeriesSelector($db.ts, 'up', 0, 9999999999)"
 ${CLIENT_USER} -q "SELECT * FROM $db.sel_dst FORMAT Null; -- { serverError ACCESS_DENIED }"
+# prometheusQuery() is a separate storage, authorized in its own read path, so it needs its own case.
+${CLIENT_USER} -q "CREATE TABLE $db.pq_dst AS prometheusQuery($db.ts, '1 + 2', 1000)"
+${CLIENT_USER} -q "SELECT * FROM $db.pq_dst FORMAT Null; -- { serverError ACCESS_DENIED }"
 # reading it directly is refused for the same reason: describing the TimeSeries table is not reading it.
 ${CLIENT_USER} -q "SELECT * FROM timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }"
 ${CLIENT_USER} -q "SELECT * FROM prometheusQuery($db.ts, '1 + 2', 1000) FORMAT Null; -- { serverError ACCESS_DENIED }"
@@ -125,10 +129,11 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON $db.ts_samples TO $user"
 echo 'select with SELECT on both tables'
 ${CLIENT_USER} -q "SELECT id, value FROM timeSeriesSamples($db.ts) ORDER BY id FORMAT TSV"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT, SHOW COLUMNS ON $db.ts_tags TO $user"
-echo 'selector, prometheusQuery and the persistent table over the selector'
+echo 'selector, prometheusQuery and the persistent tables over them'
 ${CLIENT_USER} -q "SELECT count() FROM timeSeriesSelector($db.ts, 'up', 0, 9999999999)"
 ${CLIENT_USER} -q "SELECT value FROM prometheusQuery($db.ts, '1 + 2', 1000) FORMAT TSV"
 ${CLIENT_USER} -q "SELECT count() FROM $db.sel_dst"
+${CLIENT_USER} -q "SELECT value FROM $db.pq_dst FORMAT TSV"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts) SETTINGS describe_include_virtual_columns = 1 FORMAT Null"
 
 # A row policy on the TimeSeries table cannot be enforced on the target table's rows, so the read fails
