@@ -4485,6 +4485,74 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 1
 ```
 
+## parseISO8601Duration {#parseISO8601Duration}
+
+導入バージョン: v26.9.0
+
+[ISO 8601 duration](https://en.wikipedia.org/wiki/ISO_8601#Durations) 文字列を解析し、秒数を返します。
+
+期間は `P` で始まり、その後に任意の日付部分が続き、さらに `T` で始まる任意の時刻セクションが続きます。
+
+* `W` - 週
+* `D` - 日
+* `T` - 時刻セクションの開始
+* `H` - 時
+* `M` - 分 (`T` の後のみ)
+* `S` - 秒
+
+ISO 8601 では最下位の部分にのみ小数部が認められますが、ここではどの部分にも小数部を指定できます。そのため `PT0.5H` は有効で、1800 を返します。
+
+指示子は上記の順序で記述する必要があり、それぞれ最大 1 回までしか使用できません。ISO 8601:2004 では週の指示子は排他的ですが、ここでは他の指示子と組み合わせられます。
+
+年 (`Y`) の指示子と、`T` より前の月 (`M`) の指示子は拒否されます。年も月も秒数として固定の長さを持たないためです。こうした期間は、基準日を用いて変換してください。
+
+規格およびその拡張機能では許容されている次の 2 つの形式は受け付けられません。
+
+* `PT1,5S` のように小数点の区切りにカンマを使う形式 - ピリオドを使用してください
+* `-PT1S` のような先頭の符号。これはコア文法ではなく RFC 3339 および XML Schema に由来するものです
+
+[Float64](/ja/reference/data-types/float) に収まらない値は、無限大として返されるのではなく拒否されます。
+
+**Syntax**
+
+```sql
+parseISO8601Duration(duration)
+```
+
+**Arguments**
+
+* `duration` — ISO 8601 形式の期間文字列。[`String`](/ja/reference/data-types/string)
+
+**戻り値**
+
+秒数。[`Float64`](/ja/reference/data-types/float)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT parseISO8601Duration('PT1H30M')
+```
+
+```response title=Response
+┌─parseISO8601Duration('PT1H30M')─┐
+│                            5400 │
+└─────────────────────────────────┘
+```
+
+**小数秒**
+
+```sql title=Query
+SELECT parseISO8601Duration('P1DT12H30M5.5S')
+```
+
+```response title=Response
+┌─parseISO8601Duration('P1DT12H30M5.5S')─┐
+│                               131405.5 │
+└────────────────────────────────────────┘
+```
+
 ## parseQueryToJSON {#parseQueryToJSON}
 
 導入バージョン: v26.8.0

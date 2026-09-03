@@ -4485,6 +4485,79 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 1
 ```
 
+## parseISO8601Duration {#parseISO8601Duration}
+
+Introduit dans : v26.9.0
+
+Analyse une chaîne de [durée ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Durations) et renvoie le nombre de secondes.
+
+La durée commence par `P`, suivi de composants de date facultatifs, puis d&#39;une section horaire facultative
+introduite par `T` :
+
+* `W` - semaines
+* `D` - jours
+* `T` - démarre la section horaire
+* `H` - heures
+* `M` - minutes, uniquement après `T`
+* `S` - secondes
+
+Tout composant peut comporter une partie fractionnaire, et pas uniquement celui de plus faible ordre comme l&#39;exige la norme ISO 8601 ; ainsi,
+`PT0.5H` est valide et renvoie 1800.
+
+Les désignateurs doivent apparaître dans l&#39;ordre ci-dessus et chacun ne peut figurer qu&#39;une seule fois. Le désignateur de semaine peut
+être combiné avec les autres, contrairement à la norme ISO 8601:2004 où il est exclusif.
+
+Le désignateur d&#39;année (`Y`) et le désignateur de mois (`M`) placé avant `T` sont rejetés, car ni une
+année ni un mois n&#39;ont de longueur fixe en secondes. Convertissez plutôt ce type de durées par rapport à une date de référence.
+
+Deux formes autorisées par la norme et ses extensions ne sont pas acceptées :
+
+* une virgule comme séparateur décimal, comme dans `PT1,5S` - utilisez un point
+* un signe en tête, comme dans `-PT1S`, qui provient de la RFC 3339 et de XML Schema plutôt que de la grammaire de base
+
+Une valeur qui ne tient pas dans [Float64](/fr/reference/data-types/float) est rejetée plutôt que
+renvoyée comme infinie.
+
+**Syntaxe**
+
+```sql
+parseISO8601Duration(duration)
+```
+
+**Arguments**
+
+* `duration` — Une chaîne de durée au format ISO 8601. [`String`](/fr/reference/data-types/string)
+
+**Valeur renvoyée**
+
+Le nombre de secondes. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT parseISO8601Duration('PT1H30M')
+```
+
+```response title=Response
+┌─parseISO8601Duration('PT1H30M')─┐
+│                            5400 │
+└─────────────────────────────────┘
+```
+
+**Fractions de seconde**
+
+```sql title=Query
+SELECT parseISO8601Duration('P1DT12H30M5.5S')
+```
+
+```response title=Response
+┌─parseISO8601Duration('P1DT12H30M5.5S')─┐
+│                               131405.5 │
+└────────────────────────────────────────┘
+```
+
 ## parseQueryToJSON {#parseQueryToJSON}
 
 Introduite dans : v26.8.0

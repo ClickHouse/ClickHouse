@@ -4485,6 +4485,77 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 1
 ```
 
+## parseISO8601Duration {#parseISO8601Duration}
+
+Introduced in: v26.9.0
+
+解析 [ISO 8601 时长](https://en.wikipedia.org/wiki/ISO_8601#Durations)字符串，并返回对应的秒数。
+
+时长以 `P` 开头，后接可选的日期部分，以及由 `T` 引出的可选时间部分：
+
+* `W` - 周
+* `D` - 天
+* `T` - 时间部分的起始标识
+* `H` - 小时
+* `M` - 分钟，仅可出现在 `T` 之后
+* `S` - 秒
+
+任意部分都可以带小数，而不像 ISO 8601 规定的那样只有最低位才允许带小数，因此
+`PT0.5H` 是合法的，返回 1800。
+
+各标识符必须按上述顺序出现，且每个最多出现一次。与 ISO 8601:2004 中周标识符为 exclusive (不可与其他标识符共用) 不同，这里它可以
+与其他标识符组合使用。
+
+年 (`Y`) 标识符以及位于 `T` 之前的月 (`M`) 标识符会被拒绝，因为年和月所对应的秒数并不固定。此类时长请改为基于某个参考日期
+进行换算。
+
+标准及其扩展允许、但此处不接受的写法有两种：
+
+* 使用逗号作为小数分隔符，例如 `PT1,5S` —— 请改用句点
+* 带前导符号，例如 `-PT1S`，该写法来自 RFC 3339 和 XML Schema，而非核心语法
+
+超出 [Float64](/zh/reference/data-types/float) 表示范围的值会被拒绝，而不是返回无穷大。
+
+**Syntax**
+
+```sql
+parseISO8601Duration(duration)
+```
+
+**参数**
+
+* `duration` — ISO 8601 时长字符串。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+秒数。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**用法示例**
+
+```sql title=Query
+SELECT parseISO8601Duration('PT1H30M')
+```
+
+```response title=Response
+┌─parseISO8601Duration('PT1H30M')─┐
+│                            5400 │
+└─────────────────────────────────┘
+```
+
+**小数秒**
+
+```sql title=Query
+SELECT parseISO8601Duration('P1DT12H30M5.5S')
+```
+
+```response title=Response
+┌─parseISO8601Duration('P1DT12H30M5.5S')─┐
+│                               131405.5 │
+└────────────────────────────────────────┘
+```
+
 ## parseQueryToJSON {#parseQueryToJSON}
 
 引入版本：v26.8.0
