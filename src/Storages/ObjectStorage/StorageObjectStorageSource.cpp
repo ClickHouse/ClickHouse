@@ -1633,10 +1633,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_distributed_cache)
     {
         filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+        /// The cache key is `hash(path, etag)`, so any backend with a strong etag can be cached.
+        /// The native GCS one is the object generation, which changes on every overwrite.
         use_filesystem_cache = effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
-                || object_storage->getType() == ObjectStorageType::S3);
+                || object_storage->getType() == ObjectStorageType::S3
+                || object_storage->getType() == ObjectStorageType::GCS);
     }
 
     bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache

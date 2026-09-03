@@ -1,0 +1,9 @@
+access_key_id: rejected
+secret_access_key: rejected
+session_token: rejected
+role_arn: rejected
+http_client: rejected
+service_account: rejected
+metadata_service: rejected
+request_token_path: rejected
+server_side_encryption_customer_key_base64: rejected

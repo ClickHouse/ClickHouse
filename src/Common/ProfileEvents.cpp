@@ -844,6 +844,29 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3Bytes, "Bytes written to S3.", ValueType::Bytes) \
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.", ValueType::Number) \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.", ValueType::Microseconds) \
+    \
+    M(GCSGetObject, "Number of GCS API ReadObject calls (native google-cloud-cpp backend).", ValueType::Number) \
+    M(GCSWriteObject, "Number of GCS API resumable upload (WriteObject) calls.", ValueType::Number) \
+    M(GCSGetObjectMetadata, "Number of GCS API GetObjectMetadata calls.", ValueType::Number) \
+    M(GCSListObjects, "Number of GCS API ListObjects calls.", ValueType::Number) \
+    M(GCSDeleteObjects, "Number of GCS API DeleteObject calls.", ValueType::Number) \
+    M(GCSCopyObject, "Number of GCS API RewriteObject calls.", ValueType::Number) \
+    \
+    M(DiskGCSGetObject, "Number of GCS API ReadObject calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSWriteObject, "Number of GCS API resumable upload (WriteObject) calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSGetObjectMetadata, "Number of GCS API GetObjectMetadata calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSListObjects, "Number of GCS API ListObjects calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSDeleteObjects, "Number of GCS API DeleteObject calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSCopyObject, "Number of GCS API RewriteObject calls for a GCS disk.", ValueType::Number) \
+    \
+    M(ReadBufferFromGCSMicroseconds, "Time spent on reading from GCS.", ValueType::Microseconds) \
+    M(ReadBufferFromGCSInitMicroseconds, "Time spent opening a GCS object read stream, which includes connecting.", ValueType::Microseconds) \
+    M(ReadBufferFromGCSBytes, "Bytes read from GCS.", ValueType::Bytes) \
+    M(ReadBufferFromGCSRequestsErrors, "Number of exceptions while reading from GCS.", ValueType::Number) \
+    \
+    M(WriteBufferFromGCSMicroseconds, "Time spent on writing to GCS.", ValueType::Microseconds) \
+    M(WriteBufferFromGCSBytes, "Bytes written to GCS.", ValueType::Bytes) \
+    M(WriteBufferFromGCSRequestsErrors, "Number of exceptions while writing to GCS.", ValueType::Number) \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \

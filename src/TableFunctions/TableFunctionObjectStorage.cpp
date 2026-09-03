@@ -22,6 +22,9 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#include <Storages/ObjectStorage/GCS/Configuration.h>
+#endif
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -38,12 +41,14 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool use_native_gcs;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DataLakeStorageSetting
@@ -85,6 +90,19 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     else
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
+                    break;
+#endif
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD && USE_AVRO
+                case ObjectStorageType::GCS:
+                    /// A native GCS disk is only reachable for the backend-agnostic `iceberg` function, not for
+                    /// a backend-named one: `icebergS3` names the S3-compatibility API, which is a different
+                    /// path to the same bucket, and there is no `icebergGCS`. Delta Lake is not wired to the
+                    /// native backend at all, so a `deltaLake` over a `gcs` disk falls through to the error
+                    /// below rather than silently reading through the wrong configuration.
+                    if (Definition::name != "iceberg" && Definition::name != "icebergCluster")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
+
+                    configuration = std::make_shared<StorageGCSIcebergConfiguration>(settings);
                     break;
 #endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
@@ -310,6 +328,36 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     storage->startup();
     return storage;
 }
+
+#if USE_AWS_S3
+/// `gcs()` table function. Picks the backend per query: the native GCS configuration when
+/// `use_native_gcs` is set, otherwise the S3-compatibility configuration (the default, unchanged).
+/// The argument grammar is identical to `s3()` in both cases.
+/// On builds without the Google Cloud SDK the setting must fail closed rather than silently
+/// falling through to the S3-compatibility path.
+class TableFunctionGCS : public TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>
+{
+public:
+    void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
+    {
+        if (context->getSettingsRef()[Setting::use_native_gcs])
+        {
+#if USE_GOOGLE_CLOUD
+            configuration = std::make_shared<StorageGCSConfiguration>();
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The setting `use_native_gcs` is enabled, but ClickHouse was built without Google Cloud support. "
+                "Unset `use_native_gcs` to use the S3-compatibility path");
+#endif
+        }
+        else
+            configuration = std::make_shared<StorageS3Configuration>();
+
+        StorageObjectStorageConfiguration::initialize(*configuration, args, context, /* with_structure */ true);
+    }
+};
+#endif
 
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 {
@@ -765,8 +813,11 @@ SETTINGS schema_inference_mode='union';
         {.allow_readonly = false}
     );
 
-    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
-        {.description = R"DOCS_MD(
+    /// The `gcs` reference page (docs/reference/functions/table-functions/gcs.mdx) is regenerated from this
+    /// description, so both registration branches carry the full page body, including the "Native GCS
+    /// integration" section: the page documents the feature (experimental, off by default) regardless of
+    /// whether this particular build has the native backend compiled in.
+    const String gcs_description = R"DOCS_MD(
 Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
 This is an alias of the [s3 table function](/reference/functions/table-functions/s3).
@@ -786,6 +837,30 @@ gcs(named_collection[, option=value [,..]])
 The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
 See the [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 </Tip>
+
+## Native GCS integration {#native-gcs}
+
+:::note Experimental feature
+Native GCS integration is an experimental feature (the `use_native_gcs` setting is in the experimental tier and off by default). Its behavior may change in future releases.
+:::
+
+By default `gcs` talks to Google Cloud Storage through its S3-compatible XML API (using the AWS SDK and HMAC keys). Enable the [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs) setting to instead use the native Google Cloud SDK (`google-cloud-cpp`, the GCS JSON API):
+
+```sql
+SELECT * FROM gcs('https://storage.googleapis.com/my-bucket/data.parquet')
+SETTINGS use_native_gcs = 1;
+```
+
+In native mode credentials are resolved via the Google-native mechanisms rather than S3 HMAC keys:
+
+- **Application Default Credentials** (the default when no credentials are given): `GOOGLE_APPLICATION_CREDENTIALS`, the GCE/GKE metadata server, or the `gcloud` SDK configuration.
+- **`NOSIGN`**, and **`use_environment_credentials = 0`** — anonymous access (public buckets and the GCS emulator). A named collection that only specifies a `url` is anonymous, because that is what `use_environment_credentials = 0` means and named collections default it to `0`.
+- **`google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token`** — a Google "authorized user" refresh-token triple. The access token minted from it is renewed as it nears expiry, so it is also usable by a long-lived disk.
+- Those are the authentication modes supported by the SQL surface. Service-account keys are supported by server-configured GCS disks.
+
+Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
+
+Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`). `use_native_gcs` gates the `gcs` table function and a dynamic `disk(...)` definition, while a disk defined in the server configuration is selected by that configuration alone and needs no session setting. The `GCS` table engine always stays on the S3-compatible backend, because table metadata must describe a stable backend across `ATTACH` and server restart and the backend choice is not persisted there yet. Such a disk can back an [`Iceberg`](/reference/engines/table-engines/integrations/iceberg) table through the `disk` setting.
 
 ## Arguments {#arguments}
 
@@ -979,7 +1054,9 @@ As a result, the data is written into three files in different buckets: `my_buck
 ## Related {#related}
 - [S3 table function](/reference/functions/table-functions/s3)
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD";
+    factory.registerFunction<TableFunctionGCS>(
+        {.description = gcs_description, .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false}
     );
 

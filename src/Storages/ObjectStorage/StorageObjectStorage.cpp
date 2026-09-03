@@ -1026,6 +1026,14 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
                 DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
+    if (storage_engine_name == "gcs")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt(
+                "schema_inference_cache_max_elements_for_gcs",
+                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
     if (storage_engine_name == "hdfs")
     {
         static SchemaCache schema_cache(

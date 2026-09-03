@@ -241,6 +241,11 @@ if (TARGET ch_contrib::azure_sdk)
     add_headers_and_sources(dbms IO/AzureBlobStorage)
 endif()
 
+if (TARGET ch_contrib::google_cloud_cpp)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/GCS)
+    add_headers_and_sources(dbms Storages/ObjectStorage/GCS)
+endif()
+
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/HDFS)
 endif()

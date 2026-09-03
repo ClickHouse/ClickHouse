@@ -111,6 +111,13 @@ class Client;
 }
 #endif
 
+#if USE_GOOGLE_CLOUD
+namespace DB
+{
+struct GCSObjectStorageSettings;
+}
+#endif
+
 namespace DB
 {
 
@@ -445,6 +452,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
+#endif
+
+#if USE_GOOGLE_CLOUD
+    /// The settings the native GCS client was built from: the bucket, the endpoint and the
+    /// authentication mode. Returned as a shared pointer that owns the snapshot it points into,
+    /// because a configuration reload may replace it under a concurrent reader.
+    virtual std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for GCSObjectStorage");
+    }
 #endif
 
     /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST

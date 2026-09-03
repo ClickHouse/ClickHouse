@@ -134,6 +134,12 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         .syntax = "disk(type = azure_blob_storage, storage_account_url = '...', container_name = '...')",
         .related = {"object_storage"}}); /// For compatibility
 #endif
+#if USE_GOOGLE_CLOUD
+    factory.registerDiskType("gcs", creator, Documentation{
+        .description = "A disk backed by Google Cloud Storage using the native Google Cloud SDK. Equivalent to `object_storage` with `object_storage_type = gcs`.",
+        .syntax = "disk(type = gcs, endpoint = 'https://storage.googleapis.com/<bucket>/<path>/')",
+        .related = {"object_storage", "s3"}});
+#endif
     factory.registerDiskType("local_blob_storage", creator, Documentation{
         .description = "A disk backed by a local directory treated as object storage. Retained for compatibility; equivalent to `object_storage` with `object_storage_type = local`.",
         .syntax = "disk(type = local_blob_storage, path = '/var/lib/clickhouse/disk_local_blob/')",

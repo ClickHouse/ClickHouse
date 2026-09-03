@@ -212,6 +212,9 @@
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
+    M(ObjectStorageGCSThreads, "Number of threads in the GCSObjectStorage thread pool.") \
+    M(ObjectStorageGCSThreadsActive, "Number of threads in the GCSObjectStorage thread pool running a task.") \
+    M(ObjectStorageGCSThreadsScheduled, "Number of queued or active jobs in the GCSObjectStorage thread pool.") \
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
