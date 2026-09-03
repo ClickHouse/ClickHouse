@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -476,6 +477,20 @@ public:
 
         try
         {
+            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
+            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
+            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
+            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/format_query"))
+            {
+                /// The format_query endpoint only parses and reformats the given PromQL expression,
+                /// so it doesn't need the TimeSeries table.
+                formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -483,12 +498,6 @@ public:
             {
                 getOutputStream(response).finalize();
             };
-
-            /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
-            /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
-            /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
-            /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
 
             if (uri_path.ends_with("/query_range"))
             {
@@ -536,10 +545,6 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
             }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
-            }
             else if (uri_path.ends_with("/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
@@ -573,11 +578,12 @@ public:
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {
@@ -612,6 +618,19 @@ public:
     }
 
 private:
+    /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
+    /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
+    /// the comments removed, and the redundant parentheses dropped.
+    static void formatQuery(WriteBuffer & out, const String & query)
+    {
+        PrometheusQueryTree promql_tree;
+        promql_tree.parse(query);
+
+        writeString(R"({"status":"success","data":)", out);
+        writeJSONString(promql_tree.toString(), out, FormatSettings{});
+        writeChar('}', out);
+    }
+
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
     Int64 getMetadataLimitParam(const String & name) const
     {
