@@ -2503,10 +2503,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// constructor can already create data on disk (and the hidden inner tables of a view), which
     /// would be left behind if the quota rejected the table only inside `database->createTable`.
     /// The check there still guards the race window between this preflight and the actual attach.
-    /// DDL dictionaries do not count toward the limit.
-    if (!create.is_dictionary)
-        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
-            database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
+    if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function

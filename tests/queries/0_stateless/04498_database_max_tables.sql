@@ -109,16 +109,21 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.b; -- { serverError TOO_MANY_TAB
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- Dictionaries do not count toward the limit and are not restricted by it.
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
+-- Dictionaries are table-like objects: they consume a slot and are restricted by the limit.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 2;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dict_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict (x UInt64) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE 'dict_source')) LIFETIME(0) LAYOUT(FLAT());
--- The dictionary neither consumes a table slot nor is blocked by the exhausted limit.
+-- The dictionary took the second slot, so neither a table nor another dictionary fits now.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dt2 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict2 (x UInt64) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE 'dict_source')) LIFETIME(0) LAYOUT(FLAT()); -- { serverError TOO_MANY_TABLES }
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
--- Renaming a dictionary into a full database is not blocked by the limit either.
+-- Renaming a dictionary into a full database is blocked by the limit, and the dictionary stays put.
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.occupies_slot (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict TO {CLICKHOUSE_DATABASE_2:Identifier}.dict; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'dict';
+-- Freeing a slot lets the same rename through.
+DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.occupies_slot;
 RENAME DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict TO {CLICKHOUSE_DATABASE_2:Identifier}.dict;
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'dict';
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
