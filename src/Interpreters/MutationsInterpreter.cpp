@@ -588,6 +588,8 @@ MutationsInterpreter::MutationsInterpreter(
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
 
+    new_context->setMutation(true);
+
     context = std::move(new_context);
 }
 

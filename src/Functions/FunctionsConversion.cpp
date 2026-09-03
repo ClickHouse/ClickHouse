@@ -2973,6 +2973,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
     {
         /// Conversion from Nullable to non-Nullable.
 
+        if (settings.inside_validated_mutation)
+            throw Exception(
+                ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                "Prevent converting Nullable type to non-Nullable type inside mutation. Use assumeNotNull() or set "
+                "validate_mutation_query to 0 to allow.");
+
         bool accurate_or_null = cast_type == CastType::accurateOrNull;
 
         return [wrapper, skip_not_null_check, accurate_or_null]
