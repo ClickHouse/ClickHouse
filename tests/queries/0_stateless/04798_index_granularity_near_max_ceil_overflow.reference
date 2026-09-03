@@ -1,0 +1,30 @@
+written	10	45
+read	0
+read	1
+read	2
+read	3
+read	4
+read	5
+read	6
+read	7
+read	8
+read	9
+reloaded	10	45
+skip index, no filter	4096	8386560
+skip index, filtered	1	500
+skip index, top-K read	0
+skip index, top-K granule filter	1
+skip index keeps every granule	0
+skip index drops every granule	1
+skip index, no match	0	0
+top-K across parts	0
+top-K across parts	1
+top-K across parts	2
+top-K across parts	3
+top-K across parts, granule filter	1
+skip index granularity 1, filtered	1	500
+skip index drops all but one granule	1
+reverse	4095
+reverse	4094
+reverse	4093
+reverse reads in reverse order	1

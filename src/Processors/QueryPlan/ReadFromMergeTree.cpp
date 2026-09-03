@@ -1842,7 +1842,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         (const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+        /// Rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
+        const size_t max_marks_in_range = my_max_block_size / rows_granularity + (my_max_block_size % rows_granularity != 0);
         size_t marks_in_range = 1;
 
         if (direction == 1)
