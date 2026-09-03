@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_suspicious_row_policies_with_blending_engines", true, false, "New setting that rejects a row policy on a `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` or `GraphiteMergeTree` table, because a merge puts the values of the hidden rows into the row the policy shows. previous_value=true so `compatibility` with versions before 26.9 keeps the old behavior."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},

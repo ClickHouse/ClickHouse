@@ -5,21 +5,32 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
+#include <Common/quoteString.h>
+#include <Core/Settings.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/IStorage.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_suspicious_row_policies_with_blending_engines;
+}
+
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -47,6 +58,65 @@ namespace
             policy.to_roles = *override_to_roles;
         else if (query.roles)
             policy.to_roles = *query.roles;
+    }
+
+    [[noreturn]] void rejectPolicyOnBlendingEngine(const String & subject, const String & engine)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} has the {} engine, which merges rows with the same sorting key into one row "
+            "taking the values of all of them, so a row policy on this table does not hide the values of "
+            "the rows it filters out - they end up in the row it shows. Define the row policy on the table "
+            "which stores the raw rows instead. "
+            "See https://clickhouse.com/docs/sql-reference/statements/create/row-policy, or set "
+            "allow_suspicious_row_policies_with_blending_engines = 1 to create the policy anyway",
+            subject,
+            engine);
+    }
+
+    /// A policy for the whole database is used for every table in it which has no policy of its own
+    void checkDatabaseHasNoBlendingEngines(const String & database, const ContextPtr & context)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(database);
+        if (!db)
+            return;
+
+        for (auto it = db->getTablesIterator(context, {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+        {
+            const auto & table = it->table();
+            if (table && table->isBlendingEngine())
+                rejectPolicyOnBlendingEngine(
+                    fmt::format("Table {}.{}, which a policy on {}.* is used for,",
+                        backQuoteIfNeed(database), backQuoteIfNeed(it->name()), backQuoteIfNeed(database)),
+                    table->getName());
+        }
+    }
+
+    /// A merge mixes the hidden rows into the visible one, so the policy only looks like a boundary here
+    void checkTablesAreNotBlendingEngines(const ASTCreateRowPolicyQuery & query, const ContextPtr & context)
+    {
+        if (context->getSettingsRef()[Setting::allow_suspicious_row_policies_with_blending_engines])
+            return;
+
+        for (const auto & full_name : query.names->full_names)
+        {
+            if (full_name.database.empty())
+                continue;
+
+            if (full_name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            {
+                checkDatabaseHasNoBlendingEngines(full_name.database, context);
+                continue;
+            }
+
+            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{full_name.database, full_name.table_name}, context);
+            if (!storage || !storage->isBlendingEngine())
+                continue;
+
+            rejectPolicyOnBlendingEngine(
+                fmt::format("Table {}.{}", backQuoteIfNeed(full_name.database), backQuoteIfNeed(full_name.table_name)),
+                storage->getName());
+        }
     }
 }
 
@@ -76,6 +146,8 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     getContext()->checkAccess(required_access);
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+    checkTablesAreNotBlendingEngines(query, getContext());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
