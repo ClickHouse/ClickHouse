@@ -103,7 +103,7 @@ class Docker:
                     ",force-compression=true"
                 )
 
-            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path}{push_out}"
+            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11 {config.path}{push_out}"
 
             return Result.from_commands_run(
                 name=name,

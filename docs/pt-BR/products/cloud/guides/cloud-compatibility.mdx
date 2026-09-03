@@ -59,6 +59,7 @@ Os motores de tabela a seguir também têm suporte e são usados exatamente como
 * Null
 * Buffer
 * Memory
+* `IcebergS3` e `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ Os motores de tabela a seguir também têm suporte e são usados exatamente como
 * PostgreSQL
 * S3
 * Kafka
+
+Os motores de tabela experimentais `PaimonS3` e `PaimonAzure` podem ser habilitados em determinados serviços do ClickHouse Cloud. Entre em contato com o Suporte para confirmar a disponibilidade.
 
 <div id="interfaces">
   ### Interfaces
@@ -87,6 +90,8 @@ Dictionaries são uma forma popular de acelerar buscas no ClickHouse. Atualmente
 
 Oferecemos suporte a consultas federadas do ClickHouse para comunicação entre clusters na nuvem e com clusters ClickHouse autogerenciados externos. No momento, o ClickHouse Cloud oferece suporte a consultas federadas com os seguintes motores de integração:
 
+* `IcebergS3` e `IcebergAzure`
+* `PaimonS3` e `PaimonAzure` (experimental; entre em contato com o Suporte para verificar a disponibilidade)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ Os recursos experimentais são desativados nos serviços do ClickHouse Cloud par
   ### Coleções nomeadas
 </div>
 
-[Coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) não são compatíveis no momento com o ClickHouse Cloud.
+[Coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) criadas por DDL podem ser habilitadas em determinados serviços do ClickHouse Cloud. Entre em contato com o Suporte para confirmar a disponibilidade. Coleções nomeadas definidas em arquivos de configuração não estão disponíveis porque os usuários não podem modificar os arquivos de configuração do servidor no ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Padrões operacionais e considerações

@@ -598,6 +598,7 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
+    const NameSet & missing_columns,
     bool share_nested_offsets,
     const NameSet & additional_available_columns)
 {
@@ -625,7 +626,9 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// But if the column was explicitly marked as missing (frozen default at
+        /// write time), fill with type-defaults even if a DEFAULT expression exists.
+        if (res_columns[i] || (hasDefault(storage_snapshot, *requested_column) && !missing_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         /// Subcolumn missing from the part's (older) type but whose parent is available (read here

@@ -1,0 +1,239 @@
+---
+title: Cloud クイックスタート CLI
+---
+
+このページでは、[ClickHouse CLI](/ja/products/cloud/features/cli) (`clickhousectl`) を使用して、コマンドラインから ClickHouse Cloud サービスのプロビジョニング、接続、データの読み込みを行う方法を説明します。コマンドは非対話型で、`clickhousectl` は `--json` を指定すると JSON を出力します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+ClickHouse CLI をインストールします。
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+`jq` も必要です。
+
+ClickHouse Cloud アカウントが必要です。まだお持ちでない場合は、`clickhousectl cloud auth signup` を実行すると、ブラウザでサインアップページが開きます。
+
+書き込み操作 (作成、削除) には [API キー認証](/ja/products/cloud/features/admin-features/api/openapi) が必要です。OAuth ログインは読み取り専用です。
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+または、環境変数 `CLICKHOUSE_CLOUD_API_KEY` と `CLICKHOUSE_CLOUD_API_SECRET` を設定します。`clickhousectl cloud auth status` で確認し、scope が `read/write` のエントリが表示されることを確認してください。
+
+<div id="create-service">
+  ## ClickHouse サービスを作成する
+</div>
+
+サービスを作成してレスポンスを保存します。`default` USER のパスワードは一度しか表示されません。
+
+```bash
+clickhousectl cloud service create \
+  --name quickstart-ch \
+  --region us-east-1 \
+  --json > ch.json
+```
+
+レスポンスには、サービス ID、エンドポイント、生成されたパスワードが含まれます (ここでは一部を省略しています。完全なレスポンスには、スケーリング設定、IP アクセスリスト、タグも含まれます) 。
+
+```json
+{
+  "password": "dK7mPq2x_-TzrL9vNw0s",
+  "service": {
+    "id": "4f7b92f3-4163-403a-b538-b9bc6e2e8f66",
+    "name": "quickstart-ch",
+    "provider": "aws",
+    "region": "us-east-1",
+    "state": "provisioning",
+    "endpoints": [
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 9440,
+        "protocol": "nativesecure"
+      },
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 8443,
+        "protocol": "https"
+      }
+    ],
+    "numReplicas": 3,
+    "minReplicaMemoryGb": 16.0,
+    "maxReplicaMemoryGb": 120.0
+  }
+}
+```
+
+このガイドの続きで必要な情報を抽出します。
+
+```bash
+CH_ID=$(jq -r .service.id ch.json)
+CH_PASSWORD=$(jq -r .password ch.json)
+CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .host' ch.json)
+```
+
+パスワードを紛失した場合は、`clickhousectl cloud service reset-password "$CH_ID"` で新しいパスワードを生成します。
+
+`clickhousectl` で作成されたサービスでは、デフォルトで、すべてのアクセス元 (`0.0.0.0/0`) を許可する IP アクセスリストが設定されます。アクセスを制限するには、サービスの作成時に `--ip-allow` を指定してください。詳細は[&quot;IP フィルタの設定&quot;](/ja/products/cloud/guides/security/connectivity/setting-ip-filters)を参照してください。
+
+<div id="wait-for-provisioning">
+  ## サービスのプロビジョニングが完了するまで待機する
+</div>
+
+プロビジョニングには約1分かかります。状態が `running` になるまでポーリングします。
+
+```bash
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+<div id="run-sql">
+  ## Query API を使用して SQL を実行する
+</div>
+
+`clickhousectl cloud service query` を使用すると、HTTP 経由で SQL を実行できます。ローカルの `clickhouse` バイナリやサービスのパスワードは不要です。初回の呼び出し時に、Query API エンドポイントとサービススコープの API キーが自動的にプロビジョニングされます。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+```
+
+```text
+Provisioning Query API endpoint + key for service 'quickstart-ch'...
+{"name":"INFORMATION_SCHEMA"}
+{"name":"default"}
+{"name":"information_schema"}
+{"name":"system"}
+```
+
+パイプでの出力はデフォルトで `JSONEachRow` 形式です。表形式で出力するには、代わりに `--format PrettyCompact` を指定します。
+
+<div id="create-database-and-table">
+  ## データベースとテーブルを作成する
+</div>
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE DATABASE IF NOT EXISTS helloworld"
+
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE helloworld.my_first_table (
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+  ) ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)"
+```
+
+どちらのコマンドも `OK` を出力します。数行を挿入します。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!', now(), -1.0),
+    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+```
+
+正常に動作したことを確認します。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
+```
+
+```text
+{"user_id":102,"message":"Insert a lot of rows per batch","timestamp":"2026-08-26 00:00:00","metric":1.41421}
+{"user_id":102,"message":"Sort your data based on your commonly-used queries","timestamp":"2026-08-27 00:00:00","metric":2.718}
+{"user_id":101,"message":"Hello, ClickHouse!","timestamp":"2026-08-27 10:41:28","metric":-1}
+{"user_id":101,"message":"Granules are the smallest chunks of data read","timestamp":"2026-08-27 10:41:33","metric":3.14159}
+```
+
+タイムスタンプはinsertを実行した時刻に依存するため、実際の値は異なります。
+
+<div id="load-csv-file">
+  ## CSVファイルを読み込む
+</div>
+
+次のテキストが、`data.csv`という名前のCSVファイルに含まれているとします。
+
+```text title="data.csv"
+102,This is data in a file,2022-02-22 10:43:28,123.45
+101,It is comma-separated,2022-02-23 00:00:00,456.78
+103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+```
+
+`INSERT ... FORMAT` はstdinからデータを読み込むため、クエリとファイルをパイプで連結します。
+
+```bash
+printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+新しい行が取り込まれたことを確認します。
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM helloworld.my_first_table"
+```
+
+```text
+{"count()":7}
+```
+
+<div id="native-client">
+  ## clickhouse client で接続する
+</div>
+
+[**clickhouse client**](/ja/concepts/features/interfaces/client) を使用すると、ネイティブプロトコル経由でも接続できます。ClickHouse CLI が `clickhouse` バイナリを管理するため、クライアントを別途インストールする必要はありません。
+
+```bash
+clickhousectl local use latest
+```
+
+これにより最新の`clickhouse`バイナリがインストールされ、`~/.local/bin/clickhouse`へのシンボリックリンクが作成されます。これにより、`clickhouse`コマンドを`PATH`上のどこからでも使用できます。
+
+次に、作成レスポンスのhostnameとパスワードを使用して接続します。`--query`を指定すると結果が出力され、clientは終了します。指定しない場合は対話型プロンプト (`:)`) が表示され、`exit`で終了します。
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp FORMAT TabSeparated"
+```
+
+```text
+102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
+102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
+101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
+101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
+```
+
+同じ形式のコマンドでファイルをアップロードできます。
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+```
+
+<div id="cleanup">
+  ## クリーンアップ
+</div>
+
+サービスを削除すると、そのすべてのデータが完全に失われます。`--force` を指定すると、実行中のサービスを先に停止します。
+
+```bash
+clickhousectl cloud service delete "$CH_ID" --force
+```
+
+データを保持したままコンピュート料金の発生を止めるには、代わりに `clickhousectl cloud service stop "$CH_ID"` でサービスを停止します。

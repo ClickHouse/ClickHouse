@@ -1,0 +1,107 @@
+---
+sidebarTitle: 'JWT 身份验证设置'
+slug: /cloud/security/jwt-authentication-setup
+title: 'JWT 身份验证设置'
+description: '如何通过控制台为 ClickHouse Cloud 服务配置服务级 JWT（JWKS）身份验证提供商'
+doc_type: '指南'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '身份验证', '身份提供商', 'RS256']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
+
+<Tip>
+  本指南介绍如何在 Cloud 控制台中配置 JWKS 提供商。若要了解如何生成 JWT 及其结构，包括必需的声明、角色和授权声明，以及临时用户的工作方式，请参阅 [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt)参考文档。
+</Tip>
+
+ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份验证，并根据您自己的 JSON Web Key Set (JWKS) 端点验证这些 JWT。您无需管理数据库凭据；身份提供商会签发短期有效的标记，ClickHouse 则会使用您配置的 JWKS URL 中发布的公钥对其进行验证。
+
+您可以在 ClickHouse Cloud 控制台的 **设置 → 安全** 中，按服务自行配置这些 JWKS 提供商。
+
+<div id="before-you-begin">
+  ## 开始前准备
+</div>
+
+要为服务配置 JWT 提供商，您需要：
+
+* 一个使用 **Enterprise** 套餐的组织。
+* 一个运行 **ClickHouse 26.4 或更高版本**的服务。
+* 一个拥有该服务 `control-plane:service:manage` 权限的角色 (例如 **Admin** 或 **Service admin**) 。没有此权限的成员只能以只读方式查看此部分。
+* 一个可从公网访问的 **HTTPS** JWKS URL，并且该 URL 至少发布一个 **RSA** 密钥 (`RS256`)，或者对于 26.8 或更高版本的服务，发布一个 **EC** 密钥 (`ES256`、`ES384`、`ES512`) 。
+
+<Note>
+  基于 JWKS 的提供商接受 **RSA** 密钥，以及从 26.8 版本起接受 P-256、P-384 和 P-521 曲线上的 **EC** 密钥。JWKS 文档可以包含其他类型的密钥，但必须至少包含一个可用的密钥。
+</Note>
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+客户端 (您的身份提供商或应用程序) 生成 JWT，并使用其**私钥**对其签名。标记必须符合预期的[标记格式](/zh/concepts/features/security/external-authenticators/jwt#token-claims)。随后，ClickHouse 会使用您 JWKS URL 上发布的**公钥**验证该标记：
+
+1. ClickHouse 读取标记 `kid` (密钥 ID) 请求头，并从您的 JWKS 文档中选择匹配的密钥。
+2. 它使用该公钥验证标记签名，并根据您的提供商配置检查 `iss` (签发方) 和 `aud` (受众) 声明。
+3. 验证成功后，连接将以临时用户身份运行；其访问权限来自标记中的 `clickhouse:grants` 和 `clickhouse:roles` 声明，并受权限上限 (`default` 用户) 约束。详见[访问权限](/zh/concepts/features/security/external-authenticators/jwt#access-rights)。
+
+添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
+
+<div id="add-a-jwt-provider">
+  ## 添加 JWT 提供商
+</div>
+
+<Steps>
+  <Step title="打开服务安全设置" id="open-security-settings">
+    进入您的服务，打开**设置**，然后滚动到**安全**部分。找到 **JWT 身份验证**卡片。
+
+    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="服务安全设置中的 JWT 身份验证部分" force />
+  </Step>
+
+  <Step title="打开提供商弹出面板" id="open-flyout">
+    选择**设置 JWT 提供商** (如果已有提供商，则选择**管理 JWT 提供商**) 。随即会打开弹出面板，其中显示可填写的新提供商表单。
+  </Step>
+
+  <Step title="填写提供商详细信息" id="fill-provider-details">
+    填写提供商表单，然后选择**保存**。
+
+    | 字段            | 描述                                                                           |
+    | ------------- | ---------------------------------------------------------------------------- |
+    | **名称**        | 此服务中该提供商的唯一名称。创建后无法更改。                                                       |
+    | **签发方**       | 传入标记中预期的 `iss` 声明。                                                           |
+    | **受众**        | 传入标记中预期的 `aud` 声明。                                                           |
+    | **JWKS URL**  | 用于发布验证标记签名所需公钥的公开 HTTPS URL。                                                 |
+    | **角色声明** (可选) | 用于从标记中读取 ClickHouse 角色的声明。留空以使用默认声明名称 `clickhouse:roles`。标记中指定的角色必须已存在于该服务中。 |
+  </Step>
+
+  <Step title="按需添加更多提供商" id="add-more-providers">
+    使用**添加另一个提供商**配置更多提供商。每个服务最多可配置五个 JWT 提供商。
+  </Step>
+</Steps>
+
+<Warning>
+  删除 JWT 提供商后，将立即不再接受为其签发的标记；任何仍使用这些标记进行身份验证的工作负载都将停止运行。
+</Warning>
+
+<div id="limits">
+  ## 限制
+</div>
+
+* 每个服务最多可配置 **五个** JWT 提供商。
+* JWKS 提供商接受 **RSA** 密钥 (`RS256`) ，并从 26.8 版本起接受 **EC** 密钥 (`ES256`、`ES384`、`ES512`) 。
+* JWKS URL 必须是公网 HTTPS 端点。私网、内部或链路本地地址均会被拒绝。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 标记声明、临时用户和客户端使用。

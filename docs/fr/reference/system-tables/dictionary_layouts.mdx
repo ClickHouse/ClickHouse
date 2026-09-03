@@ -21,7 +21,7 @@ Contient la liste des layouts de dictionnaire pris en charge par le serveur, ain
 
 * `name` ([String](/fr/reference/data-types/string)) — Le nom du layout de dictionnaire, tel que spécifié dans la clause LAYOUT.
 * `is_complex` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si le layout requiert une clé complexe (une clé composée de plusieurs attributs ou de type non entier).
-* `description` ([String](/fr/reference/data-types/string)) — Une description générale du fonctionnement du layout de dictionnaire.
+* `description` ([String](/fr/reference/data-types/string)) — Une description du fonctionnement du layout de dictionnaire. Pour les layouts disposant d’une page de documentation dédiée, ce champ contient le corps Markdown complet de cette page ; pour les autres layouts, il contient un résumé concis.
 * `syntax` ([String](/fr/reference/data-types/string)) — La manière dont le layout est spécifié dans la clause LAYOUT d’une requête CREATE DICTIONARY.
 * `examples` ([String](/fr/reference/data-types/string)) — Exemples d’utilisation.
 * `introduced_in` ([String](/fr/reference/data-types/string)) — La version de ClickHouse dans laquelle le layout a été introduit, au format majeure.mineure.

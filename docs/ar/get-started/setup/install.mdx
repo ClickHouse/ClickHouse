@@ -7,14 +7,29 @@ title: 'إرشادات التثبيت'
 doc_type: 'guide'
 ---
 
-import {galaxyOnClick} from "/snippets/ar/lib/galaxy.jsx";
+export const withDocsBase = (href) => {
+  if (!href || !href.startsWith('/')) return href;
+  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  return base + href;
+};
 
-<Card title="ClickHouse Cloud" icon="cloud" href="/ar/get-started/setup/cloud" cta="عرض الدليل">
-  ابدأ فورًا من دون الحاجة إلى تحديد حجم عنقودك أو توسيعه. تتولى ClickHouse Cloud مهام تحديد الحجم، والتوسّع
-  ، والأمان، والموثوقية، والترقيات.
-</Card>
-
-<br />
+<div className="ch-install-cloud-card">
+  <span className="ch-install-cloud-badge">موصى به</span>
+  <span className="ch-install-cloud-icon" aria-hidden="true"></span>
+  <p className="ch-install-cloud-title">ClickHouse Cloud</p>
+  <p className="ch-install-cloud-description">
+    ابدأ فورًا من دون الحاجة إلى تحديد حجم عنقودك أو توسيعه. تتولى ClickHouse Cloud مهام تحديد الحجم، والتوسّع
+    ، والأمان، والموثوقية، والترقيات.
+  </p>
+  <div className="ch-install-cloud-actions">
+    <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
+      ابدأ مجانًا
+    </a>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/ar/get-started/setup/cloud')}>
+      اقرأ البرنامج التعليمي للبدء السريع
+    </a>
+  </div>
+</div>
 
 إذا كنت تفضّل الإدارة الذاتية، فاختر أحد خيارات ClickHouse مفتوح المصدر أدناه.
 استخدم برنامج التثبيت السريع النصي أو واجهة سطر الأوامر `clickhousectl` لإعداد محلي، أو ثبّت

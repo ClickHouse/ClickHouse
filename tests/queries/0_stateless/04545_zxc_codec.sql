@@ -4,10 +4,10 @@ DROP TABLE IF EXISTS t_zxc_src;
 DROP TABLE IF EXISTS t_zxc;
 
 -- ZXC is experimental: without the setting it is rejected.
-SET allow_experimental_codecs = 0;
+SET enable_zxc_codec = 0;
 CREATE TABLE t_zxc_bad (x UInt64 CODEC(ZXC)) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_codecs = 1;
+SET enable_zxc_codec = 1;
 
 CREATE TABLE t_zxc_src (id UInt64, s String, v UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_zxc_src

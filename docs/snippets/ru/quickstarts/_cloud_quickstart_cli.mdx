@@ -1,0 +1,239 @@
+---
+title: Краткое руководство по Cloud CLI
+---
+
+На этой странице описано, как создать сервис ClickHouse Cloud, подключиться к нему и загрузить данные — всё из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`). Команды выполняются в неинтерактивном режиме; для вывода JSON используйте в `clickhousectl` параметр `--json`.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Установите ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Вам также потребуется `jq`.
+
+Вам нужен аккаунт ClickHouse Cloud. Если у вас его ещё нет, команда `clickhousectl cloud auth signup` откроет в браузере страницу регистрации.
+
+Для операций записи (создания, удаления) требуется [аутентификация с помощью ключа API](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth предоставляет доступ только для чтения:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Или задайте переменные окружения `CLICKHOUSE_CLOUD_API_KEY` и `CLICKHOUSE_CLOUD_API_SECRET`. Выполните проверку командой `clickhousectl cloud auth status`: должна отобразиться запись с областью действия `read/write`.
+
+<div id="create-service">
+  ## Создайте сервис ClickHouse
+</div>
+
+Создайте сервис и сохраните ответ; пароль пользователя `default` отображается только один раз:
+
+```bash
+clickhousectl cloud service create \
+  --name quickstart-ch \
+  --region us-east-1 \
+  --json > ch.json
+```
+
+Ответ содержит ID сервиса, конечные точки и сгенерированный пароль (здесь сокращён; полный ответ также содержит настройки масштабирования, IP Access List и теги):
+
+```json
+{
+  "password": "dK7mPq2x_-TzrL9vNw0s",
+  "service": {
+    "id": "4f7b92f3-4163-403a-b538-b9bc6e2e8f66",
+    "name": "quickstart-ch",
+    "provider": "aws",
+    "region": "us-east-1",
+    "state": "provisioning",
+    "endpoints": [
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 9440,
+        "protocol": "nativesecure"
+      },
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 8443,
+        "protocol": "https"
+      }
+    ],
+    "numReplicas": 3,
+    "minReplicaMemoryGb": 16.0,
+    "maxReplicaMemoryGb": 120.0
+  }
+}
+```
+
+Извлеките данные, необходимые для продолжения работы с этим руководством:
+
+```bash
+CH_ID=$(jq -r .service.id ch.json)
+CH_PASSWORD=$(jq -r .password ch.json)
+CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .host' ch.json)
+```
+
+Если пароль утерян, создайте новый командой `clickhousectl cloud service reset-password "$CH_ID"`.
+
+Для сервисов, созданных с помощью `clickhousectl`, по умолчанию используется IP Access List, разрешающий доступ со всех адресов (`0.0.0.0/0`). Чтобы ограничить доступ, при создании сервиса укажите `--ip-allow`; см. [&quot;Настройка IP-фильтров&quot;](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="wait-for-provisioning">
+  ## Дождитесь создания сервиса
+</div>
+
+Создание занимает около минуты. Проверяйте состояние, пока оно не станет `running`:
+
+```bash
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+<div id="run-sql">
+  ## Выполнение SQL-запросов с помощью Query API
+</div>
+
+`clickhousectl cloud service query` выполняет SQL-запросы по HTTP — локальный бинарный файл `clickhouse` или пароль сервиса не требуются. При первом вызове автоматически создаются конечная точка Query API и ключ API, ограниченный областью действия сервиса:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+```
+
+```text
+Provisioning Query API endpoint + key for service 'quickstart-ch'...
+{"name":"INFORMATION_SCHEMA"}
+{"name":"default"}
+{"name":"information_schema"}
+{"name":"system"}
+```
+
+По умолчанию при перенаправлении вывода используется `JSONEachRow`; чтобы получить вывод в табличном виде, передайте `--format PrettyCompact`.
+
+<div id="create-database-and-table">
+  ## Создайте базу данных и таблицу
+</div>
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE DATABASE IF NOT EXISTS helloworld"
+
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE helloworld.my_first_table (
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+  ) ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)"
+```
+
+Обе команды выводят `OK`. Вставьте несколько строк:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!', now(), -1.0),
+    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+```
+
+Проверьте, что всё работает:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
+```
+
+```text
+{"user_id":102,"message":"Insert a lot of rows per batch","timestamp":"2026-08-26 00:00:00","metric":1.41421}
+{"user_id":102,"message":"Sort your data based on your commonly-used queries","timestamp":"2026-08-27 00:00:00","metric":2.718}
+{"user_id":101,"message":"Hello, ClickHouse!","timestamp":"2026-08-27 10:41:28","metric":-1}
+{"user_id":101,"message":"Granules are the smallest chunks of data read","timestamp":"2026-08-27 10:41:33","metric":3.14159}
+```
+
+Временные метки зависят от времени выполнения вставки, поэтому у вас они будут другими.
+
+<div id="load-csv-file">
+  ## Загрузка CSV-файла
+</div>
+
+Предположим, что в CSV-файле `data.csv` содержится следующий текст:
+
+```text title="data.csv"
+102,This is data in a file,2022-02-22 10:43:28,123.45
+101,It is comma-separated,2022-02-23 00:00:00,456.78
+103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+```
+
+`INSERT ... FORMAT` считывает данные из stdin, поэтому передайте запрос и файл через конвейер:
+
+```bash
+printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+Убедитесь, что новые строки добавлены:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM helloworld.my_first_table"
+```
+
+```text
+{"count()":7}
+```
+
+<div id="native-client">
+  ## Подключение с помощью клиента ClickHouse
+</div>
+
+Вы также можете подключиться по собственному протоколу с помощью [**клиента ClickHouse**](/ru/concepts/features/interfaces/client). ClickHouse CLI управляет бинарным файлом `clickhouse`, поэтому устанавливать клиент отдельно не нужно:
+
+```bash
+clickhousectl local use latest
+```
+
+Будет установлен последний бинарный файл `clickhouse` и создана символическая ссылка на него в `~/.local/bin/clickhouse`, поэтому команду `clickhouse` можно будет запускать из любого места, указанного в вашем `PATH`.
+
+Затем подключитесь, используя имя хоста и пароль из ответа на создание. При использовании `--query` результат выводится, после чего клиент завершает работу; без него открывается интерактивный промпт (`:)`), из которого можно выйти командой `exit`:
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp FORMAT TabSeparated"
+```
+
+```text
+102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
+102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
+101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
+101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
+```
+
+Та же команда используется для загрузки файлов:
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+```
+
+<div id="cleanup">
+  ## Очистка
+</div>
+
+При удалении сервиса все его данные удаляются безвозвратно. `--force` сначала останавливает работающий сервис:
+
+```bash
+clickhousectl cloud service delete "$CH_ID" --force
+```
+
+Чтобы сохранить данные и не платить за вычислительные ресурсы, остановите сервис командой `clickhousectl cloud service stop "$CH_ID"`.

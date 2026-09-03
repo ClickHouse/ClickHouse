@@ -448,14 +448,16 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
             compound_expression_from_error_message += compound_expression_source;
         }
 
+        /// The hint is the actionable part of the message, so it goes before the formatted query, which
+        /// can be many kilobytes long.
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-            "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
+            "Identifier {} nested path {} cannot be resolved from type {}{}{}. In scope {}",
             expression_identifier,
             nested_path,
             expression_type->getName(),
             compound_expression_from_error_message,
-            scope.scope_node->formatASTForErrorMessage(),
-            getHintsErrorMessageSuffix(hints));
+            getHintsErrorMessageSuffix(hints),
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
@@ -730,9 +732,30 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     bool clone_is_needed = true;
 
+    /// `table_expression_name` is the alias when the table expression has one, so a query that lost a comma
+    /// in the FROM clause - `FROM date_dim AS dt, store_sales item` - reports that `item.i_brand` cannot be
+    /// resolved from "table with name item" while a table named `item` does exist. Name the table the alias
+    /// actually refers to, which is what makes the mistake visible.
     String table_expression_source = table_expression_data.table_expression_description;
     if (!table_expression_data.table_expression_name.empty())
+    {
         table_expression_source += " with name " + table_expression_data.table_expression_name;
+
+        /// A materialized CTE is a table node over a temporary table whose name is generated, so use the
+        /// name the user wrote instead of leaking `_materialized_cte_<name>_<rng>`.
+        String underlying_name = table_expression_data.table_name;
+        if (const auto * table_node = table_expression_node->as<TableNode>())
+            if (table_node->isMaterializedCTE())
+                underlying_name = table_node->getMaterializedCTE()->cte_name;
+
+        const bool name_is_an_alias = !underlying_name.empty()
+            && table_expression_data.table_expression_name != underlying_name
+            && table_expression_data.table_expression_name
+                != table_expression_data.database_name + "." + underlying_name;
+
+        if (name_is_an_alias)
+            table_expression_source += " (an alias of " + underlying_name + ")";
+    }
 
     if (!result_expression)
     {
@@ -760,11 +783,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
         auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
 
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
             identifier.getFullName(),
             table_expression_source,
-            scope.scope_node->formatASTForErrorMessage(),
-            getHintsErrorMessageSuffix(hints));
+            getHintsErrorMessageSuffix(hints),
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     if (clone_is_needed)

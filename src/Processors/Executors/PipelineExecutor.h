@@ -62,8 +62,6 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
 
-    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
-
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
 
@@ -142,6 +140,8 @@ private:
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
+
+    String dumpPipeline() const;
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;

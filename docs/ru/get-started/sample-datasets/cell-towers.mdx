@@ -48,7 +48,7 @@ import SupersetDocker from '/snippets/ru/_add_superset_detail.mdx';
 
     <ActionsMenu menu="Load Data" />
 
-    Выберите набор данных **Cell Towers** на вкладке **Sample data** и нажмите **Load data**:
+    Выберите набор данных **базовых станций сотовой связи** на вкладке **Sample data** и нажмите **Load data**:
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Загрузка набора данных о базовых станциях сотовой связи" />
 
@@ -109,7 +109,7 @@ import SupersetDocker from '/snippets/ru/_add_superset_detail.mdx';
     2. Импортируйте набор данных из публичного S3 бакета (686 МБ):
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>

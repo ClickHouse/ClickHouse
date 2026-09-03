@@ -70,9 +70,11 @@ Chaque flush crée au moins une part par valeur distincte de clé de partitionne
   ### Déduplication et fiabilité
 </div>
 
-Par défaut, ClickHouse effectue une déduplication automatique pour les insertions synchrones, ce qui sécurise les nouvelles tentatives en cas d’échec. Cependant, cette fonctionnalité est désactivée pour les insertions asynchrones, sauf si elle est explicitement activée (elle ne doit pas l’être si vous avez des vues matérialisées dépendantes — [voir l’issue](https://github.com/ClickHouse/ClickHouse/issues/66003)).
+Depuis la version 26.2, ClickHouse effectue automatiquement la déduplication des insertions asynchrones comme synchrones, ce qui permet de réessayer les insertions en toute sécurité sur les tables qui conservent un journal de déduplication. Les moteurs `*ReplicatedMergeTree` en conservent un par défaut ; pour une table `MergeTree` classique, `non_replicated_deduplication_window` doit être défini sur une valeur positive. Les deux types d’insertions sont contrôlés par [`deduplicate_insert`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), dont la valeur par défaut est `enable`. Les vues matérialisées dépendantes sont prises en charge.
 
-En pratique, si la déduplication est activée et que la même insertion est relancée — en raison, par exemple, d’un timeout ou d’une interruption du réseau — ClickHouse peut ignorer le doublon en toute sécurité. Cela permet de préserver l’idempotence et d’éviter les écritures de données en double.
+En pratique, si une même insertion est réessayée — par exemple en raison d’un timeout ou d’une interruption réseau — ClickHouse peut ignorer le doublon en toute sécurité. Cela permet de préserver l’idempotence et d’éviter les doubles écritures. Pour les insertions asynchrones, la déduplication s’effectue par requête utilisateur plutôt que par batch vidé : une requête dupliquée n’entraîne donc pas l’abandon des autres requêtes regroupées dans le même batch.
+
+Pour plus de détails, ainsi que sur l’unique restriction applicable aux vues matérialisées avec les insertions asynchrones, consultez [Déduplication des insertions lors de nouvelles tentatives](/fr/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
 <div id="enabling-asynchronous-inserts">
   ### Activation des insertions asynchrones

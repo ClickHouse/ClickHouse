@@ -51,7 +51,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — Le [format](/fr/reference/formats/index#formats-overview) du fichier.
 * `aws_access_key_id`, `aws_secret_access_key` - Identifiants à long terme pour l’utilisateur du compte [AWS](https://aws.amazon.com/). Vous pouvez les utiliser pour authentifier vos requêtes. Ce paramètre est facultatif. Si les identifiants ne sont pas spécifiés, elles sont récupérées depuis le fichier de configuration. Pour plus d’informations, voir [Using S3 for Data Storage](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — Type de compression. Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Ce paramètre est facultatif. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier.
-* `partition_strategy` – Options : `wildcard` ou `hive`. `wildcard` nécessite un `{_partition_id}` dans le chemin, qui est remplacé par la clé de partition. `hive` n’autorise pas les caractères génériques, suppose que le chemin correspond à la racine de la table et génère des répertoires partitionnés au format Hive avec des Snowflake IDs comme noms de fichiers et le format de fichier comme extension. Si le chemin contient un espace réservé `{_partition_id}`, la valeur par défaut est `wildcard` — la seule stratégie compatible avec un tel chemin. Sinon, la valeur par défaut est définie par le paramètre `file_like_engine_default_partition_strategy` (`wildcard` pour les paramètres `compatibility` antérieurs à `26.6`, `hive` sinon).
+* `partition_strategy` – Options : `wildcard` ou `hive`. `wildcard` nécessite un `{_partition_id}` dans le chemin, qui est remplacé par la clé de partition. `hive` n’autorise pas les caractères génériques, suppose que le chemin correspond à la racine de la table et génère des répertoires partitionnés au format Hive avec des Snowflake IDs comme noms de fichiers et le format de fichier comme extension. Sans stratégie explicite, un chemin contenant `{_partition_id}` utilise `wildcard`. Un chemin avec un autre glob n’utilise aucune stratégie de partitionnement et ignore `PARTITION BY`. Un chemin sans glob utilise `hive` lorsque `file_like_engine_default_partition_strategy` est défini sur `hive` ; sinon, il n’utilise aucune stratégie de partitionnement.
 * `partition_columns_in_data_file` - Utilisé uniquement avec la stratégie de partitionnement `hive`. Indique à ClickHouse s’il doit s’attendre à ce que les colonnes de partition soient écrites dans le fichier de données. La valeur par défaut est `false`.
 * `storage_class_name` - Options : `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Seules les classes de stockage S3 qui permettent une récupération immédiate sont prises en charge (les classes d’archivage telles que `GLACIER` et `DEEP_ARCHIVE` ne le sont pas). Permet de spécifier [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - Facultatif. Utilisé pour transmettre un `role_arn` pour l’accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
@@ -101,7 +101,9 @@ Pour un partitionnement mensuel, utilisez l’expression `toYYYYMM(date_column)`
   #### Stratégie de partitionnement
 </div>
 
-`wildcard` : remplace le caractère générique `{_partition_id}` dans le chemin du fichier par la clé de partition effective. La lecture n&#39;est pas prise en charge. Cette option est sélectionnée par défaut lorsque le chemin contient un espace réservé `{_partition_id}` (la seule stratégie compatible avec un tel chemin) ou, à défaut, avec des réglages `compatibility` antérieurs à `26.6` ; dans les autres cas, la valeur par défaut est `hive` (voir le paramètre `file_like_engine_default_partition_strategy`).
+`wildcard` : remplace le caractère générique `{_partition_id}` dans le chemin du fichier par la clé de partition effective. La lecture n&#39;est pas prise en charge. Cette option est sélectionnée par défaut lorsque le chemin contient `{_partition_id}`.
+
+Lorsqu&#39;aucune `partition_strategy` n&#39;est définie, un chemin contenant un autre glob n&#39;utilise aucune stratégie de partitionnement et ignore `PARTITION BY`. Un chemin sans glob utilise `hive` lorsque `file_like_engine_default_partition_strategy` est défini sur `hive` ; sinon, il n&#39;utilise aucune stratégie de partitionnement.
 
 `hive` implémente le partitionnement de style Hive pour les lectures &amp; écritures. La lecture s&#39;appuie sur un motif glob récursif et est équivalente à `SELECT * FROM s3('table_root/**.parquet')`.
 L&#39;écriture génère des fichiers au format suivant : `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -458,7 +460,8 @@ Il est possible d’extraire des données de ces archives à l’aide de ::. Des
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

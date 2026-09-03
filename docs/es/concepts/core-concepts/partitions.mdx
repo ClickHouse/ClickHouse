@@ -162,9 +162,15 @@ ClickHouse procesa esa consulta aplicando una secuencia de técnicas de poda par
 
 <br />
 
-① **Poda de particiones**: se usan los [índices MinMax](/es/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) para ignorar particiones completas (conjuntos de partes) que, lógicamente, no pueden coincidir con el filtro de la consulta sobre columnas usadas en la clave de partición de la tabla.
+<Steps>
+  <Step title="Poda de particiones">
+    Se usan los [índices MinMax](/es/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) para ignorar particiones completas (conjuntos de partes) que, lógicamente, no pueden coincidir con el filtro de la consulta sobre columnas usadas en la clave de partición de la tabla.
+  </Step>
 
-② **Poda de gránulos**: para las partes de datos restantes tras el paso ①, se usa su [índice primario](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para ignorar todos los [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (bloques de filas) que, lógicamente, no pueden coincidir con el filtro de la consulta sobre columnas usadas en la clave primaria de la tabla.
+  <Step title="Poda de gránulos">
+    Para las partes de datos restantes tras el paso de poda de particiones, se usa su [índice primario](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para ignorar todos los [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (bloques de filas) que, lógicamente, no pueden coincidir con el filtro de la consulta sobre columnas usadas en la clave primaria de la tabla.
+  </Step>
+</Steps>
 
 Podemos observar estos pasos de poda de datos [inspeccionando](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) el plan físico de ejecución de la consulta para la consulta de ejemplo anterior mediante una cláusula [EXPLAIN](/es/reference/statements/explain):
 
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 La salida anterior muestra:
 
-① Poda de particiones: Las filas 7 a 18 de la salida de EXPLAIN anterior muestran que ClickHouse primero usa el [índice MinMax](/es/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) del campo `date` para identificar 11 de los 3257 [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existentes (bloques de filas) almacenados en 1 de las 436 partes de datos activas existentes que contienen filas que coinciden con el filtro `date` de la consulta.
+<Steps>
+  <Step title="Poda de particiones">
+    Las filas 7 a 18 de la salida de `EXPLAIN` anterior muestran que ClickHouse primero usa el [índice MinMax](/es/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) del campo `date` para identificar 11 de los 3257 [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existentes (bloques de filas) almacenados en 1 de las 436 partes de datos activas existentes que contienen filas que coinciden con el filtro `date` de la consulta.
+  </Step>
 
-② Poda de gránulos: Las filas 19 a 24 de la salida de EXPLAIN anterior indican que ClickHouse luego usa el [índice primario](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) (creado sobre el campo `town`) de la parte de datos identificada en el paso ① para reducir aún más el número de gránulos (que contienen filas que potencialmente también coinciden con el filtro `town` de la consulta) de 11 a 1. Esto también se refleja en la salida del cliente de ClickHouse que imprimimos más arriba para la ejecución de la consulta:
+  <Step title="Poda de gránulos">
+    Las filas 19 a 24 de la salida de `EXPLAIN` anterior indican que ClickHouse luego usa el [índice primario](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) (creado sobre el campo `town`) de la parte de datos identificada en el paso de poda de particiones para reducir aún más el número de gránulos (que contienen filas que potencialmente también coinciden con el filtro `town` de la consulta) de 11 a 1. Esto también se refleja en la salida del cliente de ClickHouse que imprimimos más arriba para la ejecución de la consulta:
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 Esto significa que ClickHouse escaneó y procesó 1 gránulo (bloque de [8192](/es/reference/settings/merge-tree-settings/index-granularity#index_granularity) filas) en 6 milisegundos para calcular el resultado de la consulta.
 

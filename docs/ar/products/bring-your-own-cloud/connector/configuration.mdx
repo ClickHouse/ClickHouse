@@ -1,0 +1,317 @@
+---
+title: 'التهيئة'
+sidebarTitle: 'التهيئة'
+description: 'هيّئ ClickHouse Connector: مثيلات ClickHouse، وقوائم السماح الخاصة بالمشغّل، وسياسات الشبكة، وإخفاء المعلومات الحساسة، والنسخ المتطابقة الخاصة، والتخزين'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
+doc_type: 'guide'
+---
+
+تتناول هذه الصفحة تغييرات التهيئة التي يُرجّح إجراؤها بعد تثبيت ClickHouse Connector. للاطلاع على كل مفتاح وقيمته الافتراضية ومعناه، راجع [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration)؛ ولخيارات سطر الأوامر، راجع [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli).
+
+<div id="configuration-surfaces">
+  ## واجهات التهيئة
+</div>
+
+للموصل واجهة تهيئة واحدة لكل هدف تثبيت.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    يُنشئ `clicklink clctl init` تراكب قيم باسم `clicklink-values.yaml` في دليل العمل، وينشر مخطط `clicklink-connector` باستخدامه. ويُعد هذا التراكب سجلًا دائمًا لعملية النشر: فعند إعادة تشغيل `init`، يُحتفَظ به ما لم تمرر `--force`، لذا تبقى تعديلاتك محفوظة عبر عمليات إعادة التشغيل والاستعادة.
+
+    <Note>
+      تستخدم أوامر التشغيل اللاحقة للنشر في هذه الصفحة وفي [العمليات](/ar/products/bring-your-own-cloud/connector/operations) واجهة سطر الأوامر `helm`. وحده `init` يتضمن عميل Helm مدمجًا.
+    </Note>
+
+    حرّر التراكب، ثم طبّقه:
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # مساحة أسماء الموصل التي اخترتها عند init
+    CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+    helm upgrade clicklink-connector clicklink-connector \
+      --repo https://releases.clicklink.clickhouse.com/charts \
+      --version "${CHART_VERSION}" \
+      --namespace "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+
+    تعيد هذه الكتلة تطبيق قيمك المعدّلة على إصدار المخطط المثبّت حاليًا، لذا لا يتحول تغيير التهيئة إلى ترقية غير مخططة؛ فالانتقال إلى إصدار جديد خطوة مقصودة موضحة في [العمليات](/ar/products/bring-your-own-cloud/connector/operations). إذا كان التثبيت يستخدم نسخة معكوسة من مستودع المخططات، فاستبدل `--repo` بمرآتك.
+
+    لا يتضمن التثبيت من مرجع مباشر للمخطط (`oci://` أو URL أو أرشيف أو دليل محلي، راجع [المرايا الخاصة](#private-mirrors)) مستودعًا يمكن الرجوع إليه لحل المرجع. أعد تنفيذ الترقية باستخدام المرجع الذي ثبّت منه:
+
+    ```bash
+    helm upgrade clicklink-connector <same-chart-reference> \
+      --version "${CHART_VERSION}" \
+      -n "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+  </Tab>
+
+  <Tab title="جهاز Linux افتراضي">
+    يكتب `clicklink clctl init` الملف `/etc/clicklink/config.yaml`. عند إعادة تشغيل `init`، يُحتفَظ بملف تهيئة موجود ما لم تمرر `--force`، لذا يمكنك تحرير الملف يدويًا بأمان. بعد التحرير، أعد تشغيل البرنامجين الخفيين ثم تحقّق:
+
+    ```bash
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+    sudo clicklink clctl preflight
+    ```
+  </Tab>
+</Tabs>
+
+<div id="clickhouse-instances">
+  ## إضافة مثيلات ClickHouse أو تعديلها
+</div>
+
+يحدّد كل إدخال ضمن `instances` نقطة نهاية لبروتوكول ClickHouse الأصلي يقرأ منها الموصل: `host` و`port` و`database` و`secure`، إضافةً إلى `namespace` و`cluster` في Kubernetes. لا تُخزَّن بيانات الاعتماد في التهيئة مطلقًا؛ إذ يستخرج كل مكوّن مستخدم ClickHouse للقراءة فقط من حزمة الوصول التي ينشئها التزويد.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    أضف المثيل إلى خريطتي المكوّنات في `clicklink-values.yaml`، وأضف مساحة اسمه إلى `networkPolicy.clickhouseNamespaces` (تتم المطابقة باستخدام التسمية `kubernetes.io/metadata.name` الخاصة بمساحة الاسم):
+
+    ```yaml
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    networkPolicy:
+      clickhouseNamespaces:
+        - "clickhouse"
+    ```
+
+    وفّر صلاحية القراءة فقط لكل مكوّن من محطة العمل لديك. يطبّق `--apply-ch-grants` امتيازات ClickHouse المُنشأة داخل الـ pod عبر `kubectl exec`؛ ومن دونه ينشئ الأمر جانب Kubernetes فقط ويترك `ch-grants.sql` على القرص لتطبّقه بنفسك. إذا كانت للمستخدم الإداري كلمة مرور، فأضف `--ch-admin-password-stdin` ومرّر كلمة المرور عبر pipe.
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # مساحة اسم الموصل التي اخترتها عند التهيئة
+    clicklink clctl scraper access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    ```
+
+    بالنسبة إلى مثيل يديره Operator ولا يتوفر له مستخدم إداري قادر على تنفيذ SQL، استبدل `--apply-ch-grants` بـ `--ch-user-via cr` (تبقى علامات اختيار الـ pod كما هي)؛ راجع [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli). ثم اربط زوج Secret وServiceAccount الذي ينشئه كل أمر بخريطة `accessBundles` المطابقة، وشغّل `helm upgrade` المعروض أعلاه:
+
+    ```yaml
+    scraper:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-scraper-access-analytics
+          serviceAccountName: pcm-scraper-analytics
+
+    troubleshooter:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-troubleshooter-access-analytics
+          serviceAccountName: pcm-troubleshooter-analytics
+    ```
+  </Tab>
+
+  <Tab title="جهاز Linux افتراضي">
+    أضف المثيل إلى `/etc/clicklink/config.yaml`:
+
+    ```yaml
+    instances:
+      analytics:
+        host: "10.0.12.34"
+        port: 9440
+        database: "default"
+        secure: true
+        cluster: "default"
+    ```
+
+    ثم وفّر الوصول لكل مكوّن على المضيف بصفتك root. يطبّق كل أمر امتيازات ClickHouse ويعيد تشغيل برنامجه الخفي (يمكنك تخطي إعادة التشغيل باستخدام `--skip-restart`):
+
+    ```bash
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  تعمل أوامر `access provision` نفسها مع `--force` على تدوير بيانات اعتماد ClickHouse الخاصة بالمثيل. راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations).
+</Tip>
+
+<div id="operator-allowlist">
+  ## قائمة السماح بالمشغّلين
+</div>
+
+تتحكم قائمة سماح لعناوين البريد الإلكتروني للمشغّلين في الوصول إلى الجلسات المُدارة عبر Gateway: يجب أن يتضمن كل طلب إلى بوابة الجلسة رمز OIDC ID قصير الأجل، ويكون عنوان البريد الإلكتروني المُثبَت فيه مدرجًا في القائمة. تؤدي قائمة السماح الفارغة إلى إغلاق البوابة، لذا لن يتمكن أحد من فتح جلسة عبرها. على جهاز افتراضي، يمكن للمستخدم الجذر على المضيف أيضًا إدارة الجلسات مباشرةً من خلال ملف الجلسة المحلي؛ إذ تحكم قائمة السماح مسار البوابة فقط. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions) للاطلاع على نموذج الثقة الكامل.
+
+<Tabs>
+  <Tab title="Kubernetes">
+    توجد قائمة السماح في الطبقة المتراكبة وتُحوَّل إلى ConfigMap. لتغييرها، عدّل القائمة وشغّل `helm upgrade`:
+
+    ```yaml
+    clctl:
+      gateway:
+        enabled: true
+        allowedOperators:
+          - "oncall@example.com"
+          - "dba@example.com"
+    ```
+  </Tab>
+
+  <Tab title="جهاز Linux افتراضي">
+    يكتب `init` قائمة السماح إلى `/etc/clicklink/allowed-operators.txt`، بمعدل عنوان بريد إلكتروني واحد في كل سطر:
+
+    ```text
+    oncall@example.com
+    dba@example.com
+    ```
+
+    تعيد أداة استكشاف الأخطاء وإصلاحها قراءة الملف كل 30 ثانية، لذا تسري التعديلات دون إعادة تشغيل.
+  </Tab>
+</Tabs>
+
+<div id="network-policy">
+  ## سياسة الشبكة وحركة المرور الصادرة
+</div>
+
+في Kubernetes، يوفّر المخطط كائن NetworkPolicy يمنع حركة المرور افتراضيًا، مع قائمة سماح لحركة المرور الصادرة (`networkPolicy.enabled: true`). لا تصبح كائنات NetworkPolicy نافذة إلا إذا كانت CNI لديك تفرض تطبيقها؛ ومع CNI تفرضها، لن يتمكن الموصل من إرسال أي حركة مرور صادرة حتى تحدد `allowEgressCIDRs` نطاقات CIDR الخاصة بنقطة نهاية واجهة برمجة تطبيقات الموصل.
+
+```yaml
+networkPolicy:
+  enabled: true
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
+  allowEgressCIDRs:
+    - "203.0.113.0/24"
+  # Ports opened to allowEgressCIDRs.
+  allowEgressPorts:
+    - 443
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
+  apiserverCIDRs:
+    - "172.16.0.0/28"
+```
+
+تتطلب قاعدتان اهتمامًا خاصًا:
+
+* **`apiserverCIDRs`**: عند تركها فارغة، لا يُصدر المخطط أي قاعدة خروج لخادم API. وعندها تفشل البرامج الخفية في أول طلب لرمز Kubernetes بسبب خطأ في الشبكة، ما يشير إلى ضرورة ضبطها. في Kubernetes المُدار، استخدم نطاقات CIDR لنقاط نهاية خادم API الخاصة بالعنقود.
+* **`clctl.gateway.jwksEgressCIDRs`**: عند تمكين بوابة الجلسة، تجلب أداة استكشاف الأخطاء وإصلاحها مفاتيح JWKS الخاصة بموفّر الهوية لديك للتحقق من صحة رموز المشغّلين. ضمن نهج الرفض الافتراضي، يؤدي ترك هذا الحقل فارغًا إلى حظر جميع عمليات التحقق من الرموز:
+
+```yaml
+clctl:
+  gateway:
+    jwksEgressCIDRs:
+      - "199.36.153.8/30"
+```
+
+المثال هو النطاق `private.googleapis.com`، الذي يشمل موفّر هوية من Google يمكن الوصول إليه عبر Private Google Access. بالنسبة إلى أي موفّر هوية آخر، حدّد نطاق ذلك الموفّر (أو CIDR لخادم الوكيل الصادر الذي يسبقه).
+
+إعدادان إضافيان لـ Ingress: يقيّد `metricsScrapeSelector` حركة Ingress الخاصة بكشط المقاييس إلى مساحة اسم محددة في Prometheus استنادًا إلى تسمية، بينما يسمح `kubeletProbeCIDRs` صراحةً بمسبارات السلامة الخاصة بـ kubelet في البيئات التي تتبع سياسة رفض افتراضية صارمة. راجع [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration) للاطلاع على القائمة الكاملة للمفاتيح.
+
+<div id="redaction-patterns">
+  ## أنماط إخفاء المعلومات الحساسة
+</div>
+
+تُخفى المعلومات الحساسة من مخرجات مستكشف الأخطاء وإصلاحها قبل أن تغادر نطاقك. تغطي الأنماط المضمّنة `ipv4` و`ipv6` و`bearer-token` و`aws-access-key` و`email` و`jwt` و`ssh-private-key` و`connection-string-credentials`. يمكنك إضافة أنماطك الخاصة في ملف YAML؛ إذ تُطبَّق أنماطك أولًا حسب ترتيبها في الملف، ثم الأنماط المضمّنة. ويستبدل الإدخال الذي يعيد استخدام `name` لنمط مضمّن ذلك النمط.
+
+يحدّد كل نمط `name` (مطلوب وفريد)، و`regex` (مطلوب، بصياغة Go RE2)، و`replace` (القيمة الافتراضية `[REDACTED]`، ويدعم مراجع الالتقاط مثل `$1`)، و`case_insensitive` (القيمة الافتراضية `false`):
+
+```yaml
+version: 1
+patterns:
+  - name: internal-hostname
+    regex: '\b[a-z0-9-]+\.corp\.example\.com\b'
+    replace: '[REDACTED:internal-host]'
+
+  # Reusing a built-in name replaces the built-in pattern.
+  - name: ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    replace: '[REDACTED:ip]'
+```
+
+على جهاز افتراضي، يوجد الملف في `/etc/clicklink/redaction-patterns.yaml`؛ وينشئ المثبّت ملفًا افتراضيًا مُعلّقًا ويحافظ على نسختك عبر عمليات الترقية. في Kubernetes، ضع ملف YAML في ConfigMap تحت المفتاح `redaction-patterns.yaml` واضبط `troubleshooter.redaction.patternsConfigMap` على اسمه؛ إذ يقوم مخطط بربطه في المسار نفسه.
+
+<Warning>
+  يرفض مستكشف الأخطاء وإصلاحها البدء إذا كان ملف الأنماط موجودًا لكنه غير صالح، ويسجل الإدخال المسبّب للمشكلة. يتحقق `clicklink clctl preflight` من صحة الملف، لذا شغّله قبل إعادة تشغيل البرنامج الخفي.
+</Warning>
+
+<div id="private-mirrors">
+  ## المرايا الخاصة ونقاط النهاية ضمن الحدود
+</div>
+
+يُعيّن المخطط المنشور مسبقًا `image.repository` إلى صورة موصل عامة متعددة المعماريات وموقّعة باستخدام cosign، لذا لا تتطلب عمليات التثبيت العادية قيمًا للصورة. لفحص الإعدادات الافتراضية المنشورة:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+helm show values clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version "${CLICKLINK_VERSION#v}"
+```
+
+للسحب عبر السجل الخاص بك، استبدل المستودع في التراكب:
+
+```yaml
+image:
+  repository: "registry.example.com/mirrors/clicklink"
+```
+
+لتثبيت المخطط نفسه من مرآة، يقبل `init` الخيار `--chart` إما كاسم مخطط يُحلّ ضمن `--chart-repo`، أو كمرجع `oci://` مباشر، أو URL، أو أرشيف أو دليل محلي. يستخدم `--chart-version` إصدار CLI نفسه افتراضيًا، بحيث يبقى الملف الثنائي والمخطط متزامنين:
+
+```bash
+clicklink clctl init --handoff handoff.yaml --target helm \
+  --chart oci://registry.example.com/charts/clicklink-connector
+```
+
+عندما تكون نقطة نهاية واجهة برمجة تطبيقات الموصل خلف مرجع تصديق خاص (CA) ضمن نطاقك، مرّر `--api-private-ca` إلى `init`: إذ يُهيّئ `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`، بحيث يُتحقق من نقطة النهاية باستخدام سلسلة CA من حزمة التسجيل بدلاً من جذور النظام. على جهاز افتراضي (VM)، يكون المكافئ هو `api.tls.ca_file` في `/etc/clicklink/config.yaml`؛ يثبّت `init` سلسلة الحزمة في `/etc/clicklink/tls/ca.crt`، وتُضاف إلى جذور النظام لأغراض التحقق. للتسجيل وتوقيع الشهادات في بيئة معزولة هوائياً بالكامل، راجع [الإعداد الأوّلي](/ar/products/bring-your-own-cloud/connector/onboarding).
+
+<div id="storage">
+  ## التخزين
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    يحتفظ مستكشف الأخطاء وإصلاحها بحالته في PersistentVolumeClaim، بحيث تظل حالة الجلسة وسجل التدقيق محفوظين بعد إعادة جدولة pod:
+
+    ```yaml
+    persistence:
+      enabled: true
+      storageClass: "gp3"
+      size: 5Gi
+    ```
+
+    تستخدم `storageClass` الفارغة StorageClass الافتراضية للعنقود. وإذا لم يكن للعنقود StorageClass افتراضية، يتطلب `init` تحديد واحدة عبر الموجّه أو الخيار `--storage-class`.
+  </Tab>
+
+  <Tab title="جهاز Linux افتراضي">
+    يخزّن الـ scraper المقاييس مؤقتًا ضمن `/var/lib/clicklink/buffer` لضمان التسليم مرة واحدة على الأقل عند تعذّر الوصول إلى نقطة نهاية واجهة برمجة التطبيقات، مع الاحتفاظ بها لمدة تصل إلى 168 ساعة أو 1024 MB، والرفع افتراضيًا بمعدل محدود قدره 1 MB/s:
+
+    ```yaml
+    scraper:
+      buffer:
+        path: /var/lib/clicklink/buffer
+        retention: 168h
+        max_size_mb: 1024
+    ```
+
+    يتضمن `clicklink clctl preflight` عمليات فحص للقرص لدليل buffer و`/var/log`.
+  </Tab>
+</Tabs>

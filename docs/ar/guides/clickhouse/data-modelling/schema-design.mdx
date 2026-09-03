@@ -37,34 +37,34 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوفّر ClickHouse إمكانية استدلال المخطط لتحديد الأنواع تلقائيًا لمجموعة بيانات. وهذا مدعوم لجميع تنسيقات البيانات، بما في ذلك Parquet. ويمكننا الاستفادة من هذه الميزة لتحديد أنواع ClickHouse للبيانات عبر دالة الجدول S3 والأمر [`DESCRIBE`](/ar/reference/statements/describe-table). لاحظ أدناه أننا نستخدم نمط glob ‏`*.parquet` لقراءة جميع الملفات في المجلد `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
 ```response
 ┌─name──────────────────┬─type───────────────────────────┐
-│ Id                    │ Nullable(Int64)               │
-│ PostTypeId            │ Nullable(Int64)               │
-│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ Id                    │ Nullable(Int64)                │
+│ PostTypeId            │ Nullable(Int64)                │
+│ AcceptedAnswerId      │ Nullable(Int64)                │
 │ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
-│ Score                 │ Nullable(Int64)               │
-│ ViewCount             │ Nullable(Int64)               │
-│ Body                  │ Nullable(String)              │
-│ OwnerUserId           │ Nullable(Int64)               │
-│ OwnerDisplayName      │ Nullable(String)              │
-│ LastEditorUserId      │ Nullable(Int64)               │
-│ LastEditorDisplayName │ Nullable(String)              │
+│ Score                 │ Nullable(Int64)                │
+│ ViewCount             │ Nullable(Int64)                │
+│ Body                  │ Nullable(String)               │
+│ OwnerUserId           │ Nullable(Int64)                │
+│ OwnerDisplayName      │ Nullable(String)               │
+│ LastEditorUserId      │ Nullable(Int64)                │
+│ LastEditorDisplayName │ Nullable(String)               │
 │ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
 │ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
-│ Title                 │ Nullable(String)              │
-│ Tags                  │ Nullable(String)              │
-│ AnswerCount           │ Nullable(Int64)               │
-│ CommentCount          │ Nullable(Int64)               │
-│ FavoriteCount         │ Nullable(Int64)               │
-│ ContentLicense        │ Nullable(String)              │
-│ ParentId              │ Nullable(String)              │
-│ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
-│ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
+│ Title                 │ Nullable(String)               │
+│ Tags                  │ Nullable(String)               │
+│ AnswerCount          │ Nullable(Int64)                │
+│ CommentCount         │ Nullable(Int64)                │
+│ FavoriteCount        │ Nullable(Int64)                │
+│ ContentLicense       │ Nullable(String)               │
+│ ParentId             │ Nullable(String)               │
+│ CommunityOwnedDate   │ Nullable(DateTime64(3, 'UTC')) │
+│ ClosedDate           │ Nullable(DateTime64(3, 'UTC')) │
 └───────────────────────┴────────────────────────────────┘
 ```
 
@@ -76,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 بضع نقاط مهمة:
@@ -84,7 +84,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stac
 جدول posts الخاص بنا فارغ بعد تشغيل هذا الأمر. لم يتم تحميل أي بيانات.
 لقد حددنا MergeTree كمحرك للجدول. ويُعد MergeTree أكثر محركات الجداول شيوعًا في ClickHouse، ومن المرجح أنك ستستخدمه. فهو بمثابة الأداة متعددة الاستخدامات في مجموعة أدوات ClickHouse، إذ يمكنه التعامل مع بيتابايت من البيانات، ويلبّي معظم حالات الاستخدام التحليلية. وتوجد محركات جداول أخرى لحالات استخدام مثل CDC التي تحتاج إلى دعم تحديثات فعّالة.
 
-تعني العبارة `ORDER BY ()` أنه ليس لدينا فهرس، وبشكل أدق لا يوجد أي ترتيب في بياناتنا. سنتناول هذا بمزيد من التفصيل لاحقًا. أما الآن، فيكفي أن تعرف أن جميع الاستعلامات ستتطلب مسحًا خطيًا.
+تعني العبارة `ORDER BY ()` أنه ليس لدينا فهرس، وبشكل أدق لا يوجد أي ترتيب في بياناتنا. سنتناول هذا بمزيد من التفصيل لاحقًا. أما الآن، فيكفي أن تعرف أن جميع الاستعلامات ستتطلب فحصًا خطيًا.
 
 لتأكيد أنه تم إنشاء الجدول:
 
@@ -123,7 +123,7 @@ ORDER BY tuple()
 بعد تعريف المخطط الأوّلي، يمكننا تعبئة البيانات باستخدام `INSERT INTO SELECT`، مع قراءة البيانات عبر دالة الجدول S3. يحمّل المثال التالي بيانات `posts` في نحو دقيقتين على مثيل ClickHouse Cloud مزوّد بثماني نوى.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -275,10 +275,10 @@ LIMIT 3
 
 ```response
 ┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
-│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
-│ 78183948 │ About memory barrier                                               │               52 │
-│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
-└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+│ 78203063 │ How to avoid default initialization of objects in std::vector?    │           74 │
+│ 78183948 │ About memory barrier                                              │           52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │           49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────┘
 
 10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
 Peak memory usage: 429.38 MiB.
@@ -288,7 +288,7 @@ Peak memory usage: 429.38 MiB.
 
 لنحدّد العمودين `PostTypeId` و`CreationDate` كمفاتيح الترتيب لدينا.
 
-ربما نتوقع في حالتنا أن يطبّق المستخدمون دائمًا عامل تصفية على `PostTypeId`. يبلغ عدد القيم المميّزة هنا 8، ما يجعله الخيار المنطقي للعنصر الأول في مفتاح الترتيب لدينا. ونظرًا إلى أن التصفية بدقة التاريخ يُرجّح أن تكون كافية (مع أنها ستظل مفيدة أيضًا لعوامل تصفية التاريخ والوقت)، فإننا نستخدم `toDate(CreationDate)` بوصفه المكوّن الثاني من مفتاحنا. وسيؤدي هذا أيضًا إلى إنشاء فهرس أصغر، لأن التاريخ يمكن تمثيله باستخدام 16، مما يسرّع التصفية. أما العنصر الأخير في مفتاحنا فهو `CommentCount` للمساعدة في العثور على المنشورات الأكثر احتواءً على التعليقات (الفرز النهائي).
+ربما نتوقع في حالتنا أن يطبّق المستخدمون دائمًا عامل تصفية على `PostTypeId`. تبلغ الكاردينالية هنا 8، ما يجعله الخيار المنطقي للعنصر الأول في مفتاح الترتيب لدينا. ونظرًا إلى أن التصفية بدقة التاريخ يُرجّح أن تكون كافية (مع أنها ستظل مفيدة أيضًا لعوامل تصفية التاريخ والوقت)، فإننا نستخدم `toDate(CreationDate)` بوصفه المكوّن الثاني من مفتاحنا. وسيؤدي هذا أيضًا إلى إنشاء فهرس أصغر، لأن التاريخ يمكن تمثيله باستخدام 16، مما يسرّع التصفية. أما العنصر الأخير في مفتاحنا فهو `CommentCount` للمساعدة في العثور على المنشورات الأكثر احتواءً على التعليقات (الفرز النهائي).
 
 ```sql
 CREATE TABLE posts_v3

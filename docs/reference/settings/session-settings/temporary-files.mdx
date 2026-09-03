@@ -19,7 +19,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "New setting"}]}]}/>
 
-Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.
+Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption. A value above 1 GiB is reduced to 1 GiB.
 
 ## temporary_files_codec {#temporary_files_codec}
 

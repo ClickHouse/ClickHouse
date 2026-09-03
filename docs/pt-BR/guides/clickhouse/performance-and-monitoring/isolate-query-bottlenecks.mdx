@@ -1,0 +1,243 @@
+---
+slug: /optimize/isolate-query-bottlenecks
+sidebarTitle: 'Isole gargalos em consultas'
+sidebar_label: 'Isole gargalos em consultas'
+sidebar_position: 3
+title: 'Isole gargalos em consultas'
+description: 'Use uma comparação reproduzível de três execuções para isolar gargalos em consultas lentas do ClickHouse'
+doc_type: 'guide'
+keywords: ['otimização de consultas', 'gargalos em consultas', 'desempenho', 'benchmarking']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import NYCTaxiExampleDataset from '/snippets/pt-BR/_nyc_taxi_example_dataset.mdx';
+
+A otimização de consultas fica mais fácil quando você altera uma parte da consulta por vez e compara os resultados com uma base de referência estável. Este guia mostra como simplificar progressivamente uma consulta e usar as diferenças entre execuções para identificar quais operações mais contribuem para sua duração. Em seguida, você pode validar o possível gargalo antes de escolher uma otimização.
+
+<div id="before-you-begin">
+  ## Antes de começar
+</div>
+
+Comece com um padrão recorrente de consultas lentas que deseja investigar. Se ainda não identificou um, consulte [Diagnosticar consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries).
+
+Para executar os exemplos deste guia conforme descritos, crie e carregue a tabela `nyc_taxi.trips_small_inferred`, caso ainda não tenha feito isso:
+
+<Accordion title="Configurar o conjunto de dados de exemplo">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+A tabela de exemplo usa `ORDER BY ()`, portanto, seu filtro de data não pode usar uma chave de ordenação para eliminar dados durante a leitura. Use o exemplo para praticar o método de comparação, e não como referência de desempenho.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+Simplificar uma consulta progressivamente permite comparar sua duração antes e depois de remover uma etapa do processamento. As diferenças ajudam a decidir se é necessário investigar a varredura e a filtragem, o agrupamento, os cálculos de agregação ou etapas posteriores, como a ordenação e a formatação da saída:
+
+1. Execute a consulta original para estabelecer as medições de referência.
+2. Mantenha `GROUP BY`, substitua os cálculos de agregação da consulta por `count` e remova operações posteriores, como a ordenação e a formatação da saída.
+3. Remova o agrupamento e execute um `count` sem agrupamento para estimar o trabalho correspondente à varredura, à filtragem e a eventuais junções.
+
+Essas etapas se aplicam diretamente a consultas de agregação agrupadas convencionais. Para consultas mais complexas, aplique o mesmo princípio a um bloco `SELECT` por vez: preserve fontes de dados e filtros equivalentes, remova uma operação por vez e verifique o plano de execução após cada alteração.
+
+<Note>
+  Essas diferenças são estimativas para diagnóstico, não medições exatas das etapas de execução do ClickHouse. Alterar a consulta pode modificar seu plano de execução, as colunas lidas e os dados transmitidos entre as etapas. Use os resultados para formular uma hipótese. Em seguida, valide-a com logs de consulta e [`EXPLAIN`](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement).
+</Note>
+
+<div id="establish-a-repeatable-baseline">
+  ## Estabeleça uma linha de referência reproduzível
+</div>
+
+Use as práticas a seguir para tornar as medições comparáveis:
+
+* Mantenha as cláusulas `FROM`, `JOIN`, `PREWHERE` e `WHERE` inalteradas para que todas as comparações usem os mesmos dados e intervalo de tempo.
+* Execute cada versão da consulta várias vezes sob carga de sistema semelhante.
+* Mantenha as condições de cache consistentes. Execute cada versão da consulta antes de registrar as medições ou desative os caches listados abaixo. Não compare execuções com e sem cache.
+* Registre uma duração representativa, como a mediana das execuções repetidas após as execuções de aquecimento, em vez de se basear no resultado mais rápido ou mais lento.
+* Altere uma variável por vez para que seja possível associar uma diferença de desempenho a uma alteração específica.
+
+Para uma comparação diagnóstica sem cache, desative o cache do sistema de arquivos do ClickHouse para dados remotos, o cache de consultas e o cache de condições de consulta. Desative também as projeções implícitas para que o `count` na execução C não use um plano de execução otimizado que ignore a varredura que você pretende comparar.
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+SET optimize_use_implicit_projections = 0;
+```
+
+<Note>
+  Estas instruções `SET` se aplicam somente à sessão atual. Execute todas as consultas de comparação nessa sessão ou aplique as mesmas configurações a cada execução. A configuração de cache do sistema de arquivos não desativa o cache de páginas do sistema operacional nem todos os [caches do ClickHouse](/pt-BR/concepts/features/performance/caches/caches). Ao terminar, feche a sessão dedicada ou restaure cada configuração ao valor anterior.
+</Note>
+
+O fluxo de trabalho combina execuções controladas de consultas com medições do log de consultas:
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Fluxo de trabalho para identificar consultas candidatas nos logs de consultas e testar alterações de forma isolada" />
+
+Colete as medições de cada execução da seguinte forma:
+
+1. Atribua um ID de consulta único a cada execução ou registre o ID gerado pela interface de consulta. Por exemplo, identifique execuções repetidas como `bottleneck-a-1`, `bottleneck-a-2` e `bottleneck-a-3`. Com o `clickhouse-client`, passe `--query_id your-query-id` ao executar uma consulta.
+
+2. Execute cada consulta de comparação várias vezes nas mesmas condições. Mantenha as execuções de aquecimento separadas das execuções medidas.
+
+3. Execute o flush do log de consultas antes de procurar consultas concluídas recentemente:
+
+   ```sql
+   SYSTEM FLUSH LOGS;
+   ```
+
+   Se não puder executar `SYSTEM FLUSH LOGS`, aguarde o flush automático do log de consultas e tente a busca novamente. Se o registro nunca aparecer, verifique se o log de consultas está habilitado, se você tem permissão para ler `system.query_log` e se está consultando o nó que executou a consulta.
+
+4. Procure o registro concluído de cada ID de consulta. `system.query_log` registra os eventos `QueryStart` e `QueryFinish` de uma consulta concluída. Filtre por `QueryFinish`, que contém a duração final, as linhas e os bytes lidos, além do pico de memória:
+
+   ```sql
+   SELECT
+       query_id,
+       query_duration_ms,
+       read_rows,
+       read_bytes,
+       memory_usage
+   FROM system.query_log
+   WHERE type = 'QueryFinish'
+     AND query_id = 'your-query-id'
+   ORDER BY event_time_microseconds DESC
+   LIMIT 1;
+   ```
+
+5. Para cada versão da consulta, use a duração mediana das execuções medidas. Registre `read_rows`, `read_bytes` e o pico de memória da execução mais próxima dessa mediana, para que as medições permaneçam vinculadas a uma execução real.
+
+<Note>
+  Para consultas distribuídas, `memory_usage` no registro `QueryFinish` da consulta iniciadora não representa o pico de memória em todo o cluster. Use `initial_query_id` para inspecionar os registros `QueryFinish` filhos nos nós participantes.
+</Note>
+
+Use uma tabela como a seguir para organizar as medições representativas. Consulte [`system.query_log`](/pt-BR/reference/system-tables/query_log) para obter mais informações sobre seus campos e configuração.
+
+<Tabs>
+  <Tab title="Tabela">
+    | Execução | Versão da consulta   | Duração representativa | `read_rows` | `read_bytes` | Pico de memória |
+    | -------- | -------------------- | ---------------------- | ----------- | ------------ | --------------- |
+    | A        | Consulta original    |                        |             |              |                 |
+    | B        | `count` agrupado     |                        |             |              |                 |
+    | C        | `count` não agrupado |                        |             |              |                 |
+  </Tab>
+
+  <Tab title="CSV">
+    ```csv title="query-comparison.csv"
+    Run,Query version,Representative duration,read_rows,read_bytes,Peak memory
+    A,Original query,,,,
+    B,Grouped count,,,,
+    C,Ungrouped count,,,,
+    ```
+  </Tab>
+</Tabs>
+
+<div id="run-progressively-simpler-queries">
+  ## Execute consultas cada vez mais simples
+</div>
+
+Para demonstrar as três comparações, o exemplo usa a [carga de trabalho agrupada por intervalo de datas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation). Você pode aplicar o método a outra consulta sem seguir o exemplo passo a passo. Se a consulta não contiver `GROUP BY`, pule a execução B, conforme descrito abaixo.
+
+<Steps>
+  <Step title="Execução A: Meça a consulta original" id="run-a-measure-the-original-query">
+    Execute a consulta completa sem alterar os filtros, o agrupamento, as expressões de agregação, a ordenação ou a saída. Isso estabelece a duração de referência, o número de linhas e bytes lidos e o pico de uso de memória.
+
+    Esta consulta agrupa viagens por tipo de pagamento e calcula vários valores agregados:
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count,
+        formatReadableQuantity(sum(trip_distance)) AS total_distance,
+        avg(total_amount) AS total_amount_avg,
+        avg(tip_amount) AS tip_amount_avg
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type
+    ORDER BY trip_count DESC;
+    ```
+
+    Registre as métricas da consulta como execução A.
+  </Step>
+
+  <Step title="Execução B: Mantenha o agrupamento com count" id="run-b-retain-grouping-with-count">
+    Preserve `FROM`, `JOIN`, `PREWHERE`, `WHERE` e as chaves de agrupamento da consulta. Substitua as expressões de agregação por um `count` agrupado. Remova o processamento posterior à agregação, incluindo a ordenação original e as expressões de saída.
+
+    ```sql
+    SELECT
+        payment_type,
+        count() AS trip_count
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01'
+    GROUP BY payment_type;
+    ```
+
+    A execução B ainda varre e filtra os dados, realiza as junções necessárias e forma os grupos. Compare sua duração com a da execução A para estimar a contribuição das expressões de agregação originais e do processamento posterior à agregação. Compare também `read_bytes`, pois a remoção das expressões de agregação pode eliminar colunas da leitura.
+
+    Se a consulta original não contiver `GROUP BY`, não haverá uma etapa de agrupamento a isolar. Pule a execução B e compare a consulta original diretamente com a execução C.
+  </Step>
+
+  <Step title="Execução C: Remova o agrupamento" id="run-c-remove-grouping">
+    Remova `GROUP BY` e retorne um único `count`. Mantenha as cláusulas `FROM`, `JOIN`, `PREWHERE` e `WHERE` inalteradas para que o processamento restante seja comparável.
+
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small_inferred
+    WHERE pickup_datetime >= '2009-01-01'
+      AND pickup_datetime < '2009-04-01';
+    ```
+
+    A execução C fornece uma base de referência para as operações mantidas em seu plano, e não uma medição isolada de varredura ou filtragem. Compare-a com a execução B para estimar a contribuição do agrupamento. Compare também `read_bytes`, pois remover a chave de agrupamento pode reduzir o número de colunas lidas. O `count` retornado mostra quantas linhas chegam à agregação após os filtros e as junções preservados.
+
+    Antes de interpretar a execução C, confirme que seu plano de execução lê a fonte de dados pretendida e aplica os filtros preservados. Uma projeção ou uma contagem baseada em metadados pode alterar o processamento executado. Para obter uma base de referência baseada em varredura, desative a otimização indicada no plano nas três execuções: use `optimize_use_implicit_projections = 0` para uma projeção implícita, `optimize_use_projections = 0` para uma projeção explícita ou `optimize_trivial_count_query = 0` para uma contagem não filtrada atendida pelos metadados da tabela.
+
+    Se a execução C continuar lenta, investigue as operações nela mantidas, começando pela varredura e pela filtragem. Use os logs de consulta e `EXPLAIN` para validar o possível gargalo antes de alterar a consulta.
+  </Step>
+</Steps>
+
+<div id="interpret-the-differences">
+  ## Interprete as diferenças
+</div>
+
+Compare durações representativas de execuções repetidas, em vez de subtrair duas medições individuais. Diferenças grandes e consistentes indicam o que investigar a seguir:
+
+| Observação                                       | Possíveis gargalos                                                                                           | Próxima investigação                                                                                                                                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A execução A é muito mais lenta que a execução B | Expressões de agregação, ordenação, outras operações após a agregação ou leitura de colunas adicionais       | Inspecione funções de agregação custosas, expressões, `ORDER BY`, `read_bytes` e o pico de uso de memória                                                                                                                        |
+| A execução B é muito mais lenta que a execução C | Agrupamento, cardinalidade dos grupos ou leitura das chaves de agrupamento                                   | Inspecione as chaves de agrupamento, o número de grupos, `read_bytes` e o pico de uso de memória                                                                                                                                 |
+| A execução C continua lenta                      | Varredura, filtragem, junções ou outra operação mantida na execução C                                        | Inspecione as linhas e os bytes lidos, o uso da chave primária, os data skipping indexes e o plano de execução; em seguida, valide o gargalo suspeito                                                                         |
+| As três execuções têm durações semelhantes       | A fonte da latência pode ser comum às três versões, ou a simplificação pode ter alterado o plano de execução | Compare `read_rows`, `read_bytes` e o pico de memória entre as execuções. Se também forem semelhantes, investigue as operações mantidas na execução C. Caso contrário, compare os planos de execução para identificar diferenças |
+
+<div id="compare-rows-read-with-count-result">
+  ### Compare as linhas lidas com o resultado de `count`
+</div>
+
+Compare o `read_rows` da execução C com o valor retornado por seu `count`. Por exemplo, se `read_rows` for 100 milhões e `count` retornar 1 milhão, o ClickHouse examinou aproximadamente 100 linhas de origem para cada linha contada. Isso mostra que o filtro rejeitou a maioria das linhas lidas da tabela, mas não identifica o motivo. Essa razão se aplica a varreduras simples de uma única tabela. Para consultas com várias fontes de dados ou projeções, interprete `read_rows` usando o plano de execução.
+
+No ClickHouse 25.9 e versões posteriores, desabilite o cache de condições da consulta e a aplicação dinâmica de data skipping indexes antes de inspecionar o uso dos índices:
+
+```sql
+SET use_query_condition_cache = 0;
+SET use_skip_indexes_on_data_read = 0;
+```
+
+Em seguida, use [`EXPLAIN indexes = 1`](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para verificar quais índices o ClickHouse usou e quantas partes e grânulos cada índice eliminou. Se o ClickHouse selecionou mais grânulos do que o esperado, verifique se os filtros estão alinhados à chave de ordenação da tabela e se a eliminação de partições ou um data skipping index poderia eliminar mais grânulos. Se o plano não tiver uma seção `Indexes`, o `EXPLAIN` não informou a poda por índice para essa consulta. Em contraste, espera-se que uma consulta analítica na tabela inteira leia a maior parte da tabela.
+
+<div id="validate-the-suspected-bottleneck">
+  ## Valide o gargalo suspeito
+</div>
+
+Depois que a comparação indicar um provável gargalo, valide-o antes de alterar o esquema ou a consulta. Use evidências adequadas à fonte suspeita de latência:
+
+* Para um gargalo de varredura ou filtragem, use `EXPLAIN indexes = 1` com as configurações descritas acima para ver quais índices o ClickHouse usa e quantas partes e grânulos cada índice elimina. Verifique se o plano usa uma projeção implícita em vez da varredura esperada.
+* Para um gargalo de agrupamento ou agregação, inspecione os eventos de perfil de consulta relevantes e o pico de uso de memória.
+* Se a execução C continuar lenta e contiver junções, compare-a a uma consulta de diagnóstico que remova uma junção por vez. Uma redução significativa na duração sugere que a junção removida contribui com uma carga de trabalho considerável. Como remover uma junção altera o significado da consulta, use essa comparação apenas para isolar o tempo de execução e interprete separadamente as alterações na contagem de linhas.
+* Para um gargalo em outra operação mantida na execução C, inspecione o plano de execução e os eventos de perfil de consulta relevantes.
+
+Consulte o [guia de diagnóstico de consultas lentas](/pt-BR/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) para obter detalhes sobre as informações de índice retornadas por `EXPLAIN`. Aplique uma alteração pontual e repita as execuções A, B e C nas mesmas condições. Confirme que a alteração reduziu o trabalho pretendido e não deslocou o gargalo para outro ponto.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Prossiga para [Abordagens de otimização](/pt-BR/guides/clickhouse/performance-and-monitoring/optimization-approaches) para associar o possível gargalo a uma ou mais alterações específicas.

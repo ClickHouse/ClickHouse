@@ -417,14 +417,21 @@ void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
 
 
 std::unordered_set<std::string> PrometheusMetricsWriter::getReservedLabelNames(
-    bool expose_info, bool expose_asynchronous_metrics, bool expose_histograms, bool expose_dimensional_metrics) const
+    bool expose_info,
+    bool expose_asynchronous_metrics,
+    AsynchronousMetricsKeyValuesMode async_metrics_mode,
+    bool expose_histograms,
+    bool expose_dimensional_metrics) const
 {
     std::unordered_set<std::string> reserved_names;
 
     if (expose_info)
         reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
 
-    if (expose_asynchronous_metrics)
+    /// Every one of these labels belongs to a metric family that also has a pre-26.8 scalar name, so in
+    /// `legacy_names` mode none of them is written and a configuration that was valid before 26.8 - a
+    /// constant `device` label, for example - is valid again.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
         reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
 
     if (expose_histograms)
@@ -501,6 +508,7 @@ void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
 std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelNames(
     [[maybe_unused]] bool expose_info,
     [[maybe_unused]] bool expose_asynchronous_metrics,
+    [[maybe_unused]] AsynchronousMetricsKeyValuesMode async_metrics_mode,
     [[maybe_unused]] bool expose_histograms,
     [[maybe_unused]] bool expose_dimensional_metrics) const
 {
@@ -511,7 +519,8 @@ std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelN
         reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
 
 #if USE_NURAFT
-    if (expose_asynchronous_metrics)
+    /// As above: these labels disappear together with the key-value form.
+    if (expose_asynchronous_metrics && async_metrics_mode != AsynchronousMetricsKeyValuesMode::LegacyNames)
         reserved_names.insert({"channel", "cpu", "device", "disk", "interface", "mc", "sensor"});
 #endif
 

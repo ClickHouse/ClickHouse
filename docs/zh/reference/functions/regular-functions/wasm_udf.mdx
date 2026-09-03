@@ -49,8 +49,7 @@ guest 代码会导出 ClickHouse 可调用的函数——这些函数既包括�
 
 可用的引擎实现：
 
-* `wasmtime` (默认，推荐) — 基于 [WasmTime](https://github.com/bytecodealliance/wasmtime)
-* `wasmedge` — 基于 [WasmEdge](https://github.com/WasmEdge/WasmEdge)
+* `wasmtime` (默认且目前唯一的实现) — 基于 [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
 <div id="quick-start">
   ## 快速入门
@@ -241,7 +240,7 @@ RETURNS return_type
 * `SHA256_HASH`：用于校验的预期模块哈希 (若省略则自动填充) ，可用于确保不同副本上加载的是正确的 WASM 模块。
 * `SETTINGS`：函数级设置
   * `serialization_format` String —— 用于序列化传递给模块的参数块并解析返回结果的格式。仅由 `ABI BUFFERED_V1` 使用。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
-  * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。使用 `wasmtime` engine 时，禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
+  * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
 
 <div id="abis-versions">
   ## ABI 版本

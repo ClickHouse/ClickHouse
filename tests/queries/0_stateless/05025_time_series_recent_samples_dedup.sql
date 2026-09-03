@@ -1,5 +1,4 @@
--- Tags: zookeeper, no-fasttest, no-replicated-database, no-shared-merge-tree
--- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 -- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 -- Tag no-shared-merge-tree: the test relies on the block-hash insert deduplication of `ReplicatedMergeTree`.
 
@@ -8,13 +7,15 @@
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
+-- The generated inner tables use replicated engines: the samples and recent samples tables need the block-hash
+-- insert deduplication of `ReplicatedMergeTree`.
+SET default_table_engine = 'ReplicatedMergeTree';
+
 DROP TABLE IF EXISTS ts_dedup;
 
 -- The TTL is 10 years: the fixed timestamps below (byte-identical blocks are needed for dedup) must stay inside the TTL window.
 CREATE TABLE ts_dedup ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 315360000
-SAMPLES INNER ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05025_ts_dedup/samples', 'r1') ORDER BY (id, timestamp)
-RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05025_ts_dedup/recent', 'r1') PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
+SETTINGS recent_samples_ttl_seconds = 315360000;
 
 SELECT '-- the same block inserted twice is deduplicated in both the samples and the recent samples table';
 

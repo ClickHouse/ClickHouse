@@ -279,10 +279,9 @@ SELECT count() FROM clear_column_direct_ttl_no_match;
 DROP TABLE clear_column_direct_ttl_recalc;
 DROP TABLE clear_column_direct_ttl_no_match;
 
--- CLEAR COLUMN recomputes every MATERIALIZED column, including ones that do not read the
--- cleared column. A projection or skip index over such a column must be rebuilt rather than
--- hardlinked, otherwise it keeps serving the pre-mutation value. MODIFY COLUMN below is a
--- metadata-only change (it schedules no mutation), so the rewrite happens on the clear.
+-- CLEAR COLUMN recomputes only MATERIALIZED columns that depend on the cleared
+-- column. Unrelated MATERIALIZED columns and their artifacts remain untouched;
+-- the metadata-only MODIFY below therefore does not rewrite existing value 1.
 -- min_bytes_for_full_part_storage = 0 pins Full storage: the runner randomizes that threshold,
 -- and a Packed part takes the all-column mutation path, which rebuilds the artifacts anyway
 -- and would make the assertions below pass without exercising the rebuild selection.
@@ -314,18 +313,15 @@ WHERE database = currentDatabase() AND table = 'clear_column_unrelated_materiali
 
 ALTER TABLE clear_column_unrelated_materialized CLEAR COLUMN c SETTINGS mutations_sync = 2;
 
--- The base part now holds the recomputed other = 2 ...
+-- The base part keeps unrelated `other = 1` and only recomputes c/d.
 SELECT id, c, d, other FROM clear_column_unrelated_materialized ORDER BY id;
--- ... and the projection must agree with it instead of returning the stale other = 1.
+-- The projection remains consistent with the untouched stored value.
 SELECT other, count() FROM clear_column_unrelated_materialized
 GROUP BY other ORDER BY other SETTINGS force_optimize_projection = 1;
 
 DROP TABLE clear_column_unrelated_materialized;
 
--- Same for a skip index on such a column. Kept in its own table so the index, and not a
--- projection, has to answer the query, and forced so that a silent decline to use it cannot
--- pass as a base scan. Both directions are asserted: a stale index prunes away the rows that
--- now match and does not bring back the rows that no longer match.
+-- Same for a skip index on an unrelated MATERIALIZED column.
 DROP TABLE IF EXISTS clear_column_unrelated_materialized_index;
 
 CREATE TABLE clear_column_unrelated_materialized_index

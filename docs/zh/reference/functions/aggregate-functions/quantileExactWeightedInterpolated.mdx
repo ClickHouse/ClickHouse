@@ -50,6 +50,13 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 **计算精确加权插值分位数**
 
 ```sql title=Query
+CREATE TABLE t (
+    n Int32,
+    val UInt32
+) ENGINE = Memory;
+
+INSERT INTO t VALUES (0, 3), (1, 2), (2, 1), (5, 4);
+
 SELECT quantileExactWeightedInterpolated(n, val) FROM t;
 ```
 

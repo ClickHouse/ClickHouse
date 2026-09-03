@@ -556,7 +556,12 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
+    /// For a conditional completion mere existence proves nothing: the object may be the one the
+    /// condition was meant to reject. Leave the error for the caller, which can verify authorship.
+    const bool is_conditional = request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
+
     if (!outcome.IsSuccess()
+        && !is_conditional
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
     {
         auto check_request = HeadObjectRequest()

@@ -144,7 +144,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | SERVER_SETTINGS                 | 54474   | ServerHello            | Server broadcasts its non-default settings as a list at the tail of ServerHello, after `nonce`. Format: `(key, flags, value)` triples terminated by an empty key — same as the Query packet's settings list. |
 | QUERY_AND_LINE_NUMBERS          | 54475   | ClientInfo             | Adds `script_query_number` (VarUInt) and `script_line_number` (VarUInt) at the tail of ClientInfo. Used by clickhouse-client for multi-statement script error attribution; external clients send `0, 0`. |
 | JWT_IN_INTERSERVER              | 54476   | ClientInfo             | Adds a JWT-presence UInt8 + optional `String jwt` at the tail of ClientInfo. External clients (no JWT) send byte `0x00`. (Spelled `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER` in C++ — note the typo in the constant name.) |
-| QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. |
+| QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. Query-plan serialization version `10` prefixes the serialized plan with `VarUInt max_threads` and `Bool concurrency_control`; when either is non-default, initiators use SQL shipping for peers below version `10` so the peer builds its plan from the transmitted query settings. |
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
 | VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). Current value: `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index` to the inter-server cluster read-task payload (the `ReadTaskResponse` body, which stays unspecified here — see below). External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
@@ -908,7 +908,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
-| 13   | QueryPlan                 | not specified       | Query plan |
+| 13   | QueryPlan                 | [QueryPlan](#queryplan) | Query plan |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
 
 ### Server → Client {#server-to-client}
@@ -934,6 +934,19 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | Server timezone update |
 | 18   | SSHChallenge                   | [SSH auth](#ssh-authentication) | SSH auth challenge |
+
+### QueryPlan {#queryplan}
+
+`QueryPlan` is an inter-server-only client packet. It follows a [`Query`](#query) whose `stage` is `QueryPlan` (`7`) and contains one serialized plan stream.
+
+| # | Field | Type | Gate | Description |
+|---|---|---|---|---|
+| 1 | serialization_version | VarUInt | universal | Query-plan serialization version, no greater than the receiver's `query_plan_serialization_version` advertised in `ServerHello`. |
+| 2 | max_threads | VarUInt | serialization version ≥ `10` | Plan-level thread limit. `0` means no plan-specific limit. |
+| 3 | concurrency_control | Bool | serialization version ≥ `10` | Whether the plan participates in concurrency control. |
+| 4 | plan | versioned query-plan stream | universal | Serialized plan tree, step settings, headers, and prepared sets. Its internal layout is owned by the query-plan serialization version. |
+
+Before version `10`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
 
 ## Configuration {#configuration}
 

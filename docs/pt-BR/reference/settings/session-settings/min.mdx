@@ -126,6 +126,16 @@ A configuração `min_outstreams_per_resize_after_split` garante que a divisão 
 
 Para desativar a divisão de nós `Resize`, defina esta configuração como 0. Isso impedirá a divisão de nós `Resize` durante a geração do pipeline, permitindo que mantenham sua estrutura original sem serem divididos em nós menores.
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Nova configuração para controlar a razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida."}]}]} />
+
+Razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida.
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>

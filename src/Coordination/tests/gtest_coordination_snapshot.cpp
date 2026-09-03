@@ -8,9 +8,12 @@
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
+#include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <IO/CompressionMethod.h>
+#include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 
 #include <Common/SipHash.h>
@@ -365,6 +368,25 @@ std::vector<std::string> snapshotFilesForIdx(const std::string & dir, uint64_t i
             result.push_back(entry.path().filename().string());
     }
     return result;
+}
+
+nuraft::ptr<nuraft::buffer> serializeSnapshotWithZstdLevel(
+    const DB::KeeperStorageSnapshot & snapshot,
+    const DB::KeeperContextPtr & keeper_context,
+    int compression_level)
+{
+    auto writer = std::make_unique<DB::WriteBufferFromNuraftBuffer>();
+    auto * buffer_writer = writer.get();
+    auto compressed_writer = DB::wrapWriteBufferWithCompressionMethod(
+        std::move(writer), DB::CompressionMethod::Zstd, compression_level);
+    DB::KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
+    compressed_writer->finalize();
+    return buffer_writer->getBuffer();
+}
+
+bool nuraftBuffersEqual(const nuraft::ptr<nuraft::buffer> & lhs, const nuraft::ptr<nuraft::buffer> & rhs)
+{
+    return lhs->size() == rhs->size() && std::memcmp(lhs->data_begin(), rhs->data_begin(), lhs->size()) == 0;
 }
 
 template <typename Manager>
@@ -780,6 +802,59 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
     ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.getSeqNum(), large_seq_num);
+}
+
+TEST(KeeperSnapshotCompressionLevel, ConfiguredLevelIsUsedForMemoryAndDiskSnapshots)
+{
+    ChangelogDirTest snapshots("./snapshots_zstd_level");
+    auto keeper_context = makeKeeperContext(false);
+    auto snapshot_disk = std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots_zstd_level");
+    keeper_context->setSnapshotDisk(snapshot_disk);
+
+    auto storage = DB::KeeperStorage::create(500, "", keeper_context);
+    std::string payload;
+    for (size_t i = 0; i < 2048; ++i)
+        payload += fmt::format("keeper-snapshot-compression-pattern-{:03};", i % 251);
+    for (size_t i = 0; i < 32; ++i)
+        addNode(*storage, fmt::format("/node_{}", i), payload + std::to_string(i));
+
+    const auto serialize_at_level = [&](int level)
+    {
+        DB::KeeperStorageSnapshot snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+        return serializeSnapshotWithZstdLevel(snapshot, keeper_context, level);
+    };
+
+    auto expected_level_1 = serialize_at_level(1);
+    auto expected_level_3 = serialize_at_level(DB::DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
+    ASSERT_FALSE(nuraftBuffersEqual(expected_level_1, expected_level_3));
+
+    DB::KeeperSnapshotManager manager(3, keeper_context, true, 1);
+    DB::KeeperStorageSnapshot memory_snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto memory_buffer = manager.serializeSnapshotToBuffer(memory_snapshot);
+    EXPECT_TRUE(nuraftBuffersEqual(memory_buffer, expected_level_1));
+
+    DB::KeeperStorageSnapshot disk_snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto file_info = manager.serializeSnapshotToDisk(disk_snapshot);
+    auto disk_reader = snapshot_disk->readFile(file_info->path, {});
+    std::string disk_contents;
+    DB::readStringUntilEOF(disk_contents, *disk_reader);
+    ASSERT_EQ(disk_contents.size(), expected_level_1->size());
+    EXPECT_EQ(std::memcmp(disk_contents.data(), expected_level_1->data_begin(), disk_contents.size()), 0);
+}
+
+TEST(KeeperSnapshotCompressionLevel, RejectsUnsupportedLevel)
+{
+    ChangelogDirTest snapshots("./snapshots_invalid_zstd_level");
+    auto keeper_context = makeKeeperContext(false);
+    keeper_context->setSnapshotDisk(
+        std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots_invalid_zstd_level"));
+
+    EXPECT_THROW(
+        DB::KeeperSnapshotManager(3, keeper_context, true, std::numeric_limits<int64_t>::min()),
+        DB::Exception);
+    EXPECT_THROW(
+        DB::KeeperSnapshotManager(3, keeper_context, true, std::numeric_limits<int64_t>::max()),
+        DB::Exception);
 }
 
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSerializeToDisk)

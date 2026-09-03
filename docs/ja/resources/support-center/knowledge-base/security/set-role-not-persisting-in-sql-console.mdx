@@ -12,6 +12,10 @@ keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'アクセス制御']
 
 ClickHouse Cloud SQL Console で `SET ROLE` を実行すると、1 つのクエリではロールが変更されたように見えても、次のクエリでは元に戻ることがあります。クエリやセッションをまたいで権限を維持する必要がある場合は、ユーザーごとの SQL Console ロールを使用してください。
 
+<Tip>
+  コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用を推奨します。`sql-console-role:<email>` ロールは [JWT authentication](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) と互換性がありません。
+</Tip>
+
 <div id="symptoms">
   ## 症状
 </div>

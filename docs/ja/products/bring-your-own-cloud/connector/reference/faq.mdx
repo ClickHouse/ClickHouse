@@ -1,0 +1,53 @@
+---
+title: 'よくある質問'
+sidebarTitle: 'よくある質問'
+description: 'ClickHouse Connector に関するよくある質問'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'FAQ']
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## よくある質問
+</div>
+
+<div id="what-data-leaves-my-environment">
+  ### 環境外に送信されるデータは何ですか？
+</div>
+
+データを外部へ送信する経路は2つあり、いずれもコネクタ自身が確立するアウトバウンド接続を使用します。運用メタデータを継続的に送信するスクレイプパスと、有効化したサポートセッションによる診断情報の返送です。
+
+スクレイパーは、固定されたシステムテーブルセット (デフォルトでは `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings`) の結果、ヘルスおよびステータスのハートビート、インスタンスとバックアップの状態、コネクタ自身のメトリクスを送信します。デフォルトのスクレイプセットでは意図的に `system.query_log` を除外しているため、明示的に追加しない限り、生のSQLテキストやそこに含まれるリテラル、個人データがスクレイプパス経由で送信されることはありません。セッション中は、デフォルトのテーブル許可リストに、実行中のクエリテキストを表示する `system.processes` が含まれます。これを非表示にする必要がある場合は、許可リストから削除してください。
+
+アクティブな[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)中、トラブルシューターは追加でコマンド出力を返送します。返送対象は、許可リストに含まれるClickHouseテーブルと、ポッドログを含む読み取り専用のKubernetesビューに限定されます。また、送信前に編集処理が行われます (IPアドレス、認証情報、トークン、秘密鍵向けの組み込みパターンに加え、独自のパターンも使用できます) 。テーブルデータ、バックアップ、クエリ履歴 (`system.query_log`、`system.text_log`) が環境外に送信されることはありません。ただし、許可リストに含まれるメトリクス履歴テーブル (`system.metric_log`、`system.asynchronous_metric_log`) の行はすべてのスクレイプで送信され、実行中のクエリテキストは許可リストから削除しない限り `system.processes` を通じてセッション中に確認でき、Kubernetesサポートセッション中に読み取られたポッドログは編集処理後に送信されます。アウトバウンド接続の完全な一覧は、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)ページにあります。
+
+<div id="how-do-i-revoke-access">
+  ### ClickHouse のアクセスを取り消すにはどうすればよいですか？
+</div>
+
+影響が小さい順に説明します。
+
+1. **対話型アクセスを終了します。** VM ホストで `sudo clicklink clctl troubleshoot session disable` を実行してセッションを無効にするか、Kubernetes ではポートフォワード経由で `--gateway-url` を指定して同じコマンドを実行します (正確なコマンドについては[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)ページを参照) 。アクティブなセッションがない場合、トラブルシューターは接続中であってもすべてのコマンドを拒否します。
+2. **今後のセッションを防止します。** オペレーターの許可リストを空にする (許可リストを空にするとゲートウェイが閉じます) か、ゲートウェイを無効にします。VM では、ホスト上の root は引き続きローカルセッション管理を利用できます。[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+3. **ClickHouse Cloud との接続を遮断します。** ネットワーク層でコネクタエンドポイントへの送信トラフィックをブロックするか、強制適用される CNI で `networkPolicy.allowEgressCIDRs` を空にします。コネクタは送信専用のため、ClickHouse Cloud には接続を復旧するための受信経路がありません。ワークロードを停止またはアンインストールするまで、ClickHouse に対するローカル読み取りは継続します。これが完全な停止です。
+4. **認証情報を取り消します。** `pcm_scraper` と `pcm_troubleshooter` の ClickHouse ユーザーを削除し、コネクタの Secret (Kubernetes) または `/etc/clicklink` 配下のファイル (VM) を削除します。
+5. **コネクタを完全に削除します。** [操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
+
+<div id="air-gapped-and-mirrors">
+  ### エアギャップ環境や独自のミラー経由で実行できますか？
+</div>
+
+はい。インストール時に必要なすべてのartifactは、ネットワーク境界内から取得できます。`releases.clicklink.clickhouse.com` とパブリックregistryからCLI tarballおよびコンテナーイメージをミラーリングし、`image.repository` にミラーを指定して、`oci://` 参照、URL、またはローカルアーカイブとともに `--chart` を指定します (`--chart-version` も指定します。デフォルトはCLI自体のバージョンです) 。コネクタのAPI エンドポイントがネットワーク境界内でprivate CAの背後に配置されている場合は、`--api-private-ca` (Kubernetes) または `api.tls.ca_file` (VM) により、オンボーディングバンドルのchainを使用して検証できます。直接接続せずにオンボーディングする場合、`init --handoff` は帯域外で取得したbundleを使用します。また、`--no-auto-sign` と `init --signed-cert` により、証明書署名を帯域外で完了できます。[private mirrors](/ja/products/bring-your-own-cloud/connector/configuration) および[onboarding](/ja/products/bring-your-own-cloud/connector/onboarding)のエアギャップセクションを参照してください。コネクタは実行時にも組織のコネクタAPI エンドポイントへの経路を必要とします。経路がない場合、ClickHouse Cloudはテレメトリーを受信しません。
+
+<div id="connector-down">
+  ### コネクタが停止した場合はどうなりますか？
+</div>
+
+ClickHouse サービスには影響しません。コネクタはこれらから読み取るだけで、データパスには含まれません。影響を受けるのは可視性のみであるため、ClickHouse Cloud はテレメトリーを受信しなくなり、復旧するまでサポートセッションは使用不可になります。VM では、API エンドポイントに到達できない場合、スクレイパーはスクレイプしたデータを `/var/lib/clicklink/buffer` にスプールし (デフォルトで最大 168 時間または 1024 MB) 、再接続時に送信します。そのため、エンドポイントの停止によってテレメトリーが失われることはありません。デーモンがクラッシュした場合は systemd によって再起動され、Kubernetes ではキューブレットによって再起動されます。診断するには、各コンポーネントの `/livez` エンドポイントを確認し (HTTP コードではなく JSON の `status` フィールドを確認します) 、`clicklink clctl preflight` を実行します (VM ホストでは `sudo` を使用します) 。これにより、設定、接続性、ClickHouse への到達可能性、アクセス、ディスクを一度に確認できます。[操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。コネクタが不健全な状態のままである場合は、ClickHouse Support にお問い合わせください。
+
+<div id="support-session-auditing">
+  ### サポートセッションはどのように監査されますか？
+</div>
+
+許可またはブロックされたすべてのゲートウェイ呼び出しとトラブルシューティングコマンドは、エントリごとの帰属情報とともに、newline-delimited JSON形式で`/var/log/clicklink/troubleshoot-audit.log`の監査ログに追記されます。ゲートウェイ呼び出しにはトークンによって証明されたオペレーターのメールアドレス (自己申告の名前は使用されません) が記録され、VM上のローカルセッションの変更には実行元のホストユーザーが記録され、セッション中に実行されたコマンドには認証済みチャネルの組織アイデンティティが記録されます。セッションには時間制限があり (デフォルトでは4時間、最長24時間) 、有効化のたびに、有効化したユーザー、有効期限、任意の理由が記録されます。これらは`clicklink clctl troubleshoot session status`で表示できます。
+
+ログは`clicklink clctl troubleshoot audit tail`で閲覧します。Kubernetesでは、このコマンドがサポートされているreaderです (runtimeイメージにはシェルがありません) 。デフォルトの`persistence.enabled: true`では、ログはtroubleshooterの永続volumeに保存されるため、ポッドの再スケジュール後も監査履歴が維持されます。永続化を無効にすると、監査ログとセッション状態はポッドの存続期間に限定され、chart自体でもローカル開発専用として扱われます。rotationでは、デフォルトで最大128 MBのファイルを5つ、168時間保持します。調整方法については[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を、信頼モデルの詳細については[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。

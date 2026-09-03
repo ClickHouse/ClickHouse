@@ -7,14 +7,29 @@ title: '설치 안내'
 doc_type: 'guide'
 ---
 
-import {galaxyOnClick} from "/snippets/ko/lib/galaxy.jsx";
+export const withDocsBase = (href) => {
+  if (!href || !href.startsWith('/')) return href;
+  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  return base + href;
+};
 
-<Card title="ClickHouse Cloud" icon="cloud" href="/ko/get-started/setup/cloud" cta="가이드 보기">
-  클러스터의 용량을 산정하거나 스케일링할 필요 없이 즉시 시작할 수 있습니다. ClickHouse Cloud가 용량 산정, 스케일링
-  , 보안, 안정성 및 업그레이드를 처리합니다.
-</Card>
-
-<br />
+<div className="ch-install-cloud-card">
+  <span className="ch-install-cloud-badge">권장</span>
+  <span className="ch-install-cloud-icon" aria-hidden="true"></span>
+  <p className="ch-install-cloud-title">ClickHouse Cloud</p>
+  <p className="ch-install-cloud-description">
+    클러스터의 용량을 산정하거나 스케일링할 필요 없이 즉시 시작할 수 있습니다. ClickHouse Cloud가 용량 산정, 스케일링
+    , 보안, 안정성 및 업그레이드를 처리합니다.
+  </p>
+  <div className="ch-install-cloud-actions">
+    <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
+      무료로 시작하기
+    </a>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/ko/get-started/setup/cloud')}>
+      빠른 시작 튜토리얼 읽기
+    </a>
+  </div>
+</div>
 
 직접 관리하는 방식을 선호한다면 아래의 오픈소스 ClickHouse 옵션 중 하나를 선택하십시오.
 로컬 환경에서는 빠른 설치 스크립트 또는 `clickhousectl` CLI를 사용하고, 프로덕션 배포에는

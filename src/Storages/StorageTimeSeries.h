@@ -55,14 +55,12 @@ public:
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, Tags, Metrics, and the optional RecentSamples.
-    static constexpr std::array<ViewTarget::Kind, 4> getAllTargetKinds()
+    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
+    /// A concrete table can have no RecentSamples target (see hasTarget).
+    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
     }
-
-    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics, and RecentSamples if the recent samples table is enabled.
-    std::vector<ViewTarget::Kind> getTargetKinds() const;
 
     void readImpl(
         QueryPlan & query_plan,

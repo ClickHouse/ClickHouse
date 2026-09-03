@@ -1,0 +1,154 @@
+---
+title: '지원 세션'
+sidebarTitle: '지원 세션'
+description: 'ClickHouse 커넥터를 통해 ClickHouse 지원팀의 접근 권한을 활성화하고, 범위를 설정하며, 감사 및 철회합니다'
+keywords: ['BYOC', 'cloud', '자체 클라우드 사용', '커넥터']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Support 세션을 사용하면 ClickHouse 커넥터를 통해 ClickHouse에 임시 진단 액세스 권한을 부여할 수 있습니다. 이 페이지에서는 세션의 의미, 세션을 활성화 및 비활성화하는 방법, 세션이 활성화된 동안 ClickHouse 연산자가 수행할 수 있는 작업, 그리고 발생한 모든 활동을 감사하는 방법을 설명합니다.
+
+<div id="what-a-support-session-is">
+  ## 지원 세션이란?
+</div>
+
+지원 세션은 troubleshooter가 ClickHouse 지원 엔지니어의 명령어를 수락하는 제한된 시간 동안의 창입니다. 활성 세션이 없으면 troubleshooter는 아웃바운드 WebSocket이 연결되어 있더라도 모든 명령어를 거부합니다. 다른 실행 경로는 없습니다. 세션 없이는 아무것도 실행되지 않으며, ClickHouse가 대신 세션을 열 수도 없습니다. ClickHouse의 컨트롤 플레인은 사용자 환경에 직접 연결하지 않습니다. troubleshooter가 아웃바운드 채널을 통해 전송하는 내용만 수신하며, 이 채널은 세션 상태가 허용할 때만 명령어를 전달합니다.
+
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector 지원 세션 신뢰 흐름" />
+
+세션은 다음 두 가지 방법으로 제어할 수 있습니다:
+
+* **세션 gateway**: troubleshooter에 내장된 인증 API로, `enable`, `disable`, `status` endpoint를 제공합니다. 모든 gateway 호출에는 이메일이 연산자 허용 목록에 포함된 사용자의 단기 OIDC ID token이 필요합니다.
+* Linux VM 설치에서는 **로컬 세션 파일**을 사용하며, root 액세스로 호스트에 직접 기록됩니다.
+
+Gateway 전송 방식은 대상에 따라 다릅니다. VM gateway는 각 연산자가 인증서 지문을 고정하는 자체 서명 TLS를 제공합니다. Kubernetes gateway는 파드 로컬에서 HTTP로 수신하며, `kubectl port-forward`(터널은 API server의 TLS를 사용함)를 통해 접근하거나 CA가 발급한 인증서로 TLS를 종료하는 인그레스를 통해 접근할 수 있습니다.
+
+`clicklink clctl init` 중에 연산자 허용 목록를 비롯한 세션 정책을 선택합니다.
+
+<div id="enabling-and-disabling-sessions">
+  ## 세션 활성화 및 비활성화
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    Gateway는 troubleshooter 파드의 8443 포트에서 수신 대기합니다. 클러스터에 액세스할 수 있으면 포트 포워딩을 통해 연결하십시오. 터널은 Kubernetes API server의 TLS를 통해 연결됩니다.
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # init 시 선택한 커넥터 네임스페이스
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
+    ```
+
+    그런 다음 다른 터미널에서 세션을 활성화하십시오.
+
+    ```bash
+    clicklink clctl troubleshoot session enable \
+      --gateway-url http://localhost:8443 \
+      --duration 4h \
+      --reason "<ticket reference>"
+    ```
+
+    같은 방법으로 상태를 확인하거나 세션을 종료할 수 있습니다.
+
+    ```bash
+    clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
+    clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
+    ```
+
+    호출자의 OIDC 아이덴티티는 연산자 허용 목록에 있어야 합니다. 인증되지 않았거나 허용 목록에 없는 호출자는 401 또는 403을 받으며, 해당 시도는 기록됩니다. 클러스터 자격 증명을 요구하지 않으려면 chart에서 선택적으로 인그레스를 통해 Gateway를 노출할 수 있습니다. 이 인그레스는 CA가 발급한 인증서로 TLS를 종료합니다. 자세한 내용은 [구성](/ko/products/bring-your-own-cloud/connector/configuration)을 참조하십시오.
+  </Tab>
+
+  <Tab title="Linux VM">
+    호스트에 대한 root 액세스 권한이 있으면 세션을 직접 관리하십시오. 상태는 `/var/lib/clicklink/session.json`에 영구 저장되며, 데몬과 CLI가 이를 원자적으로 읽고 씁니다.
+
+    ```bash
+    sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
+    sudo clicklink clctl troubleshoot session status
+    sudo clicklink clctl troubleshoot session disable
+    ```
+
+    root 액세스 권한이 없는 호출자도 VM에서 Gateway를 사용할 수 있습니다. Gateway는 자체 서명 TLS를 제공하므로 세션 사용자마다 Gateway 인증서의 지문을 한 번만 고정하면 됩니다.
+
+    ```bash
+    clicklink clctl troubleshoot gateway trust \
+      --gateway-url https://<vm-host>:8443 \
+      --gateway-fingerprint <sha256-fingerprint>
+    ```
+
+    고정 정보는 `~/.clicklink/clctl.yaml`에 저장되며, 제시된 인증서가 이 정보와 일치하지 않으면 연결이 거부됩니다.
+  </Tab>
+</Tabs>
+
+<div id="session-expiry">
+  ## 세션 만료
+</div>
+
+세션은 자동으로 만료됩니다. 기본 지속 시간은 4시간이며, `session enable --duration`으로 최대 24시간까지 설정할 수 있습니다. 세션이 만료되거나 `session disable`을 실행하면 troubleshooter는 즉시 명령어 수락을 중지합니다. 세션 비활성화는 즉시 권한을 해지하는 방법으로, 재시작하거나 ClickHouse와 조정할 필요가 없습니다.
+
+<div id="operator-allowlist">
+  ## 연산자 허용 목록
+</div>
+
+모든 gateway 호출은 클라이언트가 자체적으로 주장하는 정보가 아니라, 검증된 OIDC token으로 증명된 이메일과 일치하는 연산자 이메일 허용 목록을 기준으로 권한이 부여됩니다.
+
+* **Kubernetes:** values 오버레이에서 `clctl.gateway.allowedOperators`를 설정하십시오. 이 목록은 gateway가 30초 간격으로 다시 읽는 ConfigMap에 렌더링되므로, values를 변경하고 `helm upgrade`를 실행하면 파드를 재시작하지 않고도 허용 목록을 교체할 수 있습니다.
+* **Linux VM:** 허용 목록은 `/etc/clicklink/allowed-operators.txt`에 저장되며, 제공한 연산자 이메일을 바탕으로 `clicklink clctl init`이 작성합니다.
+
+<div id="what-operators-can-do">
+  ## 세션 중 지원 엔지니어가 수행할 수 있는 작업
+</div>
+
+세션이 활성 상태인 동안 ClickHouse 지원 엔지니어는 다음 작업을 수행할 수 있습니다.
+
+* 명시적인 테이블 허용 목록으로 제한된 `pcm_troubleshooter` 사용자로 클러스터에 대해 **읽기 전용 SQL**을 실행합니다. 기본 허용 목록에는 `system.parts`, `system.merges`, `system.replicas`, `system.metrics`, `system.settings` 등의 ClickHouse `system` 테이블이 포함됩니다. `system.query_log`와 `system.text_log`는 항상 거부되므로 쿼리 이력이 외부로 유출되지 않습니다. 기본 허용 목록에는 해당 시점에 실행 중인 SQL 문의 텍스트를 표시하는 `query` 컬럼을 포함하는 `system.processes`도 있습니다. 실시간 쿼리 텍스트가 세션에 절대 표시되지 않아야 한다면 세션 테이블 허용 목록에서 이를 제거하십시오(Helm 오버레이의 `troubleshooter.allowedTables`, VM 설정 파일의 `troubleshooter.allowed_tables`). 이 사용자에게는 테이블별 `SELECT` 권한만 부여되며, 쓰기, DDL 또는 관리자 권한은 없습니다.
+* 프로비저닝된 모든 배포에 대해 **읽기 전용 Kubernetes 리소스 조회**를 수행합니다(액세스 번들은 두 설치 대상 모두에서 Kubernetes ServiceAccounts에 연결됩니다). 부여된 네임스페이스의 파드, 파드 로그, 서비스, configmaps, events, PersistentVolumeClaims, deployments, statefulsets, replicasets에 대해 `get`, `list`, `watch`를 수행할 수 있습니다. 프로비저닝된 번들이 없으면 troubleshooter는 kubectl 유형의 명령어를 실행하지 않습니다.
+
+troubleshooter의 RBAC에는 `exec`, `delete`, `patch` 권한이 없으므로 지원 엔지니어는 파드에서 셸을 열거나 커넥터를 통해 որևէ 것도 변경할 수 없습니다. 전체 권한 부여 및 RBAC 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 참고에서 확인할 수 있습니다.
+
+<div id="audit-log">
+  ## 감사 로그
+</div>
+
+모든 gateway 호출과 세션 중 실행되는 모든 명령어는 `/var/log/clicklink/troubleshoot-audit.log`에 한 줄당 하나의 JSON 객체(NDJSON)로 추가됩니다. `submitted_by` 필드에는 각 항목의 아이덴티티가 기록되며, 항목의 생성 방식에 따라 그 내용이 달라집니다. gateway 호출에는 검증된 token으로 확인된 이메일이 기록되며, 클라이언트가 제공한 값은 절대 사용되지 않습니다. VM에서 로컬로 수행된 세션 변경에는 해당 host 사용자가 기록되고, 세션 중 실행된 명령어에는 인증된 명령어 채널을 통해 전달된 org 아이덴티티가 기록됩니다. gateway 세션 활성화 항목은 다음과 같습니다:
+
+```json
+{
+  "timestamp": "2026-06-22T22:30:00.123456789Z",
+  "command_id": "11111111-2222-4333-8444-555555555555",
+  "submitted_by": "operator@clickhouse.com",
+  "command_type": "clctl.session.enable",
+  "command_text": "ticket #1234",
+  "instance_id": "",
+  "status": "ok",
+  "duration_ms": 42,
+  "output_lines": 0,
+  "remote_addr": "10.20.30.40"
+}
+```
+
+세션 수명 주기 항목에는 `clctl.session.enable`, `clctl.session.disable`, `clctl.session.status` 명령어 유형이 사용되며, enable의 `--reason`은 `command_text`로 기록됩니다. 세션 중 실행된 명령어도 동일한 스키마로 기록됩니다. `status`는 성공한 호출과 `unauthorized`, `forbidden`, `rate_limited` 시도를 구분하므로, 거부된 접근도 로그에 남습니다.
+
+VM에서는 `clicklink clctl troubleshoot audit tail`을 사용해 파일을 직접 읽으십시오. Kubernetes에서는 로그가 troubleshooter 파드 내부에 있고 컨테이너 이미지에 셸이 없으므로, `kubectl exec`를 통해 바이너리에 내장된 리더를 호출하십시오:
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-troubleshooter -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+로그는 환경 내 일반 파일이므로 다른 호스트나 컨테이너 로그와 마찬가지로 자체 SIEM으로 전송하십시오.
+
+<div id="redaction">
+  ## 민감 정보 삭제
+</div>
+
+troubleshooter가 반환하는 모든 내용은 사용자 환경을 벗어나기 전에 민감 정보가 삭제됩니다. 기본 제공 패턴은 IPv4 및 IPv6 주소, Bearer token, AWS 액세스 키, 이메일 주소, JWT, SSH private key, connection string에 포함된 자격 증명을 처리합니다. `/etc/clicklink/redaction-patterns.yaml`에서 이를 확장하거나 재정의할 수 있으며, 기본 제공 패턴과 이름이 같은 항목은 해당 패턴을 대체합니다. 패턴 파일이 유효하지 않으면 데몬이 시작되지 않으며 `clicklink clctl preflight`에서도 이를 검증하므로, 민감 정보 삭제 구성이 잘못되면 데이터가 아무런 경고 없이 전달되지 않고 명확하게 실패합니다.
+
+<div id="related-pages">
+  ## 관련 페이지
+</div>
+
+* [Architecture](/ko/products/bring-your-own-cloud/connector/architecture): 커넥터가 설정하는 모든 연결과 세션 관련 데이터 흐름을 설명합니다.
+* [구성](/ko/products/bring-your-own-cloud/connector/configuration): gateway, 허용 목록 및 민감 정보 삭제 설정을 설명합니다.
+* [FAQ](/ko/products/bring-your-own-cloud/connector/reference/faq): 취소, 감사 및 데이터 egress 관련 질문에 간략히 답변합니다.

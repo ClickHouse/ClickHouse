@@ -2,13 +2,16 @@
 title: 'Replica-aware 라우팅'
 slug: /manage/replica-aware-routing
 description: '임시 테이블, 세션, 캐시 재사용 및 쓰기 후 읽기 일관성을 위해 관련 요청을 동일한 ClickHouse Cloud 레플리카로 라우팅합니다'
-keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session_id', 'session affinity', 'temporary tables', 'read-after-write consistency']
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Replica-aware 라우팅" support="true" />
 
 Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. 쿼리 간에도 [임시 테이블](/ko/reference/statements/create/table/temporary-table) 또는 [이름이 지정된 세션 상태](/ko/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)에 계속 액세스해야 하거나, 관련 쿼리에서 동일한 레플리카의 로컬 캐시를 재사용하려는 경우 또는 쓰기 후 후속 읽기에서 [쓰기 후 읽기 일관성](#read-after-write-consistency)이 필요한 경우 사용하십시오.
 
@@ -17,7 +20,7 @@ Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어�
 <Warning>
   **HTTP 인터페이스 필요**
 
-  Replica-aware 라우팅은 [HTTP/HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 프록시 계층에서 적용됩니다. ClickHouse Cloud는 Replica-aware 라우팅 방식을 `session_id`에서 `X-ClickHouse-Replica-Tag` 헤더로 전환하고 있습니다. 아래 탭에서는 롤아웃 기간 동안 두 방법을 모두 설명합니다.
+  Replica-aware 라우팅은 `X-ClickHouse-Replica-Tag` 헤더를 사용하여 [HTTP/HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 프록시 계층에서 적용됩니다.
 
   Replica-aware 라우팅은 **현재 네이티브 프로토콜에서 사용할 수 없습니다**(네이티브 포트, 예: 기본 네이티브 모드의 [clickhouse-go](/ko/integrations/language-clients/go/index) 드라이버). 네이티브 프로토콜 클라이언트는 HTTP로 전환하고 모든 요청에 라우팅 값을 전송해야 합니다.
 </Warning>
@@ -34,92 +37,45 @@ Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어�
   ## Replica-aware 라우팅 구성하기
 </div>
 
-[지원](https://clickhouse.com/support/program) 티켓을 열어 HTTP 기반 sticky 레플리카 라우팅을 활성화해 달라고 요청하십시오. 서비스 ID와 이 기능이 필요한 이유(임시 테이블, 세션 상태, 캐시 재사용 또는 쓰기 후 읽기 일관성)를 함께 포함하십시오. 기존 서비스를 마이그레이션하기 전에 지원팀에 해당 서비스에 header 기반 라우팅이 활성화되어 있는지 확인해 달라고 요청하십시오. 확인을 받을 때까지 `session_id`를 계속 사용하십시오. 배포가 서비스에 적용되기 전까지 `X-ClickHouse-Replica-Tag`는 sticky 라우팅을 제공하지 않습니다. 재시작은 필요하지 않습니다.
+[지원](https://clickhouse.com/support/program) 티켓을 열어 HTTP 기반 sticky 레플리카 라우팅을 활성화해 달라고 요청하십시오. 서비스 ID와 이 기능이 필요한 이유(임시 테이블, 세션 상태, 캐시 재사용 또는 쓰기 후 읽기 일관성)를 함께 포함하십시오. 재시작은 필요하지 않습니다.
 
 <div id="http-based-routing">
   ## HTTP 기반 라우팅
 </div>
 
-<Tabs>
-  <Tab title="X-ClickHouse-Replica-Tag (권장)">
-    워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 프록시는 헤더 값에 일관된 해싱을 적용하므로 레플리카 수가 변하지 않는 한 동일한 값을 사용하는 요청은 같은 레플리카로 전송됩니다. 다른 값은 독립적으로 해싱되며 같은 레플리카 또는 다른 레플리카에 할당될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
+워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 프록시는 헤더 값에 일관된 해싱을 적용하므로 레플리카 수가 변하지 않는 한 동일한 값을 사용하는 요청은 같은 레플리카로 전송됩니다. 다른 값은 독립적으로 해싱되며 같은 레플리카 또는 다른 레플리카에 할당될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
 
-    기존 서비스 호스트명을 사용하십시오. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다. 헤더 값에는 애플리케이션 이름, 사용자 ID 또는 워크로드 레이블 등 원하는 문자열을 사용할 수 있습니다. 헤더가 없는 요청에는 일반적인 부하 분산이 적용됩니다.
+기존 서비스 호스트명을 사용하십시오. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다. 헤더 값에는 애플리케이션 이름, 사용자 ID 또는 워크로드 레이블 등 원하는 문자열을 사용할 수 있습니다. 헤더가 없는 요청에는 일반적인 부하 분산이 적용됩니다.
 
-    각 요청에 `X-ClickHouse-Replica-Tag` 헤더를 설정하십시오:
+각 요청에 `X-ClickHouse-Replica-Tag` 헤더를 설정하십시오:
 
-    ```bash
-    echo 'SELECT hostName()' | curl \
-      -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
-      -H 'X-ClickHouse-User: default' \
-      -H 'X-ClickHouse-Key: <password>' \
-      'https://<host>:8443/' -d @-
-    ```
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
 
-    clickhouse-go(v2)의 경우 `Protocol: clickhouse.HTTP`를 설정하고 [`HttpHeaders` 연결 옵션](/ko/integrations/language-clients/go/configuration#connection-settings)을 통해 헤더를 전달하십시오.
+clickhouse-go(v2)의 경우 `Protocol: clickhouse.HTTP`를 설정하고 [`HttpHeaders` 연결 옵션](/ko/integrations/language-clients/go/configuration#connection-settings)을 통해 헤더를 전달하십시오.
 
-    <Info>
-      `X-ClickHouse-Replica-Tag`를 사용하면 ClickHouse HTTP 세션을 생성하지 않고도 특정 레플리카에 요청을 고정할 수 있습니다. 동시에 실행되는 요청에서도 `SESSION_IS_LOCKED` 오류 없이 동일한 태그를 재사용할 수 있습니다.
-    </Info>
+<Info>
+  `X-ClickHouse-Replica-Tag`를 사용하면 ClickHouse HTTP 세션을 생성하지 않고도 특정 레플리카에 요청을 고정할 수 있습니다. 동시에 실행되는 요청에서도 `SESSION_IS_LOCKED` 오류 없이 동일한 태그를 재사용할 수 있습니다.
+</Info>
 
-    ### 쓰기 후 읽기 일관성
-
-    다중 레플리카 서비스에서는 한 레플리카에 쓴 데이터가 복제가 완료될 때까지 다른 레플리카에서 보이지 않을 수 있습니다. `X-ClickHouse-Replica-Tag` 헤더와 함께 쓰기 요청을 전송한 후, 후속 읽기 요청에서도 동일한 헤더 값을 재사용하십시오. 프록시가 두 요청을 동일한 레플리카로 라우팅하므로 다른 레플리카의 복제가 아직 완료되지 않았더라도 방금 쓴 데이터를 읽을 수 있습니다. 이 패턴은 대화형 애플리케이션이나 다음 단계로 진행하기 전에 삽입을 검증하는 ETL 작업처럼 데이터를 쓴 직후 동일한 데이터를 다시 읽는 워크로드에 적합합니다.
-
-    모든 레플리카에 걸쳐 더 강력한 일관성을 보장하려면 ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
-
-    ### 연결된 레플리카 확인
-
-    동일한 `X-ClickHouse-Replica-Tag` 값으로 `SELECT hostName()` 예시를 다시 실행하십시오. 레플리카 수가 변경되지 않았다면 동일한 호스트명이 반환됩니다. 다른 헤더 값은 다른 레플리카에 매핑될 수 있습니다.
-  </Tab>
-
-  <Tab title="session_id (legacy)">
-    <Warning>
-      Replica-aware 라우팅에는 `session_id` 대신 `X-ClickHouse-Replica-Tag`를 사용하게 됩니다. Support에서 서비스에 헤더 기반 라우팅이 활성화되었음을 확인할 때까지는 `session_id`를 계속 사용하십시오.
-    </Warning>
-
-    **동시 요청이 `SESSION_IS_LOCKED` 오류로 실패합니다**
-
-    * `session_id`는 ClickHouse HTTP 세션을 생성하므로 지정된 세션에서는 한 번에 하나의 쿼리만 실행할 수 있습니다.
-    * 서비스에 헤더 기반 라우팅이 활성화되면 레플리카 선호도만 필요한 워크로드는 `X-ClickHouse-Replica-Tag`로 전환할 수 있습니다. 동시 요청은 동일한 레플리카 태그를 공유할 수 있습니다.
-    * ClickHouse HTTP 세션 상태가 필요하면 동일한 `session_id`를 공유하는 요청을 순차적으로 처리하십시오.
-
-    워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/interfaces/http)에서 `session_id` 쿼리 매개변수를 전송하십시오. 프록시는 매개변수 값을 일관된 해싱에 사용하므로 레플리카 수가 변경되지 않는 한 이를 공유하는 요청은 동일한 레플리카로 라우팅됩니다. 다른 값은 독립적으로 해싱되며 동일하거나 다른 레플리카에 배정될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
-
-    기존 서비스 호스트명을 사용하십시오. 별도의 sticky 호스트명이나 DNS 변경은 필요하지 않습니다. `session_id`에는 애플리케이션 이름, 사용자 ID, 워크로드 레이블 등 원하는 임의의 문자열을 사용할 수 있습니다. `session_id`가 없는 요청에는 일반 로드 밸런싱이 적용됩니다.
-
-    각 요청에 `session_id` 쿼리 매개변수를 설정하십시오:
-
-    ```bash
-    echo 'SELECT hostName()' | curl \
-      -H 'X-ClickHouse-User: default' \
-      -H 'X-ClickHouse-Key: <password>' \
-      'https://<host>:8443/?session_id=my-workload-1' -d @-
-    ```
-
-    clickhouse-go(v2)에서는 `Protocol: clickhouse.HTTP`를 설정하고 `session_id`를 [설정](/ko/integrations/language-clients/go/database-sql-api#sessions)으로 전달합니다. 드라이버는 이를 URL 쿼리 매개변수로 전송합니다.
-
-    ### `session_id`를 사용한 쓰기 후 읽기 일관성
-
-    여러 레플리카가 있는 서비스에서는 한 레플리카에 쓴 데이터가 복제가 완료될 때까지 다른 레플리카에 표시되지 않을 수 있습니다. 쓰기 요청에 `session_id`를 포함하고, 후속 읽기 요청에서도 동일한 `session_id`를 재사용합니다. 프록시는 두 요청을 모두 같은 레플리카로 라우팅하므로, 다른 레플리카의 복제가 아직 완료되지 않았더라도 방금 쓴 데이터를 읽을 수 있습니다. 이 패턴은 대화형 애플리케이션이나 다음 단계로 넘어가기 전에 삽입을 검증하는 ETL 작업처럼 데이터를 쓴 직후 동일한 데이터를 다시 읽는 워크로드에 적합합니다.
-
-    모든 레플리카에 걸쳐 더 강력한 보장이 필요한 경우, ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
-
-    ### `session_id`로 연결되는 레플리카 확인
-
-    동일한 `session_id`로 `SELECT hostName()` 예시를 다시 실행합니다. 레플리카 수가 변경되지 않는 한 동일한 호스트명이 반환되어야 합니다. 다른 `session_id`는 다른 레플리카에 매핑될 수 있습니다.
-  </Tab>
-</Tabs>
-
-<div id="subdomain-based-routing-deprecated">
-  ## 레거시 하위 도메인 기반 라우팅
+<div id="read-after-write-consistency">
+  ### 쓰기 후 읽기 일관성
 </div>
 
-하위 도메인 기반 라우팅은 새로운 서비스에서 더 이상 활성화되지 않습니다. 이미 sticky 하위 도메인을 사용 중이라면 [지원](https://clickhouse.com/support/program)에 문의하여 [HTTP 헤더 메서드](#http-based-routing)로 마이그레이션하십시오.
+다중 레플리카 서비스에서는 한 레플리카에 쓴 데이터가 복제가 완료될 때까지 다른 레플리카에서 보이지 않을 수 있습니다. `X-ClickHouse-Replica-Tag` 헤더와 함께 쓰기 요청을 전송한 후, 후속 읽기 요청에서도 동일한 헤더 값을 재사용하십시오. 프록시가 두 요청을 동일한 레플리카로 라우팅하므로 다른 레플리카의 복제가 아직 완료되지 않았더라도 방금 쓴 데이터를 읽을 수 있습니다. 이 패턴은 대화형 애플리케이션이나 다음 단계로 진행하기 전에 삽입을 검증하는 ETL 작업처럼 데이터를 쓴 직후 동일한 데이터를 다시 읽는 워크로드에 적합합니다.
 
-<Accordion title="레거시 하위 도메인 기반 라우팅의 작동 방식">
-  이전에는 Replica-aware 라우팅을 활성화하면 서비스 호스트명에 와일드카드 하위 도메인을 추가로 사용할 수 있었습니다. 호스트명이 `abcxyz123.us-west-2.aws.clickhouse.cloud`인 서비스의 경우, `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`(예: `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`)와 일치하는 모든 호스트명은 Envoy가 해시를 사용해 일관되게 특정 레플리카로 라우팅했습니다. 원래 호스트명은 기본 라우팅 알고리즘인 `LEAST_CONNECTION` load balancing을 계속 사용했습니다.
-</Accordion>
+모든 레플리카에 걸쳐 더 강력한 일관성을 보장하려면 ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
+
+<div id="check-which-replica">
+  ### 연결된 레플리카 확인
+</div>
+
+동일한 `X-ClickHouse-Replica-Tag` 값으로 `SELECT hostName()` 예시를 다시 실행하십시오. 레플리카 수가 변경되지 않았다면 동일한 호스트명이 반환됩니다. 다른 헤더 값은 다른 레플리카에 매핑될 수 있습니다.
 
 <div id="limitations-of-replica-aware-routing">
   ## Replica-aware 라우팅의 한계
@@ -137,19 +93,17 @@ Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어�
 
 스티키 라우팅은 *어느 레플리카가* 요청을 처리할지만 제어합니다. 해당 레플리카는 여전히 다른 트래픽도 처리할 수 있습니다. 전용 컴퓨트가 필요하면 [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses)를 사용하십시오.
 
-<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### Private Link 및 레거시 하위 도메인 방식
+<div id="private-networking">
+  ### 프라이빗 네트워킹
 </div>
 
 HTTP 기반 라우팅은 일반 서비스 호스트명에서 [프라이빗 네트워킹](/ko/products/cloud/guides/security/connectivity/private-networking)과 함께 작동합니다. 추가 DNS 항목은 필요하지 않습니다.
-
-하지만 레거시 하위 도메인 방식은 그렇지 않습니다. `*.sticky.*` 호스트명 패턴에 대한 DNS를 추가해야 하며, 설정이 올바르지 않으면 레플리카 간 부하가 불균형하게 분산될 수 있습니다.
 
 <div id="replica-aware-routing-requires-http">
   ### Replica-aware 라우팅에는 HTTP 프로토콜이 필요합니다
 </div>
 
-스티키 라우팅은 서비스에서 사용할 수 있는 라우팅 메서드에 따라 HTTP 헤더 또는 쿼리 매개변수를 기준으로 합니다. 네이티브 바이너리 프로토콜에는 HTTP 프록시가 해시에 사용할 수 있는 두 값이 없으므로, 네이티브 프로토콜을 통해서는 Replica-aware 라우팅을 사용할 수 없습니다. 네이티브 프로토콜을 사용하는 클라이언트는 이 기능을 사용하려면 관련 워크로드를 HTTP 인터페이스로 옮겨야 합니다.
+스티키 라우팅은 `X-ClickHouse-Replica-Tag` HTTP 헤더를 기준으로 합니다. 네이티브 바이너리 프로토콜에는 HTTP 프록시가 해시에 사용할 수 있는 두 값이 없으므로, 네이티브 프로토콜을 통해서는 Replica-aware 라우팅을 사용할 수 없습니다. 네이티브 프로토콜을 사용하는 클라이언트는 이 기능을 사용하려면 관련 워크로드를 HTTP 인터페이스로 옮겨야 합니다.
 
 <div id="troubleshooting">
   ## 문제 해결
@@ -157,7 +111,7 @@ HTTP 기반 라우팅은 일반 서비스 호스트명에서 [프라이빗 네�
 
 **동일한 라우팅 값을 사용했는데도 쿼리가 계속 다른 레플리카로 전달되는 경우**
 
-* 서비스에서 지원하는 라우팅 메서드(`X-ClickHouse-Replica-Tag` 헤더 또는 레거시 `session_id` URL 쿼리 매개변수)를 사용하고 있는지 확인하세요.
+* 모든 요청에 `X-ClickHouse-Replica-Tag` 헤더가 포함되어 있는지 확인하세요.
 * 모든 요청에서 정확히 동일한 라우팅 값을 사용하는지 확인하세요.
 * 활성화 후 잠시 기다리세요. 적용되기까지 1분 이내가 걸릴 수 있습니다.
 * 최근 레플리카 수가 변경되었는지 확인하세요. 스케일링 후에는 리매핑이 발생할 수 있습니다. `SELECT hostName()`을 사용하여 새 매핑을 확인하세요.

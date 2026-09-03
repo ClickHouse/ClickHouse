@@ -2,7 +2,7 @@
 sidebarTitle: 'الدوال المعرّفة من قبل المستخدم'
 slug: /cloud/features/user-defined-functions
 title: 'الدوال المعرّفة من قبل المستخدم في Cloud'
-description: 'أضف دوال بايثون التنفيذية الخاصة بك إلى Cloud'
+description: 'أضف دوال بايثون القابلة للتنفيذ الخاصة بك إلى Cloud'
 doc_type: 'guide'
 keywords: ['دالة معرّفة من قبل المستخدم', 'UDF']
 ---
@@ -16,7 +16,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 1. باستخدام SQL
 2. باستخدام UI والتعليمات البرمجية الخاصة بك (الإصدار التجريبي العام)
 3. باستخدام [Cloud واجهة برمجة تطبيقات](#manage-udfs-with-the-cloud-api) (تجريبي)
-4. باستخدام [Terraform](#manage-udfs-with-terraform) (alpha)
+4. باستخدام [Terraform](#manage-udfs-with-terraform) (تجريبي)
 
 <div id="sql-udfs">
   ## الدوال المعرّفة من قبل المستخدم في SQL
@@ -231,13 +231,15 @@ DROP FUNCTION isBusinessHours
   ## إدارة UDFs باستخدام Terraform
 </div>
 
+<BetaBadge />
+
 يتضمن [موفّر Terraform الرسمي لـ ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) موردين لإدارة UDFs كبنية تحتية معرّفة بالشيفرة:
 
 * يدير [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) الدالة نفسها. ويأخذ أرشيف ZIP يتضمن شيفرة مصدر الدالة وينشر إصدارًا جديدًا كلما تغيّر hash الأرشيف، مع انتظار اكتمال عملية البناء.
 * يرفق [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) إصدار UDF بخدمة. لا يمكن أن تحتوي الخدمة إلا على إصدار واحد من الدالة في الوقت نفسه. يمكنك تثبيت رقم إصدار محدد، أو الإشارة إلى `clickhouse_udf.<name>.version` لترقية الخدمات تلقائيًا إلى أحدث إصدار.
 
 <Note>
-  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة alpha، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
+  تتوفر هذه الموارد في إصدار الموفّر 3.24.0 والإصدارات الأحدث. وهي في حالة beta، وقد يتغير سلوكها في إصدارات الموفّر المستقبلية.
 </Note>
 
 على سبيل المثال، لنشر UDF‏ `isBusinessHours` من المثال السابق باستخدام Terraform:

@@ -4,10 +4,8 @@
 -- from an arena no source variant used; otherwise the bucket merge would see a state merged into
 -- itself. The cells run the shape that stages and drains delayed records with such states.
 
-SET max_rows_to_group_by = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
-SET enable_sharding_aggregator = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 -- The adaptive gate requires two-level aggregation to be permitted.
 SET group_by_two_level_threshold = 100000;

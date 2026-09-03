@@ -1,5 +1,5 @@
 ---
-description: 'LAION 5B 데이터셋의 벡터 1억 개를 포함한 데이터셋'
+description: 'LAION 5B 데이터셋의 벡터 1천만 개를 포함한 데이터셋'
 sidebarTitle: 'LAION 5B 데이터셋'
 slug: /getting-started/example-datasets/laion-5b-dataset
 title: 'LAION 5B 데이터셋'
@@ -26,8 +26,8 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 전체 데이터셋은 [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader)를 사용하여 다운로드할 수 있습니다.
 
-ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니다.
-이 `S3` 버킷에는 10개의 `Parquet` 파일이 있으며, 각 `Parquet` 파일에는 1천만 개의 행이 들어 있습니다.
+ClickHouse는 공개 `S3` 버킷에 1천만 개 벡터의 부분 집합을 제공했습니다.
+부분 집합은 하나의 `Parquet` 파일에 저장됩니다.
 
 이 데이터셋에 필요한 스토리지와 메모리 요구 사항을 추정하려면 먼저 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)를 참고하여 규모 산정을 수행하는 것이 좋습니다.
 
@@ -37,10 +37,10 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
 
 <Steps>
   <Step title="테이블 생성" id="create-table">
-    임베딩과 연관된 속성을 저장할 `laion_5b_100m` 테이블을 생성하세요:
+    `laion_5b_10m` 테이블을 생성하여 embeddings 및 관련 속성을 저장합니다:
 
     ```sql
-    CREATE TABLE laion_5b_100m
+    CREATE TABLE laion_5b_10m
     (
         id UInt32,
         image_path String,
@@ -61,105 +61,71 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
     ) ENGINE = MergeTree ORDER BY (id)
     ```
 
-    `id`는 단순히 증가하는 정수입니다. 추가 속성은 프레디케이트에서 사용할 수 있으며, [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에 설명된 대로
-    포스트필터링/프리필터링이 결합된 벡터 유사도 검색을 이해하는 데 활용할 수 있습니다.
+    `id`는 단순히 증가하는 정수입니다. 추가 속성은 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에서 설명한 포스트필터링/프리필터링과 결합된 벡터 유사도 검색을 이해하기 위한 프레디케이트에 사용할 수 있습니다.
   </Step>
 
   <Step title="데이터 로드" id="load-table">
-    모든 `Parquet` 파일에서 데이터셋을 로드하려면 다음 SQL 문을 실행하십시오:
+    데이터셋을 로드하려면 다음 SQL 문을 실행하세요:
 
     ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+    INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
     ```
 
-    1억 개의 행을 테이블에 적재하는 데는 몇 분 정도 걸립니다.
-
-    또는 특정 개수의 파일/행만 적재하도록 개별 SQL 문을 실행할 수 있습니다.
-
-    ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
-    ⋮
-    ```
+    1,000만 행을 테이블에 로드하는 데 몇 분 정도 걸립니다.
   </Step>
 
-  <Step title="브루트 포스 벡터 유사도 검색(vector similarity search) 실행하기" id="run-a-brute-force-vector-similarity-search">
-    KNN (k - Nearest Neighbours) 검색 또는 브루트 포스(brute force) 검색은 데이터셋 내 각 벡터와 검색 임베딩 벡터 사이의 거리를 계산한 후, 거리를 기준으로 정렬하여 가장 가까운 이웃(nearest neighbours)을 찾는 방식입니다. 데이터셋에 포함된 벡터 중 하나를 검색 벡터로 활용할 수 있습니다. 예시:
+  <Step title="브루트포스 방식으로 벡터 유사성 검색 실행" id="run-a-brute-force-vector-similarity-search">
+    KNN(k - 최근접 이웃) 검색 또는 브루트포스 검색에서는 데이터셋의 각 벡터와
+    검색 임베딩 벡터 간의 거리를 계산한 후, 이를 정렬하여 최근접 이웃을 찾습니다. 데이터셋의 벡터 중 하나를
+    검색 벡터로 사용할 수 있습니다. 예시는 다음과 같습니다:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
     ```
 
-    ```response title="Response" highlight={24}
-        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-     1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
-     2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
-     3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
-     4. │ 51559839 │ https://img1.mashed.com/img/gallery/how-rich-is-the-mcalisters-deli-ceo-and-whats-the-average-pay-of-its-employees/intro-1619793841.jpg                                                                                           │
-     5. │ 22104014 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/04/Largest-McAlisters-Deli-Franchisee-to-Expand-into-Nebraska.jpg                                                                                                      │
-     6. │ 54337236 │ http://www.restaurantnews.com/wp-content/uploads/2015/11/McAlisters-Deli-Giving-Away-Gift-Cards-With-Win-One-Gift-One-Holiday-Promotion.jpg                                                                                       │
-     7. │ 20770867 │ http://www.restaurantnews.com/wp-content/uploads/2016/04/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Florida-as-Chain-Enters-New-Markets.jpg                                                                               │
-     8. │ 22493966 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/06/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Columbus-Ohio-as-Chain-Expands-feature.jpg                                                                       │
-     9. │  2224351 │ https://holttribe.com/wp-content/uploads/2019/10/60880046-879A-49E4-8E13-1EE75FB24980-900x675.jpeg                                                                                                                                │
-    10. │ 30779663 │ https://www.gannett-cdn.com/presto/2018/10/29/PMUR/685f3e50-cce5-46fb-9a66-acb93f6ea5e5-IMG_6587.jpg?crop=2166,2166,x663,y0&amp;width=80&amp;height=80&amp;fit=bounds                                                             │
-    11. │ 54939148 │ https://www.priceedwards.com/sites/default/files/styles/staff_property_listing_block/public/for-lease/images/IMG_9674%20%28Custom%29_1.jpg?itok=sa8hrVBT                                                                          │
-    12. │ 95371605 │ http://www.restaurantmagazine.com/wp-content/uploads/2015/08/McAlisters-Deli-Signs-Development-Agreement-with-Kingdom-Foods-to-Grow-in-Southern-Mississippi.jpg                                                                   │
-    13. │ 79564563 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/05/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Denver-as-Chain-Expands.jpg                                                                                      │
-    14. │ 76429939 │ http://www.restaurantnews.com/wp-content/uploads/2016/08/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Pennsylvania-as-Chain-Expands.jpg                                                                                     │
-    15. │ 96680635 │ https://img.claz.org/tc/400x320/9w3hll-UQNHGB9WFlhSGAVCWhheBQkeWh5SBAkUWh9SBgsJFxRcBUMNSR4cAQENXhJARwgNTRYcBAtDWh5WRQEJXR5SR1xcFkYKR1tYFkYGR1pVFiVyP0ImaTA                                                                        │
-    16. │ 48716846 │ http://tse2.mm.bing.net/th?id=OIP.nN2qJqGUJs_fVNdTiFyGnQHaEc                                                                                                                                                                      │
-    17. │  4472333 │ https://sgi.offerscdn.net/i/zdcs-merchants/05lG0FpXPIvsfiHnT3N8FQE.h200.w220.flpad.v22.bffffff.png                                                                                                                                │
-    18. │ 82667887 │ https://irs2.4sqi.net/img/general/200x200/11154479_OEGbrkgWB5fEGrrTkktYvCj1gcdyhZn7TSQSAqN2Yqw.jpg                                                                                                                                │
-    19. │ 57525607 │ https://knoji.com/images/logo/mcalistersdelicom.jpg                                                                                                                                                                               │
-    20. │ 15785896 │ https://www.groupnimb.com/mimg/merimg/mcalister-s-deli_1446088739.jpg                                                                                                                                                             │
-        └──────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-    20 rows in set. Elapsed: 3.968 sec. Processed 100.38 million rows, 320.81 GB (25.30 million rows/s., 80.84 GB/s.)
-    ```
-
-    쿼리 지연 시간을 기록해 두세요. 이후 ANN(벡터 인덱스 사용) 쿼리 지연 시간과 비교하는 데 활용할 수 있습니다.
-    1억 행을 대상으로 벡터 인덱스 없이 위 쿼리를 실행하면 완료까지 수 초에서 수 분이 소요될 수 있습니다.
+    ANN(벡터 인덱스 사용) 쿼리의 지연 시간과 비교할 수 있도록 쿼리 지연 시간을 기록해 두십시오.
+    1,000만 행의 경우 벡터 인덱스 없이 위 쿼리를 완료하는 데 수 초에서 수 분이 걸릴 수 있습니다.
   </Step>
 
-  <Step title="벡터 유사도 인덱스 생성" id="build-vector-similarity-index">
-    다음 SQL을 실행하여 `laion_5b_100m` 테이블의 `vector` 컬럼에 벡터 유사도 인덱스를 정의하고 생성합니다:
+  <Step title="벡터 유사성 인덱스 구축" id="build-vector-similarity-index">
+    다음 SQL을 실행하여 `laion_5b_10m` 테이블의 `vector` 컬럼에 벡터 유사성 인덱스를 정의하고 생성합니다:
 
     ```sql
-    ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+    ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
 
-    ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
     ```
 
-    인덱스 생성과 검색에 대한 매개변수 및 성능 고려 사항은 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에 설명되어 있습니다.
-    위 문장에서는 HNSW 하이퍼매개변수 `M`과 `ef_construction`에 각각 64와 512를 사용합니다.
-    선택한 값에 따른 인덱스 빌드 시간과 검색 결과의 품질을 평가하여 이러한 매개변수의 최적값을 신중하게 선택해야 합니다.
+    인덱스 생성 및 검색의 매개변수와 성능 고려 사항은 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에 설명되어 있습니다.
+    위 문에서는 HNSW 하이퍼매개변수 `M`과 `ef_construction`에 각각 64와 512를 사용합니다.
+    인덱스 빌드 시간과 선택한 값에 따른 검색 결과 품질을 평가하여 이러한 매개변수의 최적값을 신중하게 선택해야 합니다.
 
-    인덱스를 빌드하고 저장하는 데는 사용 가능한 CPU 코어 수와 스토리지 대역폭에 따라 전체 1억 데이터셋의 경우 몇 시간이 걸릴 수도 있습니다.
+    사용 가능한 CPU 코어 수와 스토리지 대역폭에 따라 1,000만 행 부분 집합에 대한 인덱스를 빌드하고 저장하는 데 상당한 시간이 걸릴 수 있습니다.
   </Step>
 
   <Step title="ANN 검색 수행" id="perform-ann-search">
-    벡터 유사도 인덱스가 생성되면 벡터 검색 쿼리는 자동으로 이 인덱스를 사용합니다:
+    벡터 유사성 인덱스가 생성되면 벡터 검색 쿼리에서 자동으로 해당 인덱스를 사용합니다:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     ```
 
-    메모리에 벡터 인덱스를 처음 로드할 때는 몇 초에서 몇 분 정도 걸릴 수 있습니다.
+    벡터 인덱스를 메모리에 처음 로드할 때 몇 초에서 몇 분 정도 걸릴 수 있습니다.
   </Step>
 
   <Step title="검색 쿼리용 임베딩 생성" id="generating-embeddings-for-search-query">
     `LAION 5b` 데이터셋의 임베딩 벡터는 `OpenAI CLIP` 모델 `ViT-L/14`를 사용해 생성되었습니다.
 
-    아래에는 `CLIP` API를 사용해 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여주는 Python 예시 스크립트가 제공됩니다. 그런 다음 검색 임베딩 벡터를 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달합니다.
+    아래 Python 스크립트 예시는 `CLIP` API를 사용해 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 그런 다음 검색 임베딩 벡터를 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달합니다.
 
     `clip` 패키지 설치 방법은 [OpenAI GitHub 리포지토리](https://github.com/openai/clip)를 참고하십시오.
 
@@ -184,7 +150,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
-        result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+        result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
         # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
@@ -194,7 +160,7 @@ ClickHouse는 `S3` 버킷에 1억 개 벡터의 부분 집합을 제공했습니
         print("</html>")
     ```
 
-    위 검색 결과는 아래와 같습니다:
+    위 검색 결과는 다음과 같습니다.
 
     <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="벡터 유사도 검색 결과" size="md" />
   </Step>

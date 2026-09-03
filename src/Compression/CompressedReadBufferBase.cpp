@@ -164,6 +164,10 @@ static void readHeaderAndGetCodecAndSize(
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
                         "Most likely corrupted data.", size_compressed_without_checksum);
 
+    if (size_decompressed > DBMS_MAX_DECOMPRESSED_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_decompressed: {}. "
+                        "Most likely corrupted data.", size_decompressed);
+
     if (size_compressed_without_checksum < header_size)
         throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
             "the compressed data size ({}, this should include header size) is less than the header size ({})",

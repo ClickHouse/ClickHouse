@@ -59,6 +59,7 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 * Null
 * Buffer
 * Memory
+* `IcebergS3` および `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -68,6 +69,8 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 * PostgreSQL
 * S3
 * Kafka
+
+実験的な `PaimonS3` および `PaimonAzure` テーブルエンジンは、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。
 
 <div id="interfaces">
   ### インターフェイス
@@ -87,6 +90,8 @@ Dictionaries は、ClickHouse におけるルックアップを高速化する�
 
 クラウド内でのクラスター間通信、および外部のセルフマネージド ClickHouse クラスターとの通信向けに、フェデレーテッド ClickHouse クエリをサポートしています。現在、ClickHouse Cloud では、以下のインテグレーションエンジンを使用したフェデレーテッドクエリをサポートしています。
 
+* `IcebergS3` および `IcebergAzure`
+* `PaimonS3` および `PaimonAzure` (実験的。利用可否についてはサポートにお問い合わせください)
 * Deltalake
 * Hudi
 * MySQL
@@ -130,7 +135,7 @@ ClickHouse Cloud のユーザー定義関数は、[パブリックベータ](/ja
   ### 名前付きコレクション
 </div>
 
-[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) は現在、ClickHouse Cloud ではサポートされていません。
+DDL で作成された[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)は、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。ClickHouse Cloud ではユーザーがサーバー設定ファイルを変更できないため、設定ファイルで定義された名前付きコレクションは利用できません。
 
 <div id="operational-defaults-and-considerations">
   ## 運用上のデフォルト設定と考慮事項

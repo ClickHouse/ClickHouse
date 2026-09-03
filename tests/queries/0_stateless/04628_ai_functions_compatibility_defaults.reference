@@ -1,5 +1,5 @@
 -- Current defaults
-false	1000
+false	1000	1
 -- compatibility = 26.6 restores the legacy defaults
-true	0
+true	0	0
 0

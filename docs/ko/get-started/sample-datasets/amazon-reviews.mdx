@@ -24,7 +24,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN)
 LIMIT 3
 ```
 
@@ -35,10 +35,10 @@ Row 1:
 ──────
 review_date:       16462
 marketplace:       US
-customer_id:       25444946 -- 2,544만
+customer_id:       25444946 -- 25.44 million
 review_id:         R146L9MMZYG0WA
 product_id:        B00NV85102
-product_parent:    908181913 -- 9억 818만
+product_parent:    908181913 -- 908.18 million
 product_title:     XIKEZAN iPhone 6 Plus 5.5 inch Waterproof Case, Shockproof Dirtproof Snowproof Full Body Skin Case Protective Cover with Hand Strap & Headphone Adapter & Kickstand
 product_category:  Wireless
 star_rating:       4
@@ -53,10 +53,10 @@ Row 2:
 ──────
 review_date:       16462
 marketplace:       US
-customer_id:       1974568 -- 197만
+customer_id:       1974568 -- 1.97 million
 review_id:         R2LXDXT293LG1T
 product_id:        B00OTFZ23M
-product_parent:    951208259 -- 9억 5,121만
+product_parent:    951208259 -- 951.21 million
 product_title:     Season.C Chicago Bulls Marilyn Monroe No.1 Hard Back Case Cover for Samsung Galaxy S5 i9600
 product_category:  Wireless
 star_rating:       1
@@ -71,10 +71,10 @@ Row 3:
 ──────
 review_date:       16462
 marketplace:       US
-customer_id:       24803564 -- 2,480만
+customer_id:       24803564 -- 24.80 million
 review_id:         R7K9U5OEIRJWR
 product_id:        B00LB8C4U4
-product_parent:    524588109 -- 5억 2,459만
+product_parent:    524588109 -- 524.59 million
 product_title:     iPhone 5s Case, BUDDIBOX [Shield] Slim Dual Layer Protective Case with Kickstand for Apple iPhone 5 and 5s
 product_category:  Wireless
 star_rating:       4
@@ -123,7 +123,7 @@ ORDER BY (review_date, product_category)
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
-'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet')
+'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
 
 <Tip>

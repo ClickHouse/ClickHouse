@@ -74,7 +74,7 @@ Você pode ver que o conjunto de dados acima contém objetos JSON aninhados. Emb
 O uso da [função s3](/pt-BR/reference/functions/table-functions/s3) com o comando `DESCRIBE` mostra os tipos que serão inferidos.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -124,7 +124,7 @@ SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -249,7 +249,7 @@ Os comandos anteriores criaram uma tabela na qual os dados podem ser carregados.
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -313,7 +313,7 @@ No exemplo anterior, usamos um JSON estático, com nomes de chaves e tipos bem c
 
 O ClickHouse lida com isso por meio de um tipo [`JSON`](/pt-BR/reference/data-types/newjson) específico.
 
-Se você sabe que seu JSON é altamente dinâmico, com muitas chaves exclusivas e vários tipos para as mesmas chaves, recomendamos não usar a inferência de esquema com `JSONEachRow` para tentar inferir uma coluna para cada chave — mesmo que os dados estejam no formato JSON delimitado por quebras de linha.
+Se você sabe que seu JSON é altamente dinâmico, com muitas chaves exclusivas e vários tipos para as mesmas chaves, recomendamos não usar a inferência de esquema com `JSONEachRow` para tentar inferir uma coluna para cada chave — mesmo que os dados estejam no formato JSON delimitado por quebra de linha.
 
 Considere o exemplo a seguir, de uma versão estendida do [Python PyPI conjunto de dados](https://clickpy.clickhouse.com/) acima. Aqui, adicionamos uma coluna `tags` arbitrária com pares aleatórios de chave-valor.
 
@@ -334,10 +334,10 @@ Considere o exemplo a seguir, de uma versão estendida do [Python PyPI conjunto 
 }
 ```
 
-Uma amostra desses dados está disponível publicamente em formato JSON delimitado por nova linha. Se tentarmos fazer inferência de esquema nesse arquivo, você verá que o desempenho é ruim, com uma resposta extremamente verbosa:
+Uma amostra desses dados está disponível publicamente em formato JSON delimitado por quebra de linha. Se tentarmos fazer inferência de esquema nesse arquivo, você verá que o desempenho é ruim, com uma resposta extremamente verbosa:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ Com milhares de colunas únicas, essa abordagem de inferência é lenta. Como al
 `JSONAsObject` trata toda a entrada como um único objeto JSON e a armazena em uma única coluna do tipo [`JSON`](/pt-BR/reference/data-types/newjson), o que o torna mais adequado para payloads JSON altamente dinâmicos ou aninhados.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -365,7 +365,7 @@ SETTINGS describe_compact_output = 1
 1 row in set. Elapsed: 0.005 sec.
 ```
 
-Esse formato também é essencial nos casos em que as colunas têm vários tipos que não podem ser compatibilizados. Por exemplo, considere um arquivo `sample.json` com o seguinte JSON delimitado por quebras de linha:
+Esse formato também é essencial nos casos em que as colunas têm vários tipos que não podem ser compatibilizados. Por exemplo, considere um arquivo `sample.json` com o seguinte JSON delimitado por quebra de linha:
 
 ```json
 {"a":1}
@@ -375,7 +375,7 @@ Esse formato também é essencial nos casos em que as colunas têm vários tipos
 Nesse caso, o ClickHouse consegue fazer a coerção necessária para lidar com o conflito de tipos e tratar a coluna `a` como `Nullable(String)`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -403,7 +403,7 @@ No entanto, alguns tipos são incompatíveis. Considere o exemplo a seguir:
 Nesse caso, não é possível fazer nenhum tipo de conversão. Portanto, o comando `DESCRIBE` falha:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 Nesse caso, `JSONAsObject` trata cada linha como um único tipo [`JSON`](/pt-BR/reference/data-types/newjson) (que permite que a mesma coluna tenha múltiplos tipos). Isso é essencial:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

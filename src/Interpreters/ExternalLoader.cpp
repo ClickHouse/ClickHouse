@@ -438,6 +438,10 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The reader has not collected any configuration yet, so there is nothing to apply.
+        if (!new_configs)
+            return;
+
         /// The following check prevents a race when two threads are trying to update configuration
         /// at almost the same time:
         /// 1) first thread reads a configuration (for example as a part of periodic updates)

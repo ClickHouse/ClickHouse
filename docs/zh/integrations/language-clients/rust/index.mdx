@@ -1,5 +1,5 @@
 ---
-sidebarTitle: '概览'
+sidebarTitle: 'Rust'
 keywords: ['clickhouse', 'rs', 'rust', 'cargo', 'crate', 'http', 'client', 'connect', 'integrate']
 slug: /integrations/rust
 description: '用于连接 ClickHouse 的官方 Rust 客户端。'
@@ -168,7 +168,7 @@ while let Some(row) = cursor.next().await? { .. }
 </Warning>
 
 <div id="inserting-rows">
-  ### 插入行
+  ### 插入数据行
 </div>
 
 ```rust
@@ -189,7 +189,7 @@ insert.end().await?;
 
 * 如果未调用 `end()`，`INSERT` 会被中止。
 * 行会以 stream 的形式逐步发送，以分散网络负载。
-* 只有当所有行都位于同一分区，且行数小于 [`max_insert_block_size`](/zh/reference/settings/session-settings/max-insert#max_insert_block_size) 时，ClickHouse 才会以原子方式插入批次。
+* 只有当所有行都位于同一分区，且行数小于 [`max_insert_block_size`](/zh/reference/settings/session-settings#max_insert_block_size) 时，ClickHouse 才会以原子方式插入批次。
 
 <div id="async-insert-server-side-batching">
   ### 异步插入 (服务端批处理)

@@ -185,6 +185,26 @@ help maxx_threads
 
 单独输入 `help` 会显示简短的用法摘要。
 
+<div id="slash-commands">
+  ### 命令
+</div>
+
+客户端会自行执行一些以 `/` 开头的命令，而不是将其发送到服务器：
+
+| 命令                            | 描述                            |
+| ----------------------------- | ----------------------------- |
+| `/help <name>`, `/man <name>` | 显示 `<name>` 的文档，与上述 `help` 相同 |
+| `/clear`                      | 清空终端                          |
+
+在输入开头键入 `/` 会以[提示](#command-line-options-formatting)的形式列出命令；继续输入名称可缩小列表范围。`Tab` 可补全正在输入的命令；提示被禁用时，也可通过这种方式补全命令。单独提交 `/` 并非命令：与 Oracle SQL*Plus 一样，它会重复上一次输入。拼写错误的命令名称会被提示为错误，并显示可能想输入的命令，而不会将其作为查询执行：
+
+```text
+:) /hepl
+
+Exception on client:
+Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Type `/` at the beginning of the line to see all the commands. (BAD_ARGUMENTS)
+```
+
 <div id="processing-info">
   ### 查询处理信息
 </div>
@@ -954,17 +974,17 @@ $ clickhouse-client --max_threads 1
   ### 格式选项
 </div>
 
-| Option                            | Description                                                                                                                                                                                                                           | Default                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `-f [ --format ] <format>`        | 使用指定的格式输出结果。 <br /><br />支持的格式列表请参见[输入和输出数据格式](/zh/reference/formats/index)。                                                                                                                                                             | `TabSeparated`                      |
-| `--pager <command>`               | 将所有输出通过管道传递给此命令。通常是 `less` (例如，使用 `less -S` 显示较宽的结果集) 或类似命令。                                                                                                                                                                          | -                                   |
-| `-E [ --vertical ]`               | 使用 [Vertical format](/zh/reference/formats/Vertical) 输出结果。这与 `–-format Vertical` 相同。在这种格式下，每个值都会单独打印在一行中，因此在显示宽表时很有帮助。                                                                                                                   | -                                   |
-| `--echo [ <bool> ]`               | 在执行前打印每个查询。可选接受一个布尔值。                                                                                                                                                                                                                 | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-formatted [ <bool> ]`     | 对回显的查询进行格式化。可选接受一个布尔值。                                                                                                                                                                                                                | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-query-id [ <bool> ]`      | 在执行前打印查询 ID。可选接受一个布尔值。                                                                                                                                                                                                                | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
-| `--echo-query-separator <string>` | 在格式化后的回显查询前打印此分隔符 (需要 `--echo-formatted`)，以便更容易区分输入的查询和重新格式化后的回显。                                                                                                                                                                     | 空 (已禁用)                             |
-| `--highlight [ --hilite ] <bool>` | 切换命令提示符和回显查询的语法高亮显示。                                                                                                                                                                                                                  | `true`                              |
-| `--hints <bool>`                  | 当光标位于输入末尾时，显示键入时的自动补全提示 (内联“幽灵”文本) ，给出最佳匹配建议。使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选择某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开传统补全列表。需要启用 `--highlight` (提示需要颜色) 以及建议机制 (因此 `--disable_suggestion` 也会将其关闭) 。 | `true`                              |
+| Option                            | Description                                                                                                                                                                                                                                                                                                                                     | Default                             |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `-f [ --format ] <format>`        | 使用指定的格式输出结果。 <br /><br />支持的格式列表请参见[输入和输出数据格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                       | `TabSeparated`                      |
+| `--pager <command>`               | 将所有输出通过管道传递给此命令。通常是 `less` (例如，使用 `less -S` 显示较宽的结果集) 或类似命令。                                                                                                                                                                                                                                                                                    | -                                   |
+| `-E [ --vertical ]`               | 使用 [Vertical 格式](/zh/reference/formats/Vertical) 输出结果。这与 `–-format Vertical` 相同。在这种格式下，每个值都会单独打印在一行中，因此在显示宽表时很有帮助。                                                                                                                                                                                                                             | -                                   |
+| `--echo [ <bool> ]`               | 在执行前打印每个查询。可选接受一个布尔值。                                                                                                                                                                                                                                                                                                                           | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--echo-formatted [ <bool> ]`     | 对回显的查询进行格式化。可选接受一个布尔值。                                                                                                                                                                                                                                                                                                                          | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--echo-query-id [ <bool> ]`      | 在执行前打印查询 ID。可选接受一个布尔值。                                                                                                                                                                                                                                                                                                                          | 交互模式下为 `true`，非交互 (批次) 模式下为 `false` |
+| `--echo-query-separator <string>` | 在格式化后的回显查询前打印此分隔符 (需要 `--echo-formatted`)，以便更容易区分输入的查询和重新格式化后的回显。                                                                                                                                                                                                                                                                               | 空 (已禁用)                             |
+| `--highlight [ --hilite ] <bool>` | 切换命令提示符和回显查询的语法高亮显示。                                                                                                                                                                                                                                                                                                                            | `true`                              |
+| `--hints <bool>`                  | 当光标位于输入末尾时，显示键入时的自动补全提示 (内联“幽灵”文本) ，给出最佳匹配建议。使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选择某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开传统补全列表。需要启用 `--highlight` (提示需要颜色)。建议提示还需要建议机制，因此 `--disable_suggestion` 会将其关闭；只要启用了 `--hints` 和 `--highlight`，客户端的 [`/` 命令](#slash-commands) 就是静态列表，并会始终显示提示。即使关闭了提示，`Tab` 仍可补全 `/` 命令。 | `true`                              |
 
 <div id="command-line-options-execution-details">
   ### 执行细节

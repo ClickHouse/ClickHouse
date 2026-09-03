@@ -7,7 +7,7 @@
 DROP TABLE IF EXISTS t_full;
 
 CREATE TABLE t_full (dt DateTime, n UInt64) ENGINE = MergeTree ORDER BY n TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(NONE)
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 INSERT INTO t_full SELECT now() - INTERVAL 1 DAY, number FROM numbers(100000);
 ALTER TABLE t_full DELETE WHERE n = 0 SETTINGS mutations_sync = 2;
@@ -23,7 +23,7 @@ DROP TABLE t_full;
 DROP TABLE IF EXISTS t_colonly;
 
 CREATE TABLE t_colonly (dt DateTime, n UInt64, v UInt64) ENGINE = MergeTree ORDER BY n TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(NONE)
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 INSERT INTO t_colonly SELECT now() - INTERVAL 1 DAY, number, number FROM numbers(100000);
 OPTIMIZE TABLE t_colonly FINAL;

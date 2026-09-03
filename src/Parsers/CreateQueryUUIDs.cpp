@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
@@ -54,32 +54,12 @@ namespace
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
     }
-
-    /// Whether SETTINGS carries a non-zero `recent_samples_ttl_seconds`; the normalization pins the default there before UUIDs are made.
-    bool hasTimeSeriesRecentSamplesTable(const ASTCreateQuery & query)
-    {
-        if (!query.storage || !query.storage->settings)
-            return false;
-        const auto * value = query.storage->settings->changes.tryGet("recent_samples_ttl_seconds");
-        if (!value)
-            return false;
-        switch (value->getType())
-        {
-            case Field::Types::UInt64:
-                return value->safeGet<UInt64>() != 0;
-            case Field::Types::Int64:
-                return value->safeGet<Int64>() != 0;
-            default:
-                /// Non-numeric values are rejected later when the setting is actually parsed.
-                return false;
-        }
-    }
 }
 
 
-CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
+CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
 {
-    if (!generate_random || !force_random)
+    if (!generate_random || !for_restore)
     {
         uuid = query.uuid;
         if (query.targets)
@@ -130,7 +110,16 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
-                if (hasTimeSeriesRecentSamplesTable(query))
+
+                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
+                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
+                {
+                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
+                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
+                    /// so a fresh UUID is not stamped on RESTORE.
+                    recent_samples_enabled = false;
+                }
+                if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
             }
         }

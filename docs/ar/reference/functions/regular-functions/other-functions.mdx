@@ -97,7 +97,7 @@ SELECT MACNumToString(149809441867716) AS mac_address;
 
 ```response title=Response
 ┌─mac_address───────┐
-│ 88:00:11:22:33:44 │
+│ 88:40:3A:91:07:C4 │
 └───────────────────┘
 ```
 
@@ -203,8 +203,9 @@ authenticatedUser()
 **مثال على الاستخدام**
 
 ```sql title=Query
-EXECUTE as u1;
-            SELECT currentUser(), authenticatedUser();
+CREATE USER u1;
+EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
+DROP USER u1;
 ```
 
 ```response title=Response
@@ -245,42 +246,55 @@ bar(x, min, max[, width])
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE hits (EventTime DateTime('UTC')) ENGINE = Memory;
+
+-- One row per page view, spread over the hours of a day.
+INSERT INTO hits
+SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + toIntervalHour(hour)
+FROM (
+    SELECT
+        number AS hour,
+        [293, 181, 115, 85, 69, 78, 113, 171, 278, 391, 458, 494, 510, 523, 540, 528, 539, 524, 506, 521, 522, 542, 494, 400][number + 1] AS count
+    FROM numbers(24)
+)
+ARRAY JOIN range(count);
+
 SELECT
 toHour(EventTime) AS h,
 count() AS c,
-bar(c, 0, 600000, 20) AS bar
-FROM test.hits
+bar(c, 0, 600, 20) AS bar
+FROM hits
 GROUP BY h
 ORDER BY h ASC
 ```
 
 ```response title=Response
-┌──h─┬──────c─┬─bar────────────────┐
-│  0 │ 292907 │ █████████▋         │
-│  1 │ 180563 │ ██████             │
-│  2 │ 114861 │ ███▋               │
-│  3 │  85069 │ ██▋                │
-│  4 │  68543 │ ██▎                │
-│  5 │  78116 │ ██▌                │
-│  6 │ 113474 │ ███▋               │
-│  7 │ 170678 │ █████▋             │
-│  8 │ 278380 │ █████████▎         │
-│  9 │ 391053 │ █████████████      │
-│ 10 │ 457681 │ ███████████████▎   │
-│ 11 │ 493667 │ ████████████████▍  │
-│ 12 │ 509641 │ ████████████████▊  │
-│ 13 │ 522947 │ █████████████████▍ │
-│ 14 │ 539954 │ █████████████████▊ │
-│ 15 │ 528460 │ █████████████████▌ │
-│ 16 │ 539201 │ █████████████████▊ │
-│ 17 │ 523539 │ █████████████████▍ │
-│ 18 │ 506467 │ ████████████████▊  │
-│ 19 │ 520915 │ █████████████████▎ │
-│ 20 │ 521665 │ █████████████████▍ │
-│ 21 │ 542078 │ ██████████████████ │
-│ 22 │ 493642 │ ████████████████▍  │
-│ 23 │ 400397 │ █████████████▎     │
-└────┴────────┴────────────────────┘
+┌──h─┬───c─┬─bar────────────────┐
+│  0 │ 293 │ █████████▊         │
+│  1 │ 181 │ ██████             │
+│  2 │ 115 │ ███▊               │
+│  3 │  85 │ ██▊                │
+│  4 │  69 │ ██▎                │
+│  5 │  78 │ ██▌                │
+│  6 │ 113 │ ███▊               │
+│  7 │ 171 │ █████▋             │
+│  8 │ 278 │ █████████▎         │
+│  9 │ 391 │ █████████████      │
+│ 10 │ 458 │ ███████████████▎   │
+│ 11 │ 494 │ ████████████████▍  │
+│ 12 │ 510 │ █████████████████  │
+│ 13 │ 523 │ █████████████████▍ │
+│ 14 │ 540 │ ██████████████████ │
+│ 15 │ 528 │ █████████████████▌ │
+│ 16 │ 539 │ █████████████████▉ │
+│ 17 │ 524 │ █████████████████▍ │
+│ 18 │ 506 │ ████████████████▊  │
+│ 19 │ 521 │ █████████████████▎ │
+│ 20 │ 522 │ █████████████████▍ │
+│ 21 │ 542 │ ██████████████████ │
+│ 22 │ 494 │ ████████████████▍  │
+│ 23 │ 400 │ █████████████▎     │
+└────┴─────┴────────────────────┘
 ```
 
 <div id="blockNumber">
@@ -326,24 +340,16 @@ FROM
 
 ```response title=Response
 ┌─blockNumber()─┐
+│             6 │
+│             6 │
 │             7 │
 │             7 │
-└───────────────┘
-┌─blockNumber()─┐
 │             8 │
 │             8 │
-└───────────────┘
-┌─blockNumber()─┐
 │             9 │
 │             9 │
-└───────────────┘
-┌─blockNumber()─┐
 │            10 │
 │            10 │
-└───────────────┘
-┌─blockNumber()─┐
-│            11 │
-│            11 │
 └───────────────┘
 ```
 
@@ -471,7 +477,7 @@ SELECT buildId()
 
 ```response title=Response
 ┌─buildId()────────────────────────────────┐
-│ AB668BEF095FAA6BD26537F197AC2AF48A927FB4 │
+│ B49BA4BC500E5E850F832BEC918885516B22FC0E │
 └──────────────────────────────────────────┘
 ```
 
@@ -509,7 +515,7 @@ SELECT byteSize('string')
 
 ```response title=Response
 ┌─byteSize('string')─┐
-│                 15 │
+│                 14 │
 └────────────────────┘
 ```
 
@@ -521,7 +527,7 @@ SELECT byteSize(NULL, 1, 0.3, '')
 
 ```response title=Response
 ┌─byteSize(NULL, 1, 0.3, '')─┐
-│                         19 │
+│                         18 │
 └────────────────────────────┘
 ```
 
@@ -669,9 +675,9 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 ```
 
 ```response title=Response
-┌─RGB──────────┐
-│ (255,0,0)    │
-└──────────────┘
+┌─RGB───────┐
+│ (255,0,0) │
+└───────────┘
 ```
 
 <div id="colorOKLCHToSRGB">
@@ -1070,9 +1076,9 @@ SELECT currentProfiles();
 ```
 
 ```response title=Response
-┌─currentProfiles()─────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics'] │
-└───────────────────────────────────────────────┘
+┌─currentProfiles()─┐
+│ ['default']       │
+└───────────────────┘
 ```
 
 <div id="currentQueryID">
@@ -1188,9 +1194,9 @@ SELECT currentRoles();
 ```
 
 ```response title=Response
-┌─currentRoles()─────────────────────────────────┐
-│ ['sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────┘
+┌─currentRoles()─┐
+│ []             │
+└────────────────┘
 ```
 
 <div id="currentSchemas">
@@ -1373,9 +1379,9 @@ SELECT defaultRoles();
 ```
 
 ```response title=Response
-┌─defaultRoles()─────────────────────────────────┐
-│ ['sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────┘
+┌─defaultRoles()─┐
+│ []             │
+└────────────────┘
 ```
 
 <div id="defaultValueOfArgumentType">
@@ -1678,9 +1684,9 @@ SELECT enabledProfiles();
 ```
 
 ```response title=Response
-┌─enabledProfiles()─────────────────────────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
-└───────────────────────────────────────────────────────────────────┘
+┌─enabledProfiles()─┐
+│ ['default']       │
+└───────────────────┘
 ```
 
 <div id="enabledRoles">
@@ -1718,9 +1724,9 @@ SELECT enabledRoles();
 ```
 
 ```response title=Response
-┌─enabledRoles()─────────────────────────────────────────────────┐
-│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
-└────────────────────────────────────────────────────────────────┘
+┌─enabledRoles()─┐
+│ []             │
+└────────────────┘
 ```
 
 <div id="errorCodeToName">
@@ -1795,7 +1801,19 @@ file(path[, default])
 **إدراج ملفات في جدول**
 
 ```sql title=Query
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
+INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE data (a String, b String) ENGINE = Memory;
+INSERT INTO data SELECT file('a.txt'), file('b.txt');
+
+SELECT * FROM data;
+```
+
+```response title=Response
+┌─a─────┬─b──────┐
+│ Hello │ World! │
+└───────┴────────┘
 ```
 
 <div id="filesystemAvailable">
@@ -2014,7 +2032,7 @@ SELECT flipCoordinates((1.0, 2.0));
 ```
 
 ```response title=Response
-(2.0, 1.0)
+(2,1)
 ```
 
 **حلقة**
@@ -2024,7 +2042,7 @@ SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
 ```
 
 ```response title=Response
-[(2.0, 1.0), (4.0, 3.0)]
+[(2,1),(4,3)]
 ```
 
 **polygon**
@@ -2034,7 +2052,7 @@ SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);
 ```
 
 ```response title=Response
-[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]
+[[(2,1),(4,3)],[(6,5),(8,7)]]
 ```
 
 **geometry&#95;wkt**
@@ -2044,7 +2062,7 @@ SELECT flipCoordinates(readWkt('POINT(10 20)'));
 ```
 
 ```response title=Response
-(20, 10)
+(20,10)
 ```
 
 **geometry&#95;polygon&#95;wkt**
@@ -2054,7 +2072,7 @@ SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));
 ```
 
 ```response title=Response
-[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]
+[[(0,0),(0,5),(5,5),(5,0),(0,0)]]
 ```
 
 <div id="formatQuery">
@@ -2089,11 +2107,7 @@ SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
 ```
 
 ```response title=Response
-SELECT
-    a,
-    b
-FROM tab
-WHERE (a > 3) AND (b < 3)
+SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3)
 ```
 
 <div id="formatQueryFromJSON">
@@ -2136,7 +2150,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
 
 ```response title=Response
 ┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
-│ SELECT a, b FROM t WHERE x > 1                                         │
+│ SELECT a, b FROM t WHERE x > 1                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2184,11 +2198,7 @@ SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
 ```
 
 ```response title=Response
-SELECT
-    a,
-    b
-FROM tab
-WHERE (a > 3) AND (b < 3)
+SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3)
 ```
 
 <div id="formatQuerySingleLine">
@@ -2297,12 +2307,12 @@ SELECT
 ```
 
 ```response title=Response
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB    │
-│        1048576 │ 1.05 MB    │
-│      192851925 │ 192.85 MB  │
-└────────────────┴────────────┘
+┌─filesize_bytes─┬─filesize──┐
+│              1 │ 1.00 B    │
+│           1024 │ 1.02 KB   │
+│        1048576 │ 1.05 MB   │
+│      192851925 │ 192.85 MB │
+└────────────────┴───────────┘
 ```
 
 **مع تحديد الدقة بشكل صريح**
@@ -2373,9 +2383,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─no_decimals──┬─four_decimals─────┐
-│ 99 trillion  │ 98.7654 trillion  │
-└──────────────┴───────────────────┘
+┌─no_decimals─┬─four_decimals────┐
+│ 99 trillion │ 98.7654 trillion │
+└─────────────┴──────────────────┘
 ```
 
 <div id="formatReadableSize">
@@ -2434,9 +2444,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─no_decimals─┬─four_decimals──┐
-│ 184 MiB     │ 183.9179 MiB   │
-└─────────────┴────────────────┘
+┌─no_decimals─┬─four_decimals─┐
+│ 184 MiB     │ 183.9179 MiB  │
+└─────────────┴───────────────┘
 ```
 
 <div id="formatReadableTimeDelta">
@@ -2478,14 +2488,14 @@ SELECT
 ```
 
 ```response title=Response
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                        │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
-└────────────┴────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
+│       100 │ 1 minute and 40 seconds                                         │
+│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└───────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
-**مع أكبر وحدة**
+**مع تحديد أكبر وحدة**
 
 ```sql title=Query
 SELECT
@@ -2599,7 +2609,7 @@ SELECT generateRandomStructure(NULL, 33)
 ```
 
 ```response title=Response
-c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
+c1 DateTime, c2 Enum8(\'c2V0\' = -123, \'c2V1\' = 94, \'c2V2\' = -105, \'c2V3\' = 67), c3 Nullable(UInt8), c4 String, c5 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(71))), c6 UInt32, c7 Bool, c8 Float64
 ```
 
 <div id="generateSerialID">
@@ -2641,9 +2651,9 @@ SELECT generateSerialID('id1')
 ```
 
 ```response title=Response
-┌─generateSerialID('id1')──┐
-│                        1 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       0 │
+└─────────────────────────┘
 ```
 
 **الاستدعاء الثاني**
@@ -2653,25 +2663,28 @@ SELECT generateSerialID('id1')
 ```
 
 ```response title=Response
-┌─generateSerialID('id1')──┐
-│                        2 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       1 │
+└─────────────────────────┘
 ```
 
 **استدعاء العمود**
 
 ```sql title=Query
+CREATE TABLE test_table (CounterID UInt32, UserID UInt32, ver UInt32) ENGINE = Memory;
+INSERT INTO test_table VALUES (1, 3, 3), (1, 1, 1), (1, 2, 2), (1, 5, 5), (1, 4, 4);
+
 SELECT *, generateSerialID('id1') FROM test_table
 ```
 
 ```response title=Response
-┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
-│         1 │      3 │   3 │                        3 │
-│         1 │      1 │   1 │                        4 │
-│         1 │      2 │   2 │                        5 │
-│         1 │      5 │   5 │                        6 │
-│         1 │      4 │   4 │                        7 │
-└───────────┴────────┴─────┴──────────────────────────┘
+┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')─┐
+│         1 │      3 │   3 │                       2 │
+│         1 │      1 │   1 │                       3 │
+│         1 │      2 │   2 │                       4 │
+│         1 │      5 │   5 │                       5 │
+│         1 │      4 │   4 │                       6 │
+└───────────┴────────┴─────┴─────────────────────────┘
 ```
 
 **مع قيمة ابتدائية**
@@ -2681,9 +2694,9 @@ SELECT generateSerialID('id2', 100)
 ```
 
 ```response title=Response
-┌─generateSerialID('id2', 100)──┐
-│                           100 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          100 │
+└──────────────────────────────┘
 ```
 
 **مع قيمة البداية في الاستدعاء الثاني**
@@ -2693,9 +2706,9 @@ SELECT generateSerialID('id2', 100)
 ```
 
 ```response title=Response
-┌─generateSerialID('id2', 100)──┐
-│                           101 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          101 │
+└──────────────────────────────┘
 ```
 
 <div id="getClientHTTPHeader">
@@ -2827,8 +2840,8 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 ```response title=Response
 ┌─getMaxTableNameLengthForDatabase('default')─┐
-            │                                         206 │
-            └─────────────────────────────────────────────┘
+│                                         206 │
+└─────────────────────────────────────────────┘
 ```
 
 <div id="getMergeTreeSetting">
@@ -3028,12 +3041,12 @@ SELECT getSetting('enable_analyzer');
 ```
 
 ```response title=Response
-┌─getSetting('⋯_analyzer')─┐
-│ true                     │
-└──────────────────────────┘
-┌─getSetting('⋯_analyzer')─┐
-│ false                    │
-└──────────────────────────┘
+┌─getSetting('enable_analyzer')─┐
+│ true                          │
+└───────────────────────────────┘
+┌─getSetting('enable_analyzer')─┐
+│ false                         │
+└───────────────────────────────┘
 ```
 
 <div id="getSettingOrDefault">
@@ -3076,7 +3089,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
 ```response title=Response
 my_value
 100
-NULL
+\N
 ```
 
 <div id="getSizeOfEnumType">
@@ -3143,6 +3156,13 @@ getSubcolumn(nested_value, subcolumn_name)
 
 ```sql title=Query
 SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
+FROM values('array_col Array(UInt32), tuple_col Tuple(elem_name String)', ([1, 2, 3], tuple('abc')));
+```
+
+```response title=Response
+┌─getSubcolumn(array_col, 'size0')─┬─getSubcolumn(tuple_col, 'elem_name')─┐
+│                                3 │ abc                                  │
+└──────────────────────────────────┴──────────────────────────────────────┘
 ```
 
 <div id="getTypeSerializationStreams">
@@ -3177,7 +3197,7 @@ SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2))
 ```
 
 ```response title=Response
-['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']
+['{TupleElement(1), InlinedStringSizes()}','{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), InlinedStringSizes()}','{TupleElement(3), Regular}','{TupleElement(4), Regular}']
 ```
 
 **map**
@@ -3187,7 +3207,7 @@ SELECT getTypeSerializationStreams('Map(String, Int64)')
 ```
 
 ```response title=Response
-['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']
+['{ArraySizes}','{ArrayElements, TupleElement(keys), InlinedStringSizes()}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}']
 ```
 
 <div id="globalVariable">
@@ -3609,15 +3629,26 @@ indexHint(expression)
 **مثال استخدام مع التصفية حسب التاريخ**
 
 ```sql title=Query
+-- `index_granularity` is lowered to 8 here only to keep the example small enough to follow.
+-- Do not change it in production: the default of 8192 is what makes the index sparse and cheap,
+-- and a small value makes the index large and slows queries down.
+CREATE TABLE ontime (FlightDate Date, Carrier String)
+ENGINE = MergeTree ORDER BY FlightDate
+SETTINGS index_granularity = 8;
+
+-- Ten flights on each of four days, so a granule of eight rows spans more than one day.
+INSERT INTO ontime SELECT toDate('2025-09-14') + intDiv(number, 10), 'AA' FROM numbers(40);
+
+-- The granules that hold the rows of 2025-09-15 also hold rows of the neighbouring days,
+-- and `indexHint` returns all of them.
 SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GROUP BY k ORDER BY k ASC;
 ```
 
 ```response title=Response
 ┌──────────k─┬─count()─┐
-│ 2025-09-14 │    7071 │
-│ 2025-09-15 │   16428 │
-│ 2025-09-16 │    1077 │
-│ 2025-09-30 │    8167 │
+│ 2025-09-14 │       2 │
+│ 2025-09-15 │      10 │
+│ 2025-09-16 │       4 │
 └────────────┴─────────┘
 ```
 
@@ -3663,9 +3694,9 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0
 ```
 
 ```response title=Response
-┌─count(DISTINCT t)─┐
-│                 1 │
-└───────────────────┘
+┌─countDistinct(t)─┐
+│                1 │
+└──────────────────┘
 ```
 
 <div id="initialQueryStartTime">
@@ -3708,9 +3739,9 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('
 ```
 
 ```response title=Response
-┌─count(DISTINCT t)─┐
-│                 1 │
-└───────────────────┘
+┌─countDistinct(t)─┐
+│                1 │
+└──────────────────┘
 ```
 
 <div id="initializeAggregation">
@@ -3928,29 +3959,28 @@ joinGet(join_storage_table_name, value_column, join_keys)
 **مثال على الاستخدام**
 
 ```sql title=Query
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGet(db_test.id_val, 'val', toUInt32(1));
+SELECT joinGet(id_val, 'val', toUInt32(1));
 ```
 
 ```response title=Response
-┌─joinGet(db_test.id_val, 'val', toUInt32(1))─┐
-│                                          11 │
-└─────────────────────────────────────────────┘
+┌─joinGet('id_val', 'val', toUInt32(1))─┐
+│                                    11 │
+└───────────────────────────────────────┘
 ```
 
 **الاستخدام مع جدول من قاعدة البيانات الحالية**
 
 ```sql title=Query
-USE db_test;
 SELECT joinGet(id_val, 'val', toUInt32(2));
 ```
 
 ```response title=Response
-┌─joinGet(id_val, 'val', toUInt32(2))─┐
-│                                  12 │
-└─────────────────────────────────────┘
+┌─joinGet('id_val', 'val', toUInt32(2))─┐
+│                                    12 │
+└───────────────────────────────────────┘
 ```
 
 **استخدام المصفوفات كمفاتيح للربط**
@@ -3959,13 +3989,13 @@ SELECT joinGet(id_val, 'val', toUInt32(2));
 CREATE TABLE some_table (id1 UInt32, id2 UInt32, name String) ENGINE = Join(ANY, LEFT, id1, id2);
 INSERT INTO some_table VALUES (1, 11, 'a') (2, 12, 'b') (3, 13, 'c');
 
-SELECT joinGet(some_table, 'name', 1, 11);
+SELECT joinGet(some_table, 'name', toUInt32(1), toUInt32(11));
 ```
 
 ```response title=Response
-┌─joinGet(some_table, 'name', 1, 11)─┐
-│ a                                  │
-└────────────────────────────────────┘
+┌─joinGet('some_table', 'name', toUInt32(1), toUInt32(11))─┐
+│ a                                                        │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="joinGetOrNull">
@@ -4007,16 +4037,16 @@ joinGetOrNull(join_storage_table_name, value_column, join_keys)
 **مثال على الاستخدام**
 
 ```sql title=Query
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.id_val, 'val', toUInt32(999));
+SELECT joinGetOrNull(id_val, 'val', toUInt32(1)), joinGetOrNull(id_val, 'val', toUInt32(999));
 ```
 
 ```response title=Response
-┌─joinGetOrNull(db_test.id_val, 'val', toUInt32(1))─┬─joinGetOrNull(db_test.id_val, 'val', toUInt32(999))─┐
-│                                                11 │                                                ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+┌─joinGetOrNull('id_val', 'val', toUInt32(1))─┬─joinGetOrNull('id_val', 'val', toUInt32(999))─┐
+│                                          11 │                                          ᴺᵁᴸᴸ │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
 <div id="lowCardinalityIndices">
@@ -4058,24 +4088,24 @@ CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
 
-SELECT s, lowCardinalityIndices(s) FROM test;
+-- the order the blocks are read in is not defined, so sort the result to make it reproducible:
+
+SELECT s, lowCardinalityIndices(s) AS index FROM test ORDER BY s, index;
 ```
 
 ```response title=Response
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ab │                        1 │
-│ cd │                        2 │
-│ ab │                        1 │
-│ ab │                        1 │
-│ df │                        3 │
-└────┴──────────────────────────┘
-┌─s──┬─lowCardinalityIndices(s)─┐
-│ ef │                        1 │
-│ cd │                        2 │
-│ ab │                        3 │
-│ cd │                        2 │
-│ ef │                        1 │
-└────┴──────────────────────────┘
+┌─s──┬─index─┐
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     1 │
+│ ab │     3 │
+│ cd │     2 │
+│ cd │     2 │
+│ cd │     2 │
+│ df │     3 │
+│ ef │     1 │
+│ ef │     1 │
+└────┴───────┘
 ```
 
 <div id="lowCardinalityKeys">
@@ -4174,12 +4204,21 @@ materialize(x)
 -- verifying that the function throws an error for a non-constant argument.
 
 SELECT countMatches('foobarfoo', 'foo');
-SELECT countMatches('foobarfoo', materialize('foo'));
 ```
 
 ```response title=Response
 2
-Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
+```
+
+**تحويل قيمة ثابتة إلى عمود كامل**
+
+```sql title=Query
+SELECT countMatches('foobarfoo', materialize('foo'));
+```
+
+```response title=Response
+Received exception:
+Code: 44. DB::Exception: A value of illegal type was provided as 2nd argument 'pattern' to function 'countMatches'. Expected: constant String, got: String. (ILLEGAL_COLUMN)
 ```
 
 <div id="minSampleSizeContinuous">
@@ -4561,7 +4600,7 @@ SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b
 ```
 
 ```response title=Response
-A B
+SELECT 1	SELECT 1
 ```
 
 <div id="obfuscateQueryWithSeed">
@@ -4613,7 +4652,7 @@ SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)
 ```
 
 ```response title=Response
-SELECT fruit FROM table
+SELECT name FROM users
 ```
 
 **إخفاء الهوية الحتمي باستخدام seed نصي**
@@ -4623,17 +4662,17 @@ SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')
 ```
 
 ```response title=Response
-SELECT a, b FROM c
+SELECT id, value FROM data
 ```
 
-**قيمة seed نفسها تعطي النتيجة نفسها**
+**تؤدي قيمة seed نفسها إلى النتيجة نفسها**
 
 ```sql title=Query
 SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)
 ```
 
 ```response title=Response
-true
+1
 ```
 
 <div id="parseQueryToJSON">
@@ -4938,6 +4977,90 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 └───┴───┴────────────────┴───────────────┘
 ```
 
+<div id="pgGetUserById">
+  ## pgGetUserById
+</div>
+
+أُضيف في: v26.8.0
+
+دالة توافقية لبروتوكول الاتصال PostgreSQL، وهي مماثلة لـ `pg_catalog.pg_get_userbyid`.
+يستخدمها عملاء PostgreSQL (مثل الأمر `\d` في `psql`) لعرض مالك الجدول.
+لا يتتبع ClickHouse ملكية الجداول، لذا تتجاهل الدالة الوسيطة وتُرجع اسم المستخدم الحالي.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
+**البنية**
+
+```sql
+pgGetUserById(oid)
+```
+
+**الأسماء المستعارة**: `pg_get_userbyid`
+
+**الوسيطات**
+
+* `oid` — معرّف كائن الدور. تُتجاهل القيمة. [`UInt32`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+يعيد اسم المستخدم الحالي. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT pg_get_userbyid(10)
+```
+
+```response title=Response
+┌─pg_get_userbyid(10)─┐
+│ default             │
+└─────────────────────┘
+```
+
+<div id="pgTableIsVisible">
+  ## pgTableIsVisible
+</div>
+
+أُضيف في: v26.8.0
+
+دالة توافق مع بروتوكول الاتصال PostgreSQL، وهي نظير للدالة `pg_catalog.pg_table_is_visible`.
+تستخدمها عميل PostgreSQL (مثل الأمر `\d` في `psql`) لتصفية الجداول الظاهرة في مسار البحث.
+ونظرًا لأن العرض `pg_class` الذي يحاكيه ClickHouse لا يكشف إلا عن جداول قاعدة البيانات الحالية، وجميعها ظاهرة، فإن الدالة تُرجع دائمًا `1`.
+
+**الصياغة**
+
+```sql
+pgTableIsVisible(oid)
+```
+
+**الأسماء البديلة**: `pg_table_is_visible`
+
+**الوسيطات**
+
+* `oid` — معرّف كائن الجدول، كما هو معروض في طريقة العرض المحاكية `pg_class`. تُتجاهل القيمة. [`UInt32`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُرجع دائمًا `1`. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT pg_table_is_visible(0)
+```
+
+```response title=Response
+┌─pg_table_is_visible(0)─┐
+│                      1 │
+└────────────────────────┘
+```
+
 <div id="queryID">
   ## queryID
 </div>
@@ -4980,9 +5103,9 @@ SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}
 ```
 
 ```response title=Response
-┌─count(DISTINCT t)─┐
-│                 3 │
-└───────────────────┘
+┌─countDistinct(t)─┐
+│                3 │
+└──────────────────┘
 ```
 
 <div id="revision">
@@ -5056,37 +5179,26 @@ rowNumberInAllBlocks()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT rowNumberInAllBlocks()
-FROM
-(
-    SELECT *
-    FROM system.numbers_mt
-    LIMIT 10
-)
+-- The data is processed in blocks of two rows: rowNumberInBlock restarts from 0 in every block,
+-- while rowNumberInAllBlocks keeps counting across them.
+SELECT
+    number,
+    rowNumberInBlock(),
+    rowNumberInAllBlocks()
+FROM system.numbers
+LIMIT 6
 SETTINGS max_block_size = 2
 ```
 
 ```response title=Response
-┌─rowNumberInAllBlocks()─┐
-│                      0 │
-│                      1 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      4 │
-│                      5 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      2 │
-│                      3 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      6 │
-│                      7 │
-└────────────────────────┘
-┌─rowNumberInAllBlocks()─┐
-│                      8 │
-│                      9 │
-└────────────────────────┘
+┌─number─┬─rowNumberInBlock()─┬─rowNumberInAllBlocks()─┐
+│      0 │                  0 │                      0 │
+│      1 │                  1 │                      1 │
+│      2 │                  0 │                      2 │
+│      3 │                  1 │                      3 │
+│      4 │                  0 │                      4 │
+│      5 │                  1 │                      5 │
+└────────┴────────────────────┴────────────────────────┘
 ```
 
 <div id="rowNumberInBlock">
@@ -5135,20 +5247,12 @@ FROM
 ┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
-└────────────────────┘
-┌─rowNumberInBlock()─┐
 │                  0 │
 │                  1 │
 └────────────────────┘
@@ -5256,6 +5360,9 @@ runningConcurrency(start, end)
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE example_table (start Date, end Date) ENGINE = Memory;
+INSERT INTO example_table VALUES ('2025-03-03', '2025-03-11'), ('2025-03-06', '2025-03-08'), ('2025-03-07', '2025-03-09'), ('2025-03-11', '2025-03-12');
+
 SELECT start, runningConcurrency(start, end) FROM example_table;
 ```
 
@@ -5264,7 +5371,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 │ 2025-03-03 │                              1 │
 │ 2025-03-06 │                              2 │
 │ 2025-03-07 │                              3 │
-│ 2025-03-11 │                              2 │
+│ 2025-03-11 │                              1 │
 └────────────┴────────────────────────────────┘
 ```
 
@@ -5369,9 +5476,7 @@ WHERE diff != 1;
 ```response title=Response
 ┌─number─┬─diff─┐
 │      0 │    0 │
-└────────┴──────┘
-┌─number─┬─diff─┐
-│  65536 │    0 │
+│  65409 │    0 │
 └────────┴──────┘
 ```
 
@@ -5567,7 +5672,12 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 أُضيف في: v22.6.0
 
 يعرض معلومات عن شهادة SSL الخاصة بالخادم الحالي إذا كانت مُهيّأة.
+تُعاد خريطة فارغة إذا لم تكن لدى الخادم شهادة، على سبيل المثال، عندما تُوفَّر الشهادة باستخدام ACME ولم تُصدر بعد.
 راجع [إعداد TLS](/ar/concepts/features/security/tls/configuring-tls) لمزيد من المعلومات حول كيفية إعداد ClickHouse لاستخدام شهادات OpenSSL للتحقق من الاتصالات.
+
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **الصيغة**
 
@@ -5575,7 +5685,7 @@ SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 showCertificate()
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * لا شيء.
 
@@ -5645,7 +5755,6 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 row in set. Elapsed: 2.012 sec.
 ```
 
 <div id="sleepEachRow">
@@ -5857,8 +5966,8 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 ```
 
 ```response title=Response
-↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
-Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+Received exception:
+Code: 395. DB::Exception: Too many. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
 ```
 
 <div id="toColumnTypeName">
@@ -6191,46 +6300,55 @@ transform(x, array_from, array_to[, default])
 **transform(T, Array(T), Array(U), U) -&gt; U**
 
 ```sql title=Query
+CREATE TABLE hits (SearchEngineID UInt8, Referer String) ENGINE = Memory;
+
+INSERT INTO hits VALUES
+    (2, 'http://yandex.ru/search'),
+    (2, 'http://yandex.ru/news'),
+    (2, 'http://mail.yandex.ru/'),
+    (3, 'http://google.ru/search'),
+    (4, 'http://duckduckgo.com/'),
+    (0, 'http://vkontakte.ru/feed'),
+    (0, '');
+
 SELECT
 transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
 count() AS c
-FROM test.hits
+FROM hits
 WHERE SearchEngineID != 0
 GROUP BY title
-ORDER BY c DESC
+ORDER BY c DESC, title
 ```
 
 ```response title=Response
-┌─title─────┬──────c─┐
-│ Yandex    │ 498635 │
-│ Google    │ 229872 │
-│ Other     │ 104472 │
-└───────────┴────────┘
+┌─title──┬─c─┐
+│ Yandex │ 3 │
+│ Google │ 1 │
+│ Other  │ 1 │
+└────────┴───┘
 ```
 
 **transform(T, Array(T), Array(T)) -&gt; T**
 
 ```sql title=Query
+-- Without a default, a domain that is not listed is returned unchanged.
 SELECT
 transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
-FROM test.hits
+FROM hits
 GROUP BY domain(Referer)
-ORDER BY count() DESC
+ORDER BY count() DESC, s
 LIMIT 10
 ```
 
 ```response title=Response
-┌─s──────────────┬───────c─┐
-│                │ 2906259 │
-│ www.yandex     │  867767 │
-│ ███████.ru     │  313599 │
-│ mail.yandex.ru │  107147 │
-│ ██████.ru      │  100355 │
-│ █████████.ru   │   65040 │
-│ news.yandex.ru │   64515 │
-│ ██████.net     │   59141 │
-│ example.com    │   57316 │
-└────────────────┴─────────┘
+┌─s──────────────┬─c─┐
+│ www.yandex     │ 2 │
+│                │ 1 │
+│ duckduckgo.com │ 1 │
+│ example.com    │ 1 │
+│ mail.yandex.ru │ 1 │
+│ vk.com         │ 1 │
+└────────────────┴───┘
 ```
 
 <div id="uniqThetaIntersect">
@@ -6589,7 +6707,7 @@ SELECT zookeeperSessionUptime();
 
 ```response title=Response
 ┌─zookeeperSessionUptime()─┐
-│                      286 │
+│                        3 │
 └──────────────────────────┘
 ```
 

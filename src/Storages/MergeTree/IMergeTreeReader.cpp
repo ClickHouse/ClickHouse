@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
@@ -187,6 +188,43 @@ void IMergeTreeReader::fillMissingColumns(
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
+            /// Markers use part-time physical names; reads expose current names.
+            const auto & part_missing_columns = data_part_info_for_read->getSerializationInfos().getMissingColumns();
+            NameSet missing_column_names;
+            if (!part_missing_columns.empty())
+            {
+                size_t column_index = 0;
+                for (const auto & column : converted_requested_columns)
+                {
+                    auto name_in_part = column.getNameInStorage();
+                    if (alter_conversions->isColumnRenamed(name_in_part))
+                        name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+                    /// DROP/CLEAR invalidates both the physical and current name.
+                    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+                    if (alter_conversions->isColumnDropped(name_in_part, share_nested)
+                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested))
+                    {
+                        ++column_index;
+                        continue;
+                    }
+
+                    if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
+                    {
+                        missing_column_names.insert(column.getNameInStorage());
+                        if (!res_columns[column_index] && !missing_info->type_name.empty())
+                        {
+                            auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
+                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            if (column.isSubcolumn())
+                                frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
+                            res_columns[column_index] = std::move(frozen_column);
+                        }
+                    }
+                    ++column_index;
+                }
+            }
+
             bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
@@ -197,6 +235,7 @@ void IMergeTreeReader::fillMissingColumns(
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
+                missing_column_names,
                 share_nested,
                 previous_step_columns);
 
@@ -376,14 +415,18 @@ NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & requir
 
     if (!column_in_part)
     {
-        /// If column is missing in part, return column with required type but with name that should be
-        /// in part according to renames to avoid ambiguity in case of transitive renames.
-        ///
-        /// Consider that we have column A in part and the following chain (not materialized in current part) of alters:
-        /// ADD COLUMN B, RENAME COLUMN A TO C, RENAME COLUMN B TO A.
-        /// If requested columns are A and C, we will read column A from part (as column C) and will
-        /// add missing column B (as column A) to fill with default values, because the first name of this column was B.
-        return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
+        const auto & infos = data_part_info_for_read->getSerializationInfos();
+        DataTypePtr type_in_part = required_column.getTypeInStorage();
+        DataTypePtr requested_type_in_part = required_column.type;
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        {
+            type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            requested_type_in_part = name_pair.second.empty()
+                ? type_in_part
+                : type_in_part->getSubcolumnType(name_pair.second);
+        }
+
+        return NameAndTypePair{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
     }
 
     return *column_in_part;
@@ -397,6 +440,18 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 
     if (!column_in_part)
     {
+        const auto & infos = data_part_info_for_read->getSerializationInfos();
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        {
+            auto type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            NameAndTypePair missed_column{
+                name_pair.first,
+                name_pair.second,
+                type_in_part,
+                name_pair.second.empty() ? type_in_part : type_in_part->getSubcolumnType(name_pair.second)};
+            return IDataType::getSerialization(missed_column);
+        }
+
         NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
         return IDataType::getSerialization(missed_column);
     }

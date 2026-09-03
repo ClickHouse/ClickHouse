@@ -69,8 +69,7 @@ TEST(AggregatingStep, ClearsReadStreamCountWasReducedFlag)
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false,
-        /*enable_sharding_aggregator=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
 
     /// Build a single-stream pipeline from a header-only source.
     QueryPipelineBuilder builder;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/ioctl.h>
+#include <termios.h>
 
 
 /// Portable replacement for libc's `openpty` using POSIX `posix_openpt`/`grantpt`/`unlockpt`.

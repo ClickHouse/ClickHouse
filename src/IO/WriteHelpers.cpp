@@ -103,7 +103,24 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
             && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
     };
 
+    /// These are valid identifiers that the parser reads back as a literal instead of an identifier:
+    /// `ParserNumber` hands a bare word to `strtod`, which accepts `inf`, `infinity` and `nan`, and
+    /// `true`/`false` are parsed as `Bool` literals. (`null` is already rejected by
+    /// `isValidIdentifier`.) Left unquoted, a reference to a column with such a name silently turns
+    /// into a constant: a table with a column named `inf` has `ORDER BY inf` written to its
+    /// metadata, and the next server start fails to load it with `Sorting key cannot contain
+    /// constants`.
+    auto isParsedAsLiteral = [&](std::string_view identifier)
+    {
+        return isCaseInsensitiveEqual(identifier, "inf")
+            || isCaseInsensitiveEqual(identifier, "infinity")
+            || isCaseInsensitiveEqual(identifier, "nan")
+            || isCaseInsensitiveEqual(identifier, "true")
+            || isCaseInsensitiveEqual(identifier, "false");
+    };
+
     if (isValidIdentifier(s)
+        && !isParsedAsLiteral(s)
         && !isCaseInsensitiveEqual(s, "distinct")
         && !isCaseInsensitiveEqual(s, "all")
         && !isCaseInsensitiveEqual(s, "table")

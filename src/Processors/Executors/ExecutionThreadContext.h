@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/Executors/ExecutingGraph.h>
 #include <Processors/StepWallClockRegistry.h>
-#include <queue>
 #include <condition_variable>
 
 namespace DB
@@ -59,8 +58,6 @@ public:
     ExecutingGraph::Node * getTask() const { return node; }
     ExecutingGraph::Node * popTask() { return std::exchange(node, nullptr); }
     bool executeTask();
-
-    std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();

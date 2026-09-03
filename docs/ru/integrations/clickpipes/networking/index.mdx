@@ -1,13 +1,13 @@
 ---
-sidebarTitle: 'Сеть'
-description: 'Параметры сетевой конфигурации для ClickPipes.'
-slug: /integrations/clickpipes/networking
-title: 'Сеть'
-doc_type: 'guide'
-keywords: ['сеть clickpipes', 'частное сетевое подключение', 'обратная частная конечная точка', 'aws privatelink', 'gcp private service connect', 'частное подключение', 'azure privatelink']
+title: "Обзор"
+sidebarTitle: "Обзор"
+description: "Параметры сетевой конфигурации для ClickPipes."
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["сеть clickpipes", "частное сетевое подключение", "обратная частная конечная точка", "aws privatelink", "gcp private service connect", "частное подключение", "azure privatelink"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 В зависимости от конфигурации сети вашего исходного источника данных можно подключить ClickPipes одним из следующих способов:
@@ -26,11 +26,11 @@ integration:
 
 Поддержка RPE зависит от облачного провайдера и региона, в котором размещён ваш источник данных:
 
-| Провайдер                                                                   | Поддерживается | Примечания                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AWS PrivateLink](/ru/integrations/clickpipes/networking/aws-privatelink)      | Да             | Для источников данных, размещённых в AWS. Межрегиональное подключение можно настроить с помощью VPC endpoint service.                                                                                                                                          |
-| [GCP Private Service Connect](/ru/integrations/clickpipes/networking/gcp-psc)  | Да             | Для источников данных `AlloyDB`, размещённых в GCP. Межрегиональное подключение через Global Access пока не поддерживается; используйте [SSH-туннелирование](#ssh-tunneling) для доступа к частному источнику данных `AlloyDB` в неподдерживаемом регионе GCP. |
-| [Azure Private Link](/ru/integrations/clickpipes/networking/azure-privatelink) | Нет            | Используйте [SSH-туннелирование](#ssh-tunneling) для доступа к частному источнику данных Azure.                                                                                                                                                                |
+| Провайдер                                                                   | Поддерживается | Примечания                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/ru/integrations/clickpipes/networking/aws-privatelink)      | Да             | Для источников данных, размещённых в AWS. Межрегиональное подключение можно настроить с помощью VPC endpoint service.                                                                                                      |
+| [GCP Private Service Connect](/ru/integrations/clickpipes/networking/gcp-psc)  | Да             | Для источников данных, размещённых в GCP. Межрегиональное подключение можно настроить с помощью [глобального доступа](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). |
+| [Azure Private Link](/ru/integrations/clickpipes/networking/azure-privatelink) | Нет            | Используйте [SSH-туннелирование](#ssh-tunneling) для доступа к частному источнику данных Azure.                                                                                                                            |
 
 <div id="ssh-tunneling">
   ## SSH-туннелирование
@@ -42,4 +42,4 @@ integration:
 
 * Источник данных размещен в Azure.
 * Источник данных и ClickPipes размещены у разных облачных провайдеров или в разных регионах, и возможность межрегионального подключения с помощью [управляемых частных конечных точек](#managed-private-endpoints) отсутствует.
-* Нет возможности использовать [управляемые частные конечные точки](#managed-private-endpoints), например при развертываниях в собственной инфраструктуре, доступ к которым возможен только через бастион-хост.
+* Нет возможности использовать [управляемые частные конечные точки](#managed-private-endpoints), *например* при развертываниях в собственной инфраструктуре, доступ к которым возможен только через бастион-хост.

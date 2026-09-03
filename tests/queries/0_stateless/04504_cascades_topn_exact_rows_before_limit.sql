@@ -17,7 +17,6 @@ SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_topn_exact": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';

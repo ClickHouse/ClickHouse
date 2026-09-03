@@ -17,9 +17,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
   ## join_algorithm
 </div>
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "`ie_join`이 기본 목록에 추가되어 `ON` 절에 부등 조건만 있는 조인은 필터가 있는 `CROSS JOIN` 대신 IEJoin으로 실행됩니다. 마지막에 있으므로 다른 알고리즘이 적용되지 않을 때만 사용됩니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default'는 조인 알고리즘을 명시적으로 지정하는 방식으로 대체되어 Deprecated 상태가 되었으며, 이제 hash보다 parallel_hash가 우선 사용됩니다"}]}]} />
 
 어떤 [JOIN](/ko/reference/statements/select/join) 알고리즘을 사용할지 지정합니다.
 
@@ -60,7 +60,7 @@ grace 조인의 첫 번째 단계에서는 오른쪽 테이블을 읽고 키 컬
 
 `RIGHT JOIN`과 `FULL JOIN`은 `ALL` 엄격성에서만 지원됩니다(`SEMI`, `ANTI`, `ANY`, `ASOF`는 지원되지 않음).
 
-`partial_merge` 알고리즘을 사용할 때 ClickHouse는 데이터를 정렬한 뒤 디스크에 기록합니다. ClickHouse의 `partial_merge` 알고리즘은 고전적인 구현과 약간 다릅니다. 먼저 ClickHouse는 오른쪽 테이블을 블록 단위로 조인 키 기준 정렬하고, 정렬된 블록에 대해 MinMax 인덱스를 생성합니다. 그런 다음 왼쪽 테이블의 일부를 `join key` 기준으로 정렬한 뒤 오른쪽 테이블과 조인합니다. 불필요한 오른쪽 테이블 블록을 건너뛰는 데에도 MinMax 인덱스가 사용됩니다.
+`partial_merge` 알고리즘을 사용할 때 ClickHouse는 데이터를 정렬하고 디스크에 덤프합니다. ClickHouse의 `partial_merge` 알고리즘은 고전적인 구현과 약간 다릅니다. 먼저 ClickHouse는 오른쪽 테이블을 조인 키로 블록 단위로 정렬하고 정렬된 블록에 대한 min-max 인덱스를 생성합니다. 그런 다음 왼쪽 테이블의 파트를 `join key`로 정렬하고 오른쪽 테이블에 조인합니다. min-max 인덱스는 불필요한 오른쪽 테이블 블록을 건너뛰는 데도 사용됩니다.
 
 * direct
 
@@ -83,7 +83,7 @@ MergeTree 테이블의 경우 이 알고리즘은 조인 키 필터를 스토리
 
 조인 대상 테이블의 표현식 간 부등식 비교(`<`, `<=`, `>`, `>=`)가 2개 있는 `ON` 절을 포함하는 `JOIN`을 위한 정렬 기반 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 알고리즘입니다. `ALL INNER/LEFT/RIGHT/FULL JOIN` 및 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`을 지원합니다.
 
-목록 내 위치가 우선순위를 결정합니다. 다른 알고리즘 뒤에 나열하면 IEJoin은 해당 알고리즘을 적용할 수 없을 때만 사용됩니다(`ON` 절에 동등 조건이 없는 경우). 첫 번째로 나열하면 `ON` 절에 부등 조건이 2개 있을 때마다 사용됩니다. 나머지 조건(동등 조건 포함)은 `ALL INNER JOIN`에서는 조인 결과에 대한 필터로 적용되며, 다른 종류에서는 매칭에 영향을 주는 잔여 조건으로 연산자 내부에서 평가됩니다. 목록에 `ie_join`이 없으면 부등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되며, 다른 종류는 지원되지 않습니다.
+목록 내 위치가 우선순위를 결정합니다. 기본값처럼 다른 알고리즘 뒤에 나열하면 IEJoin은 해당 알고리즘을 적용할 수 없을 때만 사용됩니다(`ON` 절에 동등 조건이 없는 경우). 첫 번째로 나열하면 `ON` 절에 부등 조건이 2개 있을 때마다 사용됩니다. 나머지 조건(동등 조건 포함)은 `ALL INNER JOIN`에서는 조인 결과에 대한 필터로 적용되며, 다른 종류에서는 매칭에 영향을 주는 잔여 조건으로 연산자 내부에서 평가됩니다. 목록에 `ie_join`이 없으면 부등 조건만 있는 `INNER JOIN`은 필터가 적용된 `CROSS JOIN`으로 실행되며, 다른 종류는 지원되지 않습니다.
 
 두 입력은 조인 전에 모두 메모리에 누적됩니다. [`max_rows_in_join`](/ko/reference/settings/session-settings/max-rows#max_rows_in_join) 및 [`max_bytes_in_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_in_join)은 양쪽의 누적 입력을 함께 제한하며(오른쪽만이 아님), 오버플로우 시 수행할 작업은 [`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)로 설정합니다. 누적된 입력 위에 연산자가 구축하는 정렬 인덱스는 제한에 포함되지 않습니다. 조인 연산자 자체는 단일 스레드에서 실행되며, 입력의 조인 전 정렬만 병렬화됩니다.
 
@@ -106,7 +106,7 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하려고 시�
 * default (deprecated)
 
 레거시 값이므로 더 이상 사용하지 마십시오.
-`direct,hash`와 같으며, 즉 direct 조인과 hash 조인을 이 순서대로 사용하려고 시도합니다.
+`direct,hash`와 같으며, 즉 direct 조인과 해시 조인을 이 순서대로 사용하려고 시도합니다.
 
 <div id="join_any_take_last_row">
   ## join_any_take_last_row

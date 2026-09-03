@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
+#include <IO/ReadBuffer.h>
 #include <Common/ProductQuantizer.h>
 #include <Common/VectorQuantizer.h>
 #include <Common/Exception.h>
@@ -288,6 +289,53 @@ void SerializationQuantizedVector::serializeBinaryBulkWithMultipleStreams(
     auto codes_column = encodeCodes(column, offset, count, codebook);
     SerializeBinaryBulkStatePtr codes_state;
     codes_serialization->serializeBinaryBulkWithMultipleStreams(*codes_column, 0, codes_column->size(), settings, codes_state);
+}
+
+void SerializationQuantizedVector::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    /// Only a Compact part interleaves the codes with this granule's array bytes, so only there can the array streams
+    /// be left mid-granule. Wide gives each substream its own file, and Native writes no codes at all.
+    if (settings.data_part_type != MergeTreeDataPartType::Compact)
+    {
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// A Compact reader may skip the per-granule seek and inherit the stream position, which the unread codes make
+    /// wrong. Re-assert it absolutely from this granule's mark; a no-op when already positioned.
+    if (settings.seek_stream_to_current_mark_callback)
+    {
+        settings.path.push_back(Substream::ArraySizes);
+        settings.seek_stream_to_current_mark_callback(settings.path);
+        settings.path.pop_back();
+
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// No marks to seek to, so consume this granule's codes instead. Only valid if the nested read actually advanced
+    /// the stream: served from the substreams cache it does not, and consuming then would itself desync it.
+    settings.path.push_back(Substream::ArraySizes);
+    const ReadBuffer * array_stream = settings.getter(settings.path);
+    settings.path.pop_back();
+    const size_t bytes_before = array_stream ? array_stream->count() : 0;
+
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+
+    if (!array_stream || array_stream->count() == bytes_before)
+        return;
+
+    /// Consume this granule's codes through the codes serialization rather than by byte arithmetic;
+    /// a no-op if the getter has no codes stream.
+    auto codes = codes_type->createColumn();
+    DeserializeBinaryBulkStatePtr codes_state;
+    codes_serialization->deserializeBinaryBulkWithMultipleStreams(
+        *codes, limit, settings, codes_state, /*cache=*/nullptr);
 }
 
 void SerializationQuantizedVector::serializeBinaryBulkStateSuffix(

@@ -33,7 +33,6 @@ void registerInterpreterAlterNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory);
-void registerInterpreterWatchQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
@@ -104,7 +103,6 @@ void registerInterpreters()
     registerInterpreterCheckQuery(factory);
     registerInterpreterKillQueryQuery(factory);
     registerInterpreterSystemQuery(factory);
-    registerInterpreterWatchQuery(factory);
     registerInterpreterCreateUserQuery(factory);
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);

@@ -65,7 +65,7 @@ doc_type: 'guide'
     لتحميل مجموعة البيانات من ملف `Parquet`، نفّذ تعليمة SQL التالية:
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     سيستغرق إدخال 28.74 مليون صف في الجدول بضع دقائق.
@@ -103,12 +103,12 @@ doc_type: 'guide'
   </Step>
 
   <Step title="توليد تضمينات لاستعلام البحث" id="generating-embeddings-for-search-query">
-    توفر [Sentence Transformers](https://www.sbert.net/) نماذج تضمين محلية وسهلة الاستخدام لاستخلاص المعنى الدلالي للجمل والفقرات.
+    توفر [Sentence Transformers](https://www.sbert.net/) نماذج تضمين محلية وسهلة الاستخدام لالتقاط المعنى الدلالي للجمل والفقرات.
 
-    تحتوي مجموعة البيانات الخاصة بـ HackerNews على تضمينات متجهية مُولَّدة باستخدام نموذج
+    تحتوي مجموعة بيانات HackerNews هذه على تمثيلات متجهية (تضمينات) تم إنشاؤها باستخدام نموذج
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
-    يُقدَّم فيما يلي مثال على سكريبت بايثون يوضح كيفية توليد متجهات التضمين برمجيًا باستخدام حزمة بايثون `sentence_transformers`. يُمرَّر بعد ذلك متجه تضمين البحث وسيطًا إلى دالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في الاستعلام &#96;SELECT&#96;.
+    يُقدَّم فيما يلي مثال على سكريبت بايثون يوضح كيفية توليد متجهات التضمين برمجيًا باستخدام حزمة بايثون `sentence_transformers`. يُمرَّر بعد ذلك متجه تضمين البحث كوسيط إلى دالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT`.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -225,11 +225,11 @@ doc_type: 'guide'
     4. يستخدم `LangChain` وواجهة Chat API من OpenAI للنموذج `gpt-3.5-turbo` **لتلخيص** المحتوى المسترجع في الخطوة رقم 3.
        وتُمرَّر المنشورات/التعليقات المسترجعة في الخطوة رقم 3 على أنها *سياق* إلى Chat API، وهي حلقة الوصل الأساسية في Generative AI.
 
-    يُعرض أدناه أولاً مثال على تشغيل تطبيق التلخيص، يليه الكود الخاص بهذا التطبيق. يتطلب تشغيل التطبيق ضبط مفتاح OpenAI API في متغير البيئة `OPENAI_API_KEY`. يمكن الحصول على مفتاح OpenAI API بعد التسجيل في https://platform.openai.com.
+    أدناه مثال على تشغيل تطبيق التلخيص، يليه كود التطبيق. يتطلب تشغيل التطبيق ضبط مفتاح OpenAI API في متغير البيئة `OPENAI_API_KEY`. يمكن الحصول على مفتاح OpenAI API بعد التسجيل على https://platform.openai.com.
 
-    يُوضّح هذا التطبيق حالة استخدام للذكاء الاصطناعي التوليدي (Generative AI) قابلة للتطبيق في مجالات مؤسسية متعددة، منها:
+    يُوضّح هذا التطبيق حالة استخدام للذكاء الاصطناعي التوليدي قابلة للتطبيق في مجالات مؤسسية متعددة، مثل:
     تحليل مشاعر العملاء، وأتمتة الدعم الفني، واستخراج المعلومات من محادثات المستخدمين، والوثائق القانونية، والسجلات الطبية،
-    ومحاضر الاجتماعات، والبيانات المالية، وغير ذلك.
+    محاضر الاجتماعات، والبيانات المالية، وغيرها.
 
     ```shell
     $ python3 summarize.py

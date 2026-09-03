@@ -7,9 +7,12 @@ keywords: ['prometheus', 'grafana', '监控', '指标', 'exporter']
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 此功能支持集成 [Prometheus](https://prometheus.io/)，用于监控 ClickHouse Cloud 服务。Prometheus 指标通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 端点提供，您可以通过该端点安全地连接，并将指标导出到您的 Prometheus 指标收集器中。这些指标还可以集成到仪表盘中，例如 Grafana、Datadog，以便进行可视化。
+
+附加到服务的 [ClickPipes](/zh/integrations/clickpipes) 指标会与该服务的 ClickHouse 指标一同包含在内。
 
 要开始使用，请先[生成 API key](/zh/products/cloud/features/admin-features/api/openapi)。
 
@@ -23,18 +26,25 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ### API 参考文档
 </div>
 
-| 方法  | 路径                                                                                                                              | 描述           |
-| --- | ------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 返回特定服务的指标    |
-| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 返回组织内所有服务的指标 |
+| 方法  | 路径                                                                                                                              | 描述                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 返回特定服务的指标                                                                                        |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **已弃用。** 返回组织内所有服务的指标                                                                            |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | 以 [HTTP 服务发现](https://prometheus.io/docs/prometheus/latest/http_sd/)格式返回组织内所有服务的 Prometheus 抓取目标 |
+
+<Note>
+  组织范围的指标端点 (`GET /v1/organizations/{organizationId}/prometheus`) 已弃用，建议改用[自动服务发现](#automatic-service-discovery)。现有组织可以继续使用它；新创建的组织则改用发现端点。如果您需要访问此端点，请联系 ClickHouse 支持团队。
+</Note>
 
 **请求参数**
 
-| 名称                   | 位置   | 类型            |
-| -------------------- | ---- | ------------- |
-| Organization ID      | 端点地址 | uuid          |
-| Service ID           | 端点地址 | uuid (可选)     |
-| filtered&#95;metrics | 查询参数 | boolean (可选)  |
+| 名称                   | 位置   | 类型           |
+| -------------------- | ---- | ------------ |
+| Organization ID      | 端点地址 | uuid         |
+| Service ID           | 端点地址 | uuid (可选)    |
+| filtered&#95;metrics | 查询参数 | boolean (可选) |
+
+这些端点的完整请求和响应 schema 可在 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus)中查看。
 
 <div id="authentication">
   ### 身份验证
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 请注意，必须将配置参数 `honor_labels` 设为 `true`，实例标记才能被正确填充。另请注意，在上述示例中，`filtered_metrics` 被设置为 `true`，但实际应根据用户偏好进行配置。
+
+<div id="automatic-service-discovery">
+  ### 自动服务发现
+</div>
+
+<BetaBadge />
+
+发现端点会以 Prometheus [HTTP 服务发现](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) 格式，为组织中的每个服务返回一个抓取目标。Prometheus 会在每次发现轮询时刷新目标列表，并抓取每个发现到的目标，因此新创建的服务会自动纳入其中，已删除的服务则会从目标列表中移除。仅包含您的 API key 有权查看的服务；正在删除或已删除的服务不会包含在内。
+
+要使用此功能，请将 [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job 配置为指向发现端点：
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+在两个位置设置 `basic_auth`：`http_sd_configs` 下的块用于对发现轮询进行身份验证，抓取作业中的块则用于对各服务的指标抓取进行身份验证。与静态配置一样，请设置 `honor_labels: true`，以正确填充标签。
+
+发现响应示例：
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+已发现的目标会使用 `filtered_metrics=true` 抓取指标。若要发现抓取完整指标集的目标，请在服务发现 URL 中添加 `?filtered_metrics=false`。完整端点规范请参阅 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)。
 
 <div id="integrating-with-grafana">
   ## 与 Grafana 集成

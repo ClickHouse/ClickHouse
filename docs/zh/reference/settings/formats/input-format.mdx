@@ -624,7 +624,7 @@ JSON 中字段的最大深度。这不是严格限制，无需精确执行。
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "新增设置，用于限制单个 JSON 对象的最大字节大小"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "536870912"},{"label": "新增设置，用于限制单个 JSON 对象的最大字节大小"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "新增设置，用于限制单个 JSON 对象的最大字节大小"}]}]} />
 
 单个 JSON 对象允许的最大字节大小。超过此限制的对象将被拒绝，因为它们很可能格式不正确。这可防止格式不正确的 JSON 文档被作为单个对象解析时导致内存耗尽。并行和非并行解析路径均采用相同的限制。设为 0 可禁用此检查。
 

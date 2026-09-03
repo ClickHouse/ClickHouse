@@ -86,11 +86,15 @@ engine = create_engine(
 
 En este modo, cada valor vinculado debe tener un tipo de SQLAlchemy compatible con ClickHouse. Las listas `IN` compatibles se convierten en parámetros `Array` tipados de ClickHouse. El compilador genera `CompileError` cuando no puede deducir un tipo compatible ni procesar de forma segura una vinculación.
 
+Los nombres de vinculación deben ser nombres BareWord ASCII de ClickHouse. Los nombres que empiezan y terminan con `$` se rechazan porque el driver principal los reserva para parámetros de consulta binarios sin procesar.
+
 <div id="sqlalchemy-core-queries">
   ## Consultas de SQLAlchemy Core
 </div>
 
-El dialecto admite consultas `SELECT` de SQLAlchemy Core con `JOIN`, filtros, ordenación, límites y `OFFSET`, y `DISTINCT`.
+El dialecto admite consultas `SELECT` de SQLAlchemy Core con `JOIN`, filtros, ordenación, límites y `OFFSET`, `DISTINCT` y consultas compuestas.
+
+`union()`, `intersect()` y `except_()` de SQLAlchemy se compilan en `UNION DISTINCT`, `INTERSECT DISTINCT` y `EXCEPT DISTINCT` de ClickHouse. Sus equivalentes `union_all()`, `intersect_all()` y `except_all()` se compilan en los operadores `ALL` correspondientes. Esta correspondencia explícita preserva la semántica de duplicados de SQLAlchemy independientemente de los valores predeterminados de las operaciones de conjuntos de ClickHouse.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### Representación de literales
+</div>
+
+Cuando SQLAlchemy inserta en línea un valor vinculado mediante `literal_binds` o `literal_execute`, el dialecto utiliza el entrecomillado de ClickHouse para los tipos String genéricos y los tipos de ClickHouse. Esto también se aplica a través de envolturas `TypeDecorator` y selecciones `with_variant()`. Los valores String conservan los signos de porcentaje y las barras invertidas, incluso cuando quedan otros parámetros vinculados.
 
 <div id="sqlalchemy-json-subcolumns">
   ### Subcolumnas JSON
@@ -199,6 +209,20 @@ Los métodos `Select` de ClickHouse son:
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                               |
 | `.ch_join(...)`                          | JOIN de ClickHouse con opciones `strictness`, `distribution`, `using` y `cross` |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                               |
+
+`Select.with_hint()` de SQLAlchemy es una API de sugerencias de tabla. El dialecto de ClickHouse no genera sugerencias de tabla. Una sugerencia aplicable con comodín o `clickhousedb` emite un `SAWarning` y no modifica el SQL generado. Utilice `final()`, `sample()`, `prewhere()` o `limit_by()` para esas cláusulas de ClickHouse.
+
+`Select.with_statement_hint()` es una API de directivas finales sin procesar. Añade el texto proporcionado al final del `SELECT` sin validación específica de ClickHouse. Sigue disponible para SQL estático de confianza, como `SETTINGS max_threads=1`:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+Para los ajustes de ClickHouse, utilice preferentemente opciones de ejecución para que el driver los gestione por separado del texto SQL:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 Por ejemplo, un `GLOBAL ANY LEFT JOIN` de ClickHouse puede encadenarse sin anidar un `FromClause` personalizado:
 
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 Las columnas reflejadas incluyen `server_default` para las expresiones `DEFAULT` y atributos específicos del dialecto, como `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized` y `clickhouse_alias`, cuando están presentes.
+
+Los valores String de las cláusulas `DEFAULT`, `MATERIALIZED`, `ALIAS` y `TTL` utilizan el mecanismo de escape de cadenas de ClickHouse. El mismo mecanismo de escape se aplica a los comentarios de tablas, diccionarios y columnas, incluidos los comentarios generados por Alembic.
 
 Los argumentos de clave de MergeTree, como `order_by`, `partition_by`, `primary_key`, `sample_by` y `ttl`, aceptan columnas y expresiones SQL de SQLAlchemy, así como cadenas simples.
 

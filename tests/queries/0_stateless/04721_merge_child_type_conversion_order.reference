@@ -1,0 +1,147 @@
+-- smallest and largest values through a top-level ORDER BY
+0
+18446744073709550617
+18446744073709550618
+18446744073709551615
+18446744073709551614
+18446744073709551613
+0
+18446744073709550617
+18446744073709550618
+0
+100000
+100001
+18446744073709551615
+18446744073709551614
+18446744073709551613
+0
+18446744073709550617
+18446744073709550618
+0
+100000
+100001
+18446744073709551615
+18446744073709551614
+18446744073709551613
+-999
+-998
+-997
+100000
+100001
+100002
+-- the reported DISTINCT query, both analyzers
+0
+18446744073709550617
+18446744073709550618
+0
+18446744073709550617
+18446744073709550618
+1000	0	18446744073709551615
+-- aggregate states must survive the child stage as well
+0	18446744073709551615
+0	18446744073709551615
+0	18446744073709551615
+-999	0
+-- window sort with no top-level ORDER BY (the shape the fuzzer reported)
+0
+-- LIMIT BY and the negative LIMIT sibling
+0
+18446744073709550617
+18446744073709550618
+18446744073709551613
+18446744073709551614
+18446744073709551615
+-- UNION ALL forwards the claim upward
+2200	1100
+-- GROUP BY over the nested and aliased carriers
+1000	0	18446744073709551615
+1100	0	18446744073709551615
+-- controls: matching types keep the stage pushed down, so the merge step survives
+1
+1
+-- controls: differing but order-preserving types keep the stage too
+1
+1
+-999
+-998
+-997
+-999
+-998
+-997
+-- a self-referential Merge must not hang
+0
+-- MergeTree child under read-in-order and aggregation-in-order
+0
+18446744073709550617
+18446744073709550618
+1000	0	18446744073709551615
+-- an ALIAS column crosses the same boundary
+0
+18446744073709550617
+18446744073709550618
+18446744073709551615
+18446744073709551614
+18446744073709551613
+-999
+-998
+-997
+0
+1
+-- order-preserving conversions inside supported wrappers keep the stage
+1
+1
+1
+-49
+-48
+-47
+a
+b
+c
+1
+2
+3
+-- the same wrapper shape with the declared type left to Merge to derive
+Nullable(String)
+1
+0
+1
+10
+-- an Enum narrowing stays refused even though the target contains the source values
+0
+d
+c
+-- widening into the wide integer types keeps the stage as well
+1
+1
+1
+1
+-999
+-998
+-997
+100000
+100001
+100002
+100000
+100001
+100002
+1
+2
+3
+0
+-- element widening inside Array keeps the stage
+Array(Int64)
+1
+[-199]
+[-198]
+[-197]
+-- an order-breaking element conversion, or a one-sided Array, stays refused
+0
+0
+-- Tuple and Map need their own analysis, so they stay refused
+0
+0
+-- an equal-width signedness flip inside LowCardinality stays refused
+0
+0
+18446744073709551567
+18446744073709551568

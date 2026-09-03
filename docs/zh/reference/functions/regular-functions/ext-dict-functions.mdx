@@ -498,9 +498,9 @@ SELECT dictGetChildren('hierarchical_dictionary', 2);
 ```
 
 ```response title=Response
-┌─dictGetChild⋯ionary', 2)─┐
-│ [4,5]                    │
-└──────────────────────────┘
+┌─dictGetChildren('hierarchical_dictionary', 2)─┐
+│ [4,5]                                         │
+└───────────────────────────────────────────────┘
 ```
 
 <div id="dictGetDate">
@@ -548,9 +548,9 @@ SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetDate(⋯_value', 1)─┐
-│               2020-01-01 │
-└──────────────────────────┘
+┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
+│                                     2020-01-01 │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetDateOrDefault">
@@ -603,12 +603,12 @@ SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01
 ```
 
 ```response title=Response
-┌─dictGetDate(⋯_value', 1)─┐
-│               2024-01-15 │
-└──────────────────────────┘
-┌─dictGetDateO⋯70-01-01'))─┐
-│               1970-01-01 │
-└──────────────────────────┘
+┌─dictGetDate('all_types_dict', 'Date_value', 1)─┐
+│                                     2024-01-15 │
+└────────────────────────────────────────────────┘
+┌─dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'))─┐
+│                                                                      1970-01-01 │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetDateTime">
@@ -656,9 +656,9 @@ SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetDateT⋯_value', 1)─┐
-│      2024-01-15 10:30:00 │
-└──────────────────────────┘
+┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
+│                                    2024-01-15 10:30:00 │
+└────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetDateTimeOrDefault">
@@ -711,12 +711,12 @@ SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateT
 ```
 
 ```response title=Response
-┌─dictGetDateT⋯_value', 1)─┐
-│      2024-01-15 10:30:00 │
-└──────────────────────────┘
-┌─dictGetDateT⋯0:00:00'))──┐
-│      1970-01-01 00:00:00 │
-└──────────────────────────┘
+┌─dictGetDateTime('all_types_dict', 'DateTime_value', 1)─┐
+│                                    2024-01-15 10:30:00 │
+└────────────────────────────────────────────────────────┘
+┌─dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'))─┐
+│                                                                                  1970-01-01 00:00:00 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetDescendants">
@@ -768,9 +768,9 @@ SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 ```
 
 ```response title=Response
-┌─dictGetDesce⋯ary', 0, 2)─┐
-│ [3,2]                    │
-└──────────────────────────┘
+┌─dictGetDescendants('hierarchical_dictionary', 0, 2)─┐
+│ [3,2]                                               │
+└─────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetFloat32">
@@ -818,9 +818,9 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetFloat⋯_value', 1)─┐
-│               -123.123   │
-└──────────────────────────┘
+┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
+│                                             -123.123 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetFloat32OrDefault">
@@ -926,9 +926,9 @@ SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetFloat⋯_value', 1)─┐
-│                 -123.123 │
-└──────────────────────────┘
+┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
+│                                             -123.123 │
+└──────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetFloat64OrDefault">
@@ -981,12 +981,12 @@ SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 ```
 
 ```response title=Response
-┌─dictGetFloat⋯_value', 1)─┐
-│            987654.123456 │
-└──────────────────────────┘
-┌─dictGetFloat⋯, 999, nan)─┐
-│                      nan │
-└──────────────────────────┘
+┌─dictGetFloat64('all_types_dict', 'Float64_value', 1)─┐
+│                                        987654.123456 │
+└──────────────────────────────────────────────────────┘
+┌─dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan)─┐
+│                                                                  nan │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetHierarchy">
@@ -1028,9 +1028,9 @@ SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 ```
 
 ```response title=Response
-┌─dictGetHiera⋯ionary', 5)─┐
-│ [5,2,1]                  │
-└──────────────────────────┘
+┌─dictGetHierarchy('hierarchical_dictionary', 5)─┐
+│ [5,2,1]                                        │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetIPv4">
@@ -1078,9 +1078,9 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
-│ 192.168.0.1                         │
-└─────────────────────────────────────┘
+┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
+│ 192.168.0.1                                    │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetIPv4OrDefault">
@@ -1186,9 +1186,9 @@ SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334        │
-└─────────────────────────────────────┘
+┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334                   │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetIPv6OrDefault">
@@ -1294,9 +1294,9 @@ SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetInt16⋯_value', 1)─┐
-│                    -5000 │
-└──────────────────────────┘
+┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
+│                                            -5000 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt16OrDefault">
@@ -1349,12 +1349,12 @@ SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 ```
 
 ```response title=Response
-┌─dictGetInt16⋯_value', 1)─┐
-│                    -5000 │
-└──────────────────────────┘
-┌─dictGetInt16⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt16('all_types_dict', 'Int16_value', 1)─┐
+│                                            -5000 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt32">
@@ -1379,7 +1379,7 @@ dictGetInt32(dict_name, attr_name, id_expr)
 
 * `dict_name` — 字典名称。[`String`](/zh/reference/data-types/string)
 * `attr_name` — 字典中列的名称。[`String`](/zh/reference/data-types/string) 或 [`Tuple(String)`](/zh/reference/data-types/tuple)
-* `id_expr` — 键值。返回字典键类型值或 Tuple 值的表达式 (取决于字典配置) 。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
+* `id_expr` — 键值。返回字典键类型值或元组值的表达式 (取决于字典配置) 。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
 
 **返回值**
 
@@ -1402,9 +1402,9 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetInt32⋯_value', 1)─┐
-│                -1000000  │
-└──────────────────────────┘
+┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
+│                                         -1000000 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt32OrDefault">
@@ -1457,12 +1457,12 @@ SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 ```
 
 ```response title=Response
-┌─dictGetInt32⋯_value', 1)─┐
-│                -1000000  │
-└──────────────────────────┘
-┌─dictGetInt32⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt32('all_types_dict', 'Int32_value', 1)─┐
+│                                         -1000000 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt64">
@@ -1510,9 +1510,9 @@ SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetInt64⋯_value', 1)───┐
-│       -9223372036854775807 │
-└────────────────────────────┘
+┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
+│                             -9223372036854775807 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt64OrDefault">
@@ -1565,12 +1565,12 @@ SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 ```
 
 ```response title=Response
-┌─dictGetInt64⋯_value', 1)─┐
-│     -9223372036854775808 │
-└──────────────────────────┘
-┌─dictGetInt64⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt64('all_types_dict', 'Int64_value', 1)─┐
+│                             -9223372036854775808 │
+└──────────────────────────────────────────────────┘
+┌─dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1)─┐
+│                                                              -1 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt8">
@@ -1618,9 +1618,9 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetInt8(⋯_value', 1)─┐
-│                     -100 │
-└──────────────────────────┘
+┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
+│                                           -100 │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetInt8OrDefault">
@@ -1673,12 +1673,12 @@ SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 ```
 
 ```response title=Response
-┌─dictGetInt8(⋯_value', 1)─┐
-│                     -100 │
-└──────────────────────────┘
-┌─dictGetInt8O⋯', 999, -1)─┐
-│                       -1 │
-└──────────────────────────┘
+┌─dictGetInt8('all_types_dict', 'Int8_value', 1)─┐
+│                                           -100 │
+└────────────────────────────────────────────────┘
+┌─dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1)─┐
+│                                                            -1 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetKeys">
@@ -1820,11 +1820,11 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 ```
 
 ```response title=Response
-(0,'2019-05-20')  \N
-(1,'2019-05-20')  First
-(2,'2019-05-20')  Second
-(3,'2019-05-20')  Third
-(4,'2019-05-20')  \N
+(0,'2019-05-20')	\N
+(1,'2019-05-20')	First
+(2,'2019-05-20')	Second
+(3,'2019-05-20')	Third
+(4,'2019-05-20')	\N
 ```
 
 <div id="dictGetRoot">
@@ -1870,9 +1870,9 @@ SELECT dictGetRoot('hierarchical_dictionary', 5)
 ```
 
 ```response title=Response
-┌─dictGetRoot(⋯ionary', 5)─┐
-│                        1 │
-└──────────────────────────┘
+┌─dictGetRoot('hierarchical_dictionary', 5)─┐
+│                                         1 │
+└───────────────────────────────────────────┘
 ```
 
 <div id="dictGetString">
@@ -1897,7 +1897,7 @@ dictGetString(dict_name, attr_name, id_expr)
 
 * `dict_name` — 字典名称。[`String`](/zh/reference/data-types/string)
 * `attr_name` — 字典中列的名称。[`String`](/zh/reference/data-types/string) 或 [`Tuple(String)`](/zh/reference/data-types/tuple)
-* `id_expr` — 键值。返回字典键类型值或元组值 (取决于字典配置) 的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
+* `id_expr` — 键值。返回字典键类型值或Tuple 值 (取决于字典配置) 的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
 
 **返回值**
 
@@ -1920,9 +1920,9 @@ SELECT dictGetString('all_types_dict', 'String_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetString(⋯_value', 1)─┐
-│ test string                │
-└────────────────────────────┘
+┌─dictGetString('all_types_dict', 'String_value', 1)─┐
+│ test string                                        │
+└────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetStringOrDefault">
@@ -2005,7 +2005,7 @@ dictGetUInt16(dict_name, attr_name, id_expr)
 
 * `dict_name` — 字典名称。[`String`](/zh/reference/data-types/string)
 * `attr_name` — 字典中列的名称。[`String`](/zh/reference/data-types/string) 或 [`Tuple(String)`](/zh/reference/data-types/tuple)
-* `id_expr` — 键值。返回字典键类型值或元组值 (取决于字典配置) 的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
+* `id_expr` — 键值。返回字典键类型值或Tuple 值 (取决于字典配置) 的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression) 或 [`Tuple(T)`](/zh/reference/data-types/tuple)
 
 **返回值**
 
@@ -2028,16 +2028,16 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetUInt1⋯_value', 1)─┐
-│                     5000 │
-└──────────────────────────┘
+┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
+│                                               5000 │
+└────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt16OrDefault">
   ## dictGetUInt16OrDefault
 </div>
 
-引入于：v1.1.0
+引入版本：v1.1.0
 
 无论字典配置如何，都会将字典属性值转换为 `UInt16` 数据类型；如果未找到键，则返回提供的默认值。
 
@@ -2083,12 +2083,12 @@ SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 ```
 
 ```response title=Response
-┌─dictGetUInt1⋯_value', 1)─┐
-│                     5000 │
-└──────────────────────────┘
-┌─dictGetUInt1⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt16('all_types_dict', 'UInt16_value', 1)─┐
+│                                               5000 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt32">
@@ -2136,9 +2136,9 @@ SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetUInt3⋯_value', 1)─┐
-│                  1000000 │
-└──────────────────────────┘
+┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
+│                                            1000000 │
+└────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt32OrDefault">
@@ -2191,19 +2191,19 @@ SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 ```
 
 ```response title=Response
-┌─dictGetUInt3⋯_value', 1)─┐
-│                  1000000 │
-└──────────────────────────┘
-┌─dictGetUInt3⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt32('all_types_dict', 'UInt32_value', 1)─┐
+│                                            1000000 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt64">
   ## dictGetUInt64
 </div>
 
-在 v1.1.0 中引入
+引入版本：v1.1.0
 
 无论字典配置如何，都会将字典属性值转换为 `UInt64` 数据类型。
 
@@ -2244,9 +2244,9 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetUInt6⋯_value', 1)─┐
-│      9223372036854775807 │
-└──────────────────────────┘
+┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
+│                                9223372036854775807 │
+└────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt64OrDefault">
@@ -2299,12 +2299,12 @@ SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 
 ```response title=Response
-┌─dictGetUInt6⋯_value', 1)─┐
-│      9223372036854775807 │
-└──────────────────────────┘
-┌─dictGetUInt6⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt64('all_types_dict', 'UInt64_value', 1)─┐
+│                                9223372036854775807 │
+└────────────────────────────────────────────────────┘
+┌─dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0)─┐
+│                                                                0 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt8">
@@ -2352,9 +2352,9 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetUInt8⋯_value', 1)─┐
-│                      100 │
-└──────────────────────────┘
+┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
+│                                              100 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUInt8OrDefault">
@@ -2407,12 +2407,12 @@ SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 ```
 
 ```response title=Response
-┌─dictGetUInt8⋯_value', 1)─┐
-│                      100 │
-└──────────────────────────┘
-┌─dictGetUInt8⋯e', 999, 0)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictGetUInt8('all_types_dict', 'UInt8_value', 1)─┐
+│                                              100 │
+└──────────────────────────────────────────────────┘
+┌─dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0)─┐
+│                                                              0 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUUID">
@@ -2460,9 +2460,9 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 ```
 
 ```response title=Response
-┌─dictGetUUID(⋯_value', 1)─────────────┐
-│ 123e4567-e89b-12d3-a456-426614174000 │
-└──────────────────────────────────────┘
+┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
+│ 123e4567-e89b-12d3-a456-426614174000           │
+└────────────────────────────────────────────────┘
 ```
 
 <div id="dictGetUUIDOrDefault">
@@ -2527,7 +2527,7 @@ SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-
   ## dictHas
 </div>
 
-引入于：v1.1.0
+引入版本：v1.1.0
 
 检查字典中是否存在某个键。
 
@@ -2572,19 +2572,19 @@ SELECT dictHas('hierarchical_dictionary', 7);
 ```
 
 ```response title=Response
-┌─dictHas('hie⋯ionary', 2)─┐
-│                        1 │
-└──────────────────────────┘
-┌─dictHas('hie⋯ionary', 7)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictHas('hierarchical_dictionary', 2)─┐
+│                                     1 │
+└───────────────────────────────────────┘
+┌─dictHas('hierarchical_dictionary', 7)─┐
+│                                     0 │
+└───────────────────────────────────────┘
 ```
 
 <div id="dictIsIn">
   ## dictIsIn
 </div>
 
-在 v1.1.0 中引入
+引入版本：v1.1.0
 
 检查字典中某个键在整个层级链中的祖先节点。
 
@@ -2624,12 +2624,12 @@ SELECT dictIsIn('hierarchical_dictionary', 3, 5);
 ```
 
 ```response title=Response
-┌─dictIsIn('hi⋯ary', 6, 3)─┐
-│                        1 │
-└──────────────────────────┘
-┌─dictIsIn('hi⋯ary', 3, 5)─┐
-│                        0 │
-└──────────────────────────┘
+┌─dictIsIn('hierarchical_dictionary', 6, 3)─┐
+│                                         1 │
+└───────────────────────────────────────────┘
+┌─dictIsIn('hierarchical_dictionary', 3, 5)─┐
+│                                         0 │
+└───────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

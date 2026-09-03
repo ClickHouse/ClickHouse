@@ -70,9 +70,11 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
   ### 去重与可靠性
 </div>
 
-默认情况下，ClickHouse 会对同步插入自动去重，因此在发生故障时进行重试也是安全的。不过，对异步插入而言，除非显式启用，否则该功能默认关闭 (如果你有依赖它的 materialized view，则不应启用——[参见 issue](https://github.com/ClickHouse/ClickHouse/issues/66003)) 。
+自 26.2 版本起，ClickHouse 会自动对异步插入和同步插入进行去重，因此，对于保留去重日志的表，可以安全地重试插入操作。`*ReplicatedMergeTree` 引擎默认保留去重日志；普通的 `MergeTree` 表则需将 `non_replicated_deduplication_window` 设置为正值。这两种插入类型均由 [`deduplicate_insert`](/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) 控制，默认值为 `enable`。支持依赖的 materialized view。
 
-在实际使用中，如果开启了去重，并且同一次插入因超时或网络中断等原因被重试，ClickHouse 就可以安全地忽略重复数据。这有助于保持幂等性，避免数据被重复写入。
+在实际使用中，如果因超时或网络中断等原因重试相同的插入操作，ClickHouse 可以安全地忽略重复插入。这有助于保证幂等性，避免数据被重复写入。对于异步插入，去重以用户查询为单位，而非以已刷写的批次为单位，因此重复查询不会导致与其一同批量处理的其他查询被丢弃。
+
+有关详细信息，以及异步插入时 materialized view 的唯一限制，请参阅[重试时对插入进行去重](/zh/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts)。
 
 <div id="enabling-asynchronous-inserts">
   ### 启用异步插入

@@ -47,6 +47,10 @@ Para habilitar esta função de introspecção:
 * Instale o pacote `clickhouse-common-static-dbg`.
 * Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
 
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -67,12 +71,12 @@ Retorna um nome de arquivo de código-fonte e um número de linha separados por 
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
 -- The `trace` field contains the stack trace at the moment of sampling.
-Linha 1:
+Row 1:
 ──────
 event_date:              2019-11-19
 event_time:              2019-11-19 18:57:23
@@ -87,11 +91,11 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
@@ -106,11 +110,11 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
@@ -135,6 +139,10 @@ Para habilitar esta função de introspecção:
 
 * Instale o pacote `clickhouse-common-static-dbg`.
 * Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
 
 **Sintaxe**
 
@@ -232,6 +240,10 @@ Introduzido em: v20.1.0
 
 Converte um endereço de memória virtual no processo do servidor ClickHouse em um símbolo dos arquivos-objeto do ClickHouse.
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -252,11 +264,11 @@ Retorna o símbolo dos arquivos-objeto do ClickHouse ou uma string vazia, se o e
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
--- O campo `trace` contém o stack trace no momento da amostragem.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -286,14 +298,14 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- A função arrayMap permite processar cada elemento individual do array trace pela função addressToSymbols.
--- O resultado desse processamento é exibido na coluna trace_symbols da saída.
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -348,12 +360,12 @@ Retorna o nome da função C++, ou uma string vazia se o símbolo não for váli
 **Selecionando a primeira string da tabela do sistema `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
 -- The `trace` field contains the stack trace at the moment of sampling.
-Linha 1:
+Row 1:
 ──────
 event_date:    2019-11-20
 event_time:    2019-11-20 16:57:59
@@ -368,11 +380,11 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 ```
@@ -389,11 +401,11 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const

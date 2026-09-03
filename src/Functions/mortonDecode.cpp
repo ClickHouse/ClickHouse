@@ -4,7 +4,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
 #if defined(__BMI2__)

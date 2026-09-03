@@ -30,15 +30,17 @@ Le point de terminaison `/webterminal` est activé par défaut et contrôlé par
   ## Authentification
 </div>
 
-Le terminal web authentifie l&#39;utilisateur en appliquant les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP, mais les identifiants sont échangés directement sur la connexion WebSocket établie plutôt que via la requête de mise à niveau HTTP. Une fois la négociation initiale WebSocket terminée, le navigateur envoie le premier message au format JSON :
+Le terminal web authentifie l&#39;utilisateur en appliquant les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP, mais les informations d’identification sont échangées directement sur la connexion WebSocket établie plutôt que via la requête de mise à niveau HTTP. Une fois la négociation initiale WebSocket terminée, le navigateur envoie le premier message au format JSON :
 
 ```json
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
-Cela évite de placer des identifiants dans les paramètres d’URL ou les en-têtes `Authorization` associés à la requête d’upgrade, où ils pourraient se retrouver dans l’historique du navigateur, les journaux d’accès du serveur et les logs du proxy inverse. Les paramètres d’URL, l’authentification HTTP Basic et les en-têtes `X-ClickHouse-User`/`X-ClickHouse-Key` de la requête d’upgrade ne sont délibérément **pas** pris en compte par `/webterminal`.
+Le champ `user` est facultatif : lorsqu’il est omis ou vide, le nom d’utilisateur est défini par le [paramètre du serveur](/fr/reference/settings/server-settings/settings) `default_session_user` (ou son remplacement par point de terminaison dans une configuration de [protocoles composables](/fr/concepts/features/configuration/server-config/composable-protocols)), à savoir `default` sauf configuration contraire. Si `default_session_user` est défini sur une chaîne vide, les connexions sans nom d’utilisateur sont interdites : un message `auth` dont le champ `user` est omis ou vide échoue à l’authentification, le serveur ferme le WebSocket avec le code `1008` et, lorsque la section `session_log` est activée dans la configuration du serveur, le refus est enregistré dans [`system.session_log`](/fr/reference/system-tables/session_log) en tant qu’événement `LoginFailure` avec un `user` vide.
 
-Des identifiants invalides entraînent la fermeture du WebSocket par le serveur avec le code `1008` ; l’UI du navigateur redemande les identifiants.
+Cela évite de placer des informations d’identification dans les paramètres d’URL ou les en-têtes `Authorization` associés à la requête d’upgrade, où ils pourraient se retrouver dans l’historique du navigateur, les journaux d’accès du serveur et les logs du proxy inverse. Les paramètres d’URL, l’authentification HTTP Basic et les en-têtes `X-ClickHouse-User`/`X-ClickHouse-Key` de la requête d’upgrade ne sont délibérément **pas** pris en compte par `/webterminal`.
+
+Des informations d’identification invalides entraînent la fermeture du WebSocket par le serveur avec le code `1008` ; l’UI du navigateur redemande les informations d’identification.
 
 <div id="session">
   ## À quoi ressemble la session
@@ -58,6 +60,16 @@ Le terminal utilise [xterm.js](https://xtermjs.org/) pour l’affichage. Toutes 
 </div>
 
 L’[interface Web SQL `/play`](/fr/concepts/features/interfaces/http) intègre le terminal web dans un panneau ancrable. Affichez-le ou masquez-le à l’aide de l’icône du terminal dans la barre latérale, ou appuyez sur la touche `~` lorsque l’éditeur de requêtes est vide. La page `/play` détecte la disponibilité de `/webterminal` au chargement et masque les commandes du terminal lorsque le point de terminaison n’est pas disponible (par exemple, lorsque `enable_webterminal` est défini sur `false`).
+
+<div id="docs-integration">
+  ## Intégration au site web de documentation
+</div>
+
+Ce site web de documentation intègre le même terminal dans un étroit panneau développeur en bas de page, connecté au [ClickHouse playground](https://play.clickhouse.com) avec l&#39;utilisateur `play` en lecture seule, afin de pouvoir essayer les exemples de n&#39;importe quelle page sans la quitter. Le panneau fixe réserve un espace équivalent en fin de page afin de ne pas masquer les contrôles du pied de page. Lorsque le terminal est ouvert, la page de documentation est verrouillée et sa barre de défilement est masquée. Le défilement dans le terminal reste limité à son historique et ne déplace pas la page de documentation située derrière. Cliquez sur la barre « ClickHouse terminal » ou appuyez sur la touche `~` pour ouvrir le panneau avec marges internes au-dessus de la barre. Cliquez de nouveau sur la barre, utilisez son chevron, appuyez sur `~` ou `Escape`, ou faites glisser le bord supérieur du panneau vers le bas pour le replier ; ce bord supérieur permet également de le redimensionner. La fin de la session — `exit` ou `Ctrl+D` — replie également le panneau.
+
+La fermeture du panneau conserve la session et son historique : la réouverture du terminal vous ramène à la même invite. La session est conservée dans la page ; elle persiste donc lors de la navigation entre les pages de documentation, mais pas lors du rechargement de l&#39;onglet du navigateur — après un rechargement, le panneau revient avec une nouvelle session.
+
+Le panneau du terminal fait partie de la mise en page pour ordinateur du site web et n&#39;est pas disponible dans les fenêtres d&#39;affichage étroites.
 
 <div id="security">
   ## Considérations de sécurité

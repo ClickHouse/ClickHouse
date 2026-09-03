@@ -11,8 +11,14 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'مغلّف البيانات الخ�
   ## نظرة عامة
 </div>
 
-يعتمد هذا الدليل التعليمي على [دليل ClickHouse التعليمي]، لكنه يُجري جميع استعلاماته عبر
+يعتمد هذا الدليل العملي على [دليل ClickHouse التعليمي]، لكنه يُجري جميع استعلاماته عبر
 pg&#95;clickhouse.
+
+اختر كيفية تهيئة `pg_clickhouse`:
+
+* [من Console](#from-console) إذا كنت تستخدم ClickHouse Managed Postgres.
+* [من PSQL](#from-psql) إذا كنت تثبّت وتُهيّئ الامتداد
+  بنفسك.
 
 <div id="start-clickhouse">
   ## ابدأ ClickHouse
@@ -163,6 +169,43 @@ SELECT * FROM s3(
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+<div id="from-console">
+  ## من وحدة التحكم
+</div>
+
+إذا كنت تستخدم ClickHouse Managed Postgres، يمكنك تهيئة
+`pg_clickhouse` والاتصال بخدمة ClickHouse من خلال ClickHouse Cloud console.
+افتح خدمة Managed Postgres، واختر **الإعدادات**، ثم ابحث عن قسم
+**ClickHouse integration**. انقر على **تمكين pg&#95;clickhouse**.
+
+في نموذج الإعداد، أدخل اسمًا للخادم الخارجي. اختر خدمة ClickHouse
+وقاعدة البيانات والمستخدم المراد استخدامهم للاتصال. أدخل كلمة مرور
+ClickHouse، ثم اختر قاعدة بيانات Postgres ومخطط الوجهة الذي تريد
+استيراد جداول ClickHouse إليه. انقر على **اتصال** لإنشاء الخادم الخارجي
+واستيراد المخطط.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="نموذج إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+
+عند اكتمال الإعداد، تعرض وحدة التحكم رسالة تأكيد، ويظهر الخادم الخارجي
+في قائمة الخوادم.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="اكتمال إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="قائمة الخوادم الخارجية التي تعرض اتصال pg_clickhouse لسيارات الأجرة" size="lg" border />
+
+يمكنك الآن فتح **SQL console** في Postgres والاستعلام عن الجداول المستوردة:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+لمتابعة أمثلة سيارات الأجرة في هذا الدليل العملي، اختر قاعدة بيانات ClickHouse ‏`taxi`
+واستوردها إلى مخطط الوجهة ‏`taxi`.
+
+<div id="from-psql">
+  ## من PSQL
+</div>
 
 <div id="install-pg_clickhouse">
   ### تثبيت pg_clickhouse

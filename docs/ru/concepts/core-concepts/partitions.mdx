@@ -162,9 +162,15 @@ ClickHouse обрабатывает этот запрос, применяя по
 
 <br />
 
-① **Отсечение партиций**: [индексы MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
+<Steps>
+  <Step title="Отсечение партиций">
+    [индексы MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
+  </Step>
 
-② **Отсечение гранул**: Для оставшихся частей данных после шага ① используется их [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes), чтобы игнорировать все [гранулы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоки строк), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в первичном ключе таблицы.
+  <Step title="Отсечение гранул">
+    Для оставшихся частей данных после шага отсечения партиций используется их [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes), чтобы игнорировать все [гранулы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоки строк), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в первичном ключе таблицы.
+  </Step>
+</Steps>
 
 Мы можем увидеть эти шаги отсеивания данных, [изучив](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) физический план выполнения для нашего примера запроса выше с помощью оператора [EXPLAIN](/ru/reference/statements/explain) :
 
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 Вывод выше показывает:
 
-① Отсечение партиций: строки 7–18 приведённого выше вывода EXPLAIN показывают, что ClickHouse сначала использует [индекс MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) поля `date`, чтобы выявить 11 из 3257 существующих [гранул](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоков строк), хранящихся в 1 из 436 существующих активных частей данных, которые содержат строки, соответствующие фильтру `date` в запросе.
+<Steps>
+  <Step title="Отсечение партиций">
+    Строки 7–18 приведённого выше вывода `EXPLAIN` показывают, что ClickHouse сначала использует [индекс MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) поля `date`, чтобы выявить 11 из 3257 существующих [гранул](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоков строк), хранящихся в 1 из 436 существующих активных частей данных, которые содержат строки, соответствующие фильтру `date` в запросе.
+  </Step>
 
-② Отсечение гранул: строки 19–24 приведённого выше вывода EXPLAIN показывают, что затем ClickHouse использует [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) (созданный по полю `town`) части данных, определённой на шаге ①, чтобы ещё сильнее сократить число гранул (содержащих строки, которые потенциально также соответствуют фильтру `town` в запросе) — с 11 до 1. Это также отражено в выводе ClickHouse-client, который мы привели выше для выполненного запроса:
+  <Step title="Отсечение гранул">
+    Строки 19–24 приведённого выше вывода `EXPLAIN` показывают, что затем ClickHouse использует [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) (созданный по полю `town`) части данных, определённой на этапе отсечения партиций, чтобы ещё сильнее сократить число гранул (содержащих строки, которые потенциально также соответствуют фильтру `town` в запросе) — с 11 до 1. Это также отражено в выводе клиента ClickHouse, который мы привели выше для выполненного запроса:
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
 

@@ -62,13 +62,23 @@ Mostramos como o índice primário esparso é usado para acelerar consultas com 
 
 <br />
 
-① A consulta de exemplo inclui um predicado em ambas as colunas da chave primária: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="Analisar o predicado da consulta">
+    A consulta de exemplo inclui um predicado em ambas as colunas da chave primária: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② Para acelerar a consulta, o ClickHouse carrega na memória o índice primário da tabela.
+  <Step title="Carregar o índice primário">
+    Para acelerar a consulta, o ClickHouse carrega na memória o índice primário da tabela.
+  </Step>
 
-③ Em seguida, ele percorre as entradas do índice para identificar quais grânulos podem conter linhas que correspondam ao predicado — em outras palavras, quais grânulos não podem ser ignorados.
+  <Step title="Identificar grânulos correspondentes">
+    Em seguida, ele percorre as entradas do índice para identificar quais grânulos podem conter linhas que correspondam ao predicado — em outras palavras, quais grânulos não podem ser ignorados.
+  </Step>
 
-④ Esses grânulos potencialmente relevantes são então carregados e [processados](/pt-BR/concepts/core-concepts/query-parallelism) na memória, junto com os grânulos correspondentes de quaisquer outras colunas necessárias para a consulta.
+  <Step title="Carregar e processar grânulos">
+    Esses grânulos potencialmente relevantes são então carregados e [processados](/pt-BR/concepts/core-concepts/query-parallelism) na memória, junto com os grânulos correspondentes de quaisquer outras colunas necessárias para a consulta.
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## Monitoramento de índices primários

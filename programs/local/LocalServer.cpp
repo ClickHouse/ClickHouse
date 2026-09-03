@@ -20,6 +20,7 @@
 #include <Databases/registerDatabases.h>
 #include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Storages/System/attachSystemTables.h>
@@ -45,6 +46,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -141,6 +143,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
+    extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -454,6 +457,15 @@ void LocalServer::initialize(Poco::Util::Application & self)
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
 
+    /// Zero means the number of CPU cores.
+    const size_t shutdown_concurrency = server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        ? server_settings[ServerSetting::database_catalog_shutdown_table_concurrency]
+        : getNumberOfCPUCoresToUse();
+    getDatabaseCatalogShutdownTablesThreadPool().initialize(
+        shutdown_concurrency,
+        0, // Threads are only needed during server shutdown.
+        shutdown_concurrency);
+
     getMergeTreePrefixesDeserializationThreadPool().initialize(
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
@@ -474,11 +486,35 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
     {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
         system_database = std::make_shared<DatabaseMemory>(database_name, context);
         DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
     return system_database;
+}
+
+void deferDatabaseTables(IDatabase & database, std::function<void(IDatabase &)> populate)
+{
+    dynamic_cast<DatabaseWithOwnTablesBase &>(database).setDeferredPopulation(std::move(populate));
+}
+
+void createMemoryDatabaseWithDeferredTables(ContextPtr context, const String & database_name, std::function<void(IDatabase &)> populate)
+{
+    deferDatabaseTables(*createMemoryDatabaseIfNotExists(context, database_name), std::move(populate));
+}
+
+void attachRemainingSystemTables(ContextPtr context, IDatabase & system_database)
+{
+    attachSystemTablesServerExceptOne(context, system_database, false, false);
+}
+
+void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
+{
+    validateSystemUserQueryLog(context, system_database);
+
+    deferDatabaseTables(system_database,
+        [context](IDatabase & database) { attachRemainingSystemTables(context, database); });
+
+    attachSystemTableOne(context, system_database);
 }
 
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
@@ -810,28 +846,35 @@ void LocalServer::startServers(const ServerType & server_type)
             if (server_type.shouldStart(ServerType::Type::HTTP))
             {
                 const char * port_name = "http_port";
-                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                /// Anything the callback throws is reported as a listener bind failure, and only logged
+                /// when `listen_try` is set, so the handler configuration is parsed before it. The port
+                /// check matches the early return in `createServer`.
+                if (!config.getString(port_name, "").empty())
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                    auto handler_factory = createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory");
+                    if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            std::make_shared<HTTPContext>(global_context),
-                            createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
-                            *server_pool,
-                            socket,
-                            http_params,
-                            /* connection_filter= */ nullptr,
-                            ProfileEvents::InterfaceHTTPReceiveBytes,
-                            ProfileEvents::InterfaceHTTPSendBytes));
-                }, &logger()))
-                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            "http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                std::make_shared<HTTPContext>(global_context),
+                                handler_factory,
+                                *server_pool,
+                                socket,
+                                http_params,
+                                /* connection_filter= */ nullptr,
+                                ProfileEvents::InterfaceHTTPReceiveBytes,
+                                ProfileEvents::InterfaceHTTPSendBytes));
+                    }, &logger()))
+                        ports_to_register.emplace_back(port_name, servers.back().portNumber());
+                }
             }
         }
 
@@ -1707,8 +1750,10 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("path"))
     {
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Attaching "automatic" tables in the system database is done after attaching the system database.
         /// Consequently, it depends on whether we load it from the path.
@@ -1730,7 +1775,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false, false);
+                deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));
                 attached_system_database = true;
             }
 
@@ -1745,16 +1790,18 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
+            deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
         /// even in temporary mode (--path not set) without persistent storage

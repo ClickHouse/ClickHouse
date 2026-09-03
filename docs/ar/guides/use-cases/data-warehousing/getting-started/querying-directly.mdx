@@ -169,7 +169,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     <Info>
       **دعم GCS**
 
-      يمكن استخدام إصدار S3 من هذه الدوال مع Google Cloud Storage ‏(GCS).
+      يمكن استخدام صيغة S3 من الدوال مع Google Cloud Storage ‏(GCS).
     </Info>
 
     **مثال:**
@@ -197,9 +197,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     Peak memory usage: 9.16 GiB.
     ```
 
-    ### متغيّر الكلاستر
+    ### متغاير المجموعة
 
-    تُوزِّع دالة [`deltaLakeCluster`](/ar/reference/functions/table-functions/deltalakeCluster) عمليات القراءة عبر عقد متعددة في مجموعة ClickHouse. تقوم عقدة المُبادِر بإرسال ملفات البيانات ديناميكيًا إلى عقد العمال لمعالجتها بالتوازي. `deltaLakeS3Cluster` هو اسم مستعار لـ `deltaLakeCluster`. كما يتوفر نوع بديل لـ Azure وهو [`deltaLakeAzureCluster`](/ar/reference/functions/table-functions/deltalakeCluster).
+    تُوزِّع دالة [`deltaLakeCluster`](/ar/reference/functions/table-functions/deltalakeCluster) عمليات القراءة عبر عقد متعددة في مجموعة ClickHouse. تقوم عقدة المُبادِر بإرسال ملفات البيانات ديناميكيًا إلى عقد العمال لمعالجتها بالتوازي. `deltaLakeS3Cluster` هو اسم مستعار لـ `deltaLakeCluster`. كما يتوفر نوع بديل لـ Azure وهو ([`deltaLakeAzureCluster`](/ar/reference/functions/table-functions/deltalakeCluster)).
 
     **مثال على الصياغة:**
 
@@ -213,7 +213,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
     <Info>
       **دعم GCS**
 
-      يمكن استخدام إصدار S3 من هذه الدوال مع Google Cloud Storage ‏(GCS).
+      يمكن استخدام صيغة S3 من الدوال مع Google Cloud Storage ‏(GCS).
     </Info>
 
     **مثال (ClickHouse Cloud):**
@@ -345,7 +345,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
     ### محرك الجدول
 
-    لا يوفّر Paimon حاليًا محرك جدول مخصصًا في ClickHouse. استخدم دوال الجداول المذكورة أعلاه للاستعلام عن جداول Paimon.
+    يوفّر ClickHouse محركات الجداول التجريبية [`PaimonS3` و`PaimonAzure` و`PaimonHDFS` و`PaimonLocal`](/ar/reference/engines/table-engines/integrations/paimon). فعّلها باستخدام `allow_experimental_paimon_storage_engine = 1`.
 
     للاطلاع على الميزات المدعومة، بما في ذلك أنظمة التخزين الخلفية وغيرها، راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix#format-support). وللمرجع الكامل، راجع توثيق [دالة الجدول `paimon`](/ar/reference/functions/table-functions/paimon).
   </Tab>

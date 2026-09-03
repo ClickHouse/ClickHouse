@@ -14,6 +14,11 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 Alias: `timeSeriesLastToGrid`.
 
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 <Warning>
@@ -25,6 +30,7 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
 
 ```sql
 timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(timestamp, value)
+timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(samples)
 ```
 
 **Aliases**: `timeSeriesLastToGrid`
@@ -38,8 +44,9 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **Arguments**
 
-- `timestamp` — Timestamp of the sample. Can be individual values or arrays. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`Array(UInt32)`](/reference/data-types/array) or [`Array(DateTime)`](/reference/data-types/array)
+- `timestamp` — Timestamp of the sample. Can be individual values or arrays. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Array(UInt32)`](/reference/data-types/array) or [`Array(DateTime)`](/reference/data-types/array) or [`Array(DateTime64)`](/reference/data-types/array)
 - `value` — Value of the time series corresponding to the timestamp. Can be individual values or arrays. [`Float*`](/reference/data-types/float) or [`Array(Float*)`](/reference/data-types/array)
+- `samples` — Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments. [`Array(Tuple(T1, T2))`](/reference/data-types/array)
 
 **Returned value**
 

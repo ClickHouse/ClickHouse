@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — O [formato](/pt-BR/reference/formats/index#formats-overview) do arquivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciais de longo prazo para o usuário da conta [AWS](https://aws.amazon.com/). Você pode usá-las para autenticar suas solicitações. O parâmetro é opcional. Se as credenciais não forem especificadas, elas serão obtidas do arquivo de configuração. Para mais informações, veja [Usar o S3 para armazenamento de dados](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — Tipo de compressão. Valores compatíveis: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. O parâmetro é opcional. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo.
-* `partition_strategy` – Opções: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no `path`, que é substituído pela chave de partição. `hive` não permite curingas, assume que o `path` é a raiz da tabela e gera diretórios particionados no estilo Hive, com ID Snowflake como nomes de arquivo e o formato do arquivo como extensão. Se o `path` contiver um placeholder `{_partition_id}`, o padrão será `wildcard` — a única estratégia compatível com esse `path`. Caso contrário, o padrão será a configuração `file_like_engine_default_partition_strategy` (`wildcard` nas configurações de `compatibility` anteriores à `26.6`, `hive` caso contrário).
+* `partition_strategy` – Opções: `wildcard` ou `hive`. `wildcard` exige um `{_partition_id}` no `path`, que é substituído pela chave de partição. `hive` não permite curingas, assume que o `path` é a raiz da tabela e gera diretórios particionados no estilo Hive, com ID Snowflake como nomes de arquivo e o formato do arquivo como extensão. Sem uma estratégia explícita, um `path` com `{_partition_id}` usa `wildcard`. Um `path` com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um `path` sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento.
 * `partition_columns_in_data_file` - Usado apenas com a estratégia de particionamento `hive`. Informa ao ClickHouse se ele deve esperar que as colunas de partição sejam gravadas no arquivo de dados. O padrão é `false`.
 * `storage_class_name` - Opções: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Somente classes de armazenamento do S3 que permitem recuperação imediata são compatíveis (classes de arquivamento como `GLACIER` e `DEEP_ARCHIVE` não são). Permite especificar o [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - Opcional. Usado para passar um `role_arn` para acesso baseado em função no ClickHouse Cloud. Veja [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para as etapas de configuração.
@@ -102,7 +102,9 @@ Para particionamento por mês, use a expressão `toYYYYMM(date_column)`, em que 
   #### Estratégia de particionamento
 </div>
 
-`wildcard`: Substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. A leitura não é suportada. É selecionada por padrão quando o caminho contém um placeholder `{_partition_id}` (a única estratégia compatível com esse caminho) e, caso contrário, em configurações de `compatibility` anteriores à `26.6`; nos demais casos, o padrão é `hive` (consulte a configuração `file_like_engine_default_partition_strategy`).
+`wildcard`: Substitui o curinga `{_partition_id}` no caminho do arquivo pela chave de partição correspondente. A leitura não é suportada. É selecionada por padrão quando o caminho contém `{_partition_id}`.
+
+Quando nenhuma `partition_strategy` é definida, um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento.
 
 `hive` implementa o particionamento no estilo Hive para leituras &amp; gravações. A leitura é implementada usando um padrão glob recursivo; é equivalente a `SELECT * FROM s3('table_root/**.parquet')`.
 A gravação gera arquivos no seguinte formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -458,7 +460,8 @@ Suponha que temos vários arquivos compactados com os seguintes URIs no S3:
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

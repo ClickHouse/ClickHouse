@@ -38,6 +38,16 @@ ClickHouse Cloud에서만 적용됩니다. 테스트용 설정이므로 변경�
 
 ClickHouse Cloud에서만 효과가 있습니다. Distributed Cache 연결 풀 우회를 허용합니다
 
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
+
+<CloudOnlyBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "쿼리별 distributed cache client id를 재정의하는 새로운 설정(CI 테스트 전용)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "쿼리별 distributed cache client id를 재정의하는 새로운 설정(CI 테스트 전용)."}]}]} />
+
+ClickHouse Cloud에서만 적용됩니다. CI 테스트 전용 설정으로, 비어 있지 않으면 이 쿼리의 요청에 대해 registry에 구성된 distributed cache client id를 재정의합니다. 테스트에서 제한된 client id 집합에 데이터를 분산하는 동시에 동일한 데이터가 동일한 client id에 유지되도록 합니다. distributed cache client 구성에서 `ci_mode`를 활성화해야 합니다. 활성화하지 않으면(기본값이며 production 환경도 이에 해당) distributed cache를 통해 읽기 또는 쓰기가 라우팅되는 쿼리는 구성된 client id로 자동 대체되는 대신 `SUPPORT_IS_DISABLED` 오류와 함께 실패합니다. distributed cache에 도달하지 않는 쿼리는 영향을 받지 않으므로 이 값은 무시됩니다.
+
 <div id="distributed_cache_connect_backoff_max_ms">
   ## distributed_cache_connect_backoff_max_ms
 </div>
@@ -188,7 +198,7 @@ ClickHouse Cloud에서만 적용됩니다. Distributed Cache에서 seek를 수�
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4194304"},{"label": "seek 시 폐기해야 하는 전송 중 바이트 수가 너무 많을 경우 Distributed Cache 연결을 끊고 다시 여는 새로운 설정입니다. 기본값은 4 MiB이며, 0으로 설정하면 이전 동작(항상 읽기 범위 ID를 통해 연결 재사용)으로 돌아갑니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "seek 시 폐기해야 하는 전송 중 바이트 수가 너무 많을 경우 Distributed Cache 연결을 끊고 다시 여는 새로운 설정입니다. 기본값은 4 MiB이며, 0으로 설정하면 이전 동작(항상 읽기 범위 ID를 통해 연결 재사용)으로 돌아갑니다."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "seek 시 폐기해야 하는 전송 중 바이트 수가 너무 많을 경우 Distributed Cache 연결을 끊고 다시 여는 새로운 설정입니다. 기본값은 4 MiB이며, 0으로 설정하면 이전 동작(항상 읽기 범위 ID를 통해 연결 재사용)으로 돌아갑니다."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "seek 시 폐기해야 하는 전송 중 바이트 수가 너무 많을 경우 Distributed Cache 연결을 끊고 다시 여는 새로운 설정입니다. 기본값은 4 MiB이며, 0으로 설정하면 이전 동작(항상 읽기 범위 ID를 통해 연결 재사용)으로 돌아갑니다."}]}]} />
 
 ClickHouse Cloud에서만 적용됩니다. 열린 Distributed Cache 스트림의 현재 위치에서 다른 위치로 seek할 때, 연결을 계속 재사용하기 위해(읽기 범위 ID 메커니즘을 통해) 폐기해야 하는 것으로 추정되는 전송 중 바이트 수가 이 값을 초과하면 연결을 끊고 새로 엽니다. 이렇게 하면 seek가 빈번할 때 사용되지 않는 대량의 데이터를 소진하지 않아도 됩니다. 0으로 설정하면 이 기능이 비활성화되며 항상 연결을 재사용합니다.
 

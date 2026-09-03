@@ -1,40 +1,41 @@
 ---
-sidebarTitle: 'GCP Private Service Connect'
-description: '使用 Private Service Connect (PSC) 在 ClickPipes 与托管在 GCP 上的数据源之间建立安全连接。'
-slug: /integrations/clickpipes/networking/gcp-psc
-title: '适用于 ClickPipes 的 GCP Private Service Connect'
-doc_type: 'guide'
-keywords: ['gcp psc', 'private service connect', 'ClickPipes 安全', '反向专用终结点', '私有连接']
+title: "适用于 ClickPipes 的 GCP Private Service Connect"
+sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
+description: "使用 Private Service Connect (PSC) 在 ClickPipes 与托管在 GCP 上的数据源之间建立安全连接。"
+slug: "/integrations/clickpipes/networking/gcp-psc"
+doc_type: "guide"
+keywords: ["gcp psc", "private service connect", "ClickPipes 安全", "反向专用终结点", "私有连接"]
 integration:
-   - support_level: 'core'
-   - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 您可以使用 GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)，在 ClickPipes 与托管在 GCP 上的数据源之间建立安全连接。ClickPipes 会在其 VPC 中创建一个**反向专用终结点 (RPE)**，并将其指向为您的数据源发布的专用端点服务，确保流量不会暴露于公网。
 
-<Note>
-  只有当 ClickPipes 服务部署在 GCP 上时，才能使用 GCP PSC 连接。开始前，请查看 [托管 ClickPipes 的 GCP 区域列表](/zh/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)。
-</Note>
+<Check>
+  ClickPipes 通过[全局访问](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)支持**跨区域** PSC 连接。对于位于与运行 ClickPipes 基础设施所在区域不同区域的端点，必须启用全局访问。有关更多详情，请查看 [ClickPipes GCP 区域文档](/zh/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)。
+</Check>
 
 <div id="supported-patterns">
   ## 支持的模式
 </div>
 
-| 模式            | 适用场景                                                             | 服务附件              |
-| ------------- | ---------------------------------------------------------------- | ----------------- |
-| **原生 PSC**    | 自动发布 PSC 服务附件的托管服务，例如 AlloyDB。                                   | 在实例上启用 PSC 时自动创建。 |
-| **生产者拥有的 PSC** | 不发布服务附件的数据源，例如运行在 Compute Engine 上的 Postgres，或仅能通过私网 IP 访问的托管服务。 | 由您创建和管理。          |
+| 模式             | 适用场景                                                                                               | 服务附件              |
+| -------------- | -------------------------------------------------------------------------------------------------- | ----------------- |
+| **原生 PSC**     | 自动发布 PSC 服务附件的托管服务 (*例如* Google Cloud SQL、AlloyDB、Google Cloud Managed Service for Apache Kafka) 。 | 在实例上启用 PSC 时自动创建。 |
+| **生产者拥有的 PSC** | 不发布服务附件的数据源，例如运行在 Compute Engine 上的 Postgres，或仅能通过私网 IP 访问的托管服务。                                   | 由您创建和管理。          |
 
 <div id="prerequisites">
   ## 前置条件
 </div>
 
-* 位于 [ClickPipes 托管区域](/zh/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)的、托管于 GCP 上的 ClickHouse Cloud 服务。
+* 托管于 GCP 上的 ClickHouse Cloud 服务。ClickPipes 与您的 ClickHouse Cloud 服务运行在同一区域 ([少数例外情况](/zh/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)除外) 。
 * 用于在源端启用 PSC 以及管理 PSC 服务附件的 IAM 权限 (`roles/compute.networkAdmin`) 。
-* 获准连接您的服务附件的 **ClickPipes 消费者项目**。对于生产环境中的 ClickPipes，该项目为 `clickpipes-production`。
-* 服务所属组织的 ClickHouse Cloud API 密钥/secret (仅在通过 Terraform 或 API 进行预配时需要) 。
+* 获准连接您的服务附件的 **ClickPipes 消费者项目** (`clickpipes-production`)。
+* 如果以编程方式预配 ClickPipes：服务所属组织的 ClickHouse Cloud API 密钥。
 
 <div id="create-rpe">
   ## 创建反向专用终结点
@@ -43,8 +44,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要创建 RPE，您需要准备数据源的以下信息：
 
 * **服务附件 URI**：`projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`，即位于数据源前端的 PSC 端点。
-* **私有 DNS 名称**：管道要连接的主机名。PSC 端点会获得一个未关联 DNS 名称的静态内部 IP，
-  因此 ClickPipes 会为您将该主机名解析为此 IP。
+* **私有 DNS 名称**：管道要连接的主机名。PSC 端点会获得一个未关联 DNS 名称的静态内部 IP，因此 ClickPipes 会为您将该主机名解析为此 IP。
 
 <Tabs>
   <Tab title="ClickPipes UI">
@@ -98,9 +98,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ### 自定义私有 DNS 名称
 </div>
 
-由于 GCP PSC 不会传播 DNS，自定义私有 DNS 映射是每个 GCP PSC 端点必不可少的组成部分：您始终通过这种方式提供源端的私有 DNS 名称，ClickPipes 会将其解析为该端点的静态内部 IP。
+由于 GCP PSC 不会传播 DNS，每个 GCP PSC 端点都需要自定义私有 DNS 映射，以便 ClickPipes 将其解析为该端点的静态内部 IP。
 
-标准的 ClickPipes [自定义私有 DNS 命名规则](/zh/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)同样适用：所有提供商均以相同方式支持通配符，并强制要求服务的反向专用终结点之间保持唯一性，同时遵守保留后缀限制。通配符在 GCP 上尤其有用：单个映射 (如 `*.<cluster>.<region>.managedkafka.<project>.cloud.goog`) 即可覆盖 Managed Kafka 集群中的每个 broker。
+标准的 ClickPipes [自定义私有 DNS 命名规则](/zh/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)同样适用：所有提供商均以相同方式支持通配符，并强制要求服务的反向专用终结点之间保持唯一性，同时遵守保留后缀限制。通配符尤其有用，例如，单个映射 (如 `*.<cluster>.<region>.managedkafka.<project>.cloud.goog`) 即可覆盖 Managed Kafka 集群中的每个 broker。
 
 对于 GCP PSC，仅使用映射的 `privateDnsName`。不支持 `internalDNSName` 字段，因为 PSC 端点提供的是静态 IP，没有可供绑定的 DNS 名称：映射始终会解析到该 IP。
 
@@ -108,9 +108,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 批准生产者拥有的连接
 </div>
 
-对于生产者拥有的 PSC，请将 ClickPipes 消费者项目添加到服务附件的自动接受列表中，以自动接受连接。否则，RPE 将一直处于 `PendingAcceptance` 状态，直到您手动批准。
+对于生产者拥有的 PSC，请将 ClickPipes 消费者项目 (`clickpipes-production`) 添加到服务附件的自动接受列表，以便自动接受该连接。如果跳过此步骤，RPE 将一直处于 `PendingAcceptance` 状态，直到您手动批准。
 
-要接受连接，服务附件的消费者接受列表中需要添加端点基于数字 ID 的 URI (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`) 。该值即服务附件上待处理连接的 `endpointWithId`；可通过描述服务附件来查找：
+要接受该连接，服务附件的消费者接受列表中需要包含端点的基于数字 ID 的 URI (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`)。要获取服务附件上待处理连接的 `endpointWithId` 值，请运行：
 
 ```bash
 gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
@@ -118,7 +118,11 @@ gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
   --format='json(connectedEndpoints)'
 ```
 
-获取 `status` 为 `PENDING` 的条目的 `endpointWithId`，移除 `https://www.googleapis.com/compute/beta/` 前缀，然后将结果传递给 `--consumer-accept-list`：
+获取 `status` 为 `PENDING` 的条目的 `endpointWithId`，去掉 `https://www.googleapis.com/compute/beta/` 前缀，然后将结果传递给 `--consumer-accept-list`：
+
+<Danger>
+  `--consumer-accept-list` 会覆盖接受列表，而非将新的消费者项目追加到列表中。如果服务附件已接受其他项目或端点，请在同一命令中传入所有项目或端点，否则未传入的项目或端点将失去访问权限。
+</Danger>
 
 ```bash
 gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
@@ -128,9 +132,7 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 ```
 
 <Warning>
-  此处请勿使用 ClickPipes API/Terraform 响应中的 `endpoint_id`——该值是转发规则的*名称*，而非 GCP 所需的数字 ID，因此接受列表无法匹配。请始终使用服务附件中待处理的 `endpointWithId` 所包含的数字 ID。
-
-  `--consumer-accept-list` 会覆盖接受列表，而非在其中追加内容。如果服务附件已接受其他项目或端点，请在同一命令中传入全部项目或端点；否则，未传入的项目或端点将失去访问权限。
+  请勿在此处使用 ClickPipes API/Terraform 响应中的 `endpoint_id`；该值是转发规则的*名称*，而非 GCP 要求的数字 ID，因此不会与接受列表匹配。应始终从服务附件中处于待处理状态的 `endpointWithId` 获取数字 ID。
 </Warning>
 
 <div id="managing-rpes">
@@ -139,25 +141,18 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 
 您可以在 ClickHouse Cloud 服务设置中管理现有的反向专用终结点：
 
-1. 在侧边栏中找到并点击 `Settings` 按钮。
+1. 在 ClickHouse Cloud 控制台侧边栏中，前往 `Settings`。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 设置" size="lg" border />
+在 `ClickPipe reverse private endpoints` 下，点击 `Reverse private endpoints`。
 
-2. 在 `ClickPipe reverse private endpoints` 部分中，点击 `Reverse private endpoints`。
+反向专用终结点的详细信息会显示在弹出面板中。您可以在此视图中删除 RPE：点击端点旁的 `×`，然后确认删除。删除操作是**永久性的**，会导致所有当前使用该端点的 ClickPipe 中断。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 设置" size="md" border />
+要更改端点的自定义私有 DNS 映射，请使用 [Cloud API](/zh/integrations/clickpipes/programmatic-access/openapi) 或 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform)。更新操作会替换整个映射列表，而不是在其中添加映射。
 
-   弹出面板会显示反向专用终结点的详细信息。
-
-   除删除外，此视图为只读：点击端点上的 `×` 并确认即可删除。删除操作不可恢复，并会中断当前使用该端点的所有 ClickPipe。
-
-   要更改端点的自定义私有 DNS 映射，请使用 API 或 Terraform。更新会替换整个映射列表，而非在其中添加映射。
-
-如果端点显示 `Rejected` 或 `Failed`，请查看其状态下方的消息：该消息可帮助区分被生产者拒绝的连接、已关闭的连接或需要处理的连接。这两种状态通常都表示服务附件的接受列表未包含 ClickPipes 消费者项目。要查看 GCP 为该端点报告的状态，请查看服务附件的 `connectedEndpoints`。
+如果端点显示 `Rejected` 或 `Failed`，请查看其状态下方的消息：该消息可区分被生产者拒绝的连接，以及已关闭或需要处理的连接。这两种情况通常都表示服务附件的接受列表未包含 ClickPipes 消费者项目。要查看 GCP 针对该端点报告的状态，请描述服务附件的 `connectedEndpoints`。
 
 <div id="limitations">
-  ## 限制
+  ## 已知限制
 </div>
 
-* RPE 端点和服务附件必须位于**同一 GCP 区域**。目前尚不支持通过[全局访问](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)实现跨区域 PSC。如果您的数据源位于其他区域，请使用 [SSH 隧道](/zh/integrations/clickpipes/networking/index#ssh-tunneling)。
 * 一个 PSC 服务附件在同一时间只能由一个 ClickHouse Cloud 服务认领，不能在多个服务之间重复使用。若要将服务附件迁移到其他服务，请[联系 ClickHouse 支持团队](https://clickhouse.com/support/program)以解除现有认领。

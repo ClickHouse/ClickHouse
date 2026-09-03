@@ -15,6 +15,8 @@ doc_type: '참고'
 
 타임스탬프와 값의 쌍으로 이루어진 시계열 데이터를 입력받아, 시작 타임스탬프, 종료 타임스탬프, 간격으로 정의된 규칙적인 시간 그리드에서 이 데이터의 [PromQL과 유사한 rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate)를 계산하는 집계 함수입니다. 그리드의 각 지점에 대해 `rate` 계산에 사용할 샘플은 지정된 시간 윈도우 내에서 고려됩니다.
 
+여러 샘플의 timestamp가 같으면 값이 가장 큰 샘플 하나만 사용됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 timestamp의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
+
 <Warning>
   이 함수는 실험적 기능이므로 `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Warning>
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

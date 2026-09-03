@@ -256,9 +256,9 @@ clickhouse-jdbc-bridge contains experimental codes and is no longer supported. I
 ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
 </Note>
 
-JDBC table function returns table that is connected via JDBC driver.
+The JDBC table function returns a table that is connected via the JDBC driver.
 
-This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
+This table function requires a separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
 It supports Nullable types (based on DDL of remote table that is queried).
 
 ## Syntax {#syntax}
@@ -301,7 +301,7 @@ INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionODBC>({.description = R"DOCS_MD(
-Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+The `odbc` table function returns a table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ## Syntax {#syntax}
 

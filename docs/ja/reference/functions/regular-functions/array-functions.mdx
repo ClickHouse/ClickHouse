@@ -20,11 +20,11 @@ doc_type: 'reference'
 
 導入バージョン: v1.1.0
 
-関数の引数から配列を作成します。
+関数の引数から Array を作成します。
 
 引数は定数であり、型は共通のスーパータイプを共有している必要があります。
-少なくとも 1 つの引数を渡す必要があります。そうしないと、どの型の配列を作成すべきか判断できないためです。
-つまり、この関数を使って空の配列を作成することはできません。空の配列を作成するには、`emptyArray*` 関数を使用してください。
+少なくとも 1 つの引数を渡す必要があります。そうしないと、どの型の Array を作成すべきか判断できないためです。
+つまり、この関数を使って空の Array を作成することはできません。空の Array を作成するには、`emptyArray*` 関数を使用してください。
 
 同じ機能を使うには、`[ ]` 演算子を使用します。
 
@@ -36,11 +36,11 @@ array(x1 [, x2, ..., xN])
 
 **引数**
 
-* `x1` — 任意の型 T の定数値。この引数のみを指定した場合、配列の型は T になります。 - `[, x2, ..., xN]` — `x1` と共通の上位型を持つ、追加の N 個の定数値
+* `x1` — 任意の型 T の定数値。この引数のみを指定した場合、Array の型は T になります。 - `[, x2, ..., xN]` — `x1` と共通の上位型を持つ、追加の N 個の定数値
 
 **戻り値**
 
-配列を返します。ここで &#39;T&#39; は、渡された引数の最小の共通型です。[`Array(T)`](/ja/reference/data-types/array)
+Array を返します。ここで &#39;T&#39; は、渡された引数の最小の共通型です。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -63,9 +63,9 @@ SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a
 ```
 
 ```response title=Response
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayAUCPR">
@@ -177,7 +177,7 @@ SELECT arrayAll(x, y -> x=y, [1, 2, 3], [1, 1, 1])
 
 導入バージョン: v26.4.0
 
-配列の自己相関を計算します。
+Array の自己相関を計算します。
 `max_lag` が指定されている場合は、`[0, max_lag)` の範囲内のラグについてのみ相関を計算します。
 `max_lag` が指定されていない場合は、取り得るすべてのラグについて計算します。
 
@@ -205,7 +205,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);
 ```
 
 ```response title=Response
-[1, 0.4, -0.1, -0.4, -0.4]
+[1,0.4,-0.1,-0.4,-0.4]
 ```
 
 **対称的**
@@ -215,7 +215,7 @@ SELECT arrayAutocorrelation([10, 20, 10]);
 ```
 
 ```response title=Response
-[1, -0.6666666666666669, 0.16666666666666674]
+[1,-0.6666666666666669,0.16666666666666674]
 ```
 
 **定数**
@@ -225,7 +225,7 @@ SELECT arrayAutocorrelation([5, 5, 5]);
 ```
 
 ```response title=Response
-[nan, nan, nan]
+[nan,nan,nan]
 ```
 
 **制限あり**
@@ -235,7 +235,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 ```
 
 ```response title=Response
-[1, 0.4]
+[1,0.4]
 ```
 
 <div id="arrayAvg">
@@ -419,9 +419,9 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
 
 導入バージョン: v1.1.0
 
-引数として渡された配列を結合します。
+引数として渡された Array を結合します。
 
-**Syntax**
+**構文**
 
 ```sql
 arrayConcat(arr1 [, arr2, ... , arrN])
@@ -429,11 +429,11 @@ arrayConcat(arr1 [, arr2, ... , arrN])
 
 **引数**
 
-* `arr1 [, arr2, ... , arrN]` — 連結する `N` 個の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `arr1 [, arr2, ... , arrN]` — 連結する `N` 個の Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-指定された配列引数を連結した 1 つの配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+指定された Array 引数を連結した 1 つの Array を返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -444,7 +444,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4, 5, 6]
+[1,2,3,4,5,6]
 ```
 
 <div id="arrayCount">
@@ -491,7 +491,7 @@ SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)
 
 導入バージョン: v1.1.0
 
-ソース配列の要素について、部分和 (累積和) を格納した配列を返します。ラムダ関数を指定した場合は、各位置の配列要素にラムダ関数を適用した結果に基づいて和が計算されます。
+ソースArrayの要素について、部分和 (累積和) を格納した Array を返します。ラムダ関数を指定した場合は、各位置の Array 要素にラムダ関数を適用した結果に基づいて和が計算されます。
 
 **構文**
 
@@ -501,13 +501,13 @@ arrayCumSum([func,] arr1[, arr2, ... , arrN])
 
 **引数**
 
-* `func` — 任意。各位置の配列要素に適用するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1` — 数値のソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `[arr2, ..., arrN]` — 任意。同じサイズの追加の配列です。指定した場合は、ラムダ関数の引数として渡されます。[`Array(T)`](/ja/reference/data-types/array)
+* `func` — 任意。各位置の Array 要素に適用するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1` — 数値のソースArray。[`Array(T)`](/ja/reference/data-types/array)
+* `[arr2, ..., arrN]` — 任意。同じサイズの追加の Array です。指定した場合は、ラムダ関数の引数として渡されます。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ソース配列の要素の累積和からなる配列を返します。結果の型は、入力配列の数値型と一致します。[`Array(T)`](/ja/reference/data-types/array)
+ソースArrayの要素の累積和からなる Array を返します。結果の型は、入力Arrayの数値型と一致します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -518,7 +518,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4]
+[1,2,3,4]
 ```
 
 **ラムダ式を使用**
@@ -528,7 +528,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 6, 12]
+[2,6,12]
 ```
 
 <div id="arrayCumSumNonNegative">
@@ -537,7 +537,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 
 導入バージョン: v18.12.0
 
-ソース配列の要素の部分和 (累積和) からなる配列を返します。累積和が負になった場合は、0 に置き換えられます。ラムダ関数が指定されている場合、各位置の配列要素にラムダ関数を適用した結果に基づいて和が計算されます。
+ソースArrayの要素の部分和 (累積和) からなる Array を返します。累積和が負になった場合は、0 に置き換えられます。ラムダ関数が指定されている場合、各位置の Array 要素にラムダ関数を適用した結果に基づいて和が計算されます。
 
 **構文**
 
@@ -547,13 +547,13 @@ arrayCumSumNonNegative([func,] arr1[, arr2, ... , arrN])
 
 **引数**
 
-* `func` — 任意。各位置の配列要素に適用するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr1` — 数値からなるソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `[arr2, ..., arrN]` — 任意。同じサイズの追加配列です。指定した場合は、ラムダ関数に引数として渡されます。[`Array(T)`](/ja/reference/data-types/array)
+* `func` — 任意。各位置の Array 要素に適用するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1` — 数値からなるソースArray。[`Array(T)`](/ja/reference/data-types/array)
+* `[arr2, ..., arrN]` — 任意。同じサイズの追加Arrayです。指定した場合は、ラムダ関数に引数として渡されます。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ソース配列の要素の累積和からなる配列を返します。累積和が途中で負になった場合は 0 に置き換えられます。結果の型は入力配列の数値型と一致します。[`Array(T)`](/ja/reference/data-types/array)
+ソースArrayの要素の累積和からなる Array を返します。累積和が途中で負になった場合は 0 に置き換えられます。結果の型は入力Arrayの数値型と一致します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -564,7 +564,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 0, 1]
+[1,2,0,1]
 ```
 
 **ラムダ式を使用する場合**
@@ -574,7 +574,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 0, 6]
+[2,0,6]
 ```
 
 <div id="arrayDifference">
@@ -702,7 +702,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 ```
 
 ```response title=Response
-32    UInt16
+32	UInt16
 ```
 
 **Tupleの例**
@@ -712,7 +712,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 ```
 
 ```response title=Response
-32    Float64
+32	Float64
 ```
 
 <div id="arrayElement">
@@ -739,6 +739,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 演算子 `[n]` でも同じ機能を使用できます。
 
+第 1 引数には [QBit](/ja/reference/data-types/qbit) も指定できます。n 番目のベクトル要素は、QBit 要素型の完全な精度で再構築され、その要素を含むストライドグループのビットプレーンのみが読み取られます。
+
 **構文**
 
 ```sql
@@ -747,7 +749,7 @@ arrayElement(arr, n)
 
 **引数**
 
-* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
+* `arr` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit). - `n` — 取得する要素の位置、または位置の配列。位置は Nullable にすることができます。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Array((U)Int*)`](/ja/reference/data-types/array).
 
 **戻り値**
 
@@ -868,7 +870,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 ```
 
 ```response title=Response
-NULL
+\N
 ```
 
 **索引の配列**
@@ -995,7 +997,7 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 
 * `clear_depth` — 指定したレベルで要素を別々に列挙します。`max_arr_depth` 以下でなければなりません。[`UInt*`](/ja/reference/data-types/int-uint)
 * `arr` — 列挙対象の N 次元配列。[`Array(T)`](/ja/reference/data-types/array)
-* `max_array_depth` — 有効な最大深さです。`arr` の深さ以下でなければなりません。[`UInt*`](/ja/reference/data-types/int-uint)
+* `max_array_depth` — 有効な最大深度です。`arr` の深さ以下でなければなりません。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -1006,7 +1008,7 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 **基本的な使い方**
 
 ```sql title=Query
--- clear_depth=1 かつ max_array_depth=1 の場合、結果は arrayEnumerateDense と同一になります。
+-- With clear_depth=1 and max_array_depth=1, the result is identical to what arrayEnumerateDense would give.
 
 SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 ```
@@ -1018,14 +1020,14 @@ SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 **多次元配列での使用**
 
 ```sql title=Query
--- この例では、arrayEnumerateDenseRanked を使用して、多次元配列の各要素について、
--- 同じ値を持つ要素の中での出現順位を示す配列を取得します。
--- 渡された配列の1行目 [10, 10, 30, 20] に対応する結果の1行目は [1, 1, 2, 3] となります。
--- これは、10 が位置1と2で最初に出現する数値（1番目）、30 が位置3で2番目に出現する数値、
--- 20 が位置4で3番目に出現する数値であることを示しています。
--- 2行目 [40, 50, 10, 30] に対応する結果の2行目は [4,5,1,2] となります。
--- これは、40 と 50 がその行の位置1と2でそれぞれ4番目・5番目に出現する数値であり、
--- 別の 10（最初に出現した数値）が位置3に、30（2番目に出現した数値）が最後の位置にあることを示しています。
+-- In this example, arrayEnumerateDenseRanked is used to obtain an array indicating, for each element of the
+-- multidimensional array, what its position is among elements of the same value.
+-- For the first row of the passed array, [10, 10, 30, 20], the corresponding first row of the result is [1, 1, 2, 3],
+-- indicating that 10 is the first number encountered in position 1 and 2, 30 the second number encountered in position 3
+-- and 20 is the third number encountered in position 4.
+-- For the second row, [40, 50, 10, 30], the corresponding second row of the result is [4,5,1,2], indicating that 40
+-- and 50 are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another 10
+-- (the first encountered number) is in position 3 and 30 (the second number encountered) is in the last position.
 
 SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 ```
@@ -1037,13 +1039,13 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 **clear&#95;depth を増やした場合の例**
 
 ```sql title=Query
--- clear_depth=2 に変更すると、各行ごとに列挙がリセットされて個別に行われます。
+-- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 ```response title=Response
-[[1, 1, 2, 3], [1, 2, 3, 4]]
+[[1,1,2,3],[1,2,3,4]]
 ```
 
 <div id="arrayEnumerateUniq">
@@ -1082,7 +1084,7 @@ SELECT arrayEnumerateUniq([10, 20, 10, 30]);
 ```
 
 ```response title=Response
-[1, 1, 2, 1]
+[1,1,2,1]
 ```
 
 **複数の配列**
@@ -1098,37 +1100,38 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
 **ARRAY JOIN 集計**
 
 ```sql title=Query
--- 各ゴールIDについて、コンバージョン数（Goalsネストデータ構造の各要素は達成されたゴールであり、これをコンバージョンと呼ぶ）
--- およびセッション数を計算する。ARRAY JOINを使用しない場合、セッション数はsum(Sign)でカウントできる。しかしこのケースでは、
--- ネストされたGoals構造によって行が増幅されるため、各セッションを1回だけカウントするには、
--- arrayEnumerateUniq(Goals.ID)関数の値に条件を適用する。
+-- Each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion)
+-- and the number of sessions. Without ARRAY JOIN, we would have counted the number of sessions as sum(Sign). But in this particular case,
+-- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
+-- value of the arrayEnumerateUniq(Goals.ID) function.
+
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
 
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 ```
 
 ```response title=Response
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 ```
 
@@ -1163,57 +1166,57 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 **例 1**
 
 ```sql title=Query
--- clear_depth=1 かつ max_array_depth=1 の場合、arrayEnumerateUniqRanked の結果は
--- 同じ配列に対して arrayEnumerateUniq が返す結果と同一になります。
+-- With clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniq would give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[1,1,2]
 ```
 
 **例 2**
 
 ```sql title=Query
--- clear_depth=1 かつ max_array_depth=1 の場合、arrayEnumerateUniqRanked の結果は
--- 同じ配列に対して arrayEnumerateUniq が返す結果と同一になります。
-
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
-```
-
-```response title=Response
-[1, 1, 2]
-```
-
-**例 3**
-
-```sql title=Query
--- この例では、arrayEnumerateUniqRanked を使用して、多次元配列の各要素が
--- 同じ値を持つ要素の中で何番目に出現するかを示す配列を取得します。
--- 渡された配列の1行目 [1, 2, 3] に対応する結果は [1, 1, 1] であり、
--- 1、2、3 がいずれも初めて出現することを示します。
--- 2行目 [2, 2, 1] に対応する結果は [2, 3, 3] であり、
--- 2 が2回目・3回目に出現し、1 が2回目に出現することを示します。
--- 同様に、3行目 [3] に対応する結果は [2] であり、
--- 3 が2回目に出現することを示します。
+-- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniqwould give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [2, 3, 2], [2]]
+[[1,1,1],[2,3,2],[2]]
+```
+
+**例 3**
+
+```sql title=Query
+-- In this example, arrayEnumerateUniqRanked is used to obtain an array indicating,
+-- for each element of the multidimensional array, what its position is among elements
+-- of the same value. For the first row of the passed array, [1, 2, 3], the corresponding
+-- result is [1, 1, 1], indicating that this is the first time 1, 2 and 3 are encountered.
+-- For the second row of the provided array, [2, 2, 1], the corresponding result is [2, 3, 3],
+-- indicating that 2 is encountered for a second and third time, and 1 is encountered
+-- for the second time. Likewise, for the third row of the provided array [3] the
+-- corresponding result is [2] indicating that 3 is encountered for the second time.
+
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
+```
+
+```response title=Response
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **例 4**
 
 ```sql title=Query
--- clear_depth=2 に変更すると、各行ごとに要素が個別に列挙されます。
+-- Changing clear_depth=2, results in elements being enumerated separately for each row.
 SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [1, 2, 1], [1]]
+[[1,1,1],[1,2,1],[1]]
 ```
 
 <div id="arrayExcept">
@@ -1256,7 +1259,7 @@ SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])
 ```
 
 ```response title=Response
-[1, 2, 2, 4]
+[1,2,2,4]
 ```
 
 **with&#95;nulls1**
@@ -1266,7 +1269,7 @@ SELECT arrayExcept([1, NULL, 2, NULL], [2])
 ```
 
 ```response title=Response
-[1, NULL, NULL]
+[1,NULL,NULL]
 ```
 
 **with&#95;nulls2**
@@ -1286,7 +1289,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ```
 
 ```response title=Response
-['apple', 'cherry']
+['apple','cherry']
 ```
 
 <div id="arrayExists">
@@ -1362,7 +1365,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 1, 2, 2]
+[1,1,2,2]
 ```
 
 **2つの配列を使った例**
@@ -1372,7 +1375,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 ```
 
 ```response title=Response
-[5, 5, 6, 6]
+[5,5,6,6]
 ```
 
 <div id="arrayFilter">
@@ -1442,7 +1445,7 @@ arrayFirst(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])
 
 **引数**
 
-* `func(x[, y1, ..., yN])` — ソース配列 (`x`) と条件配列 (`y`) の要素に対して動作するラムダ関数。[ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source_arr` — 処理するソース配列。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1_arr, ... , condN_arr]` — 省略可能。ラムダ関数に追加の引数を渡す N 個の条件配列。[`Array(T)`](/ja/reference/data-types/array)。
+* `func(x[, y1, ..., yN])` — ソース配列 (`x`) と条件配列 (`y`) の要素に対して動作するラムダ関数。[ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source_arr` — 処理するソース配列。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件配列。[`Array(T)`](/ja/reference/data-types/array)。
 
 **戻り値**
 
@@ -1467,7 +1470,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayFirstIndex">
@@ -1520,7 +1523,7 @@ SELECT arrayFirstIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f'])
 
 導入バージョン: v1.1.0
 
-`func(x[, y1, y2, ... yN])` が true を返すソース配列内の最初の要素を返します。該当する要素がない場合は `NULL` を返します。
+`func(x[, y1, y2, ... yN])` が true を返すソースArray内の最初の要素を返します。該当する要素がない場合は `NULL` を返します。
 
 **構文**
 
@@ -1530,13 +1533,13 @@ arrayFirstOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr
 
 **引数**
 
-* `func(x[, y1, ..., yN])` — ソース配列 (`x`) および条件配列 (`y`) の要素に対して適用されるラムダ関数。[`Lambda function`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `source_arr` — 処理するソース配列。[`Array(T)`](/ja/reference/data-types/array)
-* `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件配列。[`Array(T)`](/ja/reference/data-types/array)
+* `func(x[, y1, ..., yN])` — ソースArray (`x`) および条件Array (`y`) の要素に対して適用されるラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `source_arr` — 処理するソースArray。[`Array(T)`](/ja/reference/data-types/array)
+* `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-`func` が true となるソース配列の最初の要素を返します。該当する要素がない場合は `NULL` を返します。
+`func` が true となるソースArrayの最初の要素を返します。該当する要素がない場合は `NULL` を返します。
 
 **例**
 
@@ -1557,7 +1560,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayFlatten">
@@ -1566,14 +1569,14 @@ NULL Nullable(UInt8)
 
 導入バージョン: v20.1.0
 
-配列の配列をフラット化して、1つの配列に変換します。
+Array の Array をフラット化して、1つの Array に変換します。
 
 関数:
 
-* ネストされた配列の深さにかかわらず適用できます。
-* すでにフラットな配列は変更しません。
+* ネストされた Array の深さにかかわらず適用できます。
+* すでにフラットな Array は変更しません。
 
-フラット化された配列には、すべてのソース配列の要素が含まれます。
+フラット化された Array には、すべてのソースArrayの要素が含まれます。
 
 **構文**
 
@@ -1585,22 +1588,22 @@ arrayFlatten(arr)
 
 **引数**
 
-* `arr` — 多次元配列。[`Array(Array(T))`](/ja/reference/data-types/array)
+* `arr` — 多次元Array。[`Array(Array(T))`](/ja/reference/data-types/array)
 
 **戻り値**
 
-多次元配列をフラット化した [`Array(T)`](/ja/reference/data-types/array) を返します
+多次元Arrayをフラット化した [`Array(T)`](/ja/reference/data-types/array) を返します
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT arrayFlatten([[[1]], [[2], [3]]]);
+SELECT arrayFlatten([[[1]], [[2], [3]]);
 ```
 
 ```response title=Response
-[1, 2, 3]
+[1,2,3]
 ```
 
 <div id="arrayFold">
@@ -1762,6 +1765,8 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 この関数が適用されたカラムを除き、他のカラムの値はそのままコピーされます。
 適用されたカラムの値は、対応する Array の要素の値に置き換えられます。
 
+`unnest` (バージョン26.5以降) は、関数呼び出し形式 (`SELECT unnest(arr)`) における `arrayJoin` の大文字・小文字を区別しない別名です。PostgreSQL のテーブルソース構文 (`FROM unnest(...)`、`CROSS JOIN UNNEST(...)`、および `LATERAL`) はサポートされていません。これらのクエリには `ARRAY JOIN` 句を使用してください。
+
 別名の `unnest` 経由を含め、`arrayJoin` は結合中に評価される `JOIN ON` 条件では使用できません。このような条件では、
 行数を維持する必要があるためです。一方の側にのみ適用される条件、および `arrayJoin` に対する等価キーは、
 結合前に抽出されるため、影響を受けません。非選言的な `ALL INNER JOIN` 条件も影響を受けません。
@@ -1797,11 +1802,11 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 ```response title=Response
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
 ```
 
 **arrayJoin はクエリのすべての句に影響します**
@@ -1986,7 +1991,7 @@ ORDER BY
 
 導入バージョン: v1.1.0
 
-ラムダ `func(x [, y1, y2, ... yN])` が true を返すソース配列内の最後の要素を返します。該当する要素がない場合は、デフォルト値を返します。
+ラムダ `func(x [, y1, y2, ... yN])` が true を返すソースArray内の最後の要素を返します。該当する要素がない場合は、デフォルト値を返します。
 
 **構文**
 
@@ -1996,11 +2001,11 @@ arrayLast(func(x[, y1, ..., yN]), source[, cond1, ... , condN_arr])
 
 **引数**
 
-* `func(x[, y1, ..., yN])` — ソース配列 (`x`) および条件配列 (`y`) の要素に対して適用されるラムダ関数です。[Lambda function](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source` — 処理対象のソース配列。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1, ... , condN]` — 省略可。ラムダ関数に追加の引数を渡すための N 個の条件配列です。[`Array(T)`](/ja/reference/data-types/array)。
+* `func(x[, y1, ..., yN])` — ソースArray (`x`) および条件Array (`y`) の要素に対して適用されるラムダ関数です。[ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source` — 処理対象のソースArray。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1, ... , condN]` — 省略可。ラムダ関数に追加の引数を渡すための N 個の条件Arrayです。[`Array(T)`](/ja/reference/data-types/array)。
 
 **戻り値**
 
-`func` が true となるソース配列内の最後の要素を返します。該当する要素がない場合は、`T` のデフォルト値を返します。
+`func` が true となるソースArray内の最後の要素を返します。該当する要素がない場合は、`T` のデフォルト値を返します。
 
 **例**
 
@@ -2021,7 +2026,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayLastIndex">
@@ -2076,7 +2081,7 @@ SELECT arrayLastIndex(x, y -> x=y, ['a', 'b', 'c'], ['d', 'e', 'f']);
 
 導入バージョン: v1.1.0
 
-ラムダ `func(x [, y1, y2, ... yN])` が true を返すソース配列内の最後の要素を返します。該当する要素がない場合は、`NULL` を返します。
+ラムダ `func(x [, y1, y2, ... yN])` が true を返すソースArray内の最後の要素を返します。該当する要素がない場合は、`NULL` を返します。
 
 **構文**
 
@@ -2086,11 +2091,11 @@ arrayLastOrNull(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr]
 
 **引数**
 
-* `func(x [, y1, ..., yN])` — ソース配列 (`x`) と条件配列 (`y`) の要素に対して適用されるラムダ関数です。[ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source_arr` — 処理対象のソース配列。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件配列。[`Array(T)`](/ja/reference/data-types/array)。
+* `func(x [, y1, ..., yN])` — ソースArray (`x`) と条件Array (`y`) の要素に対して適用されるラムダ関数です。[ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)。 - `source_arr` — 処理対象のソースArray。[`Array(T)`](/ja/reference/data-types/array)。 - `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件Array。[`Array(T)`](/ja/reference/data-types/array)。
 
 **戻り値**
 
-`λ` が真ではないソース配列内の最後の要素を返します。該当する要素がない場合は `NULL` を返します。
+`λ` が真ではないソースArray内の最後の要素を返します。該当する要素がない場合は `NULL` を返します。
 
 **例**
 
@@ -2111,7 +2116,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayLevenshteinDistance">
@@ -2190,7 +2195,7 @@ SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 
 
 導入バージョン: v1.1.0
 
-元の配列の各要素にラムダ関数を適用して得られる配列を返します。
+元のArrayの各要素にラムダ関数を適用して得られるArrayを返します。
 
 **構文**
 
@@ -2200,12 +2205,12 @@ arrayMap(func, arr)
 
 **引数**
 
-* `func` — ソース配列 (`x`) と条件配列 (`y`) の要素に適用されるラムダ関数です。[`Lambda function`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `arr` — 処理対象の配列を N 個指定します。[`Array(T)`](/ja/reference/data-types/array)
+* `func` — ソースArray (`x`) と条件Array (`y`) の要素に適用されるラムダ関数です。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr` — 処理対象のArrayを N 個指定します。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ラムダ関数の結果からなる配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+ラムダ関数の結果からなるArrayを返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -2216,17 +2221,17 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
 ```response title=Response
-[3, 4, 5]
+[3,4,5]
 ```
 
-**異なる配列の要素からタプルを作成する**
+**異なるArrayの要素からタプルを作成する**
 
 ```sql title=Query
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
 ```response title=Response
-[(1, 4),(2, 5),(3, 6)]
+[(1,4),(2,5),(3,6)]
 ```
 
 <div id="arrayMax">
@@ -2357,7 +2362,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 ```
 
 ```response title=Response
-(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
+(0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
 <div id="arrayPartialReverseSort">
@@ -2403,7 +2408,7 @@ SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **simple&#95;string**
@@ -2423,7 +2428,7 @@ SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[9, 5]
+[9,5]
 ```
 
 **lambda&#95;simple**
@@ -2433,7 +2438,7 @@ SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **lambda&#95;complex**
@@ -2443,7 +2448,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[0, 1, 2]
+[0,1,2]
 ```
 
 <div id="arrayPartialShuffle">
@@ -2501,7 +2506,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4])
 ```
 
 ```response title=Response
-[4, 1, 3, 2]
+[2,3,4,1]
 ```
 
 **random&#95;seed**
@@ -2521,7 +2526,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)
 ```
 
 ```response title=Response
-[3, 2, 1, 4]
+[3,2,1,4]
 ```
 
 **マテリアライズ**
@@ -2531,18 +2536,18 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 ```
 
 ```response title=Response
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayPartialSort">
@@ -2588,7 +2593,7 @@ SELECT arrayPartialSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **simple&#95;string**
@@ -2598,7 +2603,7 @@ SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])
 ```
 
 ```response title=Response
-['embolism', 'expenses', 'gladly', 'lasso']
+['embolism','expenses','gladly','lasso']
 ```
 
 **retain&#95;sorted**
@@ -2608,7 +2613,7 @@ SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **lambda&#95;simple**
@@ -2618,7 +2623,7 @@ SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **lambda&#95;complex**
@@ -2628,7 +2633,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[2, 1, 0]
+[2,1,0]
 ```
 
 <div id="arrayPopBack">
@@ -2662,7 +2667,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[1, 2]
+[1,2]
 ```
 
 <div id="arrayPopFront">
@@ -2696,7 +2701,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[2, 3]
+[2,3]
 ```
 
 <div id="arrayProduct">
@@ -3083,7 +3088,7 @@ SELECT arrayRemove([1, 2, 2, 3], 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **例 2**
@@ -3093,7 +3098,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ```
 
 ```response title=Response
-['a', 'b']
+['a','b']
 ```
 
 <div id="arrayResize">
@@ -3221,7 +3226,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 2, 2, NULL]
+[1,2,2,NULL]
 ```
 
 **2つの配列を使った例**
@@ -3231,7 +3236,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 ```
 
 ```response title=Response
-[5, 6, 6, 2]
+[5,6,6,2]
 ```
 
 <div id="arrayReverseSort">
@@ -3306,8 +3311,8 @@ arrayReverseSplit(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_ar
 
 **引数**
 
-* `func(x[, y1, ..., yN])` — ソース配列 (`x`) および条件配列 (`y`) の要素に対して処理を行うラムダ関数です。[`Lambda function`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `source_arr` — 処理対象のソース配列です。[`Lambda function`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func(x[, y1, ..., yN])` — ソース配列 (`x`) および条件配列 (`y`) の要素に対して処理を行うラムダ関数です。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `source_arr` — 処理対象のソース配列です。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `[, cond1_arr, ... , condN_arr]` — 任意。ラムダ関数に追加の引数を渡す N 個の条件配列です。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
@@ -3323,7 +3328,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1], [2, 3, 4], [5]]
+[[1],[2,3,4],[5]]
 ```
 
 <div id="arrayRotateLeft">
@@ -3505,7 +3510,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;
 ```
 
 ```response title=Response
-[0, 0, 1, 2, 3, 4]
+[0,0,1,2,3,4]
 ```
 
 **n が負の値の場合**
@@ -3515,7 +3520,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;
 ```
 
 ```response title=Response
-[3, 4, 5, 6, 0, 0]
+[3,4,5,6,0,0]
 ```
 
 **デフォルト値を使用する**
@@ -3525,7 +3530,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 ```
 
 ```response title=Response
-[42, 42, 1, 2, 3, 4]
+[42,42,1,2,3,4]
 ```
 
 <div id="arrayShingles">
@@ -3544,12 +3549,12 @@ arrayShingles(arr, l)
 
 **引数**
 
-* `arr` — shingle の配列を生成する対象の Array。[`Array(T)`](/ja/reference/data-types/array)
-* `l` — 各 shingle の長さ。[`(U)Int*`](/ja/reference/data-types/int-uint)
+* `arr` — シングル の配列を生成する対象の Array。[`Array(T)`](/ja/reference/data-types/array)
+* `l` — 各 シングル の長さ。[`(U)Int*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-生成された shingle の配列 [`Array(T)`](/ja/reference/data-types/array)
+生成された シングル の配列 [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -3560,7 +3565,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 ```
 
 ```response title=Response
-[[1, 2, 3], [2, 3, 4]]
+[[1,2,3],[2,3,4]]
 ```
 
 <div id="arrayShuffle">
@@ -3662,6 +3667,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 配列の一部を返します。`NULL` 要素も含まれます。
 
+最初の引数には [QBit](/ja/reference/data-types/qbit) も指定できます。この場合、結果は選択した次元上の QBit (次元の部分集合への射影) になります。QBit の次元はその型の一部であり、スライスでは少なくとも 1 つの次元を選択する必要があるため、この場合の `offset` と `length` は定数でなければなりません。QBit の stride-group 境界に揃ったスライスでは、ストライドが維持され、コピーを行わずに保存済みのビットプレーンストリームが再利用されます。
+
 **構文**
 
 ```sql
@@ -3670,7 +3677,7 @@ arraySlice(arr, offset [, length])
 
 **引数**
 
-* `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
 * `offset` — 配列の端からの位置。正の値は左側からのオフセット、負の値は右側からのインデントを示します。配列要素の番号は `1` から始まります。[`(U)Int*`](/ja/reference/data-types/int-uint)
 * `length` — 必要なスライスの長さ。負の値を指定すると、関数は開区間のスライス `[offset, array_length - length]` を返します。値を省略すると、関数はスライス `[offset, the_end_of_array]` を返します。[`(U)Int*`](/ja/reference/data-types/int-uint)
 
@@ -3687,7 +3694,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ```response title=Response
-[2, NULL, 4]
+[2,NULL,4]
 ```
 
 <div id="arraySort">
@@ -3789,7 +3796,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1, 2, 3], [4, 5]]
+[[1,2,3],[4,5]]
 ```
 
 <div id="arraySum">
@@ -4006,7 +4013,7 @@ SELECT arrayTranspose([[1, 2], [3, 4]])
 ```
 
 ```response title=Response
-[[1, 3], [2, 4]]
+[[1,3],[2,4]]
 ```
 
 **非正方行列**
@@ -4016,7 +4023,7 @@ SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])
 ```
 
 ```response title=Response
-[[1, 4], [2, 5], [3, 6]]
+[[1,4],[2,5],[3,6]]
 ```
 
 **文字列型の要素**
@@ -4026,7 +4033,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 ```
 
 ```response title=Response
-[['a', 'c'], ['b', 'd']]
+[['a','c'],['b','d']]
 ```
 
 <div id="arrayUnion">
@@ -4161,7 +4168,7 @@ SELECT arrayWithConstant(3, 1)
 ```
 
 ```response title=Response
-[1, 1, 1]
+[1,1,1]
 ```
 
 <div id="arrayZip">
@@ -4195,7 +4202,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 ```response title=Response
-[('a', 5), ('b', 2), ('c', 1)]
+[('a',5),('b',2),('c',1)]
 ```
 
 <div id="arrayZipUnaligned">
@@ -4229,7 +4236,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 ```response title=Response
-[('a', 1),(NULL, 2),(NULL, 3)]
+[('a',1),(NULL,2),(NULL,3)]
 ```
 
 <div id="countEqual">
@@ -4623,7 +4630,7 @@ SELECT emptyArrayString()
 
 導入バージョン: v1.1.0
 
-空の配列を受け取り、デフォルト値に等しい1要素の配列を返します。
+空のArrayを受け取り、デフォルト値に等しい1要素のArrayを返します。
 
 **構文**
 
@@ -4633,11 +4640,11 @@ emptyArrayToSingle(arr)
 
 **引数**
 
-* `arr` — 空の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — 空のArray。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-Array のデフォルト型の値を 1 つ持つ配列。[`Array(T)`](/ja/reference/data-types/array)
+Array のデフォルト型の値を 1 つ持つArray。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4659,7 +4666,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 ```response title=Response
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
@@ -4876,11 +4883,11 @@ SELECT has('{"a": {"b": 1}}'::JSON, 'a.b')
 
 導入バージョン: v1.1.0
 
-一方の配列がもう一方の配列の部分集合であるかどうかを判定します。
+一方のArrayがもう一方のArrayの部分集合であるかどうかを判定します。
 
-* 空の配列は、任意の配列の部分集合です。
+* 空のArrayは、任意のArrayの部分集合です。
 * `Null` は値として処理されます。
-* どちらの配列でも、値の順序は関係ありません。
+* どちらのArrayでも、値の順序は関係ありません。
 
 **構文**
 
@@ -4902,7 +4909,7 @@ hasAll(set, subset)
 
 **例**
 
-**空の配列**
+**空のArray**
 
 ```sql title=Query
 SELECT hasAll([], [])
@@ -4932,7 +4939,7 @@ SELECT hasAll([1.0, 2, 3, 4], [1, 3])
 1
 ```
 
-**String 型の値を含む配列**
+**String 型の値を含むArray**
 
 ```sql title=Query
 SELECT hasAll(['a', 'b'], ['a'])
@@ -4949,7 +4956,8 @@ SELECT hasAll([1], ['a'])
 ```
 
 ```response title=Response
-NO_COMMON_TYPE 例外が発生します
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **ArrayのArray**
@@ -4968,10 +4976,10 @@ SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])
 
 導入バージョン: v1.1.0
 
-2 つの配列に共通する要素があるかどうかを判定します。
+2 つのArrayに共通する要素があるかどうかを判定します。
 
 * `Null` は値として処理されます。
-* どちらの配列でも、値の順序は問いません。
+* どちらのArrayでも、値の順序は問いません。
 
 **構文**
 
@@ -5013,7 +5021,7 @@ SELECT hasAny([Null], [Null, 1])
 1
 ```
 
-**異なる型の値を含む配列**
+**異なる型の値を含むArray**
 
 ```sql title=Query
 SELECT hasAny([-128, 1., 512], [1])
@@ -5023,17 +5031,18 @@ SELECT hasAny([-128, 1., 512], [1])
 1
 ```
 
-**共通の型がないArray**
+**共通の型を持たないArray**
 
 ```sql title=Query
 SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])
 ```
 
 ```response title=Response
-`NO_COMMON_TYPE` 例外が発生します
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
 ```
 
-**ArrayのArray**
+**Array の Array**
 
 ```sql title=Query
 SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])
@@ -5057,9 +5066,9 @@ array2 のすべての要素が、array1 にまったく同じ順序で現れる
 
 * array2 が空の場合、この関数は `1` を返します。
 * `NULL` は値として処理されます。言い換えると、`hasSubstr([1, 2, NULL, 3, 4], [2,3])` は `0` を返します。ただし、`hasSubstr([1, 2, NULL, 3, 4], [2,NULL,3])` は `1` を返します。
-* 両方の配列における値の順序は重要です。
+* 両方のArrayにおける値の順序は重要です。
 
-2 つの配列の要素同士に共通の上位型がない場合は、`NO_COMMON_TYPE` 例外を発生させます。
+2 つのArrayの要素同士に共通スーパータイプがない場合は、`NO_COMMON_TYPE` 例外を発生させます。
 
 **構文**
 
@@ -5074,11 +5083,11 @@ hasSubstr(arr1, arr2)
 
 **戻り値**
 
-配列 `arr1` が配列 `arr2` を含む場合は `1`、それ以外の場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+Array `arr1` がArray `arr2` を含む場合は `1`、それ以外の場合は `0` を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
-**両方の配列が空の場合**
+**両方のArrayが空の場合**
 
 ```sql title=Query
 SELECT hasSubstr([], [])
@@ -5108,7 +5117,7 @@ SELECT hasSubstr([1.0, 2, 3, 4], [1, 3])
 0
 ```
 
-**文字列を含む配列**
+**文字列を含むArray**
 
 ```sql title=Query
 SELECT hasSubstr(['a', 'b'], ['a'])
@@ -5138,7 +5147,7 @@ SELECT hasSubstr(['a', 'b' , 'c'], ['a', 'c'])
 0
 ```
 
-**Arrayの配列**
+**ArrayのArray**
 
 ```sql title=Query
 SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])
@@ -5148,14 +5157,15 @@ SELECT hasSubstr([[1, 2], [3, 4], [5, 6]], [[1, 2], [3, 4]])
 1
 ```
 
-**共通の型を持たない配列**
+**共通の型を持たないArray**
 
 ```sql title=Query
 SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 ```
 
 ```response title=Response
-`NO_COMMON_TYPE` 例外が発生します
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 <div id="indexOf">
@@ -5356,9 +5366,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 ```
 
 ```response title=Response
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
 ```
 
 <div id="notEmpty">
@@ -5624,7 +5634,7 @@ SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
 
 導入バージョン: v1.1.0
 
-単一の値を含む配列を作成します。
+単一の値を含むArrayを作成します。
 
 **構文**
 
@@ -5634,12 +5644,12 @@ replicate(x, arr)
 
 **引数**
 
-* `x` — 結果の配列を値 `x` で埋めるための値。[`Any`](/ja/reference/data-types/index)
-* `arr` — 配列。[`Array(T)`](/ja/reference/data-types/array)
+* `x` — 結果のArrayを値 `x` で埋めるための値。[`Any`](/ja/reference/data-types/index)
+* `arr` — Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-`arr` と同じ長さで、各要素が値 `x` の配列を返します。[`Array(T)`](/ja/reference/data-types/array)
+`arr` と同じ長さで、各要素が値 `x` のArrayを返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -5650,9 +5660,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 ```response title=Response
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
 ```
 
 <div id="reverse">
@@ -5671,22 +5681,22 @@ reverse(arr | str)
 
 **引数**
 
-* `arr | str` — ソース配列または文字列。[`Array(T)`](/ja/reference/data-types/array) または [`String`](/ja/reference/data-types/string)
+* `arr | str` — ソースArrayまたは文字列。[`Array(T)`](/ja/reference/data-types/array) または [`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-要素または文字の並び順を逆にした配列または文字列を返します。
+要素または文字の並び順を逆にしたArrayまたは文字列を返します。
 
 **例**
 
-**配列を逆順にする**
+**Arrayを逆順にする**
 
 ```sql title=Query
 SELECT reverse([1, 2, 3, 4]);
 ```
 
 ```response title=Response
-[4, 3, 2, 1]
+[4,3,2,1]
 ```
 
 **文字列の反転**
@@ -5696,7 +5706,7 @@ SELECT reverse('abcd');
 ```
 
 ```response title=Response
-'dcba'
+dcba
 ```
 
 {/*AUTOGENERATED_END*/}

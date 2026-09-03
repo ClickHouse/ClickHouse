@@ -1,6 +1,6 @@
 const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
   // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을
-  // 보존하지 않은 채 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
+  // 보존하지 않은 채로 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
   // 해당 평가 스코프에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
@@ -726,9 +726,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "shared_merge_*",
-      count: 51,
+      count: 53,
       settings: [
         { name: "shared_merge_tree_activate_coordinated_merges_tasks", path: "/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
+        { name: "shared_merge_tree_blobs_list_inline_file_max_bytes", path: "/shared-merge#shared_merge_tree_blobs_list_inline_file_max_bytes", default: "0" },
         { name: "shared_merge_tree_create_per_replica_metadata_nodes", path: "/shared-merge#shared_merge_tree_create_per_replica_metadata_nodes", default: "0" },
         { name: "shared_merge_tree_disable_merges_and_mutations_assignment", path: "/shared-merge#shared_merge_tree_disable_merges_and_mutations_assignment", default: "0" },
         { name: "shared_merge_tree_empty_partition_lifetime", path: "/shared-merge#shared_merge_tree_empty_partition_lifetime", default: "86400" },
@@ -785,6 +786,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           default: "0"
         },
         { name: "shared_merge_tree_update_replica_flags_delay_ms", path: "/shared-merge#shared_merge_tree_update_replica_flags_delay_ms", default: "30000" },
+        { name: "shared_merge_tree_use_blobs_list_for_parts", path: "/shared-merge#shared_merge_tree_use_blobs_list_for_parts", default: "0" },
         { name: "shared_merge_tree_use_metadata_hints_cache", path: "/shared-merge#shared_merge_tree_use_metadata_hints_cache", default: "1" },
         { name: "shared_merge_tree_use_outdated_parts_compact_format", path: "/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
         { name: "shared_merge_tree_use_too_many_parts_count_from_virtual_parts", path: "/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts", default: "0" },
@@ -814,14 +816,15 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "text_index_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "text_index_dictionary_block_frontcoding_compression", path: "/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
         { name: "text_index_dictionary_block_size", path: "/text-index#text_index_dictionary_block_size", default: "512" },
         { name: "text_index_max_memory_usage_before_flush", path: "/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
         { name: "text_index_max_processed_tokens_before_flush", path: "/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
         { name: "text_index_posting_list_block_size", path: "/text-index#text_index_posting_list_block_size", default: "1048576" },
-        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" }
+        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" },
+        { name: "text_index_serialization_version", path: "/text-index#text_index_serialization_version", default: "v2_with_positions" }
       ],
       children: []
     },

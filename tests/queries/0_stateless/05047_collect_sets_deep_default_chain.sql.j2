@@ -1,0 +1,14 @@
+-- Tags: long
+
+DROP TABLE IF EXISTS test_deep_default_chain;
+
+CREATE TABLE test_deep_default_chain (
+    c0 UInt64 DEFAULT 1
+{%- for i in range(1, 1500) %},
+    c{{ i }} UInt64 DEFAULT c{{ i - 1 }} + 1
+{%- endfor %}
+) ENGINE = Memory;
+
+SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 'test_deep_default_chain';
+
+DROP TABLE test_deep_default_chain;

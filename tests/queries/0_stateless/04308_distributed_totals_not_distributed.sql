@@ -14,7 +14,6 @@ SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_def
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
-SET automatic_parallel_replicas_mode = 0;
 
 SELECT '-- WITH TOTALS';
 SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }

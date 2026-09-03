@@ -1,0 +1,218 @@
+---
+title: '引导'
+sidebarTitle: '引导'
+description: '安装 ClickHouse 连接器，并在 Kubernetes 或 Linux VM 上进行注册'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'onboarding']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本页将指导您使用注册标记完成连接器的部署与验证。连接器可安装到以下两种目标之一：Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程；如果您的环境无法直接访问 ClickHouse 端点，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+所有安装方式均需满足：
+
+* **连接器端点和注册标记**，由 ClickHouse 在引导过程中提供 (请参阅步骤 1) 。
+* **通过端口 443 的出站访问**：安装时需能访问 `https://<subdomain>.<connector-domain>`、`https://<subdomain>.enroll.<connector-domain>`、`releases.clicklink.clickhouse.com` 和亚马逊 ECR Public。如果其中任一地址无法访问，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。
+* **可从连接器运行位置访问的 ClickHouse 原生监听端点**：安全端口 (9440) 或明文端口 (9000) ；在 Kubernetes 上会自动检测。
+* **用于预配的 ClickHouse 管理员访问权限**：无密码的 `default` 用户、密码 (按提示输入，或通过 `--ch-admin-password-stdin` 提供) ，或者由 operator 管理的实例。对于后者，预配会切换为 CR 注入，无需密码。
+* **cosign**：在任何下载发行制品的位置都需安装。安装程序始终会验证 SHA-256 校验和；如果已安装 cosign，还会验证 cosign 签名；如果设置了 `CLICKLINK_REQUIRE_COSIGN=1`，则未安装 cosign 时会拒绝继续。
+
+Kubernetes (Helm) 安装还需满足：
+
+* **任何符合规范的 Kubernetes 集群。**
+* **kubeconfig**：必须能够创建和读取连接器命名空间、应用 Secret、在 ClickHouse pod (容器组) 中执行 exec (预配会在 pod 内运行 `clickhouse-client`) 、创建 ServiceAccount、Role 和 RoleBinding，以及安装 chart。
+* **默认存储类**，或通过 `--storage-class` 指定的存储类；troubleshooter 会将状态保存在 PersistentVolumeClaim 中。
+* **镜像拉取权限**：集群节点必须能够拉取公共 ECR 镜像或您托管的镜像。
+
+Linux VM (systemd) 安装还需满足：
+
+* **任何运行 systemd 的 Linux 主机**，支持 amd64 或 arm64。Linux 构建以 FIPS 模式运行。
+* 安装程序和 `init` 均需要 **Root 访问权限**。
+* **可用端口** 8080、8082 和 8084 (健康检查) ，以及 9090、9092 和 9094 (指标) ；启用支持会话 gateway 时还需要 8443。
+* **对 Kubernetes API server 的管理员访问权限**，可通过主机上的 kubeconfig、`--server` 和 `--ca-data`，或按提示提供。访问包以两个目标上的 Kubernetes ServiceAccount 为基础。
+
+<Note>
+  `--skip-provision` 是绕过 Kubernetes 要求的唯一方式，但仅用于暂存：它会跳过 ClickHouse 用户预配；在 VM 上，还会跳过单元启用和验证，因此单独使用不会生成正在运行的连接器。
+</Note>
+
+<div id="install-and-enroll">
+  ## 安装并注册
+</div>
+
+<Steps>
+  <Step title="获取 connector 端点和注册令牌" id="get-endpoint-and-token">
+    在初始设置过程中，ClickHouse 会提供 connector 端点和一次性注册令牌。该端点的格式如下：
+
+    ```text
+    https://<subdomain>.<connector-domain>
+    ```
+
+    该标记只能使用一次，且很快会过期，因此收到后请尽快完成注册。请将其视为 secret：命令行客户端会通过隐藏提示 (或 stdin 的第一行) 读取该标记，绝不会从命令行参数、disk 或日志中读取。如果标记在使用前过期，请联系您的 ClickHouse account 团队获取新的标记。
+  </Step>
+
+  <Step title="安装并验证命令行客户端" id="install-and-verify-the-cli">
+    一条命令即可安装经过验证的 `clicklink` 可执行文件：它会检测您的平台和架构 (macOS 或 Linux、amd64 或 arm64) ，下载当前版本，验证 SHA-256 校验和；若已安装 cosign，还会验证版本签名，并将该可执行文件安装到您的 `PATH` 中。对于 Kubernetes 安装，请在任何可通过 kubeconfig 访问集群的工作站上运行此命令：
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
+    ```
+
+    对于 VM 安装，请在主机上使用 `--host` 运行相同的脚本。下载验证完成后，脚本还会创建 `clicklink` 系统用户、`/etc/clicklink`、`/var/lib/clicklink` 和 `/var/log/clicklink` 目录以及 systemd 单元，并生成默认的 `/etc/clicklink/redaction-patterns.yaml` (如已存在则保留) ，因此下一步可直接进行注册：
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
+    ```
+
+    两种方式都支持使用 `--version vX.Y.Z` 固定版本，且可安全地重复运行：在主机上安装时，会备份先前的二进制文件并保留当前配置。若要在运行前查看脚本，或自行下载并验证发布版 tarball，请参阅[手动下载和验证](#manual-download-and-verification)。
+  </Step>
+
+  <Step title="注册并安装连接器" id="enroll-and-install">
+    注册只需一条命令。该命令会兑换标记、配置 ClickHouse 访问权限、获取已签名的客户端证书、安装连接器，并完成端到端验证。
+
+    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse 连接器注册流程" />
+
+    <Tabs>
+      <Tab title="Kubernetes">
+        在工作站上运行：
+
+        ```bash
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
+        ```
+
+        在隐藏提示中粘贴注册标记。随后，命令行客户端会提示您输入：
+
+        * 连接器命名空间 (默认为 `clicklink`)
+        * 运行 ClickHouse 实例的命名空间
+        * 实例连接信息，预先填入从检测到的 ClickHouse 服务获取的信息
+        * 存储类，仅当集群未标记默认存储类时需要
+        * 支持会话策略；如启用，还需提供运维人员电子邮件允许列表
+        * ClickHouse 管理员密码，仅当 SQL 配置需要时提供
+
+        这条命令会完成整个流程：兑换标记 (将注册包以 `handoff.yaml` 保存到工作目录中) 、暂存 Helm 配置值覆盖文件 `clicklink-values.yaml`、创建命名空间、应用 `clicklink-hmac` 和 `clicklink-mtls` Secret、为每个实例配置只读 ClickHouse 用户 (对于由 operator 管理的实例，自动选择 SQL 授权或 CR 注入) 、生成私钥和 CSR，并由 ClickHouse 对客户端证书进行签名、使用内置 Helm 客户端安装 `clicklink-connector` Helm 发布版本 (无需 `helm` 二进制文件) ，以及验证运行状况。
+
+        对于无人值守运行，请改用标志提供提示所需的答案。请使用已保存的注册包作为入口点，因为在非终端运行中，`--enroll` 会从 stdin 的第一行读取注册标记，从而会读取掉重定向的密码：
+
+        ```bash
+        clicklink clctl init --handoff handoff.yaml --target helm \
+          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
+          --operators '<operator-email-1>,<operator-email-2>' \
+          --storage-class <storage-class> \
+          --ch-admin-password-stdin < admin-password.txt
+        ```
+
+        对每个 ClickHouse 实例重复指定 `--instance`。如需禁用支持会话，请传递 `--no-gateway` 而非 `--operators`；这两个标志互斥。
+      </Tab>
+
+      <Tab title="Linux 虚拟机">
+        上一步中的 `--host` 安装已部署二进制文件、`clicklink` 系统用户和目录，以及 systemd 单元。请以 root 身份注册：
+
+        ```bash
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
+        ```
+
+        在隐藏提示中粘贴注册标记。该命令会兑换标记 (将注册包保存为 `handoff.yaml`) 、写入 `/etc/clicklink/config.yaml`、安装 API 凭据和 CA 证书链、生成私钥和 CSR，并由 ClickHouse 对客户端证书进行签名、为两个守护进程配置只读 ClickHouse 用户、启用并启动 `clicklink-scraper` 和 `clicklink-troubleshooter` 服务、等待两者均报告为存活状态，最后运行完整的预检套件。
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="验证是否成功" id="verify-success">
+    `init` 会在报告安装成功前进行验证。在 Kubernetes 上，它会在最多五分钟内轮询每个已启用组件的 `/livez` 端点；如果启用了支持会话 gateway，还要求 gateway 对未经身份验证的 probe 返回 `401`。在 VM 上，它会等待每个守护进程的 `/livez`，然后运行完整的 Preflight 检查：config、文件、端口冲突、网络可达性、ClickHouse 连接、systemd 单元状态、各组件访问权限、disk 和脱敏模式。
+
+    要在 Kubernetes 上手动确认：
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+    kubectl get pods -n "${CONNECTOR_NAMESPACE}"
+    ```
+
+    所有 connector pod (容器组) 都应处于 `Running` 状态且已就绪。
+
+    如需在 VM 上手动确认：
+
+    ```bash
+    sudo clicklink clctl preflight
+    ```
+
+    所有检查均通过时，它以 `0` 退出；如有任何检查失败，则以 `2` 退出，并输出失败的检查项。
+  </Step>
+
+  <Step title="清理" id="clean-up">
+    注册支持包 `handoff.yaml` (以 `0600` 模式写入工作目录) 可确保安装过程中重新运行或恢复时无需第二个标记。它以明文形式包含 connector 的 API secret，因此安装验证完成后请将其删除：
+
+    ```bash
+    rm handoff.yaml        # workstation (Kubernetes installs)
+    sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
+    ```
+
+    正在运行的连接器会保存自己的凭据副本，因此后续运维操作无需依赖该文件：升级和配置变更都不需要它；如果日后需要再次执行 `init`，请向 ClickHouse 账户团队申请新的注册令牌，然后运行 `init --enroll --force`。
+  </Step>
+</Steps>
+
+<div id="air-gapped-and-mirrored-installs">
+  ## 隔离网络和镜像安装
+</div>
+
+根据您的环境可访问的资源，有两个独立部分可通过带外方式完成。
+
+**安装包交付。** 如果您不想在线兑换标记，ClickHouse 可在引导期间直接提供注册安装包；请使用 `clicklink clctl init --handoff <bundle-file>` 替代 `--enroll`。`--handoff` 仅替代标记兑换：证书签名仍会通过注册端点进行。因此，仅当运行 `init` 的位置可以访问该端点时，才单独使用此选项。
+
+**带外证书签名。** 如果运行 `init` 的位置无法访问注册端点，请添加 `--no-auto-sign`：`init` 会暂存所有内容并写入 `clicklink.csr`。通过您的客户团队将 CSR 发送给 ClickHouse，然后使用返回的证书和证书链完成安装：在 VM 上运行 `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt`；在 Kubernetes 上，则运行暂存执行时输出的完整完成命令 (包括 `--target helm`) 。仅传输 CSR；私钥绝不会离开您的环境。
+
+在 Kubernetes 上，`--chart` 可接受通过 `--chart-repo` 解析的 chart 名称、`oci://` 引用、直接 URL，或本地归档文件或目录。`--chart-version` 默认使用命令行客户端自身的版本，因此二进制文件与 chart 可保持同步迁移。要从您自己的 registry 提供镜像，请镜像容器镜像，并在配置值覆盖文件中设置 `image.repository`。如果您的出口路径向连接器提供私有 CA，请传入 `--api-private-ca`，以便使用注册安装包中的 CA 链而非系统信任库来验证 API 端点。
+
+安装程序也可通过镜像运行：在您自己的镜像站点上托管发行制品和 `install.sh`，并通过 `CLICKLINK_MIRROR_URL` 指向该镜像站点。
+
+<div id="manual-download-and-verification">
+  ### 手动下载和验证
+</div>
+
+如果不想通过管道运行安装程序，可以自行下载并验证发布版本。该代码块会检测你的平台和架构；可直接在 macOS 或 Linux、amd64 或 arm64 上原样运行：
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
+CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
+for suffix in '' .sha256 .sig .crt; do
+  curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
+done
+if command -v sha256sum >/dev/null; then
+  sha256sum -c "${CLICKLINK_TARBALL}.sha256"
+else
+  shasum -a 256 -c "${CLICKLINK_TARBALL}.sha256"
+fi
+```
+
+在解压前，请先使用 cosign 验证签名：
+
+```bash
+cosign verify-blob \
+  --certificate "${CLICKLINK_TARBALL}.crt" \
+  --signature "${CLICKLINK_TARBALL}.sig" \
+  --certificate-identity-regexp "^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "${CLICKLINK_TARBALL}"
+```
+
+在工作站上 (适用于 Kubernetes 安装) ，解压 tarball 并安装二进制文件：
+
+```bash
+tar -xzf "${CLICKLINK_TARBALL}"
+sudo install -m 0755 clicklink /usr/local/bin/clicklink
+```
+
+在 VM 上，解压 tarball，然后在解压后的目录中运行 `sudo ./install.sh`；该脚本会在发行制品所在目录旁执行与 `--host` 相同的主机安装。
+
+<div id="if-something-fails">
+  ## 如果出现故障
+</div>
+
+请重新运行相同的命令。`init` 具有幂等性：重复运行会收敛到相同状态，保留现有配置和暂存文件，并跳过已完成的工作。如果某个步骤中途失败，命令行客户端会输出针对当前情况的准确恢复命令，且这些命令可安全地重复执行。
+
+如果注册被拒绝，标记可能已被使用 (使用 `--handoff handoff.yaml` 重新运行；该文件会保留至最后的清理步骤) ，也可能无效或已过期 (请联系您的 ClickHouse 客户团队获取新的标记) 。如果注册因传输错误失败，标记尚未被使用；请重新运行相同的命令。
+
+`--force` 用于显式重置，而非例行重试：它会覆盖保留的配置或配置值覆盖文件，重新生成客户端密钥，并取代未过期的客户端证书 (签名端点返回 `409` 表示该证书已存在) 。即使使用 `--force`，连接器的集群 UUID 仍会保留，因此重新初始化后的连接器会保持其身份。请在轮换凭据或取代证书时使用它；有关完整的重新运行和恢复模型，请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。

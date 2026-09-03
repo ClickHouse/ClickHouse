@@ -6,7 +6,7 @@
 -- rewrite either preserves the needed column or bails out to the exact path (the exact full-precision result is always
 -- correct, just unaccelerated).
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;

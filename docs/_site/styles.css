@@ -1285,6 +1285,208 @@ html.dark .dark\:bg-primary-light,
     background-color: #f7f7f7 !important;
 }
 
+/* Featured Cloud card on the installation page. */
+.ch-install-cloud-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.25rem 1rem 1rem;
+    border: 1px solid #e6e7e9;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    background-color: #f7f7f7;
+    text-align: center;
+}
+
+.ch-install-cloud-badge {
+    display: inline-flex;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    align-items: center;
+    padding: 0.125rem 0.625rem;
+    transform: translate(-50%, -50%);
+    border: 1px solid #e6e7e9;
+    border-radius: 9999px;
+    background-color: #f5f5f5;
+    color: #151515;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1rem;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.ch-install-cloud-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    background-color: #1c1c1c;
+    -webkit-mask: url('/images/icons/icon-clickhouse-cloud.svg') center / contain no-repeat;
+    mask: url('/images/icons/icon-clickhouse-cloud.svg') center / contain no-repeat;
+}
+
+.ch-install-cloud-title {
+    margin: 0.75rem 0 0.625rem;
+    color: #1c1c1c;
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.5rem;
+}
+
+.ch-install-cloud-description {
+    max-width: 44rem;
+    margin: 0;
+    color: #42454a;
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+}
+
+.ch-install-cloud-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.ch-install-cloud-cta {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid #151515;
+    border-radius: 0.25rem;
+    background-color: #151515;
+    color: #ffffff !important;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.125rem;
+    text-decoration: none !important;
+    transition: background-color 0.15s;
+}
+
+.ch-install-cloud-cta:hover {
+    background-color: #151515;
+}
+
+.ch-install-cloud-cta-secondary {
+    border-color: #151515;
+    background-color: #f7f7f7;
+    color: #151515 !important;
+}
+
+.ch-install-cloud-cta-secondary:hover {
+    border-color: #151515;
+    background-color: #ececec;
+}
+
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta,
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
+    border: 1px solid #151515 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary,
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #151515 !important;
+}
+
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta,
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta-secondary,
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #151515 !important;
+}
+
+.ch-install-cloud-cta:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.dark .ch-install-cloud-card {
+    border-color: #7f813d;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .ch-install-cloud-badge {
+    border-color: #7f813d;
+    background-color: #1b1b1b;
+    color: #fdff75;
+}
+
+.dark .ch-install-cloud-icon {
+    background-color: #ffffff;
+}
+
+.dark .ch-install-cloud-title {
+    color: #ffffff;
+}
+
+.dark .ch-install-cloud-description {
+    color: #b7bac0;
+}
+
+.dark .ch-install-cloud-cta {
+    border-color: #fdff75;
+    background-color: #fdff75;
+    color: #1c1c1c !important;
+}
+
+.dark .ch-install-cloud-cta:hover {
+    background-color: #eaec6a;
+}
+
+.dark .ch-install-cloud-cta-secondary {
+    border-color: #555800;
+    background-color: #151515;
+    color: #ffffff !important;
+}
+
+.dark .ch-install-cloud-cta-secondary:hover {
+    border-color: #7f8300;
+    background-color: #1c1c1c;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta,
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
+    border: 1px solid #fdff75 !important;
+    color: #1c1c1c !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary,
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #555800 !important;
+    color: #ffffff !important;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border-color: #7f8300 !important;
+}
+
+@media (max-width: 640px) {
+    .ch-install-cloud-actions {
+        grid-template-columns: 1fr;
+    }
+}
+
 .dark .card,
 :is(.dark) .card {
     border-color: rgba(255, 255, 255, 0.15) !important;
@@ -2111,6 +2313,117 @@ html.dark .prose a.experimentalBadge:not(.card):not(.card *),
 #table-of-contents-content {
     max-height: calc(100vh - 22rem);
     overflow-y: auto;
+}
+
+.ch-cloud-sidebar-ad-slot {
+    display: block;
+    flex-basis: 100%;
+    width: 100%;
+    margin-top: 1rem;
+    list-style: none;
+}
+
+.ch-cloud-sidebar-ad {
+    position: relative;
+    padding: 1rem;
+    border: 1px solid #dedede;
+    border-radius: 0.5rem;
+    background-color: #f7f7f7;
+}
+
+.ch-cloud-sidebar-ad-title {
+    padding-right: 1.5rem;
+    margin: 0 0 0.5rem;
+    color: #1c1c1c;
+    font-size: 0.875rem;
+    font-weight: 650;
+    line-height: 1.25rem;
+}
+
+.ch-cloud-sidebar-ad-description {
+    margin: 0 0 0.875rem;
+    color: #5f6368;
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+}
+
+.ch-cloud-sidebar-ad-dismiss {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.625rem;
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 1.125rem;
+    line-height: 1;
+}
+
+.ch-cloud-sidebar-ad-dismiss:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #1c1c1c;
+}
+
+.ch-cloud-sidebar-ad-dismiss:focus-visible,
+.ch-cloud-sidebar-ad-link:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.ch-cloud-sidebar-ad-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    background-color: #1c1c1c;
+    color: #ffffff !important;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1rem;
+    text-decoration: none !important;
+}
+
+.ch-cloud-sidebar-ad-link:hover {
+    background-color: #333333;
+}
+
+.dark .ch-cloud-sidebar-ad {
+    border-color: rgba(255, 255, 255, 0.15);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .ch-cloud-sidebar-ad-title {
+    color: #ffffff;
+}
+
+.dark .ch-cloud-sidebar-ad-description {
+    color: #b7bac0;
+}
+
+.dark .ch-cloud-sidebar-ad-dismiss {
+    color: #b7bac0;
+}
+
+.dark .ch-cloud-sidebar-ad-dismiss:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.dark .ch-cloud-sidebar-ad-link {
+    background-color: #fdff75;
+    color: #1c1c1c !important;
+}
+
+.dark .ch-cloud-sidebar-ad-link:hover {
+    background-color: #eaec6a;
 }
 
 /* Fix layout overlap in flex-row-reverse pages (like secure-rds) */

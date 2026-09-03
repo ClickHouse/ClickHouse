@@ -41,9 +41,12 @@ SELECT count() FROM t_subplan_ref_clone WHERE idx IN (SELECT idx FROM t_subplan_
 
 -- The trigger reported in issue #110182 (found by AST fuzzer): self-referential subqueries in
 -- PREWHERE and WHERE with a nested correlated scalar, built inplace during MergeTree part pruning.
+-- The fuzzer's original left operand of the second IN was the bare column `i`, mismatching the
+-- two-column subquery; the analyzer now rejects such queries at analysis time, so the left
+-- operand is a tuple of matching arity, keeping the set body subquery (the actual trigger) intact.
 SELECT DISTINCT 3, count() <= -2147483648
 FROM t_subplan_ref_clone
 PREWHERE i GLOBAL NOT IN (SELECT i FROM t_subplan_ref_clone WHERE dt <= -1)
-WHERE i GLOBAL IN (SELECT '\0', i FROM t_subplan_ref_clone PREWHERE dt < -2147483648 WHERE (SELECT dt) < 256);
+WHERE ('\0', i) GLOBAL IN (SELECT '\0', i FROM t_subplan_ref_clone PREWHERE dt < -2147483648 WHERE (SELECT dt) < 256);
 
 DROP TABLE t_subplan_ref_clone;

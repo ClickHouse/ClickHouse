@@ -1,0 +1,13 @@
+-- default_table_engine = MergeTree generates plain inner engines
+metrics	ReplacingMergeTree
+recentsamples	MergeTree
+samples	MergeTree
+tags	AggregatingMergeTree
+-- default_table_engine = ReplicatedMergeTree generates replicated inner engines
+metrics	ReplicatedReplacingMergeTree
+recentsamples	ReplicatedMergeTree
+samples	ReplicatedMergeTree
+tags	ReplicatedAggregatingMergeTree
+-- default_table_engine = None requires explicit inner engines
+4
+-- other default_table_engine values are rejected

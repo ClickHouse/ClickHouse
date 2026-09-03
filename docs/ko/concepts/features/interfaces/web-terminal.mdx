@@ -36,6 +36,8 @@ doc_type: 'reference'
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
+`user` 필드는 선택 사항입니다. 생략되거나 비어 있으면 사용자 이름은 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)(또는 [composable protocols](/ko/concepts/features/configuration/server-config/composable-protocols) 구성의 엔드포인트별 재정의)에 지정된 값으로 사용되며, 별도로 구성하지 않은 경우 `default`입니다. `default_session_user`가 빈 문자열로 설정되면 사용자 이름이 없는 연결은 허용되지 않습니다. 생략되거나 비어 있는 `user`가 포함된 `auth` 메시지는 인증에 실패하고, server는 코드 `1008`로 WebSocket 연결을 종료하며, 서버 구성에서 `session_log` 섹션이 활성화된 경우 거부 내역은 빈 `user`를 가진 `LoginFailure` 이벤트로 [`system.session_log`](/ko/reference/system-tables/session_log)에 기록됩니다.
+
 이렇게 하면 업그레이드 요청에 포함된 URL 쿼리 매개변수나 `Authorization` 헤더에 자격 증명을 넣지 않아도 되므로, 자격 증명이 브라우저 이력, 서버 액세스 로그, 리버스 프록시 로그에 남을 수 있는 위험을 피할 수 있습니다. `/webterminal`은 업그레이드 요청의 URL 매개변수, HTTP Basic, `X-ClickHouse-User`/`X-ClickHouse-Key` 헤더를 의도적으로 **확인하지 않습니다**.
 
 잘못된 자격 증명이 제공되면 server가 코드 `1008`로 WebSocket 연결을 종료하고, 브라우저 UI는 자격 증명을 다시 입력하라는 메시지를 표시합니다.
@@ -58,6 +60,16 @@ doc_type: 'reference'
 </div>
 
 [`/play`](/ko/concepts/features/interfaces/http) Web SQL UI에는 웹 터미널이 도킹 가능한 패널로 내장되어 있습니다. 사이드바의 터미널 아이콘으로 표시하거나 숨길 수 있으며, 쿼리 편집기가 비어 있을 때는 `~` 키를 누르십시오. `/play` 페이지는 로드 시점에 `/webterminal`의 사용 가능 여부를 감지하며, 엔드포인트를 사용할 수 없으면(예를 들어 `enable_webterminal`이 `false`로 설정된 경우) 터미널 컨트롤을 숨깁니다.
+
+<div id="docs-integration">
+  ## 문서 웹사이트 통합
+</div>
+
+이 문서 웹사이트는 페이지 하단의 좁은 개발자 트레이에 동일한 터미널을 내장하고 있으며, 읽기 전용 `play` 사용자로 [ClickHouse playground](https://play.clickhouse.com)에 연결됩니다. 따라서 어느 페이지에서나 페이지를 벗어나지 않고 예시를 실행해 볼 수 있습니다. 고정 트레이는 푸터 컨트롤을 가리지 않도록 페이지 하단에 그에 맞는 공간을 확보합니다. 터미널이 열려 있는 동안 문서 페이지는 잠기고 스크롤바는 숨겨집니다. 터미널 위에서 스크롤해도 터미널의 스크롤백 내에서만 스크롤되며, 뒤의 문서 페이지는 이동하지 않습니다. &quot;ClickHouse terminal&quot; 바를 클릭하거나 `~` 키를 눌러 바 위의 여백이 있는 패널을 여십시오. 바를 다시 클릭하거나 셰브론을 사용하거나 `~` 또는 `Escape`를 누르거나 패널의 상단 가장자리를 아래로 끌어 패널을 접을 수 있습니다. 이 상단 가장자리로 패널 크기도 조정할 수 있습니다. `exit` 또는 `Ctrl+D`로 세션을 종료하면 패널도 접힙니다.
+
+패널을 닫아도 세션과 스크롤백은 유지됩니다. 터미널을 다시 열면 동일한 프롬프트로 돌아갑니다. 세션은 페이지에 유지되므로 문서 페이지 간 이동 후에도 유지되지만, 브라우저 탭을 새로고침하면 유지되지 않습니다. 새로고침 후에는 새 세션으로 패널이 다시 표시됩니다.
+
+터미널 트레이는 웹사이트의 데스크톱 레이아웃에 포함되며, 좁은 뷰포트에서는 사용할 수 없습니다.
 
 <div id="security">
   ## 보안 고려 사항

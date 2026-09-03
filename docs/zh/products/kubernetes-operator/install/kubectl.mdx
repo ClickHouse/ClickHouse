@@ -84,14 +84,18 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 如果要配置 operator 的部署选项，请按以下步骤操作。
 
 <Steps>
-  <Step title="克隆代码仓库" id="clone-the-repository">
+  <Step>
+    ### 克隆代码仓库
+
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step title="配置安装选项" id="configure-installation-options">
+  <Step>
+    ### 配置安装选项
+
     编辑 config/default/kustomization.yaml，按需启用或禁用相关功能。
 
     * 如需禁用 webhook，请注释掉 `[WEBHOOK]` 和 `[CERTMANAGER]` 部分。
@@ -100,7 +104,9 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
     * 如需启用 operator 网络策略，请取消注释 `[NETWORK POLICY]` 部分。
   </Step>
 
-  <Step title="构建并部署" id="build-and-deploy">
+  <Step>
+    ### 构建并部署
+
     构建 operator 清单并应用：
 
     ```bash

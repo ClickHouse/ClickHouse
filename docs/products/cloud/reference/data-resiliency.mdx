@@ -62,16 +62,13 @@ This section also provides the success / failure status for each backup.
 
 ## Backup and restore duration guidance {#backup-and-restore-duration-guidance}
 
-Backup and restore durations depend on several factors such as the size of the database as well as the schema and the number of tables in the database.
+Backup and restore durations vary significantly with data size, schema complexity, and the number of tables. The figures below are observations from internal testing and are not performance commitments.
 
-In our testing, we have seen smaller backups ~1 TB take up to 10-15 minutes or longer to back up.
-Backups less than 20 TB usually complete within an hour, and backing up ~50 TB of data should take 2-3 hours.
-Backups get economies of scale at larger sizes, and we have seen backups of up to 1 PB for some internal services complete in under 10 hours.
+In our testing, a backup of roughly 1 TB has taken about 10 to 15 minutes, and 20 TB about an hour. Larger datasets take proportionally longer, and backups of several hundred TB or more can take many hours, although there are economies of scale that help at larger sizes.
 
-We recommend testing with your own database or sample data to get better estimates as the actual duration depends on several factors as outlined above.
+Restores are typically slower than the equivalent backup, particularly when the restore includes a long chain of incremental backups, since the full backup and all subsequent incremental backups in the chain must be applied. Restoring a very large service can take longer than a day.
 
-Restore durations are similar to back up durations for similar size.
-As mentioned above, we recommend testing with your own database to have an idea of how long it will take to restore the backup.
+Because durations depend heavily on your data, schema, and backup configuration, we strongly recommend testing a restore against your own data before relying on any target recovery time.
 
 <Note>
 There is currently NO support for automatic failover between 2 ClickHouse Cloud instances whether in the same or different region.

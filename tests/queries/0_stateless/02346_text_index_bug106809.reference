@@ -11,3 +11,10 @@ Mixed intersecting and non-intersecting parts: lazy FINAL falls back to a regula
 0
 1
 1
+Single non-intersecting part with is_deleted: the direct text-index read must still drop deleted rows
+1
+1
+3
+0
+1
+0

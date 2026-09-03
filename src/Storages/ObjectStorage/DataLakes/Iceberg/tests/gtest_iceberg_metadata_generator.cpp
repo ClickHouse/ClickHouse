@@ -87,6 +87,14 @@ String snapshotOperation(
     return result.snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_operation);
 }
 
+void callManifestOnlySnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
+{
+    FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
+    generator.setVersion(1);
+    auto metadata_info = generator.generateMetadataPathWithInfo();
+    MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_snapshot_id);
+}
+
 }
 
 /// A plain data append (no deleted rows) must be labelled `append`.
@@ -180,6 +188,28 @@ TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotE
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
     }
     EXPECT_FALSE(metadata->has(Iceberg::f_snapshots));
+}
+
+/// `refs` is optional per the Iceberg spec too, so a manifest-only rewrite (OPTIMIZE ... MANIFEST)
+/// must seed it. isObject is asserted, not just the absence of a throw: it matches on the same
+/// typeid(Object::Ptr) as getObject, so it also rejects seeding a raw Poco::JSON::Object pointer.
+TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
+{
+    auto metadata = makeMinimalV2Metadata();
+    ASSERT_NO_THROW(appendSnapshot(metadata));
+    ASSERT_EQ(metadata->getArray(Iceberg::f_snapshots)->size(), 1u);
+    auto parent_snapshot_id
+        = metadata->getArray(Iceberg::f_snapshots)->getObject(0)->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+
+    metadata->remove(Iceberg::f_refs);
+    EXPECT_NO_THROW(callManifestOnlySnapshot(metadata, parent_snapshot_id));
+
+    EXPECT_TRUE(metadata->isObject(Iceberg::f_refs));
+    ASSERT_FALSE(metadata->getObject(Iceberg::f_refs).isNull());
+    ASSERT_TRUE(metadata->getObject(Iceberg::f_refs)->has(Iceberg::f_main));
+    EXPECT_EQ(
+        metadata->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
+        metadata->getValue<Int64>(Iceberg::f_current_snapshot_id));
 }
 
 #endif

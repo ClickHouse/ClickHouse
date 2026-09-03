@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
@@ -183,8 +182,14 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     callback(*res);
     res->forEachMutableSubcolumnRecursively(callback);
 
+    /// Use `insertMergeResultInto` so every State-combinator state is copied into
+    /// `res`'s own arena. The pointer-sharing `insertResultInto` path is unsafe
+    /// here: a flag=0 row in `-OrFill` calls `res.insertDefault` ->
+    /// `res.ensureOwnership` which resets `res.src`, so any later flag=1 row would
+    /// dangle once the source column is destroyed (issue #105742). For non-State
+    /// functions `insertMergeResultInto` just delegates to `insertResultInto`.
     for (auto * val : data)
-        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertMergeResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }
@@ -696,11 +701,6 @@ void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, con
     Arena & dst_arena = createOrGetArena();
     pushBackAndCreateState(data, dst_arena, func.get());
     func->deserialize(data.back(), in, version, &dst_arena);
-}
-
-void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
 
 void ColumnAggregateFunction::popBack(size_t n)

@@ -10,8 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/fr/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Les sauvegardes de base de données offrent un filet de sécurité : si des données sont perdues pour une raison imprévue, le service peut être restauré à un état antérieur à partir de la dernière sauvegarde réussie.
-Cela réduit l’indisponibilité et évite la perte définitive de données critiques pour l’activité.
+Les sauvegardes de base de données sont conçues pour vous permettre de restaurer un service à un état antérieur à partir de la dernière sauvegarde réussie.
 
 <div id="backups">
   ## Sauvegardes
@@ -34,8 +33,7 @@ Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de 
 </div>
 
 Les sauvegardes sont comptabilisées et facturées séparément du stockage dans les niveaux Basic, Scale et Enterprise.
-Par défaut, tous les services disposent d’une sauvegarde quotidienne, avec la possibilité d’en configurer davantage à partir du niveau Scale, via l’onglet Settings de la console Cloud.
-Chaque sauvegarde est conservée pendant au moins 24 heures.
+Actuellement, les services disposent par défaut d’une sauvegarde quotidienne avec une rétention de 24 heures. La configuration des sauvegardes peut varier selon le service et le contrat.
 
 Voir [&quot;Consulter et restaurer les sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups) pour plus de détails.
 
@@ -64,8 +62,8 @@ Consultez [&quot;Configurer les planifications de sauvegarde&quot;](/fr/products
 </div>
 
 ClickHouse Cloud permet d’exporter des sauvegardes vers le stockage du compte de votre propre fournisseur de services cloud (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
-Si vous configurez les sauvegardes vers votre propre bucket, ClickHouse Cloud continuera malgré tout à effectuer des sauvegardes quotidiennes dans son propre bucket.
-Cela garantit que nous disposons d’au moins une copie des données à restaurer si les sauvegardes de votre bucket sont corrompues.
+Si vous configurez les sauvegardes vers votre propre bucket, ClickHouse Cloud continue également à effectuer ses propres sauvegardes par défaut.
+
 Pour en savoir plus sur le fonctionnement des sauvegardes dans ClickHouse Cloud, consultez la documentation sur les [sauvegardes](/fr/products/cloud/guides/backups/review-and-restore-backups).
 
 Dans ce guide, nous expliquons comment exporter des sauvegardes vers votre stockage d’objets AWS, GCP ou Azure, ainsi que comment restaurer ces sauvegardes depuis votre compte vers un nouveau service ClickHouse Cloud.

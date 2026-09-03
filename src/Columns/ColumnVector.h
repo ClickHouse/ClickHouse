@@ -107,8 +107,6 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
@@ -314,6 +312,8 @@ public:
             return data[n] == T{};
         }
     }
+
+    bool hasOnlyTypeDefaults() const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

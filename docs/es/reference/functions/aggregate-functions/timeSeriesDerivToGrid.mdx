@@ -15,6 +15,8 @@ Introducido en: v25.6.0
 
 Función de agregación que toma datos de series temporales como pares de marcas de tiempo y valores, y calcula una [derivada similar a PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) a partir de estos datos sobre una cuadrícula temporal regular descrita por la marca de tiempo inicial, la marca de tiempo final y el paso. Para cada punto de la cuadrícula, las muestras para calcular `deriv` se toman dentro de la ventana temporal especificada.
 
+Si varias muestras tienen la misma marca de tiempo, solo se usa una de ellas: la muestra con el valor más alto. Un valor NaN pierde frente a cualquier otro valor, por lo que un valor NaN solo se usa si todas las muestras de esta marca de tiempo son NaN.
+
 <Note>
   Esta función es experimental; actívala estableciendo `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
@@ -67,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

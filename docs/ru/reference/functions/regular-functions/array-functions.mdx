@@ -63,9 +63,9 @@ SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a
 ```
 
 ```response title=Response
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
+┌─a───────────────────────────┬─toTypeName(a)─────────────────────────┐
+│ [5,'1998-06-16 00:00:00',5] │ Array(Variant(DateTime, Int32, Int8)) │
+└─────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayAUCPR">
@@ -205,7 +205,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);
 ```
 
 ```response title=Response
-[1, 0.4, -0.1, -0.4, -0.4]
+[1,0.4,-0.1,-0.4,-0.4]
 ```
 
 **Симметричный**
@@ -215,7 +215,7 @@ SELECT arrayAutocorrelation([10, 20, 10]);
 ```
 
 ```response title=Response
-[1, -0.6666666666666669, 0.16666666666666674]
+[1,-0.6666666666666669,0.16666666666666674]
 ```
 
 **Константа**
@@ -225,7 +225,7 @@ SELECT arrayAutocorrelation([5, 5, 5]);
 ```
 
 ```response title=Response
-[nan, nan, nan]
+[nan,nan,nan]
 ```
 
 **Ограничено**
@@ -235,7 +235,7 @@ SELECT arrayAutocorrelation([1, 2, 3, 4, 5], 2);
 ```
 
 ```response title=Response
-[1, 0.4]
+[1,0.4]
 ```
 
 <div id="arrayAvg">
@@ -444,7 +444,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4, 5, 6]
+[1,2,3,4,5,6]
 ```
 
 <div id="arrayCount">
@@ -518,7 +518,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 3, 4]
+[1,2,3,4]
 ```
 
 **С лямбда-функцией**
@@ -528,7 +528,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 6, 12]
+[2,6,12]
 ```
 
 <div id="arrayCumSumNonNegative">
@@ -537,7 +537,7 @@ SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res
 
 Добавленный в: v18.12.0
 
-Возвращает массив частичных (накопительных) сумм элементов исходного массива, заменяя любую отрицательную накопительную сумму на ноль. Если указана лямбда-функция, сумма вычисляется путем применения этой функции к элементам массива для каждой позиции.
+Возвращает массив частичных (накопительных) сумм элементов исходного массива, заменяя любую отрицательную накопленную сумму на ноль. Если указана лямбда-функция, сумма вычисляется путем применения этой функции к элементам массива для каждой позиции.
 
 **Синтаксис**
 
@@ -564,7 +564,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
 ```response title=Response
-[1, 2, 0, 1]
+[1,2,0,1]
 ```
 
 **С лямбда-выражением**
@@ -574,7 +574,7 @@ SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res
 ```
 
 ```response title=Response
-[2, 0, 6]
+[2,0,6]
 ```
 
 <div id="arrayDifference">
@@ -702,7 +702,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 ```
 
 ```response title=Response
-32    UInt16
+32	UInt16
 ```
 
 **Пример с Tuple**
@@ -712,7 +712,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 ```
 
 ```response title=Response
-32    Float64
+32	Float64
 ```
 
 <div id="arrayElement">
@@ -740,6 +740,8 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 Оператор `[n]` обеспечивает ту же функциональность.
 
+Первым аргументом также может быть [QBit](/ru/reference/data-types/qbit): `n`-й элемент вектора восстанавливается с полной точностью типа элемента QBit, при этом считываются только битовые плоскости группы stride, содержащей этот элемент.
+
 **Синтаксис**
 
 ```sql
@@ -748,7 +750,7 @@ arrayElement(arr, n)
 
 **Аргументы**
 
-* `arr` — Массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array). - `n` — Позиция элемента, который требуется получить, или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
+* `arr` — Массив, в котором выполняется поиск. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit). - `n` — Позиция элемента, который требуется получить, или массив позиций. Позиции могут быть Nullable. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Array((U)Int*)`](/ru/reference/data-types/array).
 
 **Возвращаемое значение**
 
@@ -870,7 +872,7 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 ```
 
 ```response title=Response
-NULL
+\N
 ```
 
 **Массив индексов**
@@ -1008,7 +1010,7 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 **Базовое использование**
 
 ```sql title=Query
--- При clear_depth=1 и max_array_depth=1 результат идентичен результату arrayEnumerateDense.
+-- With clear_depth=1 and max_array_depth=1, the result is identical to what arrayEnumerateDense would give.
 
 SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 ```
@@ -1020,14 +1022,14 @@ SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
 **Использование с многомерным массивом**
 
 ```sql title=Query
--- В этом примере arrayEnumerateDenseRanked используется для получения массива, указывающего для каждого элемента
--- многомерного массива его порядковый номер среди элементов с одинаковым значением.
--- Для первой строки переданного массива [10, 10, 30, 20] соответствующая первая строка результата равна [1, 1, 2, 3]:
--- 10 — первое встреченное число (позиции 1 и 2), 30 — второе встреченное число (позиция 3),
--- 20 — третье встреченное число (позиция 4).
--- Для второй строки [40, 50, 10, 30] соответствующая вторая строка результата равна [4,5,1,2]: 40
--- и 50 — четвёртое и пятое встреченные числа (позиции 1 и 2 этой строки), ещё одно 10
--- (первое встреченное число) находится в позиции 3, а 30 (второе встреченное число) — в последней позиции.
+-- In this example, arrayEnumerateDenseRanked is used to obtain an array indicating, for each element of the
+-- multidimensional array, what its position is among elements of the same value.
+-- For the first row of the passed array, [10, 10, 30, 20], the corresponding first row of the result is [1, 1, 2, 3],
+-- indicating that 10 is the first number encountered in position 1 and 2, 30 the second number encountered in position 3
+-- and 20 is the third number encountered in position 4.
+-- For the second row, [40, 50, 10, 30], the corresponding second row of the result is [4,5,1,2], indicating that 40
+-- and 50 are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another 10
+-- (the first encountered number) is in position 3 and 30 (the second number encountered) is in the last position.
 
 SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 ```
@@ -1039,13 +1041,13 @@ SELECT arrayEnumerateDenseRanked(1,[[10,10,30,20],[40,50,10,30]],2);
 **Пример с увеличенным значением clear&#95;depth**
 
 ```sql title=Query
--- При clear_depth=2 перечисление выполняется заново отдельно для каждой строки.
+-- Changing clear_depth=2 results in the enumeration occurring separately for each row anew.
 
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
 
 ```response title=Response
-[[1, 1, 2, 3], [1, 2, 3, 4]]
+[[1,1,2,3],[1,2,3,4]]
 ```
 
 <div id="arrayEnumerateUniq">
@@ -1084,7 +1086,7 @@ SELECT arrayEnumerateUniq([10, 20, 10, 30]);
 ```
 
 ```response title=Response
-[1, 1, 2, 1]
+[1,1,2,1]
 ```
 
 **Несколько массивов**
@@ -1100,37 +1102,38 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);
 **Агрегация ARRAY JOIN**
 
 ```sql title=Query
--- Для каждого идентификатора цели вычисляется количество конверсий (каждый элемент вложенной структуры данных Goals является достигнутой целью, которую мы называем конверсией)
--- и количество сеансов. Без ARRAY JOIN количество сеансов считалось бы как sum(Sign). Однако в данном случае
--- строки были умножены на вложенную структуру Goals, поэтому чтобы учесть каждый сеанс ровно один раз, применяется условие на
--- значение функции arrayEnumerateUniq(Goals.ID).
+-- Each goal ID has a calculation of the number of conversions (each element in the Goals nested data structure is a goal that was reached, which we refer to as a conversion)
+-- and the number of sessions. Without ARRAY JOIN, we would have counted the number of sessions as sum(Sign). But in this particular case,
+-- the rows were multiplied by the nested Goals structure, so in order to count each session one time after this, we apply a condition to the
+-- value of the arrayEnumerateUniq(Goals.ID) function.
+
+CREATE TABLE visits (CounterID UInt32, Sign Int8, Goals Nested(ID UInt32)) ENGINE = Memory;
+
+INSERT INTO visits VALUES
+    (160656, 1, [53225, 53225, 56600]),
+    (160656, 1, [53225, 2825062]),
+    (160656, 1, [56600, 56600, 2825062]),
+    (160657, 1, [53225]);
 
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
     sumIf(Sign, num = 1) AS Visits
-FROM test.visits
+FROM visits
 ARRAY JOIN
     Goals,
     arrayEnumerateUniq(Goals.ID) AS num
 WHERE CounterID = 160656
 GROUP BY GoalID
-ORDER BY Reaches DESC
+ORDER BY Reaches DESC, GoalID
 LIMIT 10
 ```
 
 ```response title=Response
 ┌──GoalID─┬─Reaches─┬─Visits─┐
-│   53225 │    3214 │   1097 │
-│ 2825062 │    3188 │   1097 │
-│   56600 │    2803 │    488 │
-│ 1989037 │    2401 │    365 │
-│ 2830064 │    2396 │    910 │
-│ 1113562 │    2372 │    373 │
-│ 3270895 │    2262 │    812 │
-│ 1084657 │    2262 │    345 │
-│   56599 │    2260 │    799 │
-│ 3271094 │    2256 │    812 │
+│   53225 │       3 │      2 │
+│   56600 │       3 │      2 │
+│ 2825062 │       2 │      2 │
 └─────────┴─────────┴────────┘
 ```
 
@@ -1165,57 +1168,57 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 **Пример 1**
 
 ```sql title=Query
--- При clear_depth=1 и max_array_depth=1 результат arrayEnumerateUniqRanked
--- совпадает с результатом, который вернул бы arrayEnumerateUniq для того же массива.
+-- With clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniq would give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [1, 2, 1], 1);
 ```
 
 ```response title=Response
-[1, 1, 2]
+[1,1,2]
 ```
 
 **Пример 2**
 
 ```sql title=Query
--- При clear_depth=1 и max_array_depth=1 результат arrayEnumerateUniqRanked
--- идентичен результату, который дал бы arrayEnumerateUniq для того же массива.
-
-SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);", "[[1, 1, 1], [2, 3, 2], [2]]
-```
-
-```response title=Response
-[1, 1, 2]
-```
-
-**Пример 3**
-
-```sql title=Query
--- В этом примере arrayEnumerateUniqRanked используется для получения массива, указывающего,
--- для каждого элемента многомерного массива, какова его позиция среди элементов
--- с тем же значением. Для первой строки переданного массива [1, 2, 3] соответствующий
--- результат равен [1, 1, 1]: значения 1, 2 и 3 встречаются впервые.
--- Для второй строки переданного массива [2, 2, 1] соответствующий результат равен [2, 3, 3]:
--- значение 2 встречается второй и третий раз, а 1 — второй раз.
--- Аналогично, для третьей строки переданного массива [3]
--- соответствующий результат равен [2]: значение 3 встречается второй раз.
+-- with clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked
+-- is identical to that which arrayEnumerateUniqwould give for the same array.
 
 SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [2, 3, 2], [2]]
+[[1,1,1],[2,3,2],[2]]
+```
+
+**Пример 3**
+
+```sql title=Query
+-- In this example, arrayEnumerateUniqRanked is used to obtain an array indicating,
+-- for each element of the multidimensional array, what its position is among elements
+-- of the same value. For the first row of the passed array, [1, 2, 3], the corresponding
+-- result is [1, 1, 1], indicating that this is the first time 1, 2 and 3 are encountered.
+-- For the second row of the provided array, [2, 2, 1], the corresponding result is [2, 3, 3],
+-- indicating that 2 is encountered for a second and third time, and 1 is encountered
+-- for the second time. Likewise, for the third row of the provided array [3] the
+-- corresponding result is [2] indicating that 3 is encountered for the second time.
+
+SELECT arrayEnumerateUniqRanked(1, [[1, 2, 3], [2, 2, 1], [3]], 2);
+```
+
+```response title=Response
+[[1,1,1],[2,3,2],[2]]
 ```
 
 **Пример 4**
 
 ```sql title=Query
--- При clear_depth=2 элементы перечисляются отдельно для каждой строки.
+-- Changing clear_depth=2, results in elements being enumerated separately for each row.
 SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3],[2, 2, 1],[3]], 2);
 ```
 
 ```response title=Response
-[[1, 1, 1], [1, 2, 1], [1]]
+[[1,1,1],[1,2,1],[1]]
 ```
 
 <div id="arrayExcept">
@@ -1258,7 +1261,7 @@ SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])
 ```
 
 ```response title=Response
-[1, 2, 2, 4]
+[1,2,2,4]
 ```
 
 **with&#95;nulls1**
@@ -1268,7 +1271,7 @@ SELECT arrayExcept([1, NULL, 2, NULL], [2])
 ```
 
 ```response title=Response
-[1, NULL, NULL]
+[1,NULL,NULL]
 ```
 
 **with&#95;nulls2**
@@ -1288,7 +1291,7 @@ SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])
 ```
 
 ```response title=Response
-['apple', 'cherry']
+['apple','cherry']
 ```
 
 <div id="arrayExists">
@@ -1348,7 +1351,7 @@ arrayFill(func(x [, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])
 
 **Аргументы**
 
-* `func(x [, y1, ..., yN])` — лямбда-функция `func(x [, y1, y2, ... yN]) → F(x [, y1, y2, ... yN])`, которая применяется к элементам исходного массива (`x`) и условных массивов (`y`). [`Лямбда-функция`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func(x [, y1, ..., yN])` — лямбда-функция `func(x [, y1, y2, ... yN])`, которая применяется к элементам исходного массива (`x`) и массивов условий (`y`). [`Лямбда-функция`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `source_arr` — исходный массив для обработки. [`Лямбда-функция`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `[, cond1_arr, ... , condN_arr]` — Необязательно. N условных массивов, которые передают дополнительные аргументы в лямбда-функцию. [`Array(T)`](/ru/reference/data-types/array)
 
@@ -1365,7 +1368,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 1, 2, 2]
+[1,1,2,2]
 ```
 
 **Пример с двумя массивами**
@@ -1375,7 +1378,7 @@ SELECT arrayFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], [10, 2,
 ```
 
 ```response title=Response
-[5, 5, 6, 6]
+[5,5,6,6]
 ```
 
 <div id="arrayFilter">
@@ -1470,7 +1473,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayFirstIndex">
@@ -1560,7 +1563,7 @@ SELECT arrayFirstOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(re
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayFlatten">
@@ -1603,7 +1606,7 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 ```
 
 ```response title=Response
-[1, 2, 3]
+[1,2,3]
 ```
 
 <div id="arrayFold">
@@ -1765,6 +1768,8 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 Все значения в столбцах просто копируются, за исключением значений в столбце, к которому применяется эта функция;
 они заменяются соответствующим значением массива.
 
+`unnest` (начиная с версии 26.5) — регистронезависимый псевдоним `arrayJoin` в форме вызова функции (`SELECT unnest(arr)`). Синтаксис PostgreSQL с источником-таблицей не поддерживается (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` и `LATERAL`). Для таких запросов используйте предложение `ARRAY JOIN`.
+
 `arrayJoin`, в том числе через его псевдоним `unnest`, нельзя использовать в условии `JOIN ON`, которое вычисляется во время выполнения JOIN, поскольку такое условие должно
 сохранять количество строк. Условие, применимое только к одной стороне, а также ключ равенства с `arrayJoin`
 извлекаются до JOIN и не затрагиваются. Условие `ALL INNER JOIN` без дизъюнкции также не затрагивается,
@@ -1800,11 +1805,11 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
 ```response title=Response
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
 ```
 
 **arrayJoin влияет на все части запроса**
@@ -2024,7 +2029,7 @@ SELECT arrayFirst(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-0 UInt8
+0	UInt8
 ```
 
 <div id="arrayLastIndex">
@@ -2114,7 +2119,7 @@ SELECT arrayLastOrNull(x, y -> x=y, [0, 1, 2], [3, 3, 3]) AS res, toTypeName(res
 ```
 
 ```response title=Response
-NULL Nullable(UInt8)
+\N	Nullable(UInt8)
 ```
 
 <div id="arrayLevenshteinDistance">
@@ -2203,7 +2208,7 @@ arrayMap(func, arr)
 
 **Аргументы**
 
-* `func` — Лямбда-функция, которая применяется к элементам исходного массива (`x`) и условных массивов (`y`). [`Лямбда-функция`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `func` — Лямбда-функция, которая применяется к элементам исходного массива (`x`) и массивов условий (`y`). [`Лямбда-функция`](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `arr` — N массивов для обработки. [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
@@ -2219,7 +2224,7 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 ```
 
 ```response title=Response
-[3, 4, 5]
+[3,4,5]
 ```
 
 **Создание кортежа из элементов разных массивов**
@@ -2229,7 +2234,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 ```
 
 ```response title=Response
-[(1, 4),(2, 5),(3, 6)]
+[(1,4),(2,5),(3,6)]
 ```
 
 <div id="arrayMax">
@@ -2332,7 +2337,7 @@ SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);
   ## arrayNormalizedGini
 </div>
 
-Добавлено в: v25.1.0
+Добавленный в: v25.1.0
 
 Вычисляет нормализованный коэффициент Джини.
 
@@ -2360,7 +2365,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 ```
 
 ```response title=Response
-(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)
+(0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
 <div id="arrayPartialReverseSort">
@@ -2406,7 +2411,7 @@ SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **simple&#95;string**
@@ -2426,7 +2431,7 @@ SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[9, 5]
+[9,5]
 ```
 
 **lambda&#95;simple**
@@ -2436,7 +2441,7 @@ SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **lambda&#95;complex**
@@ -2446,7 +2451,7 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[0, 1, 2]
+[0,1,2]
 ```
 
 <div id="arrayPartialShuffle">
@@ -2504,7 +2509,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4])
 ```
 
 ```response title=Response
-[4, 1, 3, 2]
+[2,3,4,1]
 ```
 
 **random&#95;seed**
@@ -2524,7 +2529,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)
 ```
 
 ```response title=Response
-[3, 2, 1, 4]
+[3,2,1,4]
 ```
 
 **материализовать**
@@ -2534,18 +2539,18 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 ```
 
 ```response title=Response
-┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [3,2,1,4]                │ [3,2,1]                  │
-│ [4,3,2,1]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,4,1,2]                │ [3,2,1]                  │
-│ [1,2,3,4]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [1,4,3,2]                │ [3,2,1]                  │
-│ [3,1,2,4]                │ [3,2,1]                  │
-│ [1,3,2,4]                │ [3,2,1]                  │
-└──────────────────────────┴──────────────────────────┘
+┌─arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42)─┬─arrayPartialShuffle([1, 2, 3], 2, 42)─┐
+│ [3,2,1,4]                                             │ [3,2,1]                               │
+│ [3,2,1,4]                                             │ [3,1,2]                               │
+│ [4,3,2,1]                                             │ [1,3,2]                               │
+│ [1,4,3,2]                                             │ [2,1,3]                               │
+│ [3,4,1,2]                                             │ [3,2,1]                               │
+│ [1,2,3,4]                                             │ [3,2,1]                               │
+│ [1,4,3,2]                                             │ [1,2,3]                               │
+│ [1,4,3,2]                                             │ [3,2,1]                               │
+│ [3,1,2,4]                                             │ [3,2,1]                               │
+│ [1,3,2,4]                                             │ [2,1,3]                               │
+└───────────────────────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 <div id="arrayPartialSort">
@@ -2591,7 +2596,7 @@ SELECT arrayPartialSort(2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[1, 3, 5, 9]
+[1,3,5,9]
 ```
 
 **simple&#95;string**
@@ -2601,7 +2606,7 @@ SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])
 ```
 
 ```response title=Response
-['embolism', 'expenses', 'gladly', 'lasso']
+['embolism','expenses','gladly','lasso']
 ```
 
 **retain&#95;sorted**
@@ -2611,7 +2616,7 @@ SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **lambda&#95;simple**
@@ -2621,7 +2626,7 @@ SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])
 ```
 
 ```response title=Response
-[9, 5, 1, 3]
+[9,5,1,3]
 ```
 
 **lambda&#95;complex**
@@ -2631,7 +2636,7 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 ```
 
 ```response title=Response
-[2, 1, 0]
+[2,1,0]
 ```
 
 <div id="arrayPopBack">
@@ -2665,7 +2670,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[1, 2]
+[1,2]
 ```
 
 <div id="arrayPopFront">
@@ -2699,7 +2704,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ```response title=Response
-[2, 3]
+[2,3]
 ```
 
 <div id="arrayProduct">
@@ -3086,7 +3091,7 @@ SELECT arrayRemove([1, 2, 2, 3], 2)
 ```
 
 ```response title=Response
-[1, 3]
+[1,3]
 ```
 
 **Пример 2**
@@ -3096,7 +3101,7 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 ```
 
 ```response title=Response
-['a', 'b']
+['a','b']
 ```
 
 <div id="arrayResize">
@@ -3225,7 +3230,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 2, null]) AS res
 ```
 
 ```response title=Response
-[1, 2, 2, NULL]
+[1,2,2,NULL]
 ```
 
 **Пример с двумя массивами**
@@ -3235,7 +3240,7 @@ SELECT arrayReverseFill(x, y, z -> x > y AND x < z, [5, 3, 6, 2], [4, 7, 1, 3], 
 ```
 
 ```response title=Response
-[5, 6, 6, 2]
+[5,6,6,2]
 ```
 
 <div id="arrayReverseSort">
@@ -3329,7 +3334,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1], [2, 3, 4], [5]]
+[[1],[2,3,4],[5]]
 ```
 
 <div id="arrayRotateLeft">
@@ -3511,7 +3516,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;
 ```
 
 ```response title=Response
-[0, 0, 1, 2, 3, 4]
+[0,0,1,2,3,4]
 ```
 
 **Отрицательное значение n**
@@ -3521,7 +3526,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;
 ```
 
 ```response title=Response
-[3, 4, 5, 6, 0, 0]
+[3,4,5,6,0,0]
 ```
 
 **Использование значения по умолчанию**
@@ -3531,7 +3536,7 @@ SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;
 ```
 
 ```response title=Response
-[42, 42, 1, 2, 3, 4]
+[42,42,1,2,3,4]
 ```
 
 <div id="arrayShingles">
@@ -3566,7 +3571,7 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 ```
 
 ```response title=Response
-[[1, 2, 3], [2, 3, 4]]
+[[1,2,3],[2,3,4]]
 ```
 
 <div id="arrayShuffle">
@@ -3668,6 +3673,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 Возвращает срез массива, включая элементы со значением `NULL`.
 
+Первым аргументом также может быть [QBit](/ru/reference/data-types/qbit): результатом будет QBit по выбранным размерностям (проекция на подмножество размерностей). В этом случае `offset` и `length` должны быть константами, поскольку размерность QBit является частью его типа, а срез должен выбирать хотя бы одну размерность. Срез, выровненный по границам групп stride QBit, сохраняет stride и повторно использует сохранённые потоки битовых плоскостей без копирования.
+
 **Синтаксис**
 
 ```sql
@@ -3676,7 +3683,7 @@ arraySlice(arr, offset [, length])
 
 **Аргументы**
 
-* `arr` — Массив, из которого берётся срез. [`Array(T)`](/ru/reference/data-types/array)
+* `arr` — Массив, из которого берётся срез. [`Array(T)`](/ru/reference/data-types/array) или [`QBit`](/ru/reference/data-types/qbit)
 * `offset` — Отступ от края массива. Положительное значение указывает на смещение слева, а отрицательное — на отступ справа. Нумерация элементов массива начинается с `1`. [`(U)Int*`](/ru/reference/data-types/int-uint)
 * `length` — Длина требуемого среза. Если указать отрицательное значение, функция возвращает открытый срез `[offset, array_length - length]`. Если не указывать это значение, функция возвращает срез `[offset, the_end_of_array]`. [`(U)Int*`](/ru/reference/data-types/int-uint)
 
@@ -3693,7 +3700,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ```response title=Response
-[2, NULL, 4]
+[2,NULL,4]
 ```
 
 <div id="arraySort">
@@ -3780,7 +3787,7 @@ arraySplit(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])
 
 **Аргументы**
 
-* `func(x[, y1, ..., yN])` — Лямбда-функция, применяемая к элементам исходного массива (`x`) и условных массивов (`y`). [Лямбда-функция](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda). - `source_arr` — Исходный массив, который нужно разбить [`Array(T)`](/ru/reference/data-types/array). - `[, cond1_arr, ... , condN_arr]` — Необязательно. N условных массивов, передающих лямбда-функции дополнительные аргументы. [`Array(T)`](/ru/reference/data-types/array).
+* `func(x[, y1, ..., yN])` — Лямбда-функция, применяемая к элементам исходного массива (`x`) и массивов условий (`y`). [Лямбда-функция](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda). - `source_arr` — Исходный массив, который нужно разбить [`Array(T)`](/ru/reference/data-types/array). - `[, cond1_arr, ... , condN_arr]` — Необязательно. N массивов условий, передающих лямбда-функции дополнительные аргументы. [`Array(T)`](/ru/reference/data-types/array).
 
 **Возвращаемое значение**
 
@@ -3795,7 +3802,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 ```response title=Response
-[[1, 2, 3], [4, 5]]
+[[1,2,3],[4,5]]
 ```
 
 <div id="arraySum">
@@ -4012,7 +4019,7 @@ SELECT arrayTranspose([[1, 2], [3, 4]])
 ```
 
 ```response title=Response
-[[1, 3], [2, 4]]
+[[1,3],[2,4]]
 ```
 
 **Неквадратная матрица**
@@ -4022,7 +4029,7 @@ SELECT arrayTranspose([[1, 2, 3], [4, 5, 6]])
 ```
 
 ```response title=Response
-[[1, 4], [2, 5], [3, 6]]
+[[1,4],[2,5],[3,6]]
 ```
 
 **Строковые элементы**
@@ -4032,7 +4039,7 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 ```
 
 ```response title=Response
-[['a', 'c'], ['b', 'd']]
+[['a','c'],['b','d']]
 ```
 
 <div id="arrayUnion">
@@ -4168,7 +4175,7 @@ SELECT arrayWithConstant(3, 1)
 ```
 
 ```response title=Response
-[1, 1, 1]
+[1,1,1]
 ```
 
 <div id="arrayZip">
@@ -4202,7 +4209,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 ```response title=Response
-[('a', 5), ('b', 2), ('c', 1)]
+[('a',5),('b',2),('c',1)]
 ```
 
 <div id="arrayZipUnaligned">
@@ -4236,7 +4243,7 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 ```
 
 ```response title=Response
-[('a', 1),(NULL, 2),(NULL, 3)]
+[('a',1),(NULL,2),(NULL,3)]
 ```
 
 <div id="countEqual">
@@ -4666,7 +4673,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 ```response title=Response
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
 ```
 
@@ -4956,7 +4963,8 @@ SELECT hasAll([1], ['a'])
 ```
 
 ```response title=Response
-Raises a NO_COMMON_TYPE exception
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **Массив массивов**
@@ -5037,7 +5045,8 @@ SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])
 ```
 
 ```response title=Response
-Вызывает исключение `NO_COMMON_TYPE`
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String because some of them are Array and some of them are not. (NO_COMMON_TYPE)
 ```
 
 **Массив массивов**
@@ -5162,7 +5171,8 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 ```
 
 ```response title=Response
-Вызывает исключение `NO_COMMON_TYPE`
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString/Enum and some of them are not. (NO_COMMON_TYPE)
 ```
 
 <div id="indexOf">
@@ -5363,9 +5373,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 ```
 
 ```response title=Response
-┌─str─┬─length(str)──┬─lengthUTF8(str)─┐
-│ ábc │            4 │               3 │
-└─────┴──────────────┴─────────────────┘
+┌─str─┬─length(str)─┬─lengthUTF8(str)─┐
+│ ábc │           4 │               3 │
+└─────┴─────────────┴─────────────────┘
 ```
 
 <div id="notEmpty">
@@ -5656,9 +5666,9 @@ SELECT replicate(1, ['a', 'b', 'c']);
 ```
 
 ```response title=Response
-┌─replicate(1, ['a', 'b', 'c'])───┐
-│ [1, 1, 1]                       │
-└─────────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
 ```
 
 <div id="reverse">
@@ -5692,7 +5702,7 @@ SELECT reverse([1, 2, 3, 4]);
 ```
 
 ```response title=Response
-[4, 3, 2, 1]
+[4,3,2,1]
 ```
 
 **Реверс строки**
@@ -5702,7 +5712,7 @@ SELECT reverse('abcd');
 ```
 
 ```response title=Response
-'dcba'
+dcba
 ```
 
 {/*AUTOGENERATED_END*/}

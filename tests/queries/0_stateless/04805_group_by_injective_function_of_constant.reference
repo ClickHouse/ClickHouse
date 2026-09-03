@@ -1,0 +1,30 @@
+-- a GROUP BY key that is an injective function of constants must still aggregate
+1
+1
+1
+1
+1
+-- with an aggregate function
+10
+0
+-- a surviving key still drops the constant-derived one
+10
+-- the injective unwrap still applies where it is valid
+0
+0
+1
+-- LIMIT BY shares the unwrap helper and is unaffected
+1
+10
+-- GROUP BY modifiers keep their own behaviour
+2
+2
+1
+1
+-- a Merge table mixing a local and a remote child must not lose the aggregation
+\N
+\N
+1
+-- and the same shapes without the analyzer
+1
+1

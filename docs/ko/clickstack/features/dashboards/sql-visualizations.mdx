@@ -25,7 +25,7 @@ SQL 기반 시각화를 만들려면 대시보드 타일 편집기를 열고 **S
 
 1. 쿼리를 실행할 **ClickHouse 연결**을 선택합니다.
 2. 필요에 따라 **Source**를 선택합니다. 이렇게 하면 `$__filters` 매크로를 통해 대시보드 수준 필터를 차트에 적용할 수 있습니다.
-3. 편집기에서 SQL 쿼리를 작성하고, 쿼리 매개변수와 매크로를 사용해 대시보드 시간 범위 및 필터와 연동합니다.
+3. 편집기에서 SQL 쿼리를 작성하고, 쿼리 매개변수와 매크로를 사용해 대시보드 시간 범위, 필터 및 변수와 연동합니다.
 4. **실행** 버튼을 클릭해 결과를 미리 본 다음 **저장**합니다.
 
 <div id="query-parameters">
@@ -124,6 +124,22 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 
 차트에서 **Source**가 선택되어 있고 대시보드 필터가 활성화되어 있으면 `$__filters`는 해당 SQL `WHERE` 조건으로 확장됩니다. Source가 선택되지 않았거나 적용된 필터가 없으면 `(1=1)`로 확장되므로 `WHERE` 절에 포함해도 항상 안전합니다.
 
+**Broadcast filter condition**이 활성화된 필터만 `$__filters`에 적용됩니다. 변수로 노출된 필터는 아래에 설명된 대로 명시적으로 참조합니다.
+
+<div id="dashboard-variables">
+  ### 대시보드 변수 매크로
+</div>
+
+대시보드 필터를 [변수로 사용할 수 있는 경우](/ko/clickstack/features/dashboards/overview#dashboard-variables), 선택된 값을 쿼리 어디에서나 참조할 수 있습니다. 이러한 매크로는 하나 이상의 변수를 선언한 대시보드에 속한 타일에서만 사용할 수 있습니다.
+
+| 매크로                                           | 설명                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | `variable`에 값이 선택되면 `toString(<filter expression>) IN ($variable)`로 확장되며, 그렇지 않으면 `1=1`로 확장됩니다. |
+| `$__filter(<expression>, $<variable>)`        | `variable`에 값이 선택되면 `<expression> IN ($variable)`로 확장되며, 그렇지 않으면 `1=1`로 확장됩니다.                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 변수에 선택된 값이 있으면 `<condition>`으로 확장되며, 그렇지 않으면 `1=1`로 확장됩니다.                                      |
+
+변수 값은 `$name` 또는 `${name}`으로 직접 보간할 수도 있으며, 선택적으로 포맷을 지정할 수 있습니다. `${name:sqlstring}`(기본값), `${name:csv}`, `${name:regex}`를 사용할 수 있습니다. 기본 포맷에서 직접 참조하면 아무 값도 선택되지 않은 경우 `NULL`이 렌더링되므로, 프레디케이트가 필요한 곳에서는 위 매크로를 사용하는 것이 좋습니다.
+
 <div id="how-results-are-plotted">
   ## 쿼리 결과가 차트에 표시되는 방법
 </div>
@@ -214,6 +230,24 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
+<div id="example-line-chart-variables">
+  ### 라인 차트 — 대시보드 변수 사용
+</div>
+
+`ServiceName`에 대한 `service` 변수와 `SeverityText`에 대한 `severity` 변수가 있는 대시보드에서 이 쿼리는 차트를 현재 선택된 서비스로 제한하고 선택된 심각도는 제외합니다. 두 매크로는 변수에서 아무것도 선택되지 않은 경우 `1=1`로 확장되므로, Viewer가 값을 선택하기 전까지 차트는 필터링 없이 표시됩니다.
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
 <div id="example-stacked-bar">
   ### Stacked Bar 차트 — 심각도별 오류 건수
 </div>
@@ -288,3 +322,5 @@ WHERE $__timeFilter(TimestampTime)
 * SQL 기반 시각화에는 SQL 쿼리가 정확히 하나만 포함되어야 하며, 여러 쿼리는 지원되지 않습니다.
 * SQL Editor는 쿼리 매개변수와 매크로 모두에 대해 자동 완성 제안을 제공합니다.
 * 대시보드 필터를 SQL 기반 시각화에 적용하려면 Source를 선택해야 합니다. 정확하게 필터링되도록 Source는 조회하는 테이블과 일치해야 합니다.
+* 대시보드 변수에는 Source가 필요하지 않습니다. 값은 타일 자체의 Source가 아니라 대시보드의 필터 드롭다운에서 가져옵니다.
+* 대시보드 변수를 참조하는 SQL 타일의 알림은 대시보드에서 선택한 값이 아니라 모든 변수가 비어 있는 상태에서 평가됩니다.

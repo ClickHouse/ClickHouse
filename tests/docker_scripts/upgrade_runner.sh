@@ -379,11 +379,23 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
 #       mutations emit above. Matching the message rather than the task type also covers the wrapping
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
+# `Unexpected const virtual column: _table` (`NO_SUCH_COLUMN_IN_TABLE`, Code: 16) is the same class, from
+#       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
+#       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
+#       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
+# `Cluster` + `Code: 198` + a first host label of one repeated character is the deliberately unresolvable
+#       host of `04725_distributed_async_insert_long_directory_name`. Master no longer carries that test, but
+#       this job runs the previous release's copy of the suite, cloned by tag above, and `--fake-drop` makes
+#       its `DROP` a no-op, so the `Remote` table survives into the upgrade restart, where attaching it
+#       resolves the address and logs the failure. The entry is needed until a release without the test is
+#       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
+#       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
+#       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -549,6 +561,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
+           -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -587,6 +600,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
+    | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \

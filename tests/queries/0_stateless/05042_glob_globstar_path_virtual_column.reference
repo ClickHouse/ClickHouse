@@ -10,7 +10,14 @@ the symlinked namesake was left alone
 111
 renamed beside the file that was read
 the lexical sibling was left alone
-1
-the file outside user_files kept its name
+refused: resolved outside user_files (secret.csv)
 42
 the symlinked directory is still renameable
+42
+renamed through the symlink after the ..
+two dot-dots: refused, resolved outside user_files
+77
+partitioned write: refused, resolved outside user_files
+partitioned write: nothing created outside user_files
+5
+9

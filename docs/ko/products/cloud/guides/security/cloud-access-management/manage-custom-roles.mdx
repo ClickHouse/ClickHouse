@@ -82,9 +82,17 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
 
 사용자 지정 역할에 데이터 권한을 추가하면 ClickHouse Cloud는 선택한 각 서비스에 `cloud:` 접두사가 붙은 동일한 역할을 생성합니다. 예를 들어 `readonly`라는 사용자 지정 역할은 데이터베이스에서 `cloud:readonly`로 표시됩니다. 사용자 지정 역할의 구성원은 SQL 콘솔의 비밀번호 없는 인증을 통해 서비스에 연결할 때 이러한 데이터베이스 권한을 부여받습니다.
 
-<Info>
-  [`sql-console-role:<email>` 명명 규칙](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)을 사용해 데이터베이스에서 수동으로 할당한 역할은 콘솔을 통해 할당한 역할보다 우선합니다.
-</Info>
+<Tip>
+  Cloud 관리형 데이터베이스 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않는, 수동으로 할당한 [`sql-console-role:<email>`](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 역할을 대체합니다.
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### 사전 요구 사항
+</div>
+
+서비스에서 사용자 지정 데이터베이스 역할을 사용하려면 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)이 필요하며, JWT 인증이 비활성화되어 있으면 적용되지 않습니다. 역할에 데이터 권한을 추가하기 전에 서비스로 이동하여 `설정`를 열고 `Security` 섹션에서 `JWT authentication` 카드를 찾습니다. `SQL 콘솔` 토글이 활성화되어 있는지 확인합니다.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL 콘솔 토글이 활성화된 JWT 인증 카드" size="lg" force />
 
 <Steps>
   <Step title="역할에 데이터 권한 추가" id="add-data-permissions">
@@ -92,17 +100,17 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   </Step>
 
   <Step title="서비스 선택" id="select-data-permissions-service">
-    권한을 적용할 서비스를 선택합니다. 여러 서비스에 권한을 적용하려면 서비스를 추가합니다.
+    권한을 적용할 서비스를 선택합니다. 여러 서비스에 동일한 `Read-only` 또는 `관리자` 권한을 적용하려면 서비스를 추가합니다.
   </Step>
 
   <Step title="액세스 수준 선택" id="choose-data-access-level">
-    `Read-only`, `관리자` 또는 `Custom` 액세스를 선택합니다. `Custom` 액세스에서는 ClickHouse [`GRANT` 문](/ko/reference/statements/grant)을 사용하여 특정 데이터 접근 권한을 정의합니다.
+    `Read-only`, `관리자` 또는 `Custom` 액세스를 선택합니다. `Custom` 액세스에서는 ClickHouse [`GRANT` 문](/ko/reference/statements/grant)을 사용하여 특정 데이터 접근 권한을 정의합니다. `Custom` 액세스는 권한의 대상이 단일 서비스일 때만 선택할 수 있습니다. 여러 서비스에 사용자 지정 권한을 정의하려면 각 서비스에 별도의 `Data` 권한을 추가합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="사용자 지정 GRANT 문으로 데이터 권한을 정의한 새 역할 생성 대화 상자" size="md" />
   </Step>
 
   <Step title="역할 생성" id="create-role-with-data-permissions">
-    `Create role`을 클릭합니다. 선택한 서비스에 데이터베이스 역할이 생성됩니다.
+    `Create role`을 클릭합니다. 선택한 서비스에 데이터베이스 역할이 생성됩니다. 역할이 서비스에 전파되는 데 최대 10분이 걸릴 수 있지만, 역할이 할당된 사용자는 서비스를 쿼리할 때 즉시 해당 권한을 받습니다.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   ### 데이터베이스 역할 확인
 </div>
 
-Console을 통해 관리되는 역할은 데이터베이스에 `cloud:` 접두사와 `cloud` 저장소 유형으로 생성됩니다. 이러한 역할을 나열하려면 서비스에서 `system.roles` 테이블을 쿼리합니다:
+콘솔을 통해 관리되는 역할은 데이터베이스에 `cloud:` 접두사와 `cloud` 저장소 유형으로 생성되며, 생성 후 표시되기까지 최대 10분이 걸릴 수 있습니다. 이러한 역할을 나열하려면 서비스에서 `system.roles` 테이블을 쿼리합니다:
 
 ```sql
 SELECT * FROM system.roles;

@@ -1,0 +1,67 @@
+---
+title: 'コネクタの概要'
+sidebarTitle: '概要'
+description: '常時アクセスを必要とせず、お客様が運用する環境内のClickHouseクラスターにオブザーバビリティとサポートを提供'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+<Note>
+  ClickHouse Connectorはプライベートプレビュー中です。アクセスをリクエストするには、ClickHouseのアカウントチームにお問い合わせください。
+</Note>
+
+<div id="what-the-connector-does">
+  ## コネクタの機能
+</div>
+
+ClickHouse Connector は、運用している ClickHouse クラスターと同じ環境内にデプロイするコンポーネントです。ClickHouse に環境への恒常的なアクセス権を与えることなく、これらのクラスターの監視に必要な可視性と、支援を依頼した際にサポートする機能を ClickHouse に提供します。コネクタは `clicklink` という単一のバイナリとして提供され、コネクタデーモンと、それらのインストールおよび運用に使用する `clicklink clctl` コマンドラインツールの両方が含まれています。
+
+コネクタは 2 つのコンポーネントで構成されています。
+
+* **スクレイパー**は、許可リストに含まれる ClickHouse システムテーブルからメトリクスを収集し、インフラストラクチャのメタデータとヘルスステータスとともに ClickHouse Cloud へ送信します。
+* **トラブルシューター**は、ClickHouse のサポートエンジニアが読み取り専用の診断を実行できるようにします。ただし、実行できるのは、有効化した後いつでも終了できる[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)中に限られます。
+
+コネクタが確立するすべての接続はアウトバウンドです。ClickHouse Cloud から環境への接続が開始されることはありません。[アーキテクチャ](/ja/products/bring-your-own-cloud/connector/architecture)ページには、すべての接続、そのプロトコル、および認証方法が記載されています。
+
+<div id="when-to-use-it">
+  ## 使用する場面
+</div>
+
+ClickHouse がお客様の環境で稼働する ClickHouse クラスターを監視またはサポートし、かつセキュリティポリシーで以下が求められる場合は、コネクタをデプロイしてください。
+
+* すべてのアクセス経路が境界内から発信され、インバウンド接続がないこと。
+* サポートアクセスに時間制限があり、お客様自身が有効化でき、いつでも取り消せること。
+* ClickHouse が読み取るものはすべて読み取り専用であること。ClickHouse テーブルには常に読み取り専用でアクセスし、お客様が有効化したセッション中に限り、ネームスペース単位のワークロードメタデータとログにもアクセスします。すべてのサポートセッションのコマンドは、お客様が所有する監査ログに記録されます。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+ClickHouse は、オンボーディング時にコネクタエンドポイントと1回限り使用可能な登録トークンを提供します。Kubernetes にインストールする場合は kubeconfig にアクセスできるワークステーションから、Linux VM にインストールする場合はホスト上で直接、`clicklink clctl init --enroll` を1回実行します。この1回の実行で、トークンの引き換え、各コンポーネント専用の読み取り専用 ClickHouse ユーザーの作成、mTLS クライアント証明書の取得、デーモンのデプロイと起動、および正常性の確認が行われます。
+
+以降、スクレイパーは許可リストに登録されたシステムテーブルを定期的に読み取り、メトリクス、メタデータ、ヘルスステータスを相互認証 TLS 経由でコネクタエンドポイントに送信します。トラブルシューターはアイドル状態のままです。アウトバウンドのコマンドチャネルを維持しますが、サポートセッションを有効にするまで、そのチャネルでは何も送信されません。mTLS 証明書は、お客様側での操作なしに自動更新されます。
+
+<div id="requirements-at-a-glance">
+  ## 要件の概要
+</div>
+
+* **デプロイ先。** Helm チャートでインストールされた準拠 Kubernetes クラスター、または amd64 もしくは arm64 の systemd Linux ホスト。
+* **ポート 443 経由のアウトバウンドネットワークアクセス。** コネクタエンドポイントとその登録エンドポイントに加え、インストール時には `releases.clicklink.clickhouse.com` および ECR Public へのアクセスが必要です。これは標準的な経路です。エアギャップ環境向けおよびミラーリング向けの代替手段も各手順で用意されています。詳細は[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+* **到達可能な ClickHouse ネイティブリスナー。** コネクタはネイティブプロトコルを介して各クラスターと通信します。Kubernetes ではセキュア (9440) または平文 (9000) のリスナーを自動検出します。
+* **登録トークン。** ClickHouse はオンボーディング時に、コネクタエンドポイントと 1 回限りの登録トークンを提供します。
+* **セットアップ時の ClickHouse 管理者アクセス。** 初期 Provisioning では、コネクタ用の読み取り専用ユーザーが作成されます。管理者パスワードが設定されている場合は一度だけ入力を求められ、保存されることはありません。
+* **Provisioning 時の Kubernetes API server への管理者アクセス。** 両方のインストール先で必要です。アクセスバンドルは Kubernetes ServiceAccount に紐付けられます。詳細は[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+
+両方のインストール先についての完全な手順は、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding): Kubernetes または Linux VM にコネクタをインストールし、登録する方法。
+* [アーキテクチャ](/ja/products/bring-your-own-cloud/connector/architecture): コンポーネント、すべての接続、証明書のライフサイクル、環境外に送信されるデータ。
+* [サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions): サポートアクセスを有効化、対象範囲の設定、監査、取り消しする方法。
+* [設定](/ja/products/bring-your-own-cloud/connector/configuration)と[操作](/ja/products/bring-your-own-cloud/connector/operations): チューニング、アップグレード、運用開始後のタスク。
+* [よくある質問](/ja/products/bring-your-own-cloud/connector/reference/faq): データの送信やアクセスの取り消しを含む、よくある質問。
+
+このコネクタは、お客様自身で運用する環境向けです。ClickHouse にお客様のクラウドアカウント内のクラスターを運用させる場合は、[BYOC](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview)デプロイメントモデルを使用します。両者の違いについては、[BYOC アーキテクチャ](/ja/products/bring-your-own-cloud/overview/architecture)ページを参照してください。

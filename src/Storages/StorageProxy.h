@@ -38,6 +38,10 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsOptimizationToTupleElementSubcolumns() const override { return getNested()->supportsOptimizationToTupleElementSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
+    /// `ReadFromMerge::getSelectedTables` prunes children by name based on this flag; a lazy
+    /// `StorageTableProxy` around a delegating storage (`Distributed`, `Merge`, `Buffer`, `Alias`)
+    /// answering false would let a `_table`/`_database` filter incorrectly prune the child.
+    bool readsFromOtherTables() const override { return getNested()->readsFromOtherTables(); }
     size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override { return getNested()->getMaxReadStreams(num_streams, context); }
     /// `AlterCommands::validate` checks these on the storage the ALTER is addressed to, which is
     /// the proxy itself for lazily loaded tables — forward them so support does not depend on the
@@ -64,17 +68,6 @@ public:
     {
         const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
-    }
-
-    Pipe watch(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override
-    {
-        return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     void read(

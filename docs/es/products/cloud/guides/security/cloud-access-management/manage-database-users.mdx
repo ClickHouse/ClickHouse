@@ -23,11 +23,9 @@ Los usuarios de Consola SQL se crean para cada sesión y se autentican mediante 
 
 Los roles básicos de la Consola SQL pueden asignarse a usuarios con permisos Service Read Only y Service Admin. Para obtener más información, consulta [Manage SQL Console Role Assignments](/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). En esta guía se muestra cómo crear un rol personalizado para un usuario de la Consola SQL.
 
-<Note>
-  **Administrar roles de base de datos desde la consola (beta)**
-
-  También puedes administrar roles de base de datos directamente desde la consola de ClickHouse Cloud añadiendo permisos de datos a roles personalizados. Esta función está en beta y está disponible para servicios que ejecutan ClickHouse versión 26.4 y posteriores. Los roles asignados manualmente mediante la convención de nomenclatura `sql-console-role:<email>` tienen prioridad sobre los roles asignados a través de la consola. Para obtener más información, consulta [Manage database roles](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
-</Note>
+<Tip>
+  Se recomienda usar [roles de base de datos administrados por Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para administrar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un rol general, ejecuta los siguientes comandos. La dirección de correo electrónico debe coincidir con la dirección de correo electrónico del usuario en la consola.
 

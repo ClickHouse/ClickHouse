@@ -56,8 +56,8 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```response
     ┌─url────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 milhões
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 milhão
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -75,7 +75,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```sql
     icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-    -- icebergCluster é um alias para icebergS3Cluster
+    -- icebergCluster is an alias for icebergS3Cluster
 
     icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -186,8 +186,8 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```response
     ┌─URL────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 milhões
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 milhões
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -199,13 +199,13 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ### Variante de cluster
 
-    A função [`deltaLakeCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster) distribui leituras entre múltiplos nós em um cluster ClickHouse. O nó iniciador despacha data files dinamicamente para os nós worker para processamento paralelo. `deltaLakeS3Cluster` é um alias para `deltaLakeCluster`. Uma variante para Azure ([`deltaLakeAzureCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster)) também está disponível.
+    A função [`deltaLakeCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster) distribui leituras entre múltiplos nós em um cluster ClickHouse. O nó iniciador despacha arquivos de dados dinamicamente para os nós worker para processamento paralelo. `deltaLakeS3Cluster` é um alias para `deltaLakeCluster`. Uma variante para Azure ([`deltaLakeAzureCluster`](/pt-BR/reference/functions/table-functions/deltalakeCluster)) também está disponível.
 
     **Exemplo de sintaxe:**
 
     ```sql
     deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-    -- deltaLakeS3Cluster é um alias para deltaLakeCluster
+    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
 
     deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -336,7 +336,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ```sql
     paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-    -- paimonCluster é um alias para paimonS3Cluster
+    -- paimonCluster is an alias for paimonS3Cluster
 
     paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -345,7 +345,7 @@ Os exemplos a seguir usam o conjunto de dados [hits](/pt-BR/get-started/sample-d
 
     ### Engine de tabela
 
-    No momento, o Paimon não tem um engine de tabela dedicado no ClickHouse. Use as funções de tabela acima para consultar tabelas do Paimon.
+    O ClickHouse fornece os [motores de tabela experimentais `PaimonS3`, `PaimonAzure`, `PaimonHDFS` e `PaimonLocal`](/pt-BR/reference/engines/table-engines/integrations/paimon). Habilite-os com `allow_experimental_paimon_storage_engine = 1`.
 
     Para ver os recursos compatíveis, incluindo backends de armazenamento e outros detalhes, consulte a [matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix#format-support). Para a referência completa, consulte a documentação da [função de tabela `paimon`](/pt-BR/reference/functions/table-functions/paimon).
   </Tab>

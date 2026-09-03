@@ -9,7 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 while true
 do
-    query_id=$(echo "select queryID() from (select sum(s), k from remote('127.0.0.{1,2}', view(select sum(number) s, bitAnd(number, 3) k from numbers_mt(1000000) group by k)) group by k) limit 1 settings group_by_two_level_threshold=1, max_threads=3, prefer_localhost_replica=1" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- 2>&1)
+    # The adaptive aggregator converts its tables on its own schedule instead of at the
+    # two-level threshold, so the expected per-thread conversion log lines are a baseline
+    # behavior and the test has to stay on the baseline path.
+    query_id=$(echo "select queryID() from (select sum(s), k from remote('127.0.0.{1,2}', view(select sum(number) s, bitAnd(number, 3) k from numbers_mt(1000000) group by k)) group by k) limit 1 settings group_by_two_level_threshold=1, max_threads=3, prefer_localhost_replica=1, enable_adaptive_aggregator=0" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- 2>&1)
 
     ${CLICKHOUSE_CLIENT} --query="system flush logs text_log"
     ${CLICKHOUSE_CLIENT} --query="select count() from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 and query_id = '${query_id}' and message_format_string like '%Converting aggregation data to two-level%' SETTINGS max_rows_to_read = 0" | grep -P '^6$' && break;

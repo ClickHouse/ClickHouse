@@ -16,14 +16,14 @@ doc_type: 'reference'
 
 ```xml
 <users>
-    <!-- 사용자 이름이 지정되지 않은 경우 'default' 사용자가 사용됩니다. -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
-        <!-- users.user_name 수준에서는 정확히 하나의 인증 방법만 지정할 수 있습니다. 예시: -->
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
-        <!-- 또는 (단독 사용) -->
+        <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
  
-        <!-- 또는 (단독 사용) (참고: 하위 호환성을 위해 여러 SSH 키를 허용합니다) -->
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
@@ -39,7 +39,7 @@ doc_type: 'reference'
             </ssh_key>
         </ssh_keys>
 
-        <!-- 또는 (단독 사용) 여러 인증 방법을 사용하는 경우: -->
+        <!-- Or (exclusive) for multiple authentication methods: -->
         <auth_methods>
             <method1>
                 <password></password>
@@ -74,7 +74,7 @@ doc_type: 'reference'
             <query>GRANT SELECT ON system.*</query>
         </grants>
     </user_name>
-    <!-- 다른 사용자 설정 -->
+    <!-- Other users settings -->
 </users>
 ```
 

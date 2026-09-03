@@ -61,28 +61,41 @@ API 密钥数量上限，或提高每 10 秒时间窗口内的请求上限，
 </Note>
 
 <div id="terraform-provider-releases">
-  ## Terraform 提供商 发布说明
+  ## Terraform 提供商 发行版
 </div>
 
 ClickHouse 维护着两个官方 Terraform 提供商：用于云基础设施的 ClickHouse Cloud 提供商，以及用于数据库级对象的 DBops 提供商。两者都遵循相同的发布模式。
 
-<div id="stable-vs-alpha">
-  ### 稳定版本与 alpha
+<div id="ga-vs-beta-resources">
+  ### GA 与 Beta 资源
 </div>
 
-稳定版本 (例如 3.11.1、1.9.0) 仅包含 GA 功能所需的资源。Alpha 版本 (例如 3.12.0-alpha2、1.10.0-alpha1) 除了包含稳定版本中的全部内容外，还包含仍处于 Beta 或私有预览阶段的功能所需资源，且必须显式锁定到该版本才能使用。
+每个发行版都是一个包含所有资源的构建。尚未达到正式可用阶段的功能所对应的资源会与 GA 资源一同发布，并标记为 **beta**——无需单独的构建，也无需固定版本才能使用它们。
+
+Beta 资源会在以下两处标明：
+
+* **在 plan 和 apply 时**，显示 `Beta Resource` Warning。Terraform 不会因 Warning 而失败，因此运行会正常继续。
+* **在其文档中**，会有“此资源处于 beta 阶段”的提示框。
+
+Beta 表示 schema 和行为可能会在未来的提供商版本中发生变化。未带此标记的资源均为 GA，并享有常规的兼容性保证。
+
+<Note>
+  在 v3.25.2 之前，提供商将这些资源标记为 *alpha* 而非 *beta*，且 plan 阶段的 Warning 为 `Alpha Resource`。仅措辞发生了变化——不涉及 schema、行为或状态迁移——但通过 grep 在 plan 输出中查找 `Alpha Resource` 的工具将悄然不再匹配。更早的发行版还发布过单独的 alpha 构建。
+</Note>
 
 <div id="versioning">
   ### 版本编号
 </div>
 
-两个提供商都采用语义化版本控制 (MAJOR.MINOR.PATCH) 。主版本号在发生破坏性变更时递增，次版本号用于新增功能或资源，补丁版本号则用于错误修复。Alpha 发布会在下一个次版本号后附加预发布后缀 (例如 3.12.0-alpha1) ；在正式晋升之前，随着新增修复或变更，alpha 编号会继续递增 (例如 alpha1 → alpha2 → alpha3) 。发布按需进行，而不是按固定周期安排。当为尚未达到 GA 的功能新增资源，或某项修复需要提前验证时，就会创建新的 alpha 版本。累计的变更 (包括期间已达到 GA 的功能) 一旦准备好用于生产环境，通常在经过一段客户反馈期后，就会创建新的稳定版本。多个 alpha 次版本可能会先逐步积累，之后再合并为一个稳定版本发布。
+两个提供商都采用语义化版本控制 (MAJOR.MINOR.PATCH) 。主版本号在发生破坏性变更时递增，次版本号用于新增功能或资源，补丁版本号则用于错误修复。发行版按需进行，而不是按固定周期安排。
+
+带有 `-alphaN` 后缀的版本 (例如 `3.15.0-alpha3`) 早于单一构建模型。它们仍然可用，但不再构建。
 
 <div id="promotion">
-  ### 从 alpha 晋升到稳定版本
+  ### 从 Beta 升级为 GA
 </div>
 
-当某个 Terraform 功能达到 GA 就绪状态时，相应的 Terraform 资源会在下一个稳定版本发布中从 alpha 晋升为稳定版本。在此之前，该资源仅在 alpha 构建中可用。
+当某项功能达到正式可用状态后，其资源会在下一个提供商发行版中移除 Beta 标记：plan 时 Warning 不再显示，文档中的提示框也会被移除。其他方面均不会改变——无需修改配置、状态迁移，也无需在不同构建之间切换。
 
 <div id="terraform-and-openapi-new-pricing---replica-settings-explained">
   ## Terraform 和 OpenAPI 新定价：副本设置说明

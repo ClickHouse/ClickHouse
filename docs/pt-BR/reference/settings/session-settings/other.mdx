@@ -26,6 +26,16 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 O número de chaves a partir do qual o agregador adaptativo congela a tabela hash local de uma thread (consulte `enable_adaptive_aggregator`). Valores menores mantêm as tabelas congeladas na cache, enquanto valores maiores permitem que absorvam mais chaves frequentes. O valor 0 congela as tabelas na primeira oportunidade, fazendo com que o algoritmo se comporte de forma semelhante ao agregador com sharding (`enable_sharding_aggregator`): cada chave é roteada pelo seu hash e agregada por um único proprietário, mas apenas na fase de merge, em vez de ser trocada entre threads durante a varredura.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nova configuração que limita, em bytes, as tabelas locais congeladas do agregador adaptativo; prevalece o limite atingido primeiro, seja este ou o de contagem de chaves. 0 desativa o limite em bytes."}]}]} />
+
+O tamanho de memória em que o agregador adaptativo congela a tabela hash local de uma thread (consulte `enable_adaptive_aggregator`). Uma tabela é congelada quando este valor ou `adaptive_aggregator_freeze_threshold` é atingido primeiro. O tamanho corresponde aos bytes efetivamente alocados pela própria tabela local (seu buffer de tabela hash mais suas arenas) e é verificado entre blocos. O limite em bytes é importante quando as chaves ou os estados de agregação são largos: apenas o limite de contagem de chaves permitiria que essas tabelas ultrapassassem os caches da CPU. Com o valor padrão, tabelas com chaves e estados de largura comum continuam sendo congeladas pela contagem de chaves. O valor 0 desativa o limite em bytes, de modo que apenas o limite de contagem de chaves determina isso.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -535,6 +545,20 @@ Especificar explicitamente as opções `actions`, `compact` ou `pretty` na instr
 
 `EXPLAIN PLAN` com `json = 1` ou `distributed = 1` mantém os padrões legados (anteriores à 26.7) independentemente dessa configuração, a menos que `actions`, `compact` ou `pretty` sejam definidos explicitamente. A saída Pretty não consegue representar resultados JSON nem planos distribuídos por shard, portanto esses modos só são renderizados corretamente no formato legado.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "A partir da versão 26.8, `EXPLAIN SYNTAX` retorna a consulta reformatada como um único registro (com quebras de linha embutidas), em vez de um registro por linha. Defina como `false` para restaurar a saída anterior à versão 26.8, com um registro por linha."}]}]} />
+
+Retorna a saída de `EXPLAIN SYNTAX` como um único registro (com quebras de linha embutidas), em vez de um registro por linha, de modo que o resultado seja uma única linha recuperável (por exemplo, `SELECT count() FROM (EXPLAIN SYNTAX ...)` retorna `1`).
+
+Especificar explicitamente a opção `single_record` na instrução `EXPLAIN SYNTAX` (por exemplo, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) sempre substitui esta configuração.
+
+Defina como `false` para restaurar a saída anterior à versão 26.8, com um registro por linha, ou defina `compatibility` como qualquer versão anterior à `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -578,7 +602,7 @@ Por padrão, 1 (habilitado).
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "Altera a estratégia de partição padrão dos motores de tabela semelhantes a arquivos (S3, AzureBlobStorage etc.) de `wildcard` para `hive` quando nenhum `partition_strategy` é informado."}]}]} />
 
-Estratégia de partição padrão para motores semelhantes a arquivos. Aplicada apenas quando o caminho não contém um placeholder `{_partition_id}`: esse tipo de caminho é compatível apenas com a estratégia `wildcard`, portanto sempre implica `wildcard`.
+Estratégia de partição padrão para motores semelhantes a arquivos. Aplicada apenas a consultas `CREATE` com um caminho que não contenha glob nem o placeholder `{_partition_id}`. Um caminho com `{_partition_id}` sempre usa `wildcard`. Um caminho com outro glob não usa estratégia de partição e ignora `PARTITION BY`. Se essa configuração for `wildcard`, mas o caminho não tiver `{_partition_id}`, nenhuma estratégia de partição será usada; motores de tabela que não conseguem persistir essa decisão nos argumentos do motor (por exemplo, `HDFS`) rejeitam esse `CREATE`.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
@@ -1496,6 +1520,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração experimental para habilitar a retomada de `BACKUP FROM SNAPSHOT`."}]}]} />
+
+Habilita a retomada de `BACKUP FROM SNAPSHOT`: uma tentativa que falhou pode ser executada novamente sem copiar outra vez as
+entradas dos lotes já concluídos. Disponível apenas no ClickHouse Cloud, para destinos
+`S3` e `AzureBlobStorage` no formato de diretório. Habilitá-la em compilações de código aberto do ClickHouse, nas quais
+o próprio `BACKUP FROM SNAPSHOT` não está disponível, faz com que `BACKUP` falhe com `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1505,6 +1544,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Fornece o valor exato da estatística rows_before_aggregation, que representa o número de linhas lidas antes da agregação"}]}]} />
 
 Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#95;before&#95;aggregation, que representa o número de linhas lidas antes da agregaçã
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para executar uma consulta em segundo plano, desvinculada da conexão que a enviou e descartando o resultado."}]}]} />
+
+Se habilitada, o servidor agenda a consulta em segundo plano, retorna imediatamente um resultado vazio e bem-sucedido e executa a consulta até a conclusão, independentemente do que aconteça com a conexão.
+
+Uma consulta em segundo plano não sobrevive à reinicialização do servidor. Durante o encerramento, ela segue as mesmas configurações do servidor que uma consulta em primeiro plano: `shutdown_wait_unfinished_queries` define se ela será cancelada ou se o servidor aguardará sua conclusão (as entradas enfileiradas são descartadas em ambos os casos, sem uma entrada em `system.query_log`), e `shutdown_wait_unfinished` limita por quanto tempo o servidor espera.
+
+Acompanhe a consulta pelo `query_id`: em `system.processes` enquanto estiver em execução e em `system.query_log` depois que for concluída e a entrada no log de consultas for gravada.
+
+Aplica-se a consultas recebidas pelos protocolos TCP nativo e HTTP. Em HTTP, passe a configuração como parâmetro de URL. Ela não pode ser alterada com `SET`; habilite-a por consulta ou no nível de usuário ou perfil.
+
+O principal caso de uso é um `INSERT ... SELECT` demorado que não pode ser perdido caso a conexão do cliente seja interrompida.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering
@@ -1756,6 +1813,16 @@ Valores possíveis:
 * `0` - A parte restante da string não será incluída no último elemento do array de resultado.
 * `1` - A parte restante da string será incluída no último elemento do array de resultado. Esse é o comportamento da função [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) do Spark e do método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) do Python.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "Nova configuração para limitar o custo de estimar a seletividade de `IN` com um conjunto grande: acima do limite, o estimador usa o tamanho do conjunto e seu intervalo delimitador em vez dos intervalos exatos. Antes da versão 26.8, a estimativa não tinha limite; portanto, o valor anterior é 0 (sem limite), e a `compatibility` com uma versão anterior restaura os intervalos exatos para conjuntos de qualquer tamanho."}]}]} />
+
+O tamanho máximo do conjunto no lado direito do operador `IN` para o qual o estimador de seletividade determina os intervalos exatos abrangidos pelo conjunto. Essa determinação requer um `Field` por elemento, uma ordenação e uma sondagem de estatísticas por elemento, o que, em conjuntos grandes, domina o planejamento da consulta. Acima desse limite, o estimador determina a seletividade a partir do tamanho do conjunto e de seu intervalo delimitador, em uma única passagem linear pelo conjunto, sem ordenação nem sondagens de estatísticas por elemento. Zero significa sem limite.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1791,6 +1858,18 @@ Tempo de espera para bloquear o cache ao reservar espaço para dados temporário
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permite ou proíbe INSERTs vazios; ativado por padrão (gera um erro ao fazer um INSERT vazio). Aplica-se apenas a INSERTs usando [`clickhouse-client`](/pt-BR/concepts/features/interfaces/cli) ou a [interface gRPC](/pt-BR/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ler da tabela de amostras recentes de uma tabela TimeSeries quando o intervalo de tempo solicitado estiver inteiramente dentro da janela de TTL dela."}]}]} />
+
+Leia da tabela de amostras recentes de uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series), em vez da tabela principal de amostras, quando todo o intervalo de tempo solicitado estiver dentro da janela de TTL da tabela de amostras recentes (consulte a configuração `recent_samples_ttl_seconds` do motor de tabela TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

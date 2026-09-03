@@ -2,13 +2,15 @@
 slug: /guides/developer/deduplicating-inserts-on-retries
 title: 'إزالة تكرار عمليات الإدراج عند إعادة المحاولة'
 description: 'منع تكرار البيانات عند إعادة محاولة عمليات الإدراج'
-keywords: ['إزالة التكرار', 'إزالة التكرار', 'إعادة محاولات الإدراج', 'عمليات الإدراج']
+keywords: ['إزالة التكرار', 'إزالة التكرار', 'إعادة محاولات الإدراج', 'عمليات الإدراج', 'عمليات الإدراج غير المتزامنة']
 doc_type: 'guide'
 ---
 
-قد تفشل عمليات الإدراج أحيانًا بسبب أخطاء مثل انتهاء المهلة. وعند فشلها، قد تكون البيانات قد أُدرجت بنجاح أو لا. يوضح هذا الدليل كيفية تمكين إزالة التكرار عند إعادة محاولة الإدراج، بحيث لا تُدرج البيانات نفسها أكثر من مرة.
+قد تفشل عمليات الإدراج أحيانًا بسبب أخطاء مثل انتهاء المهلة. وعند فشلها، قد تكون البيانات قد أُدرجت بنجاح أو لا. يوضح هذا الدليل كيفية عمل إزالة التكرار عند إعادة محاولة الإدراج، بحيث لا تُدرج البيانات نفسها أكثر من مرة.
 
-عند إعادة محاولة الإدراج، يحاول ClickHouse التحقق مما إذا كانت البيانات قد أُدرجت بنجاح بالفعل. وإذا وُسِمت البيانات المُدرجة على أنها مكررة، فلن يُدرجها ClickHouse في الجدول الهدف. ومع ذلك، سيظل المستخدم يتلقى حالة نجاح للعملية كما لو كانت البيانات قد أُدرجت بشكل طبيعي.
+عند إعادة محاولة الإدراج، يحاول ClickHouse التحقق مما إذا كانت البيانات قد أُدرجت بنجاح بالفعل. وإذا وُسِمت البيانات المُدرجة على أنها مكررة، فلن يُدرجها ClickHouse في الجدول الوجهة. ومع ذلك، سيظل المستخدم يتلقى حالة نجاح للعملية كما لو كانت البيانات قد أُدرجت بشكل طبيعي.
+
+تشمل إزالة التكرار عمليات الإدراج المتزامنة، وعمليات الإدراج غير المتزامنة، واستعلامات `INSERT ... SELECT`. يتحكم إعداد واحد، وهو `deduplicate_insert`، في عمليات الإدراج المتزامنة وغير المتزامنة. تتطلب `INSERT ... SELECT` عناية إضافية ولها إعداد خاص بها. راجع [الإعدادات التي تتحكم في إزالة تكرار عمليات الإدراج](#settings-that-control-insert-deduplication).
 
 <div id="limitations">
   ## القيود
@@ -26,25 +28,72 @@ doc_type: 'guide'
 
 إذا جرت أكثر من `*_deduplication_window` عملية إدراج أخرى أثناء تسلسل إعادة المحاولة، فقد لا تعمل إزالة التكرار كما هو مقصود. في هذه الحالة، قد تُدرَج البيانات نفسها عدة مرات.
 
-<div id="enabling-insert-deduplication-on-retries">
-  ## تمكين إزالة التكرار عند الإدراج عند إعادة المحاولات
+<div id="settings-that-control-insert-deduplication">
+  ## الإعدادات التي تتحكم في إزالة التكرار
 </div>
 
+لا يزيل ClickHouse تكرار عملية إدراج إلا عند استيفاء الشرطين التاليين:
+
+1. أن يحتفظ الجدول الوجهة بسجل لإزالة التكرار. هذا إعداد على مستوى الجدول.
+2. أن تكون إزالة التكرار مفعّلة للاستعلام. هذا إعداد على مستوى الاستعلام.
+
 <div id="insert-deduplication-for-tables">
-  ### إزالة التكرار عند الإدراج في الجداول
+  ### إعدادات على مستوى الجدول
 </div>
 
 **لا تدعم إزالة التكرار عند الإدراج سوى محرّكات `*MergeTree`.**
 
-بالنسبة إلى محرّكات `*ReplicatedMergeTree`، تكون إزالة التكرار عند الإدراج مفعّلة افتراضيًا، ويتحكم فيها الإعدادان [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) و[`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). أما في محرّكات `*MergeTree` غير المكرّرة، فيتحكم في إزالة التكرار الإعداد [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
+بالنسبة إلى محرّكات `*ReplicatedMergeTree`، يكون سجل إزالة التكرار مفعّلًا افتراضيًا، ويتحكم فيه الإعدادان [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) و[`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). أما في محرّكات `*MergeTree` غير المكرّرة، فيتحكم في السجل الإعداد [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)، الذي تكون قيمته `0` افتراضيًا. لذلك، لا يزيل جدول `MergeTree` العادي أي تكرار حتى تضبط تلك النافذة على قيمة موجبة.
 
 تحدّد الإعدادات أعلاه معلمات سجل إزالة التكرار للجدول. ويخزّن سجل إزالة التكرار عددًا محدودًا من `block_id`s&#96;، وهي التي تحدد آلية عمل إزالة التكرار (انظر أدناه).
 
+<Note>
+  يُعدّ كل من [`replicated_deduplication_window_for_async_inserts`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) و[`replicated_deduplication_window_seconds_for_async_inserts`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) إعدادين قديمين. تشترك عمليات الإدراج المتزامنة وغير المتزامنة الآن في سجل إزالة تكرار واحد، لذا يتحكم `replicated_deduplication_window` في كليهما. كانت الإعدادات القديمة تحدّ فقط دليل ClickHouse Keeper القديم، وهو أمر مهم أثناء ترقية تدريجية.
+</Note>
+
 <div id="query-level-insert-deduplication">
-  ### إزالة التكرار عند الإدراج على مستوى الاستعلام
+  ### إعدادات على مستوى الاستعلام
 </div>
 
-يُفعِّل الإعداد `insert_deduplicate=1` إزالة التكرار على مستوى الاستعلام. لاحظ أنه إذا أدرجت بيانات باستخدام `insert_deduplicate=0`، فلن يكون بالإمكان إزالة تكرار هذه البيانات حتى إذا أعدت محاولة إدراجها باستخدام `insert_deduplicate=1`. ويرجع ذلك إلى أن معرّفات `block_id`s لا تُكتب للكتل أثناء عمليات الإدراج التي تستخدم `insert_deduplicate=0`.
+| الإعداد                                                                                                                                               | ينطبق على                                    | القيمة الافتراضية      | الغرض                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| [`deduplicate_insert`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)                                                    | كل `INSERT`، سواء كان متزامنًا أو غير متزامن | `enable`               | المفتاح الرئيسي لإزالة تكرار عمليات الإدراج                            |
+| [`deduplicate_insert_select`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select)                                      | `INSERT ... SELECT`                          | `enable_when_possible` | يحدد الإجراء المتخذ عندما تكون نتيجة `SELECT` غير قابلة لإعادة الإنتاج |
+| [`insert_deduplication_token`](/ar/reference/settings/session-settings/insert#insert_deduplication_token)                                                | كل `INSERT`                                  | `''`                   | يحدد عملية الإدراج باستخدام سلسلة يوفّرها المستخدم بدلًا من البيانات   |
+| [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) | الجداول التابعة للعروض المادية               | `1`                    | يوسّع إزالة التكرار لتشمل وجهات العروض المادية التابعة                 |
+
+يقبل `deduplicate_insert` ثلاث قيم:
+
+* `enable` — تُفعّل إزالة التكرار لاستعلام `INSERT`.
+* `disable` — تُعطّل إزالة التكرار لاستعلام `INSERT`.
+* `backward_compatible_choice` — يُفوَّض القرار إلى الإعدادات القديمة `insert_deduplicate` (عمليات الإدراج المتزامنة) و`async_insert_deduplicate` (عمليات الإدراج غير المتزامنة).
+
+لاحظ أن الاستعلام الذي يعمل مع `deduplicate_insert = disable` لا يكتب أي قيم `block_id` لكتله. ولا يمكن إزالة تكرار هذه البيانات لاحقًا، حتى إذا أعدت محاولة الإدراج باستخدام `deduplicate_insert = enable`. وينطبق الأمر نفسه عندما لا يحتفظ جدول الوجهة بسجل إزالة التكرار: فلا يُسجَّل شيء، وبالتالي لا يمكن مطابقة أي شيء عند إعادة المحاولة.
+
+<div id="precedence">
+  ### الأسبقية
+</div>
+
+1. بالنسبة إلى استعلام `INSERT ... SELECT`، تكون الأولوية لـ `deduplicate_insert_select`. راجع [إزالة التكرار لـ INSERT ... SELECT](#deduplication-for-insert-select).
+2. بالنسبة إلى جميع عمليات `INSERT` الأخرى، تكون الأولوية لـ `deduplicate_insert`.
+3. لا تُقرأ `insert_deduplicate` و`async_insert_deduplicate` إلا عندما تكون قيمة `deduplicate_insert` هي `backward_compatible_choice`.
+
+<div id="legacy-and-obsolete-settings">
+  ### الإعدادات الموروثة والمتقادمة
+</div>
+
+| الإعداد                                                                                                  | الحالة                                                                                | استخدم بدلًا منه            |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------- |
+| [`insert_deduplicate`](/ar/reference/settings/session-settings/insert#insert_deduplicate)                   | موروث. لا يُقرأ إلا عندما تكون قيمة `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert`        |
+| [`async_insert_deduplicate`](/ar/reference/settings/session-settings/async-insert#async_insert_deduplicate) | موروث. لا يُقرأ إلا عندما تكون قيمة `deduplicate_insert = backward_compatible_choice` | `deduplicate_insert`        |
+| `insert_select_deduplicate`                                                                              | متقادم. ليس له أي تأثير                                                               | `deduplicate_insert_select` |
+| `update_insert_deduplication_token_in_dependent_materialized_views`                                      | متقادم. ليس له أي تأثير                                                               | —                           |
+
+<Warning>
+  اعتبارًا من الإصدار 26.2، تكون القيمة الافتراضية لـ `deduplicate_insert` هي `enable`. لذا، لم يعد ضبط `insert_deduplicate = 0` يعطّل إزالة التكرار بمفرده. لتعطيل إزالة التكرار، اضبط `deduplicate_insert = disable`.
+</Warning>
+
+غيّر الإصدار 26.2 أيضًا القيم الافتراضية لـ `async_insert` و`deduplicate_blocks_in_dependent_materialized_views` إلى مفعّلة. يتحكم إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) في الإعدادات الثلاثة جميعها. إذا ضبطت `compatibility` على إصدار أقدم من `26.2`، فستحتفظ هذه الإعدادات بقيمها الافتراضية القديمة: تصبح قيمة `deduplicate_insert` هي `backward_compatible_choice`، ما يُحيل القرار إلى `insert_deduplicate` و`async_insert_deduplicate`. ويُطبَّق دائمًا أي إعداد تعيّنه صراحةً، ولا يتأثر مطلقًا بـ `compatibility`.
 
 <div id="how-insert-deduplication-works">
   ## كيف تعمل إزالة التكرار عند الإدراج
@@ -54,12 +103,79 @@ doc_type: 'guide'
 
 بالنسبة إلى الجداول التي تستخدم محركات `*MergeTree`، يُخصَّص لكل كتلة `block_id` فريد، وهو `hash` لبيانات تلك الكتلة. ويُستخدم `block_id` هذا كمفتاح فريد لعملية الإدراج. وإذا عُثر على `block_id` نفسه في سجل إزالة التكرار، تُعتبر الكتلة مكررة ولا تُدرج في الجدول.
 
-يعمل هذا النهج جيدًا عندما تحتوي عمليات الإدراج على بيانات مختلفة. ولكن إذا أُدرجت البيانات نفسها عدة مرات عن قصد، فستحتاج إلى استخدام الإعداد `insert_deduplication_token` للتحكم في عملية إزالة التكرار. يتيح لك هذا الإعداد تحديد رمز مميز فريد لكل عملية إدراج، ويستخدم ClickHouse هذا الرمز لتحديد ما إذا كانت البيانات مكررة.
+يعمل هذا النهج جيدًا عندما تحتوي عمليات الإدراج على بيانات مختلفة. ولكن إذا أُدرجت البيانات نفسها عدة مرات عن قصد، فستحتاج إلى استخدام الإعداد `insert_deduplication_token` للتحكم في عملية إزالة التكرار. يتيح لك هذا الإعداد تحديد رمز مميز فريد لكل عملية إدراج، ويستخدم ClickHouse هذا الرمز لتحديد ما إذا كانت البيانات مكررة. يتمتع `insert_deduplication_token` بأولوية أعلى: لا يستخدم ClickHouse قيمة `hash` للبيانات عند توفير الرمز.
 
 بالنسبة إلى استعلامات `INSERT ... VALUES`، يكون تقسيم البيانات المُدرجة إلى كتل حتميًا ويتحدد بواسطة الإعدادات. لذلك، ينبغي إعادة محاولة الإدراج باستخدام قيم الإعدادات نفسها التي استُخدمت في العملية الأولى.
 
-بالنسبة إلى استعلامات `INSERT ... SELECT`، من المهم أن يعيد جزء `SELECT` من الاستعلام البيانات نفسها وبالترتيب نفسه في كل عملية. لاحظ أن تحقيق ذلك عمليًا صعب. ولضمان ترتيب ثابت للبيانات عند إعادة المحاولة، حدِّد عبارة `ORDER BY ALL` في جزء `SELECT` من الاستعلام. في الوقت الحالي، يجب استخدام `ORDER BY ALL` حرفيًا في الاستعلام. ولم يُنفَّذ دعم `ORDER BY` بعد، لذلك لن يُعتبر جزء `SELECT` من الاستعلام ثابتًا. وضع في اعتبارك أنه قد يجري تحديث الجدول المحدد بين محاولات إعادة التنفيذ، ما يعني أن بيانات النتيجة قد تتغير ولن تحدث إزالة التكرار. بالإضافة إلى ذلك، عند إدراج كميات كبيرة من البيانات، قد يتجاوز عدد الكتل بعد عمليات الإدراج نطاق نافذة سجل إزالة التكرار، وعندها لن يتمكن ClickHouse من معرفة ضرورة إزالة تكرار الكتل.
-في الوقت الحالي، يتحكم الإعداد `insert_select_deduplicate` في سلوك `INSERT ... SELECT`. ويحدد هذا الإعداد ما إذا كانت إزالة التكرار ستُطبَّق على البيانات المُدرجة باستخدام استعلامات `INSERT ... SELECT`. راجع الوثائق المرتبطة للحصول على التفاصيل وأمثلة الاستخدام.
+<div id="deduplication-for-insert-select">
+  ## إزالة التكرار في `INSERT ... SELECT`
+</div>
+
+بالنسبة إلى استعلامات `INSERT ... SELECT`، يجب أن يُرجع جزء `SELECT` البيانات نفسها وبالترتيب نفسه في كل محاولة. وإلا فستختلف الكتل و`block_id`s، ولن يُتعرّف على إعادة المحاولة باعتبارها مكررة.
+
+لا يستطيع ClickHouse التحقق من عدم تغيّر البيانات المصدر، لكنه يستطيع التحقق مما إذا كان الاستعلام نفسه ينتج نتيجة قابلة لإعادة الإنتاج. يُعامل `SELECT` على أنه **مستقر** عند استيفاء الشرطين التاليين:
+
+* أن يتضمن الاستعلام عبارة `ORDER BY ALL`. لا يُتعرّف إلا على الصيغة الحرفية `ORDER BY ALL`. أما `ORDER BY <expressions>` العادي فلا يُتعرّف عليه، ولا يكون `UNION` من عمليتي `SELECT` أو أكثر مستقرًا أبدًا.
+* أن ينتهي مسار القراءة بتدفق واحد.
+
+يُعدّ `insert_deduplication_token` غير الفارغ بديلًا مكافئًا للاستقرار، لأن الرمز، وليس البيانات، هو ما يعرّف عملية الإدراج في هذه الحالة.
+
+يحدد الإعداد `deduplicate_insert_select` الإجراء المتبع:
+
+| القيمة                           | السلوك                                                                                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_when_possible` (افتراضي) | أزل التكرار عندما يكون `SELECT` مستقرًا أو عند تعيين رمز. وإلا، فتجاوز إزالة التكرار واكتب رسالة في سجل الخادم.                                                                        |
+| `force_enable`                   | أزل التكرار دائمًا. إذا لم يكن `SELECT` مستقرًا ولم يُعيَّن رمز، فأطلق الاستثناء `DEDUPLICATION_IS_NOT_POSSIBLE`.                                                                      |
+| `enable_even_for_bad_queries`    | أزل التكرار بغض النظر عن الاستقرار. يُحتفَظ به للتوافق مع الإصدارات السابقة. مع `SELECT` غير مستقر، لا يُتعرّف عادةً على إعادة المحاولة باعتبارها مكررة، لذا يُفضّل استخدام قيمة أخرى. |
+| `disable`                        | لا تزل تكرار `INSERT ... SELECT` أبدًا.                                                                                                                                                |
+
+يحترم كل من `enable_when_possible` و`enable_even_for_bad_queries` أيضًا `deduplicate_insert`: إذا كانت قيمته `disable`، فلن يُزال تكرار الاستعلام. يتجاوز `force_enable` قيمة `deduplicate_insert`.
+
+ضع في اعتبارك أنه قد يُحدَّث الجدول المحدد بين عمليات إعادة المحاولة. عندها يتصرف المساران بصورة متعاكسة:
+
+* بدون `insert_deduplication_token`، تُحسب `block_id`s من البيانات. تؤدي النتيجة المتغيرة إلى `block_id`s مختلفة، فلا تحدث إزالة التكرار، وتُدرج إعادة المحاولة البيانات الجديدة فوق أي بيانات كتبتها المحاولة الأولى بالفعل.
+* مع `insert_deduplication_token`، يعرّف الرمز وحده عملية الإدراج. يُتعرّف على إعادة المحاولة باعتبارها مكررة وتُسقط، حتى لو كانت ستدرج بيانات مختلفة.
+
+اختر المسار الذي يتوافق مع المعنى الذي تريده لإعادة المحاولة. كذلك، عند إدراج كميات كبيرة من البيانات، قد يتجاوز عدد الكتل نافذة سجل إزالة التكرار، وعندها لن يعرف ClickHouse أن عليه إزالة تكرار الكتل.
+
+<div id="deduplication-for-asynchronous-inserts">
+  ## إزالة التكرار لعمليات الإدراج غير المتزامنة
+</div>
+
+تُزال تكرارات عمليات الإدراج غير المتزامنة ([`async_insert`](/ar/reference/settings/session-settings/async-insert#async_insert)، وهي مفعّلة افتراضيًا منذ الإصدار 26.2) عند إعادة المحاولة بالطريقة نفسها المتبعة لعمليات الإدراج المتزامنة. ويتحكم `deduplicate_insert` في كليهما، لذا لا حاجة إلى مفتاح منفصل.
+
+يشترك نوعا الإدراج أيضًا في سجل واحد لإزالة التكرار، ويحسبان `block_id`s بالطريقة نفسها. لذلك، يمكنك تبديل العميل بين عمليات الإدراج المتزامنة وغير المتزامنة دون التأثير في إزالة التكرار، وتبقى إعادة المحاولة المُرسلة في أحد الوضعين معروفة كتكرار لمحاولة أُرسلت في الوضع الآخر. كما يبقى نقل حمل عمل من عمليات الإدراج المتزامنة إلى غير المتزامنة آمنًا في جدول يعتمد على إزالة التكرار.
+
+<Note>
+  قبل الإصدار 26.2، كانت إزالة تكرار عمليات الإدراج غير المتزامنة معطّلة افتراضيًا، وكان يتحكم فيها `async_insert_deduplicate`. ولا يُقرأ هذا الإعداد الآن إلا عندما تكون قيمة `deduplicate_insert` هي `backward_compatible_choice`.
+</Note>
+
+<div id="asynchronous-insert-deduplication-granularity">
+  ### دقة إزالة التكرار
+</div>
+
+يجمع الخادم عدة عمليات إدراج غير متزامنة في دفعة واحدة ويكتب هذه الدفعة في جزء واحد أو أكثر، بواقع جزء واحد على الأقل لكل قيمة مميزة لمفتاح التقسيم. تعمل إزالة التكرار على مستوى استعلام المستخدم، وليس على مستوى الدفعة:
+
+* يضيف كل استعلام في قائمة الانتظار رمزاً واحداً لإزالة التكرار إلى الدفعة.
+* يكون الرمز إما قيمة `insert_deduplication_token` إذا وفّرها الاستعلام، أو hash للصفوف التي أضافها هذا الاستعلام.
+* لا يؤثر التجميع في دفعات في الرموز، كما لا يؤثر `insert_deduplication_token` في كيفية تجميع الاستعلامات ضمن دفعات.
+
+ينتج عن ذلك نتيجتان:
+
+* إذا كان أحد الاستعلامات في دفعة مكرراً، فإن ClickHouse يزيل صفوف ذلك الاستعلام فقط. وتُدرج بقية الدفعة بشكل طبيعي. ولا يُتخطى الجزء بالكامل إلا إذا أُزيلت جميع صفوفه.
+* إذا حمل استعلامان في الدفعة نفسها الرمز ذاته، يُسقط الاستعلام الثاني قبل كتابة الجزء. ينطبق ذلك على كل تقسيم على حدة: فإذا كتب الاستعلامان صفوفاً في تقسيمات مختلفة، يُحتفظ بكليهما.
+
+تحصي الأحداث `DuplicatedAsyncInserts` و`SelfDuplicatedAsyncInserts` في [`system.events`](/ar/reference/system-tables/events) هاتين الحالتين.
+
+<div id="asynchronous-inserts-and-materialized-views">
+  ### عمليات الإدراج غير المتزامنة والعروض المادية
+</div>
+
+تعمل إزالة التكرار في عمليات الإدراج غير المتزامنة بالتزامن مع العروض المادية التابعة. القاعدة بسيطة: كتلة واحدة تدخل، وكتلة واحدة تخرج. إذا حوّل الاستعلام الداخلي لعرض كتلة إدخال واحدة إلى كتلة إخراج واحدة، تعمل إزالة التكرار. أما إذا أصدر العرض كتلة ثانية، فيُطلق ClickHouse استثناء `NOT_IMPLEMENTED`.
+
+يصدر العرض كتلة ثانية عندما لا يعود الإخراج ضمن كتلة واحدة. يحدد [`max_block_size`](/ar/reference/settings/session-settings/max#max_block_size) عدد الصفوف التي يمكن أن تتسع لها الكتلة. لا تضيف تحويلات الأعمدة أو التصفية أو التجميع صفوفًا، لذا تبقى دائمًا ضمن كتلة واحدة. يمكن أن يضيف `JOIN` صفوفًا. ويعمل ما دامت النتيجة لا تتجاوز `max_block_size`، ويفشل عند تجاوزها.
+
+للإدراج عبر عرض يصدر أكثر من كتلة واحدة، عيّن `deduplicate_blocks_in_dependent_materialized_views = 0` أو استخدم عمليات الإدراج المتزامنة.
 
 <div id="insert-deduplication-with-materialized-views">
   ## إزالة التكرار عند الإدراج مع العروض المادية
@@ -73,8 +189,7 @@ doc_type: 'guide'
 * [`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
 * [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-يجب أيضًا تمكين إعداد ملف تعريف المستخدم [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
-عند تمكين الإعداد `insert_deduplicate=1`، يُزال تكرار البيانات المُدرجة في الجدول المصدر. ويؤدي الإعداد `deduplicate_blocks_in_dependent_materialized_views=1` أيضًا إلى تمكين إزالة التكرار في الجداول التابعة. يجب تمكين الإعدادين معًا إذا كان المطلوب هو إزالة التكرار الكامل.
+تخضع إزالة التكرار في الجداول التابعة للعروض المادية أيضًا لإعداد ملف تعريف المستخدم [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)، وهو مُمكّن افتراضيًا منذ الإصدار 26.2. يجب أن يسمح كلا الإعدادين بذلك: يزيل `deduplicate_insert` تكرار البيانات المُدرجة في الجدول المصدر، ويزيل `deduplicate_blocks_in_dependent_materialized_views` أيضًا تكرار البيانات في الجداول التابعة. مكّن الإعدادين كليهما إذا كنت تريد إزالة التكرار الكاملة.
 
 عند إدراج كتل في الجداول التابعة للعروض المادية، يحسب ClickHouse قيمة `block_id` عبر إجراء تجزئة لسلسلة تجمع بين قيم `block_id` من الجدول المصدر ومعرّفات إضافية. ويضمن ذلك إزالة تكرار دقيقة داخل العروض المادية، بحيث يمكن تمييز البيانات استنادًا إلى عملية إدراجها الأصلية، بغض النظر عن أي تحويلات طُبّقت عليها قبل وصولها إلى جدول الوجهة التابع للعرض المادي.
 
@@ -122,11 +237,11 @@ SET min_insert_block_size_bytes=0;
 
 تتيح لنا الإعدادات أعلاه إجراء استعلام على جدول يحتوي على سلسلة من الكتل، لا يحتوي كلٌّ منها إلا على صف واحد. هذه الكتل الصغيرة لا تُدمَج، وتبقى كما هي حتى تُدرَج في جدول.
 
+نحدد إزالة التكرار في العرض المادي صراحةً، رغم أنها مفعّلة افتراضيًا:
+
 ```sql
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 ```
-
-نحتاج إلى تمكين إزالة التكرار في العرض المادي:
 
 ```sql
 INSERT INTO dst SELECT
@@ -148,7 +263,7 @@ ORDER BY all;
 └─────┴───────┴───────────┘
 ```
 
-نرى هنا أنه تم إدراج جزأين في الجدول `dst`. كتلتان من select -- وجزآن عند الإدراج. تحتوي الأجزاء على بيانات مختلفة.
+نرى هنا أنه تم إدراج جزأين في الجدول `dst`. كتلتان من SELECT -- وجزآن عند الإدراج. تحتوي الأجزاء على بيانات مختلفة.
 
 ```sql
 SELECT

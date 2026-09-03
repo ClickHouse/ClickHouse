@@ -13,7 +13,9 @@ doc_type: 'reference'
 
 도입 버전: v25.6.0
 
-시계열 데이터를 타임스탬프와 값의 쌍으로 받아, 시작 타임스탬프, 종료 타임스탬프, 간격(step)으로 정의된 규칙적인 시간 그리드에서 이 데이터로부터 [PromQL 방식의 미분값](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv)을 계산하는 집계 함수입니다. 그리드의 각 지점에서는 지정된 시간 윈도우 내의 샘플을 사용해 `deriv`를 계산합니다.
+시계열 데이터를 타임스탬프와 값의 쌍으로 받아, 시작 타임스탬프, 종료 타임스탬프, 간격(step)으로 정의된 규칙적인 시간 그리드에서 이 데이터로부터 [미분값](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv)을 계산하는 집계 함수입니다. 그리드의 각 지점에서는 지정된 시간 윈도우 내의 샘플을 사용해 `deriv`를 계산합니다.
+
+여러 샘플의 타임스탬프가 같으면 그중 값이 가장 큰 샘플 하나만 사용됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 타임스탬프의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
 
 <Note>
   이 함수는 실험적 기능이므로 `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
@@ -67,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

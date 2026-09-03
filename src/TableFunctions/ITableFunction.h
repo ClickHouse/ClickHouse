@@ -122,6 +122,9 @@ public:
         return empty;
     }
 
+    /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
+    void checkEngineAccess(ContextPtr context) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -139,6 +142,11 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+
+    /// Opt in only for engines exposing a server-side capability with no other access gate
+    /// (`Executable` runs a user-provided script). Wrapper engines such as `Merge` or `Loop` are
+    /// gated by their delegated data access, source engines by `checkSourceAccess`.
+    virtual bool requiresTableEngineGrant() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.

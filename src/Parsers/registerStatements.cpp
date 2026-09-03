@@ -41,7 +41,6 @@ void registerStatements()
     registerStatementUnion(factory);
     registerStatementUpdate(factory);
     registerStatementUse(factory);
-    registerStatementWatch(factory);
     registerStatementWith(factory);
     registerStatementCheckGrant(factory);
     registerStatementExecuteAs(factory);

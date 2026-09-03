@@ -197,9 +197,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstri⋯AAA', 'aa')─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
+│                                            2 │
+└──────────────────────────────────────────────┘
 ```
 
 **باستخدام الوسيطة start&#95;pos**
@@ -209,9 +209,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'abc', 4)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
+│                                                           2 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 <div id="countSubstringsCaseInsensitiveUTF8">
@@ -247,9 +247,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯шка', 'КА')─┐
-│                        4 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
+│                                                                  4 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **مع الوسيطة start&#95;pos**
@@ -259,9 +259,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstri⋯, 'КА', 13)─┐
-│                        2 │
-└──────────────────────────┘
+┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
+│                                                                      2 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="extract">
@@ -456,7 +456,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 أُضيف في: v25.10.0
 
-مثل [`hasAnyTokens`](#hasAnyTokens)، لكنه يعيد 1 إذا كانت جميع الرموز في السلسلة أو المصفوفة `needle` تطابق السلسلة `input`، ويعيد 0 خلاف ذلك. وإذا كانت `input` عمودًا، فإنه يعيد جميع الصفوف التي تستوفي هذا الشرط.
+مثل [`hasAnyTokens`](#hasAnyTokens)، لكنه يُرجِع 1 إذا كانت جميع الرموز في السلسلة أو المصفوفة `needle` تطابق السلسلة `input`، ويُرجِع 0 خلاف ذلك. إذا كان `input` عمودًا، فإنه يُرجِع جميع الصفوف التي تستوفي هذا الشرط.
 
 <Note>
   يجب أن يكون للعمود `input` [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) معرّف لضمان أفضل أداء.
@@ -474,7 +474,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   إذا كان الفهرس النصي يحتوي على [تعبير معالج لاحق](/ar/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) مُعدّ، فسيُطبَّق المعالج اللاحق على رموز `needle` ورموز `input` (أي على كليهما بعد التجزئة إلى رموز).
 
 تُتجاهل الرموز المكررة.
-على سبيل المثال، تُعامل needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] بالطريقة نفسها مثل [&#39;ClickHouse&#39;].
+على سبيل المثال، تُعامل needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] بنفس طريقة المعاملة مثل [&#39;ClickHouse&#39;].
 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، فإن `hasAllTokens` يطبّقه على `input`، وعندما تكون `needles` من نوع [String](/ar/reference/data-types/string)، يطبّقه أيضًا على `needles` قبل تجزئتها إلى رموز. وعندما تكون `needles` من نوع [Array(String)](/ar/reference/data-types/array)، فتمرَّر عناصرها كما هي ولا يُطبَّق عليها المعالج المسبق.
@@ -485,26 +485,28 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **البنية**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
-**اسم مستعار**: `hasAllToken`
+**الأسماء المستعارة**: `hasAllToken`
 
-**الوسيطات**
+**الوسائط**
 
-* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array)
+* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`splitByRegexp` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد 1 إذا تطابقت جميع الرموز المراد البحث عنها، وإلا فتُعيد 0. [`UInt8`](/ar/reference/data-types/int-uint)
+تُعيد 1 إذا تطابقت جميع العينات. وإلا فتُعيد 0. [`UInt8`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
-**استخدام أساسي مع سلسلة بحث من نوع String**
+**استخدام أساسي مع سلسلة البحث**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -524,9 +526,11 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**حدِّد أنماط البحث المطلوب العثور عليها كما هي (من دون تجزئة إلى وحدات) في مصفوفة**
+**حدّد عبارات البحث المطلوب البحث عنها كما هي AS-IS (من دون تجزئة إلى رموز) في مصفوفة**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -549,6 +553,8 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **أنشئ عبارات البحث باستخدام الدالة `tokens`**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -575,14 +581,16 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens⋯ngrams(3)')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
 ```
 
 **أمثلة استخدام الأعمدة من نوع Array وMap**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -602,6 +610,8 @@ INSERT INTO log VALUES
 **مثال على عمود من نوع Array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -629,6 +639,8 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **مثال باستخدام mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -656,6 +668,8 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **مثال على mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -690,15 +704,15 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   يجب تعريف [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) على العمود `input` لتحقيق أفضل أداء.
-  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث باستخدام فهرس.
+  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
-قبل البحث، تُجزِّئ الدالة إلى رموز:
+قبل البحث، تُجزِّئ الدالة إلى رموز
 
 * الوسيط `input` (دائمًا)، و
 * الوسيط `needle` (إذا أُعطي على هيئة [String](/ar/reference/data-types/string))
-  باستخدام مُجزِّئ الرموز المحدد للفهرس النصي.
-  وإذا لم يكن للعمود فهرس نصي معرّف، فسيُستخدم بدلًا من ذلك مُجزِّئ الرموز `splitByNonAlpha`.
+  باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
+  وإذا لم يكن للعمود فهرس نصي معرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha`.
   وإذا كان الوسيط `needle` من النوع [Array(String)](/ar/reference/data-types/array)، فسيُعامل كل عنصر في المصفوفة على أنه رمز — ولا يحدث أي تجزئة إضافية إلى رموز.
   وإذا كان الفهرس النصي مهيأً بتعبير [معالج مسبق](/ar/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)، فسيُطبَّق المعالج المسبق على `needle` (إذا أُعطي على هيئة `String`) قبل التجزئة إلى رموز.
   وإذا كان الفهرس النصي مهيأً بتعبير [معالج لاحق](/ar/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional)، فسيُطبَّق المعالج اللاحق على رموز `needle` ورموز `input` (أي على كليهما بعد التجزئة إلى رموز).
@@ -715,7 +729,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **البنية**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **الأسماء المستعارة**: `hasAnyToken`
@@ -724,7 +738,7 @@ hasAnyTokens(input, needles)
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُقسِّم الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`splitByRegexp` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -735,6 +749,8 @@ hasAnyTokens(input, needles)
 **الاستخدام الأساسي مع نمط بحث نصي**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -754,9 +770,11 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**حدِّد سلاسل البحث المراد البحث عنها كما هي (من دون تجزئة إلى رموز) في مصفوفة**
+**حدِّد سلاسل البحث المراد البحث عنها كما هي (من دون تجزئة إلى رموز) في مصفوفة**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -779,6 +797,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **توليد أنماط البحث باستخدام الدالة `tokens`**
 
 ```sql title=Query
+DROP TABLE IF EXISTS doc;
+
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -801,6 +821,8 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 **أمثلة على استخدام أعمدة Array وMap**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -820,6 +842,8 @@ INSERT INTO log VALUES
 **مثال على عمود من نوع Array**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -847,6 +871,8 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **مثال على استخدام mapKeys**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -874,6 +900,8 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **مثال باستخدام mapValues**
 
 ```sql title=Query
+DROP TABLE IF EXISTS log;
+
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -911,9 +939,10 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   إذا لم يكن هناك فهرس نصي مُعرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
-قبل البحث، تُجزِّئ الدالة كلًّا من الوسيطين `input` و`phrase` إلى رموز باستخدام مُجزِّئ الرموز المحدد للفهرس النصي.
-إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُجزِّئ الرموز `splitByNonAlpha` — ما لم يتم تمرير مُجزِّئ رموز باعتباره الوسيط الثالث الاختياري.
-يجب أن يكون وسيط مُجزِّئ الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `ngrams` أو `asciiCJK` أو `icu`.
+قبل البحث، تُجزِّئ الدالة كلًّا من الوسيطين `input` و`phrase` إلى رموز باستخدام مُقسِّم الرموز المحدد للفهرس النصي.
+إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُقسِّم الرموز `splitByNonAlpha` — ما لم يتم تمرير مُقسِّم رموز باعتباره الوسيط الثالث الاختياري.
+يجب أن يكون وسيط مُقسِّم الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `splitByRegexp` أو `ngrams` أو `asciiCJK` أو `icu`.
+لاحظ أن `splitByRegexp` غير مدعوم لـ `hasPhrase` عندما يعرّف الفهرس النصي أيضًا معالجًا لاحقًا.
 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تجزئتهما إلى رموز.
@@ -933,11 +962,11 @@ hasPhrase(input, phrase[, tokenizer])
 
 **الأسماء المستعارة**: `matchPhrase`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `phrase` — العبارة المراد البحث عنها. [`const String`](/ar/reference/data-types/string)
-* `tokenizer` — مُجزِّئ الرموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُقسِّم الرموز المراد استخدامها. اختياري، والقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -1088,9 +1117,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯ 'СИСТЕМА')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="hasSubsequenceUTF8">
@@ -1125,9 +1154,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯', 'кошка')─┐
-│                        1 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 **تسلسل فرعي غير متطابق**
@@ -1137,9 +1166,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequen⋯'апельсин')─┐
-│                        0 │
-└──────────────────────────┘
+┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
+│                                          0 │
+└────────────────────────────────────────────┘
 ```
 
 <div id="hasToken">
@@ -1267,9 +1296,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNu⋯ 'ban ana')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
+│                                             ᴺᵁᴸᴸ │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="highlight">
@@ -1434,16 +1463,16 @@ SELECT like('ClickHouse', '%House');
 └──────────────────────────────┘
 ```
 
-**محرف بدل لحرف واحد**
+**محرف بدل واحد**
 
 ```sql title=Query
 SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickH⋯lick_ouse')─┐
-│                        1 │
-└──────────────────────────┘
+┌─like('ClickHouse', 'Click_ouse')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
 
 **نمط لا يتطابق**
@@ -1538,7 +1567,7 @@ SELECT locate('ca', 'abcabc')
 
 إذا كنت تريد فقط البحث عن سلاسل فرعية، فيمكنك استخدام الدالتين [`like`](#like) أو [`position`](#position) بدلًا من ذلك، إذ تعملان أسرع بكثير من هذه الدالة.
 
-صياغة عامل التشغيل البديلة: `haystack REGEXP pattern`.
+صياغة عامل التشغيل البديلة: `haystack REGEXP pattern` أو `haystack ~ pattern` (بنمط PostgreSQL).
 
 **الصياغة**
 
@@ -1595,6 +1624,48 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 └────────────────────────┴──────────────────────────┘
 ```
 
+<div id="matchCaseInsensitive">
+  ## matchCaseInsensitive
+</div>
+
+أُضيف في: v26.8.0
+
+تشبه [`match`](#match) لكنها تطابق دون مراعاة حالة الأحرف.
+
+تستخدم هذه الدالة مكتبة RE2 للتعبيرات النمطية. يُرجى الرجوع إلى [re2](https://github.com/google/re2/wiki/Syntax) للاطلاع على الصياغة المدعومة.
+
+صياغة عامل التشغيل البديلة: `haystack ~* pattern` (بنمط PostgreSQL).
+
+**الصياغة**
+
+```sql
+matchCaseInsensitive(haystack, pattern)
+-- haystack ~* pattern
+```
+
+**الوسيطات**
+
+* `haystack` — سلسلة يُبحث فيها عن النمط. [`String`](/ar/reference/data-types/string)
+* `pattern` — نمط تعبير نمطي. يمكن أن يكون ثابتًا أو أن يأتي من عمود. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجع `1` إذا كان هناك تطابق مع النمط دون تمييز بين حالة الأحرف، و`0` خلاف ذلك. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
+```
+
+```response title=Response
+┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
+│                                              1 │                                              1 │
+└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
 <div id="multiFuzzyMatchAllIndices">
   ## multiFuzzyMatchAllIndices
 </div>
@@ -1628,9 +1699,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯, 'House'])─┐
-│ [3,1,4,2]                │
-└──────────────────────────┘
+┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
+│ [3,1,4,2]                                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAny">
@@ -1672,9 +1743,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯lickHose'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAnyIndex">
@@ -1710,9 +1781,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMa⋯ickHouse'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
+│                                                                                  2 │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAllIndices">
@@ -1747,9 +1818,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAl⋯', 'ouse'])─┐
-│ [3, 2, 4]                │
-└──────────────────────────┘
+┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
+│ [3,2,4]                                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiMatchAny">
@@ -1835,9 +1906,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAn⋯, 'Click'])─┐
-│                        3 │
-└──────────────────────────┘
+┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
+│                                                             3 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositions">
@@ -1911,9 +1982,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsCaseInsensitiveUTF8">
@@ -1948,9 +2019,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchA⋯й', 'МИР'])─┐
-│ [1, 13]                  │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
+│ [1,13]                                                                                │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsUTF8">
@@ -2098,9 +2169,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchA⋯те', ['з'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
+│                                                        1 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchAnyUTF8">
@@ -2172,9 +2243,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
+│                                                                             1 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **السلوك المراعي لحالة الأحرف**
@@ -2184,9 +2255,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'Server'])─┐
-│                        2 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
+│                                                                             2 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **لم يتم العثور على أي تطابق**
@@ -2196,9 +2267,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
+│                                                         0 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitive">
@@ -2234,9 +2305,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchF⋯, 'Hello'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
+│                                                                       1 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitiveUTF8">
@@ -2271,9 +2342,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'server'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
+│                                                                                            1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **التعامل مع حالة الأحرف في UTF-8**
@@ -2283,9 +2354,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
+│                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **لم يتم العثور على أي تطابق**
@@ -2295,9 +2366,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchF⋯', 'test'])─┐
-│                        0 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
+│                                                                            0 │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexUTF8">
@@ -2333,9 +2404,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchF⋯вствуйте'])─┐
-│                        1 │
-└──────────────────────────┘
+┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
+│                                                                      1 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiSearchFirstPosition">
@@ -2525,7 +2596,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                        0.1 │
+│                                 0.06666667 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2563,9 +2634,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
-│                                                       0 │
-└─────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
+│                                                        0 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceCaseInsensitiveUTF8">
@@ -2603,9 +2674,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
-│                                             0.5 │
-└─────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
+│                                              0.5 │
+└──────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceUTF8">
@@ -2761,7 +2832,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                                        1 │
+│                                               0.57142854 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2800,7 +2871,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                      1 │
+│                                    0.5 │
 └────────────────────────────────────────┘
 ```
 
@@ -2838,9 +2909,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('Cl⋯ '%house%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notILike('ClickHouse', '%house%')─┐
+│                                 0 │
+└───────────────────────────────────┘
 ```
 
 <div id="notLike">
@@ -2877,9 +2948,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯ '%House%')─┐
-│                        0 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%House%')─┐
+│                                0 │
+└──────────────────────────────────┘
 ```
 
 **نمط غير متطابق**
@@ -2889,9 +2960,93 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('Cli⋯', '%SQL%')─┐
-│                        1 │
-└──────────────────────────┘
+┌─notLike('ClickHouse', '%SQL%')─┐
+│                              1 │
+└────────────────────────────────┘
+```
+
+<div id="notMatch">
+  ## notMatch
+</div>
+
+أُضيف في: v26.8.0
+
+مشابهة للدالة [`match`](#match)، لكنها تنفي النتيجة: تتحقق من أن السلسلة النصية لا تطابق نمط التعبير النمطي.
+
+تستخدم هذه الدالة مكتبة RE2 للتعبيرات النمطية. يُرجى الرجوع إلى [re2](https://github.com/google/re2/wiki/Syntax) للاطلاع على الصياغة المدعومة.
+
+صياغة عامل التشغيل البديلة: `haystack !~ pattern` (بنمط PostgreSQL).
+
+**الصيغة**
+
+```sql
+notMatch(haystack, pattern)
+-- haystack !~ pattern
+```
+
+**وسيطات الدالة**
+
+* `haystack` — سلسلة يُبحث فيها عن النمط. [`String`](/ar/reference/data-types/string)
+* `pattern` — نمط تعبير نمطي. يمكن أن يكون ثابتًا أو أن يأتي من عمود. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجع `0` إذا كان هناك تطابق مع النمط، و`1` خلاف ذلك. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
+```
+
+```response title=Response
+┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
+│                                  0 │                                    1 │
+└────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="notMatchCaseInsensitive">
+  ## notMatchCaseInsensitive
+</div>
+
+أُضيف في: v26.8.0
+
+تشبه [`matchCaseInsensitive`](#matchCaseInsensitive)، لكنها تنفي النتيجة: إذ تتحقق من أن السلسلة النصية لا تطابق نمط التعبير النمطي دون تمييز بين حالة الأحرف.
+
+تستخدم هذه الدالة مكتبة RE2 للتعبيرات النمطية. يُرجى الرجوع إلى [re2](https://github.com/google/re2/wiki/Syntax) للاطلاع على الصياغة المدعومة.
+
+صياغة عامل التشغيل البديلة: `haystack !~* pattern` (بأسلوب PostgreSQL).
+
+**الصيغة**
+
+```sql
+notMatchCaseInsensitive(haystack, pattern)
+-- haystack !~* pattern
+```
+
+**وسيطات الدالة**
+
+* `haystack` — سلسلة يُبحث فيها عن النمط. [`String`](/ar/reference/data-types/string)
+* `pattern` — نمط تعبير نمطي. يمكن أن يكون ثابتًا أو أن يأتي من عمود. [`String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجع `0` إذا كان النمط يتطابق دون تمييز حالة الأحرف، و`1` خلاف ذلك. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
+```
+
+```response title=Response
+┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
+│                                                 0 │                                                   1 │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="position">
@@ -3088,9 +3243,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─position('Motörhead', 'r')─┐
-│                          5 │
-└────────────────────────────┘
+┌─positionUTF8('Motörhead', 'r')─┐
+│                              5 │
+└────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

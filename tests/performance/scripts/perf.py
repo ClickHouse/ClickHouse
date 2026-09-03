@@ -80,6 +80,10 @@ def ch_median(times):
 MAX_EXACT_SPLIT_RUNS = 8
 SAMPLED_SPLITS = 10000
 
+# `ErrorCodes::TIMEOUT_EXCEEDED`, src/Common/ErrorCodes.cpp. Spelled out instead of
+# read from `clickhouse_driver.errors.ErrorCodes`, whose contents vary by version.
+TIMEOUT_EXCEEDED = 159
+
 
 def stat_threshold(left_times, right_times):
     """The relative noise threshold of this comparison, replicating the
@@ -1133,10 +1137,15 @@ for query_index in queries_to_run:
     # of runs, because we also have short queries.
     profile_start_seconds = time.perf_counter()
     run = 0
-    while time.perf_counter() - profile_start_seconds < args.profile_seconds:
+    profile_budget_reached = False
+    while (
+        not profile_budget_reached
+        and time.perf_counter() - profile_start_seconds < args.profile_seconds
+    ):
         run_id = f"{query_prefix}.profile{run}"
 
         for conn_index, c in enumerate(this_query_connections):
+            run_start_seconds = time.perf_counter()
             try:
                 profile_elapsed = execute_query_group(
                     c,
@@ -1146,22 +1155,34 @@ for query_index in queries_to_run:
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
-                        # Dedicated profile runs are not timed, so we can afford
-                        # the overhead of allocation sampling to also collect
-                        # MemorySample and JemallocSample stacks for flamegraphs.
+                        # Allocation sampling can make a query orders of magnitude
+                        # slower, so each statement of a run is bounded by the
+                        # profiling budget; a multi-statement item takes a multiple.
+                        "max_execution_time": args.profile_seconds,
                         "memory_profiler_sample_probability": 0.1,
                         "jemalloc_enable_profiler": 1,
                         "jemalloc_collect_profile_samples_in_trace_log": 1,
                     },
                 )
+            except clickhouse_driver.errors.ServerException as e:
+                if e.code != TIMEOUT_EXCEEDED:
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ": " + e.message
+                    raise
+                # The samples taken before the budget ran out are in `trace_log`;
+                # the `profile` row below is what joins them into the report.
+                profile_elapsed = time.perf_counter() - run_start_seconds
+                profile_budget_reached = True
                 print(
-                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}"
+                    f"profile-timeout\t{query_index}\t{run_id}\t{conn_index}"
+                    f"\t{profile_elapsed}"
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ": " + e.message
                 raise
+            print(f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}")
 
         run += 1
 

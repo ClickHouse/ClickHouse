@@ -92,20 +92,21 @@ kind: ClickHouseClusterList
 | الحقل                            | النوع                                                                                                                               | الوصف                                                                                                                                                                                                                                                          | مطلوب | الافتراضي      |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------- |
 | `replicas`                       | integer                                                                                                                             | عدد النسخ المتماثلة في الشظية الواحدة.                                                                                                                                                                                                                         | false | 3              |
-| `shards`                         | integer                                                                                                                             | عدد الشظايا في العنقود.                                                                                                                                                                                                                                       | false | 1              |
+| `shards`                         | integer                                                                                                                             | عدد الشظايا في العنقود.                                                                                                                                                                                                                                        | false | 1              |
 | `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | مرجع إلى KeeperCluster المستخدَم لتنسيق ClickHouse.<br />عند عدم تحديد مساحة الاسم، تُستخدم مساحة اسم ClickHouseCluster.                                                                                                                                       | true  |                |
 | `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | المعلمات التي تُمرَّر إلى مواصفة الكبسولة الخاصة بـ ClickHouse.                                                                                                                                                                                                | false |                |
 | `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | المعلمات التي تُمرَّر إلى مواصفة الحاوية الخاصة بـ ClickHouse.                                                                                                                                                                                                 | false |                |
 | `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | مواصفة التخزين الدائم لبيانات ClickHouse.                                                                                                                                                                                                                      | false |                |
 | `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | قوالب PVC إضافية لكل كبسولة لتخزين JBOD / متعدد الأقراص.<br />يُمرَّر كل مُدخل إلى volumeClaimTemplate في StatefulSet، ويُربط عند `/var/lib/clickhouse/disks/<name>` كما<br />يُضاف إلى سياسة تخزين JBOD المُنشأة.<br />تكون مجموعة الأقراص ثابتة عند الإنشاء. | false |                |
-| `labels`                         | object (keys:string, values:string)                                                                                                 | تسميات إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                               | false |                |
+| `labels`                         | object (keys:string, values:string)                                                                                                 | وسوم إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                               | false |                |
 | `annotations`                    | object (keys:string, values:string)                                                                                                 | تعليقات توضيحية إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                      | false |                |
 | `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | يضبط PodDisruptionBudget مورد PDB الذي يُنشأ لكل شظية.<br />عند عدم تعيينه، يستخدم المشغّل افتراضيًا maxUnavailable=1 للشظايا<br />أحادية النسخة المتماثلة و minAvailable=1 للشظايا متعددة النسخ المتماثلة.                                                    | false |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | يهيّئ NetworkPolicy سياسة NetworkPolicy المُدارة للعنقود.                                                                                                                                                                                                      | false |                |
 | `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | معلمات تهيئة خادم ClickHouse.                                                                                                                                                                                                                                  | false | &#123;  &#125; |
-| `clusterDomain`                  | string                                                                                                                              | ClusterDomain هي لاحقة نطاق عنقود Kubernetes المستخدمة في حلّ أسماء DNS.                                                                                                                                                                                     | false | cluster.local  |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain هي لاحقة نطاق عنقود Kubernetes المستخدمة في حلّ أسماء DNS.                                                                                                                                                                                       | false | cluster.local  |
 | `upgradeChannel`                 | string                                                                                                                              | يحدّد UpgradeChannel قناة الإصدار المستخدمة للتحقق من ترقيات الإصدارات الرئيسية.<br />وعند تركه فارغًا، لن تُقترح إلا التحديثات الثانوية. القيم المسموح بها هي: stable أو lts أو إصدار major.minor محدد (مثل 25.8).                                            | false |                |
 | `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | تجاوزات VersionProbeTemplate الخاصة بـ Job اكتشاف الإصدار.                                                                                                                                                                                                     | false |                |
-| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret مرجع اختياري إلى Secret مُدار خارجيًا ويحتوي على أسرار العنقود.<br />يجب أن يكون الـ Secret موجودًا في مساحة الاسم نفسها الخاصة بالعنقود.                                                                                                     | false |                |
+| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret مرجع اختياري إلى Secret مُدار خارجيًا ويحتوي على أسرار العنقود.<br />يجب أن يكون الـ Secret موجودًا في مساحة الاسم نفسها الخاصة بالعنقود.                                                                                                       | false |                |
 | `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | يعرّف AdditionalPorts منافذ TCP إضافية لكشفها على كبسولة ClickHouse و الخدمة عديمة الرأس العامة.<br />يقتصر دور المشغّل على إضافة المنافذ إلى موارد Kubernetes، ولا يهيّئ خادم ClickHouse للاستماع عليها.                                                      | false |                |
 
 يظهر في:
@@ -133,6 +134,25 @@ kind: ClickHouseClusterList
 يظهر في:
 
 * [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
+
+يُهيّئ ClickHouseNetworkPolicySpec مورد NetworkPolicy الذي يديره مشغّل عنقود ClickHouse.
+تغطي السياسة المُدارة حركة المرور الداخلية ضمن العنقود:
+
+* الاتصال بين النسخ المتماثلة
+* الوصول من المشغّل إلى العنقود
+  يتطلب أي دخول آخر، بما في ذلك اتصالات العميل وكشط المقاييس، موارد NetworkPolicy يعرّفها المستخدم.
+
+| الحقل    | النوع                                       | الوصف                                                                                                                                                                       | مطلوب | الافتراضي |
+| -------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | تتحكم السياسة في ما إذا كان المشغّل يدير مورد NetworkPolicy يقيّد الدخول إلى كبسولات العنقود.<br />تكون القيمة الافتراضية &quot;Disabled&quot; عند عدم تعيينها. | false | Disabled  |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 <div id="clickhousesettings">
   ## ClickHouseSettings
@@ -357,13 +377,14 @@ kind: KeeperClusterList
 | `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | المعلمات التي تُمرَّر إلى مواصفة كبسولة الخاصة بـ Keeper.                                                                                                                                                                                             | false |               |
 | `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | المعلمات التي تُمرَّر إلى مواصفة الحاوية الخاصة بـ Keeper.                                                                                                                                                                                            | false |               |
 | `dataVolumeClaimSpec`  | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | مواصفة التخزين الدائم لبيانات ClickHouse Keeper.                                                                                                                                                                                                      | false |               |
-| `labels`               | كائن (المفاتيح:string، القيم:string)                                                                                                | labels إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                      | false |               |
-| `annotations`          | كائن (المفاتيح:string، القيم:string)                                                                                                | annotations إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                 | false |               |
+| `labels`               | كائن (المفاتيح:string، القيم:string)                                                                                                | وسوم إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                      | false |               |
+| `annotations`          | كائن (المفاتيح:string، القيم:string)                                                                                                | تعليقات توضيحية إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                 | false |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | يضبط PodDisruptionBudget مورد PDB الذي يتم إنشاؤه لعنقود Keeper.<br />عند عدم تعيينه، يستخدم المشغّل افتراضيًا maxUnavailable=replicas/2<br />(مع الحفاظ على النصاب لعنقود 2F+1)؛ أما العناقيد ذات النسخة المتماثلة الواحدة فتستخدم maxUnavailable=1. | false |               |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | يضبط NetworkPolicy مورد NetworkPolicy المُدار لعنقود Keeper.                                                                                                                                                                                          | false |               |
 | `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | معلمات التهيئة لخادم ClickHouse Keeper.                                                                                                                                                                                                               | false |               |
-| `clusterDomain`        | string                                                                                                                              | ClusterDomain هي لاحقة نطاق عنقود Kubernetes المستخدمة لاستيضاح DNS.                                                                                                                                                                                  | false | cluster.local |
+| `clusterDomain`        | string                                                                                                                              | ClusterDomain هي لاحقة نطاق عنقود Kubernetes المستخدمة لحلّ أسماء DNS.                                                                                                                                                                                  | false | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | يحدد UpgradeChannel قناة الإصدار لعمليات التحقق من ترقية الإصدارات الرئيسية.<br />وعندما تكون فارغة، لن تُقترح إلا التحديثات الثانوية. القيم المسموح بها هي: stable أو lts أو إصدار major.minor محدد (مثل 25.8).                                      | false |               |
-| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | تجاوزات VersionProbeTemplate الخاصة بـ Job اكتشاف الإصدار.<br />مهمل: لم تعد Jobs فحص إصدار Keeper مستخدمة؛ وقد تم الإبقاء على هذا الحقل للتوافق مع الإصدارات السابقة.                                                                                 | false |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | تجاوزات VersionProbeTemplate الخاصة بـ Job اكتشاف الإصدار.<br />مهمل: لم تعد Jobs فحص إصدار Keeper مستخدمة؛ وقد تم الإبقاء على هذا الحقل للتوافق مع الإصدارات السابقة.                                                                                | false |               |
 
 يظهر في:
 
@@ -390,6 +411,26 @@ kind: KeeperClusterList
 يظهر في:
 
 * [KeeperCluster](#keepercluster)
+
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
+
+تُهيّئ KeeperNetworkPolicySpec مورد NetworkPolicy المُدار لعنقود Keeper.
+تغطي السياسة المُدارة حركة المرور الداخلية للعنقود:
+
+* الاتصال بين النسخ المتماثلة
+* الوصول من المشغّل إلى العنقود
+* الوصول من عناقيد ClickHouse التي تشير إلى عنقود Keeper هذا
+  يتطلب أي دخول آخر، بما في ذلك جمع المقاييس، سياسات NetworkPolicy يعرّفها المستخدم.
+
+| الحقل    | النوع                                       | الوصف                                                                                                                                                       | مطلوب | الافتراضي |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | تحدد السياسة ما إذا كان المشغّل يدير مورد NetworkPolicy يقيّد حركة الدخول إلى كبسولات Keeper.<br />تكون القيمة الافتراضية &quot;Disabled&quot; إذا لم تُعيَّن. | false | Disabled  |
+
+يظهر في:
+
+* [KeeperClusterSpec](#keeperclusterspec)
 
 <div id="keepersettings">
   ## KeeperSettings
@@ -441,6 +482,22 @@ kind: KeeperClusterList
 يظهر في:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
+
+يتحكم NetworkPolicyPolicy في ما إذا كان المشغّل يدير NetworkPolicy للعنقود.
+
+| الحقل      | الوصف                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| `Enabled`  | يجعل NetworkPolicyEnabled المشغّل يدير NetworkPolicy يقيّد حركة المرور الواردة إلى Pods العنقود.<br /> |
+| `Disabled` | يعطّل NetworkPolicyDisabled ‏NetworkPolicy المُدار، ويحذفه المشغّل إذا كان موجودًا.<br />              |
+
+يظهر في:
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 <div id="pdbpolicy">
   ## PDBPolicy

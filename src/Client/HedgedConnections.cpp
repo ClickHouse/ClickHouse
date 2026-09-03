@@ -136,6 +136,27 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     pipeline_for_new_replicas.add(send_query_plan);
 }
 
+bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
+{
+    /// The first replica is established before the query is sent, but a later hedge may
+    /// select any remaining replica: one whose version is not known yet, or an already
+    /// established usable but stale one that `setBestUsableReplica` keeps for later.
+    /// Use the SQL fallback rather than making that hedge unavailable after a timeout.
+    if (hedged_connections_factory.maySelectReplicaBelowQueryPlanSerializationVersion(version))
+        return false;
+
+    for (const OffsetState & offset_state : offset_states)
+    {
+        for (const ReplicaState & replica : offset_state.replicas)
+        {
+            if (replica.connection && replica.connection->getQueryPlanSerializationVersion() < version)
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);

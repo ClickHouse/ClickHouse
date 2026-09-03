@@ -330,27 +330,19 @@ dbt-clickhouse はデフォルトで、影響を受けていない (削除も変
   #### Delete+Insert 戦略
 </div>
 
-ClickHouse はバージョン 22.8 で「論理削除」を実験的機能として追加しました。論理削除は、
-ALTER TABLE ... DELETE
-操作よりも大幅に高速です。これは、ClickHouse のデータパーツを書き換える必要がないためです。インクリメンタル戦略 `delete+insert`
-は論理削除を利用して、
-「legacy」戦略よりも大幅に高い性能を発揮するインクリメンタルマテリアライゼーションを実装します。ただし、この戦略を使用する際には重要な
-注意点があります:
+`delete+insert` 戦略では、[論理削除](/ja/concepts/features/operations/delete/lightweight-delete)を使用して影響を受ける行を削除した後、新しい行を挿入します。テーブル全体をコピーしないため、「legacy」戦略よりも大幅に高いパフォーマンスを発揮します。プロファイルで `use_lw_deletes: true` を設定すると、`delete+insert` がデフォルトのインクリメンタル戦略になります。
 
-* 論理削除を使用するには、設定
-  `allow_experimental_lightweight_delete=1` を使って ClickHouse server で有効化するか、
-  profile で `use_lw_deletes=true` を設定する必要があります (これにより dbt のセッションでその設定が有効になります)
-* 論理削除は現在では本番利用可能ですが、23.3 より前の ClickHouse バージョンでは性能面やその他の問題が
-  発生する可能性があります。
-* この戦略は、影響を受ける table/リレーション に対して中間テーブルや一時テーブルを作成せずに直接動作するため、処理中に問題が発生した場合、
-  インクリメンタル model の
-  データが無効な状態になる可能性があります
-* 論理削除を使用する場合、dbt-clickhouse は設定 `allow_nondeterministic_mutations` を有効にします。ごく
-  まれに、非決定論的な incremental&#95;predicates を使用すると、
-  更新または削除された項目 (および ClickHouse logs 内の関連する log messages) で race condition が発生する可能性があります。
-  一貫した結果を確実に得るには、
-  incremental predicates には、インクリメンタル
-  materialization 中に変更されないデータに対するサブクエリだけを含めるようにしてください。
+この戦略の使用には、重要な注意点があります。
+
+* 中間テーブルや一時テーブルを作成せず、影響を受けるテーブルを直接操作するため、操作中に
+  問題が発生した場合、インクリメンタルモデル内のデータが無効な状態になる可能性があります。
+* ClickHouse 設定 `allow_nondeterministic_mutations` が必要です。アダプターは可能な場合、自身の
+  セッションでこの設定を自動的に有効にします。有効にできない場合 (たとえば、dbt ユーザーに対して読み取り専用に設定されている場合) 、動作は
+  戦略の選択方法によって異なります。デフォルト戦略に依存するモデルは通知なく legacy
+  戦略にフォールバックしますが、`delete+insert` または `microbatch` を明示的に設定したモデルは実行時に失敗し、
+  プロファイルの `use_lw_deletes: true` は接続時に失敗します。
+* ごくまれに、非決定論的な `incremental_predicates` を使用すると、更新または削除される項目で競合状態が発生する可能性があります。
+  一貫した結果を得るには、インクリメンタル述語には、インクリメンタルマテリアライゼーション中に変更されないデータに対するサブクエリのみを含める必要があります。
 
 <div id="microbatch-strategy">
   #### Microbatch 戦略 (dbt-core &gt;= 1.9 が必要)
@@ -422,10 +414,73 @@ microbatch の詳細な使い方については、[公式ドキュメント](htt
   ## マテリアライゼーション: Dictionary (実験的)
 </div>
 
-ClickHouse Dictionary の
-マテリアライゼーションを実装する方法の
-例については、
-https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py のテストを参照してください
+dbtモデルは、ClickHouse の[Dictionary](/ja/concepts/features/dictionaries/index)として作成できます。`dbt run` のたびに、`CREATE OR REPLACE DICTIONARY` を使用してDictionaryが現在のモデル定義に置き換えられます。
+
+<div id="incremental-configurations">
+  ### 設定
+</div>
+
+| オプション                  | 説明                                                                                                                                                                                        | 必須            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `fields`               | `(name, type)` ペアのリストで指定する Dictionary の構造。                                                                                                                                                | はい            |
+| `primary_key`          | Dictionary の主キー。選択したレイアウトで必要となるキー型と一致している必要があります (例: `COMPLEX_KEY_*` レイアウトでは複合キー) 。                                                                                                       | はい            |
+| `layout`               | `HASHED()`、`COMPLEX_KEY_HASHED()`、`DIRECT()` など、Dictionary をメモリ内に格納するために使用する[レイアウト](/ja/reference/statements/create/dictionary/layouts/overview)。                                            | はい            |
+| `source_type`          | Dictionary がデータを読み取る元: `clickhouse` (デフォルト。モデルの SQL または `table` オプションを使用) または `http`。                                                                                                     |               |
+| `lifetime`             | Dictionary の更新頻度を制御する [`LIFETIME`](/ja/reference/statements/create/dictionary/lifetime) 句 (例: `MIN 0 MAX 300`) 。dbt-clickhouse 1.10.0 以降は任意です。`DIRECT()` など、この句を使用しないレイアウトでは省略してください。        |               |
+| `table`                | `clickhouse` ソースでのみ使用します。モデルの SQL の代わりに既存のテーブルから読み取ります。                                                                                                                                   |               |
+| `update_field`         | `clickhouse` ソースでのみ使用します。このカラムの値が前回の更新以降に変更された行のみを取得して、Dictionary をインクリメンタルに更新します。[LIFETIME](/ja/reference/statements/create/dictionary/lifetime) を参照してください。dbt-clickhouse 1.10.0 以降で利用できます。 |               |
+| `update_lag`           | `clickhouse` ソースでのみ使用します。`update_field` の使用時に、遅れて到着する更新を考慮して前回の更新時刻から差し引く秒数。dbt-clickhouse 1.10.0 以降で利用できます。                                                                              |               |
+| `connection_overrides` | `clickhouse` ソースでのみ使用します。Dictionary の `SOURCE` 句で使用する認証情報のオーバーライド (例: `{'user': 'dictionary_reader'}`) 。                                                                                  |               |
+| `url`, `format`        | `http` ソースでのみ使用します。ソースファイルの URL と入力フォーマット。                                                                                                                                                | `http` の場合ははい |
+| `range`                | `RANGE_HASHED()` レイアウト用の `RANGE` 句 (例: `'min start max stop'`) 。                                                                                                                          |               |
+
+<div id="dictionary-clickhouse-source-example">
+  ### ClickHouse ソースを使用する例
+</div>
+
+モデルの SQL が Dictionary ソースのクエリになります。
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+<div id="dictionary-http-source-example">
+  ### HTTPログソースを使用する例
+</div>
+
+`source_type='http'` (または `table` オプション) を使用する場合、モデルのSQLはログソースとして使用されません。ただし、dbtでは引き続きボディが必要なため、`select 1` をプレースホルダーとして使用してください。
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+range および direct Dictionary を含むその他の例については、[dictionary テスト](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py)を参照してください。
 
 <div id="materialization-distributed-table">
   ## マテリアライゼーション: distributed_table (実験的)

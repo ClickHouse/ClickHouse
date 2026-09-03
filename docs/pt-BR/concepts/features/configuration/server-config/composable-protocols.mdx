@@ -231,6 +231,53 @@ A seção de handlers personalizados segue o mesmo formato de
 As alterações na seção de handlers personalizados são detectadas durante a recarga da configuração, e o
 endpoint correspondente é reiniciado automaticamente.
 
+<div id="default-session-user-per-endpoint">
+  ### Usuário de sessão padrão por endpoint
+</div>
+
+Quando um cliente se conecta sem especificar um nome de usuário (por exemplo, uma requisição HTTP
+sem o parâmetro `user` ou um pacote `Hello` do protocolo nativo com um nome de usuário
+vazio), o servidor o autentica como o usuário de sessão padrão —
+a [configuração do servidor](/pt-BR/reference/settings/server-settings/settings) `default_session_user`, cujo valor padrão é `default`.
+
+A tag `<default_session_user>` substitui essa configuração para um único endpoint. Isso
+permite que diferentes portas de escuta atendam a diferentes usuários anônimos:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <readonly_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <default_session_user>readonly_user</default_session_user>
+  </readonly_http>
+
+</protocols>
+```
+
+Neste exemplo, as solicitações sem credenciais na porta 8123 são autenticadas como o
+usuário de sessão padrão configurado globalmente, enquanto as da porta 8124 são autenticadas
+como `readonly_user`. Um cliente que informa explicitamente um nome de usuário não é afetado.
+
+A tag é pesquisada a partir do módulo do endpoint em direção aos módulos (`impl`)
+referenciados, e o valor mais próximo do endpoint prevalece. Ela se aplica aos handlers de protocolo
+`tcp`, `http`, `mysql` e `postgres`, bem como aos handlers `prometheus` que
+autenticam solicitações (`remote_write`, `remote_read`, `query` e `api_v1`); os
+endpoints de exposição de métricas (incluindo endpoints do Keeper exclusivos para métricas) são disponibilizados
+sem autenticação e ignoram a configuração. Handlers com um usuário fixo (a chave `user`
+dentro de `handler` de uma regra `http_handlers`, ou a chave `user` dentro de `handler`
+de uma regra `prometheus.handlers`) autenticam as solicitações como o usuário configurado e também ignoram a configuração — em
+particular, um `default_session_user` vazio não os rejeita. Ela não pode ser usada com o
+protocolo `interservidor`: as conexões interservidor são autenticadas pelo Secret do cluster
+e pelo usuário inicial e nunca usam o usuário de sessão padrão.
+
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">
   ### Especificando parâmetros adicionais da camada
 </div>

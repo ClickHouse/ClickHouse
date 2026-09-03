@@ -1,94 +1,92 @@
 ---
-title: 'ClickHouse ドキュメント用 MCP サーバーをセットアップする'
-sidebarTitle: 'ドキュメント用 MCP サーバーをセットアップする'
+title: 'ClickHouse ドキュメント用 MCPサーバーをセットアップする'
+sidebarTitle: 'ドキュメント用 MCPサーバーをセットアップする'
 slug: /resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server
 description: 'Model Context Protocol を介して AI ツールを ClickHouse ドキュメントに接続します。'
 doc_type: 'guide'
 date: 2026-08-20
-tags: ['Tools and Utilities']
+tags: ['ツールとユーティリティ']
 keywords: ['MCP', 'Model Context Protocol', 'AI ツール', 'ドキュメント']
 ---
 
 <Info>
-このページでは、ClickHouse ドキュメントを検索するための MCP サーバーを設定します。ClickHouse のデータをクエリする場合は、[オープンソースの ClickHouse MCP サーバー](/ja/guides/use-cases/ai-ml/MCP)または[ClickHouse Cloud のリモート MCP サーバー](/ja/products/cloud/features/ai-ml/remote-mcp)を使用してください。
+  このページでは、ClickHouse ドキュメントを検索するための MCPサーバーを設定します。ClickHouse データをクエリする場合は、[オープンソース版 ClickHouse MCPサーバー](/ja/guides/use-cases/ai-ml/MCP) または [ClickHouse Cloud リモート MCPサーバー](/ja/products/cloud/features/ai-ml/remote-mcp) を使用してください。
 </Info>
 
-Model Context Protocol (MCP) を使用して、AI ツールから ClickHouse ドキュメントを直接参照できます。
+Model Context Protocol (MCP) を使用すると、AI ツールから ClickHouse ドキュメントを直接クエリできます。
 
-## AI ツールを接続する {#connect-your-ai-tool}
+<div id="connect-your-ai-tool">
+  ## AI ツールを接続する
+</div>
 
 <Tabs>
-<Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+  <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+    端末で次のコマンドを実行します。
 
-ターミナルで次を実行します：
+    ```bash
+    claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
+    ```
+  </Tab>
 
-```bash
-claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user
-```
+  <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+    `claude_desktop_config.json` に以下を追加します。
 
-</Tab>
-<Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-
-`claude_desktop_config.json` に追加します：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Codex" icon="/images/logo-codex.svg">
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    端末で次のコマンドを実行します。
 
-ターミナルで次を実行します：
+    ```bash
+    codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
+    ```
+  </Tab>
 
-```bash
-codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp
-```
+  <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+    `.cursor/mcp.json` に以下を追加します。
 
-</Tab>
-<Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-
-`.cursor/mcp.json` に追加します：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
+    ```
+  </Tab>
 
-</Tab>
-<Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+  <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+    `~/.codeium/windsurf/mcp_config.json` に以下を追加します。
 
-`~/.codeium/windsurf/mcp_config.json` に追加します：
-
-```json
-{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+    ```json
+    {
+      "mcpServers": {
+        "clickhouse-docs": {
+          "command": "npx",
+          "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]
+        }
+      }
     }
-  }
-}
-```
-
-</Tab>
+    ```
+  </Tab>
 </Tabs>
 
-## コーディングエージェントに ClickHouse スキルを追加する {#add-clickhouse-skills}
+<div id="add-clickhouse-skills">
+  ## コーディングエージェントにClickHouseスキルを追加する
+</div>
 
-ClickHouse スキルをインストールすると、エージェントに ClickHouse の専門知識とベストプラクティスを持たせることができます：
+ClickHouseスキルをインストールすると、エージェントにClickHouseの専門知識とベストプラクティスを提供できます。
 
 ```bash
 npx skills add https://clickhouse.com

@@ -427,4 +427,20 @@ size_t SerializationVariantElement::allocatedBytes() const
     return sizeof(*this) + variant_element_name.capacity();
 }
 
+MutableColumnPtr SerializationVariantElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// The Nullable level of the result column belongs to this serialization: its null map is filled from the
+    /// discriminators, and deserializeBinaryBulkWithMultipleStreams peels the same level off before recursing.
+    /// A LowCardinality(Nullable) result is deserialized as a whole and keeps its wrapper.
+    if (isColumnNullable(*column))
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        return ColumnNullable::create(
+            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
+            nullable.getNullMapColumnPtr()->cloneEmpty());
+    }
+
+    return nested_serialization->wrapColumnForDeserialization(std::move(column));
+}
+
 }

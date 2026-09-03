@@ -3,17 +3,15 @@
 -- no-replicated-database: named collections are server-global, not database-scoped
 
 -- =============================================================================
--- AI functions refuse a plaintext endpoint on a remote host by default, so
--- enabling the experimental functions does not silently send prompts and API
--- keys over an unencrypted connection. Loopback endpoints stay allowed, and the
--- `ai_function_allow_insecure_endpoint` setting overrides the check.
+-- AI functions refuse a plaintext endpoint on a remote host by default, so prompts
+-- and API keys are not silently sent over an unencrypted connection. Loopback
+-- endpoints stay allowed, and the `ai_function_allow_insecure_endpoint` setting
+-- overrides the check.
 --
 -- The endpoint check runs in `resolveAIParams`, before the zero-row early
 -- return in `executeImpl`, so an empty source table exercises it without any
 -- real HTTP call. All tests run without a real AI provider.
 -- =============================================================================
-
-SET allow_experimental_ai_functions = 1;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (x String) ENGINE = Memory;

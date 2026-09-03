@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Visão geral",
+      "group": "Overview",
       "pages": [
         "pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "pt-BR/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuração",
+      "group": "Configuration",
       "pages": [
         "pt-BR/products/bring-your-own-cloud/configuration/configurations",
         "pt-BR/products/bring-your-own-cloud/configuration/connect",
@@ -21,7 +21,7 @@
       "pages": [
         "pt-BR/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Personalização",
+          "group": "Customization",
           "pages": [
             "pt-BR/products/bring-your-own-cloud/onboarding/customization-aws",
             "pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -40,7 +40,27 @@
       ]
     },
     {
-      "group": "Referência",
+      "group": "Connector",
+      "pages": [
+        "pt-BR/products/bring-your-own-cloud/connector/overview",
+        "pt-BR/products/bring-your-own-cloud/connector/onboarding",
+        "pt-BR/products/bring-your-own-cloud/connector/architecture",
+        "pt-BR/products/bring-your-own-cloud/connector/support-sessions",
+        "pt-BR/products/bring-your-own-cloud/connector/configuration",
+        "pt-BR/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "pt-BR/products/bring-your-own-cloud/connector/reference/cli",
+            "pt-BR/products/bring-your-own-cloud/connector/reference/configuration",
+            "pt-BR/products/bring-your-own-cloud/connector/reference/faq",
+            "pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
       "pages": [
         "pt-BR/products/bring-your-own-cloud/reference/network-security",
         "pt-BR/products/bring-your-own-cloud/reference/privilege",

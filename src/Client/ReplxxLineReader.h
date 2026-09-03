@@ -23,6 +23,14 @@ public:
         bool interactive_history_legacy_keymap = false;
         /// Show as-you-type autocompletion hints (ghost text). Requires color (highlighting).
         bool enable_hints = true;
+        /// Use the asynchronously loaded suggestion dictionary for as-you-type hints. Client
+        /// slash commands are static and remain available when this is disabled.
+        bool enable_suggestion_hints = true;
+        /// Offer the `/`-commands of the client (`/help`, `/clear`, ...) at the beginning of the
+        /// input, as hints and as Tab completions. Off by default: `keeper-client` and
+        /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
+        /// means something else there (the beginning of a path).
+        bool enable_slash_commands = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -71,6 +79,11 @@ private:
     Suggest & suggest;
 
     const char * word_break_characters;
+
+    /// Whether the `/`-commands of the client are offered as hints and completions (see Options).
+    const bool enable_slash_commands;
+    /// Whether ordinary as-you-type hints may query the asynchronously loaded suggestion dictionary.
+    const bool enable_suggestion_hints;
 
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;

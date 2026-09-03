@@ -40,3 +40,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 구성 매개변수에 적용한 모든 변경 사항은 일반적으로 1분 이내에 인스턴스에 저장됩니다. 일부 매개변수는 적용되려면 데이터베이스를 다시 시작해야 합니다. 이러한 변경 사항은 다음 재시작 후 적용되며, **서비스 작업** 도구 모음에서 수동으로 실행할 수 있습니다.
 
 구성 매개변수에 대해서는 공식 [문서](https://www.postgresql.org/docs/current/runtime-config.html)를 참조하세요. 설정할 수 있는 매개변수 목록은 곧 확대될 예정입니다. 그때까지는 현재 지원되지 않는 매개변수를 요청하려면 [지원팀](https://clickhouse.com/support/program)에 문의하세요.
+
+<div id="scheduled-upgrades">
+  ## 예약된 업그레이드
+</div>
+
+**구성** 섹션에서는 플랫폼 유지 관리(소규모 PostgreSQL 버전 업그레이드, 관리형 서비스 기능 업데이트, 운영 체제 패치)가 인스턴스에 적용되는 시점도 제어할 수 있습니다. **예약된 업그레이드** 하위 섹션에서 **일정 구성**을 선택하여 UTC 기준 2시간의 시간대를 지정하고, 필요에 따라 업그레이드를 적용할 수 있는 요일을 선택하십시오.
+
+사용 가능한 시간대와 일정에 포함되는 항목 및 포함되지 않는 항목은 [예약된 업그레이드](/ko/products/managed-postgres/upgrades#scheduled-upgrades)를 참조하십시오.

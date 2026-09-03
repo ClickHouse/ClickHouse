@@ -1,17 +1,60 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "Primeiros passos",
+  "item": "Get started",
   "pages": [
     {
-      "group": "Primeiros passos",
+      "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "pt-BR/get-started/index",
-        "pt-BR/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Guias de início rápido",
+          "pages": [
+            "pt-BR/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Todos os casos de uso",
+              "pages": [
+                "pt-BR/get-started/setup/cloud",
+                "pt-BR/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "pt-BR/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "pt-BR/get-started/quickstarts/creating-tables",
+                "pt-BR/get-started/quickstarts/writing-queries",
+                "pt-BR/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Analytics em tempo real",
+              "pages": [
+                "pt-BR/get-started/quickstarts/create-your-first-materialized-view",
+                "pt-BR/get-started/quickstarts/create-your-first-projection",
+                "pt-BR/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Armazenamento de dados",
+              "pages": [
+                "pt-BR/get-started/quickstarts/connect-your-iceberg-catalog",
+                "pt-BR/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observabilidade",
+              "pages": [
+                "pt-BR/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
-          "group": "Introdução",
+          "group": "Introduction",
           "pages": [
             "pt-BR/get-started/about/intro",
             "pt-BR/get-started/about/why-clickhouse-is-so-fast",
@@ -20,7 +63,7 @@
         },
         {
           "expanded": true,
-          "group": "Casos de uso",
+          "group": "Use cases",
           "pages": [
             "pt-BR/get-started/use-cases/overview",
             "pt-BR/get-started/use-cases/real-time-analytics",
@@ -41,11 +84,11 @@
         "pt-BR/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Autogerenciado",
+          "group": "Self-managed",
           "pages": [
             "pt-BR/get-started/setup/self-managed/overview",
             {
-              "group": "Desenvolvimento local",
+              "group": "Local development",
               "pages": [
                 "pt-BR/get-started/setup/self-managed/quick-install",
                 "pt-BR/get-started/setup/self-managed/clickhousectl",
@@ -54,7 +97,7 @@
               ]
             },
             {
-              "group": "Servidor de produção",
+              "group": "Production server",
               "pages": [
                 "pt-BR/get-started/setup/self-managed/debian-ubuntu",
                 "pt-BR/get-started/setup/self-managed/redhat",
@@ -68,7 +111,7 @@
     },
     {
       "expanded": true,
-      "group": "Conjuntos de dados de exemplo",
+      "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "pt-BR/get-started/sample-datasets/index",
@@ -86,7 +129,7 @@
           ]
         },
         {
-          "group": "Busca vetorial e embeddings",
+          "group": "Vector search & embeddings",
           "pages": [
             "pt-BR/get-started/sample-datasets/dbpedia",
             "pt-BR/get-started/sample-datasets/hacker-news-vector-search",
@@ -95,7 +138,7 @@
           ]
         },
         {
-          "group": "Analytics para web e redes sociais",
+          "group": "Web & social analytics",
           "pages": [
             "pt-BR/get-started/sample-datasets/amazon-reviews",
             "pt-BR/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -107,7 +150,7 @@
           ]
         },
         {
-          "group": "Geo e localização",
+          "group": "Geo & location",
           "pages": [
             "pt-BR/get-started/sample-datasets/cell-towers",
             "pt-BR/get-started/sample-datasets/foursquare-os-places",
@@ -115,7 +158,7 @@
           ]
         },
         {
-          "group": "Séries temporais e sensores",
+          "group": "Time series & sensors",
           "pages": [
             "pt-BR/get-started/sample-datasets/environmental-sensors",
             "pt-BR/get-started/sample-datasets/noaa",
@@ -124,7 +167,7 @@
           ]
         },
         {
-          "group": "Registros públicos e dados abertos",
+          "group": "Public records & open data",
           "pages": [
             "pt-BR/get-started/sample-datasets/covid19",
             "pt-BR/get-started/sample-datasets/menus",
@@ -137,7 +180,7 @@
     },
     {
       "expanded": true,
-      "group": "Migrar",
+      "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "pt-BR/get-started/migrate/overview",
@@ -146,7 +189,7 @@
           "pages": [
             "pt-BR/get-started/migrate/postgres/overview",
             {
-              "group": "Guia de migração",
+              "group": "Migration guide",
               "pages": [
                 "pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -187,14 +230,14 @@
           ]
         },
         {
-          "group": "OSS para Cloud",
+          "group": "OSS to Cloud",
           "pages": [
             "pt-BR/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "pt-BR/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "Outros métodos",
+          "group": "Other methods",
           "pages": [
             "pt-BR/get-started/migrate/other-methods/clickhouse-local-etl",
             "pt-BR/get-started/migrate/other-methods/etl-tool-to-clickhouse",

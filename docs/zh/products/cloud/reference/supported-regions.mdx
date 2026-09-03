@@ -13,7 +13,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
   ## 支持的区域
 </div>
 
-下表按云提供商列出了支持的区域。徽章表示是否支持私有区域、HIPAA 和 PCI。不带徽章的区域目前不提供上述任何选项。
+下表按云提供商列出了支持的区域。徽章表示可用性：`Public` 表示正式可用的区域，`Private`、`HIPAA` 或 `PCI` 表示提供这些选项的区域。
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
@@ -22,51 +22,52 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
     | `af-south-1`     | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-east-1`      | <Badge color="purple">私网</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">私网</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                   |
-    | `ap-northeast-2` | —                                                                                                   |
-    | `ap-south-1`     | —                                                                                                   |
-    | `ap-southeast-1` | —                                                                                                   |
-    | `ap-southeast-2` | —                                                                                                   |
+    | `ap-northeast-1` | <Badge color="yellow">公网</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">公网</Badge>                                                                    |
+    | `ap-south-1`     | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-southeast-1` | <Badge color="yellow">公网</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">公网</Badge>                                                                    |
     | `ap-southeast-3` | <Badge color="purple">私网</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">私网</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `ca-central-1`   | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-central-1`   | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `eu-north-1`     | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
-    | `il-central-1`   | —                                                                                                   |
-    | `mx-central-1`   | <Badge color="purple">私网</Badge> <Badge color="blue">PCI</Badge>                                    |
+    | `eu-west-1`      | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-2`      | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `il-central-1`   | <Badge color="yellow">公网</Badge>                                                                    |
+    | `me-central-1`   | <Badge color="yellow">公网</Badge>                                                                    |
+    | `mx-central-1`   | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `sa-east-1`      | <Badge color="purple">私网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                  |
+    | `us-east-1`      | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-2`      | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west-2`      | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
   </Tab>
 
   <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | 区域                        | 可用性                                                                |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">私网</Badge>                                   |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">私网</Badge>                                   |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">私网</Badge>                                   |
-    | `northamerica-northeast1` | <Badge color="purple">私网</Badge>                                   |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">私网</Badge>                                   |
+    | 区域                        | 可用性                                                                                                 |
+    | ------------------------- | --------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | <Badge color="yellow">公网</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">公网</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">私网</Badge>                                                                    |
+    | `europe-west2`            | <Badge color="yellow">公网</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">私网</Badge>                                                                    |
+    | `europe-west4`            | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">私网</Badge>                                                                    |
+    | `northamerica-northeast1` | <Badge color="purple">私网</Badge>                                                                    |
+    | `us-central1`             | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">私网</Badge>                                                                    |
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | 区域                     | 可用性                              |
     | ---------------------- | -------------------------------- |
     | `Australia East`       | <Badge color="purple">私网</Badge> |
-    | `East US 2`            | —                                |
-    | `Germany West Central` | —                                |
+    | `East US 2`            | <Badge color="yellow">公网</Badge> |
+    | `Germany West Central` | <Badge color="yellow">公网</Badge> |
     | `Japan East`           | <Badge color="purple">私网</Badge> |
     | `UAE North`            | <Badge color="purple">私网</Badge> |
-    | `West US 3`            | —                                |
+    | `West US 3`            | <Badge color="yellow">公网</Badge> |
   </Tab>
 </Tabs>
 

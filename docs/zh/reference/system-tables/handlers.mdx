@@ -11,7 +11,11 @@ doc_type: 'reference'
   ## 说明
 </div>
 
-包含通过 CREATE HANDLER 创建的所有 SQL 定义的 HTTP 处理程序列表。
+包含通过 [`CREATE HANDLER`](/zh/reference/statements/create/handler) 创建的所有由 SQL 定义的 HTTP 处理程序 列表。
+
+读取此表需要 `SHOW HANDLERS` 权限；否则该表显示为空。处理程序 查询中可能嵌入的 secret (例如传递给表函数的凭据) 仅当用户有权查看 secret 时，才会显示在
+`query` 和 `create_query` 列中 (即已启用 `display_secrets_in_show_and_select` 服务器设置和 `format_display_secrets_in_show_and_select` 格式
+设置，且用户拥有 `displaySecretsInShowAndSelect` 权限) ；否则会被掩码处理，与 `SHOW CREATE TABLE` 中的行为完全一致。
 
 <div id="columns">
   ## 列

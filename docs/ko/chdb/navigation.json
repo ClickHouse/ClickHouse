@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "시작하기",
+      "group": "Get started",
       "pages": [
         "ko/chdb/index",
         "ko/chdb/getting-started"
       ]
     },
     {
-      "group": "언어별 통합",
+      "group": "Language integrations",
       "pages": [
         "ko/chdb/install/index",
         "ko/chdb/install/python",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "group": "구성",
+      "group": "Configuration",
       "pages": [
         "ko/chdb/configuration/index",
         "ko/chdb/configuration/execution-engine",
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "group": "디버깅",
+      "group": "Debugging",
       "pages": [
         "ko/chdb/debugging/index",
         "ko/chdb/debugging/explain",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "개발자 가이드",
+      "group": "Developer guides",
       "pages": [
         "ko/chdb/guides/index",
         "ko/chdb/guides/jupysql",
@@ -73,7 +73,7 @@
       ]
     },
     {
-      "group": "기술 참조",
+      "group": "Technical reference",
       "pages": [
         "ko/chdb/reference/index",
         "ko/chdb/reference/data-formats",

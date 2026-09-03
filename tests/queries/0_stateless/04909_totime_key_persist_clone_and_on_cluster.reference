@@ -1,0 +1,5 @@
+clone	toTime(c0)
+on_cluster_oldest_entry	toTimeWithFixedDate(c0)
+on_cluster_oldest_entry_udf	toTimeWithFixedDate(c0)
+on_cluster_oldest_entry_mv	ORDER BY toTimeWithFixedDate(c0)
+on_cluster_oldest_entry_projection	ORDER BY toTimeWithFixedDate

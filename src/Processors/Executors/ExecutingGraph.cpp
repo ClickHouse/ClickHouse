@@ -5,11 +5,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
-#include <QueryPipeline/printPipeline.h>
-
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -66,7 +61,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
 
     const auto [_, inserted] = processors_map.emplace(processor, &new_node);
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline. Graph: {}", processor->getName(), dump(false));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
     return new_node;
 }
@@ -75,14 +70,14 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline. Graph: {}", processor->getName(), dump(false));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline", processor->getName());
 
     auto * node = node_it->second;
     if (!node->last_processor_status)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}. Graph: {}", processor->getName(), dump(false));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}. Graph: {}", processor->getName(), dump(false));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
     std::unordered_set<const void *> removed_edges;
     removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
@@ -341,38 +336,6 @@ void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & proces
         return;
 
     group_it->second->not_finished.fetch_sub(1);
-}
-
-String ExecutingGraph::dump(bool with_profile_counters) const
-{
-    if (with_profile_counters)
-    {
-        for (const auto & node : nodes)
-        {
-            WriteBufferFromOwnString buffer;
-            buffer << "(" << node.num_executed_jobs << " jobs";
-
-#ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
-#endif
-
-            buffer << ")";
-            node.processor()->setDescription(buffer.str());
-        }
-    }
-
-    std::vector<std::optional<IProcessor::Status>> statuses;
-    statuses.reserve(nodes.size());
-
-    for (const auto & node : nodes)
-        statuses.emplace_back(node.last_processor_status);
-
-    WriteBufferFromOwnString out;
-    printPipeline(getProcessors(), statuses, out, false, true);
-    out.finalize();
-
-    return out.str();
 }
 
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)

@@ -250,8 +250,6 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::WriteLock lockCache() const;
-
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
@@ -348,7 +346,13 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    /// Taken exclusively (`try_lock_for`) by `doDynamicResize`, shared (`try_lock`) by
+    /// `tryReserve` and `tryIncreasePriority` - both skip it when the policy cannot resize.
+    /// This lock alone prevents growth while the resize path has the priority guards released.
     std::shared_timed_mutex dynamic_resize_lock;
+    /// Cached `main_priority->supportsDynamicResize`: non-resizable policies skip the
+    /// `dynamic_resize_lock` gate on every reservation and priority increase.
+    bool supports_dynamic_resize = false;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 
@@ -359,8 +363,6 @@ private:
     /// Must be declared after main_priority: metadata holds iterators that reference
     /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
-    mutable CachePriorityGuard cache_guard;
-    mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;
 
     /// Random checks for cache correctness.
@@ -442,11 +444,11 @@ private:
         double slru_size_ratio = 0;
     };
     SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
+    /// Takes `cache_state_guard` itself, in several short spans; the caller must not hold it.
     bool doDynamicResizeImpl(
         const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
-        SizeLimits & result_limits,
-        CacheStateGuard::Lock &) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        SizeLimits & result_limits);
 
     bool doTryReserve(
         FileSegment & file_segment,
@@ -464,7 +466,6 @@ private:
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,
-        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
         std::string & failure_reason);
 

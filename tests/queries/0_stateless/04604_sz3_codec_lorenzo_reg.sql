@@ -10,7 +10,7 @@
 -- "SZ3 Huffman: encoded length exceeds compressed buffer", so a column written with
 -- `CODEC(SZ3('ALGO_LORENZO_REG', ...))` could be inserted but failed every later read with CORRUPTED_DATA.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 
 DROP TABLE IF EXISTS tab_sz3_lorenzo_reg;
 

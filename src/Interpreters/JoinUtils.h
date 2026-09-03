@@ -81,6 +81,18 @@ private:
 };
 
 
+/** JOIN does not need a type that is able to represent all the values of both keys (the least supertype).
+  * It is enough to have a type that is able to represent the values that both of the key types have in common
+  * (the most subtype). A value that cannot be represented in this type is not equal to any value from the other
+  * side, so it does not match anything, and `accurateCastOrNull` converts it to NULL.
+  *
+  * For example, for `UInt64` and `Int64` the least supertype does not exist, but the values that both of them
+  * can hold are `[0, 9223372036854775807]`, and all of them fit into `UInt64`.
+  *
+  * The result is never Nullable or LowCardinality. Returns nullptr if there is no such type.
+  */
+DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);

@@ -4,7 +4,7 @@
 -- is split into compressed blocks (part type, block sizes), so the error-magnitude assertions below are
 -- only stable with fixed settings.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET cross_to_inner_join_rewrite = 1;
 SET async_insert = 1;
 

@@ -10,16 +10,17 @@ workflow = Workflow.Config(
     name="NightlyStatistics",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         Job.Config(
             name="Collect Job Duration Statistics",
             command="python3 ./ci/jobs/collect_job_duration_statistics.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
         ),
         Job.Config(
             name="Collect Test Duration Statistics",
             command="python3 ./ci/jobs/collect_test_duration_statistics.py",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
         ),
     ],
     secrets=SECRETS,

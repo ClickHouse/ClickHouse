@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Types_fwd.h>
 #include <memory>
 #include <optional>
 
@@ -117,6 +118,30 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
     const std::optional<String> & default_session_user = {});
+
+/// Whether an HTTP listener serving the rules of the `<http_handlers>`-style section `http_handlers_key`
+/// can expose the Prometheus metrics protocol: through a rule with a `prometheus` handler type, or
+/// through the default `/metrics` route registered from the `prometheus` section.
+bool httpHandlersCanExposePrometheusMetrics(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & http_handlers_key);
+
+/// Checks the constant labels of every Prometheus metrics endpoint of `config` against the labels that
+/// endpoint would write itself, including the asynchronous metric key labels, which are only written
+/// when `asynchronous_metrics_key_values_mode` publishes the key-value form. Throws
+/// `INVALID_CONFIG_PARAMETER` on a collision, so that such a configuration can be rejected before it is
+/// installed - the same check runs again for each endpoint when its handler factory is built.
+/// @param http_handlers_keys - the `<http_handlers>`-style sections HTTP listeners of `config` serve, so
+///        that a section no listener serves is not checked.
+/// @param has_prometheus_listener - whether a listener of `config` serves the `prometheus` section on a
+///        port of its own (the standalone `prometheus.port` one, or a composable `type = prometheus`
+///        endpoint). Without one, that section is only read when it registers the default `/metrics`
+///        route of an HTTP listener; an inert section that nothing serves is not read at a fresh start
+///        either, and is therefore not checked here.
+void validatePrometheusConstantLabels(
+    const Poco::Util::AbstractConfiguration & config,
+    const Strings & http_handlers_keys,
+    bool has_prometheus_listener);
 
 /// Makes a handler factory to handle prometheus protocols.
 /// Supports the "metrics" protocol only.

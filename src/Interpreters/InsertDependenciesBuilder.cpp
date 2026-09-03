@@ -11,7 +11,6 @@
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
@@ -302,35 +301,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return ptr;
     }
 }
-
-
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(SharedHeader header, StorageWindowView & window_view_, ContextPtr context_)
-        : SinkToStorage(header)
-        , window_view(window_view_)
-        , context(std::move(context_))
-    {
-    }
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk & chunk) override
-    {
-        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-        StorageWindowView::writeIntoWindowView(
-            window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
-
-        if (auto process = context->getProcessListElement())
-            process->updateProgressIn(local_progress);
-
-        ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-        ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-    }
-
-private:
-    StorageWindowView & window_view;
-    ContextPtr context;
-};
 
 
 class BeginingViewsTransform final : public ISimpleTransform
@@ -1568,38 +1538,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         return true;
     }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(init_storage.get()))
-    {
-        if (current == init_table_id)
-        {
-            set_defaults_for_root_view(init_table_id, init_table_id);
-            view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
-            return true;
-        }
-
-        inner_tables[current] = current;
-        select_queries[current] = window_view->getMergeableQuery();
-        input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
-        views_error_registry->init(current);
-
-        auto parent_select_context = select_contexts.at(path.parent(2));
-        auto view_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-        view_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
-        select_contexts[current] = view_context;
-        insert_contexts[current] = view_context;
-
-        if (init_context->hasQueryContext())
-        {
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
-        }
-
-        dependent_views[path.parent(2)].push_back(current);
-
-        return true;
-    }
     else
     {
         /// the last case is a regular table
@@ -1892,14 +1830,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
 
     const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
 
-    if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
-    {
-        auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
-        sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
-        result.addSink(std::move(sink));
-    }
-    else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
+    if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
     {
         // Data is never inserted to the StorageMaterializedView, it is inserted to its inner table
         UNREACHABLE();

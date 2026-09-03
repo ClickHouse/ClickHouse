@@ -10,63 +10,64 @@ doc_type: 'reference'
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="supported-regions">
-  ## 지원 리전
+  ## 지원되는 리전
 </div>
 
-다음 표에는 클라우드 제공업체별 지원 리전이 나열되어 있습니다. 배지는 프라이빗 리전, HIPAA 및 PCI 지원 여부를 나타냅니다. 배지가 없는 리전은 현재 이러한 옵션을 제공하지 않습니다.
+다음 표에는 클라우드 제공업체별 지원 리전이 나열되어 있습니다. 배지는 가용성을 나타냅니다. 일반 제공 리전은 `Public`으로, 해당 옵션을 제공하는 리전은 `Private`, `HIPAA` 또는 `PCI`로 표시됩니다.
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
-    | 리전               | 가용성                                                                                                      |
-    | ---------------- | -------------------------------------------------------------------------------------------------------- |
-    | `af-south-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `ap-east-1`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-east-2`      | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-northeast-1` | —                                                                                                        |
-    | `ap-northeast-2` | —                                                                                                        |
-    | `ap-south-1`     | —                                                                                                        |
-    | `ap-southeast-1` | —                                                                                                        |
-    | `ap-southeast-2` | —                                                                                                        |
-    | `ap-southeast-3` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ap-southeast-5` | <Badge color="purple">Private</Badge>                                                                    |
-    | `ca-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-central-1`   | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-north-1`     | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `eu-west-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `eu-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `il-central-1`   | —                                                                                                        |
-    | `mx-central-1`   | <Badge color="purple">Private</Badge> <Badge color="blue">PCI</Badge>                                    |
-    | `sa-east-1`      | <Badge color="purple">Private</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east-1`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-east-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
-    | `us-west-2`      | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                       |
+    | 리전               | 가용성                                                                                                  |
+    | ---------------- | ---------------------------------------------------------------------------------------------------- |
+    | `af-south-1`     | <Badge color="purple">비공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `ap-east-1`      | <Badge color="purple">비공개</Badge>                                                                    |
+    | `ap-east-2`      | <Badge color="purple">비공개</Badge>                                                                    |
+    | `ap-northeast-1` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-northeast-2` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-south-1`     | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `ap-southeast-1` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-southeast-2` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-southeast-3` | <Badge color="purple">비공개</Badge>                                                                    |
+    | `ap-southeast-5` | <Badge color="purple">비공개</Badge>                                                                    |
+    | `ca-central-1`   | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-central-1`   | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-north-1`     | <Badge color="purple">비공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `eu-west-1`      | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `eu-west-2`      | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `il-central-1`   | <Badge color="yellow">공개</Badge>                                                                     |
+    | `me-central-1`   | <Badge color="yellow">공개</Badge>                                                                     |
+    | `mx-central-1`   | <Badge color="purple">비공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `sa-east-1`      | <Badge color="purple">비공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east-1`      | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-east-2`      | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
+    | `us-west-2`      | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
   </Tab>
 
   <Tab title="Google Cloud" id="google-cloud-regions" icon="/images/icons/cloud-providers/google-cloud-color.svg">
-    | 리전                        | 가용성                                                                |
-    | ------------------------- | ------------------------------------------------------------------ |
-    | `asia-northeast1`         | —                                                                  |
-    | `asia-southeast1`         | —                                                                  |
-    | `australia-southeast1`    | <Badge color="purple">Private</Badge>                              |
-    | `europe-west2`            | —                                                                  |
-    | `europe-west3`            | <Badge color="purple">Private</Badge>                              |
-    | `europe-west4`            | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `europe-west6`            | <Badge color="purple">Private</Badge>                              |
-    | `northamerica-northeast1` | <Badge color="purple">Private</Badge>                              |
-    | `us-central1`             | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-east1`                | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
-    | `us-west1`                | <Badge color="purple">Private</Badge>                              |
+    | Region                    | 가용성                                                                                                     |
+    | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+    | `asia-northeast1`         | <Badge color="yellow">Public</Badge>                                                                    |
+    | `asia-southeast1`         | <Badge color="yellow">Public</Badge>                                                                    |
+    | `australia-southeast1`    | <Badge color="purple">Private</Badge>                                                                   |
+    | `europe-west2`            | <Badge color="yellow">Public</Badge>                                                                    |
+    | `europe-west3`            | <Badge color="purple">Private</Badge>                                                                   |
+    | `europe-west4`            | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `europe-west6`            | <Badge color="purple">Private</Badge>                                                                   |
+    | `northamerica-northeast1` | <Badge color="purple">Private</Badge>                                                                   |
+    | `us-central1`             | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-east1`                | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
+    | `us-west1`                | <Badge color="purple">Private</Badge>                                                                   |
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | 리전                     | 가용성                                   |
     | ---------------------- | ------------------------------------- |
     | `Australia East`       | <Badge color="purple">Private</Badge> |
-    | `East US 2`            | —                                     |
-    | `Germany West Central` | —                                     |
+    | `East US 2`            | <Badge color="yellow">Public</Badge>  |
+    | `Germany West Central` | <Badge color="yellow">Public</Badge>  |
     | `Japan East`           | <Badge color="purple">Private</Badge> |
     | `UAE North`            | <Badge color="purple">Private</Badge> |
-    | `West US 3`            | —                                     |
+    | `West US 3`            | <Badge color="yellow">Public</Badge>  |
   </Tab>
 </Tabs>
 

@@ -119,7 +119,9 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
             ).get_value(),
             encoding="utf-8",
         )
@@ -235,7 +237,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 
 
 # `docker buildx build` resolves base/SBOM-scanner images such as
-# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# `docker/buildkit-syft-scanner` (pulled for the SBOM attestation) from docker.io, which
 # intermittently returns transient HTTP errors while resolving and while pushing
 # image layers, and the build itself hits `apt-get` package mirrors that occasionally
 # refuse connections. Retry the buildx commands only on genuine
@@ -247,7 +249,9 @@ BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
-    "unexpected status from HEAD request",
+    # One containerd error, formatted `unexpected status from <method> request to <url>:
+    # <status>`, so the method is an interpolated field and not part of the failure.
+    "unexpected status from ",
     "500 Internal Server Error",
     "502 Bad Gateway",
     "503 Service Unavailable",
@@ -440,15 +444,22 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    attest: bool,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
+    # Attestations survive only in pushed manifests (the local docker exporter
+    # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
+    # so generate them only for pushed images.
+    # The scanner is pinned because the floating stable-1 tag can silently move
+    # to a version whose scan of a multi-GB image exceeds the runner's memory.
+    if attest:
+        args.append("--provenance=true")
+        args.append("--attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
@@ -522,6 +533,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                attest=push,
             )
         )
         if not push:

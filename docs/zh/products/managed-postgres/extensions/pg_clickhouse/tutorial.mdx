@@ -14,6 +14,11 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickho
 本教程基于 [ClickHouse 教程]，但其中所有查询均通过
 pg&#95;clickhouse 运行。
 
+选择配置 `pg_clickhouse` 的方式：
+
+* 如果您使用 ClickHouse Managed Postgres，请[从控制台](#from-console)进行配置。
+* 如果您自行安装和配置扩展，请[从 PSQL](#from-psql)进行配置。
+
 <div id="start-clickhouse">
   ## 启动 ClickHouse
 </div>
@@ -163,6 +168,41 @@ SELECT * FROM s3(
 SELECT count() FROM taxi.trips;
 quit
 ```
+
+<div id="from-console">
+  ## 在控制台中
+</div>
+
+如果您使用 ClickHouse Managed Postgres，可以通过 ClickHouse Cloud
+控制台配置 `pg_clickhouse` 并连接到 ClickHouse 服务。打开您的 Managed Postgres 服务，选择 **设置**，然后找到
+**ClickHouse 集成** 部分。点击 **启用 pg&#95;clickhouse**。
+
+在设置表单中，为 foreign server 输入名称。选择用于连接的 ClickHouse
+服务、数据库和用户。输入 ClickHouse
+密码，然后选择要导入 ClickHouse 表的 Postgres 数据库和目标 schema。点击 **连接**，创建 foreign
+server 并导入 schema。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置表单" size="lg" border />
+
+设置完成后，控制台会显示确认信息，foreign
+server 将出现在 server 列表中。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置已完成" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="显示 taxi pg_clickhouse 连接的 foreign server 列表" size="lg" border />
+
+现在，您可以打开 Postgres **SQL 控制台**并查询已导入的表：
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+要按照本教程中的出租车示例操作，请选择 `taxi` ClickHouse
+数据库，并将其导入 `taxi` 目标端 schema。
+
+<div id="from-psql">
+  ## 从 PSQL 连接
+</div>
 
 <div id="install-pg_clickhouse">
   ### 安装 pg_clickhouse

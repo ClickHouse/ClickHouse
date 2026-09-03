@@ -72,7 +72,7 @@ ClickHouse では、テーブルは[データベース](/ja/reference/statements
 * [ClickHouse がデータを保存する方法: parts と グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) - ClickHouse でデータがどのように構成され、どのようにクエリされるかを詳しく説明した、より高度なガイドです。グラニュール と主キーも詳しく扱っています。
 * [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)- コマンドや内部仕様の理解に役立つ高度な MergeTree リファレンスガイドです。
 
-以下で説明する最適化はすべて、標準のClickHouse SQLを使って、[ClickHouse Cloud SQL Console](/ja/integrations/connectors/sql-clients/sql-console)または [clickhouse client](/ja/concepts/features/interfaces/cli) から基になるテーブルに直接適用できます。
+以下で説明する最適化はすべて、標準のClickHouse SQLを使って、[ClickHouse Cloud SQL Console](/ja/integrations/connectors/sql-clients/sql-console)または [clickhouse client](/ja/concepts/features/interfaces/client) から基になるテーブルに直接適用できます。
 
 <div id="materialize-frequently-queried-attributes">
   ## 最適化 1. 頻繁にクエリされる属性をマテリアライズする
@@ -580,16 +580,35 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 このクエリの書き換えには、テキスト索引付きの配列カラムに対する
 トークン単位の直接プルーニングをサポートする ClickHouse バージョンが必要です。
 ClickStack は接続先サーバーのバージョン (`SELECT version()`、接続ごとにキャッシュ)
-を検出し、サーバーがしきい値以上の場合にのみ
-書き換え後の形式を出力します。古いサーバーでは、自動的に元の
+を検出し、サーバーが以下の対応するしきい値を満たす場合にのみ
+書き換え後の形式を出力します。古いバージョンでは、自動的に元の
 Map 添字形式にフォールバックします。
 
-| ClickHouse ブランチ | 最小バージョン    |
-| --------------- | ---------- |
-| 26.2            | 26.2.19.43 |
-| 26.3            | 26.3.12.3  |
-| 26.4            | 26.4.3.37  |
-| 26.5+           | すべてのバージョン  |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud のビルドとオープンソースリリースでは、バージョン系統が独立しています。
+    以下の Cloud の最小バージョンを使用してください。
+
+    | ClickHouse ブランチ | 最小 Cloud バージョン |
+    | --------------- | -------------- |
+    | 26.2            | `26.2.1.307`   |
+    | 26.3            | `26.3.0.0`     |
+    | 26.4            | `26.4.1.1740`  |
+    | 26.5+           | すべてのバージョン      |
+
+    最小バージョンの `26.3.0.0` はブランチの下限であるため、すべての `26.3` ビルドが
+    サポートされています。
+  </Tab>
+
+  <Tab title="オープンソース">
+    | ClickHouse ブランチ | 最小オープンソースバージョン |
+    | --------------- | -------------- |
+    | 26.2            | `26.2.19.43`   |
+    | 26.3            | `26.3.12.3`    |
+    | 26.4            | `26.4.3.37`    |
+    | 26.5+           | すべてのバージョン      |
+  </Tab>
+</Tabs>
 
 <Info>
   **なぜ MATERIALIZED ではなく ALIAS なのか**

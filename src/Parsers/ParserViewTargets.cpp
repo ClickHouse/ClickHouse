@@ -121,6 +121,12 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
 
+                case ViewTarget::RecentSamples:
+                {
+                    parsed |= tryParseViewTarget(kind, Keyword::RECENT_SAMPLES, pos, expected, res);
+                    break;
+                }
+
                 case ViewTarget::Tags:
                 {
                     parsed |= tryParseViewTarget(kind, Keyword::TAGS, pos, expected, res);
@@ -130,12 +136,6 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 case ViewTarget::Metrics:
                 {
                     parsed |= tryParseViewTarget(kind, Keyword::METRICS, pos, expected, res);
-                    break;
-                }
-
-                case ViewTarget::RecentSamples:
-                {
-                    parsed |= tryParseViewTarget(kind, Keyword::RECENT_SAMPLES, pos, expected, res);
                     break;
                 }
 

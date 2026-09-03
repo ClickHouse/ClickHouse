@@ -16,14 +16,14 @@ Estructura de la sección `users`:
 
 ```xml
 <users>
-    <!-- Si no se especificó el nombre de usuario, se utiliza el usuario 'default'. -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
-        <!-- Solo se puede especificar un método de autenticación en el nivel users.user_name. Por ejemplo: -->
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
-        <!-- O (exclusivo) -->
+        <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
  
-        <!-- O (exclusivo) (N.B. se permiten múltiples claves SSH por compatibilidad con versiones anteriores) -->
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
@@ -39,7 +39,7 @@ Estructura de la sección `users`:
             </ssh_key>
         </ssh_keys>
 
-        <!-- O (exclusivo) para múltiples métodos de autenticación: -->
+        <!-- Or (exclusive) for multiple authentication methods: -->
         <auth_methods>
             <method1>
                 <password></password>
@@ -74,7 +74,7 @@ Estructura de la sección `users`:
             <query>GRANT SELECT ON system.*</query>
         </grants>
     </user_name>
-    <!-- Configuración de otros usuarios -->
+    <!-- Other users settings -->
 </users>
 ```
 

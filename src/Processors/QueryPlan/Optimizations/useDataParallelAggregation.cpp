@@ -151,8 +151,8 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
     /// aggregation. Aggregating each partition independently skips that merge, so the limit would be
     /// enforced against each partition's own hash table instead of globally, letting a query return
     /// more groups (or apply `group_by_overflow_mode`) per partition than the global limit allows.
-    /// Fall back to normal aggregation, matching `AggregatingStep::canUseShardedAggregation` and
-    /// `make_distributed_plan`, both of which reject this case for the same reason.
+    /// Fall back to normal aggregation, matching `make_distributed_plan`, which rejects this
+    /// case for the same reason.
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
         return;
 

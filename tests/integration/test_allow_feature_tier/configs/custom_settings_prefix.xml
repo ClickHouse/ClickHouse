@@ -1,0 +1,3 @@
+<clickhouse>
+    <custom_settings_prefixes>custom_</custom_settings_prefixes>
+</clickhouse>

@@ -137,11 +137,6 @@ void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const ICo
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(n);
-}
-
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
@@ -592,6 +587,11 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
     size_t start = chars.size();
     chars.resize(start + count * n);
     return {reinterpret_cast<char *>(chars.data() + start), count * n};
+}
+
+bool ColumnFixedString::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(chars.data(), 0, chars.size());
 }
 
 void ColumnFixedString::serializeAsComparable(size_t row, String & out) const

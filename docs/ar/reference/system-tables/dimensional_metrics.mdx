@@ -97,6 +97,30 @@ FORMAT Prometheus
 
 إجمالي بايتات مقاطع الملفات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات، والموسومة باسم ذاكرة التخزين المؤقت ومعرّف المستخدم. تكون معطّلة افتراضيًا؛ فعِّلها باستخدام `expose_prometheus_eviction_metrics` و `expose_prometheus_eviction_metrics_per_user`.
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+عدد حالات إخفاق `ObjectStorageQueue` (`S3Queue`/`AzureQueue`)، الموسومة بقاعدة البيانات والجدول ومرحلة المعالجة (`read`، `set_processing`، `insert`، `commit`) ورمز الخطأ.
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+عدد ملفات `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) التي يُتخلى عنها نهائيًا بعد استنفاد محاولات إعادة المحاولة (أو عند تعطيلها)، موسومًا بقاعدة البيانات والجدول. يمثّل كلٌ منها ملفًا لن تُعالج بياناته مطلقًا.
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+الطابع الزمني لـ Unix لوقت آخر تعديل لأحدث كائن رصده حتى الآن جدول `ObjectStorageQueue` ‏(`S3Queue`/`AzureQueue`)، موسومًا باسم قاعدة البيانات والجدول.
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+الطابع الزمني لـ Unix لوقت آخر تعديل لأحدث كائن تمت معالجته بالكامل حتى الآن بواسطة جدول من `ObjectStorageQueue` (`S3Queue`/`AzureQueue`)، وموسوم بـ قاعدة البيانات وجدول.
+
 <div id="see-also">
   ## راجع أيضًا
 </div>

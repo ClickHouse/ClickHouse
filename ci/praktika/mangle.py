@@ -9,6 +9,7 @@ from . import Job
 from .info import Info
 from .settings import Settings
 from .utils import Utils
+from .version import current_praktika_version
 
 
 def _is_local_run():
@@ -18,6 +19,23 @@ def _is_local_run():
     except Exception:
         # During workflow generation, Info can't be initialized - treat as CI mode
         return False
+
+
+def _is_default_local_workflow(py_file: Path, workflow_name: str) -> bool:
+    configured = Settings.DEFAULT_LOCAL_TEST_WORKFLOW
+    if not configured:
+        return False
+    configured_values = {
+        configured,
+        Path(configured).name,
+        Path(configured).stem,
+    }
+    workflow_values = {
+        workflow_name,
+        py_file.name,
+        py_file.stem,
+    }
+    return bool(configured_values & workflow_values)
 
 
 def _get_workflows(
@@ -59,10 +77,6 @@ def _get_workflows(
                     continue
             if file and str(file) not in str(py_file):
                 continue
-        elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
-            if not _is_local_run():
-                print(f"Skip [{py_file.name}]")
-            continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
@@ -72,7 +86,11 @@ def _get_workflows(
         assert spec.loader
         spec.loader.exec_module(foo)
         try:
+            matched_default_workflow = False
             for workflow in foo.WORKFLOWS:
+                if default and not _is_default_local_workflow(py_file, workflow.name):
+                    continue
+                matched_default_workflow = True
                 if name:
                     if name == workflow.name:
                         print(f"Read workflow [{name}] config from [{module_name}]")
@@ -87,10 +105,13 @@ def _get_workflows(
                     )
                 if isinstance(_file_names_out, list):
                     _file_names_out.append(py_file.name.removeprefix(".py"))
-        except Exception as e:
-            print(
-                f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
-            )
+            if default and not matched_default_workflow and not _is_local_run():
+                print(f"Skip [{py_file.name}]")
+        except Exception:
+            pass
+            # print(
+            #     f"WARNING: Failed to add WORKFLOWS config from [{module_name}], exception [{e}]"
+            # )
     if not res:
         Utils.raise_with_error(f"Failed to find [{name or file or 'any'}] workflow")
 
@@ -103,11 +124,18 @@ def _get_workflows(
     return res
 
 
-def _get_infra_config():
+def _get_infra_projects():
     """
-    Returns the infra config which is imported as: Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH import CLOUD
+    Returns the infra configs imported as:
+    Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH import PROJECTS
     """
     from pathlib import Path
+
+    if not Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH:
+        Utils.raise_with_error(
+            "Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH is not set. "
+            "Please define it in your ci/settings/*.py file."
+        )
 
     config_path = Path(Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH)
 
@@ -121,25 +149,88 @@ def _get_infra_config():
 
     if not spec or not spec.loader:
         Utils.raise_with_error(
-            f"Failed to load infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+            f"Failed to load infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]: "
+            f"path must point to a Python (.py) file, not a directory"
         )
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except TypeError as e:
+        message = str(e)
+        if "__init__()" in message and "unexpected keyword argument" in message:
+            Utils.raise_with_error(
+                "Infrastructure config cannot be loaded because there is a mismatch "
+                "between the Praktika version and the infrastructure config.\n"
+                f"Config file: {Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}\n"
+                f"Running Praktika version: {current_praktika_version()}\n"
+                f"Import error: {message}\n"
+                "The config likely uses newer infrastructure fields that this "
+                "Praktika runtime does not understand. Run the Praktika package "
+                "version that matches this config, then retry."
+            )
+        raise
 
     try:
-        cloud_config = getattr(module, "CLOUD")
-        cloud_config._settings = Settings
+        projects = list(getattr(module, "PROJECTS"))
+        if not projects:
+            Utils.raise_with_error(
+                f"PROJECTS in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}] must contain at least one config"
+            )
+        seen_names = set()
+        for project in projects:
+            if not getattr(project, "name", ""):
+                Utils.raise_with_error(
+                    f"All PROJECTS in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}] must have non-empty names"
+                )
+            if project.name in seen_names:
+                Utils.raise_with_error(
+                    f"Duplicate infrastructure project name [{project.name}] in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+                )
+            seen_names.add(project.name)
+            project._settings = Settings
         print(
-            f"Loaded infrastructure config from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+            f"Loaded {len(projects)} infrastructure project(s) from [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
         )
-        return cloud_config
+        return projects
     except AttributeError:
         Utils.raise_with_error(
-            f"CLOUD variable not found in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
+            f"PROJECTS variable not found in [{Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH}]"
         )
 
     return None
+
+
+def _get_infra_config(project_name=None, require_project: bool = False):
+    projects = _get_infra_projects()
+    if require_project and not project_name:
+        names = ", ".join(sorted(project.name for project in projects))
+        Utils.raise_with_error(
+            f"Infrastructure destroy requires --project NAME. Available projects: {names}"
+        )
+
+    if len(projects) == 1:
+        only = projects[0]
+        if project_name and project_name != only.name:
+            Utils.raise_with_error(
+                f"Unknown infrastructure project [{project_name}]. Only configured project is [{only.name}]"
+            )
+        return only
+
+    if not project_name:
+        names = ", ".join(sorted(project.name for project in projects))
+        Utils.raise_with_error(
+            f"Multiple infrastructure projects configured [{names}]. Use --project NAME."
+        )
+
+    for project in projects:
+        if project.name == project_name:
+            return project
+
+    Utils.raise_with_error(
+        f"Unknown infrastructure project [{project_name}]. "
+        f"Available projects: {', '.join(sorted(project.name for project in projects))}"
+    )
 
 
 def _get_artifact_to_providing_job_map(workflow):
@@ -155,6 +246,10 @@ def _update_workflow_artifacts(workflow):
     for artifact in workflow.artifacts:
         if artifact.name in artifact_job:
             artifact._provided_by = artifact_job[artifact.name]
+
+
+def _native_job_runs_on(workflow):
+    return copy.deepcopy(workflow.native_job_runs_on or Settings.CI_CONFIG_RUNS_ON)
 
 
 def _update_workflow_with_native_jobs(workflow):
@@ -220,6 +315,7 @@ def _update_workflow_with_native_jobs(workflow):
                 f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]"
             )
         aux_job = copy.deepcopy(_workflow_config_job)
+        aux_job.runs_on = _native_job_runs_on(workflow)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
             job.run_after.append(aux_job.name)
@@ -235,6 +331,7 @@ def _update_workflow_with_native_jobs(workflow):
         if not _is_local_run():
             print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)
+        aux_job.runs_on = _native_job_runs_on(workflow)
         for job in workflow.jobs:
             aux_job.run_after.append(job.name)
         workflow.jobs.append(aux_job)
@@ -248,4 +345,3 @@ def _update_workflow_with_native_jobs(workflow):
                 label if label == "self-hosted" else f"{prefix}{label}"
                 for label in job.runs_on
             ]
-

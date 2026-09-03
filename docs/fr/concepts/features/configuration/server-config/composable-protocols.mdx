@@ -231,6 +231,54 @@ La section des handlers personnalisés suit le même format que
 Les modifications apportées à la section des handlers personnalisés sont détectées lors du rechargement de la config, et le point de terminaison
 correspondant est automatiquement redémarré.
 
+<div id="default-session-user-per-endpoint">
+  ### Utilisateur de session par défaut par point de terminaison
+</div>
+
+Lorsqu’un client se connecte sans spécifier de nom d’utilisateur (par exemple, une requête HTTP
+sans le paramètre `user`, ou un paquet `Hello` du protocole natif avec un nom d’utilisateur
+vide), le serveur l’authentifie en tant qu’utilisateur de session par défaut : le
+[paramètre du serveur](/fr/reference/settings/server-settings/settings) `default_session_user`,
+dont la valeur par défaut est `default`.
+
+La balise `<default_session_user>` surcharge ce paramètre pour un point de terminaison donné. Cela
+permet à différents ports d’écoute de servir différents utilisateurs anonymes :
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <readonly_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <default_session_user>readonly_user</default_session_user>
+  </readonly_http>
+
+</protocols>
+```
+
+Dans cet exemple, les requêtes sans informations d&#39;identification sur le port 8123 sont authentifiées en tant qu&#39;
+utilisateur de session `default` configuré globalement, tandis que celles sur le port 8124 sont authentifiées
+en tant que `readonly_user`. Un client qui fournit explicitement un nom d&#39;utilisateur n&#39;est pas concerné.
+
+Le tag est recherché du module du point de terminaison vers les modules (`impl`)
+référencés, et la valeur la plus proche du point de terminaison l&#39;emporte. Il s&#39;applique aux gestionnaires de protocole
+`tcp`, `http`, `mysql` et `postgres`, ainsi qu&#39;aux gestionnaires `prometheus` qui
+authentifient les requêtes (`remote_write`, `remote_read`, `query` et `api_v1`) ; les
+points de terminaison d&#39;exposition des métriques (y compris les points de terminaison Keeper dédiés aux métriques uniquement) sont servis
+sans authentification et ignorent ce paramètre. Les gestionnaires avec un utilisateur fixe (la clé `user`
+dans `handler` d&#39;une règle `http_handlers`, ou la clé `user` dans `handler`
+d&#39;une règle `prometheus.handlers`) s&#39;authentifient avec l&#39;utilisateur configuré et ignorent également ce paramètre :
+en particulier, un `default_session_user` vide ne les rejette pas. Ce paramètre ne peut pas être utilisé avec le
+protocole `interserver` : les connexions interserveur sont authentifiées à l&#39;aide du secret du cluster
+et de l&#39;utilisateur initial, et n&#39;utilisent jamais l&#39;utilisateur de session `default`.
+
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">
   ### Spécification de paramètres supplémentaires pour la couche
 </div>

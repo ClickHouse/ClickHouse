@@ -97,6 +97,30 @@ Nombre de segments de fichier évincés du cache du système de fichiers, étiqu
 
 Nombre total d’octets de segments de fichier évincés d’un cache du système de fichiers, avec comme étiquettes le nom du cache et l’identifiant de l’utilisateur. Désactivé par défaut ; activez-le avec `expose_prometheus_eviction_metrics` et `expose_prometheus_eviction_metrics_per_user`.
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+Nombre d’échecs d’`ObjectStorageQueue` (`S3Queue`/`AzureQueue`), étiqueté par base de données, table, étape de traitement (`read`, `set_processing`, `insert`, `commit`) et code d’erreur.
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+Nombre de fichiers `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) définitivement abandonnés après épuisement des tentatives (ou lorsque celles-ci sont désactivées), étiqueté par base de données et table. Chacun représente un fichier dont les données ne seront jamais traitées.
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+Horodatage Unix correspondant à l’heure de dernière modification de l’objet le plus récent détecté jusqu’à présent par une table `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), étiqueté avec la base de données et la table.
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+Horodatage Unix de l’heure de dernière modification de l’objet le plus récent entièrement traité jusqu’à présent par une table `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), étiqueté avec la base de données et la table.
+
 <div id="see-also">
   ## Voir aussi
 </div>

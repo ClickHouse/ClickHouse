@@ -1,7 +1,7 @@
 export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const featuredIds = featured.map((f) => f.id)
   const data = quickStartsData || []
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // Filter options. `value` is a stable slug matched against the tag slugs in
@@ -15,7 +15,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     { value: "ai-ml", label: "AI/ML" }
   ]
   const productOptions = [
-    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "self-managed", label: "ClickHouse(오픈 소스)" },
     { value: "cloud", label: "ClickHouse Cloud" },
     { value: "clickpipes", label: "ClickPipes" },
     { value: "language-clients", label: "언어 클라이언트" },
@@ -235,7 +235,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {featuredQuickStarts.map((quickStart) => (
                   <a
                     key={quickStart.id}
-                    href={quickStart.href}
+                    href={withBase(quickStart.href)}
                     onClick={(e) => handleCardClick(e, quickStart.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
@@ -268,8 +268,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters((prev) => !prev)}
-                  aria-label={showFilters ? "Hide filters" : "Show filters"}
-                  title={showFilters ? "Hide filters" : "Show filters"}
+                  aria-label={showFilters ? "필터 숨기기" : "필터 표시"}
+                  title={showFilters ? "필터 숨기기" : "필터 표시"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={
                     isDesktop
@@ -363,7 +363,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     {filteredQuickStarts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((quickStart) => (
                       <a
                         key={quickStart.id}
-                        href={quickStart.href}
+                        href={withBase(quickStart.href)}
                         onClick={(e) => handleCardClick(e, quickStart.href)}
                         className="group block rounded-lg border px-4 py-3 transition-all border-gray-200 dark:border-white/10 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18]"
                       >

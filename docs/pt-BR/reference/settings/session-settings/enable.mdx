@@ -22,7 +22,7 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ativar a agregação adaptativa de `GROUP BY`, que congela a tabela hash local de cada thread quando ela atinge `adaptive_aggregator_freeze_threshold` chaves, permitindo que chaves frequentes continuem sendo agregadas nas pequenas tabelas locais, enquanto chaves raras são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket; assim, as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread."}]}]} />
 
-Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela hash local até atingir `adaptive_aggregator_freeze_threshold` chaves; então, a tabela é congelada, de modo que as linhas de chaves já vistas (frequentes) continuam sendo atualizadas nela, enquanto chaves novas (raras) são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket. As chaves frequentes permanecem em pequenas tabelas residentes em cache, e as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread.
+Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela hash local até atingir `adaptive_aggregator_freeze_threshold` chaves (ou `adaptive_aggregator_freeze_threshold_bytes` de memória); então, a tabela é congelada, de modo que as linhas de chaves já vistas (frequentes) continuam sendo atualizadas nela, enquanto chaves novas (raras) são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket. As chaves frequentes permanecem em pequenas tabelas residentes em cache, e as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread.
 
 As configurações de agregação externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) são respeitadas: depois de ultrapassar o limite, as filas são descarregadas antecipadamente na tabela compartilhada e, se isso não for suficiente para voltar a ficar abaixo do limite, a tabela compartilhada é gravada em disco por meio da agregação externa comum.
 
@@ -48,6 +48,18 @@ Faz o processador descarregar dados para o armazenamento externo de forma adapta
 
 Habilita `DISTINCT` em subconsultas `IN`. Esta configuração envolve um trade-off: ao habilitá-la, é possível reduzir bastante o tamanho das tabelas temporárias transferidas em subconsultas distribuídas com `IN` e acelerar significativamente a transferência de dados entre shards, garantindo que apenas valores únicos sejam enviados.
 No entanto, habilitar essa configuração acrescenta esforço extra de mesclagem em cada nó, já que a desduplicação (`DISTINCT`) precisa ser executada. Use esta configuração quando a transferência pela rede for um gargalo e o custo adicional de mesclagem for aceitável.
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `ALP`, sem usar `allow_experimental_codecs`."}]}]} />
+
+Permite usar o codec de compressão experimental `ALP`.
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -127,6 +139,17 @@ A tabela abaixo mostra o comportamento dessa configuração em várias funções
 
 Se definido como true, permite o uso do índice de texto.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Ativa a simplificação antecipada de constantes por curto-circuito para `and` e `or` durante a análise de consultas.
+Quando ativados, os ramos inativos qualificados de subconsultas escalares são analisados para preservar seus tipos e validar a semântica da consulta, mas não são executados. A otimização recorre à análise normal quando são necessários a cardinalidade escalar ou valores de tempo de execução.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,37 @@ Se definido como true, permite o uso do índice de texto.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propagar instruções WITH para consultas UNION e todas as subconsultas por padrão"}]}]} />
 
 Propagar instruções WITH para consultas UNION e todas as subconsultas
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar a otimização de filtragem TopK durante a agregação em consultas `GROUP BY key ORDER BY key LIMIT N`."}]}]} />
+
+Habilita a otimização de filtragem TopK durante a agregação em consultas `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` e em consultas `GROUP BY keys LIMIT K` sem `ORDER BY` (nesse caso, quaisquer `K` grupos constituem um resultado válido; portanto, é sintetizada uma ordenação de todas as chaves).
+
+Quando habilitada, o agregador mantém um heap limitado com as `K` principais chaves encontradas até o momento e deixa de inserir novas linhas na tabela hash quando a chave de agrupamento delas não pode fazer parte do resultado final. Isso evita agregar linhas que seriam descartadas pelo `ORDER BY ... LIMIT` subsequente e, quando o heap classifica a chave completa do `GROUP BY`, também remove os grupos expulsos da tabela hash intermediária, limitando seu tamanho ao `LIMIT`, em vez de ao número de chaves distintas. Quando o `ORDER BY` abrange apenas um prefixo próprio das chaves do `GROUP BY`, a classificação não consegue identificar um grupo completo; portanto, aplica-se apenas a omissão de linhas: a tabela hash mantém todos os grupos aceitos e ainda pode crescer conforme a cardinalidade das colunas de chave restantes.
+
+A otimização é desabilitada quando o `LIMIT` solicitado é maior que [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) ou que o limite máximo de `100000`, pois o custo de memória e CPU do heap cresce com o `LIMIT` solicitado.
+
+A otimização é ignorada para estruturas de consulta em que remover grupos poderia alterar o resultado, incluindo `WITH TOTALS`, `HAVING`, `QUALIFY`, funções de janela, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, um `COLLATE` em qualquer uma das chaves de `GROUP BY` correspondentes (um `COLLATE` em uma coluna posterior do `ORDER BY`, após o prefixo completo da chave, não pode afetar quais grupos se qualificam e, portanto, não desabilita a otimização), `ORDER BY` em um agregado ou em qualquer elemento que não seja um prefixo inicial das chaves de `GROUP BY`, e quando `max_rows_to_group_by` ou `exact_rows_before_limit` está definido.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para transformar o payload de um hash join em um layout orientado a linhas."}]}]} />
+
+Habilita a transformação do payload de um hash join em um layout orientado a linhas.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +385,18 @@ Permite que a agregação com uso eficiente de memória (consulte `distributed_a
 Isso pode melhorar o desempenho quando os tamanhos dos buckets de agregação são desiguais, permitindo que uma réplica envie buckets com IDs mais altos ao nó iniciador enquanto ainda processa alguns buckets pesados com IDs mais baixos.
 A desvantagem é um uso de memória potencialmente maior.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `Quantized`, sem `allow_experimental_codecs`."}]}]} />
+
+Permite usar o codec de compressão experimental `Quantized`.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ Quando desativado, qualquer expressão de tabela que use o modificador `STREAM` 
 na compilação do plano. Esta é a configuração principal para o recurso de
 consultas de streaming; capacidades adicionais podem ser controladas por suas próprias configurações.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `SZ3`, sem `allow_experimental_codecs`."}]}]} />
+
+Permite usar o codec de compressão experimental `SZ3`.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -497,7 +575,19 @@ Se estiver ativado, os resultados das consultas `SELECT` serão armazenados no [
 
 Valores possíveis:
 
-* 0 - Desativado
+* 0 - Desabilitado
 * 1 - Ativado
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `ZXC`, sem usar `allow_experimental_codecs`."}]}]} />
+
+Permite usar o codec de compressão experimental `ZXC`.
 
 {/*AUTOGENERATED_END*/}

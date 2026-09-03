@@ -15,6 +15,8 @@ Introduzido em: v25.6.0
 
 Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula a [taxa no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) a partir desses dados em uma grade temporal regular descrita pelo timestamp inicial, timestamp final e passo. Para cada ponto da grade, as amostras usadas para calcular `rate` são consideradas dentro da janela de tempo especificada.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto um valor NaN será usado somente se todas as amostras nesse timestamp forem NaN.
+
 <Warning>
   Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
@@ -68,7 +70,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,7 +90,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
 
 ```response title=Response
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

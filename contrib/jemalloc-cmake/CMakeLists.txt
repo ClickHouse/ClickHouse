@@ -21,11 +21,8 @@ endif ()
 #   dirty_decay_ms:5000        Purge dirty pages 5s after they go idle, off the allocation path.
 #   background_thread:true     Purge on jemalloc's own threads rather than from application allocations,
 #                              keeping RSS bounded without eager (per-free) purging.
-#   lg_extent_max_active_fit:8 Reuse an extent for requests up to 2^8 (256x) smaller; default 6 (64x).
-#                              Lets ClickBench Q35's 256 coalesced 16KB sub-hashtables be split and
-#                              reused instead of faulting via MADV_DONTNEED.
-#                              https://github.com/ClickHouse/ClickHouse/pull/80245
-#                              https://github.com/jemalloc/jemalloc/pull/2842
+#   lg_extent_max_active_fit:6 Default
+#                              Previously was 8 to let Q35 ClickBench query works better, but this may significantly increase fragmentation
 # Linux and macOS:
 #   prof:true,prof_active:true,prof_thread_active_init:false
 #                              Compile in and globally arm sampling but leave it off per-thread, so it can
@@ -51,7 +48,7 @@ endif ()
 #                              madvise on the oversize arena (JEMALLOC_HAVE_MADVISE_HUGE, absent on macOS)
 #                              and is unvalidated there.
 if (OS_LINUX)
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6")
 elseif (OS_DARWIN)
     # background_thread is unavailable in upstream jemalloc on Darwin; we enable it via the Darwin config
     # headers (include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in), where the full rationale
@@ -60,10 +57,10 @@ elseif (OS_DARWIN)
     # assumption that background_thread was unavailable; see
     # https://github.com/ClickHouse/ClickHouse/issues/108429
     # percpu_arena relies on malloc_getcpu, which reads the CPU number via TPIDR_EL0/sidt on macOS (see above).
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:6")
 else()
     # FreeBSD and any other non-Linux target. background_thread is supported out of the box.
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:6")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache
@@ -196,6 +193,26 @@ elseif (ARCH_E2K)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_e2k")
 else ()
     message (FATAL_ERROR "internal jemalloc: This arch is not supported")
+endif ()
+
+if (OS_LINUX AND ARCH_AARCH64)
+    # aarch64 kernels are built with 4KiB, 16KiB or 64KiB pages. jemalloc's page size is fixed at
+    # compile time and must not be smaller than the kernel page size, otherwise jemalloc fails to
+    # boot. 64KiB runs everywhere, at the cost of a higher memory footprint on smaller-page kernels
+    # (page-sized slabs, page-granular purging); pick a smaller size when the target kernel is known.
+    set (JEMALLOC_AARCH64_PAGE_SIZE_KIB 64 CACHE STRING "jemalloc page size on aarch64, in KiB (4, 16 or 64). Must not be less than the kernel page size.")
+    if (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 4)
+        set (JEMALLOC_LG_PAGE 12)
+    elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 16)
+        set (JEMALLOC_LG_PAGE 14)
+    elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 64)
+        set (JEMALLOC_LG_PAGE 16)
+    else ()
+        message (FATAL_ERROR "Invalid JEMALLOC_AARCH64_PAGE_SIZE_KIB=${JEMALLOC_AARCH64_PAGE_SIZE_KIB}, must be 4, 16 or 64")
+    endif ()
+    # A PMD-level THP maps (page size / 8) entries of one page each: 2MiB/32MiB/512MiB for 4/16/64 KiB pages.
+    math (EXPR JEMALLOC_LG_HUGEPAGE "2 * ${JEMALLOC_LG_PAGE} - 3")
+    message (STATUS "jemalloc aarch64 page size: ${JEMALLOC_AARCH64_PAGE_SIZE_KIB}KiB (LG_PAGE=${JEMALLOC_LG_PAGE}, LG_HUGEPAGE=${JEMALLOC_LG_HUGEPAGE})")
 endif ()
 
 configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in

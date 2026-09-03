@@ -170,8 +170,8 @@ std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
 }
 
 EvictionCandidates::EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_)
-    : on_evict_callback(std::move(on_evict_callback_))
-    , log(getLogger("EvictionCandidates"))
+    : log(getLogger("EvictionCandidates"))
+    , on_evict_callback(std::move(on_evict_callback_))
 {
 }
 
@@ -209,9 +209,25 @@ EvictionCandidates::~EvictionCandidates()
 
 void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key)
 {
-    auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
+    const auto & queue_iterator = candidate->getQueueIterator();
+    if (!queue_iterator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue iterator is not set for eviction candidate");
+
+    auto * guard = &queue_iterator->getPriorityGuard();
+    auto [it, inserted] = candidates.try_emplace(locked_key.getKey(), locked_key.getKeyMetadata(), guard);
     if (inserted)
-        it->second.key_metadata = locked_key.getKeyMetadata();
+    {
+        /// All candidates of one key share one priority guard, so the key is
+        /// registered under that guard only once.
+        candidates_by_priority_guard[guard].push_back(locked_key.getKey());
+    }
+    else
+    {
+        /// `removeQueueEntries` takes one write lock per guard and iterates all candidates of
+        /// each key under it, so all candidates of one key must share that guard.
+        chassert(&it->second.candidates.front()->getQueueIterator()->getPriorityGuard() == guard,
+                 "Candidate's guard differs from previously registered guard for the same key");
+    }
 
     it->second.candidates.push_back(candidate);
     candidate->setEvictingFlag(locked_key);
@@ -219,44 +235,137 @@ void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey
     candidates_bytes += candidate->size();
 }
 
-void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock & lock)
+void EvictionCandidates::addAfterEvictWriteCallback(CachePriorityGuard * guard, AfterEvictWriteCallback && callback)
+{
+    after_evict_write_callbacks[guard].push_back(std::move(callback));
+}
+
+void EvictionCandidates::addAfterEvictStateCallback(AfterEvictStateCallback && callback)
+{
+    after_evict_state_callbacks.push_back(std::move(callback));
+}
+
+void EvictionCandidates::removeQueueEntries()
 {
     /// Remove queue entries of eviction candidates.
     /// This will release space we consider to be hold for them.
-
     LOG_TEST(log, "Will remove {} eviction candidates", size());
 
-    for (const auto & [key, key_candidates] : candidates)
+    for (auto & [guard, keys] : candidates_by_priority_guard)
     {
-        auto locked_key = key_candidates.key_metadata->lock();
-        for (const auto & candidate : key_candidates.candidates)
+        auto lock = guard->writeLock();
+        for (auto & key : keys)
         {
-            auto queue_iterator = candidate->getQueueIterator();
+            auto & key_candidates = candidates.at(key);
+            auto locked_key = key_candidates.key_metadata->lock();
+            for (auto & candidate : key_candidates.candidates)
+            {
+                chassert(candidate->releasable());
+                auto queue_iterator = candidate->getQueueIterator();
 
-            /// Save the inner queue type before invalidation so we can
-            /// restore entries to their original queue if eviction fails.
-            /// Use getNestedOrThis() to see through SplitIterator and get
-            /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
-            original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
+                /// `lock` must protect this iterator's queue: `queue_iterator->remove` below
+                /// mutates that queue and must not run under a different mutex.
+                chassert(&queue_iterator->getPriorityGuard() == guard);
 
-            queue_iterator->invalidateBeforeRemove(lock);
+                /// Save the inner queue type before invalidation so we can
+                /// restore entries to their original queue if dynamic resize fails.
+                original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
 
-            chassert(candidate->releasable());
-            candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
+                /// The entry is removed under the same write lock right after, so use
+                /// `invalidateBeforeRemove` to skip registering it for background cleanup.
+                queue_iterator->invalidateBeforeRemove(lock);
+                candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
 
-            /// We need to set removed flag in file segment metadata,
-            /// because in dynamic cache resize we first remove queue entries,
-            /// then evict which also removes file segment metadata,
-            /// but we need to make sure that this file segment is not requested from cache in the meantime.
-            /// In ordinary eviction we use `evicting` flag for this purpose,
-            /// but here we cannot, because `evicting` is a property of a queue entry,
-            /// but at this point for dynamic cache resize we have already deleted all queue entries.
-            candidate->setRemovedFlag(*locked_key);
+                /// We need to set removed flag in file segment metadata,
+                /// because in dynamic cache resize we first remove queue entries,
+                /// then evict which also removes file segment metadata,
+                /// but we need to make sure that this file segment is not requested from cache in the meantime.
+                /// In ordinary eviction we use `evicting` flag for this purpose,
+                /// but here we cannot, because `evicting` is a property of a queue entry,
+                /// but at this point for dynamic cache resize we have already deleted all queue entries.
+                candidate->setRemovedFlag(*locked_key);
 
-            queue_iterator->remove(lock);
+                queue_iterator->remove(lock);
+            }
         }
     }
     removed_queue_entries = true;
+}
+
+void EvictionCandidates::restoreKeyCandidates(
+    IFileCachePriority & priority,
+    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock & state_lock,
+    const KeyMetadataPtr & key_metadata,
+    const std::vector<FileSegmentMetadataPtr> & key_candidates)
+{
+    auto locked_key = key_metadata->tryLock();
+    if (!locked_key)
+    {
+        /// Unreachable: `tryLock` returns null only for a non-`ACTIVE` key, and a key whose
+        /// candidates we failed to remove was not removed from the metadata either.
+        LOG_ERROR(log, "Unexpected state: key {} does not exist", key_metadata->key);
+        chassert(false);
+        return;
+    }
+
+    for (const auto & candidate : key_candidates)
+    {
+        try
+        {
+            const auto & file_segment = candidate->file_segment;
+            /// `FileSegmentMetadata::size` is the reserved size, which for a partially
+            /// downloaded segment is larger than the downloaded size logged below.
+            const auto restored_size = candidate->size();
+
+            LOG_DEBUG(
+                log, "Adding back file segment {}:{}, restored size: {}, downloaded size: {}",
+                file_segment->key(), file_segment->offset(), restored_size, file_segment->getDownloadedSize());
+
+            auto restored_iterator = priority.addForRestore(
+                key_metadata,
+                file_segment->offset(),
+                restored_size,
+                getOriginalQueueType(candidate.get()),
+                lock,
+                &state_lock);
+
+            candidate->setRemovedFlag(*locked_key, /* value */false);
+            file_segment->restoreQueueIteratorAfterDelayedRemoval(restored_iterator);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log, fmt::format("Failed to restore queue entry for {}:{}",
+                                 key_metadata->key, candidate->file_segment->offset()));
+            chassert(false);
+        }
+    }
+}
+
+void EvictionCandidates::restoreQueueEntries(IFileCachePriority & priority, const CacheStateGuard::Lock & state_lock)
+{
+    for (auto & [guard, keys] : candidates_by_priority_guard)
+    {
+        auto lock = guard->writeLock();
+        for (const auto & key : keys)
+        {
+            auto & key_candidates = candidates.at(key);
+            restoreKeyCandidates(priority, lock, state_lock, key_candidates.key_metadata, key_candidates.candidates);
+        }
+    }
+}
+
+void EvictionCandidates::restoreFailedQueueEntries(
+    IFileCachePriority & priority, const CacheStateGuard::Lock & state_lock)
+{
+    for (const auto & key_candidates : failed_candidates.failed_candidates_per_key)
+    {
+        chassert(!key_candidates.candidates.empty());
+        chassert(key_candidates.guard);
+        auto lock = key_candidates.guard->writeLock();
+        restoreKeyCandidates(priority, lock, state_lock, key_candidates.key_metadata, key_candidates.candidates);
+    }
 }
 
 void EvictionCandidates::evict()
@@ -283,8 +392,7 @@ void EvictionCandidates::evict()
             continue;
         }
 
-        KeyCandidates failed_key_candidates;
-        failed_key_candidates.key_metadata = key_candidates.key_metadata;
+        KeyCandidates failed_key_candidates(key_candidates.key_metadata, key_candidates.guard);
 
         while (!key_candidates.candidates.empty())
         {
@@ -377,10 +485,15 @@ void EvictionCandidates::evict()
     }
 }
 
-void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
+void EvictionCandidates::afterEvictWrite()
 {
-    for (auto & func : after_evict_write_callbacks)
-        func(lock);
+    for (auto & [guard, callbacks] : after_evict_write_callbacks)
+    {
+        auto lock = guard->writeLock();
+        for (auto & func : callbacks)
+            func(lock);
+    }
+
     after_evict_write_callbacks.clear();
 }
 
@@ -396,7 +509,6 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
-        iterator->check(lock);
         queue_entries_to_invalidate.pop_back();
     }
 

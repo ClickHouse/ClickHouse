@@ -43,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -70,13 +70,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_block_size` - NATS에서 데이터를 플러시하기 위해 폴링으로 수집하는 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `nats_flush_interval_ms` - NATS에서 읽은 데이터를 플러시하는 타임아웃입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_wait_for_flush_interval` - `true`이면 consumer 큐가 비워지는 즉시 종료되는 대신 백그라운드 스트리밍 사이클이 전체 플러시 인터벌(`nats_flush_interval_ms`, 또는 그 외에는 `stream_flush_interval_ms`) 동안 열려 있어, 최대 한 플러시 인터벌의 추가 수집 지연 시간을 감수하고 더 많은 메시지를 하나의 블록에 누적할 수 있습니다. 기본값: `false`(낮은 지연 시간의 drain-and-go 동작).
-* `nats_username` - NATS 사용자 이름입니다.
-* `nats_password` - NATS 비밀번호입니다.
-* `nats_token` - NATS 인증 토큰입니다.
-* `nats_credential_file` - NATS 자격 증명 파일의 경로입니다.
+* `nats_username` - NATS 사용자 이름입니다. 서버 구성 파일에 정의된 명명된 컬렉션에 저장된 경우, 쿼리에서 컬렉션의 `nats_url` 또는 `nats_server_list`를 재정의할 수 없습니다.
+* `nats_password` - NATS 비밀번호입니다. 서버 구성 파일에 정의된 명명된 컬렉션에 저장된 경우, 쿼리에서 컬렉션의 `nats_url` 또는 `nats_server_list`를 재정의할 수 없습니다.
+* `nats_token` - NATS 인증 토큰입니다. 서버 구성 파일에 정의된 명명된 컬렉션에 저장된 경우, 쿼리에서 컬렉션의 `nats_url` 또는 `nats_server_list`를 재정의할 수 없습니다.
+* `nats_credential_file` - NATS 자격 증명 파일의 경로입니다. 서버가 자체 권한으로 경로를 열기 때문에, 쿼리에서 `nats_url`과 `nats_server_list`를 재정의하지 않는 서버 구성 파일에 정의된 명명된 컬렉션에서만 허용됩니다. 대신 쿼리에서는 파일 내용을 `nats_credentials`에 전달하십시오.
+* `nats_credentials` - NATS 자격 증명 내용(사용자 JWT 및 seed가 포함된 `.creds` 파일과 동일한 페이로드)입니다. 쿼리에서 사용할 수 있는 유일한 표기이므로, `<nats_credential_file overridable="false">`로 운영자가 해당 경로를 잠그지 않은 한 명명된 컬렉션에서 상속된 `nats_credential_file`을 대체하며 충돌하지 않습니다. 명명된 컬렉션이 보유한 자격 증명을 제거하기 위해 빈 문자열을 할당할 수는 없습니다.
 * `nats_startup_connect_tries` - 시작 시 연결 시도 횟수입니다. 기본값: `5`.
 * `nats_max_rows_per_message` — 행 기반 포맷에서 하나의 NATS 메시지에 기록할 수 있는 최대 행 수입니다. (기본값: `1`)
-* `nats_commit_on_select` - 쿼리 실행 시 메시지를 커밋합니다. JetStream에만 적용되며 core NATS에는 acknowledgement가 없습니다. 기본값: `0`.
+* `nats_commit_on_select` - 쿼리 실행 시 메시지를 커밋합니다. JetStream에만 적용되며 core NATS에는 확인 응답이 없습니다. 기본값: `0`.
 * `nats_handle_error_mode` — NATS 엔진의 오류 처리 방식입니다. 가능한 값: default(메시지 파싱에 실패하면 예외가 발생함), stream(예외 메시지와 원시 메시지가 가상 컬럼 `_error` 및 `_raw_message`에 저장됨).
 
 SSL 연결:

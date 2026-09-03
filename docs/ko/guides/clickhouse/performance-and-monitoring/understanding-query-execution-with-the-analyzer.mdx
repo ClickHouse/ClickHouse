@@ -40,7 +40,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 파서의 목적은 쿼리 텍스트를 AST(Abstract Syntax Tree)로 변환하는 것입니다. 이 단계는 `EXPLAIN AST`를 사용해 시각적으로 확인할 수 있습니다:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 출력 결과는 아래와 같이 시각화할 수 있는 추상 구문 트리(Abstract Syntax Tree)입니다:
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="AST 출력" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 각 노드에는 해당 자식 노드가 있으며, 전체 트리는 쿼리의 전반적인 구조를 나타냅니다. 이는 쿼리를 처리하는 데 도움이 되는 논리적 구조입니다. 최종 사용자 입장에서는(쿼리 실행 자체에 관심이 있는 경우가 아니라면) 그다지 유용하지 않으며, 이 도구는 주로 개발자가 사용합니다.
 
 <div id="analyzer">

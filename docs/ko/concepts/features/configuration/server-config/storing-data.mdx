@@ -369,14 +369,12 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | RPS 제한에 도달하기 전까지 허용되는 최대 동시 PUT 요청 수입니다.                                                                                                                                                                                         | `s3_max_put_rps`와 동일                     |
 | `s3_max_get_rps`                                | 스로틀링이 적용되기 전의 초당 최대 GET 요청 수입니다.                                                                                                                                                                                                 | `0` (무제한)                                |
 | `s3_max_get_burst`                              | RPS 제한에 도달하기 전까지 허용되는 최대 동시 GET 요청 수입니다.                                                                                                                                                                                         | `s3_max_get_rps`와 동일                     |
-| `read_resource`                                 | 읽기 요청을 [스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)하기 위한 리소스 이름입니다.                                                                                                                                | 빈 문자열(비활성화)                              |
-| `write_resource`                                | 쓰기 요청을 [스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)하기 위한 리소스 이름입니다.                                                                                                                                | 빈 문자열(비활성화)                              |
 | `key_template`                                  | [re2](https://github.com/google/re2/wiki/Syntax) 구문을 사용해 객체 키 생성 포맷을 정의합니다. `storage_metadata_write_full_object_key` 플래그가 필요합니다. `endpoint`의 `root path`와 호환되지 않습니다. `key_compatibility_prefix`가 필요합니다.                          | -                                        |
 | `key_compatibility_prefix`                      | `key_template`과 함께 필요합니다. 이전 메타데이터 버전을 읽기 위해 `endpoint`의 기존 `root path`를 지정합니다.                                                                                                                                                  | -                                        |
 | `read_only`                                     | 디스크에서 읽기만 허용합니다.                                                                                                                                                                                                                 | -                                        |
 
 <Note>
-  Google Cloud Storage(GCS)도 `s3` 유형을 사용해 지원됩니다. [GCS backed MergeTree](/ko/integrations/connectors/data-sources/gcs)를 참조하십시오.
+  Google Cloud Storage(GCS)도 `s3` 유형을 통해 지원됩니다. [GCS backed MergeTree](/ko/integrations/connectors/data-sources/gcs)를 참조하십시오.
 </Note>
 
 <div id="plain-storage">
@@ -527,13 +525,11 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### 기타 매개변수
 </div>
 
-| 매개변수                             | 설명                                                                                               | 기본값                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `metadata_path`                  | Blob Storage용 메타데이터 파일을 저장할 로컬 파일 시스템 경로입니다.                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`              | `true`이면 시작 시 디스크 접근 검사를 건너뜁니다.                                                                  | `false`                                  |
-| `read_resource`                  | 읽기 요청 [스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)에 사용할 리소스 이름입니다. | 빈 문자열(비활성화됨)                             |
-| `write_resource`                 | 쓰기 요청 [스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)에 사용할 리소스 이름입니다. | 빈 문자열(비활성화됨)                             |
-| `metadata_keep_free_space_bytes` | 메타데이터 디스크에 예약해 둘 여유 공간의 크기입니다.                                                                   | -                                        |
+| 매개변수                             | 설명                                           | 기본값                                      |
+| -------------------------------- | -------------------------------------------- | ---------------------------------------- |
+| `metadata_path`                  | Blob Storage용 메타데이터 파일을 저장할 로컬 파일 시스템 경로입니다. | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | `true`이면 시작 시 디스크 접근 검사를 건너뜁니다.              | `false`                                  |
+| `metadata_keep_free_space_bytes` | 메타데이터 디스크에 예약해 둘 여유 공간의 크기입니다.               | -                                        |
 
 작동하는 구성 예시는 integration tests 디렉터리에서 확인할 수 있습니다(예: [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) 또는 [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 

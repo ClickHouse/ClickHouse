@@ -3,7 +3,7 @@
 -- rewritten) and would leave the table inconsistent - old parts without the companion codes stream, new parts with it.
 -- To adopt it on existing data, recreate the table with the codec and INSERT ... SELECT into it.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_alter;
 

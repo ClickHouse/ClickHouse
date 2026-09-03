@@ -115,6 +115,18 @@ Aqui estão as quantidades que podem ser restringidas:
 
 Se o limite for excedido em pelo menos um intervalo de tempo, uma exceção será lançada com um texto informando qual restrição foi excedida, para qual intervalo e quando o novo intervalo começa (ou seja, quando as consultas podem ser enviadas novamente).
 
+<Note>
+  **Consultas excluídas da contabilização de QUOTA**
+
+  Para permitir que a configuração e o uso da QUOTA sejam inspecionados mesmo quando uma QUOTA estiver esgotada, consultas `SELECT` que leem exclusivamente de uma das seguintes tabelas de sistema não são contabilizadas nas QUOTAs e não estão sujeitas a limites de complexidade de consulta:
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
 As QUOTAs podem usar o recurso &quot;QUOTA key&quot; para contabilizar recursos de várias chaves de forma independente. Veja um exemplo:
 
 ```xml
@@ -165,7 +177,7 @@ Neste exemplo, o usuário pode executar até 100 vezes por hora cada consulta no
 
 A QUOTA é atribuída aos usuários na seção &#39;users&#39; da configuração. Consulte a seção &quot;Direitos de acesso&quot;.
 
-No processamento distribuído de consultas, os valores acumulados são armazenados no servidor que faz a solicitação. Portanto, se o usuário acessar outro servidor, a QUOTA nele vai &quot;recomeçar&quot;.
+No processamento de consultas distribuídas, os valores acumulados são armazenados no servidor que faz a solicitação. Portanto, se o usuário acessar outro servidor, a QUOTA nele vai &quot;recomeçar&quot;.
 
 Quando o servidor é reiniciado, as QUOTAs são redefinidas.
 

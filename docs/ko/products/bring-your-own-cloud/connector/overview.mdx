@@ -1,0 +1,67 @@
+---
+title: 'Connector 개요'
+sidebarTitle: '개요'
+description: '상시 액세스 없이 운영하는 환경의 ClickHouse 클러스터를 위한 관측성 및 지원'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+<Note>
+  ClickHouse Connector는 비공개 프리뷰로 제공됩니다. 액세스를 요청하려면 ClickHouse 계정 팀에 문의하십시오.
+</Note>
+
+<div id="what-the-connector-does">
+  ## 커넥터의 기능
+</div>
+
+ClickHouse Connector는 운영 중인 ClickHouse 클러스터와 함께 자체 환경에 배포하는 구성 요소입니다. ClickHouse에 해당 클러스터를 모니터링하는 데 필요한 가시성을 제공하고, 지원을 요청했을 때 지원할 수 있도록 하면서도 ClickHouse에 환경에 대한 상시 액세스 권한을 부여하지 않습니다. 커넥터는 `clicklink`라는 단일 바이너리로 제공되며, 커넥터 데몬과 이를 설치 및 운영하는 데 사용하는 `clicklink clctl` 명령줄 도구가 모두 포함되어 있습니다.
+
+커넥터는 두 가지 구성 요소로 이루어집니다.
+
+* **스크레이퍼**는 허용 목록에 있는 ClickHouse 시스템 테이블에서 메트릭을 수집하고, 인프라 메타데이터와 상태 정보를 ClickHouse Cloud로 전송합니다.
+* **문제 해결 도구**를 통해 ClickHouse 지원 엔지니어는 읽기 전용 진단을 실행할 수 있지만, 사용자가 활성화하며 언제든 종료할 수 있는 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 중에만 가능합니다.
+
+커넥터가 설정하는 모든 연결은 아웃바운드입니다. ClickHouse Cloud는 환경으로의 연결을 시작하지 않습니다. [아키텍처](/ko/products/bring-your-own-cloud/connector/architecture) 페이지에는 모든 연결과 해당 프로토콜 및 인증 방식이 나열되어 있습니다.
+
+<div id="when-to-use-it">
+  ## 사용 시점
+</div>
+
+ClickHouse가 사용자 환경에서 실행 중인 ClickHouse 클러스터를 모니터링하거나 지원하며, 보안 요구 사항상 다음이 필요한 경우 커넥터를 배포하십시오.
+
+* 인바운드 연결 없이 모든 액세스 경로가 경계 내부에서 시작합니다.
+* 지원 액세스는 시간 제한이 있고 사용자가 활성화하며 언제든 철회할 수 있습니다.
+* ClickHouse가 읽는 모든 항목은 읽기 전용입니다. ClickHouse 테이블 액세스는 항상 읽기 전용이며, 사용자가 활성화한 세션 동안에는 네임스페이스 범위의 워크로드 메타데이터와 로그도 읽습니다. 모든 지원 세션 명령은 사용자가 소유한 감사 로그에 기록됩니다.
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+ClickHouse는 온보딩 과정에서 커넥터 엔드포인트와 일회용 등록 토큰을 제공합니다. Kubernetes 설치에서는 kubeconfig에 접근할 수 있는 워크스테이션에서, Linux VM 설치에서는 호스트에서 직접 `clicklink clctl init --enroll`을 한 번 실행합니다. 이 한 번의 실행으로 token이 사용되고, 각 component 전용의 읽기 전용 ClickHouse 사용자가 생성되며, mTLS 클라이언트 인증서를 발급받고, 데몬이 배포 및 시작된 후 상태가 확인됩니다.
+
+이후 스크레이퍼는 허용 목록에 있는 시스템 테이블을 주기적으로 읽어 상호 인증 TLS를 통해 메트릭, 메타데이터 및 상태 정보를 커넥터 엔드포인트로 전송합니다. 문제 해결 도구는 유휴 상태로 유지됩니다. Outbound 명령 채널을 유지하지만 지원 세션을 활성화하기 전까지는 이 채널을 통해 아무것도 전송되지 않습니다. mTLS 인증서는 별도의 조치 없이 자동으로 갱신됩니다.
+
+<div id="requirements-at-a-glance">
+  ## 요구 사항 요약
+</div>
+
+* **배포 대상.** Helm 차트가 설치된 호환 Kubernetes 클러스터 또는 amd64나 arm64 아키텍처의 systemd Linux 호스트.
+* **포트 443을 통한 아웃바운드 네트워크 액세스.** 커넥터 엔드포인트 및 등록 엔드포인트에 연결할 수 있어야 하며, 설치 시 `releases.clicklink.clickhouse.com` 및 ECR Public에도 연결할 수 있어야 합니다. 이는 표준 방식이며, 각 단계마다 air-gapped 및 미러링 환경을 위한 대안도 제공됩니다. [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
+* **접근 가능한 ClickHouse 네이티브 리스너.** 커넥터는 네이티브 프로토콜을 통해 각 클러스터와 통신하며, Kubernetes에서는 보안 포트(9440) 또는 plaintext 포트(9000)를 자동으로 감지합니다.
+* **등록 토큰.** ClickHouse는 온보딩 중에 커넥터 엔드포인트와 일회용 등록 토큰을 제공합니다.
+* **Setup 중 ClickHouse 관리자 액세스.** 초기 Provisioning 과정에서 커넥터의 읽기 전용 사용자를 생성합니다. 관리자 password가 설정된 경우 한 번만 입력하라는 메시지가 표시되며 저장되지 않습니다.
+* **Provisioning 중 Kubernetes API server에 대한 관리자 액세스.** 두 설치 대상 모두에서 액세스 번들은 Kubernetes ServiceAccounts에 연결됩니다. [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
+
+두 설치 대상에 대한 전체 절차는 [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding): Kubernetes 또는 Linux VM에 커넥터를 설치하고 등록합니다.
+* [아키텍처](/ko/products/bring-your-own-cloud/connector/architecture): 구성 요소, 각 연결, 인증서 수명 주기, 환경 외부로 전송되는 데이터를 설명합니다.
+* [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions): 지원 액세스를 활성화, 범위 지정, 감사, 취소하는 방법을 설명합니다.
+* [구성](/ko/products/bring-your-own-cloud/connector/configuration) 및 [운영](/ko/products/bring-your-own-cloud/connector/operations): 튜닝, 업그레이드 및 운영 2일 차 작업을 다룹니다.
+* [FAQ](/ko/products/bring-your-own-cloud/connector/reference/faq): 데이터 이그레스 및 액세스 취소를 포함한 일반적인 질문을 다룹니다.
+
+커넥터는 직접 운영하는 환경을 위한 서비스입니다. ClickHouse가 클라우드 계정 내 클러스터를 운영하도록 하려면 [BYOC](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 배포 모델을 사용하십시오. 두 모델의 차이점은 [BYOC 아키텍처](/ko/products/bring-your-own-cloud/overview/architecture) 페이지를 참조하십시오.

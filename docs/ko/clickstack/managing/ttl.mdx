@@ -50,7 +50,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 
 TTL은 다음 두 가지 방법으로 수정할 수 있습니다:
 
-1. **테이블 스키마를 수정합니다(권장)**. 이 방법을 사용하려면 [clickhouse-client](/ko/concepts/features/interfaces/cli) 또는 [Cloud SQL Console](/ko/products/cloud/features/sql-console-features/sql-console)을 사용해 ClickHouse 인스턴스에 연결해야 합니다. 예를 들어, 다음 DDL을 사용하면 `otel_logs` 테이블의 TTL을 수정할 수 있습니다:
+1. **테이블 스키마를 수정합니다(권장)**. 이 방법을 사용하려면 [clickhouse-client](/ko/concepts/features/interfaces/client) 또는 [Cloud SQL Console](/ko/products/cloud/features/sql-console-features/sql-console)을 사용해 ClickHouse 인스턴스에 연결해야 합니다. 예를 들어, 다음 DDL을 사용하면 `otel_logs` 테이블의 TTL을 수정할 수 있습니다:
 
 ```sql
 ALTER TABLE default.otel_logs

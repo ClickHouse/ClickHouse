@@ -23,7 +23,9 @@ INSERT INTO t_04510 VALUES ('2020-01-01', 5, 10), ('2020-01-02', 6, 20), ('2020-
 
 SET optimize_use_projections = 1, use_constant_folding_in_index_analysis = 1;
 
-SELECT k FROM t_04510 WHERE v BETWEEN 10 AND 20 ORDER BY k SETTINGS force_optimize_projection = 1;
+-- optimize_read_in_order is disabled in the forced-projection queries of this test: the base
+-- table satisfies `ORDER BY k` with an in-order read, which declines the forced projection.
+SELECT k FROM t_04510 WHERE v BETWEEN 10 AND 20 ORDER BY k SETTINGS force_optimize_projection = 1, optimize_read_in_order = 0;
 SELECT count() FROM t_04510 WHERE v < 1000;
 
 DROP TABLE t_04510;
@@ -48,14 +50,14 @@ SELECT k FROM t_04510_virt WHERE _partition_id = '202001' AND v BETWEEN 10 AND 2
     SETTINGS optimize_use_projections = 0;
 SELECT '-- _partition_id filter, forced projection';
 SELECT k FROM t_04510_virt WHERE _partition_id = '202001' AND v BETWEEN 10 AND 20 ORDER BY k
-    SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_constant_folding_in_index_analysis = 1;
+    SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_constant_folding_in_index_analysis = 1, optimize_read_in_order = 0;
 
 SELECT '-- _partition_value filter, no projection';
 SELECT k FROM t_04510_virt WHERE _partition_value.1 = 202002 AND v BETWEEN 20 AND 30 ORDER BY k
     SETTINGS optimize_use_projections = 0;
 SELECT '-- _partition_value filter, forced projection';
 SELECT k FROM t_04510_virt WHERE _partition_value.1 = 202002 AND v BETWEEN 20 AND 30 ORDER BY k
-    SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_constant_folding_in_index_analysis = 1;
+    SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, use_constant_folding_in_index_analysis = 1, optimize_read_in_order = 0;
 
 DROP TABLE t_04510_virt;
 

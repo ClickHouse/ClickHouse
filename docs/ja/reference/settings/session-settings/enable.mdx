@@ -20,11 +20,11 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集計を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集計を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "各スレッドのローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達した時点で固定するアダプティブ `GROUP BY` 集約を有効にする新しい設定です。頻出キーは小さなローカルテーブルで集約を継続し、まれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。これにより、まれなキーはスレッドごとではなく1回だけ保存・処理されます。"}]}]} />
 
-アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキーに達するまで集計を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集計されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
+アダプティブ `GROUP BY` アルゴリズムを有効にします。各スレッドは、ローカルハッシュテーブルが `adaptive_aggregator_freeze_threshold` 個のキー (または `adaptive_aggregator_freeze_threshold_bytes` のメモリ) に達するまで集約を行い、その後テーブルは固定されます。すでに出現した頻出キーの行はそのテーブル内で更新され続ける一方、新しいまれなキーはハッシュに基づいてバケットごとのバックログに振り分けられ、バケット並列マージ内で正確に1回だけ集約されます。頻出キーはキャッシュに収まる小さなテーブルに保持され、まれなキーはスレッドごとではなく1回だけ保存・処理されます。
 
-外部集計の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集計により共有テーブルがディスクにスピルされます。
+外部集約の設定 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) も考慮されます。しきい値を超えると、バックログは早期に共有テーブルへ排出されます。それでも使用量をしきい値未満に戻せない場合は、通常の外部集約により共有テーブルがディスクにスピルされます。
 
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
@@ -48,6 +48,18 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 `IN` サブクエリで `DISTINCT` を有効にします。これはトレードオフのある設定です。有効にすると、一意の値だけが送信されるようになるため、分散 `IN` サブクエリで転送される一時テーブルのサイズを大幅に削減でき、分片間のデータ転送を大きく高速化できます。
 ただし、この設定を有効にすると、重複排除 (DISTINCT) を実行する必要があるため、各ノードで追加のマージ処理負荷が発生します。ネットワーク転送がボトルネックになっており、追加のマージコストを許容できる場合にこの設定を使用してください。
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `ALP` 圧縮コーデックを個別に有効化するための新しい設定。"}]}]} />
+
+実験的な `ALP` 圧縮コーデックを使用できるようにします。
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -126,6 +138,17 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 true に設定すると、テキスト索引を使用できます。
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+クエリ分析時に、`and` および `or` の早期短絡定数畳み込みを有効にします。
+有効にすると、対象となる到達不能なスカラーサブクエリの分岐は、型を維持しクエリの意味を検証するために分析されますが、実行されません。スカラーのカーディナリティまたは実行時の値が必要な場合、この最適化は通常の分析にフォールバックします。
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -135,6 +158,37 @@ true に設定すると、テキスト索引を使用できます。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "デフォルトで、WITH ステートメントを UNION クエリおよびすべてのサブクエリに伝播する"}]}]} />
 
 WITH ステートメントを UNION クエリおよびすべてのサブクエリに伝播します
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`GROUP BY key ORDER BY key LIMIT N` クエリでの集約中における TopK フィルタリング最適化を制御する新しい設定。"}]}]} />
+
+`GROUP BY keys ORDER BY <prefix of keys> LIMIT K` クエリ、および `ORDER BY` を使用しない `GROUP BY keys LIMIT K` クエリで、集約中の TopK フィルタリング最適化を有効にします (後者では任意の `K` 個のグループが有効な結果となるため、すべてのキーを対象としたソートが生成されます) 。
+
+有効にすると、アグリゲーターはこれまでに検出した上位 `K` 個のキーを保持するサイズ制限付きヒープを維持し、グループ化キーが最終結果に含まれない場合、新しい行をハッシュテーブルに挿入しません。これにより、後続の `ORDER BY ... LIMIT` で破棄される行を集約せずに済みます。また、ヒープが完全な `GROUP BY` キーをランク付けする場合は、追い出されたグループも中間ハッシュテーブルからプルーニングされるため、ハッシュテーブルのサイズは異なるキーの数ではなく `LIMIT` によって制限されます。`ORDER BY` が `GROUP BY` キーの適切なプレフィックスのみを対象とする場合、ランク付けでは完全なグループを特定できないため、行のスキップのみが適用されます。この場合、ハッシュテーブルは受け入れられたすべてのグループを保持するため、残りのキーカラムのカーディナリティに応じて増加する可能性があります。
+
+要求された `LIMIT` が [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) またはハード上限の `100000` を超える場合、ヒープのメモリおよび CPU コストが要求された `LIMIT` に応じて増加するため、この最適化は無効になります。
+
+`WITH TOTALS`、`HAVING`、`QUALIFY`、ウィンドウ関数、`ROLLUP`/`CUBE`/`GROUPING SETS`、`LIMIT WITH TIES`、一致する `GROUP BY` キーのいずれかに対する `COLLATE` (完全なキープレフィックスより後の `ORDER BY` カラムに対する `COLLATE` は、どのグループが対象となるかに影響しないため、最適化を無効にしません) 、集約に対する `ORDER BY`、`GROUP BY` キーの先頭プレフィックス以外に対する `ORDER BY`、および `max_rows_to_group_by` または `exact_rows_before_limit` が設定されている場合など、グループのプルーニングによって結果が変わる可能性のあるクエリ形状では、この最適化はスキップされます。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "ハッシュ結合のペイロードを行優先レイアウトに変換するための新しい設定。"}]}]} />
+
+ハッシュ結合のペイロードを行優先レイアウトに変換できるようにします。
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -330,6 +384,18 @@ true の場合、テーブルから取得したシリアライゼーションの
 これにより、集約バケットのサイズに偏りがある場合でも、レプリカは id の小さい重いバケットをまだ処理している間に、id の大きいバケットをイニシエーターへ送信できるため、パフォーマンスが向上することがあります。
 欠点として、メモリ使用量が増える可能性があります。
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs`を使用せずに、実験的な`Quantized`圧縮コーデックを個別に有効にするための新しい設定。"}]}]} />
+
+実験的な`Quantized`圧縮コーデックを使用できるようにします。
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ WHERE (_part, _part_offset) IN (
 機能全体を制御するゲートであり、追加の機能は
 それぞれ独自の設定で制御される場合があります。
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `SZ3` 圧縮コーデックを個別に有効にするための新しい設定。"}]}]} />
+
+実験的な `SZ3` 圧縮コーデックを使用できるようにします。
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - 無効
 * 1 - 有効
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` を使用せずに、実験的な `ZXC` 圧縮コーデックを個別に有効化するための新しい設定。"}]}]} />
+
+実験的な `ZXC` 圧縮コーデックを使用できるようにします。
 
 {/*AUTOGENERATED_END*/}
