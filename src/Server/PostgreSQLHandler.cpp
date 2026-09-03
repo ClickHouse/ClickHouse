@@ -93,7 +93,7 @@ namespace
 
 UInt32 generateCancelKey()
 {
-    UInt32 secret_key;
+    UInt32 secret_key = 0;
 
 #if USE_SSL
     if (RAND_bytes(reinterpret_cast<unsigned char *>(&secret_key), sizeof(secret_key)) != 1)
