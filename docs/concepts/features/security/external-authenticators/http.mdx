@@ -260,11 +260,11 @@ this directory whose authentication returned roles therefore fails with `NOT_IMP
 Use `SQL SECURITY INVOKER` for views. Materialized views default to `SQL SECURITY DEFINER`
 (see `default_materialized_view_sql_security`) and must be created with an explicit
 `SQL SECURITY NONE` by such users, which requires the `ALLOW_SQL_SECURITY_NONE` privilege.
-Only roles attached by the authentication trigger this rejection. With
-`distributed_ddl_use_initial_user_and_roles` enabled, an `ON CLUSTER` query executes on each
-host under the initiator's replayed roles, which do not count as authentication-scoped, so a
-`SQL SECURITY DEFINER` object is created there with a shadow user cloned from the materialized
-user, without the helper-returned roles: the object exists but has no access to its sources.
+Only roles attached by the authentication trigger this rejection; roles replayed for an
+already-established identity, such as the initiator's roles on the hosts executing an
+`ON CLUSTER` query with `distributed_ddl_use_initial_user_and_roles`, do not. The `ON CLUSTER`
+form of the statement is rejected as well, because the check runs on the initiator before the
+query is queued for the cluster.
 
 ### Propagated roles {#http-external-user-directory-propagated-roles}
 
