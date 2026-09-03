@@ -179,6 +179,10 @@ _PIPELINE_NOTES = {
         "Label `ci-macos` runs the Darwin (macOS) `Fast test` job, which is "
         "skipped by default in PRs."
     ),
+    Labels.CI_COVERAGE: (
+        "Label `ci-coverage` forces coverage jobs and the `LLVM Coverage` merge job "
+        "to run even though the change does not affect the build."
+    ),
 }
 
 
@@ -395,18 +399,24 @@ def should_skip_job(job_name):
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
-    ) and (
-        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
-        or (
-            _info_cache.pr_number > 0
-            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-        )
     ):
+        # The explicit `ci-no-coverage` label wins over everything, including the
+        # `ci-coverage` force label below - an explicit "skip" should never lose
+        # to a leftover force label.
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
             _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
+        if (
+            _info_cache.pr_number > 0
+            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+        ):
+            # The `ci-coverage` label overrides only this automatic skip: it lets
+            # a tests-only PR still measure the coverage of the tests it adds.
+            if Labels.CI_COVERAGE in _info_cache.pr_labels:
+                _add_pipeline_note(Labels.CI_COVERAGE)
+                return False, ""
+            return True, "Skipped: no build-affecting changes; coverage would be identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
