@@ -422,7 +422,8 @@ struct HashMethodSerialized
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
     /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
-    /// Checked lazily on the first emplace/find call.
+    /// Holds the raw setting; `minBytesForPrefetch` adjusts it for the cell size on the first
+    /// emplace/find call, once `Data` is known. Checked there as well.
     size_t min_bytes_for_prefetch = 0;
 
     std::unique_ptr<PrefetchingHelper> prefetching;
@@ -520,7 +521,7 @@ struct HashMethodSerialized
     /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
     /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
     /// + prefetch path when the hash table is small enough to fit in caches. Matches
-    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    /// `Aggregator::executeImpl`'s `prefetch` gate, cell-size correction included.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires prealloc
@@ -528,7 +529,12 @@ struct HashMethodSerialized
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        /// This method prefetches on its own instead of going through `Aggregator`'s gate, so it has
+        /// to apply the same cell-size correction the gate does - see `minBytesForPrefetch`. Without
+        /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
+        /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
+        const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
         {
             can_precompute_hashes = false;
             return;
