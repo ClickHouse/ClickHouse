@@ -174,7 +174,13 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     /// If either argument is empty then the result is also empty.
     if (k_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+    {
+        /// These operators select existing samples, so the non-empty path inherits the vector's type via
+        /// `res = vector_arg`; an empty one must report the same rather than the table's sample type.
+        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+        res.value_data_type = vector_arg.value_data_type;
+        return res;
+    }
 
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 

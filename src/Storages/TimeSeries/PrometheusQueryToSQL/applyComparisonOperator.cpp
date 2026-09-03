@@ -116,7 +116,7 @@ SQLQueryPiece applyComparisonOperator(
                 makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)), context.scalar_data_type);
         };
 
-        return applySimpleBinaryOperator(
+        auto res = applySimpleBinaryOperator(
             operator_node,
             std::move(left_argument),
             std::move(right_argument),
@@ -124,6 +124,12 @@ SQLQueryPiece applyComparisonOperator(
             apply_function_to_ast,
             /* drop_metric_name = */ true,
             /* allow_grouping_modifier_copy_metric_name = */ false);
+
+        /// The result is a fresh 0/1 cast to `context.scalar_data_type` above, so the operand value type overrides
+        /// merged by `applySimpleBinaryOperator` must not override it (same cleanup as in applyDateTimeFunction).
+        res.value_data_type = nullptr;
+
+        return res;
     }
     else
     {
@@ -155,7 +161,10 @@ SQLQueryPiece applyComparisonOperator(
         if (right_argument.type == ResultType::INSTANT_VECTOR)
             right_argument = toVectorGrid(std::move(right_argument), context);
 
-        return applySimpleBinaryOperator(
+        /// Preserve only the retained operand's value type; the other operand is used only for comparison.
+        DataTypePtr kept_value_data_type = filter_left ? left_argument.value_data_type : right_argument.value_data_type;
+
+        auto res = applySimpleBinaryOperator(
             operator_node,
             std::move(left_argument),
             std::move(right_argument),
@@ -163,6 +172,9 @@ SQLQueryPiece applyComparisonOperator(
             apply_function_to_ast,
             /* drop_metric_name = */ false,
             /* allow_grouping_modifier_copy_metric_name = */ true);
+
+        res.value_data_type = kept_value_data_type;
+        return res;
     }
 }
 

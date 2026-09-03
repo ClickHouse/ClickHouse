@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -53,6 +54,14 @@ namespace
     struct ImplInfo
     {
         TransformASTFunc transform_ast;
+
+        /// Overrides the table sample type for operators whose synthesized value has its own fixed type: `count`
+        /// returns an exact series count, which `Float32` stops representing above 16777216.
+        DataTypePtr value_data_type_override = nullptr;
+
+        /// `group` synthesizes fresh scalar-typed samples, so an override inherited from the argument
+        /// (e.g. `count_over_time`'s Float64) must be dropped rather than carried through.
+        bool inherits_argument_value_type = true;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -88,14 +97,20 @@ namespace
                 {
                     /// countForEach is special: it returns UInt64 and not Nullable: if all the inputs at any specific position are NULLs,
                     /// countForEach produces 0 at this position instead of NULL. So we need to convert it to NULL with arrayMap.
+                    /// The cast makes the grid itself Float64, not just the advertised type: a nested
+                    /// composition reuses this column as `timeSeries*ToGrid` input, which rejects UInt64.
                     return makeASTFunction(
-                        "arrayMap",
+                        "CAST",
                         makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
-                            makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
-                        makeASTFunction("countForEach", std::move(v)));
+                            "arrayMap",
+                            makeASTFunction(
+                                "lambda",
+                                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                                makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
+                            makeASTFunction("countForEach", std::move(v))),
+                        make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
                 },
+                /* value_data_type_override = */ std::make_shared<DataTypeFloat64>(),
             }},
 
             {"stddev",
@@ -127,6 +142,8 @@ namespace
                                 make_intrusive<ASTLiteral>(Field{} /* NULL */))),
                         makeASTFunction("anyForEach", std::move(v)));
                 },
+                /* value_data_type_override = */ nullptr,
+                /* inherits_argument_value_type = */ false,
             }},
         };
 
@@ -158,12 +175,30 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
 
     /// If the argument is empty then the result is also empty.
     if (argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+
+        /// Same precedence as the non-empty path below: a fixed result type wins, otherwise an inheriting
+        /// operator carries the argument's, else the schema-level type falls back to `context.scalar_data_type`.
+        if (impl_info->value_data_type_override)
+            res.value_data_type = impl_info->value_data_type_override;
+        else if (impl_info->inherits_argument_value_type)
+            res.value_data_type = argument.value_data_type;
+
+        return res;
+    }
 
     argument = toVectorGrid(std::move(argument), context);
 
     auto res = argument;
     res.node = operator_node;
+
+    /// The operator's fixed type replaces the argument's override inherited via `res = argument` above, since
+    /// `count` synthesizes a series count rather than carrying the argument's values.
+    if (impl_info->value_data_type_override)
+        res.value_data_type = impl_info->value_data_type_override;
+    else if (!impl_info->inherits_argument_value_type)
+        res.value_data_type = nullptr;
 
     /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid
     /// ambiguity with the input `group` column when the alias and the source column share the same name.

@@ -41,6 +41,19 @@ SQLQueryPiece applySimpleFunction(
 
     SQLQueryPiece res{node, node->result_type, StoreMethod::EMPTY};
 
+    /// Any empty operand empties the result; merge the overrides of all operands first, so which
+    /// operand is empty does not decide whether count_over_time()'s Float64 contract survives.
+    for (const auto & argument : arguments)
+    {
+        if (argument.store_method == StoreMethod::EMPTY)
+        {
+            SQLQueryPiece empty_res{node, node->result_type, StoreMethod::EMPTY};
+            for (const auto & other : arguments)
+                empty_res.value_data_type = mergeValueDataType(empty_res.value_data_type, other.value_data_type);
+            return empty_res;
+        }
+    }
+
     ASTs function_args;
     ASTs array_map_source_arrays;
     ASTs array_map_lambda_args;
@@ -54,8 +67,9 @@ SQLQueryPiece applySimpleFunction(
         {
             case StoreMethod::EMPTY:
             {
-                /// If one of the argument is empty then the result is also empty.
-                return SQLQueryPiece{node, node->result_type, StoreMethod::EMPTY};
+                /// Handled by the pre-scan above.
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "applySimpleFunction: unexpected EMPTY argument: {}",
+                                node->toString(*context.promql_tree));
             }
 
             case StoreMethod::CONST_SCALAR:
@@ -136,6 +150,9 @@ SQLQueryPiece applySimpleFunction(
                                 getPromQLText(argument, context), argument.store_method);
             }
         }
+
+        /// Propagate argument value type overrides; conflicting overrides fall back to the default.
+        res.value_data_type = mergeValueDataType(res.value_data_type, argument.value_data_type);
 
         res.start_time = argument.start_time;
         res.end_time = argument.end_time;

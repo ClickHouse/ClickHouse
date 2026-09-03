@@ -21,7 +21,17 @@ SQLQueryPiece applyBinaryOperatorOr(
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
-    /// If one of the arguments is empty then we return the other argument.
+    /// If one of the arguments is empty then we return the other argument. Values can only come
+    /// from the surviving side, so its value type override is kept as-is; the overrides merge only
+    /// when both sides are empty and there is no surviving side to take the type from.
+    if (left_argument.store_method == StoreMethod::EMPTY && right_argument.store_method == StoreMethod::EMPTY)
+    {
+        auto res = std::move(right_argument);
+        res.node = operator_node;
+        res.value_data_type = mergeValueDataType(res.value_data_type, left_argument.value_data_type);
+        return res;
+    }
+
     if (left_argument.store_method == StoreMethod::EMPTY)
     {
         auto res = std::move(right_argument);
@@ -197,6 +207,8 @@ SQLQueryPiece applyBinaryOperatorOr(
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
     res.select_query = std::move(step3);
     res.metric_name_dropped = left_argument.metric_name_dropped && right_argument.metric_name_dropped;
+    /// The result takes values from both sides, so their overrides merge.
+    res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
 
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;

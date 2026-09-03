@@ -102,7 +102,13 @@ SQLQueryPiece applyAggregationOperatorQuantile(
 
     /// If either argument is empty then the result is also empty.
     if (phi_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+    {
+        /// The non-empty path carries the vector's type through `res = vector_arg`; without the same here a
+        /// fixed-type child such as `count_over_time` would narrow back to the table's sample type.
+        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+        res.value_data_type = vector_arg.value_data_type;
+        return res;
+    }
 
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 
