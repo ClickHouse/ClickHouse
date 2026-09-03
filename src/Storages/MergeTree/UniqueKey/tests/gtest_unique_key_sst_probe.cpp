@@ -6,7 +6,6 @@
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -40,9 +39,6 @@
 #include <filesystem>
 #include <string>
 #include <vector>
-
-#include <IO/ReadSettings.h>
-
 
 using namespace DB;
 
@@ -141,23 +137,6 @@ namespace
         std::string * out_value = nullptr)
     {
         std::unique_ptr<rocksdb::Iterator> iter(reader.NewIterator(rocksdb::ReadOptions{}));
-        iter->Seek(rocksdb::Slice(key));
-        if (!iter->Valid())
-            return false;
-        if (iter->key().compare(rocksdb::Slice(key)) != 0)
-            return false;
-        if (out_value)
-            *out_value = iter->value().ToString();
-        return true;
-    }
-
-    /// Same lookup as above, via the `IDataPartStorage`-backed reader wrapper.
-    bool sstIteratorContains(
-        const SSTFileReader & reader,
-        const std::string & key,
-        std::string * out_value = nullptr)
-    {
-        std::unique_ptr<rocksdb::Iterator> iter(reader.newIterator(rocksdb::ReadOptions{}));
         iter->Seek(rocksdb::Slice(key));
         if (!iter->Valid())
             return false;
@@ -554,7 +533,7 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
     {
         SSTIndexWriter::writeFromBlock(
             *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
-            getContext().context);
+            checksums, /*fsync=*/false, getContext().context);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY in the block";
     }
     catch (const DB::Exception & e)
@@ -572,7 +551,7 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
         SSTIndexWriter::write(
             *storage, block_unsorted, /*uk_names=*/Names{"k"}, /*sort_names=*/Names{"other"},
             /*sort_reverse_flags=*/{}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
-            getContext().context);
+            checksums, /*fsync=*/false, getContext().context);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY (unsorted path)";
     }
     catch (const DB::Exception & e)
