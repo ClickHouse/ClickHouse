@@ -23,6 +23,9 @@ USER_DEFINED_DIR = "/var/lib/clickhouse/user_defined"
 WORKLOAD_ROOT = "/var/lib/clickhouse/workload"
 WORKLOAD_DIR = f"{WORKLOAD_ROOT}/entities/local"
 SQL_OBJECT_DIRS = [NAMED_COLLECTIONS_DIR, USER_DEFINED_DIR, WORKLOAD_DIR]
+# Stands in for the credential a named collection holds, in a value no other part of the
+# suite writes, so finding it in the log can only come from the file that failed to parse.
+CORRUPT_FILE_SECRET = "sentinel_secret_2b7f4c1e"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -137,8 +140,17 @@ def test_corrupt_named_collection_does_not_brick_startup():
     node.exec_in_container(
         ["bash", "-c", f"truncate -s 0 {NAMED_COLLECTIONS_DIR}/nc_torn.sql"]
     )
+    # A write torn inside a credential, which is what a power loss produces here. The parse
+    # error quotes the text at the position it failed on, so that position has to be inside
+    # the secret for the log assertion below to mean anything: an unterminated string literal
+    # puts it there.
     node.exec_in_container(
-        ["bash", "-c", f"echo 'not valid sql @@@' > {NAMED_COLLECTIONS_DIR}/nc_garbage.sql"]
+        [
+            "bash",
+            "-c",
+            f"echo \"CREATE NAMED COLLECTION nc_garbage AS secret_access_key = '{CORRUPT_FILE_SECRET}\""
+            f" > {NAMED_COLLECTIONS_DIR}/nc_garbage.sql",
+        ]
     )
 
     # Must start despite the corrupt files.
@@ -156,6 +168,12 @@ def test_corrupt_named_collection_does_not_brick_startup():
     # logged and that is part of the contract.
     assert node.contains_in_log("Skipping named collection 'nc_garbage'")
     assert node.contains_in_log("Skipping named collection 'nc_torn'")
+
+    # The log goes to a file read by anyone who can read logs, so the skip reports the error
+    # code and never the text that failed to parse.
+    assert not node.contains_in_log(CORRUPT_FILE_SECRET), (
+        "the credential in the unparseable metadata file must not reach the log"
+    )
 
     # Cleanup so the module teardown / reruns start clean.
     node.exec_in_container(
