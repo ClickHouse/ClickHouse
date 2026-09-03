@@ -240,21 +240,16 @@ TableSettings StorageKafka::getTableSettings(ContextPtr query_context) const
     ///
     /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
     /// guessing `named_collection` for it would be wrong, and there is no source to name.
-    const auto stated_in_definition = getSettingNamesStatedInDefinition(query_context);
-
-    NamedCollectionPtr collection;
     if (!collection_name.empty())
-        collection = NamedCollectionFactory::instance().tryGet(collection_name);
-
-    for (auto & setting : settings)
     {
-        if (stated_in_definition.contains(setting.name))
-            setting.origin = TableSettingOrigin::Definition;
-        else if (collection && collection->has(setting.name))
-            setting.origin = TableSettingOrigin::NamedCollection;
+        if (const auto collection = NamedCollectionFactory::instance().tryGet(collection_name))
+            for (auto & setting : settings)
+                if (collection->has(setting.name))
+                    setting.origin = TableSettingOrigin::NamedCollection;
     }
 
-    return settings;
+    /// Last, because the `SETTINGS` clause is applied last and so wins over the collection.
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }
 
 StorageKafka::~StorageKafka()

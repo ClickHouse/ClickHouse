@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 #include <Core/BaseSettings.h>
@@ -178,6 +179,11 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
                     "Setting `tags_to_columns` has duplicate column name `{}`", column_name);
         }
     }
+}
+
+TableSettings TimeSeriesSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 }

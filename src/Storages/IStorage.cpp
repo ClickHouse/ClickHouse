@@ -271,6 +271,15 @@ NameSet IStorage::getSettingNamesStatedInDefinition(ContextPtr context) const
     return names;
 }
 
+TableSettings IStorage::attributeSettingsStatedInDefinition(TableSettings settings, ContextPtr context) const
+{
+    const auto stated_in_definition = getSettingNamesStatedInDefinition(context);
+    for (auto & setting : settings)
+        if (stated_in_definition.contains(setting.name))
+            setting.origin = TableSettingOrigin::Definition;
+    return settings;
+}
+
 TableSettings IStorage::getTableSettings(ContextPtr context) const
 {
     /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an

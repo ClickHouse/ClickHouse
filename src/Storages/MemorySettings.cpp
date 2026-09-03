@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -101,5 +102,10 @@ void MemorySettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & pa
 {
     fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(params);
 }
+TableSettings MemorySettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }
 

@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -74,4 +75,9 @@ void RocksDBSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & p
 {
     fillEngineSettingsColumnsFromImpl<RocksDBSettingsImpl>(params);
 }
+TableSettings RocksDBSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

@@ -277,6 +277,12 @@ public:
     /// whatever else may also have set it, because the clause is applied last.
     NameSet getSettingNamesStatedInDefinition(ContextPtr context) const;
 
+    /// Marks as `Definition` every setting the table's own `SETTINGS` clause names, and leaves the
+    /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
+    /// its definition; an engine with a further source - a config section, a named collection,
+    /// replicated metadata - attributes that itself before or after calling this.
+    TableSettings attributeSettingsStatedInDefinition(TableSettings settings, ContextPtr context) const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

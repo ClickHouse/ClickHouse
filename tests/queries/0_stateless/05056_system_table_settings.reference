@@ -3,6 +3,7 @@ database	String
 table	String
 engine	LowCardinality(String)
 name	String
+default	String
 value	String
 changed	UInt8
 source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'definition\' = 3, \'named_collection\' = 4, \'shared_metadata\' = 5, \'runtime\' = 6, \'other\' = 7)
@@ -13,6 +14,11 @@ type	String
 jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
 mt	MergeTree	index_granularity	4096	1	definition
+plain	Memory	compress	0	0	default
+plain	Memory	max_bytes_to_keep	0	0	default
+plain	Memory	max_rows_to_keep	0	0	default
+plain	Memory	min_bytes_to_keep	0	0	default
+plain	Memory	min_rows_to_keep	0	0	default
 -- a secret is masked, and says so
 kafka_sasl_password	[HIDDEN]	1
 -- a setting that is not secret is not masked

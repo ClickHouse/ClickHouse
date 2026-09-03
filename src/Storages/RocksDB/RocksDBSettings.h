@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Columns/IColumn_fwd.h>
@@ -32,6 +34,8 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
     static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
     static void checkCanSet(std::string_view name, const Field & value);
 

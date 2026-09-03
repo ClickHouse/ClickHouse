@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
@@ -87,4 +88,9 @@ void FileLogSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & p
 {
     fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(params);
 }
+TableSettings FileLogSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

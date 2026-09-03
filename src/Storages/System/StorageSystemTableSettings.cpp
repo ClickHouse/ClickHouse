@@ -70,6 +70,9 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
         {"engine", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             "Engine of the table. Setting names are engine-specific, so the same name can mean different things for different engines."},
         {"name", std::make_shared<DataTypeString>(), "Setting name."},
+        {"default", std::make_shared<DataTypeString>(),
+            "Value the setting has when nothing sets it. Empty for a setting known only from the table's `SETTINGS` clause, "
+            "because an engine that keeps no settings struct has no default to report."},
         {"value", std::make_shared<DataTypeString>(),
             "Value the table uses. Unlike `SHOW CREATE TABLE`, this is the value in effect, which may come from a named collection, "
             "from replicated metadata, or from the engine adjusting it while running, and so need not be the value the `CREATE` query states."},
@@ -161,6 +164,8 @@ protected:
                     res_columns[res_index++]->insert(engine_name);
                 if (column_mask[src_index++])
                     res_columns[res_index++]->insert(setting.name);
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(setting.default_value);
                 if (column_mask[src_index++])
                     res_columns[res_index++]->insert(value);
                 if (column_mask[src_index++])

@@ -1205,4 +1205,9 @@ bool StorageFileLog::updateFileInfos()
     return events.empty() || file_infos.file_names.empty();
 }
 
+TableSettings StorageFileLog::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(filelog_settings->enumerateSettings(), query_context);
+}
+
 }

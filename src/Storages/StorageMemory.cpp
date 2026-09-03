@@ -877,4 +877,9 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
         .syntax = "ENGINE = Memory"});
 }
 
+TableSettings StorageMemory::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(memory_settings->enumerateSettings(), query_context);
+}
+
 }
