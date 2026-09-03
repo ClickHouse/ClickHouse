@@ -61,10 +61,21 @@ void ITableFunction::checkSourceStorageAccess(
             ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
 }
 
+void ITableFunction::checkEngineAccess(ContextPtr context) const
+{
+    if (!requiresTableEngineGrant())
+        return;
+
+    const char * engine = isClusterFunction() ? getNonClusteredStorageEngineName() : getStorageEngineName();
+    if (engine && *engine)
+        context->checkAccess(AccessType::TABLE_ENGINE, engine);
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
+    checkEngineAccess(context);
     checkSourceObjectAccess(context, /*for_structure=*/ true);
     return getActualTableStructure(context, is_insert_query);
 }
@@ -77,7 +88,8 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
-    /// Deliberately not under `check_source_access`: no caller takes over this check.
+    /// Deliberately not under `check_source_access`: no caller takes over these checks.
+    checkEngineAccess(context);
     checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
