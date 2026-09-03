@@ -34,8 +34,10 @@ public:
     String currentTopic() const { return next_message[-1].getTopicName(); }
     String currentOrderingKey() const { return next_message[-1].getOrderingKey(); }
     String currentPartitionKey() const { return next_message[-1].getPartitionKey(); }
-    /// The producer-set event timestamp in milliseconds; 0 when the producer did not set it
-    /// (unlike the publish timestamp, which the broker always assigns).
+    /// The producer-set event timestamp in milliseconds. Presence is tracked separately, because a
+    /// producer may legitimately set the timestamp to 0 (the Unix epoch), which is indistinguishable
+    /// from an unset one by value alone. Unlike the publish timestamp, the broker never assigns it.
+    bool currentHasTimestamp() const { return next_message[-1].hasEventTimestamp(); }
     UInt64 currentTimestamp() const { return next_message[-1].getEventTimestamp(); }
     String currentPayload() const { return next_message[-1].getDataAsString(); }
 

@@ -794,6 +794,72 @@ def test_event_timestamp_virtual_columns(pulsar_cluster):
     )
 
 
+def test_zero_event_timestamp_is_not_null(pulsar_cluster):
+    # An event timestamp of 0 is a legitimate value (the Unix epoch) and must be
+    # exposed as `1970-01-01 00:00:00` / `0`, not as `NULL`: the engine decides
+    # nullability from the presence bit the broker sends, not from the numeric
+    # value. Only the REST producer can set an explicit `eventTime`, and it does
+    # not create the topic on demand, so create it up front.
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "bin/pulsar-admin",
+            "topics",
+            "create",
+            "persistent://public/default/zero_event_ts_topic",
+        ]
+    )
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table("test.pulsar_reader", "zero_event_ts_topic", "zero_event_ts_group")
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view
+        (key UInt64, value UInt64, ts Nullable(DateTime), ts_ms Nullable(DateTime64(3)))
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value, _timestamp AS ts, _timestamp_ms AS ts_ms FROM test.pulsar_reader
+        """
+    )
+    body = (
+        '{"valueSchema": "{\\"type\\":\\"STRING\\",\\"schema\\":\\"\\",\\"properties\\":{}}",'
+        ' "messages": ['
+        '{"payload": "{\\"key\\":0,\\"value\\":0}", "eventTime": 0}]}'
+    )
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "curl",
+            "-sf",
+            "-X",
+            "POST",
+            "http://localhost:8080/topics/persistent/public/default/zero_event_ts_topic",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            body,
+        ]
+    )
+
+    # Delivery is at-least-once, so tolerate duplicate rows.
+    wait_query_result(
+        "0\t0\t0\t0",
+        """
+        SELECT DISTINCT key, value, toUnixTimestamp(ts), toUnixTimestamp64Milli(ts_ms)
+        FROM test.view ORDER BY key
+        """,
+    )
+
+
 def test_table_comment_is_preserved(pulsar_cluster):
     # The engine must thread the `COMMENT` clause into its storage metadata the
     # same way the other message-broker engines do; otherwise `SHOW CREATE TABLE`

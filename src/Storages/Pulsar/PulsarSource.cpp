@@ -182,6 +182,7 @@ Chunk PulsarSource::generateImpl()
             auto topic = consumer->currentTopic();
             auto ordering_key = consumer->currentOrderingKey();
             auto partition_key = consumer->currentPartitionKey();
+            auto has_timestamp = consumer->currentHasTimestamp();
             auto timestamp_raw = consumer->currentTimestamp();
 
             for (size_t i = 0; i < new_rows; ++i)
@@ -189,7 +190,7 @@ Chunk PulsarSource::generateImpl()
                 virtual_columns[0]->insert(topic);
                 virtual_columns[1]->insert(ordering_key);
                 virtual_columns[2]->insert(partition_key);
-                if (timestamp_raw)
+                if (has_timestamp)
                 {
                     auto ts = std::chrono::milliseconds(timestamp_raw);
                     virtual_columns[3]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
