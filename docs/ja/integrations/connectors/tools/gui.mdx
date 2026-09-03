@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## 商用
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app) は、ClickHouse の監視とクエリ実行のための iOS および iPadOS クライアントです。
+
+  機能:
+
+  * ProbeDeck は、実行中のクエリ、レプリカ、パーツ、マージ、ミューテーション、ディスク、サーバーメトリクスを表示します。
+  * `KILL QUERY` でクエリを停止し、`KILL MUTATION` でミューテーションを停止できます。
+  * スキーマとデータを参照したり、エディタで SQL を実行したりできます。
+  * ProbeDeck は、デバイスネットワークまたは SSH トンネル経由で HTTP(S) を使用して接続します。
+  * ProbeDeck は認証情報を iOS Keychain に保存し、接続ごとの読み取り専用モードをサポートします。
+  * アプリには、データがバンドルされたオフラインデモが含まれています。
+
+  無料ユーザーはサーバーを監視し、読み取り専用 SQL を実行できます。1 つの接続を保存できます。ProbeDeck Pro では、停止コントロール、書き込み、DDL、無制限の保存済み接続が追加されます。
+
+  接続手順については、[ProbeDeck を ClickHouse に接続する](/ja/integrations/connectors/sql-clients/probedeck)を参照してください。
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) は、ClickHouse 専用のサポートを備えた JetBrains のデータベース IDE です。また、PyCharm、IntelliJ IDEA、GoLand、PhpStorm など、ほかの IntelliJ ベースのツールにも組み込まれています。
 
@@ -487,24 +504,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) は、データ探索と業務レポート作成のためのセルフサービス BI ツールです。クラウドサービスとセルフホスト版の両方で利用できます。SeekTable のレポートは、任意の Web アプリに埋め込めます。
+  [SeekTable](https://www.seektable.com) は、データ探索と運用レポート作成のためのセルフサービス BI ツールです。クラウドサービスとセルフホスト版の両方で利用できます。SeekTable のレポートは、任意の Web アプリに埋め込むことができます。
 
   機能:
 
   * ビジネスユーザー向けの使いやすいレポートビルダー。
-  * SQL のフィルタリングやレポート固有のクエリカスタマイズに使える強力なレポートパラメーター。
-  * native TCP/IP endpoint と HTTP(S) インターフェイスの両方で ClickHouse に接続可能 (2 種類のドライバー) 。
-  * 次元/メジャー定義では、ClickHouse の SQL方言 の機能を最大限に活用できます。
-  * レポート自動生成用の [Web API](https://www.seektable.com/help/web-api-integration)。
-  * アカウントデータの [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore) に対応し、レポート開発フローをサポートします。データモデル (キューブ) / レポート設定は人が読める XML で、バージョン管理システムで管理できます。
+  * SQL フィルタリングやレポート固有のクエリカスタマイズに対応する強力なレポートパラメーター。
+  * ネイティブ TCP/IP エンドポイントと HTTP(S) インターフェイスの両方で ClickHouse に接続可能 (2 種類の異なるドライバー)。
+  * ディメンションおよびメジャーの定義で、ClickHouse SQL 方言のすべての機能を使用できます。
+  * レポートを自動生成するための [Web API](https://www.seektable.com/help/web-api-integration)。
+  * アカウントデータの[バックアップ/復元](https://www.seektable.com/help/self-hosted-backup-restore)を利用したレポート開発フローをサポート。データモデル (キューブ) / レポート設定は可読性の高い XML 形式であり、バージョン管理システムで管理できます。
 
-  SeekTable は、個人利用であれば [無料](https://www.seektable.com/help/cloud-pricing) です。
+  SeekTable は、個人利用の場合は[無料](https://www.seektable.com/help/cloud-pricing)です。
 
   [SeekTable で ClickHouse 接続を設定する方法。](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) は、ClickHouse クラスターで現在実行中のクエリとその情報を可視化し、必要に応じて停止できるシンプルな UI です。
+  [Chadmin](https://github.com/bun4uk/chadmin) は、ClickHouse クラスターで現在実行中のクエリとその詳細を可視化し、必要に応じて停止できるシンプルな UI です。
 </Accordion>
 
 <Accordion title="TABLUM.IO">
@@ -552,6 +569,6 @@ doc_type: 'reference'
   * ClickHouse ネイティブ型をサポート — `Nullable`、`Array`、`LowCardinality`、ネストされたオブジェクト。
   * ベクトル検索をサポート — `Array(Float32)` の埋め込みカラムを compact なベクトル cell として表示し、2D 埋め込みの可視化や、`cosineDistance` による類似検索に対応します。
   * 結果テーブル内でのインラインデータ編集とバッチ保存に対応し、さらに ClickHouse のネイティブフォーマットを使用した CSV/JSON/SQL のエクスポートとインポートも可能です。
-  * 接続オプション: HTTP/HTTPS、ファイアウォールの背後にあるプライベートクラスター向けの SSH トンネル、安全に production 環境を参照するためのオプションの read-only モード。
+  * 接続オプション: HTTP/HTTPS、ファイアウォールの背後にあるプライベートクラスター向けの SSH トンネル、安全に production 環境を参照するためのオプションの 読み取り専用モード。
   * ClickHouse Cloud とセルフホストの両方で利用できます。
 </Accordion>
