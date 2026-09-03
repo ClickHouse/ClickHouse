@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/Logger.h>
+#include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 

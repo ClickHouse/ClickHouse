@@ -185,6 +185,8 @@ public:
     /// Whether prepareFailedRequests just reset processing
     /// without actually marking the file as failed.
     bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
+    /// Whether the file was given up on for good (see `permanently_failed`).
+    bool wasPermanentlyFailed() const { return permanently_failed; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
@@ -245,6 +247,10 @@ protected:
     /// Whether prepareFailedRequests just reset processing without actually
     /// marking the file as failed (when reduce_retry_count was false).
     bool processing_reset_without_failure = false;
+    /// Whether prepareFailedRequests gave up on the file for good, i.e. created
+    /// the terminal /failed node rather than a retriable one (retries exhausted,
+    /// or retries are disabled altogether).
+    bool permanently_failed = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;

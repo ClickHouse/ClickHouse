@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -23,6 +24,19 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+/// True when every key of `description` is constant in `header`, so all rows compare equal under it.
+static bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
+}
+
 QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 1)
@@ -35,7 +49,11 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     /// Cannot have multiple sinks writing to the same file concurrently. Merge-sort rather than plain
     /// resize(1) when order must be preserved, since `GatherReceiveStep` merge-sorts assuming each bucket's
     /// stream already arrives sorted.
-    if (maintain_sort_description && pipeline.getNumStreams() > 1)
+    /// An all-constant description orders nothing, so any interleaving satisfies it. The merge is skipped
+    /// there because it waits for every input to have data, which cannot complete while the streams share
+    /// one upstream producer blocked on a stream the merge is not reading.
+    if (maintain_sort_description && pipeline.getNumStreams() > 1
+        && !sortDescriptionIsAllConstant(*maintain_sort_description, *pipeline.getSharedHeader()))
     {
         pipeline.addTransform(
             std::make_shared<MergingSortedTransform>(

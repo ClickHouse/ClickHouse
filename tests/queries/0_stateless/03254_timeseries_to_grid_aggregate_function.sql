@@ -104,6 +104,21 @@ SELECT timeSeriesResampleToGridWithStalenessMerge(100, 200, 10, 15)(agg) FROM ts
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp, value) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50)(timestamp::DateTime64(2,'UTC'), value) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStaleness(100::Int32, 150::UInt16, 15::Decimal(10,2), 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
+
+-- When the timestamp argument is DateTime64, parameters can also be floats and strings
+-- containing numbers, durations (like '15s' or '1m') or date-time text
+SELECT timeSeriesResampleToGridWithStaleness(100.0, 150.0, 15.0, 50.0)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness('100', '150', '15s', '50s')(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness('1970-01-01 00:01:40', '1970-01-01 00:02:30', 15, '1m')(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data SETTINGS session_timezone = 'UTC';
+
+-- The window '1m' means 60 seconds: the sample at 151 is still fresh for the grid point 210
+SELECT timeSeriesResampleToGridWithStaleness(100, 210, 10, 60)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness(100, 210, 10, '1m')(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
+
+-- Decimal and float parameters keep their fractional part: start 100.5 shifts the whole grid,
+-- so it ends at 140.5 (the next point 150.5 would be beyond the end)
+SELECT timeSeriesResampleToGridWithStaleness(toDecimal32(100.5, 1), 150, 10, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
+SELECT timeSeriesResampleToGridWithStaleness(100.5, 150, 10, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStaleness(100, 100, 15, 50)(timestamp::DateTime64(3, 'UTC'), value::Float32) AS res FROM ts_data;
 SELECT timeSeriesResampleToGridWithStalenessIf(100, 150, 15, 50)(timestamp, value, value%2==0) AS res FROM ts_data;
 
@@ -125,6 +140,13 @@ SELECT timeSeriesResampleToGridWithStaleness(100::Float64, 150, 15, 50)(timestam
 SELECT timeSeriesResampleToGridWithStaleness(100, 150::Float32, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15::Float32, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 15, 50::Float64)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- When the timestamp argument is DateTime64, parameters which cannot be parsed are rejected
+SELECT timeSeriesResampleToGridWithStaleness('abc', 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesResampleToGridWithStaleness([100], 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesResampleToGridWithStaleness(inf, 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesResampleToGridWithStaleness('1970-01-01 00:01:40junk', 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesResampleToGridWithStaleness('1970-13-01 00:01:40', 150, 15, 50)(timestamp::DateTime64(3, 'UTC'), value) AS res FROM ts_data; -- { serverError BAD_ARGUMENTS }
 
 SELECT timeSeriesResampleToGridWithStaleness(-100, 150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT timeSeriesResampleToGridWithStaleness(100, -150, 15, 50)(timestamp, value) AS res FROM ts_data; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

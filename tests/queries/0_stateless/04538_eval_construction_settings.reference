@@ -1,0 +1,27 @@
+-- { echoOn }
+-- `limit` caps the generated query's result.
+SELECT count() FROM eval('SELECT number FROM numbers(10) SETTINGS limit = 3');
+3
+-- `offset` skips rows of the generated query's result.
+SELECT number FROM eval('SELECT number FROM numbers(5) SETTINGS offset = 3') ORDER BY number;
+3
+4
+-- `limit` and `offset` combine.
+SELECT number FROM eval('SELECT number FROM numbers(10) SETTINGS limit = 2, offset = 3') ORDER BY number;
+3
+4
+-- `page` is translated to `limit` / `offset` (`offset = limit * (page - 1)`).
+SELECT number FROM eval('SELECT number FROM numbers(10) SETTINGS limit = 2, page = 3') ORDER BY number;
+4
+5
+-- A negative `limit` selects the tail.
+SELECT number FROM eval('SELECT number FROM numbers(10) SETTINGS limit = -2') ORDER BY number;
+8
+9
+-- `filter` adds a `WHERE` over the generated query.
+SELECT number FROM eval('SELECT number FROM numbers(10) SETTINGS filter = ''number % 2 = 0'', limit = 2') ORDER BY number;
+0
+2
+-- A construction setting on a subquery nested inside the generated query applies to that subquery only.
+SELECT count() FROM eval('SELECT * FROM (SELECT number FROM numbers(10) SETTINGS limit = 4)');
+4

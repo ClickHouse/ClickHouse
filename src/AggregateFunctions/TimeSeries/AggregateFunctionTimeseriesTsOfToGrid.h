@@ -162,6 +162,8 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` selects the relevant sample.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
@@ -186,7 +188,6 @@ public:
         return Aggregator{Base::timestamp_scale_multiplier};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
     static constexpr bool DateTime64Supported = true;
 };
 
