@@ -18,6 +18,11 @@ INSERT INTO t_json_tokenbf VALUES (1, '{"alpha":"x"}'), (2, '{"beta":"y"}'), (3,
 SELECT arraySort(groupArray(id)) FROM t_json_bf      WHERE data.alpha::String = CAST('', 'Enum8('''' = 3)');
 SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = CAST('', 'Enum8('''' = 3)');
 
+-- A `Variant` or `Dynamic` constant reports its own declared type while yielding the active
+-- alternative's value, so an `Enum` alternative cannot be told apart and nothing may be skipped.
+SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST('', 'Variant(Enum8('''' = 3))');
+SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = CAST(CAST('', 'Enum8('''' = 3)'), 'Dynamic');
+
 -- A tuple comparison carries each element's own type, so a `Nullable` source reaches the same
 -- decision still wrapped. Only `WHERE` is split into per-element comparisons without the analyzer,
 -- so `PREWHERE` is where a tuple reaches index analysis whole.

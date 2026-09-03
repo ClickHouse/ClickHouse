@@ -138,6 +138,12 @@ bool isJSONPathFilterSafe(
     if (value_type)
     {
         unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+
+        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
+        const WhichDataType which_value(unwrapped_value_type);
+        if (which_value.isVariant() || which_value.isDynamic())
+            return false;
+
         enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
     }
     auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
