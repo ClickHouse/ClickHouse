@@ -153,6 +153,7 @@
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
+#    include <glibc-rseq/rseq.h>
 #endif
 
 #if USE_SSL
@@ -860,6 +861,21 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
+
+    if (rseq_cpu_id() < 0)
+        server.context()->addOrUpdateWarningMessage(
+            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
+            PreformattedMessage::create(
+                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
+                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
+                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
+                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
+                "making these counters more expensive and slightly degrading performance. "
+                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
+                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
+                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
+                "other libraries, such as musl, do not register it); "
+                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
 
     try
     {
