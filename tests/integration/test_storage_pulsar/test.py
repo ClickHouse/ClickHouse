@@ -1047,6 +1047,11 @@ def test_remote_host_filter_applies_to_lookup_results(pulsar_cluster):
         instance.replace_config(config_path, allowed_config)
         instance.query("SYSTEM RELOAD CONFIG")
 
-    # Once the allowlist permits the broker again, the client's reconnect
-    # attempts start passing the filter and consumption resumes.
+    # Once the allowlist permits the broker again, consumption resumes. Recreate
+    # the table's consumers instead of waiting for the client's own reconnect
+    # backoff to expire: every rejected connection attempt lengthens it, and the
+    # unacknowledged message is redelivered as soon as a fresh consumer joins the
+    # subscription.
+    instance.query("DETACH TABLE test.pulsar_reader")
+    instance.query("ATTACH TABLE test.pulsar_reader")
     wait_row_seen("2\t2", 240)
