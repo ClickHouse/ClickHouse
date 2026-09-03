@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Each query runs in its own clickhouse-local process, so the counters in `system.events` belong to
 # that query alone.
+
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
