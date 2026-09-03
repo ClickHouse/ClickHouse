@@ -15,11 +15,11 @@ ClickHouse Cloud's control plane runs your BYOC deployment without reading custo
 
 | Component | What leaves your VPC |
 |-----------|----------------------|
-| State exporter | Service and backup state (health, status — operational events, not backup contents) to an `SQS` queue owned by ClickHouse Cloud. |
+| State exporter | Service and backup state (health, status — operational events, not backup contents) to a queue owned by ClickHouse Cloud: `SQS` on AWS, Pub/Sub on GCP, Service Bus on Azure. |
 | Billing scraper | CPU and memory metrics to an object storage bucket owned by ClickHouse Cloud. |
 | AlertManager | Cluster health alerts to ClickHouse Cloud. |
 
-Query traffic, table contents, and schemas never flow through these channels. Logs and metrics stay inside your BYOC VPC.
+Query traffic, table contents, and schemas never flow through these channels. Your full monitoring dataset — the Prometheus and Thanos stack, and your logs — stays inside your BYOC network; the bounded telemetry in the table above is the only observability data that leaves. See [network boundaries](/products/bring-your-own-cloud/reference/network-security#network-boundaries) for the complete inbound and outbound flow reference.
 
 ## Troubleshooting access {#troubleshooting-access}
 
