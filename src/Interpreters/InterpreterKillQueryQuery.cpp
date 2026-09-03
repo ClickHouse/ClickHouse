@@ -54,6 +54,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -296,8 +297,15 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
         /// The scan sees every user's row before the filter above, so it runs in a thread group of its
         /// own: its rows are neither charged to the caller's memory, quota and profile events nor
         /// reported to them. The thread keeps its name, only the group it accounts to changes.
-        ThreadGroupSwitcher switcher(
-            ThreadGroup::createForQuery(inner_context), getThreadName(), /*allow_existing_group=*/ true);
+        auto scan_group = ThreadGroup::createForQuery(inner_context);
+        ThreadGroupSwitcher switcher(scan_group, getThreadName(), /*allow_existing_group=*/ true);
+
+        /// The scan must not be accounted to the caller's group, and the switcher's constructor cannot throw.
+        if (getCurrentThreadGroup() != scan_group)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Could not isolate the `system.processes` scan from the calling query's thread group");
+
         res = runInternalSelect(select_query, std::move(inner_context));
     }
     rebuildLowCardinalityDictionaries(res);
@@ -389,13 +397,11 @@ static Block getKillableProcesses(const ContextPtr & context, const ASTPtr & whe
     auto storage = DatabaseCatalog::instance().getTable(StorageID{"system", "processes"}, context);
 
     Block block = readKillableProcesses(context, storage);
+    /// A read that yielded no block at all has no columns, and `StorageValues` cannot resolve a name in one.
     if (block.rows() == 0)
         return {};
 
     applyProcessesRowPolicy(block, context, storage);
-    if (block.rows() == 0)
-        return {};
-
     return selectFromKillableProcesses(context, where_expression, std::move(block));
 }
 
