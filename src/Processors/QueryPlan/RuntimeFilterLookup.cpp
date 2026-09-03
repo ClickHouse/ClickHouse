@@ -274,7 +274,7 @@ Set & ExactSetRuntimeFilter<negate>::getExactValues()
 }
 
 template <bool negate>
-Set & ExactSetRuntimeFilter<negate>::getExactValues() const
+const Set & ExactSetRuntimeFilter<negate>::getExactValues() const
 {
     const auto * many = std::get_if<Many>(&lookup_state);
     if (!many || !many->exact_values)

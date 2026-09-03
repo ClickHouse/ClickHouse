@@ -137,7 +137,7 @@ private:
     using LookupState = std::variant<Empty, Single, Many>;
 
     Set & getExactValues();
-    Set & getExactValues() const;
+    const Set & getExactValues() const;
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
