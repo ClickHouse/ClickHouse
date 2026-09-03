@@ -1,5 +1,10 @@
 -- The dynamic TopN threshold filter shares PREWHERE with the read's other filters
 -- instead of replacing them, and it occupies the first conjunct.
+-- Tags: no-parallel-replicas
+-- Every assertion below pins an exact read-step shape. `clickhouse-test` enables
+-- `enable_parallel_replicas` for an untagged test whenever it draws
+-- `automatic_parallel_replicas_mode = 2`, and the `ParallelReplicas` CI flavour runs untagged tests
+-- with it on; either replaces the read step this file asserts on.
 
 -- `legacy` prints the raw filter-column name, whose argument order is the DAG child order and
 -- therefore the order the PREWHERE read steps run in. The pretty renderer walks the conjunction
@@ -62,6 +67,34 @@ SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere WHERE pred = 3 AND tag 
 SETTINGS use_top_k_dynamic_filtering = 1;
 
 DROP TABLE t_topk_prewhere;
+
+-- A stored column whose name is the name the threshold filter's own column gets must not be taken
+-- for it. The name only reaches the read's PREWHERE actions when the column takes part in the
+-- promoted filter; a plain `SELECT` of it is read outside them.
+
+DROP TABLE IF EXISTS t_topk_collide;
+
+CREATE TABLE t_topk_collide (k UInt32, pred UInt32, `__topKFilter(k)` UInt8)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_topk_collide SELECT number, number % 10, 0 FROM numbers(50000);
+
+-- Fixture control: the stored column is an input of the PREWHERE actions, so the rows below are
+-- compared on a plan that actually holds both names.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k FROM t_topk_collide WHERE pred = 3 AND `__topKFilter(k)` = 0 ORDER BY k LIMIT 5)
+WHERE explain ILIKE '%INPUT%\_\_topKFilter(k) UInt8%';
+
+SELECT groupArray(k) FROM (
+    SELECT k FROM t_topk_collide WHERE pred = 3 AND `__topKFilter(k)` = 0 ORDER BY k LIMIT 5)
+SETTINGS use_top_k_dynamic_filtering = 0;
+SELECT groupArray(k) FROM (
+    SELECT k FROM t_topk_collide WHERE pred = 3 AND `__topKFilter(k)` = 0 ORDER BY k LIMIT 5)
+SETTINGS use_top_k_dynamic_filtering = 1;
+
+DROP TABLE t_topk_collide;
 
 -- A TopK read served by a normal projection still carries the threshold filter, and returns the same
 -- rows as with the feature off. `a` is uncorrelated with the table's own sort key, so only the
@@ -163,4 +196,53 @@ SELECT groupArray((id, s)) FROM (
 SETTINGS use_top_k_dynamic_filtering = 1;
 
 DROP TABLE t_topk_proj_sorted;
+
+-- A projection that covers only some parts leaves the base-table read next to the projection read
+-- under a `Union`. Both branches have to carry the threshold filter: the base-table read is the one
+-- master installed on, so losing it there would read the uncovered parts unfiltered.
+
+DROP TABLE IF EXISTS t_topk_proj_partial;
+
+CREATE TABLE t_topk_proj_partial (id UInt64, a UInt64, s UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+-- Merging the two parts would give every part the projection and collapse the union.
+SYSTEM STOP MERGES t_topk_proj_partial;
+
+INSERT INTO t_topk_proj_partial SELECT number, cityHash64(number) % 200000, 199999 - number FROM numbers(100000);
+ALTER TABLE t_topk_proj_partial ADD PROJECTION p (SELECT id, a, s ORDER BY a);
+INSERT INTO t_topk_proj_partial SELECT number, cityHash64(number) % 200000, 199999 - number FROM numbers(100000, 100000);
+
+-- Fixture control: `ADD PROJECTION` is not materialized, so only the second part carries `p` and the
+-- plan really is a union of two reads. Without these two rows the count below holds vacuously on a
+-- plan that has one read.
+SELECT count() = 1 FROM (
+    EXPLAIN projections = 1
+    SELECT id, s FROM t_topk_proj_partial WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE explain ILIKE '%ReadFromMergeTree (p)%';
+SELECT count() = 1 FROM (
+    EXPLAIN projections = 1
+    SELECT id, s FROM t_topk_proj_partial WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE trimLeft(explain) = 'Union';
+
+SELECT count() = 2 FROM (
+    EXPLAIN actions = 1
+    SELECT id, s FROM t_topk_proj_partial WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE explain ILIKE '%Prewhere filter column: and(\_\_topKFilter(s),%';
+
+-- Negative control: with every part covered there is no union and a single installation.
+SELECT count() = 1 FROM (
+    EXPLAIN actions = 1
+    SELECT id, s FROM t_topk_proj WHERE a < 2000 ORDER BY s ASC LIMIT 10)
+WHERE explain ILIKE '%Prewhere filter column: and(\_\_topKFilter(s),%';
+
+SELECT groupArray(id) FROM (
+    SELECT id, s FROM t_topk_proj_partial WHERE a < 2000 ORDER BY s ASC LIMIT 20)
+SETTINGS use_top_k_dynamic_filtering = 0;
+SELECT groupArray(id) FROM (
+    SELECT id, s FROM t_topk_proj_partial WHERE a < 2000 ORDER BY s ASC LIMIT 20)
+SETTINGS use_top_k_dynamic_filtering = 1;
+
+DROP TABLE t_topk_proj_partial;
 DROP TABLE t_topk_proj;

@@ -251,6 +251,17 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     return 0;
 }
 
+/// A second node under the same result name is indistinguishable from `node` downstream: the reader
+/// chain looks the filter column up by name, and `MergeTreeSplitPrewhereIntoReadSteps` hands a value
+/// computed by an earlier read step to a later one by name too.
+static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
+{
+    for (const auto & other : dag.getNodes())
+        if (&other != node && other.result_name == node->result_name)
+            return true;
+    return false;
+}
+
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
@@ -273,15 +284,8 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
-    NameAndTypePair sort_column_name_and_type(top_k_filter_info.column_name, top_k_filter_info.data_type);
-    ActionsDAG filter_dag({sort_column_name_and_type});
-
     /// Cannot use FunctionFactory::get because the resolver needs the threshold tracker.
     auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
-    const auto * filter_node
-        = &filter_dag.addFunction(filter_function, {filter_dag.getInputs().front()}, {});
-    filter_dag.getOutputs().push_back(filter_node);
-    const String filter_column_name = filter_node->result_name;
 
     auto prewhere_info = std::make_shared<PrewhereInfo>();
     const auto & existing_prewhere_info = read_from_mergetree_step->getPrewhereInfo();
@@ -290,19 +294,37 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
         const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
 
-        ActionsDAG::NodeRawConstPtrs merged_outputs;
-        combined.mergeNodes(std::move(filter_dag), &merged_outputs);
-
-        const ActionsDAG::Node * merged_filter_node = nullptr;
-        for (const auto * merged : merged_outputs)
+        /// The condition has to be constructed in this DAG: `ActionsDAG::mergeNodes` identifies nodes
+        /// by result name alone, so folding a separately built DAG in binds the conjunction to
+        /// whatever already carries the generated filter column's name.
+        const ActionsDAG::Node * sort_column_node = nullptr;
+        for (const auto * input : combined.getInputs())
         {
-            if (merged->result_name == filter_column_name)
+            if (input->result_name == top_k_filter_info.column_name)
             {
-                merged_filter_node = merged;
+                sort_column_node = input;
                 break;
             }
         }
-        chassert(merged_filter_node);
+
+        if (sort_column_node)
+        {
+            /// The threshold tracker compares against values of `data_type`.
+            if (!sort_column_node->result_type->equals(*top_k_filter_info.data_type))
+                return;
+        }
+        else
+        {
+            /// A node under that name which is not one of the DAG's sources is not the read's column.
+            for (const auto & dag_node : combined.getNodes())
+                if (dag_node.result_name == top_k_filter_info.column_name)
+                    return;
+            sort_column_node = &combined.addInput(top_k_filter_info.column_name, top_k_filter_info.data_type);
+        }
+
+        const auto * filter_node = &combined.addFunction(filter_function, {sort_column_node}, {});
+        if (hasResultNameClash(combined, filter_node))
+            return;
 
         /// Keep the conjunction flat. `MergeTreeSplitPrewhereIntoReadSteps` splits on the direct
         /// children of the root `and`, so nesting `and(and(a, b), __topKFilter)` would present two
@@ -310,7 +332,7 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         /// The order of the conjuncts is the order of the read steps, and the threshold filter is
         /// the cheapest condition here: it reads only the sort column.
         ActionsDAG::NodeRawConstPtrs conditions;
-        conditions.push_back(merged_filter_node);
+        conditions.push_back(filter_node);
         const bool existing_is_conjunction = existing_filter_node->type == ActionsDAG::ActionType::FUNCTION
             && existing_filter_node->function_base && existing_filter_node->function_base->getName() == "and";
         if (existing_is_conjunction)
@@ -322,16 +344,18 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         const auto * and_node = &combined.addFunction(func_builder_and, std::move(conditions), {});
 
+        if (hasResultNameClash(combined, and_node))
+            return;
+
         auto & outputs = combined.getOutputs();
-        /// The merged DAG contributes the sort column as an input; it has to stay in the outputs,
-        /// otherwise the PREWHERE step drops it from the header and the sort loses its key.
-        for (const auto * merged : merged_outputs)
-            if (std::ranges::find(outputs, merged) == outputs.end())
-                outputs.push_back(merged);
+        /// The sort column has to stay in the outputs, otherwise the PREWHERE step drops it from the
+        /// header and the sort loses its key.
+        if (std::ranges::find(outputs, sort_column_node) == outputs.end())
+            outputs.push_back(sort_column_node);
 
         if (existing_prewhere_info->remove_prewhere_column)
             std::erase(outputs, existing_filter_node);
-        std::erase(outputs, merged_filter_node);
+        std::erase(outputs, filter_node);
         outputs.push_back(and_node);
 
         prewhere_info->prewhere_actions = std::move(combined);
@@ -339,8 +363,12 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
     else
     {
+        NameAndTypePair sort_column_name_and_type(top_k_filter_info.column_name, top_k_filter_info.data_type);
+        ActionsDAG filter_dag({sort_column_name_and_type});
+        const auto * filter_node = &filter_dag.addFunction(filter_function, {filter_dag.getInputs().front()}, {});
+        filter_dag.getOutputs().push_back(filter_node);
+        prewhere_info->prewhere_column_name = filter_node->result_name;
         prewhere_info->prewhere_actions = std::move(filter_dag);
-        prewhere_info->prewhere_column_name = filter_column_name;
     }
     prewhere_info->remove_prewhere_column = true;
     prewhere_info->need_filter = !existing_prewhere_info || existing_prewhere_info->need_filter;

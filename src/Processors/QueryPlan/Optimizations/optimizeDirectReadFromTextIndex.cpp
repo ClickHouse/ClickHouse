@@ -1200,8 +1200,8 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
     }
 
-    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
-    /// header-converting step of `tryOptimizeTopK`. Merge it into the filter above so direct read stays possible.
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter. Merge it into the filter above so direct read stays possible.
     auto walk_begin = stack.rbegin() + 1;
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {
