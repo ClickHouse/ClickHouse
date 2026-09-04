@@ -21,6 +21,7 @@
 
 #include <fmt/format.h>
 
+#include <concepts>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -60,8 +61,62 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+/// A codec: a member type that has its own serialization, shared by several steps or owned by one.
+/// A specialization gives the type a name, a writer and a reader; the framework then treats the type
+/// like any other member. The shared codecs are specialized below; a step specializes the trait for
+/// its own types in its own source file, before its manifest.
+template <typename T>
+struct WireCodec;
+
+template <typename T>
+concept HasWireCodec = requires (const T & value, T & target, IQueryPlanStep::Serialization & out, IQueryPlanStep::Deserialization & in)
+{
+    { WireCodec<T>::name } -> std::convertible_to<const char *>;
+    WireCodec<T>::write(value, out);
+    WireCodec<T>::read(target, in);
+};
+
+template <>
+struct WireCodec<SortDescription>
+{
+    static constexpr const char * name = "SortDescription";
+    static void write(const SortDescription & value, IQueryPlanStep::Serialization & ctx) { serializeSortDescription(value, ctx.out); }
+    static void read(SortDescription & value, IQueryPlanStep::Deserialization & ctx) { deserializeSortDescription(value, ctx.in); }
+};
+
+template <>
+struct WireCodec<ActionsDAG>
+{
+    static constexpr const char * name = "ActionsDAG";
+    static void write(const ActionsDAG & value, IQueryPlanStep::Serialization & ctx) { value.serialize(ctx.out, ctx.registry); }
+    static void read(ActionsDAG & value, IQueryPlanStep::Deserialization & ctx)
+    {
+        value = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    }
+};
+
+template <>
+struct WireCodec<AggregateDescriptions>
+{
+    static constexpr const char * name = "AggregateDescriptions";
+    static void write(const AggregateDescriptions & value, IQueryPlanStep::Serialization & ctx) { serializeAggregateDescriptions(value, ctx.out); }
+    static void read(AggregateDescriptions & value, IQueryPlanStep::Deserialization & ctx)
+    {
+        deserializeAggregateDescriptions(value, ctx.in, ctx.max_type_complexity);
+    }
+};
+
+template <>
+struct WireCodec<TableExpressionModifiers::Rational>
+{
+    static constexpr const char * name = "Rational";
+    static void write(const TableExpressionModifiers::Rational & value, IQueryPlanStep::Serialization & ctx) { serializeRational(value, ctx.out); }
+    static void read(TableExpressionModifiers::Rational & value, IQueryPlanStep::Deserialization & ctx) { value = deserializeRational(ctx.in); }
+};
 
 /// Which digest an entry belongs to, the classification of PR 116196: a `Logical` entry decides
 /// which rows the step computes, a `Physical` entry only how. Both are in the full digest; only
@@ -346,11 +401,6 @@ inline constexpr bool is_pair = false;
 template <typename A, typename B>
 inline constexpr bool is_pair<std::pair<A, B>> = true;
 
-template <typename T>
-inline constexpr bool is_codec
-    = std::is_same_v<T, SortDescription> || std::is_same_v<T, ActionsDAG> || std::is_same_v<T, AggregateDescriptions>
-    || std::is_same_v<T, TableExpressionModifiers::Rational>;
-
 [[noreturn]] void throwCannotParse(const char * what);
 
 /// A length or count that is about to be allocated must fit into the bytes that remain. Framed
@@ -372,16 +422,10 @@ template <typename T>
 void write(const T & value, IQueryPlanStep::Serialization & ctx)
 {
     auto & out = ctx.out;
-    if constexpr (std::is_same_v<T, bool>)
+    if constexpr (HasWireCodec<T>)
+        WireCodec<T>::write(value, ctx);
+    else if constexpr (std::is_same_v<T, bool>)
         writeBinary(UInt8(value ? 1 : 0), out);
-    else if constexpr (std::is_same_v<T, SortDescription>)
-        serializeSortDescription(value, out);
-    else if constexpr (std::is_same_v<T, ActionsDAG>)
-        value.serialize(out, ctx.registry);
-    else if constexpr (std::is_same_v<T, AggregateDescriptions>)
-        serializeAggregateDescriptions(value, out);
-    else if constexpr (std::is_same_v<T, TableExpressionModifiers::Rational>)
-        serializeRational(value, out);
     else if constexpr (std::is_unsigned_v<T> && std::is_integral_v<T>)
         writeVarUInt(UInt64(value), out);
     else if constexpr (std::is_enum_v<T>)
@@ -422,7 +466,9 @@ template <typename T>
 void read(T & value, IQueryPlanStep::Deserialization & ctx)
 {
     auto & in = ctx.in;
-    if constexpr (std::is_same_v<T, bool>)
+    if constexpr (HasWireCodec<T>)
+        WireCodec<T>::read(value, ctx);
+    else if constexpr (std::is_same_v<T, bool>)
     {
         UInt8 byte = 0;
         readBinary(byte, in);
@@ -430,14 +476,6 @@ void read(T & value, IQueryPlanStep::Deserialization & ctx)
             WireDetail::throwCannotParse("a bool must be 0 or 1");
         value = byte == 1;
     }
-    else if constexpr (std::is_same_v<T, SortDescription>)
-        deserializeSortDescription(value, in);
-    else if constexpr (std::is_same_v<T, ActionsDAG>)
-        value = ActionsDAG::deserialize(in, ctx.registry, ctx.context, ctx.max_type_complexity);
-    else if constexpr (std::is_same_v<T, AggregateDescriptions>)
-        deserializeAggregateDescriptions(value, in, ctx.max_type_complexity);
-    else if constexpr (std::is_same_v<T, TableExpressionModifiers::Rational>)
-        value = deserializeRational(in);
     else if constexpr (std::is_unsigned_v<T> && std::is_integral_v<T>)
     {
         UInt64 wide = 0;
@@ -500,16 +538,10 @@ void read(T & value, IQueryPlanStep::Deserialization & ctx)
 template <typename T>
 String typeName()
 {
-    if constexpr (std::is_same_v<T, bool>)
+    if constexpr (HasWireCodec<T>)
+        return WireCodec<T>::name;
+    else if constexpr (std::is_same_v<T, bool>)
         return "bool";
-    else if constexpr (std::is_same_v<T, SortDescription>)
-        return "SortDescription";
-    else if constexpr (std::is_same_v<T, ActionsDAG>)
-        return "ActionsDAG";
-    else if constexpr (std::is_same_v<T, AggregateDescriptions>)
-        return "AggregateDescriptions";
-    else if constexpr (std::is_same_v<T, TableExpressionModifiers::Rational>)
-        return "Rational";
     else if constexpr (std::is_unsigned_v<T> && std::is_integral_v<T>)
         return "UInt" + std::to_string(sizeof(T) * 8);
     else if constexpr (std::is_enum_v<T>)
@@ -595,6 +627,17 @@ void writeManifestPayload(const Manifest & manifest, const typename Manifest::Wi
     ctx.step_format_version = written;
 }
 
+/// Fills the setting members of the wire struct from a settings object.
+template <typename Manifest>
+void readManifestSettings(const Manifest & manifest, typename Manifest::Wire & wire, const QueryPlanSerializationSettings & settings)
+{
+    WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
+    {
+        using Value = typename std::remove_cvref_t<decltype(entry)>::Value;
+        wire.*entry.member = static_cast<Value>(settings[*entry.setting]);
+    });
+}
+
 /// Reads the payload into a default-constructed wire struct: the settings first, from the node's
 /// settings entries, then the formats up to the one the outline names. A format above the ones
 /// this binary knows is left to the frame, which skips it by the payload size.
@@ -603,12 +646,7 @@ typename Manifest::Wire readManifestPayload(const Manifest & manifest, IQueryPla
 {
     using Wire = typename Manifest::Wire;
     Wire wire{};
-
-    WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
-    {
-        using Value = typename std::remove_cvref_t<decltype(entry)>::Value;
-        wire.*entry.member = static_cast<Value>(ctx.settings[*entry.setting]);
-    });
+    readManifestSettings(manifest, wire, ctx.settings);
 
     [&]<size_t... I>(std::index_sequence<I...>)
     {
@@ -740,6 +778,25 @@ constexpr bool manifestCoversWire(const Manifest & manifest)
     return WireDetail::allDistinct<0>(bindings);
 }
 
+/// The initializer of a setting member is what a default-constructed wire struct means, and what a
+/// reader gets for an absent entry is the registered default: the two must agree, or the baseline
+/// would pin one meaning and the reader apply another.
+template <typename Manifest>
+void checkSettingInitializers(const Manifest & manifest)
+{
+    using Wire = typename Manifest::Wire;
+    static const QueryPlanSerializationSettings defaults;
+    const Wire initializers{};
+    WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
+    {
+        using Value = typename std::remove_cvref_t<decltype(entry)>::Value;
+        if (initializers.*entry.member != static_cast<Value>(defaults[*entry.setting]))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The wire struct of step '{}' initializes the member of setting '{}' to a value other than the setting's default",
+                manifest.name, QueryPlanSerializationSettings::settingName(*entry.setting));
+    });
+}
+
 /// Registers a step by its manifest: the registry entry is derived and the description of the
 /// declaration goes with it. Fails to compile unless the manifest binds every member of the wire
 /// struct exactly once.
@@ -747,6 +804,7 @@ template <const auto & manifest>
 void registerManifest(QueryPlanStepRegistry & registry, QueryPlanStepRegistry::StepCreateFunction create)
 {
     static_assert(manifestCoversWire(manifest), "the manifest must bind every member of its wire struct exactly once");
+    checkSettingInitializers(manifest);
     registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest), describeManifest(manifest));
 }
 

@@ -322,7 +322,86 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+/// The two encodings that only this step uses, as codecs of its wire struct.
+template <>
+struct WireCodec<WindowFrame>
+{
+    static constexpr const char * name = "WindowFrame";
+    static void write(const WindowFrame & frame, IQueryPlanStep::Serialization & ctx) { serializeWindowFrame(frame, ctx.out); }
+    static void read(WindowFrame & frame, IQueryPlanStep::Deserialization & ctx) { frame = deserializeWindowFrame(ctx.in); }
+};
+
+template <>
+struct WireCodec<std::vector<WindowFunctionDescription>>
+{
+    static constexpr const char * name = "WindowFunctions";
+    static void write(const std::vector<WindowFunctionDescription> & functions, IQueryPlanStep::Serialization & ctx)
+    {
+        serializeWindowFunctions(functions, ctx.out);
+    }
+    static void read(std::vector<WindowFunctionDescription> & functions, IQueryPlanStep::Deserialization & ctx)
+    {
+        functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
+    }
+};
+
+namespace
+{
+
+constexpr auto WINDOW_MANIFEST = StepManifest<WindowStep, WindowWire>("Window")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
+    .baseFormat(
+        field("window_name", WireFieldClass::Logical, &WindowWire::window_name),
+        field("partition_by", WireFieldClass::Logical, &WindowWire::partition_by),
+        field("order_by", WireFieldClass::Logical, &WindowWire::order_by),
+        field("frame", WireFieldClass::Logical, &WindowWire::frame),
+        field("window_functions", WireFieldClass::Logical, &WindowWire::window_functions),
+        field("streams_fan_out", WireFieldClass::Physical, &WindowWire::streams_fan_out));
+
+}
+
+WindowWire WindowStep::toWire() const
+{
+    return WindowWire{
+        window_description.window_name, window_description.partition_by, window_description.order_by,
+        window_description.frame, window_functions, streams_fan_out};
+}
+
+QueryPlanStepPtr WindowStep::fromWire(WindowWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep must have one input stream");
+
+    WindowDescription window_description;
+    window_description.window_name = std::move(wire.window_name);
+    window_description.partition_by = std::move(wire.partition_by);
+    window_description.order_by = std::move(wire.order_by);
+    window_description.frame = wire.frame;
+    window_description.full_sort_description = window_description.partition_by;
+    window_description.full_sort_description.insert(
+        window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
+    window_description.window_functions = std::move(wire.window_functions);
+
+    return std::make_unique<WindowStep>(
+        ctx.input_headers.front(), window_description, window_description.window_functions, wire.streams_fan_out);
+}
+
 void WindowStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(WINDOW_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(WINDOW_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void WindowStep::serializeLegacy(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
     /// version 4; an older worker does not know the "Window" step name at all and would throw
@@ -348,7 +427,7 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeWindowFunctions(window_functions, ctx.out);
 }
 
-QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr WindowStep::deserializeLegacy(Deserialization & ctx)
 {
     /// Mirrors the guard in `serialize`: a "Window" step never legitimately arrives from a stream
     /// written below this version, since a peer that old cannot have written one (see `serialize`).
@@ -387,16 +466,6 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         window_description,
         window_description.window_functions,
         streams_fan_out);
-}
-
-namespace
-{
-
-/// The payload of `WindowStep` stays hand-written; the manifest declares the name only.
-constexpr auto WINDOW_MANIFEST = StepManifest<WindowStep, NoWire>("Window")
-    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
-    .customSerialization();
-
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);
