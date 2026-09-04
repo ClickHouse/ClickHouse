@@ -14,7 +14,7 @@
 # is the point at which the executor provably holds it; the node is then removed, and its absence
 # is re-checked. Both checks fail loudly, so a pass cannot mean the race was never set up.
 #
-# The `ALTER` under test is EXPECTED to end in Code 341 UNFINISHED on every build (the
+# The `ALTER` under test is EXPECTED to end in `Code 341 UNFINISHED` on every build (the
 # `alter_sync = 2` wait for the detached replica genuinely times out), so its own status can never
 # be the assertion.
 
@@ -60,7 +60,7 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
 table_zk=$(${CLICKHOUSE_CLIENT} -q "SELECT zookeeper_path FROM system.replicas WHERE database = '${RDB}' AND table = 't'")
 
 # Register a second replica of the same table and detach it, so it never processes the log entry.
-# `alter_sync = 2` then waits for it and finally fails with Code 341 UNFINISHED. `DETACH` must be
+# `alter_sync = 2` then waits for it and finally fails with `Code 341 UNFINISHED`. `DETACH` must be
 # `SYNC`: a later `ATTACH` is not performed here, but `SYNC` keeps the shutdown deterministic.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE DATABASE ${AUX}"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
