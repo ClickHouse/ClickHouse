@@ -474,6 +474,10 @@ public:
 
     bool hasTemporaryData() const;
 
+    /// Peak memory of the aggregation state across all threads. Unavailable when the states
+    /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
+    std::optional<UInt64> getPeakMemoryUsage() const;
+
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.

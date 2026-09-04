@@ -2517,6 +2517,13 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
 }
 
+std::optional<UInt64> Aggregator::getPeakMemoryUsage() const
+{
+    if (!memory_tracker)
+        return std::nullopt;
+    return std::max<Int64>(memory_tracker->getPeak(), 0);
+}
+
 size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
 {
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;

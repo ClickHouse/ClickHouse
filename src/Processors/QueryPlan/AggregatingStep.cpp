@@ -2,6 +2,7 @@
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
+#include <unordered_set>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -33,6 +34,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
@@ -244,6 +246,32 @@ String AggregatingStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingStep group {}", group);
 }
 
+StepAnalysisReport AggregatingStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// The transforms of one aggregation share an aggregator; grouping sets have one per set.
+    std::unordered_set<const Aggregator *> aggregators;
+    UInt64 peak_memory = 0;
+    bool tracked = false;
+    for (const auto * processor : step_processors)
+    {
+        const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
+        if (!aggregating_transform || !aggregators.insert(&aggregating_transform->getAggregator()).second)
+            continue;
+
+        if (auto peak = aggregating_transform->getAggregator().getPeakMemoryUsage())
+        {
+            peak_memory += *peak;
+            tracked = true;
+        }
+    }
+
+    if (!tracked)
+        return {};
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::Memory, peak_memory);
+    return {{MetricGroupKey::HashTable, std::move(hash_table_metrics)}};
+}
 
 const SortDescription & AggregatingStep::getSortDescription() const
 {

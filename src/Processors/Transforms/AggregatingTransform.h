@@ -139,6 +139,8 @@ public:
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
     void onCancel() noexcept override;
 
+    const Aggregator & getAggregator() const { return params->aggregator; }
+
     ISpillable * getSpillable() override { return this; }
     ProcessorMemoryStats getMemoryStats() const override;
     size_t spill(size_t at_least_bytes) override;
