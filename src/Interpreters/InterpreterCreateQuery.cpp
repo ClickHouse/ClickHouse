@@ -789,7 +789,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context, bool validate)
+    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
@@ -801,12 +801,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
             constraints_data.push_back(constraint->clone());
         }
 
-    ConstraintsDescription result{constraints_data};
-
-    if (validate)
-        result.checkExpressionsPreserveRowCount();
-
-    return result;
+    return ConstraintsDescription{constraints_data};
 }
 
 
@@ -873,8 +868,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(
-            create.columns_list->constraints, properties.columns, getContext(), /*validate=*/ mode <= LoadingStrictnessLevel::CREATE);
+        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
     else if (!create.as_table.empty())
     {
@@ -1109,6 +1103,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
+
+    /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
+    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
+    /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
+    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// still attaches.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        properties.constraints.checkExpressionsPreserveRowCount();
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1982,8 +1985,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
         /// reload, accepting and rejecting the same row on the two sides of a restart.
         if (create.columns_list)
-            properties.constraints = getConstraintsDescription(
-                create.columns_list->constraints, properties.columns, getContext(), /*validate=*/ mode <= LoadingStrictnessLevel::CREATE);
+            properties.constraints
+                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
 
     DatabasePtr database;

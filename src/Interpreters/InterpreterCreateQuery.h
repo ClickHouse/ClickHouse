@@ -82,11 +82,7 @@ public:
     /// (ordinary views and external-target materialized views).
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
-    getConstraintsDescription(
-        const ASTExpressionList * constraints,
-        const ColumnsDescription & columns,
-        ContextPtr local_context,
-        bool validate = false);
+    getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
