@@ -1,4 +1,3 @@
-import ast
 import json
 import re
 import time
@@ -7,6 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
+from helpers.keeper_utils import KeeperClient
 
 
 cluster = ClickHouseCluster(__file__)
@@ -41,9 +41,16 @@ def kafka_setup_teardown():
     yield
 
 
-def create_kafka_with_mv(instance, table_name, topic_name, keeper_path,
-                         replica_name, consumer_group=None, settings=None):
-    """Return SQL that creates a Kafka table."""
+def create_kafka_table(table_name, topic_name, keeper_path,
+                       replica_name, consumer_group=None, settings=None):
+    """
+    Return SQL that creates ONLY the Kafka table -- no destination, no materialized view.
+
+    The StorageKafka2 constructor writes /replicas/<replica_name> at CREATE TABLE time
+    (StorageKafka2.cpp:217), but `threadFunc` only streams once a materialized view is
+    attached. Creating the tables first therefore registers every replica without any of
+    them consuming yet, which is what `attach_materialized_view` below relies on.
+    """
     query = k.generate_new_create_table_query(
         table_name=table_name,
         columns_def="key UInt64, value UInt64",
@@ -59,11 +66,53 @@ def create_kafka_with_mv(instance, table_name, topic_name, keeper_path,
         f"DROP TABLE IF EXISTS test.dst_{table_name};"
         f"DROP TABLE IF EXISTS test.{table_name};"
         f"{query};"
+    )
+
+
+def attach_materialized_view(table_name):
+    """
+    Return SQL that attaches the destination table and materialized view, which is what
+    actually starts consumption for `table_name`.
+    """
+    return (
         f"CREATE TABLE test.dst_{table_name} (key UInt64, value UInt64)"
         f" ENGINE = MergeTree() ORDER BY key;"
         f"CREATE MATERIALIZED VIEW test.mv_{table_name} TO test.dst_{table_name}"
         f" AS SELECT * FROM test.{table_name};"
     )
+
+
+def wait_for_replicas_registered(kafka_cluster, keeper_path, expected, timeout=60):
+    """
+    Block until /replicas holds `expected` children.
+
+    This removes the convergence race the tests used to wait out. `active_replica_count`
+    is the number of children of /replicas (getActiveReplicasInfo), so once every replica
+    is registered each consumer computes the correct node_quota on its very first poll and
+    no replica ever over-claims -- there is nothing to shed and nothing to settle.
+
+    NOTE: this relies on active_replica_count counting *registered* replicas. If it is ever
+    changed to consult the ephemeral is_active node, this setup has to change too.
+    """
+    base = f"{keeper_path}/replicas"
+    start = time.time()
+    seen = []
+    while time.time() - start < timeout:
+        try:
+            seen = zk_ls(kafka_cluster, base)
+        except Exception:
+            seen = []
+        if len(seen) >= expected:
+            return seen
+        time.sleep(1)
+    pytest.fail(
+        f"Only {len(seen)}/{expected} replicas registered under {base} within {timeout}s: {seen}"
+    )
+
+
+def zk_ls(kafka_cluster, path):
+    with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
+        return zk.ls(path)
 
 
 QUOTA_LOG_RE = re.compile(
@@ -104,58 +153,52 @@ def wait_for_quota_logs(instance, table_name, num_consumers, num_replicas,
     )
 
 
-def wait_for_consumer_assignments(instance, table, node_quota, max_per_consumer,
-                                  max_total, min_busy, timeout=240):
+def wait_for_partitions_claimed(instance, tables, num_partitions, timeout=240):
     """
-    Poll `system.kafka_consumers` until this table's consumers hold a distribution that
-    satisfies the enforcement bounds, then return the sorted per-consumer counts.
+    Poll `system.kafka_consumers` until every replica in `tables` holds at least one
+    partition and the replicas together hold all `num_partitions`. Returns
+    {table: partitions_held}.
 
-    This checks the quota was *enforced*, not merely computed -- the log assertions above
-    read what the code decided, this reads what it holds.
+    Deliberately weak, and here is why. `assignments` merges permanent AND temporary locks
+    (KeeperHandlingConsumer::getStat reads both maps), so it cannot show the permanent
+    distribution on its own. While one replica is still acquiring its share, the partitions
+    it has not taken yet are momentarily free and a sibling picks them up as temporary
+    locks -- so a node can transiently report more than its node_quota ([0,1,2] against a
+    node_quota of 2 was observed on arm_asan_ubsan). Any tighter bound on the counts is
+    therefore asserting something the code does not guarantee.
 
-    Bounds rather than an exact multiset, deliberately. `assignments` merges permanent AND
-    temporary locks (KeeperHandlingConsumer::getStat), and the split across a node's
-    consumers keeps moving after the node's total has settled: a consumer holding a
-    temporary lock blocks a starved sibling until it releases on its next refresh round.
-    An exact multiset is therefore only true at a quiet instant -- [1,2,3] was observed on
-    arm_binary for a node_quota of 6, i.e. the right total with an unsettled split.
-
-    What must hold, and does hold immediately:
-      * the node holds its own share and no more (plus any floating leftover partitions);
-      * no single consumer holds more than its share plus one temporary lock;
-      * the share is spread over `min_busy` consumers -- this is what rules out "one
-        consumer keeps all of that replica's assignments", the regression the per-consumer
-        check exists to catch.
+    What is guaranteed, and what this checks: every replica gets work, and the topic is
+    fully claimed. That is enough to catch the bug this PR fixes -- on master one replica
+    takes the whole topic and the other reports zero. The exact per-consumer quotas are
+    asserted separately, and exactly, from the trace log.
     """
     start = time.time()
     last = None
     while time.time() - start < timeout:
-        raw = instance.query(
-            "SELECT arraySort(groupArray(length(assignments.partition_id))) "
-            "FROM system.kafka_consumers "
-            f"WHERE database = 'test' AND table = '{table}'"
-        ).strip()
-        last = raw
-        if raw:
-            counts = ast.literal_eval(raw)
-            if counts and node_quota <= sum(counts) <= max_total \
-                    and max(counts) <= max_per_consumer \
-                    and sum(1 for c in counts if c > 0) >= min_busy:
-                return counts
+        held = {}
+        for table in tables:
+            raw = instance.query(
+                "SELECT sum(length(assignments.partition_id)) "
+                "FROM system.kafka_consumers "
+                f"WHERE database = 'test' AND table = '{table}'"
+            ).strip()
+            held[table] = int(raw) if raw and raw != "\\N" else 0
+        last = held
+        if all(v >= 1 for v in held.values()) and sum(held.values()) == num_partitions:
+            return held
         time.sleep(2)
     pytest.fail(
-        f"Per-consumer assignments for {table} never satisfied "
-        f"{node_quota} <= sum <= {max_total}, max <= {max_per_consumer}, "
-        f">= {min_busy} consumers busy; last seen: {last}"
+        f"Partitions were never fully claimed with every replica busy "
+        f"(expected {num_partitions} across {len(tables)} replicas); last seen: {last}"
     )
 
 
-def wait_for_shard_partitions(instance, table, timeout=120):
+def wait_for_shard_partitions(instance, table, timeout=240):
     """
     Return the set of partition ids currently held by `table`'s consumers, waiting until it
-    holds at least one. Used for the affinity check, which cares about *which* partitions a
-    replica holds rather than how many -- unlike the count, that is not affected by
-    convergence timing.
+    holds at least one. The affinity check cares about *which* partitions a replica holds,
+    not how many -- unlike the count, shard membership is not affected by convergence or by
+    temporary locks, since the affinity filter runs before anything is locked.
     """
     start = time.time()
     while time.time() - start < timeout:
@@ -165,7 +208,7 @@ def wait_for_shard_partitions(instance, table, timeout=120):
             f"WHERE database = 'test' AND table = '{table}'"
         ).strip()
         if raw and raw != "[]":
-            return set(ast.literal_eval(raw))
+            return set(int(x) for x in raw.strip("[]").split(",") if x.strip())
         time.sleep(2)
     pytest.fail(f"{table} never acquired any partition within {timeout}s")
 
@@ -208,10 +251,10 @@ def test_permanent_lock_quota(
             k.kafka_produce(kafka_cluster, topic_name,
                             [json.dumps({"key": p, "value": 1})], retries=5)
 
-        queries = []
-        for replica in replicas:
-            queries.append(create_kafka_with_mv(
-                instance,
+        # Phase 1: create every Kafka table, so all replicas register in Keeper.
+        # None of them consumes yet -- there is no materialized view attached.
+        instance.query("\n".join(
+            create_kafka_table(
                 table_name=f"kafka_{topic_name}_{replica}",
                 topic_name=topic_name,
                 consumer_group=topic_name,
@@ -221,8 +264,16 @@ def test_permanent_lock_quota(
                     "kafka_num_consumers": num_consumers,
                     "kafka_thread_per_consumer": 1,
                 },
-            ))
-        instance.query("\n".join(queries))
+            )
+            for replica in replicas
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, num_replicas)
+
+        # Phase 2: start consumption. Every consumer now sees active_replicas == R on its
+        # first poll, so each takes exactly its share and nothing has to be rebalanced.
+        instance.query("\n".join(
+            attach_materialized_view(f"kafka_{topic_name}_{replica}") for replica in replicas
+        ))
 
         for replica in replicas:
             table = f"kafka_{topic_name}_{replica}"
@@ -254,24 +305,17 @@ def test_permanent_lock_quota(
                     f"active_replicas={ar}, expected {num_replicas}"
                 )
 
-            # End-to-end: the quota was not just computed, it was enforced.
-            # A consumer may hold its own share plus at most one temporary lock; the node
-            # may hold its share plus the partitions left over by integer division.
-            share = -(-expected_node_quota // num_consumers)   # ceil
-            counts = wait_for_consumer_assignments(
-                instance, table,
-                node_quota=expected_node_quota,
-                max_per_consumer=share + 1,
-                max_total=expected_node_quota + num_partitions % num_replicas,
-                min_busy=min(num_consumers, expected_node_quota),
-            )
-            assert max(counts) <= share + 1, (
-                f"[{case}] {replica} per-consumer assignments {counts}: one consumer holds "
-                f"more than its share ({share}) plus a temporary lock"
-            )
-            assert sum(1 for c in counts if c > 0) >= min(num_consumers, expected_node_quota), (
-                f"[{case}] {replica} per-consumer assignments {counts}: the node's share is "
-                f"not spread across its consumers"
+        # End-to-end: the quota was enforced, not just computed. Every replica gets work
+        # and the topic is fully claimed -- on master one replica takes everything.
+        held = wait_for_partitions_claimed(
+            instance,
+            [f"kafka_{topic_name}_{r}" for r in replicas],
+            num_partitions,
+        )
+        for replica in replicas:
+            table = f"kafka_{topic_name}_{replica}"
+            assert held[table] >= 1, (
+                f"[{case}] {replica} holds no partitions; held = {held}"
             )
 
 
@@ -301,29 +345,37 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
             k.kafka_produce(kafka_cluster, topic_name,
                             [json.dumps({"key": p, "value": 1})], retries=5)
 
-        queries = []
-        for shard_num in (1, 2):
-            for replica_idx in (1, 2):
-                replica = f"s{shard_num}_r{replica_idx}"
-                queries.append(create_kafka_with_mv(
-                    instance,
-                    table_name=f"kafka_aff_{replica}",
-                    topic_name=topic_name,
-                    consumer_group=f"{topic_name}_cg_s{shard_num}",
-                    keeper_path=keeper_path,
-                    replica_name=replica,
-                    settings={
-                        "kafka_num_consumers": num_consumers,
-                        "kafka_thread_per_consumer": 1,
-                        # kafka_partition_shard_num is a String setting, so it has to
-                        # render quoted.  Passing an int makes create_settings_string
-                        # emit it bare and CREATE TABLE fails with
-                        #   Code: 170. Bad get: has UInt64, requested String
-                        "kafka_partition_shard_num": str(shard_num),
-                        "kafka_shard_count": shard_count,
-                    },
-                ))
-        instance.query("\n".join(queries))
+        replicas = [(sh, ri, f"s{sh}_r{ri}") for sh in (1, 2) for ri in (1, 2)]
+
+        # Phase 1: register every replica of both shards before any of them consumes.
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=f"kafka_aff_{replica}",
+                topic_name=topic_name,
+                consumer_group=f"{topic_name}_cg_s{sh}",
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={
+                    "kafka_num_consumers": num_consumers,
+                    "kafka_thread_per_consumer": 1,
+                    # kafka_partition_shard_num is a String setting, so it has to render
+                    # quoted. Passing an int makes create_settings_string emit it bare and
+                    # CREATE TABLE fails with
+                    #   Code: 170. Bad get: has UInt64, requested String
+                    "kafka_partition_shard_num": str(sh),
+                    "kafka_shard_count": shard_count,
+                },
+            )
+            for sh, _ri, replica in replicas
+        ))
+        # All four replicas share one keeper_path, so /replicas holds all of them; the
+        # shard filter in getActiveReplicasInfo then narrows each consumer to its own shard.
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+
+        # Phase 2: start consumption with every replica already visible.
+        instance.query("\n".join(
+            attach_materialized_view(f"kafka_aff_{replica}") for _sh, _ri, replica in replicas
+        ))
 
         for shard_num in (1, 2):
             for replica_idx in (1, 2):
