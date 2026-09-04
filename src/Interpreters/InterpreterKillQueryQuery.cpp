@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -366,6 +367,26 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
     rebuildLowCardinalityDictionaries(block);
 }
 
+/// The relation below carries the rows under the table's name alone, so that is the longest qualifier
+/// resolvable there, while a predicate may name a column with any qualifier the table itself accepts.
+static void unqualifyProcessesColumns(ASTPtr & ast)
+{
+    if (auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const auto & parts = identifier->name_parts;
+        if (parts.size() > 2 && parts[0] == "system" && parts[1] == "processes")
+        {
+            auto unqualified = make_intrusive<ASTIdentifier>(std::vector<String>(parts.begin() + 1, parts.end()));
+            unqualified->setAlias(identifier->tryGetAlias());
+            ast = std::move(unqualified);
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        unqualifyProcessesColumns(child);
+}
+
 /// Runs the caller's predicate over the materialized block, under the caller's own rights.
 static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPtr & where_expression, Block block)
 {
@@ -384,7 +405,12 @@ static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPt
     /// the caller's limits and filter settings to apply to.
     String select_query = "SELECT query_id, user, query FROM " + backQuoteIfNeed(table_name) + " AS processes";
     if (where_expression)
-        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
+    {
+        /// A copy: the statement's AST is shared and outlives this read.
+        auto predicate = where_expression->clone();
+        unqualifyProcessesColumns(predicate);
+        select_query += " WHERE " + predicate->formatWithSecretsOneLine();
+    }
 
     return runInternalSelect(select_query, std::move(query_context));
 }

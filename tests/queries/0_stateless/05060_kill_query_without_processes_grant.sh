@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: long
+# Tag long: every arm starts a query, waits for it to reach the process list and kills it
+# synchronously, which costs minutes at the flaky check's rerun count.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,10 +27,13 @@ VICTIMS=""
 # victims whose rows they match. Setup, cleanup and observation go over HTTP, which does not pay a
 # client process startup per statement. HTTP takes one statement per request, so a block is sent as one
 # argument per statement.
+# --fail-with-body, because a plain curl exits 0 on a server side exception and prints it as if it were
+# the result. The diagnostic is on stderr, which the runner fails on where a caller discards the output.
 via_http() {
     local stmt
     for stmt in "$@"; do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$stmt" || return 1
+        ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary "$stmt" \
+            || { echo "via_http failed: $stmt" >&2; return 1; }
     done
 }
 
@@ -332,6 +338,19 @@ echo -n "20 control killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own20$SUFFIX'
     AND lowCardinalityIndices(arrayJoin(Settings.keys)) >= 1 SYNC" 2>&1 | killed "own20$SUFFIX"
 gone "own20$SUFFIX"; echo "20 control alive=$(alive "own20$SUFFIX")"
+reset_arm
+
+# 21: a predicate qualified with the database resolves, so which spellings the statement accepts does
+# not depend on the caller's grant.
+start_victim "$U1" "own21a$SUFFIX"
+echo -n "21 grant_free killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE system.processes.query_id = 'own21a$SUFFIX' SYNC" 2>&1 | killed "own21a$SUFFIX"
+gone "own21a$SUFFIX"; echo "21 grant_free alive=$(alive "own21a$SUFFIX")"
+via_http "GRANT SELECT ON system.processes TO $U1"
+start_victim "$U1" "own21b$SUFFIX"
+echo -n "21 granted killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE system.processes.query_id = 'own21b$SUFFIX' SYNC" 2>&1 | killed "own21b$SUFFIX"
+gone "own21b$SUFFIX"; echo "21 granted alive=$(alive "own21b$SUFFIX")"
 reset_arm
 
 via_http "DROP USER $U1, $U2"

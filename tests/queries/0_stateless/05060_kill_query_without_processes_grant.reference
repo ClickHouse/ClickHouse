@@ -57,3 +57,7 @@
 20 shifted alive=1
 20 control killed=1
 20 control alive=0
+21 grant_free killed=1
+21 grant_free alive=0
+21 granted killed=1
+21 granted alive=0
