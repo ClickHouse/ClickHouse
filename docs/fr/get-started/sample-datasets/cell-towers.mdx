@@ -109,7 +109,7 @@ Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-Sh
     2. Importez le jeu de données depuis un bucket S3 public (686 Mo) :
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>

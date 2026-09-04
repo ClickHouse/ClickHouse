@@ -2,7 +2,7 @@
 
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
-#include <Common/Fiber.h>
+#include <Common/StackfulCoroutine.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -48,7 +48,7 @@ private:
 #if defined(OS_LINUX)
 
 /// Class for nonblocking establishing connection to the replica.
-/// It runs establishing connection process in fiber and sets special
+/// It runs establishing connection process in coroutine and sets special
 /// read callback which is called when reading from socket blocks.
 /// When read callback is called, socket and receive timeout are added in epoll
 /// and execution returns to the main program.

@@ -45,6 +45,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -2800,6 +2802,113 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementColumnsTransformers(StatementFactory & factory)
+{
+    factory.registerStatement("APPLY modifier",
+    {
+        .description = R"DOCS_MD(
+> Allows you to invoke some function for each row returned by an outer table expression of a query.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+## Example {#example}
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> APPLY(<func>) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
+    factory.registerStatement("EXCEPT modifier",
+    {
+        .description = R"DOCS_MD(
+> Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+## Examples {#examples}
+
+```sql title="Query"
+SELECT * EXCEPT (i) from columns_transformers;
+```
+
+```response title="Response"
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+    });
+
+    factory.registerStatement("REPLACE modifier",
+    {
+        .description = R"DOCS_MD(
+> Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
+
+Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches
+the alias is replaced by the expression in that `REPLACE`.
+
+This modifier does not change the names or order of columns. However, it can change the value and the value type.
+
+**Syntax:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Example:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+    });
 }
 
 }

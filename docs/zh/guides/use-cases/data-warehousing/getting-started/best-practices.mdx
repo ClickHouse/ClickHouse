@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 对于 AWS S3 和 GCS，请使用 S3 变体。Azure 和本地文件系统则有各自的专用变体 (`icebergAzure`、`icebergLocal`，以及其他格式中的对应变体) 。完整列表请参见[直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)。
 
-[Paimon](/zh/reference/functions/table-functions/paimon)仅提供表函数。
+[Paimon](/zh/reference/functions/table-functions/paimon)提供表函数和[实验性表引擎](/zh/reference/engines/table-engines/integrations/paimon)。
 
 <div id="table-engines">
   ### 表引擎
@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### 检查扫描量
 </div>
 
-在添加过滤器或调整设置前后，对比 [system.query&#95;log](/zh/reference/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 ProfileEvents 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 query&#95;log 和 EXPLAIN 的完整说明，请参阅 [查询优化](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)。
+在添加过滤器或调整设置前后，对比 [`system.query&#95;log`](/zh/reference/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 `ProfileEvents` 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 `query_log` 和 `EXPLAIN` 的完整说明，请参阅 [诊断慢查询](/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)。
 
 进行基准测试时，请禁用 [enable&#95;filesystem&#95;cache](/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache)，以免缓存命中掩盖不同运行之间的变化。
 

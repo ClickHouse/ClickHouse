@@ -2,20 +2,20 @@
 #include <base/defines.h>
 
 /// LockMemoryExceptionInThread
-thread_local constinit uint64_t LockMemoryExceptionInThread::counter = 0;
-thread_local constinit VariableContext LockMemoryExceptionInThread::level = VariableContext::Global;
-thread_local constinit bool LockMemoryExceptionInThread::block_fault_injections = false;
+constinit FiberLocal<uint64_t, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_COUNTER> LockMemoryExceptionInThread::counter;
+constinit FiberLocal<VariableContext, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_LEVEL> LockMemoryExceptionInThread::level;
+constinit FiberLocal<bool, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS> LockMemoryExceptionInThread::block_fault_injections;
 LockMemoryExceptionInThread::LockMemoryExceptionInThread(VariableContext level_, bool block_fault_injections_)
     : previous_level(level)
     , previous_block_fault_injections(block_fault_injections)
 {
-    ++counter;
+    counter = counter + 1;
     level = level_;
     block_fault_injections = block_fault_injections_;
 }
 LockMemoryExceptionInThread::~LockMemoryExceptionInThread()
 {
-    --counter;
+    counter = counter - 1;
     level = previous_level;
     block_fault_injections = previous_block_fault_injections;
 }
