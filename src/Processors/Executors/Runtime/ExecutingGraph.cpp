@@ -16,7 +16,6 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include <ranges>
 
 namespace DB
 {
@@ -66,7 +65,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
+const ExecutingGraph::Node * ExecutingGraph::removeNode(ProcessorPtr processor)
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -79,15 +78,11 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
-    std::unordered_set<const void *> removed_edges;
-    removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
-    removed_edges.insert_range(node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
-
     processors_map.erase(node_it);
     processors->erase(node->processor_iter);
     nodes.erase(node->self_iter);
 
-    return {node, std::move(removed_edges)};
+    return node;
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
@@ -147,7 +142,7 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+void ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
 {
     std::unordered_set<const void *> removed_edge_ids;
 
@@ -180,8 +175,6 @@ std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node
         std::erase_if(node.post_updated_input_ports, is_stale);
         std::erase_if(node.post_updated_output_ports, is_stale);
     }
-
-    return removed_edge_ids;
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
@@ -274,50 +267,38 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
     if (cancel_reason_if_cancelled != IProcessor::CancelReason::NotCancelled && cancel_reason_if_cancelled != IProcessor::CancelReason::PartialResult)
         return UpdateNodeStatus::Cancelled;
 
+    /// Add itself back to be prepared again.
+    stack.push_front(&cur_node);
+
     return UpdateNodeStatus::Done;
 }
 
-ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
+void ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
 {
-    RemoveGroupResult result;
+    std::unordered_set<const Node *> removed_nodes;
 
     {
         std::lock_guard guard(processors_mutex);
 
         for (const auto & removed_proc : group.processors)
-        {
-            auto [removed_node, removed_edges] = removeNode(removed_proc);
-            result.removed_nodes.insert(removed_node);
-            result.removed_edges.insert_range(removed_edges);
-        }
+            removed_nodes.insert(removeNode(removed_proc));
     }
 
     for (const auto & removed_proc : group.processors)
         removed_processors.erase(removed_proc);
 
     for (auto & node : nodes)
-        result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
+        removeAffectedEdges(node, removed_nodes);
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
     delayed_destruction.splice(delayed_destruction.end(), group.processors);
-
-    return result;
 }
 
-ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
+void ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
 {
-    std::unique_lock lock(nodes_mutex);
-
-    RemoveGroupResult result;
     while (auto group = findGroupReadyForRemoval())
-    {
-        auto group_result = removePendingGroup(*group, delayed_destruction);
-        result.removed_nodes.insert_range(group_result.removed_nodes);
-        result.removed_edges.insert_range(group_result.removed_edges);
-    }
-
-    return result;
+        removePendingGroup(*group, delayed_destruction);
 }
 
 std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupReadyForRemoval()
@@ -367,6 +348,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
     Processors delayed_destruction;
     boost::container::devector<Edge *> updated_edges;
     boost::container::devector<Node *> updated_processors;
+    std::vector<Node *> pending_expansion;
     updated_processors.push_back(start_node);
 
     std::shared_lock read_lock(nodes_mutex);
@@ -500,6 +482,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                     case IProcessor::Status::UpdatePipeline:
                     {
                         need_update_pipeline = true;
+                        pending_expansion.push_back(current);
                         break;
                     }
                 }
@@ -532,52 +515,35 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                     node.post_updated_output_ports.clear();
                 }
             }
+        }
 
-            if (need_update_pipeline)
-            {
-                // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
-                read_lock.unlock();
-
-                UpdateNodeStatus update_status = [&]()
-                {
-                    std::unique_lock lock(nodes_mutex);
-                    return updatePipeline(updated_processors, node);
-                }();
-
-                if (update_status != UpdateNodeStatus::Done)
-                {
-                    /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
-                    removeReadyGroups(delayed_destruction);
-                    return update_status;
-                }
-
-                /// Add itself back to be prepared again.
-                updated_processors.push_front(current);
-
-                read_lock.lock();
-            }
-
+        if (updated_processors.empty() && updated_edges.empty())
+        {
             /// The peek under the shared lock is only a hint.
-            if (!removed_processors.empty() && findGroupReadyForRemoval())
+            const bool has_ready_removal = !removed_processors.empty() && findGroupReadyForRemoval();
+            if (pending_expansion.empty() && !has_ready_removal)
+                break;
+
+            // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
+            read_lock.unlock();
             {
-                read_lock.unlock();
+                std::unique_lock write_lock(nodes_mutex);
 
-                RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
-
-                if (!remove_result.removed_edges.empty())
+                for (auto * node : pending_expansion)
                 {
-                    auto removed_range = std::ranges::remove_if(updated_edges, [&](const void * edge) { return remove_result.removed_edges.contains(edge); });
-                    updated_edges.erase(removed_range.begin(), removed_range.end());
+                    UpdateNodeStatus update_status = updatePipeline(updated_processors, *node);
+                    if (update_status != UpdateNodeStatus::Done)
+                    {
+                        /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
+                        removeReadyGroups(delayed_destruction);
+                        return update_status;
+                    }
                 }
+                pending_expansion.clear();
 
-                if (!remove_result.removed_nodes.empty())
-                {
-                    auto removed_range = std::ranges::remove_if(updated_processors, [&](const Node * node_ptr) { return remove_result.removed_nodes.contains(node_ptr); });
-                    updated_processors.erase(removed_range.begin(), removed_range.end());
-                }
-
-                read_lock.lock();
+                removeReadyGroups(delayed_destruction);
             }
+            read_lock.lock();
         }
     }
 
