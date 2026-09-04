@@ -2,6 +2,7 @@
 
 #if USE_ARROW
 
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
@@ -46,6 +47,19 @@ namespace DB::ArrowIPC
 
 namespace
 {
+
+/// The writer splits an oversized chunk across batches, so normally only a single row too large on its own
+/// gets here; it is also the backstop for a shape the row limit does not cover, such as a `LowCardinality`
+/// dictionary exceeding one buffer.
+[[noreturn]] void throwValueDoesNotFitArrowBuffer(Int64 bytes)
+{
+    throw Exception(
+        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+        "Cannot write {} bytes of string data to Arrow IPC: `Utf8`/`Binary` offsets are 32-bit, so one record "
+        "batch cannot hold more than {} bytes",
+        bytes, MAX_ARROW_BUFFER_SIZE);
+}
+
 
 /// Pack one bit per input byte into `out` (size (num_rows + 7) / 8, zero-initialised by the caller):
 /// bit = 1 where the byte is non-zero, optionally inverted. Arrow validity uses invert = true (1 = not-null),
@@ -92,7 +106,7 @@ void RecordBatchEncoder::appendEmptyBuffer()
     buffers.emplace_back(static_cast<Int64>(body.size()), 0);
 }
 
-Int64 RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t num_rows)
+Int64 RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t begin, size_t end)
 {
     if (!null_map_column)
     {
@@ -101,22 +115,32 @@ Int64 RecordBatchEncoder::appendValidity(const IColumn * null_map_column, size_t
         return 0;
     }
 
+    const size_t num_rows = end - begin;
     const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
     PODArray<char> bitmap((num_rows + 7) / 8, 0);
-    packBytesToBits(null_map.data(), num_rows, bitmap.data(), /*invert=*/true); /// Arrow validity bit: 1 = valid.
+    packBytesToBits(null_map.data() + begin, num_rows, bitmap.data(), /*invert=*/true); /// Arrow validity bit: 1 = valid.
     appendBuffer(bitmap.data(), bitmap.size());
-    return countBytesInFilter(null_map.data(), 0, num_rows);
+    return countBytesInFilter(null_map.data(), begin, end);
 }
 
-void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows)
+void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size_t begin, size_t end)
 {
+    const size_t num_rows = end - begin;
+    const UInt64 base = ch_offsets[static_cast<ssize_t>(begin) - 1];
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (ch_offsets[i] > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC offset {} exceeds 32 bits", ch_offsets[i]);
-        arrow_offsets[i + 1] = static_cast<Int32>(ch_offsets[i]);
+        const UInt64 offset = ch_offsets[begin + i] - base;
+        /// The row limit bounds the element count of `Array`/`Map` exactly, so only a row too large on its
+        /// own gets here.
+        if (offset > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a row of {} elements to Arrow IPC: `List` offsets are 32-bit, so a single row "
+                "cannot hold more than {} elements",
+                offset, MAX_ARROW_BUFFER_SIZE);
+        arrow_offsets[i + 1] = static_cast<Int32>(offset);
     }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
 }
@@ -126,11 +150,11 @@ namespace
 
 /// Appends a fixed-width column's contiguous data straight into the body (a single copy, no temporary).
 template <typename Col>
-void appendFixedWidth(RecordBatchEncoder & self, const IColumn & column, size_t num_rows)
+void appendFixedWidth(RecordBatchEncoder & self, const IColumn & column, size_t begin, size_t end)
 {
     using V = typename Col::ValueType;
     const auto & data = assert_cast<const Col &>(column).getData();
-    self.appendBuffer(data.data(), num_rows * sizeof(V));
+    self.appendBuffer(data.data() + begin, (end - begin) * sizeof(V));
 }
 
 int arrowTimeUnitForScale(UInt32 scale)
@@ -167,49 +191,50 @@ Int64 timeUnitsPerDay(UInt32 scale)
 }
 
 void RecordBatchEncoder::encodeValues(
-    const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column)
+    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, const IColumn * null_map_column)
 {
     const WhichDataType which(type);
+    const size_t num_rows = end - begin;
 
     if (isBool(type))
     {
         /// Pack the 0/1 UInt8 column into an Arrow bit-packed boolean buffer.
         const auto & data = assert_cast<const ColumnUInt8 &>(column).getData();
         PODArray<char> bitmap((num_rows + 7) / 8, 0);
-        packBytesToBits(data.data(), num_rows, bitmap.data(), /*invert=*/false);
+        packBytesToBits(data.data() + begin, num_rows, bitmap.data(), /*invert=*/false);
         appendBuffer(bitmap.data(), bitmap.size());
         return;
     }
 
     switch (which.idx)
     {
-        case TypeIndex::UInt8: appendFixedWidth<ColumnUInt8>(*this, column, num_rows); return;
-        case TypeIndex::UInt16: appendFixedWidth<ColumnUInt16>(*this, column, num_rows); return;
-        case TypeIndex::UInt32: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
-        case TypeIndex::UInt64: appendFixedWidth<ColumnUInt64>(*this, column, num_rows); return;
-        case TypeIndex::Int8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
-        case TypeIndex::Enum8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
-        case TypeIndex::Int16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
-        case TypeIndex::Enum16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
-        case TypeIndex::Int32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
-        case TypeIndex::Int64: appendFixedWidth<ColumnInt64>(*this, column, num_rows); return;
-        case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, num_rows); return;
-        case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, num_rows); return;
-        case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
-        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
+        case TypeIndex::UInt8: appendFixedWidth<ColumnUInt8>(*this, column, begin, end); return;
+        case TypeIndex::UInt16: appendFixedWidth<ColumnUInt16>(*this, column, begin, end); return;
+        case TypeIndex::UInt32: appendFixedWidth<ColumnUInt32>(*this, column, begin, end); return;
+        case TypeIndex::UInt64: appendFixedWidth<ColumnUInt64>(*this, column, begin, end); return;
+        case TypeIndex::Int8: appendFixedWidth<ColumnInt8>(*this, column, begin, end); return;
+        case TypeIndex::Enum8: appendFixedWidth<ColumnInt8>(*this, column, begin, end); return;
+        case TypeIndex::Int16: appendFixedWidth<ColumnInt16>(*this, column, begin, end); return;
+        case TypeIndex::Enum16: appendFixedWidth<ColumnInt16>(*this, column, begin, end); return;
+        case TypeIndex::Int32: appendFixedWidth<ColumnInt32>(*this, column, begin, end); return;
+        case TypeIndex::Int64: appendFixedWidth<ColumnInt64>(*this, column, begin, end); return;
+        case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, begin, end); return;
+        case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, begin, end); return;
+        case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, begin, end); return;
+        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, begin, end); return;
         case TypeIndex::Date:
         {
             if (settings.arrow.output_date_as_uint16)
             {
                 /// Backwards-compatible mode: write Date as a plain uint16.
-                appendFixedWidth<ColumnUInt16>(*this, column, num_rows);
+                appendFixedWidth<ColumnUInt16>(*this, column, begin, end);
                 return;
             }
             /// Date is UInt16 days; widen to Int32 to match Arrow date32.
             const auto & data = assert_cast<const ColumnUInt16 &>(column).getData();
             PODArray<Int32> widened(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
-                widened[i] = static_cast<Int32>(data[i]);
+                widened[i] = static_cast<Int32>(data[begin + i]);
             appendBuffer(widened.data(), num_rows * sizeof(Int32));
             return;
         }
@@ -229,14 +254,14 @@ void RecordBatchEncoder::encodeValues(
                 /// A null row carries an arbitrary nested value that the validity bitmap already masks as
                 /// NULL; do not rescale it (matching the Apache Arrow writer), so junk in a NULL row cannot
                 /// raise DECIMAL_OVERFLOW for a value that is emitted as NULL anyway.
-                if (null_map && (*null_map)[i])
+                if (null_map && (*null_map)[begin + i])
                 {
                     values[i] = 0;
                     continue;
                 }
                 /// Widening to a coarser Arrow unit multiplies the value; guard against silent wraparound,
                 /// matching the Apache Arrow writer which raises `DECIMAL_OVERFLOW` for the same case.
-                if (common::mulOverflow(data[i].value, factor, values[i]))
+                if (common::mulOverflow(data[begin + i].value, factor, values[i]))
                     throw Exception(
                         ErrorCodes::DECIMAL_OVERFLOW, "Decimal value is too large to convert to the Arrow timestamp scale");
             }
@@ -254,12 +279,12 @@ void RecordBatchEncoder::encodeValues(
                 = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
             for (size_t i = 0; i < num_rows; ++i)
             {
-                if (null_map && (*null_map)[i])
+                if (null_map && (*null_map)[begin + i])
                     continue;
-                if (data[i] < 0 || data[i] >= 86400)
-                    throwArrowTimeOutOfRange(data[i], 86400);
+                if (data[begin + i] < 0 || data[begin + i] >= 86400)
+                    throwArrowTimeOutOfRange(data[begin + i], 86400);
             }
-            appendFixedWidth<ColumnInt32>(*this, column, num_rows);
+            appendFixedWidth<ColumnInt32>(*this, column, begin, end);
             return;
         }
         case TypeIndex::Time64:
@@ -287,12 +312,12 @@ void RecordBatchEncoder::encodeValues(
                 {
                     /// A null row's arbitrary value is masked by the validity bitmap; do not rescale or
                     /// range-check it (matching the library writer's `AppendNull`).
-                    if (null_map && (*null_map)[i])
+                    if (null_map && (*null_map)[begin + i])
                     {
                         values[i] = 0;
                         continue;
                     }
-                    Int64 value = data[i].value;
+                    Int64 value = data[begin + i].value;
                     if (value < 0 || value >= source_units_per_day)
                         throwArrowTimeOutOfRange(value, source_units_per_day);
                     if (common::mulOverflow(value, factor, value)
@@ -307,14 +332,14 @@ void RecordBatchEncoder::encodeValues(
                 PODArray<Int64> values(num_rows);
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    if (null_map && (*null_map)[i])
+                    if (null_map && (*null_map)[begin + i])
                     {
                         values[i] = 0;
                         continue;
                     }
-                    if (data[i].value < 0 || data[i].value >= source_units_per_day)
-                        throwArrowTimeOutOfRange(data[i].value, source_units_per_day);
-                    if (common::mulOverflow(data[i].value, factor, values[i]))
+                    if (data[begin + i].value < 0 || data[begin + i].value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(data[begin + i].value, source_units_per_day);
+                    if (common::mulOverflow(data[begin + i].value, factor, values[i]))
                         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }
                 appendBuffer(values.data(), num_rows * sizeof(Int64));
@@ -333,7 +358,7 @@ void RecordBatchEncoder::encodeValues(
                 const auto & data = col.getData();
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    const char * src = reinterpret_cast<const char *>(&data[i]);
+                    const char * src = reinterpret_cast<const char *>(&data[begin + i]);
                     char * dst = out.data() + i * arrow_width;
                     memcpy(dst, src, ch_width);
                     /// Sign-extend to the wider Arrow representation (little-endian two's complement).
@@ -358,22 +383,40 @@ void RecordBatchEncoder::encodeValues(
             const auto & offs = cs.getOffsets();
             const NullMap * null_map
                 = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+            /// ClickHouse ColumnString stores no trailing '\0', so the offsets rebased against the row
+            /// before the range already are the Arrow ones.
+            const UInt64 base = offs[static_cast<ssize_t>(begin) - 1];
+            const UInt64 total_bytes = offs[static_cast<ssize_t>(end) - 1] - base;
             PODArray<Int32> arrow_offsets(num_rows + 1);
-            PODArray<char> data;
             arrow_offsets[0] = 0;
+
+            if (!null_map)
+            {
+                /// The bytes of the whole range are contiguous, so no full-size temporary is needed.
+                if (total_bytes > MAX_ARROW_BUFFER_SIZE)
+                    throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total_bytes));
+                for (size_t i = 0; i < num_rows; ++i)
+                    arrow_offsets[i + 1] = static_cast<Int32>(offs[begin + i] - base);
+                appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+                appendBuffer(chars.data() + base, total_bytes);
+                return;
+            }
+
+            PODArray<char> data;
+            data.reserve(total_bytes); /// An upper bound: null rows contribute nothing.
             Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
                 /// A null row carries an arbitrary nested value that the validity bitmap already masks as
                 /// NULL; emit a zero-length slot for it (matching the Apache Arrow writer's `AppendNull`)
                 /// so the bytes of a logically-NULL row never reach the IPC body.
-                if (!(null_map && (*null_map)[i]))
+                if (!(*null_map)[begin + i])
                 {
-                    const size_t start = i == 0 ? 0 : offs[i - 1];
-                    const size_t len = offs[i] - start; /// ClickHouse ColumnString stores no trailing '\0'
+                    const size_t start = offs[static_cast<ssize_t>(begin + i) - 1];
+                    const size_t len = offs[begin + i] - start;
                     cur += static_cast<Int64>(len);
-                    if (cur > std::numeric_limits<Int32>::max())
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    if (static_cast<UInt64>(cur) > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(cur);
                     const size_t old = data.size();
                     data.resize(old + len);
                     if (len)
@@ -390,7 +433,7 @@ void RecordBatchEncoder::encodeValues(
             const auto & cfs = assert_cast<const ColumnFixedString &>(column);
             if (settings.arrow.output_fixed_string_as_fixed_byte_array)
             {
-                appendBuffer(cfs.getChars().data(), num_rows * cfs.getN());
+                appendBuffer(cfs.getChars().data() + begin * cfs.getN(), num_rows * cfs.getN());
                 return;
             }
             /// `output_fixed_string_as_fixed_byte_array = 0`: the schema advertises a variable-width
@@ -408,13 +451,13 @@ void RecordBatchEncoder::encodeValues(
                 /// nested buffer can be copied in one shot.
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    const UInt64 end = static_cast<UInt64>(i + 1) * n;
-                    if (end > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
-                    arrow_offsets[i + 1] = static_cast<Int32>(end);
+                    const UInt64 slot_end = static_cast<UInt64>(i + 1) * n;
+                    if (slot_end > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(static_cast<Int64>(slot_end));
+                    arrow_offsets[i + 1] = static_cast<Int32>(slot_end);
                 }
                 appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
-                appendBuffer(chars.data(), num_rows * n);
+                appendBuffer(chars.data() + begin * n, num_rows * n);
                 return;
             }
             /// A null row carries an arbitrary nested value that the validity bitmap already masks as NULL;
@@ -424,15 +467,15 @@ void RecordBatchEncoder::encodeValues(
             Int64 cur = 0;
             for (size_t i = 0; i < num_rows; ++i)
             {
-                if (!(*null_map)[i])
+                if (!(*null_map)[begin + i])
                 {
                     cur += static_cast<Int64>(n);
-                    if (cur > std::numeric_limits<Int32>::max())
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                    if (static_cast<UInt64>(cur) > MAX_ARROW_BUFFER_SIZE)
+                        throwValueDoesNotFitArrowBuffer(cur);
                     const size_t old = data.size();
                     data.resize(old + n);
                     if (n)
-                        memcpy(data.data() + old, &chars[i * n], n);
+                        memcpy(data.data() + old, &chars[(begin + i) * n], n);
                 }
                 arrow_offsets[i + 1] = static_cast<Int32>(cur);
             }
@@ -440,13 +483,13 @@ void RecordBatchEncoder::encodeValues(
             appendBuffer(data.data(), data.size());
             return;
         }
-        case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows); return;
-        case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, num_rows); return;
-        case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, num_rows); return;
-        case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, num_rows); return;
-        case TypeIndex::UInt256: appendFixedWidth<ColumnVector<UInt256>>(*this, column, num_rows); return;
-        case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, num_rows); return;
-        case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, num_rows); return;
+        case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, begin, end); return;
+        case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, begin, end); return;
+        case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, begin, end); return;
+        case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, begin, end); return;
+        case TypeIndex::UInt256: appendFixedWidth<ColumnVector<UInt256>>(*this, column, begin, end); return;
+        case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, begin, end); return;
+        case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, begin, end); return;
         case TypeIndex::UUID:
         {
             /// fixed_size_binary(16) with the two 64-bit halves byte-reversed, matching the library writer.
@@ -454,7 +497,7 @@ void RecordBatchEncoder::encodeValues(
             PODArray<char> out(num_rows * 16);
             for (size_t i = 0; i < num_rows; ++i)
             {
-                UUID value = data[i];
+                UUID value = data[begin + i];
                 auto * bytes = reinterpret_cast<uint8_t *>(&value);
                 std::reverse(bytes, bytes + 8);
                 std::reverse(bytes + 8, bytes + 16);
@@ -466,9 +509,11 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::Array:
         {
             const auto & ca = assert_cast<const ColumnArray &>(column);
-            appendOffsets(ca.getOffsets(), num_rows);
+            const auto & array_offsets = ca.getOffsets();
+            appendOffsets(array_offsets, begin, end);
             const DataTypePtr & element_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-            encodeField(ca.getData(), element_type, ca.getData().size());
+            encodeField(
+                ca.getData(), element_type, array_offsets[static_cast<ssize_t>(begin) - 1], array_offsets[end - 1]);
             return;
         }
         case TypeIndex::Tuple:
@@ -476,23 +521,25 @@ void RecordBatchEncoder::encodeValues(
             const auto & ct = assert_cast<const ColumnTuple &>(column);
             const auto & elem_types = assert_cast<const DataTypeTuple &>(*type).getElements();
             for (size_t i = 0; i < elem_types.size(); ++i)
-                encodeField(ct.getColumn(i), elem_types[i], num_rows);
+                encodeField(ct.getColumn(i), elem_types[i], begin, end);
             return;
         }
         case TypeIndex::Map:
         {
             const auto & cm = assert_cast<const ColumnMap &>(column);
             const auto & arr = cm.getNestedColumn(); /// ColumnArray(ColumnTuple(key, value))
-            appendOffsets(arr.getOffsets(), num_rows);
+            const auto & array_offsets = arr.getOffsets();
+            appendOffsets(array_offsets, begin, end);
 
             const auto & entries = assert_cast<const ColumnTuple &>(arr.getData());
-            const size_t entries_rows = entries.size();
+            const size_t entries_begin = array_offsets[static_cast<ssize_t>(begin) - 1];
+            const size_t entries_end = array_offsets[end - 1];
             /// The entries struct node (non-nullable), then its key and value children.
-            nodes.emplace_back(static_cast<Int64>(entries_rows), 0);
+            nodes.emplace_back(static_cast<Int64>(entries_end - entries_begin), 0);
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            encodeField(entries.getColumn(0), map_type.getKeyType(), entries_rows);
-            encodeField(entries.getColumn(1), map_type.getValueType(), entries_rows);
+            encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
+            encodeField(entries.getColumn(1), map_type.getValueType(), entries_begin, entries_end);
             return;
         }
         default:
@@ -501,7 +548,7 @@ void RecordBatchEncoder::encodeValues(
             /// Arrow `Binary` column (read back as `String`); otherwise reject it.
             if (settings.arrow.output_unsupported_types_as_binary)
             {
-                encodeAsBinary(column, num_rows, null_map_column);
+                encodeAsBinary(column, begin, end, null_map_column);
                 return;
             }
             throw Exception(
@@ -512,8 +559,9 @@ void RecordBatchEncoder::encodeValues(
     }
 }
 
-void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column)
+void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t begin, size_t end, const IColumn * null_map_column)
 {
+    const size_t num_rows = end - begin;
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
     PODArray<Int32> arrow_offsets(num_rows + 1);
@@ -524,12 +572,12 @@ void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows,
     {
         /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
         /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
-        if (!(null_map && (*null_map)[i]))
+        if (!(null_map && (*null_map)[begin + i]))
         {
-            const std::string_view value = column.getDataAt(i);
+            const std::string_view value = column.getDataAt(begin + i);
             total += value.size();
-            if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
+            if (total > MAX_ARROW_BUFFER_SIZE)
+                throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total));
             data.insert(data.end(), value.data(), value.data() + value.size());
         }
         arrow_offsets[i + 1] = static_cast<Int32>(total);
@@ -538,12 +586,14 @@ void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows,
     appendBuffer(data.data(), data.size());
 }
 
-void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows)
+void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
 {
+    /// Materializing only the range keeps a split batch from expanding the whole chunk. `cut` is cheap for
+    /// these representations: it slices indexes or resizes a constant, it does not copy values.
     if (isColumnConst(column))
     {
-        auto full = column.convertToFullColumnIfConst();
-        encodeField(*full, type, num_rows);
+        auto full = column.cut(begin, end - begin)->convertToFullColumnIfConst();
+        encodeField(*full, type, 0, end - begin);
         return;
     }
 
@@ -554,23 +604,23 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     /// library rather than a fix for an observed failure.
     if (column.isReplicated())
     {
-        auto full = column.convertToFullColumnIfReplicated();
-        encodeField(*full, type, num_rows);
+        auto full = column.cut(begin, end - begin)->convertToFullColumnIfReplicated();
+        encodeField(*full, type, 0, end - begin);
         return;
     }
 
     if (type->lowCardinality())
     {
         /// Materialize LowCardinality to its full column (matches output_format_arrow_low_cardinality_as_dictionary=false).
-        auto full = column.convertToFullColumnIfLowCardinality();
-        encodeField(*full, removeLowCardinality(type), num_rows);
+        auto full = column.cut(begin, end - begin)->convertToFullColumnIfLowCardinality();
+        encodeField(*full, removeLowCardinality(type), 0, end - begin);
         return;
     }
 
     /// Variant maps to an Arrow dense union, which (unlike every other type) has no validity buffer.
     if (isVariant(type))
     {
-        encodeVariant(column, type, num_rows);
+        encodeVariant(column, type, begin, end);
         return;
     }
 
@@ -586,12 +636,12 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     }
 
     /// `appendValidity` packs the validity buffer and returns the null count in one pass over the null map.
-    const Int64 null_count = appendValidity(null_map_column, num_rows);
-    nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
-    encodeValues(*nested, nested_type, num_rows, null_map_column);
+    const Int64 null_count = appendValidity(null_map_column, begin, end);
+    nodes.emplace_back(static_cast<Int64>(end - begin), null_count);
+    encodeValues(*nested, nested_type, begin, end, null_map_column);
 }
 
-void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows)
+void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
 {
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
@@ -602,56 +652,83 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Native Arrow IPC writer does not support a Variant with {} alternatives (maximum is 127)", num_variants);
+    const size_t num_rows = end - begin;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & ch_offsets = variant_column.getOffsets();
+
+    /// Each alternative's rows are contiguous within a contiguous row range (see
+    /// `ColumnVariant::updateHashWithValueRange`), so the range maps to one contiguous child range per
+    /// alternative, and the union offsets are rebased against that child's start.
+    const size_t num_local = variant_column.getNumVariants();
+    std::vector<size_t> nested_begin(num_local, 0);
+    std::vector<size_t> nested_rows(num_local, 0);
+    for (size_t row = begin; row != end; ++row)
+    {
+        const auto local = local_discriminators[row];
+        if (local == ColumnVariant::NULL_DISCRIMINATOR)
+            continue;
+        if (nested_rows[local] == 0)
+            nested_begin[local] = ch_offsets[row];
+        ++nested_rows[local];
+    }
 
     /// The union node itself: no nulls are reported here (NULL rows use the dedicated null child).
     nodes.emplace_back(static_cast<Int64>(num_rows), 0);
 
     PODArray<Int8> type_ids(num_rows);
     PODArray<Int32> value_offsets(num_rows);
-    for (size_t row = 0; row < num_rows; ++row)
+    for (size_t i = 0; i < num_rows; ++i)
     {
-        const auto local = local_discriminators[row];
+        const auto local = local_discriminators[begin + i];
         if (local == ColumnVariant::NULL_DISCRIMINATOR)
         {
-            type_ids[row] = static_cast<Int8>(num_variants);
-            value_offsets[row] = 0;
+            type_ids[i] = static_cast<Int8>(num_variants);
+            value_offsets[i] = 0;
             continue;
         }
-        type_ids[row] = static_cast<Int8>(variant_column.globalDiscriminatorByLocal(local));
-        const UInt64 off = ch_offsets[row];
-        if (off > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+        type_ids[i] = static_cast<Int8>(variant_column.globalDiscriminatorByLocal(local));
+        const UInt64 off = ch_offsets[begin + i] - nested_begin[local];
+        if (off > MAX_ARROW_BUFFER_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC dense union offset exceeds 32 bits");
-        value_offsets[row] = static_cast<Int32>(off);
+        value_offsets[i] = static_cast<Int32>(off);
     }
     appendBuffer(type_ids.data(), num_rows * sizeof(Int8));
     appendBuffer(value_offsets.data(), num_rows * sizeof(Int32));
 
     /// Children in global discriminator order, then a trailing single-element null child for NULL rows.
-    for (size_t i = 0; i < num_variants; ++i)
+    for (size_t global_discr = 0; global_discr < num_variants; ++global_discr)
     {
-        const IColumn & child = variant_column.getVariantByGlobalDiscriminator(i);
-        encodeField(child, variant_type.getVariant(i), child.size());
+        const auto local = variant_column.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(global_discr));
+        encodeField(
+            variant_column.getVariantByGlobalDiscriminator(global_discr),
+            variant_type.getVariant(global_discr),
+            nested_begin[local],
+            nested_begin[local] + nested_rows[local]);
     }
     nodes.emplace_back(1, 1);
 }
 
-RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & columns, const DataTypes & types, size_t num_rows)
+RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(
+    const Columns & columns, const DataTypes & types, size_t begin, size_t end)
 {
     nodes.clear();
     buffers.clear();
     body.clear();
 
+    const size_t num_rows = end - begin;
+
     /// Reserve the body up front so `appendBuffer` does not repeatedly reallocate and copy as it grows.
-    /// The column byte sizes approximate the Arrow body size closely enough to serve as a capacity hint.
+    /// The column byte sizes approximate the Arrow body size closely enough to serve as a capacity hint,
+    /// scaled to the share of the chunk this batch covers.
     size_t body_hint = 0;
     for (const auto & column : columns)
         body_hint += column->byteSize();
+    if (const size_t total_rows = columns.empty() ? 0 : columns.front()->size(); total_rows > num_rows)
+        body_hint = body_hint / total_rows * num_rows;
     body.reserve(body_hint);
 
     for (size_t i = 0; i < columns.size(); ++i)
-        encodeField(*columns[i], types[i], num_rows);
+        encodeField(*columns[i], types[i], begin, end);
 
     /// Pad the body so its total length is a multiple of 8.
     while (body.size() % 8 != 0)
