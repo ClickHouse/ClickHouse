@@ -14,6 +14,7 @@ DROP VIEW IF EXISTS view_lookup_v;
 DROP VIEW IF EXISTS view_lookup_grouped_v;
 DROP VIEW IF EXISTS view_lookup_no_key_v;
 DROP VIEW IF EXISTS view_lookup_cast_v;
+DROP VIEW IF EXISTS view_lookup_cast_key_v;
 DROP TABLE IF EXISTS view_lookup_ref;
 DROP TABLE IF EXISTS view_lookup_data;
 DROP DICTIONARY IF EXISTS view_lookup_dict;
@@ -86,6 +87,21 @@ SELECT count() FROM view_lookup_cast_v WHERE name = 'match';
 SET optimize_inverse_dictionary_lookup = 0;
 SELECT count() FROM view_lookup_cast_v WHERE name = 'match';
 
+-- A view whose declared KEY column type differs from the inner table's type still rewrites safely:
+-- the mismatch surfaces as an explicit CAST in the resulting condition, and results still match.
+CREATE VIEW view_lookup_cast_key_v (id Nullable(UInt64), name String) AS
+SELECT id, dictGetString('view_lookup_dict', 'name', id) AS name FROM view_lookup_data;
+
+SET optimize_inverse_dictionary_lookup = 1;
+EXPLAIN indexes = 1
+SELECT count() FROM view_lookup_cast_key_v WHERE name = 'match';
+
+SET optimize_inverse_dictionary_lookup = 1;
+SELECT count() FROM view_lookup_cast_key_v WHERE name = 'match';
+
+SET optimize_inverse_dictionary_lookup = 0;
+SELECT count() FROM view_lookup_cast_key_v WHERE name = 'match';
+
 -- A view over another view (recursion through the TableNode/view path twice) still rewrites.
 CREATE VIEW view_lookup_nested_v AS SELECT * FROM view_lookup_v;
 
@@ -105,6 +121,7 @@ DROP VIEW view_lookup_v;
 DROP VIEW view_lookup_grouped_v;
 DROP VIEW view_lookup_no_key_v;
 DROP VIEW view_lookup_cast_v;
+DROP VIEW view_lookup_cast_key_v;
 DROP VIEW view_lookup_nested_v;
 DROP DICTIONARY view_lookup_dict;
 DROP TABLE view_lookup_data;
