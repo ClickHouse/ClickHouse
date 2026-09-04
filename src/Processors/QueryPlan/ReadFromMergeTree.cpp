@@ -2093,6 +2093,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else /* local reading case */
     {
+        /// The granularity and block size are the same for every read below, so bind them once.
+        auto split_ranges = [this](const MarkRanges & ranges, int direction)
+        {
+            return splitRangesToAvoidLargeReads(
+                ranges, direction, (*data_settings)[MergeTreeSetting::index_granularity], block_size.max_block_size_rows);
+        };
+
         /// Split each part independently into multiple streams.
         /// Within each part, ranges are contiguous and in PK order,
         /// so we can use PrefetchingConcatProcessor to parallelize reading.
