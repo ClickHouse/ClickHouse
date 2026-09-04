@@ -416,12 +416,16 @@ void DeduplicationInfo::calculateDataHashes() const
 
     chassert(original_block && original_block->rows() == getRows());
 
-    /// The hash must not depend on the column's sparse/dense representation, so remove sparse before hashing.
+    /// The hash must not depend on the column's representation, so remove sparse and the lazy
+    /// replication wrapper before hashing. `recursiveRemoveSparse` keeps a `ColumnReplicated` around the
+    /// de-sparsed column, and `ColumnReplicated` hashes through the generic per-row loop, whose byte
+    /// stream differs from the dense column's range overload for every variable-size type - the same
+    /// rows would then produce two different block hashes and a retried insert would not deduplicate.
     /// Column-major so only one column is materialized at a time, instead of a dense copy of the whole block.
     std::vector<SipHash> hashes(pending.size());
     for (const auto & col : original_block->getColumns())
     {
-        auto dense = recursiveRemoveSparse(col);
+        auto dense = recursiveRemoveSparse(col)->convertToFullColumnIfReplicated();
         for (size_t i = 0; i < pending.size(); ++i)
             dense->updateHashWithValueRange(getTokenBegin(pending[i]), getTokenEnd(pending[i]), hashes[i]);
     }
