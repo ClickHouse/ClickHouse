@@ -1366,8 +1366,6 @@ void StorageObjectStorageQueue::commit(
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
-
     const auto commit_id = generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
@@ -1396,6 +1394,8 @@ void StorageObjectStorageQueue::commit(
             ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
             "The after_processing action did not complete for {} object(s): {}",
             post_processing_failed_paths.size(), post_processing_failed_paths);
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
     LOG_DEBUG(
         log, "Successfully committed {} files with {} requests for {} sources with commit id {} "

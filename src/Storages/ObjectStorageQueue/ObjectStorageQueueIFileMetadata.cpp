@@ -170,6 +170,9 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             }
             else if (!processing_node_path.empty())
                 file_status->onFailed("Unprocessed exception");
+            else
+                LOG_WARNING(log, "File {} will NOT be marked as 'Failed' and will remain in '{}' state.",
+                            path, file_status->state.load());
         }
         else
         {
