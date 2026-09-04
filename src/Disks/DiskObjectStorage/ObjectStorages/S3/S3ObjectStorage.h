@@ -158,7 +158,7 @@ public:
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
 
-    ObjectStoragePtr clone() const override;
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);

@@ -221,7 +221,7 @@ void CachedObjectStorage::applyNewSettings(
     object_storage->applyNewSettings(config, config_prefix, context, options);
 }
 
-ObjectStoragePtr CachedObjectStorage::clone() const
+ObjectStoragePtr CachedObjectStorage::cloneImpl() const
 {
     /// The cache object itself is intentionally shared: caches are global objects keyed by name,
     /// so the copy keeps hitting the same cached data as the original.

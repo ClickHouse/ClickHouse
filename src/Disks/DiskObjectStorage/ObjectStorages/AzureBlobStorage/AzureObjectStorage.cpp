@@ -146,7 +146,7 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
-ObjectStoragePtr AzureObjectStorage::clone() const
+ObjectStoragePtr AzureObjectStorage::cloneImpl() const
 {
     /// `ContainerClient` is a thin copyable wrapper around the Azure SDK client, so the copy
     /// can later replace its client without affecting this storage.

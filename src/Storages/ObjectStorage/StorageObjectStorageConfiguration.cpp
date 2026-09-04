@@ -72,6 +72,11 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
         if (!disk_config_prefix)
             return;
 
+        /// The table works through a private copy of the disk's object storage (see `DataLakeConfiguration::fromDisk`),
+        /// so rebuilding its client cannot affect the disk. The settings of a disk come from the server config, not from
+        /// the query, so `isStaticConfiguration` does not apply: the object storage itself decides whether the settings
+        /// its client is built from have changed.
+        options.allow_client_change = true;
         object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", context, options);
         return;
     }

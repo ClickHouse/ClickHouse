@@ -289,7 +289,7 @@ ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
 }
 
-ObjectStoragePtr WebObjectStorage::clone() const
+ObjectStoragePtr WebObjectStorage::cloneImpl() const
 {
     return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
 }

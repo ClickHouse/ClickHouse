@@ -941,7 +941,7 @@ ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
     return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
 }
 
-ObjectStoragePtr LocalObjectStorage::clone() const
+ObjectStoragePtr LocalObjectStorage::cloneImpl() const
 {
     return std::make_shared<LocalObjectStorage>(settings);
 }

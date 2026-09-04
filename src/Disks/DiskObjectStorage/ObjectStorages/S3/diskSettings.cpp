@@ -308,19 +308,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         shared_cache);
 }
 
-bool clientAffectingSettingsChanged(const S3Settings & current, const S3Settings & updated)
-{
-    if (current.auth_settings.hasUpdates(updated.auth_settings))
-        return true;
-
-    return current.request_settings[S3RequestSetting::max_redirects].value != updated.request_settings[S3RequestSetting::max_redirects].value
-        || current.request_settings[S3RequestSetting::retry_attempts].value != updated.request_settings[S3RequestSetting::retry_attempts].value
-        || current.request_settings[S3RequestSetting::retry_initial_delay_ms].value != updated.request_settings[S3RequestSetting::retry_initial_delay_ms].value
-        || current.request_settings[S3RequestSetting::retry_max_delay_ms].value != updated.request_settings[S3RequestSetting::retry_max_delay_ms].value
-        || current.request_settings[S3RequestSetting::slow_all_threads_after_network_error].value != updated.request_settings[S3RequestSetting::slow_all_threads_after_network_error].value
-        || current.request_settings[S3RequestSetting::enable_request_logging].value != updated.request_settings[S3RequestSetting::enable_request_logging].value;
-}
-
 }
 
 #endif

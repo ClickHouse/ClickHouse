@@ -34,8 +34,6 @@ std::unique_ptr<S3::Client> getClient(
     std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback = std::nullopt,
     bool is_loading_from_existing_metadata = false,
     bool force_anonymous_load_fallback = false);
-
-bool clientAffectingSettingsChanged(const S3Settings & current, const S3Settings & updated);
 }
 
 #endif

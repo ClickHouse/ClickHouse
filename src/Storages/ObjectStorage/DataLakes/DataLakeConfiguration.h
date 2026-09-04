@@ -404,8 +404,9 @@ public:
         this->source_disk_name = disk_name;
         auto disk = context->getDisk(disk_name);
         /// The table works through a private copy of the disk's object storage: the decorators
-        /// (e.g. `CachedObjectStorage`) and connection settings stay in effect for the table,
-        /// while per-table setting updates (see `update`) cannot corrupt the disk's own storage.
+        /// (e.g. `CachedObjectStorage`), connection settings and the disk's IO scheduling resources
+        /// stay in effect for the table, while per-table setting updates (see `update`) cannot
+        /// corrupt the disk's own storage.
         ready_object_storage = disk->getObjectStorage()->clone();
     }
 

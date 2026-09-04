@@ -200,49 +200,6 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
-void StorageS3Configuration::update(ObjectStoragePtr object_storage, ContextPtr local_context)
-{
-    if (!source_disk_name.has_value())
-    {
-        StorageObjectStorageConfiguration::update(object_storage, local_context);
-        return;
-    }
-
-    const auto & config = local_context->getConfigRef();
-    /// The table's storage may be layered (e.g. a cache disk over an S3 disk); the S3 settings
-    /// live in the section of the innermost disk.
-    const auto disk_config_prefix = tryGetDiskConfigurationPrefix(config, *source_disk_name);
-    if (!disk_config_prefix)
-        return;
-
-    ObjectStoragePtr unwrapped_storage = object_storage;
-    while (auto inner = unwrapped_storage->getUnderlying())
-        unwrapped_storage = std::move(inner);
-    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*unwrapped_storage);
-    const S3Settings current_settings = s3_object_storage.getS3Settings();
-
-    S3Settings settings_from_disk_config;
-    settings_from_disk_config.loadFromConfigForObjectStorage(
-        config,
-        *disk_config_prefix,
-        local_context->getSettingsRef(),
-        url.uri.getScheme(),
-        local_context->getSettingsRef()[Setting::s3_validate_request_settings]);
-
-    S3Settings future_settings = current_settings;
-    if (auto endpoint_settings = local_context->getStorageS3Settings().getSettings(url.uri.toString(), local_context->getUserName()))
-        future_settings.updateIfChanged(*endpoint_settings);
-    future_settings.updateIfChanged(settings_from_disk_config);
-
-    /// The object storage here is the table's private copy of the disk's storage (see
-    /// `DataLakeConfiguration::fromDisk`), so a client rebuild cannot affect the disk itself.
-    /// The gating only avoids rebuilding the client on every query: `applyNewSettings` rebuilds
-    /// a disk-like client whenever a client change is allowed.
-    IObjectStorage::ApplyNewSettingsOptions options{
-        .allow_client_change = clientAffectingSettingsChanged(current_settings, future_settings)};
-    object_storage->applyNewSettings(config, *disk_config_prefix + ".", local_context, options);
-}
-
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();

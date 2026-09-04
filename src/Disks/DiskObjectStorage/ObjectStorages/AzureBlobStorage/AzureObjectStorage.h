@@ -129,7 +129,7 @@ public:
         return connection_params;
     }
 
-    ObjectStoragePtr clone() const override;
+    ObjectStoragePtr cloneImpl() const override;
 
 private:
     void removeObjectImpl(
