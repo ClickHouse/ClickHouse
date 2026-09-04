@@ -89,6 +89,7 @@ int mainEntryExampleLexer(int argc, char ** argv);
 int mainEntryExampleSelectParser(int argc, char ** argv);
 int mainEntryExampleCreateParser(int argc, char ** argv);
 int mainEntryExampleParserMemoryProfiler(int argc, char ** argv);
+int mainEntryExampleStorageMemoryProfiler(int argc, char ** argv);
 int mainEntryExampleMergeSelector(int argc, char ** argv);
 int mainEntryExampleMergeSelector2(int argc, char ** argv);
 int mainEntryExampleGetCurrentInsertsInReplicated(int argc, char ** argv);
