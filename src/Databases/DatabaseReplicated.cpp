@@ -2930,9 +2930,9 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
             || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
-        // Allowed ALTER operation on KeeperMap still should be replicated
-        // to update metadata on all nodes and commit it to database metadata
-        if (is_keeper_map_table(query_ptr) && !alter->isCommentAlter())
+        /// Any `ALTER` the storage can apply rewrites the `CREATE` statement this database keeps in
+        /// Keeper, so it must take the replicated path to obtain a metadata transaction.
+        if (is_keeper_map_table(query_ptr) && !alter->isSettingsOrCommentAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))
