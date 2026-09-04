@@ -225,6 +225,16 @@ ASTPtr ASTCreateUserQuery::clone() const
     return res;
 }
 
+
+/// `settings` and `alter_settings` are held outside `children`.
+bool ASTCreateUserQuery::hasSecretParts() const
+{
+    return (settings && settings->hasSecretParts())
+        || (alter_settings && alter_settings->hasSecretParts())
+        || childrenHaveSecretParts();
+}
+
+
 void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
     f(nullptr, &global_valid_until);

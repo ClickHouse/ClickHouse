@@ -126,6 +126,14 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 }
 
 
+bool ASTSettingsProfileElement::hasSecretParts() const
+{
+    if (!CoreSettings::SETTINGS_TO_HIDE.contains(setting_name))
+        return false;
+    return value || min_value || max_value || !disallowed_values.empty();
+}
+
+
 bool ASTSettingsProfileElements::empty() const
 {
     for (const auto & element : elements)
@@ -142,6 +150,12 @@ size_t ASTSettingsProfileElements::getNumberOfSettings() const
 size_t ASTSettingsProfileElements::getNumberOfProfiles() const
 {
     return std::count_if(elements.begin(), elements.end(), [](const auto & element){ return !element->parent_profile.empty(); });
+}
+
+
+bool ASTSettingsProfileElements::hasSecretParts() const
+{
+    return std::any_of(elements.begin(), elements.end(), [](const auto & element) { return element->hasSecretParts(); });
 }
 
 
@@ -208,6 +222,12 @@ ASTPtr ASTAlterSettingsProfileElements::clone() const
         res->drop_settings = boost::static_pointer_cast<ASTSettingsProfileElements>(drop_settings->clone());
 
     return res;
+}
+
+/// `drop_settings` carries setting names only.
+bool ASTAlterSettingsProfileElements::hasSecretParts() const
+{
+    return (add_settings && add_settings->hasSecretParts()) || (modify_settings && modify_settings->hasSecretParts());
 }
 
 void ASTAlterSettingsProfileElements::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
