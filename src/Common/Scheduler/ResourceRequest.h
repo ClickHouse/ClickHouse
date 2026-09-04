@@ -69,6 +69,13 @@ public:
     /// state; keeping a separate declared cost isolates per-query scheduling from that redistribution.
     ResourceCost scheduling_cost{};
 
+    /// Effective per-query charge used by `fair` to advance both `vruntime` and `attained_cost`:
+    /// the declared `scheduling_cost` adjusted by the query's accumulated real-vs-estimate cost
+    /// correction, computed once at enqueue by `FairAlgorithm::push`. (`las` folds the same
+    /// correction into `attained_cost` directly at pop, so it does not use this field.) Defaults to
+    /// `scheduling_cost` in `reset()` so it is never stale for schedulers that ignore it.
+    ResourceCost scheduling_charge{};
+
     /// If true, request is not throttled by the scheduler
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
@@ -116,6 +123,7 @@ public:
         // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
         // (which later rewrites `cost` only). For queues without a budget the two stay equal.
         scheduling_cost = cost_;
+        scheduling_charge = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
         // Clear per-request query identity and ordering key so a reused request (e.g. the

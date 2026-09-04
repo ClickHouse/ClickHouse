@@ -76,6 +76,17 @@ struct Fixture
         }
         return ids;
     }
+
+    /// Simulate `ResourceGuard::Request::finish()` feeding the real-vs-estimate error back for this
+    /// query on this leaf (the leaf key is the RequestQueue itself, as the algorithms use `this`).
+    void addCorrection(ResourceSchedulingContext * ctx, ResourceCost real, ResourceCost estimate)
+    {
+        ctx->getResourceState(&*queue).cost_correction.fetch_add(
+            static_cast<Int64>(real) - static_cast<Int64>(estimate), std::memory_order_relaxed);
+    }
+
+    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->getResourceState(&*queue).vruntime; }
+    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->getResourceState(&*queue).attained_cost; }
 };
 
 }
@@ -116,6 +127,61 @@ TEST(RequestQueue, FairSingleQueryFifo)
     f.enqueue(2, a);
     f.enqueue(3, a);
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
+}
+
+/// The real-vs-estimate cost correction: clamps to a non-negative charge (never moving a key
+/// backward) and carries any unspent refund forward so it converges to real cost long-term.
+TEST(RequestQueue, ConsumeCorrectedCostClampsAndCarries)
+{
+    ResourceSchedulingContext ctx(0, 1.0, 1.0, 0, 0, 0, 0);
+    int dummy_leaf = 0;
+    auto & s = ctx.getResourceState(&dummy_leaf);
+    EXPECT_EQ(s.consumeCorrectedCost(100), 100);          // no correction → identity
+    s.cost_correction.fetch_add(50);
+    EXPECT_EQ(s.consumeCorrectedCost(100), 150);          // under-estimate → charge extra
+    EXPECT_EQ(s.cost_correction.load(), 0);
+    s.cost_correction.fetch_add(-30);
+    EXPECT_EQ(s.consumeCorrectedCost(100), 70);           // over-estimate → charge less
+    EXPECT_EQ(s.cost_correction.load(), 0);
+    s.cost_correction.fetch_add(-150);
+    EXPECT_EQ(s.consumeCorrectedCost(100), 0);            // big refund → clamp to 0 (never negative)
+    EXPECT_EQ(s.cost_correction.load(), -50);             // carry the unspent -50 forward
+    EXPECT_EQ(s.consumeCorrectedCost(100), 50);           // applied to the next request
+    EXPECT_EQ(s.cost_correction.load(), 0);
+}
+
+/// fair: a query whose first request under-estimated its cost has the shortfall folded into its
+/// NEXT request's vruntime advance — never rewriting the already-served key, never going backward.
+TEST(RequestQueue, FairAppliesCostCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    double vr1 = f.vruntimeOf(a);                         // advanced by the estimate (10)
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);    // request 1 really cost 100
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    double vr2 = f.vruntimeOf(a);
+    EXPECT_GE(vr2, vr1);                                  // never backward
+    EXPECT_DOUBLE_EQ(vr2 - vr1, 100.0);                  // charged the corrected cost (10 + 90), not 10
+}
+
+/// las: the same correction folds into the query's attained service (its level key), so LAS tracks
+/// real bytes/CPU rather than the estimate; attained only ever grows (level never drops).
+TEST(RequestQueue, LasAppliesCostCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Las);
+    auto * a = f.makeQuery();
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    Int64 att1 = f.attainedOf(a);                         // 10 (the estimate)
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    Int64 att2 = f.attainedOf(a);
+    EXPECT_GE(att2, att1);                                // never backward
+    EXPECT_EQ(att2 - att1, 100);                          // attained advanced by the corrected cost
 }
 
 /// fair, unequal weights: the heavier query gets a larger share.

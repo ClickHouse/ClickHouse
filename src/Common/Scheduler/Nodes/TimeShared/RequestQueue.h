@@ -149,8 +149,13 @@ public:
         {
             auto & state = ctx->getResourceState(leaf);
             double effective_weight = effectiveWeight(*ctx, state);
+            // Charge the declared cost corrected toward real consumption (see
+            // ResourceState::consumeCorrectedCost). Stored on the request so pop() advances
+            // attained_cost by the same corrected amount. It is never negative, so vruntime only
+            // ever moves forward — a refund is realized by a smaller charge on later requests.
+            request->scheduling_charge = state.consumeCorrectedCost(request->scheduling_cost);
             vstart = std::max(system_vruntime, state.vruntime);
-            state.vruntime = vstart + static_cast<double>(request->scheduling_cost) / effective_weight;
+            state.vruntime = vstart + static_cast<double>(request->scheduling_charge) / effective_weight;
         }
         request->scheduling_key = {vstart, next_seq++};
         requests.insert(*request);
@@ -168,7 +173,9 @@ public:
         if (auto * ctx = request->scheduling_context)
         {
             auto & state = ctx->getResourceState(leaf);
-            state.attained_cost += request->scheduling_cost;
+            // Same corrected charge that advanced vruntime at push(), so the attained-service
+            // threshold (`weight_lowering_io_bytes`) also tracks real cost, not the estimate.
+            state.attained_cost += request->scheduling_charge;
             state.last_activity_ns = clock_gettime_ns();
         }
         return request;
@@ -324,7 +331,11 @@ public:
             if (ctx)
             {
                 auto & state = ctx->getResourceState(leaf);
-                state.attained_cost += request->scheduling_cost;
+                // Charge the declared cost corrected toward real consumption (see
+                // ResourceState::consumeCorrectedCost): attained_cost (the LAS level key) tracks
+                // real bytes/CPU long-term. Never negative, so the level never drops (no backward
+                // motion); a refund is realized by a smaller charge on later requests.
+                state.attained_cost += state.consumeCorrectedCost(request->scheduling_cost);
                 state.last_activity_ns = clock_gettime_ns();
             }
             return request;

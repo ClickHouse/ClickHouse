@@ -1,7 +1,9 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/Scheduler/CostUnit.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -68,6 +70,29 @@ public:
         Int64 attained_cost = 0; /// Total dequeued cost for this query in this resource
         double vruntime = 0.0; /// SFQ virtual runtime for this query in this resource (`fair`)
         UInt64 last_activity_ns = 0; /// Monotonic time of the last dequeue (introspection)
+
+        /// Accumulated `real_cost - scheduling_cost` for this query's finished requests on this
+        /// resource, not yet applied to a scheduling key. `ResourceGuard::Request::finish()` adds to
+        /// it from the consumer thread (hence atomic; the other fields are touched only by the leaf
+        /// thread). `fair`/`las` fold it into the NEXT request's charge in `consumeCorrectedCost()`,
+        /// so per-query service tracks real cost long-term without ever rewriting an assigned key.
+        std::atomic<Int64> cost_correction{0};
+
+        /// Fold the accumulated correction into `base_cost` (the request's declared `scheduling_cost`)
+        /// to get the charge to apply to `vruntime`/`attained_cost` for the next request. The charge
+        /// is never negative — a refund (over-estimate/failed op) is realized by charging LESS on
+        /// subsequent requests, never by moving `vruntime`/`attained_cost` backward (which would break
+        /// SFQ/LAS fairness). Any unspent negative remainder is carried forward, so long-term the
+        /// cumulative charge converges to the cumulative real cost. `fetch_sub` composes correctly
+        /// with a concurrent `finish()` `fetch_add`.
+        ResourceCost consumeCorrectedCost(ResourceCost base_cost)
+        {
+            Int64 corr = cost_correction.load(std::memory_order_relaxed);
+            Int64 effective = static_cast<Int64>(base_cost) + corr;
+            Int64 remainder = effective < 0 ? effective : 0; // negative part carried to the future
+            cost_correction.fetch_sub(corr - remainder, std::memory_order_relaxed);
+            return static_cast<ResourceCost>(effective - remainder); // >= 0
+        }
     };
 
     /// Returns this query's state for the leaf identified by `leaf`, creating it on first use.
