@@ -2,6 +2,9 @@
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';
+-- This test inspects the pipeline shape of the LIMIT BY into sort optimization; the primary-key-range
+-- sharding of the `full_sorting_merge` join below would split it into per-range merge joins.
+SET query_plan_join_shard_by_pk_ranges = 0;
 
 -- { echo }
 

@@ -2749,8 +2749,14 @@ For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicat
 is added so the join order optimizer can consider direct (A JOIN C) plans.
 )", BETA) \
     \
-    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, true, R"(
+Execute a JOIN of two MergeTree tables as independent joins over primary-key ranges when the join keys contain a prefix of the primary key of both tables. Both tables are split into the same ranges by the values of that prefix (the same way `FINAL` splits parts into non-intersecting layers), so equal keys land in the same range, and each range is joined on its own thread.
+
+For `full_sorting_merge` and `parallel_full_sorting_merge`, this replaces a single-threaded merge join over both tables with one streaming merge join per range, running in parallel, which is typically several times faster and uses several times less memory.
+
+For `hash` and `parallel_hash`, each range gets its own hash table. It applies only when neither join runtime filters (`enable_join_runtime_filters`) nor spilling to disk (`max_bytes_ratio_before_external_join`, `max_bytes_before_external_join`) are in effect, since both make the join opaque to this optimization; then it usually does not speed up queries but may lower memory consumption. Ranges are assigned to threads statically, so a filter that is selective only in some part of the primary key range leaves some threads idle.
+
+Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when reading with parallel replicas.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
@@ -3854,7 +3860,7 @@ Possible values:
  - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
  - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
 
- Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) by `query_plan_join_shard_by_pk_ranges` (enabled by default).
 
 - prefer_partial_merge
 
