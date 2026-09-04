@@ -9670,12 +9670,14 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             if (!changed_by_compatibility && accessor.isValueChanged(*this, change.index))
                 continue;
 
-            /// Don't mark as changed if the value isn't really changed. A setting no older version
-            /// touched still holds its default, and whether that is the previous value is known from
-            /// the history alone, so most of the walk needs no value at all.
-            if (changed_by_compatibility
-                    ? accessor.getValue(*this, change.index) == *change.previous_value
-                    : change.previous_value_is_default)
+            /// Don't mark as changed if the value isn't really changed. Only a setting a newer change
+            /// already moved has to be read to know that; an untouched one still holds its default, and
+            /// whether that is the previous value is known from the history alone.
+            const bool already_has_previous_value = changed_by_compatibility
+                ? accessor.getValue(*this, change.index) == *change.previous_value
+                : change.previous_value_is_default;
+
+            if (already_has_previous_value)
                 continue;
 
             accessor.setValue(*this, change.index, *change.previous_value);
