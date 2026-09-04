@@ -53,7 +53,6 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -182,7 +181,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
@@ -335,50 +333,6 @@ bool astContainsSubquery(const ASTPtr & ast)
     return false;
 }
 
-/// Check if current user has privileges to SELECT columns from table
-/// Throws an exception if access to any column from `column_names` is not granted
-/// If `column_names` is empty, check access to any columns and return names of accessible columns
-NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & storage_snapshot, const Names & column_names, const ContextPtr & query_context)
-{
-    /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(storage.get()))
-        return {};
-
-    if (column_names.empty())
-    {
-        NameSet accessible_columns;
-        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
-          * one table column is accessible.
-          */
-        auto access = query_context->getAccess();
-        const auto * alias = storage->as<StorageAlias>();
-        for (const auto & column : storage_snapshot->metadata->getColumns())
-        {
-            /// An `Alias` also requires access to the selected column of its target table.
-            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
-                accessible_columns.insert(column.name);
-        }
-
-        if (accessible_columns.empty())
-        {
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-                query_context->getUserName(),
-                storage_id.getFullTableName());
-        }
-        return accessible_columns;
-    }
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // `storage_id.hasDatabase()` can return false only on the initiator node.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
-
-    return {};
-}
-
 /// Check access rights for all tables referenced in a subquery
 void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const ContextPtr & query_context)
 {
@@ -393,107 +347,6 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
-}
-
-/// Collect names of the columns of `table_expression` that a resolved filter expression reads
-class CollectFilterColumnNamesVisitor : public ConstInDepthQueryTreeVisitor<CollectFilterColumnNamesVisitor>
-{
-public:
-    explicit CollectFilterColumnNamesVisitor(const IQueryTreeNode * table_expression_)
-        : table_expression(table_expression_)
-    {
-    }
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node)
-            return;
-
-        if (column_node->getColumnSourceOrNull().get() != table_expression)
-            return;
-
-        column_names.insert(column_node->getColumnName());
-    }
-
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
-    {
-        /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
-        return !isAliasColumn(parent_node);
-    }
-
-    Names getColumnNames() const
-    {
-        return Names(column_names.begin(), column_names.end());
-    }
-
-private:
-    static bool isAliasColumn(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return false;
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        return column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE;
-    }
-
-    const IQueryTreeNode * table_expression;
-    NameSet column_names;
-};
-
-/// Check column-level SELECT for the columns a settings-provided filter reads.
-/// Such filters are user-supplied, so unlike row policies they must not grant access to columns the user cannot select.
-void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & query_context)
-{
-    StoragePtr storage;
-    StorageID storage_id = StorageID::createEmpty();
-    StorageSnapshotPtr storage_snapshot;
-
-    if (const auto * table_node = table_expression->as<TableNode>())
-    {
-        storage = table_node->getStorage();
-        storage_id = table_node->getStorageID();
-        storage_snapshot = table_node->getStorageSnapshot();
-    }
-    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-    {
-        /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
-        /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
-        const auto & table_function_storage = table_function_node->getStorage();
-        const auto * storage_view = table_function_storage ? table_function_storage->as<StorageView>() : nullptr;
-        if (!storage_view || !storage_view->isParameterizedView())
-            return;
-
-        storage = table_function_storage;
-        storage_id = table_function_node->getStorageID();
-        storage_snapshot = table_function_node->getStorageSnapshot();
-    }
-    else
-    {
-        return;
-    }
-
-    CollectFilterColumnNamesVisitor visitor(table_expression.get());
-    visitor.visit(filter_query_tree);
-
-    auto column_names = visitor.getColumnNames();
-    if (column_names.empty())
-        return;
-
-    checkAccessRights(storage, storage_id, storage_snapshot, column_names, query_context);
-}
-
-/// `buildFilterInfo` for a settings-provided filter, with a column-level SELECT check on the columns it reads
-FilterDAGInfo buildFilterInfoWithAccessCheck(ASTPtr filter_ast,
-    const TableExpressionNodePtr & table_expression,
-    PlannerContextPtr & planner_context)
-{
-    const auto & query_context = planner_context->getQueryContext();
-    auto filter_query_tree = buildFilterQueryTree(std::move(filter_ast), table_expression, query_context);
-    checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
-    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context);
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -1094,8 +947,12 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfoWithAccessCheck(
-        parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfo(
+        parallel_replicas_custom_filter_ast,
+        table_expression_query_info.table_expression,
+        planner_context,
+        {},
+        /*check_access_rights=*/ true);
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into
@@ -1152,7 +1009,8 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
     if (!additional_filter_ast)
         return {};
 
-    auto filter_info = buildFilterInfoWithAccessCheck(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfo(
+        additional_filter_ast, table_expression_query_info.table_expression, planner_context, {}, /*check_access_rights=*/ true);
     if (prewhere_info)
     {
         for (const auto * input : filter_info.actions.getInputs())
