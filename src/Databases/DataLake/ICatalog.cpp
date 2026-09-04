@@ -67,6 +67,9 @@ StorageType parseStorageTypeFromString(const std::string & type)
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
+    if (storage_type_str == "hdfs")
+        return StorageType::HDFS;
+
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
