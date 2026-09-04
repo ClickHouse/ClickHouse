@@ -503,7 +503,8 @@ LimitRangeConditions buildLimitRangeConditions(
     for (const auto & column : header->getColumnsWithTypeAndName())
         actions.addInput(column);
 
-    PlannerActionsVisitor actions_visitor(planner_context, query_node.getCorrelatedColumnsSet());
+    const auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
     auto add_boundary = [&](const QueryTreeNodePtr & boundary_node, const String & description) -> std::optional<String>
     {
         if (!boundary_node)
