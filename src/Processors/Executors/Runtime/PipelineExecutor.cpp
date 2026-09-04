@@ -14,8 +14,8 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -151,11 +151,6 @@ PipelineExecutor::~PipelineExecutor()
 {
     if (process_list_element)
         process_list_element->removePipelineExecutor(this);
-}
-
-const Processors & PipelineExecutor::getProcessors() const
-{
-    return graph->getProcessors();
 }
 
 static IProcessor::CancelReason toCancelReason(PipelineExecutor::ExecutionStatus status)
