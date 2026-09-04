@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # `system.table_settings` reports where each value came from. Two of those sources are set outside
 # any query - a server config section, and the `compatibility` setting - and both are read once into
 # a server-wide instance, so a per-query SETTINGS clause cannot exercise them. These run
