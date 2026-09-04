@@ -251,7 +251,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     {
         merge_tree_reader->performRequiredConversions(read_columns);
     }
-    else if (!prewhere_info->columns_overwritten_by_chain.empty())
+    else
     {
         const auto & reader_columns = merge_tree_reader->getColumns();
         const auto & skip = prewhere_info->columns_overwritten_by_chain;
