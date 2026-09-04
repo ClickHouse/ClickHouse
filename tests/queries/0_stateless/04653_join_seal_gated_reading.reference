@@ -1,0 +1,47 @@
+5	100000
+5	100000
+1
+0
+5	100000
+1
+0
+10000
+20000
+40000
+30000
+20000
+5	100000
+5	100000
+5	100000
+2	10000
+5	100000
+5	100000
+49995
+0
+5
+0
+500
+0
+5
+1
+500
+0
+5
+1
+49996	1249875000
+5
+5
+seal_empty_build	0	1	0	0
+seal_final	0	0	0	0
+seal_gated_aliased_key	1	1	0	0
+seal_gated_in_order	1	1	0	0
+seal_gated_join	1	1	0	0
+seal_gated_pk_prefix	1	1	0	0
+seal_gated_prefetched	1	1	0	0
+seal_gated_reverse_key	1	1	0	0
+seal_gated_reverse_order	1	1	0	0
+seal_gated_single_stream	1	1	0	0
+seal_gated_suppresses_read_time	1	1	0	0
+seal_join_by_shards	1	1	0	0
+seal_shadowed_key	0	0	1	0
+seal_ungated_join	0	0	1	0

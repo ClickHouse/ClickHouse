@@ -770,4 +770,72 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     return res;
 }
 
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
+{
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
+    if (!predicate)
+        return res;
+
+    /// Decompose the AND chain of the predicate: only a top-level conjunct is guaranteed to
+    /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
+    /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
+    /// be used for pruning.
+    std::vector<const ActionsDAG::Node *> conjuncts = {predicate};
+    while (!conjuncts.empty())
+    {
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        if (node->function_base->getName() == "and")
+        {
+            conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (node->function_base->getName() != "__applyFilter" || node->children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = node->children[0];
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
+            continue;
+        String filter_id(label->column->getDataAt(0));
+
+        /// Argument 1: the probe key column, possibly wrapped in a CAST and/or aliases
+        /// (composing the filter through expression steps turns a renamed key into an alias
+        /// of the physical column - looking through it reports the physical name).
+        const auto * key_arg = node->children[1];
+        while ((key_arg->type == ActionsDAG::ActionType::ALIAS
+                || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                    && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
+               && !key_arg->children.empty())
+            key_arg = key_arg->children.front();
+
+        /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
+        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
+        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
+        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
+        /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
+        /// the negating filter exposes neither recorded key values nor a key range.)
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+    }
+
+    return res;
+}
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
+}
+
 }

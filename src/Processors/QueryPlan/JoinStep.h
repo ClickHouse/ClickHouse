@@ -81,6 +81,10 @@ public:
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+
+    /// Gate the probe-side reads on the build completion seal carrying the given runtime
+    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
+    void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }
@@ -116,6 +120,9 @@ private:
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
+
+    /// See enableSealGatedProbeReading.
+    std::optional<String> seal_gate;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep

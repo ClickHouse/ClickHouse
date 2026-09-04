@@ -35,6 +35,18 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
+
+    /// Make the built filter record its key values/range (see track_key_range). Called by plan
+    /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
+    void enableKeyRangeTracking() { track_key_range = true; }
+
+    /// Whether the completed filter is guaranteed to convert into a positive primary-key
+    /// predicate (see convertRuntimeFilterToKeyConditionDAG): positive containment semantics
+    /// (an ANTI-join NOT-contains filter can never prune positively) and a key type whose
+    /// [min, max] envelope survives an exact-set overflow. Gating a read on a seal that
+    /// fails this could only delay the probe side and then scan it unpruned.
+    bool canSealPrunePrimaryKey() const;
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 

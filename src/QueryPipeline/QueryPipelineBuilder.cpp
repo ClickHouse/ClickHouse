@@ -17,8 +17,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
@@ -33,8 +35,10 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/Transforms/CopyTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -281,6 +285,11 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     if (transform->getOutputs().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge transform must have exactly 1 output, got {}", transform->getOutputs().size());
 
+    /// Both sides of a merging transform are consumed concurrently: gating one on the other
+    /// could deadlock, so gated reads (if any) fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
+
     connect(*left->pipe.output_ports.front(), transform->getInputs().front());
     connect(*right->pipe.output_ports.front(), transform->getInputs().back());
 
@@ -363,6 +372,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
+
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
     {
         left->pipe.resize(1);
@@ -430,6 +443,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
 
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
+
     if (left->getNumStreams() != right->getNumStreams())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join by layers is supported only for pipelines equal number of output ports, got {} and {}", left->getNumStreams(), right->getNumStreams());
 
@@ -461,6 +478,86 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return left;
 }
 
+void QueryPipelineBuilder::terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors)
+{
+    /// The gates never get a seal: the null sources finish immediately and the gated reads
+    /// proceed without the runtime filter, which is always correct.
+    for (InputPort * seal_input : builder.pipe.pending_seal_inputs)
+    {
+        auto null_source = std::make_shared<NullSource>(seal_input->getSharedHeader());
+        connect(null_source->getPort(), *seal_input);
+        if (collected_processors)
+            collected_processors->emplace_back(null_source);
+        builder.pipe.processors->emplace_back(std::move(null_source));
+    }
+
+    builder.pipe.pending_seal_inputs.clear();
+}
+
+void QueryPipelineBuilder::wireSealGatedReading(
+    QueryPipelineBuilder & probe,
+    QueryPipelineBuilder & build,
+    const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+    const String & runtime_filter_key,
+    Processors * collected_processors)
+{
+    auto & pending_inputs = probe.pipe.pending_seal_inputs;
+    if (pending_inputs.empty() || filling_transforms.empty())
+        return;
+
+    auto add_processor = [&](ProcessorPtr processor)
+    {
+        if (collected_processors)
+            collected_processors->emplace_back(processor);
+        build.pipe.processors->emplace_back(std::move(processor));
+    };
+
+    /// The optional seal payload: the runtime filter built from this join's build side. It is
+    /// complete by the time the seal is emitted, because the filter transforms sit upstream of
+    /// the filling transforms in the same streams.
+    FillingRightJoinSideTransform::SealPayloadGetter payload_getter;
+    if (!runtime_filter_key.empty())
+    {
+        if (auto query_context = CurrentThread::get().tryGetQueryContext())
+            payload_getter = [query_context, runtime_filter_key] { return query_context->getRuntimeFilterLookup()->find(runtime_filter_key); };
+    }
+
+    /// Exactly one of the concurrent filling transforms emits the seal (the one which
+    /// completes the build), the others just finish their seal ports.
+    OutputPortRawPtrs seal_ports;
+    seal_ports.reserve(filling_transforms.size());
+    for (auto * filling : filling_transforms)
+        seal_ports.push_back(filling->addSealPort(payload_getter));
+
+    OutputPort * seal_output = seal_ports.front();
+    if (seal_ports.size() > 1)
+    {
+        auto resize = std::make_shared<ResizeProcessor>(seal_output->getSharedHeader(), seal_ports.size(), 1);
+        auto input_it = resize->getInputs().begin();
+        for (auto * seal_port : seal_ports)
+            connect(*seal_port, *(input_it++));
+        seal_output = &resize->getOutputs().front();
+        add_processor(std::move(resize));
+    }
+
+    /// One seal for all gated reads of the probe subtree.
+    if (pending_inputs.size() == 1)
+    {
+        connect(*seal_output, *pending_inputs.front());
+    }
+    else
+    {
+        auto copy = std::make_shared<CopyTransform>(seal_output->getSharedHeader(), pending_inputs.size());
+        connect(*seal_output, copy->getInputs().front());
+        auto output_it = copy->getOutputs().begin();
+        for (auto * seal_input : pending_inputs)
+            connect(*(output_it++), *seal_input);
+        add_processor(std::move(copy));
+    }
+
+    pending_inputs.clear();
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
@@ -472,6 +569,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t max_streams,
     IQueryPlanStep * join_step,
     bool keep_left_read_in_order,
+    const std::optional<String> & seal_gate,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -489,6 +587,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             collected_processors->emplace_back(processor);
         left->pipe.processors->emplace_back(std::move(processor));
     };
+
+    /// A gated read on the build (right) side of the join cannot be wired: gating it on the
+    /// left side would deadlock, because the left side is consumed only after the right one
+    /// completes; it falls back to an ungated read instead. The probe (left) side gates are
+    /// wired below, after the filling transforms are created.
+    terminatePendingSealInputs(*right, collected_processors);
+
+    /// A join not marked as gating carries the probe-side pending seal inputs upward.
+    FillingRightJoinSideTransformRawPtrs filling_transforms_for_seal;
+    const bool wire_seal_gates = seal_gate.has_value() && !left->pipe.pending_seal_inputs.empty();
 
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right, join_step);
@@ -536,6 +644,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    if (wire_seal_gates)
+                        filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -545,6 +655,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 for (const auto & outport : outports)
                 {
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+                    if (wire_seal_gates)
+                        filling_transforms_for_seal.push_back(adding_joined.get());
                     connect(*outport, adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -560,6 +672,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         auto filling_finish_counter = std::make_shared<FinishCounter>(1);
         auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getSharedHeader(), join, filling_finish_counter);
+        if (wire_seal_gates)
+            filling_transforms_for_seal.push_back(adding_joined.get());
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
@@ -569,6 +683,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
+
+    /// Gate the probe-side reading by the build completion. The seal ports are added after all
+    /// pipe transformations of the right pipeline, so they do not interfere with the resizes.
+    if (wire_seal_gates)
+        wireSealGatedReading(*left, *right, filling_transforms_for_seal, *seal_gate, collected_processors);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
@@ -766,6 +885,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     left->pipe.collected_processors = collected_processors;
 
+    /// Gated reads are not supported by this join pipeline shape; fall back to ungated reading.
+    terminatePendingSealInputs(*left, collected_processors);
+    terminatePendingSealInputs(*right, collected_processors);
+
     /// Collect the NEW processors for the right pipeline.
     QueryPipelineProcessorsCollector collector(*right, join_step);
 
@@ -922,6 +1045,10 @@ Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResou
 
 QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
 {
+    /// Gated reads whose seals were never wired (e.g. no join marked as gating above them):
+    /// terminate the pending inputs so the reads proceed without a filter.
+    terminatePendingSealInputs(builder, builder.pipe.collected_processors);
+
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());

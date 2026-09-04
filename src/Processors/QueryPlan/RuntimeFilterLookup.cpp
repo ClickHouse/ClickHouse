@@ -42,10 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
 /// Whether a min/max envelope over the key is usable (int/Date keys only).
-bool typeSupportsMinMaxRange(const DataTypePtr & type)
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type)
 {
     if (!type)
         return false;
@@ -54,7 +52,6 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
     WhichDataType which(inner);
     return which.isInt() || which.isUInt()
         || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
-}
 }
 
 IRuntimeFilter::IRuntimeFilter(
@@ -67,7 +64,7 @@ IRuntimeFilter::IRuntimeFilter(
     , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
 {
-    range_supported = typeSupportsMinMaxRange(filter_column_target_type);
+    range_supported = runtimeFilterKeySupportsMinMaxRange(filter_column_target_type);
 }
 
 std::optional<Range> IRuntimeFilter::getRecordedKeyRanges() const
@@ -563,7 +560,7 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndNam
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
+    bool add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
         auto & filter = filters_by_name[key];
@@ -579,6 +576,7 @@ public:
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
+        return filter->isReady();
     }
 
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
@@ -629,7 +627,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
 }
 
 /// Build a pruning predicate on the column: IN (exact values) else BETWEEN.
-static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
+const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
     const IRuntimeFilter & filter,
     const String & column_name,
     const DataTypePtr & column_type,

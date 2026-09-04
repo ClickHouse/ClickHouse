@@ -173,6 +173,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 max_streams,
                 this,
                 keep_left_read_in_order,
+                seal_gate,
                 &processors);
         }
     }
