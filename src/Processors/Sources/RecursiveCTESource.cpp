@@ -25,7 +25,13 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsBool use_strict_insert_block_limits;
 }
 
 namespace ErrorCodes
@@ -205,7 +211,43 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        /// TODO: Support squashing transform
+        /// Squash small chunks before writing them into the intermediate table. A recursive step
+        /// writes one block per produced chunk, and the next step reads the working table block by
+        /// block, so without squashing a step that produces many small chunks leaves many tiny
+        /// blocks behind and the read of the next step degrades.
+        ///
+        /// The thresholds follow the same policy as a regular `INSERT` into the same storage. Today the
+        /// intermediate table is always a `Memory` table, which prefers smaller blocks for cache
+        /// locality, so squashing accumulates only up to `max_block_size` rows before flushing; the
+        /// `prefersLargeBlocks` branch keeps the policy in sync with `INSERT` should the storage of the
+        /// intermediate table ever change. The upper bounds are enforced only with
+        /// `use_strict_insert_block_limits`, as for `INSERT`.
+        const bool prefers_large_blocks = intermediate_temporary_table_storage->prefersLargeBlocks();
+        const size_t squashing_min_block_size_rows = prefers_large_blocks
+            ? recursive_subquery_settings[Setting::min_insert_block_size_rows]
+            : recursive_subquery_settings[Setting::max_block_size];
+        const size_t squashing_min_block_size_bytes
+            = prefers_large_blocks ? recursive_subquery_settings[Setting::min_insert_block_size_bytes] : 0;
+
+        /// The sink below is single-stream anyway (`addChain` resizes the pipeline to one stream), so
+        /// squash on a single stream too: otherwise each of the parallel streams reading the working
+        /// table would squash its own chunks and leave its own under-filled tail block behind.
+        pipeline_builder.resize(1);
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            /// The totals and extremes streams are dropped by the sink below; `SquashingTransform` does not
+            /// tolerate a finished output port, so it must not be attached to them.
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<SquashingTransform>(
+                in_header,
+                squashing_min_block_size_rows,
+                squashing_min_block_size_bytes,
+                recursive_subquery_settings[Setting::max_insert_block_size],
+                recursive_subquery_settings[Setting::max_insert_block_size_bytes],
+                recursive_subquery_settings[Setting::use_strict_insert_block_limits]);
+        });
 
         const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(

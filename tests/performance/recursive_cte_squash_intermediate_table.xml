@@ -1,0 +1,19 @@
+<test>
+    <!-- The recursive term reads the working table block by block and writes one block per chunk it
+         produces. A fragmented frontier, here produced by a selective filter over a wide scan, would
+         otherwise stay fragmented on every step: thousands of blocks of a few rows each, and the same
+         number of chunks to process per step. -->
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+    </settings>
+
+    <query>
+        WITH RECURSIVE t AS
+        (
+            SELECT number AS n, toUInt64(0) AS step FROM numbers_mt(100000000) WHERE number % 4096 = 0
+            UNION ALL
+            SELECT n + 1, step + 1 FROM t WHERE step &lt; 20
+        )
+        SELECT count(), sum(n) FROM t
+    </query>
+</test>
