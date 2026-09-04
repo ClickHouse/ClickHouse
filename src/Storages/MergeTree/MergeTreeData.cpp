@@ -11581,19 +11581,57 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
+    auto report = [&](String message, const String & full_name, const String & other_full_name, const char * hash_hint)
+    {
+        /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
+        if (full_name != other_full_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
+            message += hash_hint;
+
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+        LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+    };
+
+    /// Two streams of a single column that render to the same file name.
+    struct IntraColumnCollision
+    {
+        String stream_name;
+        String full_stream_name;
+        String other_full_stream_name;
+    };
+
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
+        std::optional<IntraColumnCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
+            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
+            if (!inserted && !collision)
+                collision = IntraColumnCollision{stream_name, full_stream_name, it->second};
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
         serialization->enumerateStreams(callback);
+
+        /// As fatal as a collision between two columns: both streams go into one file, so the part cannot be read back.
+        if (collision)
+        {
+            report(
+                fmt::format(
+                    "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(),
+                    collision->full_stream_name, collision->other_full_stream_name, collision->stream_name),
+                collision->full_stream_name, collision->other_full_stream_name,
+                ". It may be a collision between a filename for one stream and a hash of filename for another stream"
+                " (see setting 'replace_long_file_name_to_hash')");
+            return;
+        }
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
@@ -11603,17 +11641,13 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
                 const auto & [other_full_name, other_column_name] = it->second;
                 auto other_type = columns.getPhysical(other_column_name).type;
 
-                auto message = fmt::format(
-                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
-
-                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
-
-                if (throw_on_error)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                report(
+                    fmt::format(
+                        "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+                        column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name),
+                    full_stream_name, other_full_name,
+                    ". It may be a collision between a filename for one column and a hash of filename for another column"
+                    " (see setting 'replace_long_file_name_to_hash')");
                 return;
             }
         }
