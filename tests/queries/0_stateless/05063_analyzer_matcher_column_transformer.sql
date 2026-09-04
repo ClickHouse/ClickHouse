@@ -6,6 +6,7 @@
 -- All paths require enable_analyzer=1 (default) and EXPLAIN SYNTAX to trigger QueryTree→AST conversion.
 -- Tags: no-parallel-replicas
 
+SET enable_analyzer = 1; -- targeted code runs only in the analyzer path; pin it so old-analyzer CI shards behave the same
 CREATE TABLE t_matcher (a UInt64, b_x UInt64, b_y UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_matcher VALUES (1, 2, 3);
 

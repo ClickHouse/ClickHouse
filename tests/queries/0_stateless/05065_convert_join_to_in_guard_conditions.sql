@@ -8,6 +8,7 @@
 --   lines 190-191: output columns come from the right-side table
 -- Tags: no-random-settings, no-parallel-replicas
 
+SET enable_analyzer = 1; -- targeted code runs only in the analyzer path; pin it so old-analyzer CI shards behave the same
 SET query_plan_convert_join_to_in = 1;
 
 -- Baseline: inner hash-join, equality condition, left-only output -> optimization MUST fire.

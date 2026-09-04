@@ -6,6 +6,7 @@
 -- Tags: no-parallel-replicas
 
 -- 1. DESCENDING sort — hits line 23 (case SortDirection::DESCENDING: return "DESCENDING")
+SET enable_analyzer = 1; -- targeted code runs only in the analyzer path; pin it so old-analyzer CI shards behave the same
 EXPLAIN QUERY TREE SELECT number FROM numbers(5) ORDER BY number DESC;
 
 -- 2. NULLS FIRST — hits lines 50-51 (nulls_sort_direction branch)

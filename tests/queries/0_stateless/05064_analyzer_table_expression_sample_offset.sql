@@ -3,6 +3,7 @@
 -- Existing tests only use SAMPLE without OFFSET; the sample_offset_ratio branch in dump() is never hit.
 -- Tags: no-parallel-replicas
 
+SET enable_analyzer = 1; -- targeted code runs only in the analyzer path; pin it so old-analyzer CI shards behave the same
 CREATE TABLE t_sample_off (a UInt64) ENGINE = MergeTree ORDER BY a SAMPLE BY a;
 INSERT INTO t_sample_off SELECT number FROM numbers(100);
 
