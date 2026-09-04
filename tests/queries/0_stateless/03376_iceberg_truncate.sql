@@ -54,3 +54,11 @@ SELECT icebergTruncate(10, 1::Int64);
 SELECT icebergTruncate(10, -1::Int64);
 SELECT icebergTruncate(50, toDecimal64('10.65', 2));
 SELECT icebergTruncate(3, 'iceberg');
+
+SELECT icebergTruncate(100000, toDecimal32(123456, 0));
+SELECT icebergTruncate(100000, toDecimal64(1234567890123, 0));
+SELECT icebergTruncate(100000, toDecimal128(12345678901234567890, 0));
+SELECT icebergTruncate(100000, toDecimal256(123456789012345678901234567890, 0));
+
+SELECT icebergTruncate(100000, toDecimal128(100000, 0));
+SELECT icebergTruncate(100000, toDecimal128(99999, 0));
