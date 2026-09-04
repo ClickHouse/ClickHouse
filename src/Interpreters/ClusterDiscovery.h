@@ -9,7 +9,10 @@
 
 #include <base/defines.h>
 
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -32,6 +35,19 @@ public:
         const String & config_prefix = "remote_servers");
 
     void start();
+
+    /// Apply changes from reloaded remote_servers config (credentials, add/remove discovery paths).
+    /// Safe to call from the config-reloader thread; the update is applied on the discovery worker.
+    void updateFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix = "remote_servers");
+
+    /// Throws if discovery subtrees under `config_prefix` are invalid. No side effects.
+    /// Call before committing Clusters / clusters_config so a bad reload cannot partially apply.
+    static void validateConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        ContextPtr context,
+        const String & config_prefix = "remote_servers");
 
     ClusterPtr getCluster(const String & cluster_name) const;
     std::unordered_map<String, ClusterPtr> getClusters() const;
@@ -89,9 +105,11 @@ private:
         String password;
         String cluster_secret;
 
-        /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
-        /// 0 for static clusters
-        size_t zk_root_index;
+        /// For dynamic clusters: MulticlusterDiscovery::getFullPath() where cluster was found.
+        /// Empty for static clusters defined with <path>.
+        String multicluster_full_path;
+
+        bool isDynamic() const { return !multicluster_full_path.empty(); }
 
         ClusterInfo(const String & name_,
                     const String & zk_name_,
@@ -105,60 +123,42 @@ private:
                     size_t shard_id,
                     bool observer_mode,
                     bool invisible,
-                    size_t zk_root_index_ = 0
+                    const String & multicluster_full_path_ = {}
                     );
     };
 
-    void initialUpdate();
+    struct ParsedStaticDiscovery
+    {
+        String name;
+        String zk_name;
+        String zk_root;
+        String host_name;
+        String username;
+        String password;
+        String cluster_secret;
+        bool secure = false;
+        size_t shard_id = 0;
+        bool observer = false;
+        bool invisible = false;
+    };
 
-    void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
+    struct ParsedMulticlusterDiscovery
+    {
+        String zk_name;
+        String zk_path;
+        bool is_secure_connection = false;
+        String username;
+        String password;
+        String cluster_secret;
 
-    Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
-                         const String & zk_root,
-                         const String & cluster_name,
-                         int * version,
-                         bool set_callback,
-                         size_t zk_root_index);
+        String getFullPath() const { return zk_name + ":" + zk_path; }
+    };
 
-    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
-
-    ClusterPtr makeCluster(const ClusterInfo & cluster_info);
-
-    bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
-    bool upsertCluster(ClusterInfo & cluster_info);
-    void removeCluster(const String & name, bool is_dynamic);
-
-    bool runMainThread(std::function<void()> up_to_date_callback);
-    void shutdown();
-
-    void findDynamicClusters(std::unordered_map<String, ClusterInfo> & info, std::unordered_set<size_t> * unchanged_roots = nullptr);
-
-    /// cluster name -> cluster info (zk root, set of nodes)
-    std::unordered_map<String, ClusterInfo> clusters_info;
-
-    ContextMutablePtr context;
-
-    String current_node_name;
-
-    template <typename T> class Flags;
-    using UpdateFlags = Flags<std::string>;
-
-    /// Cluster names to update.
-    /// The `shared_ptr` is used because it's passed to watch callback.
-    /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
-    std::shared_ptr<UpdateFlags> clusters_to_update;
-
-    /// Hold the callback pointers of each cluster.
-    /// To avoid registering callbacks for the same path multiple times.
-    std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
-
-    mutable std::mutex mutex;
-    std::unordered_map<String, ClusterPtr> cluster_impls;
-
-    bool is_initialized = false;
-    ThreadFromGlobalPool main_thread;
-
-    LoggerPtr log;
+    struct ParsedDiscoveryConfig
+    {
+        std::vector<ParsedStaticDiscovery> static_clusters;
+        std::vector<ParsedMulticlusterDiscovery> multicluster_roots;
+    };
 
     struct MulticlusterDiscovery
     {
@@ -191,7 +191,115 @@ private:
         String getFullPath() const { return zk_name + ":" + zk_path; }
     };
 
-    std::vector<MulticlusterDiscovery> multicluster_discovery_paths;
+    static ParsedDiscoveryConfig parseDiscoveryConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        ContextPtr context,
+        const String & config_prefix);
+
+    void applyParsedConfig(ParsedDiscoveryConfig && parsed);
+    void addStaticCluster(ParsedStaticDiscovery && parsed);
+    void removeStaticCluster(const String & name);
+    /// Remove a multicluster-discovered cluster so a static config entry can take its name.
+    void removeDynamicCluster(const String & name);
+    bool updateStaticClusterFields(ClusterInfo & info, const ParsedStaticDiscovery & parsed);
+    void addMulticlusterRoot(ParsedMulticlusterDiscovery && parsed);
+    void removeMulticlusterRoot(const String & full_path);
+    bool updateMulticlusterRootFields(MulticlusterDiscovery & path, const ParsedMulticlusterDiscovery & parsed);
+    /// Force findDynamicClusters to rescan roots (e.g. after a static name stops shadowing).
+    void markMulticlusterRootsNeedUpdate();
+
+    void rebuildClusterObject(const ClusterInfo & info);
+    void ensureWorkerStarted();
+    bool consumePendingConfigUpdate();
+
+    /// Assumes start_mutex is held. Starts the worker at most once.
+    void startImpl();
+
+    void initialUpdate();
+
+    void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
+
+    struct PendingZkUnregister
+    {
+        String zk_name;
+        String zk_root;
+        String cluster_name;
+    };
+
+    /// Returns false if Keeper remove failed; caller should queue a retry.
+    bool unregisterFromZk(const String & zk_name, const String & zk_root, const String & cluster_name);
+    /// Retries failed unregisters. Returns true when the queue is empty.
+    /// Drops pending entries whose path already has an active participant again.
+    bool retryPendingUnregisters();
+
+    Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
+                         const String & zk_root,
+                         const String & cluster_name,
+                         int * version,
+                         bool set_callback,
+                         const String & multicluster_full_path);
+
+    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
+
+    ClusterPtr makeCluster(const ClusterInfo & cluster_info);
+
+    bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
+    bool upsertCluster(ClusterInfo & cluster_info);
+    void removeCluster(const String & name, bool is_dynamic);
+
+    bool runMainThread(std::function<void()> up_to_date_callback);
+    void shutdown();
+
+    void findDynamicClusters(
+        std::unordered_map<String, ClusterInfo> & info,
+        std::unordered_set<String> * unchanged_roots = nullptr);
+
+    /// cluster name -> cluster info (zk root, set of nodes)
+    /// Mutated only from constructor (before start) and the discovery worker thread.
+    std::unordered_map<String, ClusterInfo> clusters_info;
+
+    ContextMutablePtr context;
+
+    String current_node_name;
+
+    template <typename T> class Flags;
+    using UpdateFlags = Flags<std::string>;
+
+    /// Cluster names to update.
+    /// The `shared_ptr` is used because it's passed to watch callback.
+    /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
+    std::shared_ptr<UpdateFlags> clusters_to_update;
+
+    /// Hold the callback pointers of each cluster.
+    /// To avoid registering callbacks for the same path multiple times.
+    std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, ClusterPtr> cluster_impls;
+
+    bool is_initialized = false;
+
+    /// Serializes start() / ensureWorkerStarted() so concurrent config reload and
+    /// startClusterDiscovery cannot double-assign main_thread (ThreadFromGlobalPool aborts).
+    /// Lock order: start_mutex before pending_config_mutex.
+    mutable std::mutex start_mutex;
+    ThreadFromGlobalPool main_thread;
+
+    LoggerPtr log;
+
+    /// Keyed by MulticlusterDiscovery::getFullPath()
+    std::unordered_map<String, MulticlusterDiscovery> multicluster_discovery_paths;
+
+    /// Config reload posts parsed config here; worker applies it.
+    /// Never take this lock while a caller without start_mutex may later take start_mutex
+    /// while holding this one: lock order is start_mutex -> pending_config_mutex.
+    mutable std::mutex pending_config_mutex;
+    std::optional<ParsedDiscoveryConfig> pending_config_update;
+
+    /// Ephemeral registrations that failed to remove during config apply.
+    /// Local cluster state is already dropped; retry from the worker thread.
+    /// Accessed only from the discovery worker (same as clusters_info).
+    std::vector<PendingZkUnregister> pending_zk_unregisters;
 
     MultiVersion<Macros>::Version macros;
 };
