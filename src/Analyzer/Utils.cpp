@@ -1,5 +1,6 @@
 #include <Analyzer/Utils.h>
 
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -44,6 +45,7 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -60,6 +62,7 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <functional>
 #include <ranges>
 
 namespace DB
@@ -736,6 +739,50 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
     return result;
 }
 
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {join_tree};
+    while (!stack.empty())
+    {
+        auto node = std::move(stack.back());
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        if (const auto * join = node->as<JoinNode>())
+        {
+            const auto contains_table = [&](const TableExpressionNodePtr & side)
+            {
+                return std::ranges::any_of(
+                    extractTableExpressions(side),
+                    [&](const auto & expression) { return expression.get() == table.get(); });
+            };
+
+            const bool table_on_left = contains_table(join->getLeftTableExpressionNodeTyped());
+            const bool table_on_right = contains_table(join->getRightTableExpressionNodeTyped());
+
+            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
+                return false;
+            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
+                return false;
+            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
+                return false;
+            stack.push_back(join->getLeftTableExpressionNode());
+            stack.push_back(join->getRightTableExpressionNode());
+        }
+        else if (const auto * array_join = node->as<ArrayJoinNode>())
+        {
+            stack.push_back(array_join->getTableExpressionNode());
+        }
+        else if (const auto * cross_join = node->as<CrossJoinNode>())
+        {
+            for (const auto & expression : cross_join->getTableExpressions())
+                stack.push_back(expression);
+        }
+    }
+    return true;
+}
+
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node)
 {
     TableExpressionNodePtr result;
@@ -1294,19 +1341,74 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
     return false;
 }
 
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
+namespace
+{
+
+template <typename KeepFunction>
+bool walkOrdinaryFunctions(const QueryTreeNodePtr & node, KeepFunction && keep_function)
+{
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+        if (!current)
+            continue;
+
+        const auto type = current->getNodeType();
+        if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+            return false;
+
+        if (const auto * function = current->as<FunctionNode>())
+        {
+            if (function->isWindowFunction() || function->isAggregateFunction())
+                return false;
+            /// `IN local_table` is node-local: remotes may not have the table. Subquery `IN`
+            /// is already rejected via `QUERY` / `UNION` above. Tuple / literal `IN` stays.
+            if (functionIsInOrGlobalInOperator(function->getFunctionName()))
+            {
+                const auto & args = function->getArguments().getNodes();
+                if (args.size() == 2)
+                {
+                    const auto rhs_type = args[1]->getNodeType();
+                    if (rhs_type == QueryTreeNodeType::TABLE || rhs_type == QueryTreeNodeType::TABLE_FUNCTION)
+                        return false;
+                }
+            }
+            if (function->isOrdinaryFunction())
+            {
+                auto function_base = function->getFunction();
+                if (!function_base || !keep_function(function_base))
+                    return false;
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return true;
+}
+
+void filterConjunctions(
     QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & table_expression,
+    const std::function<bool(const QueryTreeNodePtr &)> & keep,
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
     if (!function)
+    {
+        if (!keep(expression))
+            expression = {};
         return;
+    }
 
     if (function->getFunctionName() != "and")
     {
-        if (hasUnknownColumn(expression, table_expression))
-            expression = nullptr;
+        if (!keep(expression))
+            expression = {};
         return;
     }
 
@@ -1321,10 +1423,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         if (auto * function_node = node->as<FunctionNode>())
         {
             if (function_node->getFunctionName() == "and")
-                std::ranges::copy(
-                    function_node->getArguments(),
-                    std::back_inserter(processing)
-                );
+                std::ranges::copy(function_node->getArguments(), std::back_inserter(processing));
             else
                 conjunctions.push_back(node);
         }
@@ -1338,7 +1437,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     for (const auto & node : processing)
     {
-        if (!hasUnknownColumn(node, table_expression))
+        if (keep(node))
             conjunctions.push_back(node);
     }
 
@@ -1358,6 +1457,44 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     const auto function_impl = FunctionFactory::instance().get("and", context);
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+}
+
+}
+
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
+{
+    return walkOrdinaryFunctions(
+        node,
+        [](const FunctionBasePtr & function_base)
+        {
+            return function_base->isDeterministic()
+                && function_base->isDeterministicInScopeOfQuery()
+                && !function_base->isStateful()
+                && !function_base->isServerConstant()
+                && !functionIsDictGet(function_base->getName())
+                && !functionIsJoinGet(function_base->getName());
+        });
+}
+
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    filterConjunctions(
+        expression,
+        [&](const QueryTreeNodePtr & node) { return !hasUnknownColumn(node, table_expression); },
+        context);
+}
+
+void removeExpressionsThatAreUnsafeToDuplicate(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context)
+{
+    if (!expression)
+        return;
+
+    filterConjunctions(expression, isSafeToDuplicateInQueryTree, context);
 }
 
 namespace

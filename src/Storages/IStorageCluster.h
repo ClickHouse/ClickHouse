@@ -71,7 +71,6 @@ class ReadFromCluster : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromCluster"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromCluster(
         const Names & column_names_,
@@ -106,6 +105,10 @@ private:
     LoggerPtr log;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
+    /// Listing DAG after wrap `WHERE` is ANDed with a later optimizer filter
+    /// (when they differ) and identifier inputs (`__tableN.col`) are rewritten
+    /// to storage names.
+    std::optional<ActionsDAG> listing_filter_dag;
 
     void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);

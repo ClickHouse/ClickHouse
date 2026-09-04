@@ -82,6 +82,8 @@ public:
 
     String getName() const override { return function_name; }
 
+    bool isDeterministic() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }

@@ -1655,8 +1655,66 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
     if (wrap_read_columns_in_subquery)
     {
+        auto original_table_expression = table_expression;
+        const auto * parent_query = select_query_info.query_tree
+            ? select_query_info.query_tree->as<QueryNode>()
+            : nullptr;
+        const bool can_prefilter_wrapped_table = parent_query
+            && joinTreePreservesRowsForTable(parent_query->getJoinTreeNode(), original_table_expression);
+
+        QueryTreeNodePtr wrap_where;
+        QueryTreeNodePtr wrap_prewhere;
+        if (can_prefilter_wrapped_table)
+        {
+            auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
+            {
+                auto cloned = predicate->clone();
+                removeExpressionsThatDoNotDependOnTableIdentifiers(cloned, original_table_expression, query_context);
+                removeExpressionsThatAreUnsafeToDuplicate(cloned, query_context);
+                return cloned;
+            };
+
+            if (parent_query->hasWhere())
+                wrap_where = copy_left_only(parent_query->getWhere());
+            if (parent_query->hasPrewhere())
+                wrap_prewhere = copy_left_only(parent_query->getPrewhere());
+
+            const auto * orig_table = original_table_expression->as<TableNode>();
+            const auto * orig_table_function = original_table_expression->as<TableFunctionNode>();
+            const StoragePtr & orig_storage
+                = orig_table ? orig_table->getStorage() : orig_table_function->getStorage();
+            /// `IStorageCluster` does not support `PREWHERE`. Fold the copied clause into
+            /// wrap `WHERE` so dummy analysis / initiator listing see it, and wrap
+            /// planning does not throw `ILLEGAL_PREWHERE`.
+            if (wrap_prewhere && dynamic_cast<const IStorageCluster *>(orig_storage.get()))
+            {
+                if (wrap_where)
+                    wrap_where = mergeConditionNodes({std::move(wrap_where), std::move(wrap_prewhere)}, query_context);
+                else
+                    wrap_where = std::move(wrap_prewhere);
+                wrap_prewhere = {};
+            }
+
+            /// Keep copied `WHERE` columns in the wrap projection. `icebergCluster`
+            /// reports `WithMergeableState`, so wrap planning does not add a `FilterStep`.
+            if (auto listing_predicate = wrap_where ? wrap_where : wrap_prewhere)
+                collectSourceColumns(listing_predicate, planner_context, false /*keep_alias_columns*/);
+        }
+
         auto columns = table_expression_data.getColumns();
-        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
+
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
+        /// WHERE/PREWHERE so wrap dummy analysis (and initiator listing) see the same
+        /// predicate as a single-table `icebergCluster` read.
+        if (can_prefilter_wrapped_table)
+        {
+            auto & wrap_query = table_expression->as<QueryNode &>();
+            if (wrap_where)
+                wrap_query.getWhere() = std::move(wrap_where);
+            if (wrap_prewhere)
+                wrap_query.getPrewhere() = std::move(wrap_prewhere);
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -2766,12 +2824,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         else
         {
             std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            auto subquery_options = select_query_options.subquery();
             if (wrap_read_columns_in_subquery)
-                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            {
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(
+                    nullptr, nullptr, nullptr, collectFiltersForAnalysis(table_expression, subquery_options, nullptr));
+            }
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
-            auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
