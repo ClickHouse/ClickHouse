@@ -2751,10 +2751,16 @@ def test_column_pruning(started_cluster):
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
+    # `input_format_parquet_footer_read_size` is pinned so that the number of bytes read stays a
+    # measure of column pruning only. With the adaptive default the initial footer read is at least
+    # 128 KiB, which is more than this (much smaller) file, so the whole file would be read and the
+    # numbers below would no longer say anything about which columns were fetched.
+    footer_read_size = 64 * 1024
+
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
@@ -2770,7 +2776,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0, input_format_parquet_footer_read_size={footer_read_size}",
             query_id=query_id,
         )
     )
