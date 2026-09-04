@@ -695,16 +695,20 @@ def mark_reproduced(result):
     result.set_status(Result.Status.XFAIL)
 
 
-def finalize(results, info_lines, status="", do_not_cache=False):
+def finalize(results, info_lines, status=""):
     # `Result.create_from` derives the job status from the children and skips over
     # OK/SKIPPED/XFAIL ones, so a lone SKIPPED child yields a job status of OK. A caller
     # that needs the job itself to read SKIPPED has to pass `status` explicitly.
+    #
+    # No verdict here is cacheable: each reads the merge base, the PR's labels or the PR's
+    # changed-file set, and a digest hashes the checkout's files and submodule revisions
+    # only. The digest is kept because it also gates affectedness.
     Result.create_from(
         results=results,
         info=info_lines,
         with_info_from_results=True,
         status=status,
-    ).complete_job(do_not_cache=do_not_cache)
+    ).complete_job(do_not_cache=True)
 
 
 def main():
@@ -724,8 +728,6 @@ def main():
                 )
             ],
             "Skipped: not a bugfix PR.",
-            # A job digest hashes files and submodule revisions, never the PR's labels.
-            do_not_cache=True,
         )
         return
 
@@ -771,8 +773,6 @@ def main():
     # what the PR author wrote. See determine_merge_base.
     pr_sha = info.sha
     assert pr_sha, "Info.sha (PR head commit) is empty; cannot overlay the PR's test files"
-    # No digest input captures `merge_base` (a digest hashes the checkout's files and
-    # submodule revisions), so every verdict reached against it below sets `do_not_cache`.
     merge_base = determine_merge_base(info)
     print(f"PR head commit: {pr_sha}")
     print(f"merge-base: {merge_base}")
@@ -888,7 +888,6 @@ def main():
             "branch split, so the before-worktree cannot be populated at the merge-base "
             "submodule revisions.",
             status=Result.Status.SKIPPED,
-            do_not_cache=True,
         )
         return
 
@@ -969,7 +968,6 @@ def main():
                 "interface. Regression coverage is judged by the functional/integration "
                 "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
                 "exist).",
-                do_not_cache=True,
             )
             return
         compile_result.set_status(Result.Status.ERROR)
@@ -1038,7 +1036,6 @@ def main():
             results,
             "Bug reproduced: at least one touched unit test fails/crashes on the "
             "before-binary (merge-base without the fix) and passes on the PR binary.",
-            do_not_cache=True,
         )
         return
 
