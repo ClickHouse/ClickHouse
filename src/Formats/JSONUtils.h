@@ -9,6 +9,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/Stopwatch.h>
 #include <functional>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 namespace DB
@@ -127,9 +129,9 @@ namespace JSONUtils
         bool yield_strings,
         const FormatSettings & settings,
         WriteBuffer & out,
-        const std::optional<String> & name = std::nullopt,
+        std::optional<std::string_view> name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ",
+        std::string_view title_after_delimiter = " ",
         bool pretty_json = false);
 
     void writeColumns(

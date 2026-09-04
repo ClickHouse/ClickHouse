@@ -525,7 +525,7 @@ La siguiente tabla resume la seguridad de cada operación cuando se están reali
   ## Vistas materializadas actualizables
 </div>
 
-Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) son un tipo especial de vista materializada en ClickHouse que vuelve a ejecutar periódicamente la consulta y almacena el resultado, de forma similar a como funcionan las vistas materializadas en otras bases de datos. Esto resulta útil en escenarios en los que se necesitan instantáneas periódicas o agregaciones, en lugar de triggers de inserción en tiempo real.
+Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) son un tipo especial de vista materializada en ClickHouse que vuelve a ejecutar periódicamente la consulta y almacena el resultado, de forma similar a como funcionan las vistas materializadas en otras bases de datos. Esto resulta útil en escenarios en los que se necesitan instantáneas periódicas o agregaciones, en lugar de desencadenadores de inserción en tiempo real.
 
 <Tip>
   Las vistas materializadas actualizables pueden usarse con **ambos** enfoques: [destino implícito](#implicit-target) y [destino explícito](#explicit-target). La configuración `refreshable` es independiente de cómo se gestione la tabla de destino.
@@ -535,7 +535,7 @@ Para usar una vista materializada actualizable, agrega un objeto de configuraci�
 
 | Opción                        | Descripción                                                                                                                                                                               | Obligatorio | Valor predeterminado |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------- |
-| refresh&#95;interval          | La cláusula `interval` (obligatoria)                                                                                                                                                      | Sí          |                      |
+| interval                      | La cláusula `interval` (obligatoria), como `EVERY 5 MINUTE`                                                                                                                               | Sí          |                      |
 | randomize                     | La cláusula de aleatorización; aparecerá después de `RANDOMIZE FOR`                                                                                                                       |             |                      |
 | append                        | Si se establece en `True`, cada actualización inserta filas en la tabla sin eliminar las filas existentes. La inserción no es atómica, igual que un `INSERT SELECT` normal.               |             | False                |
 | depends&#95;on                | Una lista de dependencias para la MV actualizable. Proporciona las dependencias con el siguiente formato: `{schema}.{view_name}`                                                          |             |                      |
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### Actualización de los parámetros de refresco
+</div>
+
+A partir de dbt-clickhouse 1.10.2, los cambios en los parámetros de refresco (`interval`, `randomize` y `depends_on`) de una vista materializada actualizable existente se aplican directamente durante una ejecución normal de `dbt run`, mediante `ALTER TABLE ... MODIFY REFRESH`. La vista materializada no se elimina ni se vuelve a crear, por lo que no se pierden datos ni hay una «ventana ciega» mientras se aplica el cambio.
+
+Algunas transiciones no pueden aplicarse directamente. En lugar de ignorarlas silenciosamente, dbt hará fallar la ejecución con un error que le pedirá usar `dbt run --full-refresh`:
+
+* Convertir una vista materializada normal en una actualizable (añadiendo la configuración `refreshable`), o viceversa (eliminándola).
+* Cambiar la configuración `append`, ya que ClickHouse no permite añadir ni eliminar `APPEND` mediante `MODIFY REFRESH`.
+
+Tenga en cuenta que `--full-refresh` elimina y vuelve a crear la vista materializada, con las implicaciones descritas en [Comportamiento durante la ingestión activa](#behavior-during-active-ingestion).
 
 <div id="explicit-target-limitations">
   ### Limitaciones

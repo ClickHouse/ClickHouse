@@ -102,10 +102,10 @@ MongoDB에서 데이터베이스/테이블을 삭제하면 ClickPipes는 계속 
 
 AWS의 MongoDB(및 DocumentDB) 클러스터에 대해서만 PrivateLink를 지원합니다.
 
-단일 노드 관계형 데이터베이스와 달리 MongoDB 클라이언트는 구성된 `ReadPreference`를 따르려면 레플리카 세트를 성공적으로 검색할 수 있어야 합니다. 이를 위해서는 클러스터의 모든 노드에 대해 PrivateLink를 설정해야 하며, 그래야 MongoDB 클라이언트가 레플리카 세트 연결을 정상적으로 설정하고 연결된 노드에 장애가 발생했을 때 다른 노드로 전환할 수 있습니다.
+단일 노드 관계형 데이터베이스와 달리 MongoDB 클라이언트는 구성된 `ReadPreference`를 따르려면 Replica Set을 성공적으로 검색할 수 있어야 합니다. 이를 위해서는 클러스터의 모든 노드에 대해 PrivateLink를 설정해야 하며, 그래야 MongoDB 클라이언트가 Replica Set 연결을 정상적으로 설정하고 연결된 노드에 장애가 발생했을 때 다른 노드로 전환할 수 있습니다.
 
-클러스터의 단일 노드에 연결하려는 경우 ClickPipes 설정 중 connection string에 `/?directConnection=true`를 지정하여 레플리카 세트 검색을 건너뛸 수 있습니다. 이 경우 PrivateLink 설정은 단일 노드 관계형 데이터베이스와 유사하며, PrivateLink 지원을 위한 가장 간단한 옵션입니다.
+클러스터의 단일 노드에 연결하려는 경우 ClickPipes 설정 중 connection string에 `/?directConnection=true`를 지정하여 Replica Set 검색을 건너뛸 수 있습니다. 이 경우 PrivateLink 설정은 단일 노드 관계형 데이터베이스와 유사하며, PrivateLink 지원을 위한 가장 간단한 옵션입니다.
 
-레플리카 세트 연결의 경우 VPC 리소스 또는 VPC 엔드포인트 서비스를 사용해 MongoDB용 PrivateLink를 설정할 수 있습니다. VPC 리소스를 사용하는 경우 `GROUP` 리소스 구성과 더불어 클러스터의 각 노드마다 `CHILD` 리소스 구성을 생성해야 합니다. VPC 엔드포인트 서비스를 사용하는 경우 클러스터의 각 노드마다 별도의 엔드포인트 서비스(및 별도의 NLB)를 생성해야 합니다.
+Replica Set 연결의 경우 VPC 리소스 또는 VPC 엔드포인트 서비스를 사용해 MongoDB용 PrivateLink를 설정할 수 있습니다. VPC 리소스를 사용하는 경우 `GROUP` 리소스 구성과 더불어 클러스터의 각 노드마다 `CHILD` 리소스 구성을 생성해야 합니다. VPC 엔드포인트 서비스를 사용하는 경우 클러스터의 각 노드마다 별도의 엔드포인트 서비스(및 별도의 NLB)를 생성해야 합니다.
 
-자세한 내용은 [ClickPipes용 AWS PrivateLink](/ko/integrations/clickpipes/networking/aws-privatelink) 문서를 참조하십시오. 도움이 필요하면 ClickHouse 지원팀에 문의하십시오.
+자세한 내용은 [AWS PrivateLink](/ko/integrations/clickpipes/networking/aws-privatelink) 문서를 참조하십시오. 도움이 필요하면 ClickHouse 지원팀에 문의하십시오.

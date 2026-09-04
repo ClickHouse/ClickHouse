@@ -1543,6 +1543,17 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
                 f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
             )
             assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
+
+            ## SHOW CREATE TABLE is served by InterpreterShowCreateQuery, a different code path
+            ## from the system.tables column filler above. It answers from catalog metadata and
+            ## must not fail because the storage object cannot be opened.
+            result = node.query(
+                f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {settings}"
+            )
+            assert table_name in result, f"SHOW CREATE TABLE, require={require}"
+            assert (
+                "Injected metadata resolution failure" not in result
+            ), f"SHOW CREATE TABLE leaked the resolution error, require={require}"
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
