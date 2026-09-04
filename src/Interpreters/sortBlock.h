@@ -14,6 +14,13 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0, IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable);
 
+/** Sorts the block by `description` and keeps only the first row of every range of rows that compare equal
+  * on the whole description - with a stable sort, the first-received one. The equal rows are known from the
+  * sort itself, so the dropped rows are never copied. Without a non-constant sort column every row is equal
+  * to the first one, and only that one stays.
+  */
+void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability);
+
 /** Same as sortBlock, but do not sort the block, but only calculate the permutation of the values,
   *  so that you can rearrange the column values yourself.
   * Sorting is stable. This is important for keeping the order of rows in the CollapsingMergeTree engine
