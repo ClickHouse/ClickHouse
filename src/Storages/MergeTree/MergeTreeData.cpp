@@ -1194,6 +1194,45 @@ void MergeTreeData::checkProperties(
                         backQuote(index.column_names[0]));
 
                 columns_with_text_indexes.insert(column);
+
+                /// A text index over an ALIAS column whose declared type differs from the type its
+                /// expression produces can never be used. Reading the column applies an implicit
+                /// `CAST` to the declared type, while the index is built over the expression as
+                /// written, and `MergeTreeIndexConditionText` matches the predicate to the index by
+                /// column name - so the names never agree and the index is silently skipped. The
+                /// index files are written and merged all the same, so the cost is paid and nothing
+                /// reads them. Existing tables are left alone: `attach` must keep loading whatever
+                /// is already on disk.
+                if (!attach && !index.data_types.empty())
+                {
+                    const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+                    ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+
+                    /// Only a bare reference to an ALIAS column is diagnosable here. The expression
+                    /// stored in the index has the alias already expanded, so it is identical whether
+                    /// or not the declared type matched, and cannot be used to detect this.
+                    if (const auto * identifier = index_expression ? index_expression->as<ASTIdentifier>() : nullptr)
+                    {
+                        const auto * column_description = new_metadata.columns.tryGet(identifier->name());
+
+                        if (column_description
+                            && column_description->default_desc.kind == ColumnDefaultKind::Alias
+                            && !column_description->type->equals(*index.data_types[0]))
+                        {
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Text index {} is defined over ALIAS column {}, which is declared as {} while its "
+                                "expression produces {}. The column is read through a conversion to the declared "
+                                "type, so the index would never be used. Declare the column as {}, or index the "
+                                "expression directly.",
+                                backQuote(index.name),
+                                backQuote(identifier->name()),
+                                column_description->type->getName(),
+                                index.data_types[0]->getName(),
+                                index.data_types[0]->getName());
+                        }
+                    }
+                }
             }
         }
     }
