@@ -1,0 +1,38 @@
+1
+1
+0
+0
+0
+0
+1
+1
+0
+1
+0
+1
+0
+1
+0
+0
+1
+1
+0
+0
+1
+1
+0
+1
+-- column map, column key, column value --
+1	1
+2	0
+3	1
+4	1
+5	0
+-- column map, const key, const value --
+1
+-- Like over column map --
+1
+3
+4
+1
+2
