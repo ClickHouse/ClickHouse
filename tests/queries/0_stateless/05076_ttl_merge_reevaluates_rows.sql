@@ -18,7 +18,8 @@ DROP TABLE IF EXISTS t_ttl_patch_part;
 SELECT '-- rows TTL, horizontal merge';
 
 CREATE TABLE t_ttl_rows (ts DateTime, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-TTL ts + INTERVAL 1 SECOND SETTINGS min_bytes_for_wide_part = 0;
+TTL ts + INTERVAL 1 SECOND
+SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0;
 SYSTEM STOP MERGES t_ttl_rows;
 INSERT INTO t_ttl_rows VALUES (now() - INTERVAL 1 DAY, 42);
 ALTER TABLE t_ttl_rows MODIFY TTL ts + INTERVAL 10 YEAR SETTINGS materialize_ttl_after_modify = 0;
@@ -28,6 +29,11 @@ SELECT count(), sum(v) FROM t_ttl_rows;
 -- The merge also rewrites the stored bounds, so the part is no longer a trap for the next merge.
 SELECT delete_ttl_info_min > now() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_ttl_rows' AND active;
+-- Without this the case would silently be a second vertical-merge test.
+SYSTEM FLUSH LOGS part_log;
+SELECT merge_algorithm FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_ttl_rows' AND event_type = 'MergeParts'
+ORDER BY event_time DESC LIMIT 1;
 
 SELECT '-- rows TTL, in-range control: the same DDL with the default materialize_ttl_after_modify';
 

@@ -298,8 +298,6 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
 
 # -------------------------------------------------------------------
 # Case 6: Rows TTL + column TTL
-# How many rows the sources pushed depends on the granule size, so assert only
-# that they were read at all.
 # -------------------------------------------------------------------
 echo "-- Case 6: TTLDrop with a rows TTL and a column TTL"
 
@@ -332,7 +330,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT
         merge_reason,
         rows,
-        read_rows > 0
+        read_rows
     FROM system.part_log
     WHERE
         database = currentDatabase()

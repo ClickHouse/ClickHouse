@@ -1,6 +1,7 @@
 -- rows TTL, horizontal merge
 1	42
 1
+Horizontal
 -- rows TTL, in-range control: the same DDL with the default materialize_ttl_after_modify
 1	42
 -- rows TTL, vertical merge
