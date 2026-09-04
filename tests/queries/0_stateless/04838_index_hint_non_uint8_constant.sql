@@ -35,10 +35,13 @@ SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHi
 SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(CAST(NULL, 'Nullable(UInt8)'));
 SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(NULL, 1);
 
--- A falsy hint must still prune everything (pinned by 02841/02892/02962).
+-- A falsy hint must still prune everything (pinned by 02841/02892/02962). Each carrier here is the
+-- falsy twin of a truthy one above; a hint whose type carries no boolean reading is dropped instead,
+-- which leaves every row, so the twin is what tells the two apart.
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(0);
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toNullable(0));
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toLowCardinality(0));
+SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(toLowCardinality(toNullable(0)));
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(0.0);
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(0, 256);
 SELECT 'falsy', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint('x', 0);
