@@ -46,8 +46,7 @@ public:
     std::function<void()> confirmation_callback;
     bool ask_confirmation = true;
 
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static std::map<String, Command> commands;
+    inline static std::map<String, Command> commands;
 
     std::unordered_map<String, std::future<Coordination::WatchResponse>> watches;
 

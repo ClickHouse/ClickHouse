@@ -50,7 +50,12 @@ bool isAllASCII(const UInt8 * data, size_t size)
 #endif
 }
 
-LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+/// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
+/// We call a pattern "perfect prefix" if:
+/// - (1) the pattern has a wildcard
+/// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
+/// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -65,26 +70,24 @@ LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_p
             case '_':
             {
                 bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                if (requires_perfect_prefix && !is_perfect_prefix)
-                    return {};
-                return {.prefix = fixed_prefix, .is_perfect = is_perfect_prefix};
+                if (requires_perfect_prefix)
+                {
+                    if (is_perfect_prefix)
+                        return {fixed_prefix, true};
+                    else
+                        return {"", false};
+                }
+                else
+                {
+                    return {fixed_prefix, is_perfect_prefix};
+                }
             }
             case '\\':
             {
                 ++pos;
-                /// A trailing escape is an invalid pattern the matcher rejects; never report it as exact,
-                /// or a point range would prune the granule and skip that exception.
                 if (pos == end)
-                {
-                    if (requires_perfect_prefix)
-                        return {};
-                    return {.prefix = fixed_prefix};
-                }
-                /// Only '\%', '\_' and '\\' drop the backslash, an unknown escape keeps it.
-                if (*pos != '%' && *pos != '_' && *pos != '\\')
-                    fixed_prefix += '\\';
-                fixed_prefix += *pos;
-                break;
+                    break;
+                [[fallthrough]];
             }
             default:
             {
@@ -94,8 +97,10 @@ LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_p
 
         ++pos;
     }
-    /// No wildcard was found, so the pattern is an exact match of `fixed_prefix`.
-    return {.prefix = fixed_prefix, .is_exact = true};
+    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
+    if (requires_perfect_prefix)
+        return {"", false};
+    return {fixed_prefix, false};
 }
 
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,

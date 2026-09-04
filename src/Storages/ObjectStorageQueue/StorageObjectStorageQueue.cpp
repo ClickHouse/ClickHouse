@@ -10,7 +10,6 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Databases/DatabasesCommon.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -25,7 +24,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
@@ -39,7 +37,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Common/CurrentThread.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -67,11 +64,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
-namespace DimensionalMetrics
-{
-    extern MetricFamily & ObjectStorageQueueFailures;
-}
-
 
 namespace DB
 {
@@ -85,7 +77,6 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace FailPoints
@@ -95,7 +86,6 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
-    extern const char object_storage_queue_pause_after_commit[];
 }
 
 namespace ServerSetting
@@ -111,10 +101,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
     extern const ObjectStorageQueueSettingsString keeper_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
-    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
-    extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
-    extern const ObjectStorageQueueSettingsString partition_regex;
-    extern const ObjectStorageQueueSettingsString partition_component;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
@@ -279,12 +265,11 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_,
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
     bool keep_data_in_keeper_)
-    : IStreamingStorage(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
@@ -342,34 +327,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
     validateSettings(*queue_settings_, is_attach);
 
-    /// The object storage S3 client is built once here and reused by background threads, so the effective
-    /// per-session credential restriction must be captured now from the CREATE query (its
-    /// `s3_allow_server_credentials_in_user_queries` value arrives as `allow_server_credentials_in_user_queries_`).
-    /// The restriction is NOT relaxed when loading from existing metadata: a queue whose definition resolves to
-    /// server-managed credentials (e.g. a named collection later re-bound to `use_environment_credentials = 1`)
-    /// must not silently regain the server identity on restart, since that is something a user `CREATE`/`ATTACH`
-    /// of the same definition would be refused. Instead, flagging the load lets `getClient` downgrade such a
-    /// queue to an anonymous client (so the server still starts and the queue is merely inaccessible) rather
-    /// than escalating or aborting startup, controlled by the server setting
-    /// `s3_load_table_anonymously_if_credentials_restricted`. `context_` stays the persistent global context
-    /// held weakly by `WithContext`, and `createObjectStorage` copies the context it is given into its
-    /// credential refresher, so the transient settings copy here is safe.
-    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(mode);
-
-    /// Server-internal log-pipeline S3Queue tables live in the `system` database and are named `<log>_s3queue`.
-    /// Users cannot create tables there, so this is a safe internal marker. These tables must never abort server
-    /// startup when server-managed credentials are restricted: force the anonymous-load fallback in `getClient`
-    /// even if the operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Their bootstrap
-    /// re-credentials the client in place right after startup.
-    if (table_id_.database_name == DatabaseCatalog::SYSTEM_DATABASE && table_id_.table_name.ends_with("_s3queue"))
-        configuration->force_anonymous_load_fallback = true;
-
-    auto object_storage_context = Context::createCopy(context_);
-    object_storage_context->setSetting(
-        "s3_allow_server_credentials_in_user_queries",
-        allow_server_credentials_in_user_queries_);
-
-    object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
+    object_storage = configuration->createObjectStorage(context_, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -455,10 +413,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
+        auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
-    streaming_task_refresh_epochs.resize(task_count, 0);
     max_files_override = 0;
 }
 
@@ -586,22 +543,6 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
     }
     LOG_TRACE(log, "Shut down storage");
-}
-
-void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
-{
-    for (auto & task : streaming_tasks)
-        task->schedule();
-}
-
-void StorageObjectStorageQueue::rebuildObjectStorageClient(ContextPtr rebuild_context)
-{
-    /// Force a client rebuild under `rebuild_context` (re-resolving credentials) without detaching the table.
-    /// The client is hot-swapped in the object storage (MultiVersion), so the concurrently-running streaming
-    /// task keeps using the storage and picks up the new client on its next operation.
-    IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = true, .force_client_rebuild = true};
-    object_storage->applyNewSettings(
-        rebuild_context->getConfigRef(), configuration->getTypeName() + ".", rebuild_context, options);
 }
 
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
@@ -746,8 +687,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             metadata,
             max_block_size,
             context,
-            commit_once_processed,
-            /*is_direct_select=*/true));
+            commit_once_processed));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -769,7 +709,6 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     size_t max_block_size,
     ContextPtr local_context,
     bool commit_once_processed,
-    bool is_direct_select,
     size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
@@ -807,10 +746,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(),
         log,
         commit_once_processed,
-        is_direct_select,
         add_deduplication_info,
-        is_deduplication_v2,
-        *this);
+        is_deduplication_v2);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -836,34 +773,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     const auto storage_id = getStorageID();
 
-    const size_t num_views = DatabaseCatalog::instance().getDependentViews(storage_id).size();
-    const size_t dependencies_count = getDependencies();
-    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
-    /// Attached but unready views must not consume a pending REFRESH permit, so no cycle is claimed
-    /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
-    const bool deps_ready = num_views == 0 || dependencies_count > 0;
-
-    if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
-    {
-        /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
-        /// via `onActionLockRemove`; meanwhile reschedule with a moderate period to avoid busy-looping.
-        static constexpr auto paused_reschedule_period = 5000;
-
-        LOG_TRACE(log, "Background consumption is stopped, rescheduling next check in {} ms", paused_reschedule_period);
-
-        try
-        {
-            metadata->unregisterActive(storage_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
-        std::lock_guard lock(mutex);
-        reschedule_processing_interval_ms = paused_reschedule_period;
-    }
-    else if (getContext()->getS3QueueDisableStreaming())
+    if (getContext()->getS3QueueDisableStreaming())
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
@@ -876,13 +786,14 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     {
         try
         {
+            const size_t dependencies_count = getDependencies();
             if (dependencies_count)
             {
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index, cycle_epoch))
+                if (streamToViews(streaming_tasks_index))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -901,7 +812,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             }
             else
             {
-                LOG_TEST(log, "No ready attached dependencies");
+                LOG_TEST(log, "No attached dependencies");
             }
         }
         catch (...)
@@ -935,7 +846,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -1006,7 +917,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
+    while (!shutdown_called && !file_iterator->isFinished())
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
@@ -1057,7 +968,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
                 /*commit_once_processed=*/false,
-                /*is_direct_select=*/false,
                 effective_max_files);
 
             pipes.emplace_back(source);
@@ -1078,31 +988,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         try
         {
-            std::atomic_bool cancelled_mid_insert = false;
             CompletedPipelineExecutor executor(block_io.pipeline);
-            /// Aborting while the insert is running and reprocessing re-adds the same rows
-            /// that is only safe when deduplication is on.
-            if (is_deduplication_v2)
-                executor.setCancelCallback(
-                    [this, cycle_epoch, &cancelled_mid_insert]
-                    {
-                        if (stream_control.isCancelRequested(cycle_epoch))
-                        {
-                            cancelled_mid_insert = true;
-                            return true;
-                        }
-                        return false;
-                    },
-                    std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
-
-            if (cancelled_mid_insert)
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
         }
         catch (...)
         {
-            const int error_code = getCurrentExceptionCode();
-            const bool interrupted = error_code == ErrorCodes::QUERY_WAS_CANCELLED;
             std::string message = getCurrentExceptionMessage(true);
             try
             {
@@ -1112,17 +1002,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     sources,
                     *metadata,
                     transaction_start_time,
-                    message,
-                    error_code);
+                    getCurrentExceptionMessage(true),
+                    getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
                 file_iterator->refreshExpiringBucketLocks();
-
-                if (interrupted)
-                {
-                    LOG_DEBUG(log, "Consumption interrupted by SYSTEM STOP/CANCEL; in-flight files reset for reprocessing");
-                    return false;
-                }
 
                 /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
@@ -1157,17 +1041,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;
-
-        /// Park after the durable boundary and before the blocked check below, so a test can
-        /// observe a frozen row count with the backlog still pending and have a SYSTEM PAUSE
-        /// issued while parked be seen by that very check. No-op unless explicitly enabled.
-        /// Only a cycle that produced rows parks: the failpoint is process-global and one-shot,
-        /// so an idle table polling concurrently must not consume the pause.
-        if (rows > 0)
-            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
-
-        if (stream_control.isBlocked())
-            break;
     }
 
     LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());
@@ -1249,53 +1122,32 @@ void StorageObjectStorageQueue::commit(
     std::optional<Coordination::Error> code;
     Coordination::Responses responses;
     size_t try_num = 0;
-    try
+    zk_retry.retryLoop([&]
     {
-        zk_retry.retryLoop([&]
+        if (zk_retry.isRetry())
         {
-            if (zk_retry.isRetry())
-            {
-                LOG_TRACE(
-                    log, "Failed to commit processed files at try {}/{}, will retry",
-                    try_num, toString(settings[Setting::keeper_max_retries].value));
-            }
-            ++try_num;
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-            });
-
-            auto zk_client = getZooKeeper();
-            code = zk_client->tryMulti(requests, responses);
-
-            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-                if (code == Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromMessage(
-                        Coordination::Error::ZCONNECTIONLOSS,
-                        "Simulated connection loss after successful commit");
-            });
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
+        }
+        ++try_num;
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
         });
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        /// Retries were exhausted on a hardware error (e.g. ZCONNECTIONLOSS repeatedly):
-        /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
-        /// `code` below is never set and this never reaches the `!code.has_value()` branch
-        /// (previously dead code: that branch could never actually be reached).
-        DimensionalMetrics::add(
-            DimensionalMetrics::ObjectStorageQueueFailures,
-            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+        });
 
-        /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
-        /// ("failed after operation") - we never received its response, so the commit outcome
-        /// is unknown. Mark all metadata objects so their destructors check ownership before
-        /// removing the processing node, same as the replay-error branch below.
-        for (auto & source : sources)
-            source->setUncertainCommit();
-        throw;
-    }
+        auto zk_client = getZooKeeper();
+        code = zk_client->tryMulti(requests, responses);
+
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
+    });
 
     if (!code.has_value())
     {
@@ -1310,16 +1162,6 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
-        /// prefer that stored transport error over `code.value()`: this retry may have applied
-        /// the earlier attempt's operation and be replaying into a synthetic ZNODEEXISTS/ZNONODE,
-        /// which would otherwise hide the actual cause behind that replay error.
-        const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
-            ? zk_retry.getLastKeeperErrorCode()
-            : code.value();
-        DimensionalMetrics::add(
-            DimensionalMetrics::ObjectStorageQueueFailures,
-            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
         if (try_num > 1)
         {
             /// We had at least one hardware error retry, so the first attempt may have succeeded
@@ -1593,7 +1435,6 @@ void StorageObjectStorageQueue::alter(
         /// settings_changes will be cloned.
         StorageInMemoryMetadata new_metadata(old_metadata);
         alter_commands.apply(new_metadata, local_context);
-
         auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
         if (old_settings)
@@ -1601,11 +1442,11 @@ void StorageObjectStorageQueue::alter(
             auto get_names = [](const SettingsChanges & settings)
             {
                 std::set<std::string> names;
-                for (const auto & change : settings)
+                for (const auto & [name, _] : settings)
                 {
-                    auto inserted = names.insert(change.name).second;
+                    auto inserted = names.insert(name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", name);
                 }
                 return names;
             };
@@ -1631,11 +1472,6 @@ void StorageObjectStorageQueue::alter(
                     new_settings.push_back(SettingChange(name, default_settings.get(name)));
             }
         }
-
-        /// Check that the resulting metadata does not exceed max_query_size before mutating any state.
-        /// This must run after reset settings are re-added with their default values above, because that
-        /// expansion can grow the metadata back over the limit.
-        checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
 
         SettingsChanges changed_settings;
         std::set<std::string> new_settings_set;
@@ -1860,10 +1696,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
-    settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
-    settings[ObjectStorageQueueSetting::partitioning_mode] = table_metadata.partitioning_mode;
-    settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
-    settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
@@ -1974,7 +1806,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
 
-    if (context_ && result_zk_path.contains('{'))
+    if (context_ && result_zk_path.find('{') != String::npos)
     {
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;

@@ -1,8 +1,7 @@
-#include <algorithm>
-#include <Common/StringUtils.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -37,10 +36,10 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
     static constexpr auto make_info = [](const char * raw_name_, const String & comment_)
     {
         String init_name = raw_name_;
-        toLowerASCII(init_name);
+        boost::to_lower(init_name);
         size_t underscore_pos = init_name.find('_');
         String init_command = init_name.substr(0, underscore_pos);
-        toUpperASCII(init_command);
+        boost::to_upper(init_command);
         bool init_is_check = (std::string_view{init_name}.substr(underscore_pos + 1) == "check");
         return RowPolicyFilterTypeInfo{raw_name_, std::move(init_name), std::move(init_command), comment_, init_is_check};
     };

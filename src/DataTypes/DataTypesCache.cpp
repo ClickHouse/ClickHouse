@@ -129,7 +129,13 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name)
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    return getCacheElement(type_name).serialization;
+    const auto & element = getCacheElement(type_name);
+    if (element.serialization)
+        return element.serialization;
+
+    /// The default serialization of this type is non-poolable (see getCacheElement),
+    /// so it must be rebuilt fresh for every use.
+    return element.type->getDefaultSerialization();
 }
 
 SerializationPtr DataTypesCache::getSerialization(const String & type_name, const DataTypePtr & type)
@@ -138,7 +144,13 @@ SerializationPtr DataTypesCache::getSerialization(const String & type_name, cons
     if (const auto * elem = getSimpleDataTypesCache().findByName(type_name))
         return elem->serialization;
 
-    return getCacheElement(type_name, &type).serialization;
+    const auto & element = getCacheElement(type_name, &type);
+    if (element.serialization)
+        return element.serialization;
+
+    /// The default serialization of this type is non-poolable (see getCacheElement),
+    /// so it must be rebuilt fresh for every use.
+    return element.type->getDefaultSerialization();
 }
 
 void DataTypesCache::clearIfQueryContextChanged()
@@ -183,7 +195,18 @@ const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & t
         cache.clear();
 
     auto type = known_type ? *known_type : DataTypeFactory::instance().get(type_name);
-    it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
+    auto serialization = type->getDefaultSerialization();
+
+    /// A serialization with `supportsPooling() == false` must not be shared across uses:
+    /// it keeps mutable per-use state (e.g. SerializationJSON accumulates caches inside its
+    /// extraction tree; the property propagates through wrapper serializations of composite
+    /// types). The type itself is an immutable value object and is safe to cache, so cache
+    /// only the type and leave the serialization null; getSerialization rebuilds a fresh
+    /// serialization on every lookup for such types.
+    if (!serialization->supportsPooling())
+        serialization = nullptr;
+
+    it = cache.emplace(type_name, Element{type, std::move(serialization)}).first;
     return it->second;
 }
 

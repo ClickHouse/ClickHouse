@@ -257,12 +257,12 @@ Data type `Map(K, V)` stores key-value pairs.
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
 
-You can use syntax `m[k]` to obtain the value for key `k` in map `m`.
+You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**
 
-- `K` — The type of the Map keys. Arbitrary type except [Nullable](/reference/data-types/nullable) and [LowCardinality](/reference/data-types/lowcardinality) nested with [Nullable](/reference/data-types/nullable) types.
+- `K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
 - `V` — The type of the Map values. Arbitrary type.
 
 **Examples**
@@ -289,7 +289,7 @@ SELECT m['key2'] FROM tab;
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey).
+To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
 ```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -306,7 +306,7 @@ SELECT m['key1'] FROM tab;
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -436,7 +436,7 @@ If bucketed `Map` serialization does not fit your use case, there are two altern
 
 #### Using the JSON Data Type {#using-the-json-data-type}
 
-The [JSON](/reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
+The [JSON](/sql-reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/sql-reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
 
 | Aspect             | `Map` with buckets                                                                             | `JSON`                                                                                                                                                           |
 |--------------------|------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -477,9 +477,9 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 **See Also**
 
-- [map()](/reference/functions/regular-functions/tuple-map-functions#map) function
-- [CAST()](/reference/functions/regular-functions/type-conversion-functions#CAST) function
-- [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
+- [map()](/sql-reference/functions/tuple-map-functions#map) function
+- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
+- [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 ## Related content {#related-content}
 

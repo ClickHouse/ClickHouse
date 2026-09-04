@@ -74,7 +74,7 @@ Returns `1` if the argument is a prime number, otherwise `0`.
 Uses an exact lookup bitmap for small values and a deterministic [Miller-Rabin test](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test)
 for larger values. The result is exact for every supported input type.
 
-For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/reference/functions/regular-functions/math-functions#isProbablePrime) instead.
+For wider unsigned integer types (`UInt128`, `UInt256`), use [`isProbablePrime`](/sql-reference/functions/math-functions#isProbablePrime) instead.
     )";
     FunctionDocumentation::Syntax syntax = "isPrime(n)";
     FunctionDocumentation::Arguments arguments

@@ -1,3 +1,0 @@
---- an error before any bytes of the next packet still ends with a framed exception
-data packets complete: OK
-terminal framed exception: OK

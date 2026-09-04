@@ -20,7 +20,6 @@
 #include <memory>
 
 #include <poll.h>
-#include <sys/socket.h>
 #include <sys/uio.h>
 
 
@@ -35,43 +34,10 @@ uint64_t timeoutNs(const Poco::Timespan & timeout)
     return static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000ULL;
 }
 
-FiberStreamSocketImpl * getUnderlyingSocket(BIO * bio)
-{
-    return static_cast<FiberStreamSocketImpl *>(static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio)));
-}
-
 int silkBioRead(BIO * bio, char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
-
-    if (socket_impl->getDontWait())
-    {
-        /// Honor non-blocking mode instead of parking the caller on an io_uring read: a
-        /// non-blocking caller (e.g. `SSL_peek` from the pool's staleness probe) expects an
-        /// immediate `EAGAIN`/`SSL_ERROR_WANT_READ`, not a wait for `getReceiveTimeout()`.
-        BIO_clear_retry_flags(bio);
-        const ssize_t n = ::recv(fd, buf, len, MSG_DONTWAIT);
-        if (n < 0)
-        {
-            /// `recv` left the error in `errno`; the flag call below cannot touch it
-            /// (`BIO_set_retry_read` is a pure in-struct flag set), so it stays valid for the
-            /// caller through `return`. Read it into a local for the fatality test per the
-            /// errno rule in silk's docs/tls.md.
-            const int err = errno;
-            if (BIO_sock_non_fatal_error(err))
-                BIO_set_retry_read(bio);
-            return -1;
-        }
-
-        /// TODO(mstetsyuk): should be done at Silk level.
-        __msan_unpoison(buf, static_cast<size_t>(n));
-
-        if (n == 0)
-            BIO_set_flags(bio, BIO_FLAGS_IN_EOF);
-        return static_cast<int>(n);
-    }
-
     const uint64_t timeout_ns = timeoutNs(socket_impl->getReceiveTimeout());
 
     uint64_t bytes_read = 0;
@@ -111,27 +77,8 @@ int silkBioRead(BIO * bio, char * buf, int len)
 
 int silkBioWrite(BIO * bio, const char * buf, int len)
 {
-    auto * socket_impl = getUnderlyingSocket(bio);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
     const int fd = socket_impl->sockfd();
-
-    if (socket_impl->getDontWait())
-    {
-        /// See the matching branch in silkBioRead: honor non-blocking mode rather than parking
-        /// the caller in a fiber wait for getSendTimeout().
-        BIO_clear_retry_flags(bio);
-        const ssize_t n = ::send(fd, buf, len, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (n < 0)
-        {
-            /// See the matching note in silkBioRead: `send` left the error in `errno`, the flag
-            /// call cannot clobber it, so it survives to the caller.
-            const int err = errno;
-            if (BIO_sock_non_fatal_error(err))
-                BIO_set_retry_write(bio);
-            return -1;
-        }
-        return static_cast<int>(n);
-    }
-
     const uint64_t timeout_ns = timeoutNs(socket_impl->getSendTimeout());
 
     uint64_t bytes_written = 0;
@@ -253,26 +200,10 @@ private:
 }
 
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context)
-    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl, context)
-{
-}
-
-SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
-    : Poco::Net::SecureStreamSocketImpl(underlying_, context)
-    , underlying(underlying_)
+    : Poco::Net::SecureStreamSocketImpl(new FiberStreamSocketImpl, context)
 {
     setBioMethod(silkBioMethod());
     setMutex(std::make_unique<SilkRecursiveMutex>());
-}
-
-bool SecureFiberStreamSocketImpl::getDontWait() const
-{
-    return underlying->getDontWait();
-}
-
-void SecureFiberStreamSocketImpl::setDontWait(bool flag)
-{
-    underlying->setDontWait(flag);
 }
 
 bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
