@@ -316,7 +316,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
+                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name).resolveNumberLiteral();
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))

@@ -60,6 +60,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
@@ -108,16 +109,189 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
+/// The right-hand side of `IN` is compared against the left-hand side type, so a number literal
+/// element (which resolves to `Float64` on its own) is parsed from its original text against that
+/// type instead. A `Tuple` or `Array` left-hand side matches its elements positionally.
+DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_arg_type)
+{
+    if (!left_arg_type)
+        return nullptr;
+
+    auto type = removeNullable(removeLowCardinality(left_arg_type));
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
+        return type;
+
+    return nullptr;
+}
+
+/// The `Field` an expression stands for, with its number literals still unresolved. A bracket or
+/// paren literal holds them directly; the `array`/`tuple`/`map` spellings hold them in their
+/// arguments. False when there is nothing to recover.
+bool tryGetUnresolvedLiteralField(const ASTPtr & node, Field & out)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+    {
+        if (!fieldHasNumberLiteral(literal->value))
+            return false;
+        out = literal->value;
+        return true;
+    }
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    if (function->name != "array" && function->name != "tuple" && function->name != "map")
+        return false;
+
+    Array collected;
+    bool any_unresolved = false;
+    for (const auto & argument : function->arguments->children)
+    {
+        Field element;
+        if (tryGetUnresolvedLiteralField(argument, element))
+            any_unresolved = true;
+        else if (const auto * argument_literal = argument->as<ASTLiteral>())
+            element = argument_literal->value;
+        else
+            return false;
+        collected.push_back(std::move(element));
+    }
+
+    if (!any_unresolved)
+        return false;
+
+    if (function->name == "array")
+    {
+        out = std::move(collected);
+    }
+    else if (function->name == "tuple")
+    {
+        out = Tuple(collected.begin(), collected.end());
+    }
+    else
+    {
+        if (collected.size() % 2 != 0)
+            return false;
+        Map pairs;
+        pairs.reserve(collected.size() / 2);
+        for (size_t i = 0; i < collected.size(); i += 2)
+            pairs.push_back(Tuple{collected[i], collected[i + 1]});
+        out = std::move(pairs);
+    }
+    return true;
+}
+
+/// Build the column and type of a set element holding number literals, parsing them from their
+/// original text against `reference_type`. False when there is nothing to re-type.
+bool tryBuildNumberLiteralSetElement(
+    const ASTPtr & element, const DataTypePtr & reference_type, ColumnPtr & out_column, DataTypePtr & out_type)
+{
+    if (!reference_type)
+        return false;
+
+    Field unresolved;
+    if (!tryGetUnresolvedLiteralField(element, unresolved))
+        return false;
+
+    auto [parsed_field, target_type] = resolveNumberLiteralSetElement(unresolved, reference_type);
+    if (!target_type)
+        return false;
+
+    out_column = target_type->createColumnConst(1, parsed_field);
+    out_type = std::move(target_type);
+    return true;
+}
+
+/// Same for a whole right-hand side literal: a bare number literal (`x IN (1.1)`) or a parenthesised
+/// list of literals, which the parser folds into a single tuple literal (`x IN (1.1, 2.2)`) and whose
+/// number literals would otherwise resolve to `Float64` before the left-hand side type is known.
+bool tryBuildNumberLiteralSet(
+    const ASTPtr & right_arg, const DataTypePtr & reference_type, ColumnPtr & out_column, DataTypePtr & out_type)
+{
+    if (!reference_type)
+        return false;
+
+    if (tryBuildNumberLiteralSetElement(right_arg, reference_type, out_column, out_type))
+        return true;
+
+    /// Not a single element, so the composite is the list of them: a tuple for `x IN (1.1, 2.2)`, an
+    /// array for `x IN [1.1]` where the array itself is the set.
+    Field unresolved;
+    if (!tryGetUnresolvedLiteralField(right_arg, unresolved))
+        return false;
+    const bool is_array_list = unresolved.getType() == Field::Types::Array;
+    if (unresolved.getType() != Field::Types::Tuple && !is_array_list)
+        return false;
+
+    const auto & elements = is_array_list
+        ? static_cast<const FieldVector &>(unresolved.safeGet<Array>())
+        : static_cast<const FieldVector &>(unresolved.safeGet<Tuple>());
+    /// Checked before the rebuild below, which copies every element of a possibly huge IN list.
+    if (std::none_of(elements.begin(), elements.end(), fieldHasNumberLiteral))
+        return false;
+
+    Tuple resolved_elements;
+    DataTypes resolved_types;
+    resolved_elements.reserve(elements.size());
+    resolved_types.reserve(elements.size());
+
+    bool any_element_resolved = false;
+    for (const auto & element : elements)
+    {
+        auto [parsed_field, target_type] = resolveNumberLiteralSetElement(element, reference_type);
+        if (target_type)
+        {
+            resolved_elements.push_back(std::move(parsed_field));
+            resolved_types.push_back(std::move(target_type));
+            any_element_resolved = true;
+            continue;
+        }
+
+        resolved_elements.push_back(element);
+        resolved_types.push_back(applyVisitor(FieldToDataType(), element));
+    }
+
+    if (!any_element_resolved)
+        return false;
+
+    /// A kept number literal element is resolved to its default type by the conversion.
+    if (is_array_list)
+    {
+        /// An array holds one type, so the elements have to meet in a common one.
+        auto element_type = tryGetLeastSupertype(resolved_types);
+        if (!element_type)
+            return false;
+        out_type = std::make_shared<DataTypeArray>(element_type);
+        Array array_elements(resolved_elements.begin(), resolved_elements.end());
+        out_column = out_type->createColumnConst(1, convertFieldToTypeOrThrow(Field(std::move(array_elements)), *out_type));
+        return true;
+    }
+
+    out_type = std::make_shared<DataTypeTuple>(std::move(resolved_types));
+    out_column = out_type->createColumnConst(1, convertFieldToTypeOrThrow(Field(std::move(resolved_elements)), *out_type));
+    return true;
+}
+
 /// Build the constant right-hand side of `IN` as a single-row column plus its exact type, without
 /// materializing a `Field`. Each `tuple`/`array` element is evaluated individually
 /// (`evaluateConstantExpressionAsColumn` fast-paths literals) and assembled column-natively, because
 /// interpreting a large tuple/array as a whole function through `evaluateConstantExpression` is
 /// extremely slow.
 std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
-    const boost::intrusive_ptr<ASTFunction> & func, ContextPtr context)
+    const boost::intrusive_ptr<ASTFunction> & func, const DataTypePtr & number_literal_reference_type, ContextPtr context)
 {
     if (!func)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IN: empty function AST for constant set");
+
+    /// `array(...)`/`tuple(...)` is a single set element when the left-hand side has the same shape
+    /// (`[x] IN (array(1.1))`), and a list of elements otherwise. Try it whole first, so its literals
+    /// are retargeted against the left-hand side instead of being read as separate elements.
+    {
+        ColumnPtr whole_column;
+        DataTypePtr whole_type;
+        if (tryBuildNumberLiteralSetElement(func, number_literal_reference_type, whole_column, whole_type))
+            return {whole_column, whole_type};
+    }
 
     const auto & args = func->arguments->children;
 
@@ -133,6 +307,15 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
+            ColumnPtr literal_column;
+            DataTypePtr literal_type;
+            if (tryBuildNumberLiteralSetElement(arg, number_literal_reference_type, literal_column, literal_type))
+            {
+                element_columns.emplace_back(literal_column->convertToFullColumnIfConst());
+                element_types.emplace_back(std::move(literal_type));
+                continue;
+            }
+
             const auto value = evaluateConstantExpressionAsColumn(arg, context);
             element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
             element_types.emplace_back(value.getType());
@@ -152,6 +335,17 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
+            /// Reaching here means the array is the set rather than one element, so its items are
+            /// retargeted individually, like the elements of a tuple list.
+            ColumnPtr literal_column;
+            DataTypePtr literal_type;
+            if (tryBuildNumberLiteralSetElement(arg, number_literal_reference_type, literal_column, literal_type))
+            {
+                element_columns.emplace_back(literal_column->convertToFullColumnIfConst());
+                element_types.emplace_back(std::move(literal_type));
+                continue;
+            }
+
             const auto value = evaluateConstantExpressionAsColumn(arg, context);
             element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
             element_types.emplace_back(value.getType());
@@ -197,9 +391,15 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
-    const auto & right_arg_column = right_value.getColumn();
-    const auto & right_arg_type = right_value.getType();
+    ColumnPtr right_arg_column;
+    DataTypePtr right_arg_type;
+    if (!tryBuildNumberLiteralSet(
+            right_arg, getNumberLiteralReferenceTypeForIn(left_arg_type), right_arg_column, right_arg_type))
+    {
+        const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
+        right_arg_column = right_value.getColumn();
+        right_arg_type = right_value.getType();
+    }
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
@@ -224,7 +424,8 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
+    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(
+        right_arg, getNumberLiteralReferenceTypeForIn(left_arg_type), context);
 
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
@@ -1454,7 +1655,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (size_t i = 0; i < parameters_size; ++i)
             {
                 ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
+                parameters[i] = literal->as<ASTLiteral>()->value.resolveNumberLiteral();
             }
         }
 
@@ -1718,6 +1919,76 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
+        /// Deferred NumberLiteral resolution for comparison functions only.
+        if (node.arguments && functionIsComparisonOperator(node.name))
+        {
+            const auto & args = node.arguments->children;
+            const auto & index = data.actions_stack.getLastActionsIndex();
+
+            /// Find a reference type from non-NumberLiteral numeric arguments.
+            DataTypePtr reference_type;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const auto * lit = args[i]->as<ASTLiteral>();
+                if (lit && lit->value.getType() == Field::Types::Number)
+                    continue;
+                if (i < argument_names.size())
+                {
+                    const auto * arg_node = index.tryGetNode(argument_names[i]);
+                    if (!arg_node || !arg_node->result_type)
+                        continue;
+                    auto arg_type = removeLowCardinalityAndNullable(arg_node->result_type);
+                    if (isNumber(*arg_type) || isDecimal(*arg_type))
+                    {
+                        reference_type = arg_type;
+                        break;
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const auto * lit = args[i]->as<ASTLiteral>();
+                if (!lit || lit->value.getType() != Field::Types::Number)
+                    continue;
+
+                auto [parsed, target_type] = resolveNumberLiteralForFunction(
+                    lit->value.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
+
+                if (target_type && i < argument_names.size())
+                {
+                    String new_name = data.getUniqueName("__number_literal");
+                    ColumnConstPtr column = target_type->createColumnConst(1, parsed);
+                    data.addColumn(std::move(column), target_type, new_name);
+                    argument_names[i] = new_name;
+                }
+            }
+
+            /// A tuple or array of literals is one literal, so its elements are resolved to their
+            /// default type before the compared type is known. Rebuild it against the other argument.
+            if (args.size() == 2 && argument_names.size() == 2)
+            {
+                for (size_t i = 0; i < 2; ++i)
+                {
+                    Field unresolved;
+                    if (!tryGetUnresolvedLiteralField(args[i], unresolved))
+                        continue;
+                    const auto * other = index.tryGetNode(argument_names[1 - i]);
+                    if (!other || !other->result_type)
+                        continue;
+
+                    auto [resolved, target_type]
+                        = resolveNestedNumberLiteralsForComparison(unresolved, other->result_type);
+                    if (!target_type)
+                        continue;
+
+                    String new_name = data.getUniqueName("__number_literal");
+                    data.addColumn(target_type->createColumnConst(1, resolved), target_type, new_name);
+                    argument_names[i] = new_name;
+                }
+            }
+        }
+
         /// Calculate column name here again, because AST may be changed here (in case of untuple).
         data.addFunction(function_builder, argument_names, ast->getColumnName());
     }

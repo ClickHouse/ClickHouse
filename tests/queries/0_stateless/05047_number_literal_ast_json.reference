@@ -1,0 +1,10 @@
+field	Number	1.123456789012345679
+roundtrip	1
+exact	0
+forms	SELECT -1.5
+forms	SELECT 0x1p4
+forms	SELECT 1.20
+forms	SELECT 123456789012345678901234567890
+forms	SELECT 1e5
+forms	SELECT [1.5, 2.5]
+forms	SELECT nan

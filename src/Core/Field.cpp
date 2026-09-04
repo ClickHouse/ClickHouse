@@ -12,6 +12,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/readFloatText.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/readDecimalText.h>
 #include <Common/LockMemoryExceptionInThread.h>
 
@@ -215,6 +217,43 @@ bool AggregateFunctionStateData::operator >= (const AggregateFunctionStateData &
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
 }
 
+bool NumberLiteral::operator < (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator <= (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator > (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+bool NumberLiteral::operator >= (const NumberLiteral &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+Float64 NumberLiteral::toFloat64() const
+{
+    /// Hex floats (0x1p4) and hex integers can't be parsed by readFloatText, so use strtod for them.
+    std::string_view digits = value;
+    if (digits.starts_with('-'))
+        digits.remove_prefix(1);
+    if (digits.starts_with("0x") || digits.starts_with("0X"))
+        return std::strtod(value.c_str(), nullptr);
+
+    /// Decimal/exponent literals: use ClickHouse's own precise reader so the resolved value is
+    /// deterministic and identical to how the same text is parsed elsewhere as Float64.
+    ReadBufferFromString buf(value);
+    Float64 result = 0;
+    readFloatTextPrecise(result, buf);
+    return result;
+}
+
 bool AggregateFunctionStateData::operator == (const AggregateFunctionStateData & rhs) const
 {
     if (name != rhs.name)
@@ -282,6 +321,7 @@ bool Field::operator< (const Field & rhs) const
         case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() < rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() < rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -326,6 +366,7 @@ bool Field::operator<= (const Field & rhs) const
         case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() <= rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() <= rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -363,6 +404,7 @@ bool Field::operator== (const Field & rhs) const
         case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() == rhs.get<CustomType>();
+        case Types::Number:  return get<NumberLiteral>() == rhs.get<NumberLiteral>();
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -513,6 +555,12 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::CustomType:
             return Field();
+        case Field::Types::Number:
+        {
+            std::string value;
+            readStringBinary(value, buf);
+            return NumberLiteral(std::move(value));
+        }
     }
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
@@ -696,6 +744,99 @@ Field readFieldBinary(ReadBuffer & buf)
     UInt8 type = 0;
     readBinary(type, buf);
     return getBinaryValue(type, buf);
+}
+
+Field Field::resolveNumberLiteral() const
+{
+    /// Recurse into containers so nested literals (e.g. `[6.7]` used as an aggregate function
+    /// parameter, parsed as an Array of NumberLiteral) are resolved element-wise.
+    auto resolve_vector = [](const auto & container)
+    {
+        std::decay_t<decltype(container)> result;
+        result.reserve(container.size());
+        for (const auto & elem : container)
+            result.push_back(elem.resolveNumberLiteral());
+        return result;
+    };
+
+    if (which == Types::Array)
+        return resolve_vector(get<Array>());
+    if (which == Types::Tuple)
+        return resolve_vector(get<Tuple>());
+    if (which == Types::Map)
+        return resolve_vector(get<Map>());
+
+    if (which != Types::Number)
+        return *this;
+
+    const auto & num = get<NumberLiteral>();
+    const String & s = num.value;
+
+    /// Check if this looks like a pure integer (no decimal point or exponent).
+    bool is_integer = true;
+    for (size_t i = (s[0] == '-' ? 1 : 0); i < s.size(); ++i)
+    {
+        if (s[i] == '.' || s[i] == 'e' || s[i] == 'E')
+        {
+            is_integer = false;
+            break;
+        }
+    }
+
+    if (!is_integer)
+    {
+        /// Decimal/exponent literal → resolve to Float64 (backward compat).
+        return num.toFloat64();
+    }
+
+    /// Integer literal → resolve to the smallest fitting integer type.
+    /// tryReadIntText doesn't detect overflow for wide integers, so we verify
+    /// by converting back to string and comparing with the original.
+    bool negative = !s.empty() && s[0] == '-';
+    std::string_view digits = s;
+    if (negative)
+        digits.remove_prefix(1);
+
+    auto verifyRoundtrip = [](const auto & value, std::string_view expected) -> bool
+    {
+        WriteBufferFromOwnString wb;
+        writeText(value, wb);
+        return wb.str() == expected;
+    };
+
+    if (negative)
+    {
+        {
+            ReadBufferFromString buf(s);
+            Int128 value;
+            if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
+                return value;
+        }
+        {
+            ReadBufferFromString buf(s);
+            Int256 value;
+            if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
+                return value;
+        }
+    }
+    else
+    {
+        {
+            ReadBufferFromString buf(s);
+            UInt128 value;
+            if (tryReadIntText(value, buf) && buf.eof() && verifyRoundtrip(value, s))
+                return value;
+        }
+        {
+            ReadBufferFromString buf(s);
+            UInt256 value;
+            if (tryReadIntText(value, buf) && buf.eof() && verifyRoundtrip(value, s))
+                return value;
+        }
+    }
+
+    /// Value doesn't fit in any integer type. Fall back to Float64 (approximate).
+    return num.toFloat64();
 }
 
 String Field::dump() const
@@ -908,6 +1049,12 @@ Field Field::restoreFromDump(std::string_view dump_)
         return res;
     }
 
+    prefix = std::string_view{"Number_"};
+    if (dump.starts_with(prefix))
+    {
+        return NumberLiteral(String{dump.substr(prefix.length())});
+    }
+
     show_error();
     UNREACHABLE();
 }
@@ -968,6 +1115,11 @@ static void writeText(const Null & x, WriteBuffer & buf)
         writeText("+Inf", buf);
     else
         writeText("NULL", buf);
+}
+
+inline void writeText(const NumberLiteral & x, WriteBuffer & buf)
+{
+    writeString(x.value, buf);
 }
 
 String fieldToString(const Field & x)
@@ -1033,6 +1185,7 @@ std::string_view fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::IPv4: return "IPv4"sv;
         case Field::Types::Which::IPv6: return "IPv6"sv;
         case Field::Types::Which::CustomType: return "CustomType"sv;
+        case Field::Types::Which::Number: return "Number"sv;
     }
 }
 
@@ -1102,6 +1255,7 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
+template NearestFieldType<std::decay_t<NumberLiteral>> & Field::safeGet<NumberLiteral>() &;
 /// `unsigned long` is not covered by the list above where it is a type of its own.
 #if defined(LONG_IS_A_DISTINCT_TYPE)
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;

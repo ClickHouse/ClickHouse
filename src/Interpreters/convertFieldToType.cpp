@@ -95,6 +95,24 @@ Field convertNumericTypeImpl(const Field & from, bool strict, bool convert_inexa
 }
 
 template <typename To>
+Field convertNumberLiteralToType(const Field & from)
+{
+    const auto & num = from.safeGet<NumberLiteral>();
+    if constexpr (is_floating_point<To>)
+    {
+        return static_cast<To>(num.toFloat64());
+    }
+    else
+    {
+        ReadBufferFromString buf(num.value);
+        To result{};
+        if (!tryReadIntText(result, buf) || !buf.eof())
+            return {};
+        return result;
+    }
+}
+
+template <typename To>
 Field convertNumericType(const Field & from, const IDataType & type, bool strict, bool convert_inexact_floats)
 {
     if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
@@ -111,6 +129,8 @@ Field convertNumericType(const Field & from, const IDataType & type, bool strict
         return convertNumericTypeImpl<UInt256, To>(from, strict, convert_inexact_floats);
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from, strict, convert_inexact_floats);
+    if (from.getType() == Field::Types::Number)
+        return convertNumberLiteralToType<To>(from);
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
         type.getName(), from.getType());
@@ -204,6 +224,8 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
         result = convertDecimalToDecimalType<Decimal256>(from, type);
     else if (from.getType() == Field::Types::Float64)
         result = convertFloatToDecimalType<Float64>(from, type);
+    else if (from.getType() == Field::Types::Number)
+        result = convertStringToDecimalType(Field(from.safeGet<NumberLiteral>().value), type);
     else
         throw Exception(
             ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}", type.getName(), from.getType());
@@ -228,6 +250,15 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
+    /// If the source is a NumberLiteral, resolve it to a concrete type first,
+    /// then convert that. This handles all the non-Analyzer code paths
+    /// (settings, index params, etc.) that access Field values directly.
+    if (src.getType() == Field::Types::Number)
+    {
+        Field resolved = src.resolveNumberLiteral();
+        return convertFieldToTypeImpl(resolved, type, from_type_hint, format_settings, strict, convert_inexact_floats);
+    }
+
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;

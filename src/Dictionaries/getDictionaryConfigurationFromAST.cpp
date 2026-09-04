@@ -168,8 +168,11 @@ void buildLayoutParameterKeyValueCollection(
         auto append_scalar_child = [&](const String & element_name, const Field & field)
         {
             const auto field_type = field.getType();
-            if (field_type != Field::Types::UInt64 && field_type != Field::Types::Int64 && field_type != Field::Types::Float64
-                && field_type != Field::Types::String)
+            const bool is_number = field_type == Field::Types::UInt64 || field_type == Field::Types::Int64
+                || field_type == Field::Types::Float64 || field_type == Field::Types::UInt128
+                || field_type == Field::Types::Int128 || field_type == Field::Types::UInt256
+                || field_type == Field::Types::Int256;
+            if (!is_number && field_type != Field::Types::String)
             {
                 throw DB::Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -255,7 +258,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const Field & value_field = value_literal->value;
+        Field value_field = value_literal->value.resolveNumberLiteral();
 
         /// A collection-valued parameter (an array of (key, value) tuples) becomes structured child
         /// elements instead of a text node.

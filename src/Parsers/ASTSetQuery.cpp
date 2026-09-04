@@ -38,6 +38,17 @@ public:
         return visitor(x);
     }
 
+    /// A setting value is not a SQL literal: `ParserSetQuery` reads a bare wide integer back as the
+    /// same type, while the quotes `FieldVisitorToString` adds turn it into a `String`.
+    template <class T>
+    requires is_big_int_v<T>
+    String operator() (const T & x) const
+    {
+        WriteBufferFromOwnString wb;
+        writeText(x, wb);
+        return wb.str();
+    }
+
     String operator() (const Map & x) const
     {
         WriteBufferFromOwnString wb;
