@@ -2986,7 +2986,8 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
 
             if (cur.next_child_to_visit == cur.node->children.size())
             {
-                bool depend_on_array_join = false;
+                /// An arrayJoin moved below another one would swap their nesting and change the row order, so it stays put.
+                bool depend_on_array_join = cur.node->type == ActionType::ARRAY_JOIN;
                 if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
