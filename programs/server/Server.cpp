@@ -1835,6 +1835,13 @@ try
         );
     }
 
+    auto close_keeper_connections = []
+    {
+#if USE_NURAFT
+        KeeperTCPHandler::closeAllConnections();
+#endif
+    };
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
@@ -1881,6 +1888,8 @@ try
                     current_connections += server.currentConnections();
                 }
             }
+
+            close_keeper_connections();
 
             if (current_connections)
                 LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);

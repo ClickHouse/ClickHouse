@@ -981,6 +981,22 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
     connections.erase(conn);
 }
 
+void KeeperTCPHandler::closeAllConnections()
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        try
+        {
+            conn->socket().shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(conn->log, "Failed to close Keeper connection during shutdown");
+        }
+    }
+}
+
 void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)
 {
     std::lock_guard lock(conns_mutex);

@@ -690,6 +690,8 @@ try
             current_connections += server.currentConnections();
         }
 
+        KeeperTCPHandler::closeAllConnections();
+
         if (current_connections)
             LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
         else
