@@ -304,7 +304,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في قراءة أجزاء التصحيح
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء الفهارس لتطبيق أجزاء التصحيح بوضع Merge
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء الفهارس وجداول التجزئة لتطبيق أجزاء التصحيح بوضع Join
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق داخل حلقات دمج مفاتيح الفرز applyPatchesMergeOnKey
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق داخل حلقات دمج مفاتيح الفرز في applyPatchesMergeOnKey
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تحليل فهرس أجزاء التصحيح
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمهام القراءة التي طُبِّقت عليها أي عملية تعديل أثناء التنفيذ
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات التعديل المطبَّقة أثناء التنفيذ عبر جميع مهام القراءة
@@ -815,6 +815,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة من المصدر (remote fs، وما إلى ذلك) إلى ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرق في كتابة البيانات إلى ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي توقف فيها التخزين المؤقت بالكتابة المباشرة (بسبب فشل حجز المساحة أو الكتابة إلى ذاكرة التخزين المؤقت، أو بسبب طرد مقطع متداخل)، ثم استمرت الكتابة دون ملء ذاكرة التخزين المؤقت
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrunk` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي قلّص فيها التخزين المؤقت بالكتابة المباشرة مقطع ملف متداخلًا بقي خلف الإزاحة الجاري الكتابة عندها (إذ انتقلت النطاقات الفاصلة إلى خادم ذاكرة تخزين مؤقت موزعة آخر)، لمواصلة التخزين المؤقت في مقطع ملف جديد
+* `ProfileEvent_CachedWriteBufferCoveringSegmentShrinkFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطر فيها التخزين المؤقت بالكتابة المباشرة إلى التوقف لأن مقطع ملف متداخلًا بقي خلف الإزاحة الجاري الكتابة عندها تعذّر تقليصه (إذ يحتفظ به طرف آخر، لذلك لا يمكن حل الفجوة فيه) أو أُخرج بالتزامن
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرق في تحميل بيانات التعريف الخاصة بذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُزيلت من ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أدلة المفاتيح التي تم إنشاؤها
@@ -912,7 +914,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المرحلية التي أزال التجميع التكيفي تكرارها بسبب مفاتيح مكررة عند النشر والإغلاق.
 * `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد بايتات المفاتيح التي جهّزها التجميع التكيفي للتصريف وقت الدمج.
 * `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع المدمجة التي أغلقها التجميع التكيفي من دفعات التنظيم المؤقت المخزنة.
-* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي وحّد فيها إغلاق التجميع التكيفي تمثيلات الأعمدة بسبب اختلاف الدفعات المخزنة في موضع وسيطة واحد.
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أعمدة الوسيطات المرحلية التي وحّدها إغلاق التجميع التكيفي من تمثيل مغلّف (Const وReplicated وSparse وLowCardinality) إلى الشكل الكثيف الذي يستهلكه التصريف.
 * `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المؤجلة التي صرّفها التجميع التكيفي إلى الجدول المشترك وقت الدمج.
 * `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي صرّف فيها التجميع التكيفي السجلات المرحلية مبكرًا بسبب ضغط الذاكرة.
 * `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/ar/reference/data-types/int-uint)) — عدد السجلات المرحلية التي صرّفها التجميع التكيفي مبكرًا تحت ضغط الذاكرة.
@@ -921,6 +923,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت بمستويين لأغراض التجميع.
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي حُوِّل فيها جدول تجزئة للتجميع أحادي المستوى إلى مستويين أثناء وقت التشغيل.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي طُبّق عليها تحسين النطاقات المتساوية للمفاتيح
+* `ProfileEvent_AggregationTopKRowsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تم تخطيها أثناء التجميع لأن مفتاح التجميع الخاص بها لم يكن يمكن أن يدخل نتيجة Top-K (راجع `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مفاتيح التجميع التي أُخرجت من كومة Top-K المحدودة أثناء التجميع (راجع `enable_group_by_top_k_optimization`).
+* `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مفاتيح التجميع المُخرجة التي أُزيلت أيضًا من جدول التجزئة الوسيط، مع تدمير حالات التجميع الخاصة بها (راجع `enable_group_by_top_k_optimization`). ويكون أقل من `AggregationTopKKeysEvicted` عندما لا تستطيع طريقة التجميع إزالة المفاتيح، أو عندما يُرتَّب بادئة المفتاح فقط: إذ تستمر الكومة عندئذٍ في تخطي الصفوف، لكن جدول التجزئة يحتفظ بكل مجموعة مقبولة.
+* `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أكوام تجميع Top-K التي جُمّدت وعادت إلى التجميع العادي. إما أن الكومة لم ترفض تقريبًا أي شيء ضمن نافذة المراقبة الخاصة بها (مثلًا، لا يتجاوز عدد مفاتيح التجميع المميزة LIMIT)، أو أن مجموعة التعادلات عند حد الكومة — التي لا يمكن إخراجها أبدًا — تجاوزت حجمها (راجع `enable_group_by_top_k_optimization`).
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العناصر التي خُصصت مسبقًا في جداول التجزئة لعملية hash join.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها الرد على طلب بيانات وصفية لتخزين الكائنات من ذاكرة التخزين المؤقت دون إرسال طلب إلى Keeper
 * `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان لا بد فيها من الرد على طلب بيانات وصفية لتخزين الكائنات من Keeper
@@ -1175,6 +1181,15 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheSuccessfulRegistryUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — حدث سجل Distributed Cache. عدد تحديثات سجل الخوادم الناجحة
 * `ProfileEvent_DistrCacheUnsuccessfulRegistryUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — حدث سجل Distributed Cache. عدد تحديثات سجل الخوادم غير الناجحة
 * `ProfileEvent_DistrCacheReadBytesFromFallbackBuffer` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. البايتات المقروءة من fallback buffer
+* `ProfileEvent_DistrCacheReadBytesSkippedOnSeek` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. البايتات قيد النقل التي جرى تجاهلها عند إجراء seek إلى الأمام لإعادة استخدام التدفق المفتوح
+* `ProfileEvent_DistrCacheSeekReRequests` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد المرات التي طلبت فيها عملية seek نطاق قراءة جديدًا على الاتصال نفسه
+* `ProfileEvent_DistrCacheSeekCancelledRequests` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد المرات التي ألغت فيها عملية seek الطلب المفتوح بدلًا من إعادة استخدام التدفق
+* `ProfileEvent_DistrCacheSeekSkips` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد عمليات seek إلى الأمام التي تخطّت الفجوة في التدفق المفتوح
+* `ProfileEvent_DistrCacheSeekSkipDeclinedGapNotBuffered` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد عمليات seek إلى الأمام التي تعذر فيها التخطي لأن الفجوة لم تكن مخزنة مؤقتًا محليًا
+* `ProfileEvent_DistrCacheSeekBufferedBytesShortfall` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. عدد البايتات التي كان ينقص بها حجم البيانات المخزنة مؤقتًا محليًا عن الفجوة عند رفض التخطي
+* `ProfileEvent_DistrCacheSeekReRequestFirstPacketMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. الوقت بين طلب نطاق قراءة جديد على التدفق المفتوح بسبب عملية seek وتلقي أول حزمة منه
+* `ProfileEvent_DistrCacheEstimatedInflightBytesOnSeek` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. العدد المقدّر للبايتات قيد النقل عند عمليات seek التي نظرت في تجاهل الاتصال (قارن مع DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
+* `ProfileEvent_DistrCacheReadBytesUnconsumedOnEndRequest` ([UInt64](/ar/reference/data-types/int-uint)) — حدث مخزن القراءة لـ Distributed Cache. بايتات نطاق القراءة المطلوب التي بقيت غير مستهلكة عند إنهاء الطلب مبكرًا
 * `ProfileEvent_DistrCacheOpenedConnections` ([UInt64](/ar/reference/data-types/int-uint)) — حدث connection لـ Distributed Cache. عدد الاتصالات المفتوحة إلى Distributed Cache
 * `ProfileEvent_DistrCacheReusedConnections` ([UInt64](/ar/reference/data-types/int-uint)) — حدث connection لـ Distributed Cache. عدد الاتصالات المعاد استخدامها مع Distributed Cache
 * `ProfileEvent_DistrCacheStaleReconnections` ([UInt64](/ar/reference/data-types/int-uint)) — حدث connection لـ Distributed Cache. عدد عمليات إعادة الاتصال بسبب الاتصالات المجمّعة stale (التي أغلقها النظير)
@@ -1239,6 +1254,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت بالميكروثانية لتحديث الأجزاء الافتراضية
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeper` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تحديثات الأجزاء الافتراضية من ZooKeeper
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت بالميكروثانية لتحديثات الأجزاء الافتراضية من ZooKeeper
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitionsFromCache` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأقسام التي تم تخطيها أثناء اكتشاف الأجزاء الافتراضية لأن معلوماتها الإحصائية كانت محدّثة في ذاكرة التخزين المؤقت للاكتشاف
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperPartitions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأقسام التي اكتُشفت من ZooKeeper أثناء اكتشاف الأجزاء الافتراضية لأن معلوماتها الإحصائية لم تكن موجودة أو كانت قديمة في ذاكرة التخزين المؤقت للاكتشاف
+* `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromZooKeeperFullyCached` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات اكتشاف الأجزاء الافتراضية التي استُخدمت فيها جميع الأقسام من ذاكرة التخزين المؤقت للاكتشاف ولم يُجلب شيء من ZooKeeper
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesPeerNotFound` ([UInt64](/ar/reference/data-types/int-uint)) — فشلت تحديثات الأجزاء الافتراضية من النظير بسبب عدم العثور على أي نظير
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeer` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تحديثات الأجزاء الافتراضية من النظير
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesFromPeerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت بالميكروثانية لتحديثات الأجزاء الافتراضية من النظير
@@ -1262,6 +1280,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreePartsKillerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت الذي يستغرقه الخيط الرئيسي لـ parts killer، بالميكروثانية
 * `ProfileEvent_SharedMergeTreePartsKillerParts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأجزاء التي جدولت لإزالتها بواسطة killer
 * `ProfileEvent_SharedMergeTreePartsKillerPartsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت الذي تستغرقه إزالة الأجزاء، بالميكروثانية (تُنفَّذ عبر عدة threads)
+* `ProfileEvent_SharedMergeTreeBlobsListPartsWritten` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أجزاء blob-list الخاصة بـ SharedMergeTree التي كُتبت (عقدة blobs.list موحّدة واحدة لكل جزء)
+* `ProfileEvent_SharedMergeTreeBlobsListBlobsWritten` ([UInt64](/ar/reference/data-types/int-uint)) — عدد blobs البيانات المسجّلة عبر خرائط blobs.list الخاصة بـ SharedMergeTree
+* `ProfileEvent_SharedMergeTreeBlobsListInlineFilesWritten` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات الصغيرة المخزّنة مضمنةً في خرائط blobs.list الخاصة بـ SharedMergeTree بدلًا من blobs منفصلة
 * `ProfileEvent_SharedMergeTreeMergeSelectingTaskMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الميكروثواني لمهمة اختيار الدمج في SMT
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تشغيل updateReplicaSetTask
 * `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استعلامات OPTIMIZE غير المتزامنة التي نُفِّذت
@@ -1281,14 +1302,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeSelectPartsForCoordinatedFetchParts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأجزاء التي حدّدها selectPartsForCoordinatedFetch
 * `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت selectPartsForFullFetch
 * `ProfileEvent_SharedMergeTreeSelectPartsForFullFetchParts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الأجزاء التي حدّدها selectPartsForFullFetch
+* `ProfileEvent_SharedMergeTreeFetchDeduplicated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات جلب الأجزاء التي أُزيل تكرارها لأن الجزء كان يُجلب أو يُنتج بالفعل بواسطة خيط آخر
 * `ProfileEvent_SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت tryUpdateDiskMetadataCacheForPart في scheduleDataProcessingJob
 * `ProfileEvent_SharedMergeTreeLoadChecksumAndIndexesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت loadColumnsChecksumsIndexes في SharedMergeTree فقط
+* `ProfileEvent_SharedMergeTreeBlobRefCounterSharedBlobs` ([UInt64](/ar/reference/data-types/int-uint)) — عدد كائنات blob للبيانات المشتركة بالمسار بين أجزاء blob-list الخاصة بـ SharedMergeTree (زيادات عدد المراجع المُلحقة بعمليات commit المتعددة)
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanRequest` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي يقرّر فيها SnapshotCleanerThread تنظيف جزء
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerParts` ([UInt64](/ar/reference/data-types/int-uint)) — المدة التي يحاول خلالها SnapshotCleanerThread تنظيف جزء
 * `ProfileEvent_SharedMergeTreeSnapshotPartsRemoved` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي ينجح فيها SnapshotCleanerThread في تنظيف جزء
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerRuns` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تشغيل SnapshotCleanerThread
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مدة تشغيل SnapshotCleanerThread
 * `ProfileEvent_SharedMergeTreeSnapshotPartsCleanerPartsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — المدة التي يستغرقها SnapshotCleanerThread لتنظيف الأجزاء
+* `ProfileEvent_SharedMergeTreeSnapshotDeadLocksReclaimed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عُقد Keeper أو أشجارها الفرعية الخاصة باللقطات خفيفة الوزن التي لم تعد نشطة والتي استُعيدت
 * `ProfileEvent_SharedMergeTreeDataPartsFetchAttempt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات محاولة جلب أجزاء البيانات
 * `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeer` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جُلبت فيها أجزاء البيانات من النظير
 * `ProfileEvent_SharedMergeTreeDataPartsFetchFromPeerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن جلب أجزاء البيانات من النظير بالميكروثانية
@@ -1314,6 +1338,46 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات الفعلية (المجموع الاختباري + الترويسة + blob) المقروءة من ملفات changelog بواسطة قارئ بدء تشغيل Keeper المتوازي
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى ملفات snapshot في Keeper
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في `fsync` لملفات snapshot الخاصة بـ Keeper
+* `ProfileEvent_KeeperLSMTFlushes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات تفريغ memtable في Keeper LSMT التي اكتملت بنجاح
+* `ProfileEvent_KeeperLSMTMerges` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الدمج في Keeper LSMT التي اكتملت بنجاح
+* `ProfileEvent_KeeperLSMTFlushExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات في عمليات تفريغ memtable في Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات في عمليات الدمج في Keeper LSMT
+* `ProfileEvent_KeeperLSMTFileDeletionExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات في عمليات حذف ملفات Keeper LSMT
+* `ProfileEvent_KeeperLSMTFlushWrittenCompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المضغوطة التي كتبتها عمليات تفريغ memtable في Keeper LSMT إلى الملفات
+* `ProfileEvent_KeeperLSMTFlushWrittenUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات غير المضغوطة التي كتبتها عمليات تفريغ memtable في Keeper LSMT إلى الملفات
+* `ProfileEvent_KeeperLSMTMergeWrittenFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد ملفات الإخراج التي نشرتها عمليات الدمج في Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenCompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المضغوطة في ملفات الإخراج التي نشرتها عمليات الدمج في Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeWrittenUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات غير المضغوطة في ملفات الإخراج التي نشرتها عمليات الدمج في Keeper LSMT
+* `ProfileEvent_KeeperLSMTMergeConsumedFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد ملفات الإدخال التي استهلكتها عمليات الدمج في Keeper LSMT بالكامل وأُزيلت
+* `ProfileEvent_KeeperLSMTMergeConsumedUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات غير المضغوطة في ملفات الإدخال التي استهلكتها عمليات الدمج في Keeper LSMT بالكامل وأُزيلت
+* `ProfileEvent_KeeperLSMTUncommittedCreates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات Create المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedCreateBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المتسلسلة لإدخالات Create المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات Update المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedUpdateBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المتسلسلة لإدخالات Update المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoves` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات Remove المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedRemoveBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المتسلسلة لإدخالات Remove المضافة إلى memtables غير المعتمدة في Keeper LSMT
+* `ProfileEvent_KeeperLSMTCommittedEntryBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المتسلسلة للإدخالات المُلحقة بجدول الذاكرة المُعتمد في Keeper LSMT
+* `ProfileEvent_KeeperLSMTThrottledWrites` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الكتابة المؤجلة لأن عمليات التفريغ أو الدمج الخلفية في Keeper LSMT لم تواكب المطلوب
+* `ProfileEvent_KeeperLSMTCommittedMemtablesCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول الذاكرة المُعتمدة التي أنشأها Keeper LSMT
+* `ProfileEvent_KeeperLSMTUncommittedMemtablesCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول الذاكرة غير المُعتمدة التي أنشأها Keeper LSMT
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات البحث عن العُقد في Keeper LSMT التي عثرت على العقدة في جداول الذاكرة غير المُعتمدة
+* `ProfileEvent_KeeperLSMTGetUncommittedNodeMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات البحث عن العُقد في Keeper LSMT التي لم تعثر على العقدة في جداول الذاكرة غير المُعتمدة وانتقلت إلى الحالة المُعتمدة
+* `ProfileEvent_KeeperLSMTGetCommittedNodeFromMemory` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات البحث عن العُقد المُعتمدة في Keeper LSMT التي عثرت على كتلة العقدة في الذاكرة بالفعل
+* `ProfileEvent_KeeperLSMTGetCommittedNodeNonexistent` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات البحث عن العُقد المُعتمدة في Keeper LSMT لعُقد غير موجودة
+* `ProfileEvent_KeeperLSMTGetCommittedNodeLoadedBlock` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات البحث عن العُقد المُعتمدة في Keeper LSMT التي اضطرت إلى تحميل كتلة العقدة
+* `ProfileEvent_KeeperLSMTNodeCacheEntriesUpdated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات ذاكرة التخزين المؤقت للعُقد في Keeper LSMT التي أُعيد توجيهها إلى كتلة محمّلة حديثًا
+* `ProfileEvent_KeeperLSMTListNamesFromMemtables` ([UInt64](/ar/reference/data-types/int-uint)) — أسماء العُقد الفرعية، بما فيها علامات الحذف، التي حصلت عليها عمليات القائمة في Keeper LSMT من جداول الذاكرة
+* `ProfileEvent_KeeperLSMTListNamesFromFiles` ([UInt64](/ar/reference/data-types/int-uint)) — أسماء العُقد الفرعية، بما فيها علامات الحذف، التي حصلت عليها عمليات القائمة في Keeper LSMT من الملفات
+* `ProfileEvent_KeeperLSMTListScannedBlocks` ([UInt64](/ar/reference/data-types/int-uint)) — الكتل التي فحصتها عمليات القائمة في Keeper LSMT في الملفات
+* `ProfileEvent_KeeperLSMTListScannedEntries` ([UInt64](/ar/reference/data-types/int-uint)) — الإدخالات التي فحصتها عمليات القائمة في Keeper LSMT في الملفات
+* `ProfileEvent_KeeperLSMTListFilterSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات فحص الملفات التي تخطتها عمليات القائمة في Keeper LSMT لأن عامل تصفية مسارات العُقد الأصل استبعد وجود أي عُقد فرعية
+* `ProfileEvent_KeeperLSMTListFilterFalsePositives` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات فحص الملفات التي لم يتخطها عامل تصفية مسارات العُقد الأصل في Keeper LSMT ولم تعثر على أي عُقد فرعية
+* `ProfileEvent_KeeperLSMTListFilterTruePositives` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات فحص الملفات التي لم يتخطها عامل تصفية مسارات العُقد الأصل في Keeper LSMT وعثرت على عُقد فرعية
+* `ProfileEvent_KeeperLSMTGetBlockFromWeakPtr` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الوصول إلى الكتل في Keeper LSMT التي خدمها المؤشر الضعيف في معلومات كتلة الملف
+* `ProfileEvent_KeeperLSMTGetBlockFromCache` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الوصول إلى الكتل في Keeper LSMT التي خدمتها ذاكرة التخزين المؤقت للكتل
+* `ProfileEvent_KeeperLSMTGetBlockLoadedGroup` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الوصول إلى الكتل في Keeper LSMT التي اضطرت إلى تحميل مجموعة كتل من القرص
+* `ProfileEvent_KeeperLSMTLoadedBlocks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي حمّلها Keeper LSMT من القرص
+* `ProfileEvent_KeeperLSMTLoadedUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات غير المضغوطة للكتل التي حمّلها Keeper LSMT من القرص
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاتصالات المُنشأة لوحدات التخزين
 * `ProfileEvent_StorageConnectionsReused` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاتصالات المُعاد استخدامها لوحدات التخزين
 * `ProfileEvent_StorageConnectionsReset` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاتصالات التي أُعيد تعيينها لوحدات التخزين
@@ -1439,6 +1503,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة تخصيص jemalloc
 * `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمرات فشل تتبّع عيّنة إلغاء تخصيص jemalloc
 * `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي في تحميل الإحصاءات من الأجزاء
+* `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي لم يتمكن مقدّر الانتقائية من تحليلها لأن المجموعة لم تكن قد بُنيت بعد، ولا ينبغي له تشغيل الاستعلام الفرعي لملئها
+* `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد شروط `IN` التي قُدّرت انتقائيتها بناءً على حجم المجموعة وحدودها بدلًا من نطاقاتها الدقيقة، لأن المجموعة تتجاوز `statistics_max_set_size_for_exact_selectivity_estimation`
 * `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة ستقرأها إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
 * `ProfileEvent_RuntimeDataflowStatisticsOutputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إحصاءات مجمّعة عن عدد البايتات التي كانت النسخ المتماثلة سترسلها إلى العقدة البادئة إذا نُفِّذ الاستعلام باستخدام النسخ المتماثلة المتوازية
 * `ProfileEvent_S3CachedCredentialsProvidersReused` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لموفري بيانات الاعتماد الذين أُعيد استخدامهم من الذاكرة المؤقتة
@@ -1452,6 +1518,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحبيبات التي فُحصت للاستبعاد وقت القراءة بواسطة JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الحبيبات التي استُبعدت وقت القراءة بواسطة JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي في خطوات المعالجة اللاحقة بعد بناء الجانب الأيمن من JOIN.
+* `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المنقضي في تحويل حمولة الجانب الأيمن من JOIN إلى تنسيق الصفوف الرئيسي.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز prompt المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز الإكمال المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات HTTP المُرسَلة إلى موفري AI.
@@ -1461,6 +1528,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerProvided` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الموفَّرين للاستعلامات لتنفيذ الاستعلامات الموزعة.
 * `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته الاستعلامات في انتظار توفير العمال عديمي الحالة.
 * `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطر فيها استعلام إلى انتظار خدمة اكتشاف العمال عديمي الحالة لتوفير عمال.
+* `ProfileEvent_StatelessWorkerNotAccessible` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تبيّن فيها أن عاملًا عديم الحالة مؤجَّرًا لم يكن قابلاً للوصول بعد، فاستُبعد من تخصيص الاستعلام إلى أن يجتاز فحص قابلية الوصول.
+* `ProfileEvent_StatelessWorkerTimeToAvailableMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت، محسوبًا عبر جميع العمال، بين ظهور عامل عديم الحالة مستأجر لأول مرة من خدمة الاكتشاف واجتيازه فحص قابلية الوصول ليصبح متاحًا لتنفيذ الاستعلامات.
 * `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease المرسلة إلى خدمة اكتشاف العمال عديمي الحالة للحصول على عمال.
 * `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلبات create&#95;lease إلى خدمة اكتشاف العمال عديمي الحالة.
 * `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease الفاشلة إلى خدمة اكتشاف العمال عديمي الحالة (أي خطأ أو انتهاء مهلة).
@@ -1478,6 +1547,40 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نبضات القلب الفاشلة من العاملين عديمي الحالة إلى خدمة اكتشاف العامل عديم الحالة (بسبب أي خطأ أو انتهاء مهلة).
 * `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُسنِد فيها عامل عديم الحالة إلى مستأجر لخدمة استعلاماته.
 * `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي انتهى فيها تأجير عامل عديم الحالة وبدأ بانتظار إيقاف التشغيل.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease التي ردّت عليها خدمة اكتشاف العمال عديمي الحالة بخطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات create&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات update&#95;lease التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات update&#95;lease التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryUpdateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات update&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;lease التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;lease التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryGetLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات get&#95;lease.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;worker التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;worker التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryCreateWorkerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات create&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات delete&#95;worker التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات delete&#95;worker التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryDeleteWorkerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات delete&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;worker التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;worker التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryGetWorkerMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات get&#95;worker.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات نبضات القلب التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات نبضات القلب التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات نبضات القلب.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات list&#95;workers التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات list&#95;workers التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryListWorkersMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات list&#95;workers.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات إدارة المستأجرين (إنشاء مستأجر أو تحديثه أو حذفه أو جلبه أو سرده) التي عالجتها خدمة اكتشاف العمال عديمي الحالة.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات إدارة المستأجرين التي أعادت خدمة اكتشاف العمال عديمي الحالة استجابةً تتضمن خطأ.
+* `ProfileEvent_StatelessWorkerDiscoveryTenantMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته خدمة اكتشاف العمال عديمي الحالة في معالجة طلبات إدارة المستأجرين.
+* `ProfileEvent_StatelessWorkerDiscoveryInternalErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الطلبات التي أخفقت خدمة اكتشاف العمال عديمي الحالة في معالجتها بسبب خطأ داخلي (استثناء أو فشل في مخزن التنسيق)، بدلًا من رفض طلب غير صالح.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersLeased` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين أجّرتهم خدمة اكتشاف العمال عديمي الحالة حديثًا للمستأجرين.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersUnavailable` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين طلبهم المستأجرون، لكن خدمة اكتشاف العمال عديمي الحالة لم تتمكن من توفيرهم لعدم وجود عمال شاغرين أو لبلوغ حد العمال الخاص بالمستأجر.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersLeaseExpired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين استعادتهم خدمة اكتشاف العمال عديمي الحالة لانتهاء مدة تأجيرهم.
+* `ProfileEvent_StatelessWorkerDiscoveryWorkersHeartbeatExpired` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين استعادتهم خدمة اكتشاف العمال عديمي الحالة لتوقفهم عن إرسال نبضات القلب.
+* `ProfileEvent_StatelessWorkerDiscoveryHeartbeatsRejected` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نبضات القلب التي رفضتها خدمة اكتشاف العمال عديمي الحالة لأن العامل كان قد أُخرج بالفعل.
+* `ProfileEvent_StatelessWorkerDiscoveryKeeperTransactionRetries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد معاملات الكتابة التي أعادت خدمة اكتشاف العمال عديمي الحالة محاولتها لأن حالة مخزن التنسيق الخاص بها (Keeper) عُدِّلت بالتزامن.
 * `CurrentMetric_Query` ([Int64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات الجاري تنفيذها
 * `CurrentMetric_ASTFuzzerAccumulatedFragments` ([Int64](/ar/reference/data-types/int-uint)) — عدد أجزاء AST التي راكمها AST fuzzer على جانب الخادم لاستخدامها في mutations مستقبلية.
 * `CurrentMetric_QueryNonInternal` ([Int64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات غير الداخلية الجاري تنفيذها (الاستعلامات التي بدأها المستخدمون، باستثناء الاستعلامات الداخلية من ClickHouse)
@@ -1572,6 +1675,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_MergeTreeDataSelectExecutorThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في تجمّع الخيوط الخاص بـ MergeTreeDataSelectExecutor.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في تجمّع الخيوط الخاص بـ MergeTreeDataSelectExecutor التي تنفّذ مهمة.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في تجمّع الخيوط الخاص بـ MergeTreeDataSelectExecutor.
+* `CurrentMetric_BackgroundQueryThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمّع خيوط استعلامات الخلفية.
+* `CurrentMetric_BackgroundQueryThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمّع خيوط استعلامات الخلفية التي تنفّذ مهمة.
+* `CurrentMetric_BackgroundQueryThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط استعلامات الخلفية.
 * `CurrentMetric_BackupsThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في تجمّع الخيوط الخاص بـ BACKUP.
 * `CurrentMetric_BackupsThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في تجمّع الخيوط الخاص بـ BACKUP التي تنفّذ مهمة.
 * `CurrentMetric_BackupsThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة لـ BACKUP.
@@ -1699,6 +1805,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_IcebergCompactionSnapshots` ([Int64](/ar/reference/data-types/int-uint)) — عدد عمليات دمج Iceberg.
 * `CurrentMetric_IcebergCompactionMerge` ([Int64](/ar/reference/data-types/int-uint)) — عدد عمليات دمج Iceberg الخلفية الجاري تنفيذها.
 * `CurrentMetric_IcebergCompactionSourceFiles` ([Int64](/ar/reference/data-types/int-uint)) — عدد ملفات المصدر المُدخلة (ملفات البيانات وملفات الحذف الموضعي) المشاركة في عمليات دمج Iceberg الجاري تنفيذها حاليًا.
+* `CurrentMetric_IcebergCompactionCleanupTasks` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الخلفية لإزالة ملفات البيانات التي حلّت محلها عمليات دمج Iceberg، والمجدولة أو التي لا تزال تحتفظ بها جداول Iceberg.
 * `CurrentMetric_ParallelWithQueryThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد مؤشرات الترابط في مجمّع مؤشرات الترابط لمعالجة استعلامات PARALLEL WITH.
 * `CurrentMetric_ParallelWithQueryActiveThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد مؤشرات الترابط النشطة في مجمّع مؤشرات الترابط لمعالجة استعلامات PARALLEL WITH.
 * `CurrentMetric_ParallelWithQueryScheduledThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام النشطة أو الموجودة في قائمة الانتظار في مجمّع مؤشرات الترابط لمعالجة استعلامات PARALLEL WITH.
@@ -1918,6 +2025,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_SharedMergeTreeThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد سلاسل التنفيذ في thread pools ضمن المكوّنات الداخلية لـ SharedMergeTree
 * `CurrentMetric_SharedMergeTreeThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد سلاسل التنفيذ في thread pools ضمن المكوّنات الداخلية لـ SharedMergeTree التي تنفّذ مهمة
 * `CurrentMetric_SharedMergeTreeThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد سلاسل التنفيذ النشطة أو الموجودة في queue ضمن thread pools في المكوّنات الداخلية لـ SharedMergeTree
+* `CurrentMetric_SharedMergeTreeBlobRefCounterNodes` ([Int64](/ar/reference/data-types/int-uint)) — عدد عُقد عدّ مراجع blob (واحدة لكل blob بيانات تشترك فيه جزآن أو أكثر من أجزاء blob-list) في الأشجار الفرعية لـ Keeper المشتركة على مستوى المجموعة ` _blob_manager/refcount`، ويُقاس دوريًا بواسطة مهمة إحصاءات مدير blob ويُجمع عبر أقراص البيانات الوصفية لـ Keeper الخاصة بالخادم.
 * `CurrentMetric_SharedMergeTreeFetch` ([Int64](/ar/reference/data-types/int-uint)) — عدد عمليات fetch الجارية
 * `CurrentMetric_SharedMergeTreeAssignedCurrentParts` ([Int64](/ar/reference/data-types/int-uint)) — عدد الأجزاء المقفلة بسبب عمليات الدمج أو التعديل
 * `CurrentMetric_SharedMergeTreeOutdatedPartsInKeeper` ([Int64](/ar/reference/data-types/int-uint)) — عدد سجلات الأجزاء القديمة المخزنة في Keeper
@@ -2002,6 +2110,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `CurrentMetric_StatelessWorkerInUse` ([Int64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين تستخدمهم الاستعلامات الجارية حاليًا.
 * `CurrentMetric_StatelessWorkerIdle` ([Int64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين يحتفظ بهم الخادم حاليًا ولا يستخدمهم أي استعلام جارٍ.
 * `CurrentMetric_StatelessWorkerServerActiveTasks` ([Int64](/ar/reference/data-types/int-uint)) — عدد مهام تنفيذ الاستعلامات النشطة حاليًا على عامل عديم الحالة (المقبولة من مستأجر والتي لم تُحرَّر بعد).
+* `CurrentMetric_StatelessWorkerDiscoveryFreeWorkers` ([Int64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة المسجّلين والمتاحين للتأجير، وفقًا لما تتعقبه خدمة اكتشاف العمال عديمي الحالة.
+* `CurrentMetric_StatelessWorkerDiscoveryLeasedWorkers` ([Int64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة المؤجّرين حاليًا للمستأجرين، وفقًا لما تتعقبه خدمة اكتشاف العمال عديمي الحالة.
+* `CurrentMetric_StatelessWorkerDiscoveryDyingWorkers` ([Int64](/ar/reference/data-types/int-uint)) — عدد العمال عديمي الحالة الذين أُخرجوا وينتظرون الإزالة، وفقًا لما تتعقبه خدمة اكتشاف العمال عديمي الحالة.
+* `CurrentMetric_StatelessWorkerDiscoveryTenants` ([Int64](/ar/reference/data-types/int-uint)) — عدد المستأجرين المسجّلين لدى خدمة اكتشاف العمال عديمي الحالة.
 * `CurrentMetric_ExchangeServerThreads` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
 * `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/ar/reference/data-types/int-uint)) — عدد الخيوط التي تنفّذ مهمة في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
 * `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/ar/reference/data-types/int-uint)) — عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّع خيوط المصافحة لخادم التبادل الموزّع.
@@ -2062,6 +2174,16 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 **المخطط**
 يمكن تهيئة هذا الجدول بأنواع مختلفة من المخططات باستخدام وسم XML `<schema_type>`. نوع المخطط الافتراضي هو `wide`، حيث يُخزَّن كل مقياس أو حدث profile في عمود منفصل. هذا المخطط هو الأفضل أداءً والأكثر كفاءة لعمليات القراءة من عمود واحد.
+
+يخزّن المخطط `bucketed` جميع أحداث profile والمقاييس الحالية في عمود `metrics` واحد من النوع [Map](/ar/reference/data-types/map)([Enum16](/ar/reference/data-types/enum)، [Int64](/ar/reference/data-types/int-uint))، لذا يتكوّن الجدول من بضعة أعمدة بدلًا من آلاف الأعمدة. يستخدم `Map` تسلسلًا مقسّمًا إلى bucket (`map_serialization_version = 'with_buckets'`) بعدد ثابت قدره 128 bucket، لذا فإن قراءة مقياس واحد لا تقرأ سوى bucket واحدة من أصل 128. لا تُخزَّن القيم الصفرية: إذ تؤدي قراءة مفتاح مفقود إلى إرجاع `0`. يُعرَض كل مقياس أيضًا من خلال عمود `ALIAS` يحمل اسم المقياس نفسه (على سبيل المثال، `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`)، لذا تستمر جميع الاستعلامات المكتوبة للمخطط `wide` في العمل. تُخزَّن أحداث profile كزيادات خلال فترة التجميع، وتُخزَّن المقاييس الحالية كقيم في لحظة التجميع.
+
+```xml
+<clickhouse>
+    <metric_log>
+        <schema_type>bucketed</schema_type>
+    </metric_log>
+</clickhouse>
+```
 
 يخزّن المخطط `transposed` البيانات بتنسيق مشابه لـ `system.asynchronous_metric_log`، حيث تُخزَّن المقاييس والأحداث على شكل صفوف. ويكون هذا المخطط مفيدًا في البيئات محدودة الموارد لأنه يقلّل استهلاك الموارد أثناء عمليات الدمج.
 

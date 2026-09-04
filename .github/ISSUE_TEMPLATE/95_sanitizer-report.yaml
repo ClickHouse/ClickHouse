@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         > (you don't have to strictly follow this form)
+        > Ask the [ClickHouse Wizard](https://wizard.clickhouse.com/) about related sanitizer reports and fixes before filing.
   - type: textarea
     attributes:
       label: Describe the bug
