@@ -1,0 +1,139 @@
+#include <Storages/MergeTree/ColumnIdMappingStore.h>
+
+#include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Settings.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+namespace DB
+{
+
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+DiskColumnIdMappingStore::DiskColumnIdMappingStore(MergeTreeData & data_, LoggerPtr log_)
+    : data(data_)
+    , log(std::move(log_))
+{
+}
+
+std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load()
+{
+    const auto column_ids_path = fs::path(data.getRelativeDataPath()) / MergeTreeData::COLUMN_IDS_FILE_NAME;
+
+    std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
+    // Try to read the mapping from the first disk that has it
+    for (auto& disk : data.getStoragePolicy()->getDisks())
+    {
+        if (!disk->isBroken() && disk->existsFile(column_ids_path))
+        {
+            mapping_buf = disk->readFile(column_ids_path, getReadSettings());
+            break;
+        }
+    }
+
+    if (!mapping_buf)
+        return {};
+
+    auto loaded_mapping = ColumnIdMapping::deserialize(*mapping_buf);
+    skipWhitespaceIfAny(*mapping_buf);
+    assertEOF(*mapping_buf);
+    return loaded_mapping;
+}
+
+DiskPtr DiskColumnIdMappingStore::getAuthoritativeDisk() const
+{
+    const auto & disks = data.getStoragePolicy()->getDisks();
+    if (disks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Storage policy for table {} has no disks to hold `{}`",
+            data.getStorageID().getNameForLogs(), MergeTreeData::COLUMN_IDS_FILE_NAME);
+
+    return disks.front();
+}
+
+void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping)
+{
+    const fs::path table_path = data.getRelativeDataPath();
+    const auto column_ids_path = table_path / MergeTreeData::COLUMN_IDS_FILE_NAME;
+    const auto column_ids_tmp_path = table_path / (String(MergeTreeData::COLUMN_IDS_FILE_NAME) + ".tmp");
+
+    auto disk = getAuthoritativeDisk();
+    if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot store `{}` for table {}: disk `{}` is not writable. "
+            "Put a writable disk first in the policy.",
+            MergeTreeData::COLUMN_IDS_FILE_NAME, data.getStorageID().getNameForLogs(), disk->getName());
+
+    /// A crash between the write and the replace leaves either the previous file intact or only the
+    /// `.tmp` behind, so a reader never sees a torn one.
+    const bool fsync_metadata = data.getContext()->getSettingsRef()[Setting::fsync_metadata];
+    try
+    {
+        {
+            auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, data.getContext()->getWriteSettings());
+            mapping.serialize(*buf);
+            buf->finalize();
+            if (fsync_metadata)
+                buf->sync();
+        }
+
+        /// The rename itself needs the directory entry on the device: fsyncing only the file leaves
+        /// a window where the crash keeps the old name and loses the mapping this call reported
+        /// stored. The guard syncs the directory when it goes out of scope, after the replace.
+        SyncGuardPtr directory_sync_guard;
+        if (fsync_metadata)
+            directory_sync_guard = disk->getDirectorySyncGuard(table_path);
+
+        disk->replaceFile(column_ids_tmp_path, column_ids_path);
+    }
+    catch (...)
+    {
+        try
+        {
+            disk->removeFileIfExists(column_ids_tmp_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        throw;
+    }
+
+    /// Best-effort: drop any stale copy on the other disks (e.g. left by the old
+    /// multi-disk format) so exactly one authoritative copy exists.
+    for (const auto & other : data.getStoragePolicy()->getDisks())
+    {
+        if (other->getName() == disk->getName())
+            continue;
+        if (other->isBroken() || other->isReadOnly() || other->isWriteOnce())
+            continue;
+        try
+        {
+            other->removeFileIfExists(column_ids_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove stale column ID mapping copy");
+        }
+    }
+}
+
+}
