@@ -68,6 +68,7 @@ public:
     {
         current_iteration = 0;
         current_backoff_ms = retries_info.initial_backoff_ms;
+        gave_up = false;
 
         while (current_iteration == 0 || canTry())
         {
@@ -90,6 +91,9 @@ public:
             catch (...)
             {
                 iteration_cleanup();
+                /// Non-retryable non-Keeper errors (e.g. `MEMORY_LIMIT_EXCEEDED`) are a give-up:
+                /// run the finalizer before leaving the loop.
+                giveUpOnceWhileHandlingException("giving up after non-retryable error");
                 throw;
             }
             current_iteration++;
@@ -163,10 +167,15 @@ public:
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
     Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
 
-    /// action will be called only once and only after latest failed retry
-    /// NOTE: this one will be called only in case when retries finishes with Keeper exception
-    /// if it will be some other exception this function will not be called.
-    void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
+    /// Finalizer for give-up paths: retry limit, explicit stop, query cancel/timeout (when
+    /// `checkTimeLimit` throws), and non-Keeper exceptions from the loop body. Not invoked on
+    /// success, and not on non-hardware `KeeperException` rethrows (those are treated as a known
+    /// Keeper outcome, not an ambiguous give-up).
+    /// On the retry-limit and explicit-stop paths an error recorded via `setUserError` becomes the
+    /// reported outcome. On the cancel/timeout and non-Keeper paths an exception is already in flight
+    /// and is kept, so a finalizer that must replace the outcome there has to throw (callers often
+    /// throw `UNKNOWN_STATUS_OF_INSERT` from here).
+    void onGiveUp(std::function<void()> f) { on_give_up = std::move(f); }
 
     const std::string & getName() const { return name; }
 
@@ -187,6 +196,53 @@ private:
         std::string message;
         std::exception_ptr exception;
     };
+
+    /// Runs on_give_up at most once per `retryLoop` invocation.
+    void giveUpOnce()
+    {
+        if (gave_up)
+            return;
+        gave_up = true;
+        if (on_give_up)
+            on_give_up();
+    }
+
+    /// Runs the give-up finalizer while an exception is in flight. The exception in flight is the more
+    /// specific outcome, so it is kept: a finalizer that needs to replace it does so by throwing (see
+    /// `onGiveUp`), and errors it merely records via setUserError are not surfaced here. When it does
+    /// throw, log the triggering exception first, otherwise the cancellation or memory-limit error that
+    /// actually caused the give-up leaves no trace.
+    void giveUpOnceWhileHandlingException(std::string_view reason)
+    {
+        auto triggering_exception = std::current_exception();
+        try
+        {
+            giveUpOnce();
+        }
+        catch (...)
+        {
+            if (logger && triggering_exception)
+                tryLogException(triggering_exception, logger, fmt::format("ZooKeeperRetriesControl: {}: {}", name, reason));
+            throw;
+        }
+    }
+
+    /// If the query was cancelled or hit a throwing time limit, run the give-up finalizer then rethrow.
+    void checkQueryTimeLimitOrGiveUp()
+    {
+        if (!retries_info.query_status)
+            return;
+
+        try
+        {
+            retries_info.query_status->checkTimeLimit();
+        }
+        catch (...)
+        {
+            giveUpOnceWhileHandlingException("giving up after query cancellation or timeout");
+            throw;
+        }
+    }
 
     bool canTry()
     {
@@ -211,7 +267,7 @@ private:
 
         if (stop_retries)
         {
-            action_after_last_failed_retry();
+            giveUpOnce();
             logLastError("stop retries on request");
             throwIfError();
             return false;
@@ -219,15 +275,14 @@ private:
 
         if (total_failures > retries_info.max_retries)
         {
-            action_after_last_failed_retry();
+            giveUpOnce();
             logLastError("retry limit is reached");
             throwIfError();
             return false;
         }
 
         /// Check if the query was cancelled.
-        if (retries_info.query_status)
-            retries_info.query_status->checkTimeLimit();
+        checkQueryTimeLimitOrGiveUp();
 
         /// retries
         logLastError("will retry due to error");
@@ -235,8 +290,7 @@ private:
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
 
         /// Check if the query was cancelled again after sleeping.
-        if (retries_info.query_status)
-            retries_info.query_status->checkTimeLimit();
+        checkQueryTimeLimitOrGiveUp();
 
         return true;
     }
@@ -289,7 +343,8 @@ private:
     UInt64 total_failures = 0;
     UserError user_error;
     KeeperError keeper_error;
-    std::function<void()> action_after_last_failed_retry = []() {};
+    std::function<void()> on_give_up;
+    bool gave_up = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
 

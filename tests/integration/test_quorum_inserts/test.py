@@ -561,6 +561,92 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
             )
 
 
+def test_cancel_during_ambiguous_commit_recovery(started_cluster):
+    # The part commit reaches Keeper, but its response is lost. Cancel the `INSERT` while
+    # its recovery probe is paused, then make that probe fail with a hardware error.
+    # The recovery must preserve the committed local part instead of allowing the
+    # transaction destructor to roll it back.
+    table_name = "test_cancel_ambiguous_commit_" + uuid.uuid4().hex
+    query_id = "cancel_ambiguous_commit_" + uuid.uuid4().hex
+    part_name = "all_0_0_0"
+    create_query = (
+        f"CREATE TABLE {table_name} "
+        "(a Int8, d Date) "
+        "Engine = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') "
+        "ORDER BY a "
+    )
+
+    zero.query(create_query)
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        # Enabled inside the `try` so that a failure here still disables the failpoints already
+        # enabled. `replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault` is a regular
+        # failpoint, so leaking it would break the tests that follow.
+        zero.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+        zero.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+
+        insert_future = executor.submit(
+            zero.query,
+            f"INSERT INTO {table_name}(a,d) VALUES(1, '2011-01-01')",
+            query_id=query_id,
+            settings={
+                # Module default profile sets insert_quorum=2; this repro is single-replica.
+                "insert_quorum": 0,
+                "insert_keeper_max_retries": 20,
+                "insert_keeper_retry_max_backoff_ms": 10,
+            },
+        )
+
+        zero.query(
+            "SYSTEM WAIT FAILPOINT replicated_merge_tree_insert_retry_pause PAUSE",
+            timeout=60,
+        )
+
+        zk = cluster.get_kazoo_client("zoo1")
+        part_path = f"/clickhouse/tables/{table_name}/replicas/zero/parts/{part_name}"
+        assert zk.exists(part_path) is not None
+
+        # `ASYNC` marks the blocked query as cancelled without waiting for it to leave
+        # the failpoint. Verify the cancellation before releasing recovery so the
+        # test deterministically exercises the cancellation check between retries.
+        zero.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        assert (
+            zero.query(
+                f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
+            ).strip()
+            == "1"
+        )
+        zero.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+
+        insert_exception = insert_future.exception(timeout=60)
+        assert insert_exception is not None
+        assert "UNKNOWN_STATUS_OF_INSERT" in str(insert_exception), str(
+            insert_exception
+        )
+
+        assert zk.exists(part_path) is not None
+        assert "1" == zero.query(f"SELECT count() FROM {table_name}").strip()
+    finally:
+        zero.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        zero.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+        zero.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        # The failpoints are disabled above, so a paused insert is already released and joining it
+        # cannot hang. Join before dropping the table, otherwise `DROP TABLE ... SYNC` races an
+        # insert that is still in flight after an assertion above failed.
+        executor.shutdown(wait=True)
+        zero.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def test_insert_quorum_with_keeper_fail_during_unknown_status(started_cluster):
     # Regression for a logical error ("Part ... doesn't exist") / server abort:
     # a quorum insert commits the part to keeper but the client gets a hardware error,
