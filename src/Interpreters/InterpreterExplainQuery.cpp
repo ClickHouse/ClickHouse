@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
@@ -337,9 +338,13 @@ namespace
     bool hasSecretsInActionsDAG(const ActionsDAG & dag)
     {
         for (const auto & node : dag.getNodes())
+        {
+            if (node.is_masked_secret)
+                return true;
             if (node.type == ActionsDAG::ActionType::FUNCTION
                 && FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets())
                 return true;
+        }
         return false;
     }
 
@@ -392,9 +397,10 @@ namespace
             if (node->step)
             {
                 if (hasSecretsInStep(*node->step))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "EXPLAIN of a query with secret function arguments is only supported with the analyzer, "
-                        "because otherwise the secrets cannot be hidden in the output. SET enable_analyzer = 1.");
+                    throw Exception(ErrorCodes::ACCESS_DENIED,
+                        "Not enough privileges to execute EXPLAIN of a query with secret function arguments, "
+                        "SET enable_analyzer = 1 or get privileges to display secrets for select queries "
+                        "and set setting format_display_secrets_in_show_and_select = 1.");
 
                 for (const auto * child_plan : node->step->getChildPlans())
                     if (child_plan && child_plan->isInitialized())
