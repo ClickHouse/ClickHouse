@@ -108,14 +108,13 @@ $CLICKHOUSE_LOCAL --query \
 $CLICKHOUSE_LOCAL --query \
     "SELECT id, a FROM file('${TMP_DIR}/nested_array_map.arrow', Arrow) ORDER BY id"
 
-# DoS guard for the native reader: an empty nested container references zero child
-# elements, so the child subtree must also be empty.  A buffer-less child type (e.g.
-# a `Null` field) derives its size from the FieldNode length alone, so a forged-huge
-# length must be rejected *before* decoding it (otherwise a tiny message drives an
-# arbitrary column allocation).  Build an all-empty Array(Array(Nullable(Nothing)))
-# and, for every aligned int64 in the message, forge it to 2^62: ClickHouse must
-# never attempt a huge allocation - each variant is either rejected as INCORRECT_DATA
-# or read successfully, and at least one variant exercises the empty-child guard.
+# DoS guard for the native reader: a buffer-less child type (e.g. a `Null` field)
+# derives its size from the FieldNode length alone, so a forged-huge length must never
+# drive an allocation of that size.  The reader builds such a child for the rows its
+# parent references only, and an all-empty parent references none.  Build an all-empty
+# Array(Array(Nullable(Nothing))) and, for every aligned int64 in the message, forge it
+# to 2^62: each variant is either rejected as INCORRECT_DATA or read successfully, and
+# none attempts a huge allocation.
 python3 - "$TMP_DIR" <<'PYEOF'
 import io, struct, sys
 import pyarrow as pa
@@ -148,7 +147,6 @@ $CLICKHOUSE_LOCAL --query \
 
 # Every forged variant must be handled without an allocation attempt (no OOM/crash).
 oom=0
-guard=0
 for f in "${TMP_DIR}"/null_leaf_forged_*.arrow; do
     err=$($CLICKHOUSE_LOCAL \
         --max_memory_usage=1G \
@@ -156,9 +154,5 @@ for f in "${TMP_DIR}"/null_leaf_forged_*.arrow; do
     case "$err" in
         *CANNOT_ALLOCATE_MEMORY*|*"bad_alloc"*|*"MEMORY_LIMIT_EXCEEDED"*) oom=$((oom + 1)) ;;
     esac
-    case "$err" in
-        *"but its buffer-less child declares"*) guard=$((guard + 1)) ;;
-    esac
 done
 echo "DoS guard: forged-length variants that drove an allocation: ${oom}"
-[ "$guard" -ge 1 ] && echo "DoS guard: empty-child length check active" || echo "DoS guard: empty-child length check NOT triggered"

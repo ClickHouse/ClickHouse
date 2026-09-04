@@ -2,23 +2,21 @@
 [NULL,NULL,NULL]
 [NULL,NULL,NULL,NULL]
 forged variants that drove an allocation: 0
-pre-decode length guard active
 === large_list_null
 [NULL,NULL,NULL]
 [NULL,NULL,NULL,NULL]
 forged variants that drove an allocation: 0
-pre-decode length guard active
 === map_string_null
 {'k1':NULL,'k2':NULL,'k3':NULL}
 {'k4':NULL,'k5':NULL,'k6':NULL,'k7':NULL}
 forged variants that drove an allocation: 0
-pre-decode length guard active
+pre-decode length check active
 === fsl_null
 [NULL,NULL]
 [NULL,NULL]
 [NULL,NULL]
 forged variants that drove an allocation: 0
-pre-decode length guard active
+pre-decode length check active
 === struct_null
 (NULL)
 (NULL)
@@ -26,9 +24,9 @@ pre-decode length guard active
 (NULL)
 (NULL)
 forged variants that drove an allocation: 0
-pre-decode length guard active
+pre-decode length check active
 === list_struct_null_int
 [(NULL,1),(NULL,2),(NULL,3)]
 [(NULL,4),(NULL,5),(NULL,6),(NULL,7)]
 forged variants that drove an allocation: 0
-pre-decode length guard active
+pre-decode length check active

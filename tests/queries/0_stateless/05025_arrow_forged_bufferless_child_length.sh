@@ -12,14 +12,15 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 # A buffer-less Arrow subtree (a `null`-typed field, or a struct/fixed-size-list tree of them) carries
 # no buffers whose validated size could bound its declared FieldNode length, so its decoded size derives
-# from that length alone. The native reader must therefore bound such a length by what the parent
-# references BEFORE decoding the child; otherwise a tiny message with a forged-huge length would drive
-# an arbitrarily large null-map allocation.
+# from that length alone. The native reader must therefore never let such a length drive an allocation:
+# the child of a list is built for the rows the list references only, and every other position requires
+# the length its parent implies BEFORE decoding the child.
 #
 # Each shape below has positive parent rows and a buffer-less child whose length is a distinctive value.
 # For every aligned int64 in the message equal to that value, one forged variant patches it to 2^40:
 # every variant must be either rejected as bad data or read successfully, without attempting a huge
-# allocation, and the per-shape pre-decode guards must each fire for at least one variant.
+# allocation. Where the position fixes the length, the pre-decode check must fire for at least one
+# variant; a list child declaring more rows than referenced is legal and simply not materialized.
 #
 #   list_null:        list<null>, offsets [0, 3, 7] -> null child of length 7
 #   large_list_null:  as above with 64-bit offsets
@@ -104,18 +105,19 @@ structure()
     esac
 }
 
-# The guard each shape's forged length must trip at least once: the referenced-rows bound for a
-# buffer-less list child, the exact expected length for a fixed-size-list child or a struct field
-# (the struct shape can also trip the top-level batch-length check, when the struct's own node is the
-# patched one), and the physical body bound for a forged buffered child of a map or list (the entries
-# struct has a buffered key, the inner struct a buffered int32 field, so neither is buffer-less).
+# The check each shape's forged length must trip at least once: the exact expected length for a
+# fixed-size-list child or a struct field (the struct shape can also trip the top-level batch-length
+# check, when the struct's own node is the patched one), and the physical body bound for a forged buffered
+# child of a map or list (the entries struct has a buffered key, the inner struct a buffered int32 field,
+# so neither is buffer-less). The buffer-less child of a list may declare any length past the referenced
+# rows, so the list shapes require no rejection.
 guard_pattern()
 {
     case "$1" in
-        list_null|large_list_null)             echo "but its buffer-less child declares" ;;
         fsl_null)                              echo "fixed-size-list child declares" ;;
         struct_null)                           echo "declares .* rows, expected" ;;
         map_string_null|list_struct_null_int)  echo "more than the .* message body can hold" ;;
+        *)                                     echo "" ;;
     esac
 }
 
@@ -134,5 +136,7 @@ for name in list_null large_list_null map_string_null fsl_null struct_null list_
         if [[ "$err" =~ $(guard_pattern "$name") ]]; then guard=$((guard + 1)); fi
     done
     echo "forged variants that drove an allocation: $oom"
-    [ "$guard" -ge 1 ] && echo "pre-decode length guard active" || echo "pre-decode length guard NOT triggered"
+    if [ -n "$(guard_pattern "$name")" ]; then
+        [ "$guard" -ge 1 ] && echo "pre-decode length check active" || echo "pre-decode length check NOT triggered"
+    fi
 done
