@@ -13,6 +13,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/CachesToPrewarm.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -491,7 +492,10 @@ public:
 
     IndexPtr getIndex() const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
-    void moveIndexToCache(PrimaryIndexCache & index_cache);
+    /// Moves the in-memory index into the cache; call after commit under the final part
+    /// name (the cache key is the part path). Without prewarm asserts that there is no
+    /// in-memory index while the cache is enabled (it would stay there, unevictable).
+    void moveIndexToCache(const CachesToPrewarm & prewarm_caches);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
     /// Returns nullptr if pk isn't loaded

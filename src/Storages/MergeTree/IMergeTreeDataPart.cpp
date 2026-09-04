@@ -713,18 +713,29 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCa
     return index_cache.getOrSet(key, callback);
 }
 
-void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
+void IMergeTreeDataPart::moveIndexToCache(const CachesToPrewarm & prewarm_caches)
 {
-    std::scoped_lock lock(index_mutex);
-    if (!index)
-        return;
+    if (!prewarm_caches.primary_index_cache)
+    {
+        /// Without prewarm the index is not saved in memory during write,
+        /// otherwise it would stay in the part, unevictable.
+        chassert(!prewarm_caches.used_primary_index_cache || !isIndexLoaded());
+    }
+    else
+    {
+        std::scoped_lock lock(index_mutex);
+        if (index)
+        {
+            auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+            prewarm_caches.primary_index_cache->set(key, std::const_pointer_cast<Index>(index));
+            index.reset();
+        }
+    }
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache.set(key, std::const_pointer_cast<Index>(index));
-    index.reset();
-
+    /// The projections' writers save their indexes under the same decision, even when
+    /// this part's own index is absent (e.g. a mutation that rebuilds only a projection).
     for (const auto & [_, projection] : projection_parts)
-        projection->moveIndexToCache(index_cache);
+        projection->moveIndexToCache(prewarm_caches);
 }
 
 void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) const
@@ -766,6 +777,9 @@ void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
     index.reset();
+
+    for (const auto & [_, projection] : projection_parts)
+        projection->unloadIndex();
 }
 
 bool IMergeTreeDataPart::isIndexLoaded() const

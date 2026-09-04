@@ -135,6 +135,8 @@ bool MutatePlainMergeTreeTask::executeStep()
                     transaction.commit(lock);
                 }
 
+                new_part->moveIndexToCache(mutate_task->getCachesToPrewarm());
+
                 mutate_task->updateProfileEvents();
 
                 /// Write the part log entry before reporting the mutation as done, otherwise a

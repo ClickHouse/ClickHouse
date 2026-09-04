@@ -136,7 +136,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
             default_codec_, settings_, std::move(index_granularity_),
             written_offset_substreams_)
 {
-    if (settings.save_marks_in_cache)
+    if (settings.caches_to_prewarm.saveMarksInCache())
     {
         auto columns_vec = getColumnsToPrewarmMarks(*storage_settings, columns_list);
         columns_to_load_marks = NameSet(columns_vec.begin(), columns_vec.end());

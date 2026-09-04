@@ -23,7 +23,7 @@ public:
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
-        size_t part_uncompressed_bytes,
+        const CachesToPrewarm & prewarm_caches,
         bool reset_columns_,
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,

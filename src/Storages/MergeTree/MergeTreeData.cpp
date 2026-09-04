@@ -3711,19 +3711,23 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
 
 PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
 {
-    bool use_primary_key_cache = (*getSettings())[MergeTreeSetting::use_primary_key_cache];
-    bool primary_key_lazy_load = (*getSettings())[MergeTreeSetting::primary_key_lazy_load];
+    return getPrimaryIndexCache(*getSettings());
+}
 
-    if (!use_primary_key_cache || !primary_key_lazy_load)
+PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache(const MergeTreeSettings & settings) const
+{
+    if (!settings[MergeTreeSetting::use_primary_key_cache] || !settings[MergeTreeSetting::primary_key_lazy_load])
         return nullptr;
 
     return getContext()->getPrimaryIndexCache();
 }
 
-MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_uncompressed_bytes) const
+CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_uncompressed_bytes) const
 {
     CachesToPrewarm result;
     auto settings = getSettings();
+
+    result.used_primary_index_cache = getPrimaryIndexCache(*settings);
 
     /// Do not load data to caches for small parts because
     /// they will be likely replaced by merge immediately.
@@ -3733,7 +3737,7 @@ MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_unc
         return result;
 
     if ((*settings)[MergeTreeSetting::prewarm_primary_key_cache])
-        result.primary_index_cache = getPrimaryIndexCache();
+        result.primary_index_cache = result.used_primary_index_cache;
 
     if ((*settings)[MergeTreeSetting::prewarm_mark_cache])
     {
@@ -6380,6 +6384,8 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
+        bool has_primary_index_cache_been_enabled = getPrimaryIndexCache(*copy) && !getPrimaryIndexCache(*storage_settings.get());
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6408,6 +6414,10 @@ void MergeTreeData::changeSettings(
         {
             startStatisticsCache();
         }
+
+        /// Indexes loaded in parts while the cache was disabled would stay there, unevictable.
+        if (has_primary_index_cache_been_enabled)
+            unloadPrimaryKeys();
     }
 }
 
@@ -13544,7 +13554,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,
-        /*part_uncompressed_bytes=*/0,
+        /// Nothing to prewarm for an empty part.
+        CachesToPrewarm::noPrewarm(getPrimaryIndexCache()),
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},

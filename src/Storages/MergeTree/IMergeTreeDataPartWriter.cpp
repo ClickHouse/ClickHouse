@@ -106,7 +106,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 
 std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
 {
-    if (!settings.save_primary_index_in_memory)
+    if (!settings.caches_to_prewarm.savePrimaryIndexInMemory())
         return {};
 
     /// The memory for index was allocated without thread memory tracker.

@@ -16,6 +16,7 @@
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Storages/MergeTree/CachesToPrewarm.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
@@ -711,15 +712,7 @@ public:
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
-
-    struct CachesToPrewarm
-    {
-        MarkCachePtr mark_cache;
-        MarkCachePtr index_mark_cache;
-        PrimaryIndexCachePtr primary_index_cache;
-
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
-    };
+    PrimaryIndexCachePtr getPrimaryIndexCache(const MergeTreeSettings & settings) const;
 
     /// Returns caches that should be prewarmed for a part of the given size.
     CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;

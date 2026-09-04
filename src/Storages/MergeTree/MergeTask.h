@@ -179,6 +179,11 @@ public:
         return std::move(global_ctx->projections_merge_time);
     }
 
+    const CachesToPrewarm & getCachesToPrewarm() const
+    {
+        return global_ctx->caches_to_prewarm;
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -290,6 +295,8 @@ private:
         WrittenOffsetSubstreams written_offset_substreams{};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
+        /// Computed once per merge; also used to move the index and marks into the caches after commit.
+        CachesToPrewarm caches_to_prewarm;
 
         MergeTreeTransactionPtr txn;
         String suffix;

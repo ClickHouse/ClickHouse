@@ -23,7 +23,7 @@ public:
         const MergeTreeIndices & indices_to_recalc,
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
-        size_t part_uncompressed_bytes,
+        const CachesToPrewarm & prewarm_caches,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);

@@ -407,6 +407,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     part = merge_task->getFuture().get();
     auto cached_marks = merge_task->releaseCachedMarks();
     auto cached_index_marks = merge_task->releaseCachedIndexMarks();
+    /// Copy: the task is reset before the post-commit use.
+    auto prewarm_caches = merge_task->getCachesToPrewarm();
     projections_merge_time = merge_task->grabProjectionsMergeTime();
 #if CLICKHOUSE_CLOUD
     part->is_prewarmed = true;
@@ -494,18 +496,13 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
-
     if (prewarm_caches.mark_cache)
         addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
 
     if (prewarm_caches.index_mark_cache)
         addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
 
-    /// Move index to cache and reset it here because we need
-    /// a correct part name after rename for a key of cache entry.
-    if (prewarm_caches.primary_index_cache)
-        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+    part->moveIndexToCache(prewarm_caches);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

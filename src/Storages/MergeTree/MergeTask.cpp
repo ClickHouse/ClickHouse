@@ -1195,6 +1195,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
+    global_ctx->caches_to_prewarm = global_ctx->data->getCachesToPrewarm(ctx->sum_uncompressed_bytes_upper_bound);
+
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         merge_tree_settings,
@@ -1204,7 +1206,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+        global_ctx->caches_to_prewarm,
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
@@ -1609,7 +1611,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+            global_ctx->caches_to_prewarm);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1651,7 +1654,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+                global_ctx->caches_to_prewarm);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -2146,7 +2150,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         column_pipepline.indexes_to_recalc,
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
-        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
+        global_ctx->caches_to_prewarm,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter());
@@ -3198,10 +3202,10 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         global_ctx->new_data_part,
         global_ctx->new_data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
-        /*save_marks_in_cache=*/ false,
-        /*save_primary_index_in_memory=*/ false,
+        /// Writes text index files, not column data; nothing to prewarm.
+        CachesToPrewarm::noPrewarm(global_ctx->data->getPrimaryIndexCache()),
         /*blocks_are_granules_size=*/ false,
-        /*try_adaptive_codec=*/ false); /// Writes text index files, not column data.
+        /*try_adaptive_codec=*/ false);
 
     auto transform = std::make_shared<BuildTextIndexTransform>(
         plan.getCurrentHeader(),

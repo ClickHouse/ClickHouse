@@ -74,7 +74,7 @@ public:
     PlainMarksByName releaseCachedIndexMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
-    MergeTreeWriterSettings getWriterSettings() const { return settings; }
+    const MergeTreeWriterSettings & getWriterSettings() const { return settings; }
 
     virtual const Block & getColumnsSample() const = 0;
 

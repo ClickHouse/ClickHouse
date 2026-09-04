@@ -75,8 +75,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     const MergeTreeDataPartPtr & data_part,
     bool can_use_adaptive_granularity_,
     bool rewrite_primary_key_,
-    bool save_marks_in_cache_,
-    bool save_primary_index_in_memory_,
+    CachesToPrewarm caches_to_prewarm_,
     bool blocks_are_granules_size_,
     bool try_adaptive_codec_)
     : min_compress_block_size(std::min<size_t>(
@@ -92,8 +91,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , primary_key_compress_block_size(std::min<size_t>((*storage_settings)[MergeTreeSetting::primary_key_compress_block_size], MAX_COMPRESS_BLOCK_SIZE))
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , rewrite_primary_key(rewrite_primary_key_)
-    , save_marks_in_cache(save_marks_in_cache_)
-    , save_primary_index_in_memory(save_primary_index_in_memory_)
+    , caches_to_prewarm(std::move(caches_to_prewarm_))
     , blocks_are_granules_size(blocks_are_granules_size_)
     , query_write_settings(query_write_settings_)
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])

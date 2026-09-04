@@ -2731,7 +2731,7 @@ void InterpreterSystemQuery::prewarmMarkCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    MergeTreeData::CachesToPrewarm caches;
+    CachesToPrewarm caches;
     caches.mark_cache = getContext()->getMarkCache();
     caches.index_mark_cache = getContext()->getIndexMarkCache();
     merge_tree->prewarmCaches(pool, caches);
@@ -2759,7 +2759,7 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    MergeTreeData::CachesToPrewarm caches;
+    CachesToPrewarm caches;
     caches.primary_index_cache = index_cache;
     merge_tree->prewarmCaches(pool, caches);
 }

@@ -325,6 +325,8 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /// LOGICAL_ERROR if the old guard is still alive. Resetting the task here
     /// releases these guards before the fallback fetch can run.
     auto hardlinked_files = mutate_task->getHardlinkedFiles();
+    /// Copy: the task is reset before the post-commit use.
+    auto prewarm_caches = mutate_task->getCachesToPrewarm();
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
@@ -384,6 +386,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
 
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
+
+    new_part->moveIndexToCache(prewarm_caches);
+
     write_part_log({});
 
     return true;

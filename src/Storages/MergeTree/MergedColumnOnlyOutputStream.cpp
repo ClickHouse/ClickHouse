@@ -15,7 +15,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeIndices & indices_to_recalc,
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
-    size_t part_uncompressed_bytes,
+    const CachesToPrewarm & prewarm_caches,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     PackedFilesWriter * external_packed_skip_indices_writer)
@@ -26,12 +26,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
           columns_list_,
           /*reset_columns=*/true)
 {
-    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
-    bool save_marks_in_cache = prewarm_caches.mark_cache != nullptr || prewarm_caches.index_mark_cache != nullptr;
-    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
-
     /// Granularity is never recomputed while writing only columns.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
@@ -40,8 +34,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
-        save_marks_in_cache,
-        save_primary_index_in_memory,
+        prewarm_caches,
         /*blocks_are_granules_size=*/ false,
         try_adaptive_codec);
 
