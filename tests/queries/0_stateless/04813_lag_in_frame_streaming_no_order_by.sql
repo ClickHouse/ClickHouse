@@ -22,6 +22,8 @@ SELECT
     map('k1', toString(intDiv(number, 10) % 5)) AS Attributes
 FROM numbers(1, 100000);
 
+-- Note: the rewrite is a query-plan optimization driven by the top-level query context, so a
+-- `SETTINGS` clause inside a subquery does not switch it on; correctness checks use session-level `SET`.
 SET max_threads = 4, optimize_read_in_order = 1;
 
 -- Must NOT activate streaming: no window ORDER BY.
@@ -36,11 +38,11 @@ FROM (
 -- Order-independent correctness invariant: within every partition exactly one row (the
 -- first in whatever order the partition is traversed) gets the default value 0; all Count
 -- values are >= 1, so a zero can only be the default.
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
 SELECT countIf(prev_count = 0), count()
 FROM (
     SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes) AS prev_count
     FROM lag_streaming_no_order_by_t
-    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
 );
 
 DROP TABLE lag_streaming_no_order_by_t;

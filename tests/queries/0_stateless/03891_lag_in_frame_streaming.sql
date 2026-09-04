@@ -27,6 +27,8 @@ FROM numbers(0, 100000);
 -- This test pins the obsolete planner to keep covering the legacy `optimize_read_in_order`
 -- helper (`tryReuseStorageOrderingForWindowFunctions`).  The default planner path is covered by
 -- `05037_lag_in_frame_streaming_default_planner`.
+-- Note: the rewrite is a query-plan optimization driven by the top-level query context, so a
+-- `SETTINGS` clause inside a subquery does not switch it on; correctness checks use session-level `SET`.
 SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order = 0, allow_experimental_analyzer = 0;
 
 -- Without the optimization, no StreamingLag in the pipeline.
@@ -111,42 +113,30 @@ FROM (
 );
 
 -- Verify correctness for DESC storage key.
-SELECT
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
-            FROM lag_streaming_desc_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
-            FROM lag_streaming_desc_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+    FROM lag_streaming_desc_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+    FROM lag_streaming_desc_t
+);
 
 DROP TABLE lag_streaming_desc_t;
 
 -- Verify correctness: results are identical with and without the optimization.
-SELECT
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_t
+);
 
 DROP TABLE lag_streaming_t;
 
@@ -197,22 +187,16 @@ FROM (
 
 -- With the setting enabled the float key falls back to `WindowTransform`, so the result matches
 -- the unoptimized path (and is not corrupted by signed-zero partition splitting).
-SELECT
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_float_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_float_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_float_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_float_t
+);
 
 DROP TABLE lag_streaming_float_t;
 
@@ -255,22 +239,16 @@ FROM (
 
 -- With the setting enabled the Dynamic key falls back to `WindowTransform`, so the result matches
 -- the unoptimized path (and is not corrupted by signed-zero partition splitting).
-SELECT
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_dynamic_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_dynamic_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_dynamic_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, DynAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_dynamic_t
+);
 
 DROP TABLE lag_streaming_dynamic_t;
 
@@ -319,26 +297,20 @@ FROM (
 -- Correctness: the second window's result must match the unoptimized path.  Both window results
 -- must be consumed, otherwise the unused `lagInFrame` window is removed from the plan and the
 -- streaming rewrite (whose misapplication this checks) never happens.
-SELECT
-    (
-        SELECT (sum(rn), sum(prev_count)) FROM (
-            SELECT
-                lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
-                row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
-            FROM lag_streaming_stacked_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT (sum(rn), sum(prev_count)) FROM (
-            SELECT
-                lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
-                row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
-            FROM lag_streaming_stacked_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT (sum(rn), sum(prev_count)) FROM (
+    SELECT
+        lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
+        row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
+    FROM lag_streaming_stacked_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT (sum(rn), sum(prev_count)) FROM (
+    SELECT
+        lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
+        row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
+    FROM lag_streaming_stacked_t
+);
 
 -- A later window whose sort keys are not covered by the first window's order gets its own
 -- full `SortingStep`, which re-establishes order independently of its input: the first

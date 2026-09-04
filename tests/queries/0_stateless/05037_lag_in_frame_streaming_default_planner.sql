@@ -23,6 +23,8 @@ SELECT
     map('k1', toString(number % 5)) AS Attributes
 FROM numbers(0, 100000);
 
+-- Note: the rewrite is a query-plan optimization driven by the top-level query context, so a
+-- `SETTINGS` clause inside a subquery does not switch it on; correctness checks use session-level `SET`.
 SET max_threads = 4, optimize_read_in_order = 1;
 
 -- Without the optimization, no StreamingLag in the pipeline.
@@ -71,22 +73,16 @@ FROM (
 );
 
 -- Correctness: results are identical with and without the optimization.
-SELECT
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_default_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
-        )
-    ) AS without_opt,
-    (
-        SELECT sum(prev_count) FROM (
-            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
-            FROM lag_streaming_default_t
-            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
-        )
-    ) AS with_opt,
-    without_opt = with_opt AS correct;
+SET query_plan_reuse_storage_ordering_for_window_functions = 0;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_default_t
+);
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
+SELECT sum(prev_count) FROM (
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_default_t
+);
 
 -- The rewrite widens the read-in-order prefix by re-requesting `requestReadingInOrder`.  It must
 -- carry over the read limit installed by the earlier request, otherwise a query with a `LIMIT`
