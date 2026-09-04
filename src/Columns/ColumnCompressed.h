@@ -101,7 +101,6 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
     void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }

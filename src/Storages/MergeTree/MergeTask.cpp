@@ -31,8 +31,8 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -241,23 +241,16 @@ private:
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
 
-/// `PullingPipelineExecutor::pull` returns `false` both on a genuine end-of-stream and when the
-/// pipeline is cancelled (query kill or a soft `max_execution_time` with `timeout_overflow_mode = 'break'`).
-/// A merge that ran with the user query's limits (e.g. `OPTIMIZE ... DRY RUN`, which executes the merge
-/// synchronously in the query) can therefore be silently truncated. If we treat that as a normal finish,
-/// the merge finalizes a partial part and the row-count invariants in the merge stages fire a LOGICAL_ERROR.
-/// Detect the cancellation here and throw the proper error instead.
-static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & executor)
+static void throwIfPipelineCancelled(const QueryPipeline & pipeline)
 {
-    switch (executor.getExecutionStatus())
-    {
-        case PipelineExecutor::ExecutionStatus::CancelledByTimeout:
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while merging parts");
-        case PipelineExecutor::ExecutionStatus::CancelledByUser:
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging parts");
-        default:
-            break;
-    }
+    const auto process_list_element = pipeline.getProcessListElement();
+    if (!process_list_element || process_list_element->checkTimeLimitSoft())
+        return;
+
+    if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded");
 }
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
@@ -1803,7 +1796,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*global_ctx->merging_executor);
+                throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
             return false;
         }
@@ -2181,7 +2174,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
             else
-                throwIfMergePipelineCancelled(*ctx->executor);
+                throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
         }
 

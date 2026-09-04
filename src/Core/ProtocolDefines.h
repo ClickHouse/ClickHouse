@@ -99,9 +99,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
-/// Version 11 adds the `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct`
+/// Version 11 adds the ReadInOrder info in the reading step in the plan
+/// Version 12 adds the `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct`
 /// plan setting names (external DISTINCT) and the input-order flag of the `Distinct` step.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -120,10 +121,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
+/// First query-plan serialization version that carries the ReadInOrder info
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 11;
 /// First query-plan serialization version that knows the `max_bytes_before_external_distinct` and
 /// `max_bytes_ratio_before_external_distinct` plan setting names. Gates writing them in
 /// `DistinctStep::serializeSettings`.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 11;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 12;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
