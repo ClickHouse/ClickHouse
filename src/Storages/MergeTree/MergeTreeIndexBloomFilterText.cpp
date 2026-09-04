@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
+#include <algorithm>
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
@@ -200,7 +201,11 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BloomFilter index condition got a granule with the wrong type.");
 
     /// Check like in KeyCondition.
+    /// The stack never grows beyond the number of RPN elements, so reserve up front to
+    /// avoid reallocations - this method runs once per index granule (GRANULARITY 1 by
+    /// default), so the per-granule allocation churn is worth removing.
     std::vector<BoolMask> rpn_stack;
+    rpn_stack.reserve(rpn.size());
     size_t element_idx = 0;
     for (const auto & element : rpn)
     {
@@ -220,19 +225,30 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             case RPNElement::FUNCTION_IN:
             case RPNElement::FUNCTION_NOT_IN:
             {
-                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+                /// The set may match the granule if at least one of its rows has every key
+                /// column present in the granule's bloom filters. Iterate rows in the outer
+                /// loop so we can stop at the first matching row (and, within a row, at the
+                /// first missing column) instead of materializing a per-row bitmap.
+                const size_t num_set_rows = element.set_bloom_filters.back().size();
+                const size_t num_key_columns = element.set_key_position.size();
 
-                for (size_t column = 0; column < element.set_key_position.size(); ++column)
+                bool any_row_matches = false;
+                for (size_t row = 0; row < num_set_rows && !any_row_matches; ++row)
                 {
-                    const size_t key_idx = element.set_key_position[column];
-
-                    const auto & bloom_filters = element.set_bloom_filters[column];
-                    for (size_t row = 0; row < bloom_filters.size(); ++row)
-                        result[row] = result[row] && granule->bloom_filters[key_idx].contains(bloom_filters[row]);
+                    bool all_columns_match = true;
+                    for (size_t column = 0; column < num_key_columns; ++column)
+                    {
+                        const size_t key_idx = element.set_key_position[column];
+                        if (!granule->bloom_filters[key_idx].contains(element.set_bloom_filters[column][row]))
+                        {
+                            all_columns_match = false;
+                            break;
+                        }
+                    }
+                    any_row_matches = all_columns_match;
                 }
 
-                rpn_stack.emplace_back(
-                        std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                rpn_stack.emplace_back(any_row_matches, true);
                 if (element.function == RPNElement::FUNCTION_NOT_IN)
                     rpn_stack.back() = !rpn_stack.back();
                 break;
@@ -241,31 +257,28 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             case RPNElement::FUNCTION_HAS_ANY:
             case RPNElement::FUNCTION_HAS_ALL:
             {
-                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+                /// Single key column: `HAS_ALL` needs every needle present, the others need at
+                /// least one. Both short-circuit and avoid the per-row bitmap allocation.
+                const auto & needles = element.set_bloom_filters[0];
+                auto & column_bloom_filter = granule->bloom_filters[element.key_column];
+                auto contains = [&](const BloomFilter & needle) { return column_bloom_filter.contains(needle); };
 
-                const auto & bloom_filters = element.set_bloom_filters[0];
+                bool result = (element.function == RPNElement::FUNCTION_HAS_ALL)
+                    ? std::ranges::all_of(needles, contains)
+                    : std::ranges::any_of(needles, contains);
 
-                for (size_t row = 0; row < bloom_filters.size(); ++row)
-                    result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
-
-                if (element.function == RPNElement::FUNCTION_HAS_ALL)
-                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
-                else
-                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                rpn_stack.emplace_back(result, true);
                 break;
             }
             case RPNElement::FUNCTION_MATCH:
                 if (!element.set_bloom_filters.empty())
                 {
-                    /// Alternative substrings
-                    std::vector<bool> result(element.set_bloom_filters.back().size(), true);
-
-                    const auto & bloom_filters = element.set_bloom_filters[0];
-
-                    for (size_t row = 0; row < bloom_filters.size(); ++row)
-                        result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
-
-                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                    /// Alternative substrings: the granule may match if any alternative is present.
+                    const auto & needles = element.set_bloom_filters[0];
+                    auto & column_bloom_filter = granule->bloom_filters[element.key_column];
+                    bool result = std::ranges::any_of(
+                        needles, [&](const BloomFilter & needle) { return column_bloom_filter.contains(needle); });
+                    rpn_stack.emplace_back(result, true);
                 }
                 else if (element.bloom_filter)
                 {

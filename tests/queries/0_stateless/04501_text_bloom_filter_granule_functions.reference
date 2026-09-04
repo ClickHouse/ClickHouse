@@ -1,0 +1,33 @@
+IN
+3
+17
+NOT IN
+0
+1
+2
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+18
+19
+multiSearchAny
+3
+17
+hasAny
+3
+17
+hasAll match
+3
+hasAll no match
+index equals full scan
+1	1	1

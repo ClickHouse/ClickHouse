@@ -339,7 +339,10 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
 {
+    /// Reserve up front: the stack never grows beyond the number of RPN elements, and this
+    /// method runs once per index granule, so avoiding the reallocations is worthwhile.
     std::vector<BoolMask> rpn_stack;
+    rpn_stack.reserve(rpn.size());
     const auto & filters = granule->getFilters();
 
     size_t element_idx = 0;
