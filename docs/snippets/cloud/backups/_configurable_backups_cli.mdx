@@ -18,7 +18,7 @@ Changing the backup configuration is a write operation and requires [API key aut
 clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 ```
 
-Alternatively, set the `CLICKHOUSE_CLOUD_API_KEY` and `CLICKHOUSE_CLOUD_API_SECRET` environment variables. Verify with `clickhousectl cloud auth status`; expect an entry with scope `read/write`.
+Alternatively, set the `CLICKHOUSE_CLOUD_API_KEY` and `CLICKHOUSE_CLOUD_API_SECRET` environment variables. Verify with `clickhousectl cloud auth status`: check that the **active** credential is the one with scope `read/write`. Credentials saved by an earlier `auth login` outrank environment variables; in that case the `Env vars` row can still show scope `read/write` but is marked inactive (`Configured (inactive, outranked by credentials file)`), and the write commands below run under the saved credentials instead. Run `clickhousectl cloud auth logout` first if you want the environment variables to be used.
 
 ## Find the service ID {#find-the-service-id}
 
@@ -28,6 +28,8 @@ The backup configuration is set per service. Look up the ID of the service by na
 CH_ID=$(clickhousectl cloud service list --json \
   | jq -r '.[] | select(.name=="<service-name>") | .id')
 ```
+
+If you belong to more than one organization, the organization cannot be auto-detected and this command fails with `Multiple organizations found. Specify --org-id to choose one.`. List your organizations with `clickhousectl cloud org list`, and pass `--org-id <org-id>` to this command and to every `backup-config` command below.
 
 ## Read the current backup configuration {#read-the-current-backup-configuration}
 
