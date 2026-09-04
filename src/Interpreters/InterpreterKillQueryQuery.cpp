@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Planner/Planner.h>
@@ -425,6 +426,9 @@ static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPt
     {
         /// A copy: the statement's AST is shared and outlives this read.
         auto predicate = where_expression->clone();
+        /// A function body is substituted where the text below is parsed, which is past the point
+        /// where a qualifier inside that body can still be shortened.
+        UserDefinedSQLFunctionVisitor::visit(predicate, context);
         unqualifyProcessesColumns(predicate);
         select_query += " WHERE " + predicate->formatWithSecretsOneLine();
     }

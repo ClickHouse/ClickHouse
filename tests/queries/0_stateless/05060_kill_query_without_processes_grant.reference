@@ -63,3 +63,7 @@
 21 granted alive=0
 22 asterisk killed=1
 22 asterisk alive=0
+23 grant_free killed=1
+23 grant_free alive=0
+23 granted killed=1
+23 granted alive=0

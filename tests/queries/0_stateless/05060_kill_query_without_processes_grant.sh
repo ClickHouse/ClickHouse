@@ -12,6 +12,7 @@ U2="u2_${CLICKHOUSE_DATABASE}"
 P_ALL="pall_${CLICKHOUSE_DATABASE}"
 P_U1="pu1_${CLICKHOUSE_DATABASE}"
 Q1="q1_${CLICKHOUSE_DATABASE}"
+F1="f1_${CLICKHOUSE_DATABASE}"
 SUFFIX="_${CLICKHOUSE_DATABASE}"
 # The marker keeps the victims out of reach of other tests that kill by query text. A KILL cannot land
 # while a sleep chunk is in progress, so the interval bounds how long every KILL below waits, and the
@@ -359,6 +360,25 @@ echo -n "22 asterisk killed="
 $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE notEmpty(toString(tuple(system.processes.*)))
     AND query_id = 'own22$SUFFIX' SYNC" 2>&1 | killed "own22$SUFFIX"
 gone "own22$SUFFIX"; echo "22 asterisk alive=$(alive "own22$SUFFIX")"
+reset_arm
+
+# 23: a function body is substituted later than the statement's own AST is read, so a qualifier inside
+# one is shortened only if the body is inlined first. Both paths accept the same spelling.
+# The analyzer is pinned because the old one resolves no qualifier inside a function body on either
+# path, so under it the two halves would compare a spelling neither path has ever accepted.
+via_http "CREATE OR REPLACE FUNCTION $F1 AS (id) -> system.processes.query_id = id"
+start_victim "$U1" "own23a$SUFFIX"
+echo -n "23 grant_free killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE $F1('own23a$SUFFIX') SYNC
+    SETTINGS enable_analyzer = 1" 2>&1 | killed "own23a$SUFFIX"
+gone "own23a$SUFFIX"; echo "23 grant_free alive=$(alive "own23a$SUFFIX")"
+via_http "GRANT SELECT ON system.processes TO $U1"
+start_victim "$U1" "own23b$SUFFIX"
+echo -n "23 granted killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE $F1('own23b$SUFFIX') SYNC
+    SETTINGS enable_analyzer = 1" 2>&1 | killed "own23b$SUFFIX"
+gone "own23b$SUFFIX"; echo "23 granted alive=$(alive "own23b$SUFFIX")"
+via_http "DROP FUNCTION $F1"
 reset_arm
 
 via_http "DROP USER $U1, $U2"
