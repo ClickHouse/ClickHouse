@@ -1026,6 +1026,13 @@ def test_function_over_time():
         ],
     )
 
+    do_query_test(
+        "changes(vector(NaN)[80:10])",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "0"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 0]],
+    )
+
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
     do_query_test(
         "changes(resets[45s])[120s:15s]",
