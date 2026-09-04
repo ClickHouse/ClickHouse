@@ -27,7 +27,7 @@ When ClickHouse engineers need to diagnose a problem in your deployment, they re
 
 ### What engineers can see {#what-engineers-can-see}
 
-With approved troubleshooting access, engineers can read ClickHouse system tables only. This includes:
+Within ClickHouse, approved troubleshooting access is limited to system tables. This includes:
 
 - `system.query_log` — query text and execution metadata for queries run against your service
 - `system.tables`, `system.columns`, and similar system tables — schema and metadata
@@ -35,7 +35,11 @@ With approved troubleshooting access, engineers can read ClickHouse system table
 
 ### What engineers can't see {#what-engineers-cant-see}
 
-Engineers can't read customer user tables. Access is scoped to system tables only.
+Engineers can't read customer user tables. Within ClickHouse, access is scoped to system tables only.
+
+### Infrastructure diagnostics {#infrastructure-diagnostics}
+
+The same approval-gated escalation can separately grant time-bound access to infrastructure surfaces over Tailscale: the Kubernetes API server, and the in-cluster monitoring stack and logs. This is a distinct surface from the ClickHouse access above — it carries no customer table data, and nothing read through it is persisted on the ClickHouse side.
 
 ### How access is enforced {#how-access-is-enforced}
 
@@ -43,7 +47,7 @@ Engineers can't read customer user tables. Access is scoped to system tables onl
 - **Time-bound certificates**: a temporary, time-bound certificate is generated per approved session. Access expires automatically.
 - **Certificate-based authentication**: certificates replace password-based access for all human access to BYOC instances.
 - **Read-only on system tables**: the certificate identity is scoped to system table reads.
-- **No data exported**: logs and query results from troubleshooting sessions are never exported back to ClickHouse infrastructure.
+- **Nothing persisted on the ClickHouse side**: results read during a troubleshooting session — whether from system tables, the monitoring stack, or your logs — reach the engineer's tooling to be displayed, but are not stored in or exported back to ClickHouse infrastructure.
 
 ## Auditing {#auditing}
 
