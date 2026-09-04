@@ -1,0 +1,4 @@
+force_data_skipping_indices	idx_a	1	
+idx_b
+force_data_skipping_indices	idx_c	1	
+idx_c
