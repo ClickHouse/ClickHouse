@@ -29,7 +29,9 @@ REVISION = 54484
 
 INTERFACE_TCP = 1
 INTERFACE_HTTP = 2
-OUT_OF_DOMAIN = 200
+# Unmapped in both enums and a positive `Int8`, so the assertions below discriminate mapping
+# membership from the range of `Int8`: a projection that only mapped bytes above 127 would pass them.
+OUT_OF_DOMAIN = 127
 
 
 def writeVarUInt(x, ba):
@@ -196,10 +198,10 @@ def sendEmptyBlock(s):
 
 
 def expectQueryAccepted(s):
-    # The first response packet is the result header, which the server can only send once the query
-    # has been parsed, planned and started, so it is enough to prove the reported client info was
-    # accepted. The result itself is not read back: the rest of the stream is opaque here, and the
-    # `QueryStart` row this test asserts on is written during that same startup.
+    # Any first packet other than an `Exception` proves the server accepted the reported client info:
+    # a `SELECT` answers with its result header once the query has started, and a completed
+    # `INSERT ... SELECT` run with `interactive_delay = 0` answers only after its commit. The rest of
+    # the stream is not read.
     packet_type = readVarUInt(s)
     if packet_type == 2:  # Exception
         readUInt(s, 4)  # code
