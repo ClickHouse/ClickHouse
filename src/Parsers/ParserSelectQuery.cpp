@@ -18,6 +18,7 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/StatementFactory.h>
@@ -525,7 +526,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (!select_query->group_by_all)
         {
-            if (!exp_list.parse(pos, group_expression_list, expected))
+            ParserList group_by_elem_list(
+                std::make_unique<ParserGroupByElement>(),
+                std::make_unique<ParserToken>(TokenType::Comma),
+                false);
+            if (!group_by_elem_list.parse(pos, group_expression_list, expected))
                 return false;
         }
 
@@ -2156,6 +2161,81 @@ GROUP BY domain
 ```
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
+
+## WITH CLUSTER Modifier {#with-cluster-modifier}
+
+The `WITH CLUSTER` modifier is a per-element modifier that merges groups whose key values are within a specified distance. This enables session-window-style aggregation where nearby key values are treated as belonging to the same group.
+
+<Note>
+`WITH CLUSTER` is experimental. To use it, enable the setting [`allow_experimental_group_by_with_cluster`](/reference/settings/session-settings/allow-experimental); otherwise the query is rejected during analysis. It is implemented only for the analyzer (`enable_analyzer = 1`, the default).
+</Note>
+
+Unlike `ROLLUP` or `CUBE`, `WITH CLUSTER` is applied to an individual `GROUP BY` expression rather than to the entire `GROUP BY` clause:
+
+```sql
+SELECT ... GROUP BY key1, key2 WITH CLUSTER <distance>
+```
+
+Here `key2` is the cluster key. Rows are first aggregated by exact key values using the standard hash-table aggregation. Then adjacent groups whose cluster key values differ by at most `<distance>` are merged together. This uses chain semantics: rows A and B are in the same cluster if there is a chain of rows where each consecutive pair differs by at most `<distance>`.
+
+Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The supported cluster key kinds are:
+
+- A native-width numeric or temporal scalar — `Int8` … `Int64`, `UInt8` … `UInt64`, `Float32` / `Float64`, `Date` / `Date32`, `DateTime` / `DateTime64`, `Time` / `Time64` — where `<distance>` is interpreted as a numeric threshold on the absolute difference of key values. Wider integers (`Int128` / `UInt128` / `Int256` / `UInt256`) and `Decimal*` are **not** supported and are rejected during analysis with `BAD_ARGUMENTS`.
+- `DateTime64(scale)` / `Time64(scale)` — `<distance>` is interpreted in **the type's native tick unit** (microseconds for `scale = 6`, nanoseconds for `scale = 9`, etc.), matching how arithmetic on these types already works in ClickHouse (e.g. `now64(6) + 1` adds one microsecond). Use multiples of the corresponding power of ten to express larger units (e.g. `1000000` for one second on `DateTime64(6)`).
+- A 2-element numeric tuple **inline expression** `(x, y)` — `<distance>` is interpreted as a Euclidean threshold; rows are merged when `sqrt((x1-x2)^2 + (y1-y2)^2) <= <distance>`. Tuples of any other arity are rejected. A pre-built `Tuple(...)` *column* must be unpacked at the call site (`GROUP BY (p.1, p.2) WITH CLUSTER d`); only the inline form is recognized for 2D.
+- `String` or `FixedString` — `<distance>` is interpreted as a non-negative integer maximum edit (Levenshtein) distance over raw bytes.
+
+For a positive `<distance>`, clustering of numeric and temporal keys is computed in `Float64`, so both the key values and the bucket index `floor(key / <distance>)` must stay inside the exact-integer range of `Float64` (`2^53`). A query whose 64-bit key range, or whose `floor(key / <distance>)` quotient, exceeds that limit is rejected with `BAD_ARGUMENTS` rather than silently merging keys that are farther apart than the distance — use a larger distance or a narrower key range. `WITH CLUSTER 0` (exact matching) is exempt: it compares the original key values and therefore has no such range restriction.
+
+Any of the above may be wrapped in `LowCardinality(...)`: the wrapper is a storage detail, so `LowCardinality(String)` and `LowCardinality(UInt64)` cluster exactly like `String` and `UInt64`, and the result keeps the `LowCardinality` type. `Nullable` keys are not supported.
+
+`WITH CLUSTER` cannot be combined with `WITH ROLLUP`, `WITH CUBE`, `GROUPING SETS` or `WITH TOTALS` — these finalize aggregate states before the cluster step can merge them.
+
+**Example**
+
+Consider user activity events where you want to group events into sessions. Two events belong to the same session if they are within 1800 seconds (30 minutes) of each other:
+
+```sql
+SELECT
+    user_id,
+    min(event_time) AS session_start,
+    max(event_time) AS session_end,
+    count() AS events,
+    sum(duration) AS total_duration
+FROM user_events
+GROUP BY user_id, event_time WITH CLUSTER 1800
+ORDER BY user_id, session_start
+```
+
+A simpler example using inline data:
+
+```sql
+SELECT
+    min(ts) AS cluster_start,
+    max(ts) AS cluster_end,
+    sum(value) AS total
+FROM
+(
+    SELECT * FROM VALUES('ts UInt64, value UInt64',
+        (1, 10), (5, 20), (8, 30),
+        (100, 40), (105, 50),
+        (200, 60))
+)
+GROUP BY ts WITH CLUSTER 10
+ORDER BY cluster_start
+```
+
+Result:
+
+```text
+┌─cluster_start─┬─cluster_end─┬─total─┐
+│             1 │           8 │    60 │
+│           100 │         105 │    90 │
+│           200 │         200 │    60 │
+└───────────────┴─────────────┴───────┘
+```
+
+Values 1, 5, 8 are merged into one cluster (1→5 within 10, 5→8 within 10). Values 100 and 105 form another cluster. Value 200 is alone.
 
 ## GROUPING SETS modifier {#grouping-sets-modifier}
 

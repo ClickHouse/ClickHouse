@@ -46,6 +46,8 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/ClusterMergingStep.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -493,7 +495,8 @@ public:
         aggregate_overflow_row = query_node.isGroupByWithTotals() && settings[Setting::max_rows_to_group_by]
             && settings[Setting::group_by_overflow_mode] == OverflowMode::ANY && settings[Setting::totals_mode] != TotalsMode::AFTER_HAVING_EXCLUSIVE;
         aggregate_final = query_processing_info.getToStage() > QueryProcessingStage::WithMergeableState
-            && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+            && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube()
+            && !query_node.hasGroupByWithCluster();
         aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
             query_node.isGroupByWithGroupingSets();
         aggregation_should_produce_results_in_order_of_bucket_number
@@ -897,7 +900,10 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order);
 
-    if (!query_analysis_result.aggregate_final)
+    /// `WITH CLUSTER` keeps the aggregation non-final only so that `ClusterMergingStep` can merge the
+    /// exact groups afterwards; it must still see every group, so the Top-K heap (which evicts groups
+    /// that fall outside `ORDER BY ... LIMIT`) is not allowed to prune them first.
+    if (!query_analysis_result.aggregate_final && !query_node.hasGroupByWithCluster())
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
 
     query_plan.addStep(std::move(aggregating_step));
@@ -1184,6 +1190,36 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
             query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
         query_plan.addStep(std::move(cube_step));
     }
+}
+
+void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const QueryNode & /*query_node*/)
+{
+    if (!aggregation_analysis_result.cluster_key_info.has_value())
+        return;
+
+    auto aggregator_params = getAggregatorParams(planner_context,
+        aggregation_analysis_result,
+        query_analysis_result,
+        true /*aggregate_descriptions_remove_arguments*/);
+
+    const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
+
+    auto transform_params = std::make_shared<AggregatingTransformParams>(
+        query_plan.getCurrentHeader(),
+        std::move(aggregator_params),
+        /*final=*/true);
+
+    auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
+        query_plan.getCurrentHeader(),
+        std::move(transform_params),
+        cluster_info.key_names,
+        cluster_info.distance,
+        cluster_info.dimensions);
+    query_plan.addStep(std::move(cluster_merging_step));
 }
 
 /// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
@@ -2873,6 +2909,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addClusterMergingStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

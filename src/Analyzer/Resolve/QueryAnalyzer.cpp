@@ -51,6 +51,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
@@ -84,6 +85,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool allow_experimental_group_by_with_cluster;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
@@ -3588,6 +3592,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             [[fallthrough]];
         case QueryTreeNodeType::SORT:
             [[fallthrough]];
+        case QueryTreeNodeType::GROUP_BY_ELEMENT:
+            [[fallthrough]];
         case QueryTreeNodeType::INTERPOLATE:
             [[fallthrough]];
         case QueryTreeNodeType::WINDOW:
@@ -4087,6 +4093,46 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    /// `WITH CLUSTER` is experimental: it adds a new post-aggregation execution mode
+    /// (numeric bucketing, 2D grid/DSU merging, string q-gram filtering), and any
+    /// clustering mistake silently changes aggregate results. Keep it opt-in.
+    if (query_node_typed.hasGroupByWithCluster()
+        && !scope.context->getSettingsRef()[Setting::allow_experimental_group_by_with_cluster])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "GROUP BY ... WITH CLUSTER is experimental and disabled by default. "
+            "Set `allow_experimental_group_by_with_cluster = 1` to enable it.");
+    }
+
+    /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable states;
+    /// ROLLUP/CUBE/GROUPING SETS/TOTALS finalize aggregates earlier and would
+    /// hit a `LOGICAL_ERROR` in `mergeAggregateStates`.
+    if (query_node_typed.hasGroupByWithCluster() &&
+        (query_node_typed.isGroupByWithRollup()
+         || query_node_typed.isGroupByWithCube()
+         || query_node_typed.isGroupByWithGroupingSets()
+         || query_node_typed.isGroupByWithTotals()))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE, GROUPING SETS or WITH TOTALS");
+    }
+
+    /// `WITH CLUSTER` merges the exact `GROUP BY` groups, so it must receive all of them. A
+    /// `max_rows_to_group_by` cap with a non-throwing `group_by_overflow_mode` (`any` / `break`)
+    /// lets the aggregation drop keys before clustering, which would silently produce a wrong
+    /// result. Reject it instead of clustering a truncated set of groups. (The default trivial
+    /// `GROUP BY ... LIMIT` optimization is disabled for `WITH CLUSTER` in
+    /// `OptimizeTrivialGroupByLimitPass` so it never reaches this cap implicitly.)
+    if (query_node_typed.hasGroupByWithCluster()
+        && scope.context->getSettingsRef()[Setting::max_rows_to_group_by] != 0
+        && scope.context->getSettingsRef()[Setting::group_by_overflow_mode] != OverflowMode::THROW)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER cannot be combined with a non-throwing `max_rows_to_group_by` cap "
+            "(`group_by_overflow_mode` = 'any' or 'break'): the aggregation could drop keys before clustering "
+            "and produce a wrong result.");
+    }
+
     QueryTreeNodes nullable_group_by_keys;
 
     if (query_node_typed.isGroupByWithGroupingSets())
@@ -4117,12 +4163,139 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     {
         replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
-        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
-        expandTuplesInList(group_by_list);
+        if (query_node_typed.hasGroupByWithCluster())
+        {
+            /// Resolve GROUP BY elements one at a time so the single cluster key can be
+            /// tracked to its position after expansion. Matchers (`*`, `COLUMNS(...)`)
+            /// and functions such as `untuple` add or remove elements during resolution,
+            /// so the parser-side index no longer matches the resolved list, and bulk
+            /// resolution loses the per-element boundaries needed to recompute it.
+            auto & group_by_list_node = query_node_typed.getGroupByNode()->as<ListNode &>();
+            const QueryTreeNodes original_nodes = group_by_list_node.getNodes();
+            const int orig_cluster_idx = query_node_typed.getGroupByClusterKeyIndex();
+
+            QueryTreeNodes resolved_nodes;
+            resolved_nodes.reserve(original_nodes.size());
+
+            int cluster_pos = -1;
+            QueryTreeNodePtr cluster_elem;
+
+            for (int i = 0; i < static_cast<int>(original_nodes.size()); ++i)
+            {
+                auto node_to_resolve = original_nodes[i];
+                resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+                QueryTreeNodes expanded;
+                if (auto * expression_list = node_to_resolve->as<ListNode>())
+                    expanded = expression_list->getNodes();
+                else
+                    expanded.push_back(std::move(node_to_resolve));
+
+                if (i == orig_cluster_idx)
+                {
+                    /// The cluster key is a single scalar or an inline 2-tuple; matcher /
+                    /// `untuple` expansion here would make the cluster arity ambiguous.
+                    if (expanded.size() != 1)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER key must be a single expression, but it expanded to {} columns",
+                            expanded.size());
+                    cluster_pos = static_cast<int>(resolved_nodes.size());
+                    cluster_elem = expanded.front();
+                }
+
+                for (auto & node : expanded)
+                    resolved_nodes.push_back(std::move(node));
+            }
+
+            if (cluster_pos < 0 || !cluster_elem)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "GROUP BY ... WITH CLUSTER: failed to locate the cluster key after resolution "
+                    "(index {} of {} elements)", orig_cluster_idx, original_nodes.size());
+
+            group_by_list_node.getNodes() = std::move(resolved_nodes);
+            auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+
+            /// Wider-than-64-bit numerics (`Int128/256`, `UInt128/256`) lose
+            /// precision before their natural range when forced through
+            /// `getFloat64`. All `Decimal` types (including `Decimal32`) are
+            /// rejected too: the distance check runs in `Float64`, so exact
+            /// decimal boundaries depend on binary rounding — e.g. `Decimal32`
+            /// keys `0.7` and `0.8` with `WITH CLUSTER 0.1` would compare
+            /// `0.7 + 0.1 >= 0.8` as `0.7999999999999999 < 0.8` and split a pair
+            /// whose exact decimal distance equals the threshold. Reject them all
+            /// here so the user gets a clear error instead of silent misclustering.
+            /// `LowCardinality(...)` is a storage-level wrapper over the very same logical
+            /// key type, and both the analyzer checks below and the execution-side readers
+            /// look through it, so unwrap it before classifying the key.
+            auto is_supported_scalar = [](const DataTypePtr & type)
+            {
+                WhichDataType which(removeLowCardinality(type));
+                return which.isNativeInteger()
+                    || which.isFloat()
+                    || which.isDateOrDate32()
+                    || which.isDateTimeOrDateTime64()
+                    || which.isTimeOrTime64();
+            };
+
+            size_t cluster_dims = 1;
+            if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+            {
+                const auto & args = fn->getArguments().getNodes();
+                if (args.size() != 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "GROUP BY ... WITH CLUSTER on a tuple expects exactly 2 elements, got {}",
+                        args.size());
+                for (size_t i = 0; i < args.size(); ++i)
+                {
+                    const auto & arg_type = args[i]->getResultType();
+                    if (!is_supported_scalar(arg_type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER on a tuple requires numeric / temporal elements; "
+                            "element {} has type {}",
+                            i, arg_type->getName());
+                }
+                cluster_dims = 2;
+            }
+            else
+            {
+                const auto & key_type = cluster_elem->getResultType();
+                WhichDataType which(removeLowCardinality(key_type));
+                if (which.isTuple())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "GROUP BY ... WITH CLUSTER on a tuple-typed column is not supported. "
+                        "Use an inline tuple expression, e.g. `GROUP BY (p.1, p.2) WITH CLUSTER d`, "
+                        "to enable 2D Euclidean clustering.");
+                if (!is_supported_scalar(key_type) && !which.isStringOrFixedString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "GROUP BY ... WITH CLUSTER key must be a numeric / temporal / String / FixedString scalar, got {}",
+                        key_type->getName());
+            }
+
+            /// Shift the cluster index to its position after `expandTuplesInList` by
+            /// summing the flattened width of every preceding element (an inline
+            /// `tuple(...)` contributes its argument count, everything else 1).
+            int new_cluster_idx = 0;
+            for (int i = 0; i < cluster_pos; ++i)
+            {
+                const auto & elem = group_by_list[i];
+                if (auto * fn = elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
+                    new_cluster_idx += static_cast<int>(fn->getArguments().getNodes().size());
+                else
+                    new_cluster_idx += 1;
+            }
+
+            query_node_typed.setGroupByClusterKeyIndex(new_cluster_idx);
+            query_node_typed.setGroupByClusterDimensions(cluster_dims);
+
+            expandTuplesInList(group_by_list);
+        }
+        else
+        {
+            resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            expandTuplesInList(query_node_typed.getGroupBy().getNodes());
+        }
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {

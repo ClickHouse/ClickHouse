@@ -10,6 +10,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -237,6 +238,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
@@ -783,6 +785,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     max_streams = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
     ASTSelectQuery & query = getSelectQuery();
+
+    /// WITH CLUSTER is only implemented for the analyzer.
+    if (auto group_by = query.groupBy())
+    {
+        for (const auto & elem : group_by->children)
+        {
+            const auto * gbe = elem->as<ASTGroupByElement>();
+            if (gbe && gbe->with_cluster)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GROUP BY ... WITH CLUSTER requires the analyzer "
+                    "(`SET enable_analyzer = 1`)");
+        }
+    }
+
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)

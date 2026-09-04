@@ -49,7 +49,7 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
     auto * query = query_tree_node->as<QueryNode>();
     if (!query || !query->hasGroupBy() || !query->hasLimit() || query->hasHaving() || query->hasOrderBy() || query->hasWindow()
         || query->hasQualify() || query->hasLimitBy() || query->isDistinct() || query->isGroupByWithTotals()
-        || query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets()
+        || query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets() || query->hasGroupByWithCluster()
         || hasAggregateFunctionNodes(query->getProjectionNode()))
         return;
 
@@ -62,6 +62,11 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
     /// `DISTINCT` and `QUALIFY` (checked above) collapse and filter the groups in the same way.
     if (hasWindowFunctionNodes(query->getProjectionNode()) || hasFunctionNode(query->getProjectionNode(), "arrayJoin"))
         return;
+
+    /// `GROUP BY ... WITH CLUSTER` clusters the exact groups after aggregation, so it must see
+    /// all of them. This optimization caps `max_rows_to_group_by` with `group_by_overflow_mode`
+    /// = `any`, which would drop keys before clustering and silently change the result; the
+    /// `hasGroupByWithCluster()` guard above disables it for such queries.
 
     /// `group_by_overflow_mode` controls what happens when `max_rows_to_group_by` is exceeded.
     /// The optimization only makes sense in `ANY` mode (keep first N keys, drop the rest);

@@ -8,6 +8,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Context.h>
 
@@ -157,6 +158,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    /// Resolved cluster key names, populated below for the plain `GROUP BY` branch.
+    /// `WITH CLUSTER` is not supported in `GROUPING SETS` / `ROLLUP` / `CUBE`.
+    std::vector<std::string> cluster_key_names_resolved;
 
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
@@ -231,13 +235,35 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// Resolve cluster key names by following the visit, not by indexing
+            /// `aggregation_keys` post-hoc — constant elimination below would shift
+            /// the analyzer-side `cluster_idx`.
+            const int cluster_idx_orig = query_node.hasGroupByWithCluster()
+                ? query_node.getGroupByClusterKeyIndex() : -1;
+            const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+            int orig_pos = 0;
+
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
+                const bool is_cluster_key_position =
+                    cluster_idx_orig >= 0
+                    && orig_pos >= cluster_idx_orig
+                    && orig_pos < cluster_idx_orig + static_cast<int>(cluster_dims);
+
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
                 if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
-                    continue;
+                {
+                    /// Keep constants that sit in the cluster key range (e.g. the `0`
+                    /// in `GROUP BY (x, 0) WITH CLUSTER d`); otherwise the cluster
+                    /// step would see a key tuple of the wrong arity.
+                    if (!is_cluster_key_position)
+                    {
+                        ++orig_pos;
+                        continue;
+                    }
+                }
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
                 correlated_subtrees.assertEmpty("in aggregation keys");
@@ -256,6 +282,13 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                 }
+
+                /// `visit` may return several DAG nodes (input, intermediates, result);
+                /// the last one is the top-level expression and the right cluster key.
+                if (is_cluster_key_position && !expression_dag_nodes.empty())
+                    cluster_key_names_resolved.push_back(expression_dag_nodes.back()->result_name);
+
+                ++orig_pos;
             }
         }
     }
@@ -301,6 +334,21 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     aggregation_analysis_result.aggregate_descriptions = std::move(aggregates_descriptions);
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
+
+    if (query_node.hasGroupByWithCluster())
+    {
+        const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+        if (cluster_key_names_resolved.size() != cluster_dims)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Failed to resolve GROUP BY ... WITH CLUSTER key names: expected {}, got {}",
+                cluster_dims, cluster_key_names_resolved.size());
+
+        ClusterKeyInfo info;
+        info.distance = query_node.getGroupByClusterDistance();
+        info.dimensions = cluster_dims;
+        info.key_names = std::move(cluster_key_names_resolved);
+        aggregation_analysis_result.cluster_key_info = std::move(info);
+    }
 
     return aggregation_analysis_result;
 }

@@ -1,0 +1,30 @@
+--- Cell-boundary: distance exactly d (3-4-5 triangle) ---
+1
+--- Cell-boundary: same points, d = 4 -> no merge ---
+2
+--- Reach across two cells horizontally ---
+1
+--- Reach across two cells horizontally, just out of range ---
+2
+--- 5x5 corner: (2, 2) cell offset, points placed inside d ---
+2
+--- 100 well-separated clusters x 100 distinct points (10K rows) ---
+100	10000	100	100
+--- Long chain along x-axis: 1000 points, all merge ---
+1	1000
+--- Long chain along x-axis: same data, d below step -> no merge ---
+1000	1000
+--- Diagonal chain: 500 points along y = x, step 1, d ~ 1.5 ---
+1	500
+--- Many tiny clusters partitioned by non-cluster key ---
+10000	50000
+--- Same coordinates per non-cluster key, no cross-key merge ---
+100	300
+--- Two interleaved chains separated by gap > d ---
+2	1000	500	500
+--- Dense single cluster: 10K points inside one cell ---
+1	10000
+--- Negative coordinates, mixed quadrants ---
+4	4000
+--- Multiple aggregate functions over a large dataset ---
+400	199990000	20000

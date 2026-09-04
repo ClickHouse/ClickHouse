@@ -8814,6 +8814,11 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_group_by_with_cluster, false, R"(
+Allows the `GROUP BY ... WITH CLUSTER <distance>` modifier, which merges groups whose key values are within the given distance (with chained, transitive semantics). It introduces a new post-aggregation execution mode (numeric bucketing, 2D grid/DSU merging, string q-gram filtering); keep it opt-in until it has production coverage. Possible values:
+- 0 — `GROUP BY ... WITH CLUSTER` is rejected during query analysis.
+- 1 — `GROUP BY ... WITH CLUSTER` is enabled.
+)", EXPERIMENTAL) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", EXPERIMENTAL) \
