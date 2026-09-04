@@ -3,9 +3,11 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
@@ -16,6 +18,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -1881,6 +1884,10 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
+    else if (isMap(index_column.type) && tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        addDocumentsFromMap(preprocessed_column, offset, rows_read);
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -1926,6 +1933,39 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             else
                 granule_builder.addToken(ref, token_position++);
         }
+        granule_builder.incrementCurrentRow();
+    }
+}
+
+void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    const auto & column_offsets = column_map.getNestedColumn().getOffsets();
+    const auto & tuple = column_map.getNestedData();
+    const auto & keys = tuple.getColumn(0);
+    const auto & values = tuple.getColumn(1);
+
+    /// addToken hashes through StringHashTable, which reads past both ends of the key, so the scratch
+    /// buffer must be padded: PaddedPODArray is, std::string is not.
+    PaddedPODArray<UInt8> token;
+    /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
+    absl::flat_hash_set<std::string_view> keys_in_row;
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        keys_in_row.clear();
+
+        /// One position per map entry, in stored order, as the Array path does.
+        UInt32 token_position = 0;
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            const std::string_view key = keys.getDataAt(element_idx);
+            const bool is_rest = !keys_in_row.insert(key).second;
+
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
+        }
+
         granule_builder.incrementCurrentRow();
     }
 }
@@ -2228,7 +2268,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
@@ -2257,8 +2297,23 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    /// The `text_index_serialization_version` setting is not validated against the index features:
-    /// it is a preference, and `textIndexCreator` raises it to a version that can represent them.
+    /// The keyValuePairs tokenizer cannot be combined with a preprocessor, a postprocessor or positions.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        auto reject_argument = [](const String & argument)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
+                argument, KeyValuePairsTokenizer::getExternalName());
+        };
+
+        if (preprocessor_ast)
+            reject_argument(ARGUMENT_PREPROCESSOR);
+        if (postprocessor_ast)
+            reject_argument(ARGUMENT_POSTPROCESSOR);
+        if (positions)
+            reject_argument(ARGUMENT_POSITIONS);
+    }
+
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
@@ -2270,15 +2325,29 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
-
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
+    const auto & index_data_type = index.data_types[0];
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
+        /// FixedString is rejected: the column stores padding bytes a searched constant does not, so
+        /// lookups would silently miss rows. Nullable has no representation in the token.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
+        if (!map_type
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a Map column with String or "
+                "LowCardinality(String) keys and values, got: {}",
+                KeyValuePairsTokenizer::getExternalName(), index_data_type->getName());
+    }
+    else
+    {
+        WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+        if (!which_data_type.isString() && !which_data_type.isFixedString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+                index_data_type->getName());
     }
 
     /// Create the preprocessor for validation.

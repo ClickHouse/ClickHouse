@@ -6,6 +6,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
@@ -40,6 +41,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        KeyValuePairs,
 #if USE_JIEBA
         Chinese,
 #endif
@@ -403,6 +405,40 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Tokenizer for a text index on a `Map(String, String)` column: one token per `(key, value)` pair.
+///
+///     token = key ‖ value ‖ trailer
+///
+/// The trailer is `(length(key) << 1) | is_rest`, a varint with its bytes reversed so that a reader,
+/// which knows only where the token ends, can walk backwards to its start. The key length splits the
+/// token back into key and value, so both may hold any byte, unlike a `key=value` separator.
+/// `is_rest` is 0 for a key's first occurrence in a row and 1 for repetitions; `m['key']` is the first
+/// occurrence, so its lookup matches `is_rest = 0`. It shares the varint and costs no extra byte.
+/// Key first orders tokens by key, then value, so a search for one key reads a single range of tokens,
+/// which may also hold longer keys with the same start.
+///
+/// Tokens are built in `MergeTreeIndexAggregatorText::addDocumentsFromMap`; the methods below throw.
+struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
+{
+    KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
+
+    static const char * getName() { return "keyValuePairs"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    /// `out` is cleared first, so a hot loop can reuse one buffer.
+    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
+    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
+    static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+};
+
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGramsImpl.h for more details.
 struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer>
@@ -662,6 +698,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::KeyValuePairs:
+        {
+            /// This tokenizer does not split strings: `nextInString` throws.
+            detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }
 #if USE_JIEBA

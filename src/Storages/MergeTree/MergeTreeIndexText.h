@@ -564,6 +564,9 @@ private:
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
 
+    /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
+    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
