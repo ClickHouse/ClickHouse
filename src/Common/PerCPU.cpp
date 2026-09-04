@@ -42,6 +42,7 @@ UInt32 readPossibleCPUCount() noexcept
     /// list (theoretically possible: `0-3,8-11`) must count towards the size.
     UInt32 max_id = 0;
     const char * p = buf;
+    bool any = false;
     while (*p)
     {
         char * end;
@@ -57,6 +58,7 @@ UInt32 readPossibleCPUCount() noexcept
                 return 0;
         }
         max_id = std::max(max_id, static_cast<UInt32>(last));
+        any = true;
         p = end;
         if (*p == ',')
             ++p;
@@ -65,7 +67,7 @@ UInt32 readPossibleCPUCount() noexcept
         else
             return 0;
     }
-    return max_id + 1;
+    return any ? max_id + 1 : 0;
 }
 #endif
 
