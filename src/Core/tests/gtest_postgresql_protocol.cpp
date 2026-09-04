@@ -111,6 +111,31 @@ void expectIncompletePayloadAndAligned(std::string payload = {})
     EXPECT_EQ(message_type, 'S');
 }
 
+template <typename TMessage>
+void expectTrailingPayloadIsRejectedAndAligned(std::string payload)
+{
+    /// These bytes look like a `Sync` frame, but they are trailing bytes in the current message.
+    payload.append("S\0\0\0\4", 5);
+    std::string bytes = framePayload(std::move(payload));
+    bytes.push_back('X');
+
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    TMessage msg;
+    try
+    {
+        msg.deserialize(in);
+        FAIL() << "Expected UNKNOWN_PACKET_FROM_CLIENT";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+    }
+
+    char marker = 0;
+    in.readStrict(marker);
+    EXPECT_EQ(marker, 'X');
+}
+
 }
 
 TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
@@ -289,6 +314,39 @@ TEST(PostgreSQLProtocol, ExtendedQueryMessagesKeepIncompletePayloadsAligned)
 TEST(PostgreSQLProtocol, QueryKeepsIncompletePayloadAligned)
 {
     expectIncompletePayloadAndAligned<Messaging::Query>();
+}
+
+TEST(PostgreSQLProtocol, LengthDelimitedMessagesRejectTrailingPayload)
+{
+    std::string query_payload = "SELECT 1";
+    query_payload.push_back('\0');
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::Query>(std::move(query_payload));
+
+    std::string parse_payload;
+    parse_payload.push_back('\0');
+    parse_payload += "SELECT 1";
+    parse_payload.push_back('\0');
+    putInt16(parse_payload, 0);
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::ParseQuery>(std::move(parse_payload));
+
+    std::string bind_payload;
+    bind_payload.append("\0\0", 2);
+    putInt16(bind_payload, 0); /// no parameter format codes
+    putInt16(bind_payload, 0); /// no parameters
+    putInt16(bind_payload, 0); /// no result format codes
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::BindQuery>(std::move(bind_payload));
+
+    std::string describe_payload = "S";
+    describe_payload.push_back('\0');
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::DescribeQuery>(std::move(describe_payload));
+
+    std::string execute_payload(1, '\0');
+    putInt32(execute_payload, 0);
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::ExecuteQuery>(std::move(execute_payload));
+
+    std::string close_payload = "P";
+    close_payload.push_back('\0');
+    expectTrailingPayloadIsRejectedAndAligned<Messaging::CloseQuery>(std::move(close_payload));
 }
 
 TEST(PostgreSQLProtocol, SyncRejectsNonEmptyPayload)

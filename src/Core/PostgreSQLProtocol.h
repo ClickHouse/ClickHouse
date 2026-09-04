@@ -310,8 +310,12 @@ protected:
             throw;
         }
 
-        /// A parser can finish before the declared payload does; those bytes still belong to this message.
-        payload_in.ignore(payload_size - payload_in.count());
+        const size_t unread_payload_bytes = payload_size - payload_in.count();
+        payload_in.ignore(unread_payload_bytes);
+        if (unread_payload_bytes != 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in {}, it has {} unexpected trailing payload bytes",
+                            size, message_name, unread_payload_bytes);
     }
 };
 
