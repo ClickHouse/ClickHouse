@@ -1,0 +1,49 @@
+---
+description: 'Présentation du Model Context Protocol et du serveur MCP ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'IA', 'interfaces']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /interfaces/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) (MCP) est une norme ouverte qui permet aux assistants IA de se connecter à des systèmes externes.
+Il fournit une interface cohérente permettant aux modèles d’accéder à des sources de données, à des API, à des bases de données et à des outils, sans nécessiter d’intégration personnalisée pour chaque combinaison de modèle et de service.
+
+Une application d’IA ne doit implémenter MCP qu’une seule fois pour se connecter à n’importe quel serveur compatible.
+De même, un serveur MCP peut exposer ses fonctionnalités à n’importe quel client compatible.
+
+<div id="architecture">
+  ## Architecture
+</div>
+
+MCP repose sur une architecture client-serveur :
+
+* Les clients MCP, tels que Claude Desktop, Cursor ou VS Code, établissent des connexions avec des serveurs MCP.
+* Les serveurs MCP exposent des outils et des fonctionnalités via une interface standardisée.
+* Les modèles d’IA utilisent les outils exposés pour accéder à des données et fonctionnalités externes lorsque nécessaire.
+
+<Image img="/images/use-cases/AI_ML/MCP/mcp_overview.webp" alt="Architecture client-serveur MCP" size="lg" />
+
+Vous trouverez sur GitHub des collections de [clients MCP](https://github.com/punkpeye/awesome-mcp-clients) et de [serveurs MCP](https://github.com/punkpeye/awesome-mcp-servers) gérées par la communauté.
+
+<div id="clickhouse-mcp-server">
+  ## ClickHouse MCP server
+</div>
+
+Le [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) permet à un assistant IA de découvrir des bases de données et des tables, d’inspecter des schémas et d’exécuter des requêtes SQL sur un cluster ClickHouse.
+Les outils exposés par le serveur peuvent varier selon la version. Consultez donc le guide d’intégration correspondant pour connaître les noms des outils utilisés dans les exemples.
+
+Par défaut, le serveur autorise les requêtes en lecture seule.
+Utilisez un utilisateur ClickHouse dédié ne disposant que des autorisations nécessaires à l’assistant.
+
+Pour connecter un MCP client local, consultez [Configurer le ClickHouse MCP server](/fr/guides/use-cases/ai-ml/MCP/claude-desktop).
+Pour un serveur distant géré, consultez [Remote MCP server dans ClickHouse Cloud](/fr/products/cloud/features/ai-ml/remote-mcp).
+
+<Tip>
+  **ClickHouse Agent Skills**
+
+  Le [dépôt ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills) fournit des instructions prêtes à l’emploi qui dotent les agents de code IA d’une expertise spécifique à ClickHouse, notamment en conception de schémas, optimisation des requêtes et modèles d’ingestion de données.
+</Tip>

@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "最終集約の出力に LIMIT n 付きの ORDER BY を適用し、バケットごとの選択が正確であることを証明できる場合に、各二段階バケットの上位 n グループのみをマテリアライズするプラン最適化を切り替える新しい設定。"}]}]} />
+
+最終集約の出力に `LIMIT n` 付きの `ORDER BY` を適用し、プランによってバケットごとの選択が正確であることを証明できる場合に、集約の最終変換時に各二段階バケットの上位 n グループのみをその順序でマテリアライズするクエリプランレベルの最適化を切り替えます。結果は正確です。自身のバケットで上位 n に入らないグループには、グローバルでは少なくとも n 個のグループが先行するため、グローバルの top n に入ることはありません。
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効化
+* 1 - 有効化
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - 無効
 * 1 - 有効
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "ARRAY JOIN されたカラムに対するフィルターを ARRAY JOIN ステップに統合する新しい最適化。デフォルトで有効。"}]}]} />
+
+`ARRAY JOIN`された要素カラムに対するフィルターを`ARRAY JOIN`ステップに統合する、クエリプランレベルの最適化を切り替えます。展開前に要素レベルで配列をフィルタリングするため、フィルターで除外された要素が展開または複製されることはありません。
+設定[query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)が1の場合にのみ有効です。
+
+<Note>
+  これは開発者がデバッグ目的でのみ使用すべき、上級者向けの設定です。この設定は将来、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -233,7 +264,9 @@ JOIN の遅延索引最適化でクエリプランを使用できる上限値を
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "新しい設定"}]}]} />
 
-minmax スキップ索引と動的しきい値フィルタリングを使用した TopK 最適化のクエリプラン評価を可能にする最大リミット値を制御します。0 の場合、制限はありません。
+minmax スキップ索引と動的しきい値フィルタリングを使用した TopK 最適化のクエリプラン評価を可能にする最大制限値を制御します。0 の場合、制限はありません。
+
+この設定は、[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の動作も制御します。
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 遅延マテリアライゼーションの最適化でクエリプランを使用します。
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`file` テーブル関数および `File` テーブルエンジンでローカル Parquet ファイルを読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+
+`file` テーブル関数および `File` テーブルエンジンを使用してローカル Parquet ファイルを読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートとフィルタリングに不要なカラムは、`LIMIT` 後に残る `n` 行に対してのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
 
 オブジェクトストレージから Parquet ファイル (Iceberg テーブルを含む) を読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートやフィルタリングに不要なカラムは、`LIMIT` の結果として残った `n` 行についてのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
 
@@ -455,6 +498,26 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 * 0 - 無効
 * 1 - 有効
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "データ量を削減する関数（`length`、`lengthUTF8`、`empty`、`notEmpty`）を `Sorting` および `Filter` ステップの下にプッシュダウンし、wide 引数カラムを固定サイズの結果に置き換えるための新しい設定。previous_value=false のため、26.8 より前のバージョンとの `互換性設定` により、従来の動作（プッシュダウンなし）が復元されます。"}]}]} />
+
+データ量を削減する関数 (`length`、`lengthUTF8`、`empty`、`notEmpty`) を実行計画内の
+`Sorting` および `Filter` ステップの下へ移動する、クエリプランレベルの最適化を切り替えます。固定サイズの結果で
+wide `String` / `FixedString` の引数を置き換えるため、これらのステップで引数を保持する必要がなくなります。
+この書き換えは、プッシュダウン先のステップより上で引数カラムが不要な場合にのみ適用されます。
+
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効化
+* 1 - 有効化
 
 <div id="query_plan_push_limit_by_into_sort">
   ## query_plan_push_limit_by_into_sort
@@ -500,22 +563,6 @@ read in-order 最適化のクエリプランレベルでの 最適化 を切り�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
 JOIN演算において左テーブルから順序どおりに読み取りを継続し、その後のステップで利用できるようにします。
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "結合をメモリに固定して、結合が保証する順序を維持することで、自動スピルしきい値が設定されたハッシュ結合を介した順序どおりの読み取りの伝播を可能にする新しい設定。previous_value=false のため、26.8 より前のバージョンとの `互換性設定` では、このような結合を順序どおりの読み取りに使用せず、常にスピル可能とする従来の保守的な動作が復元されます。"}]}]} />
-
-[`query_plan_read_in_order_through_join`](/ja/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) を、[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) または [`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) で自動ディスクスピルしきい値が設定されたハッシュ結合にも適用できるようにします。
-
-このような結合が左テーブルの順序を保持すると保証できるのは、一度もスピルしない場合に限られます。スピルすると、行がハッシュによってバケットに分散されるためです。この最適化が適用される場合、結合はメモリ内に保持され、スピルしきい値はトリガーされなくなります。代わりに、自動スピルが設定されていない場合と同様に、右側のテーブルはメモリトラッカーによって制限されます。
-
-`0` に設定すると、スピルする可能性がある結合を介して順序どおりの読み取りを伝播しないという保守的な動作を維持します。メモリ制限内に収めるためにスピルに依存しており、そうでなければこの最適化の対象となるクエリは、従来どおり動作します。
-
-結合の保持側に `Sort` と `Limit` をプッシュダウンする、`JOIN` を介した個別の `ORDER BY ... LIMIT` 最適化は、結合が順序を保持することに依存しないため、この設定にかかわらずスピル可能な結合でも引き続き利用できます。ただし、順序どおりの読み取りが可能な場合は、順序どおりの読み取りが優先されます。そのため、この設定を有効にすると、保持側が要求された順序で行をストリーミングできるスピル可能な結合に対する `ORDER BY ... LIMIT` では、プッシュダウンされた `Sort` と `Limit` ではなく、順序どおりの読み取りプランが使用されます。この切り替えには従来からの条件が適用され、特に [`query_plan_join_swap_table`](/ja/reference/settings/session-settings/query-plan#query_plan_join_swap_table) が明示的に `false` に設定されている必要があります。デフォルトの `auto` では、後続の最適化によって結合の左右が入れ替わり、順序どおりの読み取りプランが無効になる可能性があるため、この切り替えは確定せず、そのようなクエリではプッシュダウンされた `Sort` と `Limit` が引き続き使用されます。
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

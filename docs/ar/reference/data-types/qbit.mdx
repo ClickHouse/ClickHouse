@@ -162,6 +162,24 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 لتشغيل بحث منخفض الأبعاد، مرِّر عدد الأبعاد المطلوب قراءتها بوصفه الوسيط الرابع لدوال المسافة المنقولة (انظر أدناه). ويجب أن يحتوي المتجه المرجعي على هذا العدد من العناصر على الأقل (ويُتجاهل أي عناصر إضافية لاحقة)، كما يجب أن تكون القيمة من مضاعفات `stride`.
 
+<div id="qbit-element-access">
+  ## الوصول إلى العناصر والتقطيع
+</div>
+
+تعيد [`arrayElement`](/ar/reference/functions/regular-functions/array-functions#arrayElement) (وكذلك العامل `vec[n]`) العنصر رقم `n` من المتجه، بعد إعادة بنائه بالدقة الكاملة لنوع العنصر. لا تُقرأ إلا مستويات البت الخاصة بمجموعة stride التي تضم العنصر. تعيد [`arraySlice`](/ar/reference/functions/regular-functions/array-functions#arraySlice) قيمة `QBit` بالأبعاد المحددة (أي إسقاطًا على مجموعة فرعية من الأبعاد)؛ ويجب أن تكون الإزاحة والطول ثابتين، لأن بُعد `QBit` جزء من نوعه. يحتفظ التقطيع المحاذي لحدود مجموعة stride بقيمة stride ويعيد استخدام تدفقات مستويات البت المخزنة دون نسخ:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## دوال البحث المتجهي
 </div>

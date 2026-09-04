@@ -56,8 +56,8 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ```response
     ┌─url────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329만
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 163만
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -75,7 +75,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ```sql
     icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
-    -- icebergCluster는 icebergS3Cluster의 별칭(alias)입니다
+    -- icebergCluster is an alias for icebergS3Cluster
 
     icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -169,7 +169,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     <Info>
       **GCS 지원**
 
-      함수의 S3 변형은 Google Cloud Storage(GCS)에도 사용할 수 있습니다.
+      이 함수들의 S3 변형은 Google Cloud Storage(GCS)에서도 사용할 수 있습니다.
     </Info>
 
     **예시:**
@@ -186,8 +186,8 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ```response
     ┌─URL────────────────────────────────────────────────┬─────cnt─┐
-    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329만
-    │ http://kinopoisk.ru                                │ 1625250 │ -- 163만
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
     │ http://bdsm_po_yers=0&with_video                   │  791465 │
     │ http://video.yandex                                │  582400 │
     │ http://smeshariki.ru/region                        │  514984 │
@@ -199,13 +199,13 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ### 클러스터 Variant
 
-    [`deltaLakeCluster`](/ko/reference/functions/table-functions/deltalakeCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드가 데이터 파일을 워커(worker) 노드에 동적으로 배분하여 병렬 처리를 수행합니다. `deltaLakeS3Cluster`는 `deltaLakeCluster`의 별칭(alias)입니다. Azure 변형인 [`deltaLakeAzureCluster`](/ko/reference/functions/table-functions/deltalakeCluster)도 사용할 수 있습니다.
+    [`deltaLakeCluster`](/ko/reference/functions/table-functions/deltalakeCluster) 함수는 ClickHouse 클러스터의 여러 노드에 읽기를 분산합니다. 이니시에이터(initiator) 노드가 데이터 파일을 워커(worker) 노드에 동적으로 배분하여 병렬 처리를 수행합니다. `deltaLakeS3Cluster`는 `deltaLakeCluster`의 별칭(alias)입니다. Azure 변형인 ([`deltaLakeAzureCluster`](/ko/reference/functions/table-functions/deltalakeCluster))도 사용할 수 있습니다.
 
     **예시 구문:**
 
     ```sql
     deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
-    -- deltaLakeS3Cluster는 deltaLakeCluster의 별칭입니다
+    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
 
     deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
     ```
@@ -213,7 +213,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
     <Info>
       **GCS 지원**
 
-      함수의 S3 버전은 Google Cloud Storage (GCS)에서도 사용할 수 있습니다.
+      이 함수들의 S3 변형은 Google Cloud Storage(GCS)에서도 사용할 수 있습니다.
     </Info>
 
     **예시 (ClickHouse Cloud):**
@@ -336,7 +336,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ```sql
     paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
-    -- paimonCluster는 paimonS3Cluster의 별칭(alias)입니다
+    -- paimonCluster is an alias for paimonS3Cluster
 
     paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -345,7 +345,7 @@ ClickHouse는 객체 스토리지에 직접 저장된 오픈 테이블 포맷의
 
     ### 테이블 엔진
 
-    현재 ClickHouse에는 Paimon 전용 테이블 엔진이 없습니다. Paimon 테이블을 쿼리하려면 위의 테이블 함수를 사용하십시오.
+    ClickHouse는 실험적으로 [`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` 테이블 엔진](/ko/reference/engines/table-engines/integrations/paimon)을 제공합니다. `allow_experimental_paimon_storage_engine = 1`로 활성화하십시오.
 
     스토리지 백엔드를 비롯한 지원 기능은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix#format-support)를 참조하십시오. 전체 참고 내용은 [`paimon` 테이블 함수](/ko/reference/functions/table-functions/paimon) 문서를 참조하십시오.
   </Tab>

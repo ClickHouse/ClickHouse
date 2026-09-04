@@ -3,11 +3,13 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: 'Actualizaciones'
 title: 'Actualizaciones'
 description: 'Cómo funcionan las actualizaciones de versión de PostgreSQL en ClickHouse Managed Postgres'
-keywords: ['actualizaciones de ClickHouse Managed Postgres', 'versión de Postgres', 'actualización menor', 'actualización mayor', 'ventana de mantenimiento']
+keywords: ['actualizaciones de ClickHouse Managed Postgres', 'versión de Postgres', 'actualización menor', 'actualización mayor', 'ventana de mantenimiento', 'actualizaciones programadas']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
@@ -27,14 +29,112 @@ Estas tareas se realizan mediante failover y, por lo general, solo provocan una 
 
 En las instancias con [instancias en espera](/es/products/managed-postgres/high-availability) habilitadas, la actualización se aplica primero a la instancia en espera, seguida de un failover para minimizar el tiempo de inactividad.
 
-<div id="maintenance-windows">
-  ## Ventanas de mantenimiento
+<div id="scheduled-upgrades">
+  ## Actualizaciones programadas
 </div>
 
-La ventana de mantenimiento predeterminada es de 14:00 a 16:00 UTC los domingos.
-El tiempo de inactividad previsto es de menos de 1 minuto dentro de esa ventana.
+<ScalePlanFeatureBadge feature="Actualizaciones programadas" linking_verb_are="true" />
 
-Para las organizaciones del nivel Enterprise, ClickHouse Managed Postgres admite ventanas de mantenimiento para que las actualizaciones y otras operaciones de mantenimiento puedan programarse en el momento que menos afecte a su carga de trabajo. La compatibilidad en la UI y la API para configurar ventanas de mantenimiento estará disponible próximamente. Mientras tanto, póngase en contacto con [support](https://clickhouse.com/support/program) para configurar una ventana de mantenimiento para su instancia.
+De forma predeterminada, el mantenimiento se aplica a su instancia cuando hay una nueva versión disponible.
+Con las **actualizaciones programadas**, puede elegir una ventana de dos horas en UTC durante la cual se
+podrá aplicar ese mantenimiento, de modo que el breve failover se produzca en el momento
+menos perjudicial para su carga de trabajo. El tiempo de inactividad previsto es inferior a un minuto dentro de la ventana.
+
+En el plan Enterprise, también puede restringir las actualizaciones a
+[días específicos de la semana](#days-of-the-week). En el plan Scale, solo puede elegir el período de tiempo,
+y las actualizaciones pueden aplicarse cualquier día dentro de él.
+
+<div id="configure-a-schedule">
+  ### Configurar una programación
+</div>
+
+<Steps>
+  <Step title="Abrir la configuración de la instancia" id="open-settings">
+    Seleccione su instancia, luego seleccione **Settings** en el menú de la izquierda y desplácese hasta la
+    sección **Configuration**.
+  </Step>
+
+  <Step title="Abrir el panel lateral de actualizaciones programadas" id="open-flyout">
+    En la subsección **actualizaciones programadas**, seleccione **Configure schedule**. Si ya hay una programación
+    configurada, se mostrará la programación actual y el botón indicará **Edit schedule**.
+  </Step>
+
+  <Step title="Elegir un período de tiempo" id="pick-time-period">
+    Seleccione una de las doce franjas horarias UTC de dos horas de la lista **Time period (UTC)**. Debe
+    seleccionar un período de tiempo.
+  </Step>
+
+  <Step title="Restringir los días de forma opcional" id="pick-days">
+    En el plan Enterprise, seleccione uno o más días en **Day(s) of the week**. Deje todos los
+    días sin seleccionar para permitir actualizaciones cualquier día dentro del período de tiempo.
+  </Step>
+
+  <Step title="Guardar" id="save">
+    Seleccione **Save**. La programación entra en vigor inmediatamente y se muestra en la
+    subsección **actualizaciones programadas**, por ejemplo:
+    `Scheduled upgrades: Sat, Sun at 12:00 a.m. - 2:00 a.m. UTC`.
+  </Step>
+</Steps>
+
+Necesita el permiso `control-plane:postgres-service:manage` en la instancia para cambiar
+su programación. Los controles también se deshabilitan mientras una instancia está detenida o todavía
+se está aprovisionando.
+
+<div id="time-periods">
+  ### Períodos de tiempo
+</div>
+
+Las ventanas duran dos horas y siempre se expresan en UTC; no es posible seleccionar una zona horaria
+local. Las ventanas disponibles son:
+
+| Primera mitad del día (UTC) | Segunda mitad del día (UTC) |
+| --------------------------- | --------------------------- |
+| 12:00 a.m. - 2:00 a.m.      | 12:00 p.m. - 2:00 p.m.      |
+| 2:00 a.m. - 4:00 a.m.       | 2:00 p.m. - 4:00 p.m.       |
+| 4:00 a.m. - 6:00 a.m.       | 4:00 p.m. - 6:00 p.m.       |
+| 6:00 a.m. - 8:00 p.m.       | 6:00 p.m. - 8:00 p.m.       |
+| 8:00 a.m. - 10:00 a.m.      | 8:00 p.m. - 10:00 p.m.      |
+| 10:00 a.m. - 12:00 p.m.     | 10:00 p.m. - 12:00 a.m.     |
+
+No se admiten horas de inicio ni duraciones de ventana personalizadas, ni más de una ventana por instancia.
+
+<div id="days-of-the-week">
+  ### Días de la semana
+</div>
+
+<EnterprisePlanFeatureBadge feature="Restringir las actualizaciones a días específicos de la semana" />
+
+La restricción de días es opcional:
+
+* **No se seleccionó ningún día** — las actualizaciones pueden aplicarse cualquier día dentro del período elegido.
+* **Se seleccionaron uno o más días** — las actualizaciones solo se aplican en esos días dentro del
+  período elegido. Seleccionar los siete días equivale a no seleccionar ninguno.
+
+<div id="schedule-scope">
+  ### A qué se aplica una programación
+</div>
+
+Una programación rige únicamente el **mantenimiento de la plataforma**: las actualizaciones de versiones
+menores, las actualizaciones de funcionalidades del servicio gestionado y los parches del sistema operativo descritos en
+[Actualizaciones de mantenimiento](#maintenance-updates).
+
+Los cambios que inicie usted mismo no se aplazan hasta el periodo programado y se aplican en cuanto
+los realiza. Esto incluye el [escalado](/es/products/managed-postgres/scaling) de una instancia,
+el redimensionamiento del almacenamiento y la modificación de los [parámetros de configuración](/es/products/managed-postgres/settings).
+
+<Note>
+  Las actualizaciones programadas se realizan según disponibilidad. El mantenimiento puede aplicarse fuera de su periodo si es
+  necesario para el correcto funcionamiento de su instancia —por ejemplo, cuando el uso del disco alcanza el 95 %— o para
+  aplicar parches de seguridad críticos y corregir vulnerabilidades. Se le notificará de dichas excepciones cuando sea
+  necesario.
+</Note>
+
+<div id="read-replicas">
+  ### Réplicas de lectura
+</div>
+
+Las [réplicas de lectura](/es/products/managed-postgres/read-replicas) siguen la programación de su
+instancia primaria y no tienen una programación propia, por lo que no se muestra la sección **Actualizaciones programadas**.
 
 <div id="major-version-upgrades">
   ## Actualizaciones de versión mayor
