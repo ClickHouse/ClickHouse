@@ -33,6 +33,7 @@
   // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
   // version (e.g. @0.5.119) when deploying for reproducible builds.
   var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5/dist/index.js';
+  var initializedBody = null;
 
   // ── Search tabs ──────────────────────────────────────────────────────────
   // Row 1 (always visible): the top-level tabs. 'Docs' is first because cxkit
@@ -273,6 +274,18 @@
   }
 
   function boot() {
+    var searchEntry = document.getElementById('search-bar-entry');
+    if (!searchEntry || document.body === initializedBody) return;
+    initializedBody = document.body;
+    var cleanSearchEntry = searchEntry.cloneNode(true);
+    cleanSearchEntry.removeAttribute('data-inkeep-listener-added');
+    searchEntry.replaceWith(cleanSearchEntry);
+    var mobileSearchEntry = document.getElementById('search-bar-entry-mobile');
+    if (mobileSearchEntry) {
+      var cleanMobileSearchEntry = mobileSearchEntry.cloneNode(true);
+      cleanMobileSearchEntry.removeAttribute('data-inkeep-listener-added');
+      mobileSearchEntry.replaceWith(cleanMobileSearchEntry);
+    }
     try {
       injectNoShiftStyle();
       loadScript(INKEEP_SCRIPT_URL, initInkeep);
@@ -286,4 +299,9 @@
   } else {
     boot();
   }
+
+  // Astro replaces the page body during client-side navigation. The Inkeep
+  // modal root and its original search entry disappear with that body, so
+  // mount the shared integration against the replacement body as well.
+  document.addEventListener('astro:page-load', boot);
 })();
