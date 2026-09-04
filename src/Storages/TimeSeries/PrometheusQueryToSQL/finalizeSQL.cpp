@@ -55,8 +55,8 @@ namespace
                 /// SELECT <start_time> AS timestamp,
                 ///        <scalar_value> AS value
 
-                /// <scalar_value> AS value, at the override type when set (e.g. scalar(count_over_time(<empty>))).
-                value = timeSeriesScalarToAST(result.scalar_value, result.value_data_type ? result.value_data_type : context.scalar_data_type);
+                /// <scalar_value> AS value
+                value = timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -64,14 +64,11 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             {
                 /// SELECT <start_time> AS timestamp,
-                ///        value::value_data_type AS value
+                ///        value::scalar_data_type AS value
                 /// FROM <subquery>
 
-                /// A `SINGLE_SCALAR` can override the table sample type through `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
-                /// value::value_data_type AS value
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), value_data_type);
+                /// value::scalar_data_type AS value
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -79,16 +76,13 @@ namespace
             case StoreMethod::SCALAR_GRID:
             {
                 /// SELECT <start_time> AS timestamp,
-                ///        values[1]::value_data_type AS value
+                ///        values[1]::scalar_data_type AS value
                 /// FROM <scalar_grid>
-
-                /// See the comment in the SINGLE_SCALAR case above about `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
                 /// values[1] AS value
                 value = timeSeriesScalarASTCast(
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    value_data_type);
+                    context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -178,18 +172,13 @@ namespace
             case StoreMethod::EMPTY:
             {
                 /// SELECT * FROM null('tags Array(Tuple(String, String)), timestamp timestamp_data_type, value scalar_data_type')
-
-                /// A compile-time-empty piece can still carry a fixed value type override (e.g. count_over_time(),
-                /// which always returns Float64); see the comment in the SINGLE_SCALAR case below about `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
                 SelectQueryBuilder builder;
                 builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
                 String structure = fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
                     ColumnNames::Tags,
                     ColumnNames::Timestamp, context.timestamp_data_type->getName(),
-                    ColumnNames::Value, value_data_type->getName());
+                    ColumnNames::Value, context.scalar_data_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -202,8 +191,8 @@ namespace
                 ///        <start_time> AS timestamp,
                 ///        <scalar_value> AS value
 
-                /// <scalar_value> AS value, at the override type when set (e.g. scalar(count_over_time(<empty>))).
-                value = timeSeriesScalarToAST(result.scalar_value, result.value_data_type ? result.value_data_type : context.scalar_data_type);
+                /// <scalar_value> AS value
+                value = timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -212,15 +201,11 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        value::value_data_type AS value
+                ///        value::scalar_data_type AS value
                 /// FROM <subquery>
 
-                /// See the comment in the VECTOR_GRID case below about `result.value_data_type`: a SINGLE_SCALAR
-                /// piece can also carry an override here, e.g. scalar(count_over_time(...)) wrapped by vector().
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
-                /// value::value_data_type
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), value_data_type);
+                /// value::scalar_data_type
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -229,16 +214,13 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        values[1]::value_data_type AS value
+                ///        values[1]::scalar_data_type AS value
                 /// FROM <scalar_grid>
 
-                /// See the comment in the SINGLE_SCALAR case above about `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
-                /// values[1]::value_data_type AS value
+                /// values[1]::scalar_data_type AS value
                 value = timeSeriesScalarASTCast(
                     makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    value_data_type);
+                    context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -247,7 +229,7 @@ namespace
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        assumeNotNull(values[1])::value_data_type AS value
+                ///        assumeNotNull(values[1])::scalar_data_type AS value
                 /// FROM <vector_grid>
                 /// WHERE isNotNull(values[1])
 
@@ -255,16 +237,13 @@ namespace
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// A `VECTOR_GRID` can override the table sample type through `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
                 /// assumeNotNull(values[1]) AS value
                 value = timeSeriesScalarASTCast(
                     makeASTFunction(
                         "assumeNotNull",
                         makeASTFunction(
                             "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))),
-                    value_data_type);
+                    context.scalar_data_type);
                 value->setAlias(ColumnNames::Value);
 
                 /// WHERE isNotNull(values[1])
@@ -335,17 +314,12 @@ namespace
             case StoreMethod::EMPTY:
             {
                 /// SELECT * FROM null('tags Array(Tuple(String, String)), time_series Array(Tuple(timestamp_data_type, scalar_data_type))')
-
-                /// A compile-time-empty piece can still carry a fixed value type override (e.g. count_over_time(),
-                /// which always returns Float64); see the comment in the SINGLE_SCALAR case below about `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
                 SelectQueryBuilder builder;
                 builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
                 String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                     ColumnNames::Tags,
-                    ColumnNames::TimeSeries, context.timestamp_data_type->getName(), value_data_type->getName());
+                    ColumnNames::TimeSeries, context.timestamp_data_type->getName(), context.scalar_data_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -363,8 +337,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    /// The override type must carry here too (see the CONST_SCALAR cases above).
-                    timeSeriesScalarToAST(result.scalar_value, result.value_data_type ? result.value_data_type : context.scalar_data_type));
+                    timeSeriesScalarToAST(result.scalar_value, context.scalar_data_type));
                 break;
             }
 
@@ -372,18 +345,15 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayResize([], <count_of_time_steps>, value::value_data_type)) AS time_series
+                ///                           arrayResize([], <count_of_time_steps>, value::scalar_data_type)) AS time_series
                 /// FROM <subquery>
-
-                /// A wrapped `SINGLE_SCALAR` can carry the same value type override as `VECTOR_GRID`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
                 /// arrayResize([], <count_of_time_steps>, value)
                 values = makeASTFunction(
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), value_data_type));
+                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), context.scalar_data_type));
                 break;
             }
 
@@ -391,24 +361,21 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           values::Array(value_data_type)) AS time_series
+                ///                           values::Array(scalar_data_type)) AS time_series
                 /// FROM <scalar_grid>
 
-                /// See the comment in the SINGLE_SCALAR case above about `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
-                /// values::Array(value_data_type)
+                /// values::Array(scalar_data_type)
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array({})", value_data_type->getName())));
+                    make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName())));
                 break;
             }
 
             case StoreMethod::VECTOR_GRID:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(value_data_type))) AS time_series
+                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(scalar_data_type))) AS time_series
                 /// FROM <vector_grid>
                 /// WHERE notEmpty(time_series)
 
@@ -416,14 +383,11 @@ namespace
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// A `VECTOR_GRID` can override the table sample type through `result.value_data_type`.
-                const auto & value_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
-
-                /// values::Array(Nullable(value_data_type))
+                /// values::Array(Nullable(scalar_data_type))
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", value_data_type->getName())));
+                    make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName())));
 
                 where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
                 break;

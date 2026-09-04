@@ -226,11 +226,6 @@ SQLQueryPiece applyDateTimeFunction(
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
-
-    /// The result is a fresh calendar component cast to `context.scalar_data_type` above, so the argument value type
-    /// override merged by `applySimpleFunction` must not override it (same cleanup as in applyComparisonOperator).
-    res.value_data_type = nullptr;
-
     return dropMetricName(std::move(res), context);
 }
 

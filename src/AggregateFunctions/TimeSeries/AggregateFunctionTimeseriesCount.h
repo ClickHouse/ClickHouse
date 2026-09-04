@@ -14,21 +14,19 @@ namespace DB
 
 /// Traits for `timeSeriesCountToGrid`, the ClickHouse counterpart of PromQL's `count_over_time`.
 template <typename TimestampType_, typename IntervalType_, typename ValueType_>
-struct AggregateFunctionTimeseriesCountToGridTraits
+struct AggregateFunctionTimeseriesCountTraits
 {
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
 
-    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType, /* keep_duplicates = */ true>;
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    /// `Float64` rather than `ValueType`: a `Float32` column would round counts above 16777216.
-    using ResultType = Float64;
+    using ResultType = ValueType;
 
     static String getName() { return "timeSeriesCountToGrid"; }
 
-    /// A sample count is exact under subtraction as well as addition, so unlike sum and avg this summary is
-    /// invertible and the window is kept as an O(1) running sum.
+    /// A count is exact under subtraction, so this summary is invertible and the window is an O(1) running sum.
     struct Summary
     {
         UInt64 count = 0;
@@ -57,7 +55,6 @@ struct AggregateFunctionTimeseriesCountToGridTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// `Samples` keeps duplicate timestamps, so every occurrence is counted.
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
@@ -86,30 +83,26 @@ struct AggregateFunctionTimeseriesCountToGridTraits
         }
     };
 
-    /// The bucket stores raw samples with duplicate timestamps kept, so every occurrence is counted.
     using Bucket = Samples;
 
-    /// Bumped from 1: buckets now keep duplicate timestamps, and an old binary would silently re-collapse them.
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
-/// Aggregate function to count timeseries values on the specified grid, i.e. the ClickHouse counterpart of
-/// PromQL's `count_over_time`.
+/// Counts time series values on a grid; the counterpart of PromQL's `count_over_time`.
 template <typename TimestampType_, typename IntervalType_, typename ValueType_>
-class AggregateFunctionTimeseriesCountToGrid final :
+class AggregateFunctionTimeseriesCount final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesCountToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesCountToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesCount<TimestampType_, IntervalType_, ValueType_>,
+        AggregateFunctionTimeseriesCountTraits<TimestampType_, IntervalType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesCountToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesCountTraits<TimestampType_, IntervalType_, ValueType_>;
     using Aggregator = typename Traits::Aggregator;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesCountToGrid, Traits>;
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesCount, Traits>;
     using Base::Base;
 
-    /// The summary is invertible, so the two-stacks queue is never used and its size is irrelevant here.
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};

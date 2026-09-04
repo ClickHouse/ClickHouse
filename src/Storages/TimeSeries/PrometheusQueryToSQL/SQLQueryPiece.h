@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <DataTypes/IDataType_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterDefs.h>
 
@@ -87,17 +86,11 @@ struct SQLQueryPiece
     /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
-
-    /// Overrides `context.scalar_data_type` for functions with a fixed result value type.
-    DataTypePtr value_data_type = nullptr;
 };
 
 String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext & context);
 
 /// Called when the store method can't be handled because it's incompatible with the type of `query_piece`.
 [[noreturn]] void throwUnexpectedStoreMethod(const SQLQueryPiece & query_piece, const ConverterContext & context);
-
-/// Merges compatible value type overrides; conflicts fall back to the context's default type.
-DataTypePtr mergeValueDataType(const DataTypePtr & a, const DataTypePtr & b);
 
 }

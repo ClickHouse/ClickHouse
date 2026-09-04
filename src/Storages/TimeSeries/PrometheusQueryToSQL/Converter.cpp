@@ -115,23 +115,7 @@ Converter::Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, Pr
 
 ColumnsDescription Converter::getResultColumns() const
 {
-    /// Mirror `finalizeSQL` by honoring the root value type override for supported store methods, including
-    /// `StoreMethod::EMPTY` (a compile-time-empty piece can still carry a fixed value type override).
-    ConverterContext context{promql_tree, settings};
-    auto query_piece = visitNode(promql_tree->getRoot(), context);
-    query_piece.type = result_type;
-
-    DataTypePtr value_data_type_override;
-    if ((query_piece.store_method == StoreMethod::VECTOR_GRID)
-        || (query_piece.store_method == StoreMethod::SINGLE_SCALAR)
-        || (query_piece.store_method == StoreMethod::SCALAR_GRID)
-        || (query_piece.store_method == StoreMethod::CONST_SCALAR)
-        || (query_piece.store_method == StoreMethod::EMPTY))
-    {
-        value_data_type_override = query_piece.value_data_type;
-    }
-
-    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings, value_data_type_override);
+    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings);
 }
 
 

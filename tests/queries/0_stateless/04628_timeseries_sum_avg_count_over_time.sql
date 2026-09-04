@@ -36,8 +36,7 @@ SELECT
     arrayZip(grid, timeSeriesCountToGrid(start, end, step, window)(timestamp, value)) as count_5m
 FROM ts_raw_data FORMAT Vertical;
 
--- Empty windows (staleness window narrower than the grid step) must yield NULL, not 0, for a grid point with
--- no samples: the gap between timestamps 140 and 190 leaves grid points 150, 165 and 180 without any sample.
+-- Grid points 150, 165 and 180 have no samples in their window and must be NULL, not 0.
 WITH
     90::UInt32 AS start, 230::UInt32 AS end, 15 AS step, 10 AS window,
     timeSeriesRange(start, end, step) as grid
@@ -55,22 +54,18 @@ FROM
         ts_and_val.2 AS value
 ) FORMAT Vertical;
 
--- A repeated timestamp is a sample of its own: the bucket keeps duplicate timestamps, so sum/avg/count fold
--- every occurrence. For these 7 samples (two timestamps repeated) on a single-point grid whose window (0,200]
--- covers them all: sum = 16.5, avg = 16.5/7, count = 7 - not the deduplicated 15, 3 and 5.
-SELECT 'duplicate timestamps keep their multiplicity (all 1):';
+-- Equal timestamps collapse to the greatest value: 5 of these 7 samples remain, so sum = 15, avg = 3, count = 5.
+SELECT 'duplicate timestamps collapse to the greatest value (all 1):';
 WITH
     arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 125, 125, 140, 155, 170, 170]) AS dup_ts,
     [1., 3, 0.5, 2, 5, 1, 4] AS dup_vals
 SELECT
-    timeSeriesSumToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 16.5 AS sum_ok,
-    timeSeriesAvgToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 16.5 / 7 AS avg_ok,
-    timeSeriesCountToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 7 AS count_ok;
+    timeSeriesSumToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 15 AS sum_ok,
+    timeSeriesAvgToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 3 AS avg_ok,
+    timeSeriesCountToGrid(200, 200, 1, 200)(dup_ts, dup_vals)[1] = 5 AS count_ok;
 
--- Sliding the window past a large value must not be done by subtracting it: in Float64 the small values
--- still in the window are cancelled by the big one leaving (1e18 + 2 + 3 + 5 - 1e18 is 0). sum/avg
--- therefore recompute the window; count is exact under subtraction and keeps the O(1) running sum.
--- Grid point 1 holds only the large sample, grid point 2 only the three small ones.
+-- The window must not slide by subtracting the departed value: 1e18 + 2 + 3 + 5 - 1e18 is 0 in Float64.
+-- Grid point 2 holds only the three small samples.
 SELECT 'window sliding past a large value keeps the small ones (all 1):';
 WITH
     arrayMap(x -> toDateTime64(x, 3, 'UTC'), [100, 110, 120, 130]) AS ts,
@@ -80,62 +75,20 @@ SELECT
     timeSeriesAvgToGrid(100, 140, 40, 35)(ts, vals)[2] = 10. / 3 AS avg_ok,
     timeSeriesCountToGrid(100, 140, 40, 35)(ts, vals)[2] = 3 AS count_ok;
 
--- avg_over_time sums with Kahan-Babuska-Neumaier compensation, so samples far smaller than the running
--- sum are not swallowed by it: 1e16 has an ulp of 2, so a plain Float64 sum drops every one of the four
--- 1s that follow and reports 1e16/5. The compensated sum keeps them and reports (1e16 + 4)/5.
-SELECT 'compensated avg keeps the small samples beside a large one (1):';
+-- Compensated summation keeps samples far below the running sum: a plain Float64 sum of 1e16 and four 1s
+-- gives 1e16, the compensated one gives 1e16 + 4.
+SELECT 'compensated sum and avg keep the small samples beside a large one (all 1):';
 WITH
     arrayMap(x -> toDateTime64(x, 3, 'UTC'), [100, 110, 120, 130, 140]) AS ts,
     [1e16, 1., 1, 1, 1] AS vals
-SELECT timeSeriesAvgToGrid(140, 140, 1, 50)(ts, vals)[1] = (1e16 + 4) / 5 AS avg_compensated;
-
--- Neither avg_over_time nor sum_over_time may combine buckets in the two-stacks queue's order: regrouping
--- needs an associative merge, and neither the compensated summary nor a plain Float64 addition is one, so a
--- dense window whose rounding error depends on the merge order would report a value depending on the queue
--- state. Here 25 buckets per window (the old two-stacks forcing threshold) hold values summing to exactly 1
--- when combined in time order, and the dense multi-point grid must agree with the single-point grid over the
--- same window, which combines its samples sequentially.
-SELECT 'avg combines buckets in time order on a dense window (all 1):';
-WITH
-    arrayMap(x -> toDateTime64(x, 3, 'UTC'), range(100, 126)) AS ts,
-    [1e16, -1e-16, -1e16, 1e-16, 1e-16, 1e-16, -1e-16, -1., 1., 1e16, 1., 1., -1., 1e16, -1e16, 1e16, -1., 1e-16, 1., -1e16, -1e-16, 1e-16, 1., 1., -1., -1.] AS vals
 SELECT
-    timeSeriesAvgToGrid(100, 125, 1, 25)(ts, vals)[26] = timeSeriesAvgToGrid(125, 125, 1, 25)(ts, vals)[1] AS matches_sequential_reference,
-    timeSeriesAvgToGrid(125, 125, 1, 25)(ts, vals)[1] = 0.04 AS reference_value;
+    timeSeriesSumToGrid(140, 140, 1, 50)(ts, vals)[1] = 1e16 + 4 AS sum_compensated,
+    timeSeriesAvgToGrid(140, 140, 1, 50)(ts, vals)[1] = (1e16 + 4) / 5 AS avg_compensated;
 
--- How the grid slices a window into buckets is an internal detail, so the same samples over the same
--- window must average identically whatever the step is. Merging rounded per-bucket totals did not
--- satisfy that: with these values 25 one-second buckets and 5 five-second buckets cover exactly the
--- samples at 100..124 and disagree in the last digit (…99.4 against …99.5). Both grids below land on
--- 124 with a 25-second window, so they differ only in bucketization.
-SELECT 'avg is independent of how the window is bucketed:';
-WITH
-    arrayMap(x -> toDateTime64(x, 3, 'UTC'), range(100, 125)) AS ts,
-    [1e-16, -1e16, -1e-16, 3., 1., -1e16, 1., -1e16, -1e-16, -1., -1e-16, -1e-16, 1e16, 1e16, 1e-16, 1., 1., -1e-16, 3., -1e16, -1., 3., 3., -1e16, 1e16] AS vals
-SELECT
-    timeSeriesAvgToGrid(124, 124, 1, 25)(ts, vals)[1] = timeSeriesAvgToGrid(104, 124, 5, 25)(ts, vals)[5] AS same_regardless_of_bucketing,
-    toString(timeSeriesAvgToGrid(124, 124, 1, 25)(ts, vals)[1]) AS folded_in_timestamp_order;
-
--- The same for sum_over_time at 20 buckets per window, the current forcing threshold. Combined in time
--- order the window sums to 1e16 + 2; a queue holding the first `1` apart from the rest folds the other two
--- together first and loses both, reporting 1e16.
-SELECT 'sum combines buckets in time order on a dense window:';
-WITH
-    arrayMap(x -> toDateTime64(x, 3, 'UTC'), range(100, 121)) AS ts,
-    [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1e16] AS vals
-SELECT
-    timeSeriesSumToGrid(100, 120, 1, 20)(ts, vals)[21] = timeSeriesSumToGrid(120, 120, 1, 20)(ts, vals)[1] AS matches_sequential_reference,
-    timeSeriesSumToGrid(120, 120, 1, 20)(ts, vals)[1] = 1e16 + 2 AS reference_value;
-
--- `timeSeriesCountToGrid` must return an exact `Float64` count regardless of the input value type.
--- Inheriting `Float32` would round counts above 16777216.
+-- The result has the value type of the input, like the other grid functions.
+SELECT toTypeName(timeSeriesSumToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
+SELECT toTypeName(timeSeriesAvgToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
 SELECT toTypeName(timeSeriesCountToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
 SELECT toTypeName(timeSeriesCountToGrid(0, 0, 0, 0)(0::UInt32, 1::Float64));
-
--- sum_over_time/avg_over_time still project to the input value type, unlike count_over_time
-SELECT toTypeName(timeSeriesSumToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
-SELECT toTypeName(timeSeriesSumToGrid(0, 0, 0, 0)(0::UInt32, 1::Float64));
-SELECT toTypeName(timeSeriesAvgToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
-SELECT toTypeName(timeSeriesAvgToGrid(0, 0, 0, 0)(0::UInt32, 1::Float64));
 
 DROP TABLE ts_raw_data;

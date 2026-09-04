@@ -25,8 +25,7 @@ namespace ErrorCodes
 }
 
 /// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the largest real value (a NaN survives only when every sample at the timestamp is NaN).
-/// With `keep_duplicates` every occurrence is preserved instead, for sum/avg/count-style folds that must consider duplicates.
-template <typename TimestampType, typename ValueType, bool keep_duplicates = false>
+template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
@@ -41,20 +40,12 @@ public:
         if (!buffer.empty() && timestamp <= buffer.back().first) [[unlikely]]
         {
             auto & last = buffer.back();
-            if constexpr (!keep_duplicates)
+            if (timestamp == last.first)
             {
-                if (timestamp == last.first)
-                {
-                    last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
-                    return;
-                }
-                sorted = false;
+                last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
+                return;
             }
-            /// With `keep_duplicates` an equal timestamp is appended, so only a strictly smaller one breaks the order.
-            else if (timestamp < last.first)
-            {
-                sorted = false;
-            }
+            sorted = false;
         }
         buffer.emplace_back(timestamp, value);
     }
@@ -70,10 +61,9 @@ public:
         for (size_t i = 0; i < count; ++i)
             appended[i] = {timestamps[i], values[i]};
 
-        /// With `keep_duplicates` equal timestamps stay in order, so the order check is non-decreasing rather than strictly increasing.
-        UInt8 in_order = old_size == 0 || (keep_duplicates ? appended[-1].first <= timestamps[0] : appended[-1].first < timestamps[0]);
+        UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
         for (size_t i = 1; i < count; ++i)
-            in_order &= static_cast<UInt8>(keep_duplicates ? timestamps[i - 1] <= timestamps[i] : timestamps[i - 1] < timestamps[i]);
+            in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
         sorted = sorted && in_order;
     }
 
@@ -174,11 +164,7 @@ public:
         });
     }
 
-    /// Whether the buffer is already in ascending timestamp order, so a caller that replays it many
-    /// times can order it once itself instead of paying for a sorted copy on every pass.
-    bool isSorted() const { return sorted; }
-
-    /// Invokes `f(timestamp, value)` for every sample, in ascending timestamp order; duplicates are collapsed unless `keep_duplicates`.
+    /// Invokes `f(timestamp, value)` for every sample, in ascending timestamp order with duplicates collapsed.
     template <typename F>
     void forEachSample(F && f) const
     {
@@ -221,22 +207,18 @@ private:
     }
 
     /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
-    /// With `keep_duplicates` every occurrence is a sample of its own, so there is nothing to collapse.
     static void deduplicateSorted(Buffer & buf)
     {
-        if constexpr (!keep_duplicates)
+        size_t last_unique = 0;
+        for (size_t i = 1; i < buf.size(); ++i)
         {
-            size_t last_unique = 0;
-            for (size_t i = 1; i < buf.size(); ++i)
-            {
-                if (buf[i].first == buf[last_unique].first)
-                    buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
-                else
-                    buf[++last_unique] = buf[i];
-            }
-            if (!buf.empty())
-                buf.resize(last_unique + 1);
+            if (buf[i].first == buf[last_unique].first)
+                buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
+            else
+                buf[++last_unique] = buf[i];
         }
+        if (!buf.empty())
+            buf.resize(last_unique + 1);
     }
 
     static void sortBuffer(Buffer & buf)
@@ -254,10 +236,9 @@ private:
         sorted = true;
     }
 
-    /// The samples, sorted by timestamp whenever `sorted` is true; deduplicated unless `keep_duplicates`.
+    /// The samples, sorted by timestamp and deduplicated whenever `sorted` is true.
     Buffer buffer;
-    /// Cleared by an out-of-order `add` (a strictly smaller timestamp); while set, timestamps in `buffer` are
-    /// strictly increasing, or non-decreasing with `keep_duplicates`.
+    /// Cleared by an out-of-order `add`; while set, timestamps in `buffer` are strictly increasing.
     bool sorted = true;
 };
 

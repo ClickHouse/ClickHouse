@@ -21,14 +21,9 @@ SQLQueryPiece applyBinaryOperatorUnless(
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 
-    /// If the left argument is empty then the result is also empty. `unless` passes the left
-    /// operand's values through, so the result keeps its value type override either way.
+    /// If the left argument is empty then the result is also empty.
     if (left_argument.store_method == StoreMethod::EMPTY)
-    {
-        SQLQueryPiece res(operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY);
-        res.value_data_type = left_argument.value_data_type;
-        return res;
-    }
+        return SQLQueryPiece(operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY);
 
     /// If the right argument is empty then we return the left argument.
     if (right_argument.store_method == StoreMethod::EMPTY)
@@ -129,8 +124,6 @@ SQLQueryPiece applyBinaryOperatorUnless(
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
     res.select_query = std::move(step2);
     res.metric_name_dropped = left_argument.metric_name_dropped;
-    /// The output values are the left operand's, so its value type override carries over.
-    res.value_data_type = left_argument.value_data_type;
 
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;

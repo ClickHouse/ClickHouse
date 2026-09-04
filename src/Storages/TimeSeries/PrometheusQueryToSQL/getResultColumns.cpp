@@ -11,11 +11,11 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings, const DataTypePtr & value_data_type_override)
+ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     auto result_type = getResultType(promql_tree, settings);
     const auto & timestamp_data_type = settings.timestamp_data_type;
-    const auto & scalar_data_type = value_data_type_override ? value_data_type_override : settings.scalar_data_type;
+    const auto & scalar_data_type = settings.scalar_data_type;
 
     ColumnsDescription columns;
 

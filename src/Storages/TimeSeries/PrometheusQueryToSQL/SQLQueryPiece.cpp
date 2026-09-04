@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 
 #include <Common/Exception.h>
-#include <DataTypes/IDataType.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 
 
@@ -25,15 +24,6 @@ String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext &
     throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Expression '{}' (type {}) has unexpected store method {}",
                     getPromQLText(query_piece, context), query_piece.type, query_piece.store_method);
-}
-
-DataTypePtr mergeValueDataType(const DataTypePtr & a, const DataTypePtr & b)
-{
-    if (!a)
-        return b;
-    if (!b)
-        return a;
-    return a->equals(*b) ? a : nullptr;
 }
 
 }

@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -63,9 +62,6 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
-
-        /// Overrides the table sample type for functions such as `count_over_time` that always return `Float64`.
-        DataTypePtr value_data_type_override = nullptr;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -143,7 +139,6 @@ namespace
              {
                  "timeSeriesCountToGrid",
                  /* drop_metric_name = */ true,
-                 /* value_data_type_override = */ std::make_shared<DataTypeFloat64>(),
              }},
 
             /// TODO:
@@ -198,17 +193,7 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
-    {
-        /// Functions with a fixed result type (e.g. `count_over_time` always returns `Float64`) must keep
-        /// reporting it even for a compile-time-empty range, else the schema-level type falls back to `context.scalar_data_type`.
-        SQLQueryPiece res{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        /// Built from scratch rather than from the argument, so the argument's own override is inherited
-        /// explicitly, exactly as `res = argument` does below; this function's fixed type then wins over it.
-        res.value_data_type = arguments[0].value_data_type;
-        if (impl_info->value_data_type_override)
-            res.value_data_type = impl_info->value_data_type_override;
-        return res;
-    }
+        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -249,10 +234,6 @@ SQLQueryPiece applyFunctionOverRange(
     {
         case StoreMethod::EMPTY:
         {
-            /// Same reasoning as the compile-time-empty early return above: an empty argument must not make a
-            /// fixed-result-type function (e.g. `count_over_time`) lose its `Float64` override.
-            if (impl_info->value_data_type_override)
-                res.value_data_type = impl_info->value_data_type_override;
             return res;
         }
 
@@ -391,11 +372,6 @@ SQLQueryPiece applyFunctionOverRange(
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
-
-    /// Fixed-result-type functions (e.g. `count_over_time`) override the value type; others keep the one
-    /// inherited from the argument (already copied into `res` via `res = argument` above).
-    if (impl_info->value_data_type_override)
-        res.value_data_type = impl_info->value_data_type_override;
 
     if (has_group && impl_info->drop_metric_name)
         res = dropMetricName(std::move(res), context);

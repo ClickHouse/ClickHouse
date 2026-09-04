@@ -75,13 +75,7 @@ namespace
         /// If one of the arguments is empty then the result is also empty.
         if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
         {
-            SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
-
-            /// Output values would combine both operands, so merge their value type overrides
-            /// the same way the non-empty path below does.
-            res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
-
-            return res;
+            return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
         }
 
         String sides[2];
@@ -390,9 +384,6 @@ namespace
         res.end_time = left_argument.end_time;
         res.step = left_argument.step;
         res.metric_name_dropped = metric_name_dropped_from_result;
-
-        /// Output values combine both operands, so merge their value type overrides.
-        res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
 
         return res;
     }
