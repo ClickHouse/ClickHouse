@@ -8792,6 +8792,10 @@ Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimi
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA) \
     \
+    DECLARE(UInt64, generate_random_max_json_dynamic_keys, 5, R"(
+Maximum number of randomly generated dynamic paths per JSON object in `generateRandom`. Has no effect for non-JSON columns.
+)", 0) \
+    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \

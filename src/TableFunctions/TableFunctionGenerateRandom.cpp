@@ -130,7 +130,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     if (args.size() == arg_index + 1)
     {
-        max_array_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_string_length");
+        max_array_length = checkAndGetLiteralArgument<UInt64>(args[arg_index], "max_array_length");
         ++arg_index;
     }
 }
