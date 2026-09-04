@@ -343,7 +343,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 下图展示了我们表中 887 万行数据 (的列值)
 如何被组织为 1083 个粒度，这是因为该表的 DDL 语句中包含设置 `index_granularity` (其值为默认的 8192) 。
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Sparse Primary Indices 02" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="稀疏主索引 02" />
 
 按磁盘上的物理顺序，前 8192 行 (的列值) 在逻辑上属于粒度 0，接下来的 8192 行 (的列值) 属于粒度 1，以此类推。
 
@@ -354,7 +354,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
     因此，示例表中的所有粒度 (最后一个除外) 大小都相同。
 
-  * 对于启用了 自适应索引粒度 的表 (默认情况下 index granularity 是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)) ，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
+  * 对于启用了自适应索引粒度的表 (默认情况下 index granularity 是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes))，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
 
   * 我们将主键列 (`UserID`、`URL`) 中的一些列值标记为橙色。
     这些橙色标记的列值，就是每个粒度第一行的主键列值。
@@ -391,7 +391,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 <Accordion title="检查主索引的内容">
   在自管理 ClickHouse 集群中，我们可以使用 [file table function](/zh/reference/functions/table-functions/file) 来检查示例表主索引的内容。
 
-  为此，我们首先需要将主索引文件复制到运行中集群某个节点的 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings#user_files_path) 中：
+  为此，我们首先需要将主索引文件复制到运行中集群某个节点的 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 中：
 
   **步骤 1：获取包含主索引文件的 part 路径**
 
@@ -399,7 +399,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  在测试机器上返回 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
+  在测试机器上返回 `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
 
   **步骤 2：获取 user&#95;files&#95;path**
 
@@ -407,12 +407,12 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
   在 Linux 上，你可以检查它是否已被修改：`$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  在测试机器上，该路径是 `/Users/tomschreiber/Clickhouse/user_files/`
+  在测试机器上，该路径是 `/Users/tomschreiber/ClickHouse/user_files/`
 
   **步骤 3：将主索引文件复制到 user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   现在我们可以通过 SQL 检查主索引的内容：
@@ -464,7 +464,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   主索引中存储的 `UserID` 值按升序排列。<br />
   因此，上图中的“标记 1”表示，粒度 1 以及后续所有粒度中的所有表行，其 `UserID` 值都保证大于或等于 4.073.710。
 
-[正如我们稍后将看到的](#the-primary-index-is-used-for-selecting-granules)，这种全局有序性使 ClickHouse 能够在查询按主键第一列进行过滤时，对第一键列的索引标记 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">使用二分查找算法</a>。
+[正如我们稍后将看到的](#the-primary-index-is-used-for-selecting-granules)，这种全局有序性使 ClickHouse 能够在查询按主键第一列进行过滤时，对首个键列的索引标记 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">使用二分查找算法</a>。
 
 * URL 索引标记：
 
@@ -514,7 +514,7 @@ Processed 8.19 thousand rows,
 
 ClickHouse 客户端的输出现在显示，ClickHouse 仅流入了 8190 行数据，而不是执行全表扫描。
 
-如果启用了 <a href="/zh/reference/settings/server-settings/settings#logger" target="_blank">trace 日志</a>，那么 ClickHouse 服务器日志文件会显示，ClickHouse 在 1083 个 UserID 索引标记上执行了 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>，以识别可能包含 UserID 列值为 `749927693` 的行的粒度。这需要 19 个步骤，平均时间复杂度为 `O(log2 n)`：
+如果启用了 <a href="/zh/reference/settings/server-settings/settings/other#logger" target="_blank">trace 日志</a>，那么 ClickHouse 服务器日志文件会显示，ClickHouse 在 1083 个 UserID 索引标记上执行了 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>，以识别可能包含 UserID 列值为 `749927693` 的行的粒度。这需要 19 个步骤，平均时间复杂度为 `O(log2 n)`：
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -526,6 +526,10 @@ ClickHouse 客户端的输出现在显示，ClickHouse 仅流入了 8190 行数�
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
+
+:::note
+在较新版本的 ClickHouse 中，`Running binary search on index range`、`Found (LEFT) boundary mark` 和 `Found (RIGHT) boundary mark` 消息会记录在 `test` 级别 (最高详细级别) ，而非 `trace` 级别。若要查看这些消息，请将日志详细级别提高到 `test` (例如，在客户端执行 `SET send_logs_level = 'test'`，或者在服务器配置中设置 `<logger><level>test</level></logger>`) 。上面显示的其余行仍记录在 `trace` 级别。本指南中的所有二分查找日志示例均适用此说明。
+:::
 
 我们可以从上面的 trace 日志中看到，在现有的 1083 个标记中，只有 1 个标记满足该查询。
 
@@ -631,13 +635,13 @@ LIMIT 10;
 随后，属于该已定位未压缩粒度的全部 8192 行都会流式传输到 ClickHouse 中做进一步处理。
 
 <Note>
-  * 对于使用 [wide format](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 且未启用 [自适应索引粒度](/zh/resources/changelogs/oss/2019#experimental-features-1) 的表，ClickHouse 会使用如上图所示的 `.mrk` 标记文件，其中每个条目包含两个 8 字节长的地址。这些条目记录的是粒度的物理位置，而这些粒度的大小都相同。
+  * 对于采用[宽格式](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)且未启用[自适应索引粒度](/zh/resources/changelogs/oss/2019#experimental-features-1)的表，ClickHouse 会使用如上图所示的 `.mrk` 标记文件，其中每个条目包含两个 8 字节长的地址。这些条目对应的是所有大小相同的粒度的物理位置。
 
-  索引粒度默认是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)；但在本示例表中，我们禁用了自适应索引粒度 (以简化本指南中的说明，并使图示和结果可复现) 。我们的表使用 wide format，是因为数据大小超过了 [min&#95;bytes&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (对于自管理 cluster，其默认值为 10 MB) 。
+  索引粒度在[默认](/zh/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)情况下是自适应的，但在我们的示例表中，我们禁用了自适应索引粒度 (这是为了简化本指南中的讨论，并使图示和结果可复现) 。我们的表使用宽格式，因为数据大小大于 [min&#95;bytes&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (对于自管理集群，其默认值为 10 MB) 。
 
-  * 对于使用 wide format 且启用了自适应索引粒度的表，ClickHouse 会使用 `.mrk2` 标记文件。它与 `.mrk` 标记文件中的条目类似，但每个条目额外包含第三个值：当前条目所对应粒度的行数。
+  * 对于采用宽格式且启用了自适应索引粒度的表，ClickHouse 会使用 `.mrk2` 标记文件。其条目与 `.mrk` 标记文件中的条目类似，但每个条目额外包含第三个值：当前条目所关联粒度的行数。
 
-  * 对于使用 [compact format](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 的表，ClickHouse 使用 `.mrk3` 标记文件。
+  * 对于采用[紧凑格式](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)的表，ClickHouse 会使用 `.mrk3` 标记文件。
 </Note>
 
 <Info>
@@ -662,7 +666,7 @@ LIMIT 10;
 
 下图和下方文字说明了在我们的示例查询中，ClickHouse 如何在 UserID.bin 数据文件中定位粒度 176。
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="Sparse Primary Indices 06" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="稀疏主索引 06" />
 
 我们在本指南前面已经讨论过，ClickHouse 选中了主索引标记 176，因此也选中了粒度 176，认为它可能包含与查询匹配的行。
 
@@ -738,7 +742,7 @@ Processed 8.81 million rows,
 
 客户端输出表明，尽管 [URL 列是复合主键的一部分](#a-table-with-a-primary-key)，ClickHouse 仍几乎执行了全表扫描！ClickHouse 从该表的 887 万行中读取了 881 万行。
 
-如果启用了 [trace&#95;logging](/zh/reference/settings/server-settings/settings#logger)，那么 ClickHouse server 日志文件会显示，ClickHouse 对 1083 个 URL 索引标记使用了<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">通用排除搜索</a>，以识别那些可能包含 URL 列值为 &quot;http://public&#95;search&quot; 的行的粒度：
+如果启用了 [trace&#95;logging](/zh/reference/settings/server-settings/settings/other#logger)，那么 ClickHouse server 日志文件会显示，ClickHouse 对 1083 个 URL 索引标记使用了<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">通用排除搜索</a>，以识别那些可能包含 URL 列值为 &quot;http://public&#95;search&quot; 的行的粒度：
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -975,7 +979,7 @@ Processed 319.49 thousand rows,
 在[原始表](#a-table-with-a-primary-key)的主索引中，UserID 是第一主键列，URL 是第二主键列。ClickHouse 为执行该查询，对索引标记使用了 [通用排除搜索](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm)，但由于 UserID 和 URL 的基数都很高，效果并不理想。
 
 而当 URL 成为主索引中的第一列后，ClickHouse 现在会对索引标记执行 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>。
-ClickHouse server 日志文件中相应的 trace 日志也证实了这一点：
+相应的服务器日志也证实了这一点 (在较新版本中，二分查找消息会以 `test` 级别记录——请参阅[上文注释](#the-primary-index-is-used-for-selecting-granules)) ：
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1116,7 +1120,7 @@ Processed 335.87 thousand rows,
 
 因为实际上，为 materialized view 提供底层支撑而隐式创建的表 (及其主索引) 与[我们显式创建的辅助表](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)完全相同，所以该查询的执行方式实际上与使用显式创建的表时相同。
 
-ClickHouse server 日志文件中相应的 trace 日志证实，ClickHouse 正在对索引标记执行二分查找：
+相应的 server 日志证实，ClickHouse 正在对索引标记执行二分查找 (在最近的版本中，二分查找消息记录在 `test` 级别 — 参见[上方说明](#the-primary-index-is-used-for-selecting-granules)) ：
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1200,7 +1204,7 @@ Processed 319.49 thousand rows, 1
 
 由于 projection 创建的隐藏表 (及其主索引) 实际上与[我们显式创建的辅助表](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)完全一致，因此，该查询的实际执行方式与使用显式创建的表时相同。
 
-ClickHouse server 的日志文件中对应的 trace 日志证实，ClickHouse 正在对索引标记执行二分查找：
+相应的服务器日志证实，ClickHouse 正在对索引标记执行二分查找 (在较新的版本中，二分查找消息记录在 `test` 级别——参见[上面的说明](#the-primary-index-is-used-for-selecting-granules)) ：
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

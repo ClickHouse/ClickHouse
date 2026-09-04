@@ -34,7 +34,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string).                                                                                                                                                                                                                                                                                                                    |
 | `headers`   | En-têtes au format `'headers('key1'='value1', 'key2'='value2')'`. Vous pouvez définir des en-têtes pour l’appel HTTP.                                                                                                                                                                                                                                                                                                                                                           |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valeur renvoyée
 </div>
 
@@ -74,7 +74,7 @@ La fonction `url` sert de wrapper unifié au-dessus des autres fonctions de tabl
 
 Seuls les schémas S3 que le mappeur d’URI S3 résout en un endpoint concret sans configuration supplémentaire (`s3`, ainsi que `gs`/`gcs`/`oss`) sont distribués. Les autres schémas de fournisseurs compatibles S3 (`cos`, `obs`, `eos`, …) sont spécifiques à une région et n’ont pas de mappage d’endpoint par défaut. Une URL `cos://…` est donc traitée comme un schéma non reconnu et signalée comme une erreur ; pour ces backends, utilisez directement la fonction [`s3`](/fr/reference/functions/table-functions/s3) (avec `url_scheme_mappers` configuré).
 
-Pour `file://`, un chemin relatif (`file://data.csv`) est résolu dans le répertoire [user&#95;files](/fr/reference/settings/server-settings/settings#user_files_path), et un chemin absolu (`file:///home/user/data.csv`) doit, comme d’habitude, pointer à l’intérieur de celui-ci.
+Pour `file://`, un chemin relatif (`file://data.csv`) est résolu dans le répertoire [user&#95;files](/fr/reference/settings/server-settings/settings/user#user_files_path), et un chemin absolu (`file:///home/user/data.csv`) doit, comme d’habitude, pointer à l’intérieur de celui-ci.
 
 Les arguments `format`, `structure` et `compression_method`, ainsi que le paramètre [url&#95;base](#resolving-relative-urls), fonctionnent de la même manière quelle que soit la cible de distribution.
 
@@ -90,7 +90,7 @@ La répartition selon le schéma d’URL n’est pas encore prise en charge par 
 </div>
 
 Les motifs dans `{ }` sont utilisés pour générer un ensemble de shards ou pour spécifier des adresses de basculement. Pour connaître les types de motifs pris en charge et voir des exemples, consultez la description de la fonction [remote](/fr/reference/functions/table-functions/remote#globs-in-addresses).
-Le caractère `|` à l’intérieur des motifs sert à spécifier des adresses de basculement. Elles sont parcourues dans le même ordre que celui indiqué dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings#glob_expansion_max_elements).
+Le caractère `|` à l’intérieur des motifs sert à spécifier des adresses de basculement. Elles sont parcourues dans le même ordre que celui indiqué dans le motif. Le nombre d’adresses générées est limité par le paramètre [glob&#95;expansion&#95;max&#95;elements](/fr/reference/settings/session-settings/other#glob_expansion_max_elements).
 Pour la syntaxe des globs dans le chemin de l’URL (comme `*`, `{a,b}`, `{N..M}` et `**`), voir [Globs dans le chemin](/fr/reference/functions/table-functions/file#globs-in-path). Notez que `?` marque le début de la chaîne de requête dans une URL et ne peut pas être utilisé comme caractère générique dans le composant de chemin.
 
 <div id="wildcards-with-http-index-pages">
@@ -105,10 +105,10 @@ Remarques :
 * Les modèles `URL` sont étendus avant la récupération des pages d’index, y compris l’expansion des segments par virgules et par plages numériques, ainsi que les options de basculement `|` en dehors du composant de chemin.
 * Les motifs de basculement `|` à l’intérieur du composant de chemin ne sont pas pris en charge pour l’expansion des pages d’index HTTP.
 * La correspondance des caractères génériques est appliquée au composant de chemin de l’URL.
-* Si une URL listée contient déjà une query string ou un fragment, celle-ci prévaut sur ceux de l’URL source. Sinon, la query string et le fragment de l’URL source sont utilisés.
+* Si une URL listée contient déjà une chaîne de requête ou un fragment, celle-ci prévaut sur ceux de l’URL source. Sinon, la chaîne de requête et le fragment de l’URL source sont utilisés.
 * Une liste vide est autorisée ; les erreurs HTTP (par ex. 404) sur les pages d’index génèrent des exceptions.
-* La taille maximale d’une page d’index est limitée par [max&#95;http&#95;index&#95;page&#95;size](/fr/reference/settings/server-settings/settings#max_http_index_page_size).
-* Le nombre maximal de répertoires lus lors de l’expansion récursive est limité par [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/fr/reference/settings/session-settings#url_wildcard_max_directories_to_read).
+* La taille maximale d’une page d’index est limitée par [max&#95;http&#95;index&#95;page&#95;size](/fr/reference/settings/server-settings/settings/max#max_http_index_page_size).
+* Le nombre maximal de répertoires lus lors de l’expansion récursive est limité par [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/fr/reference/settings/session-settings/url#url_wildcard_max_directories_to_read).
 
 Exemple :
 
@@ -146,7 +146,7 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE da
   ## Résolution des URL relatives
 </div>
 
-Le paramètre [url&#95;base](/fr/reference/settings/session-settings#url_base) permet de passer une URL relative à la fonction `url`. Lorsque `url_base` est défini et que l’argument de la fonction est une référence relative, celle-ci est résolue par rapport à l’URL de base, conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+Le paramètre [url&#95;base](/fr/reference/settings/session-settings/url#url_base) permet de passer une URL relative à la fonction `url`. Lorsque `url_base` est défini et que l’argument de la fonction est une référence relative, celle-ci est résolue par rapport à l’URL de base, conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
 Les règles de résolution sont les suivantes :
 
@@ -156,7 +156,8 @@ Les règles de résolution sont les suivantes :
 * **Requête uniquement** (par ex. `?x=1`) : ajoutée au chemin de base complet, en remplaçant toute requête ou tout fragment existant.
 * **Fragment uniquement** (par ex. `#frag`) : ajouté à l’URL de base, en conservant la requête et en remplaçant tout fragment existant.
 * **Vide** : renvoie l’URL de base sans fragment.
-* **URL absolue** : transmise telle quelle ; `url_base` est ignoré.
+* **URL absolue** : transmise telle quelle ; `url_base` est ignoré. Une URL est considérée comme absolue uniquement lorsqu’elle commence par `scheme://` : un nom dont le premier segment de chemin contient un deux-points (par ex. `report:2026.csv`), que la RFC 3986 analyserait comme un URI absolu avec le schéma `report`, est plutôt résolu comme une référence relative au chemin, car un tel nom n’est pas une URL utilisable.
+* **Base avec schéma uniquement** (par ex. `file://`) : une URL relative au chemin est ajoutée directement à la base : `file://` + `data.csv` = `file://data.csv`, ce qui, pour le schéma `file://`, désigne un chemin relatif au répertoire [user&#95;files](/fr/reference/settings/server-settings/settings/user#user_files_path) (le répertoire courant pour clickhouse-local). Dans ce cas, les segments de point sont conservés tels quels.
 
 **Exemple**
 
@@ -169,9 +170,9 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
   ## Paramètres de stockage
 </div>
 
-* [engine&#95;url&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#engine_url_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
-* [enable&#95;url&#95;encoding](/fr/reference/settings/session-settings#enable_url_encoding) - permet d’activer ou de désactiver le décodage/l’encodage du chemin dans l’URI. Activé par défaut.
-* [url&#95;base](/fr/reference/settings/session-settings#url_base) - URL de base pour résoudre les URL relatives passées à la fonction `url`.
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings/other#engine_url_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
+* [enable&#95;url&#95;encoding](/fr/reference/settings/session-settings/enable#enable_url_encoding) - permet d’activer ou de désactiver le décodage/l’encodage du chemin dans l’URI. Activé par défaut.
+* [url&#95;base](/fr/reference/settings/session-settings/url#url_base) - URL de base pour résoudre les URL relatives passées à la fonction `url`.
 
 <div id="permissions">
   ## Autorisations

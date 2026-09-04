@@ -53,7 +53,12 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
         /// Peek at next token: `{` starts a nested object, integer is a leaf.
         if (pos->type == TokenType::OpeningCurlyBrace)
         {
-            if (!parseCursorObject(pos, expected, flat, new_path))
+            /// This helper recurses directly instead of going through IParserBase::parse,
+            /// so the depth has to be accounted for here to keep `max_parser_depth` in effect.
+            pos.increaseDepth();
+            const bool parsed = parseCursorObject(pos, expected, flat, new_path);
+            pos.decreaseDepth();
+            if (!parsed)
                 return false;
         }
         else
@@ -126,10 +131,18 @@ std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expect
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_bounded{Keyword::BOUNDED};
+    ParserKeyword s_unordered{Keyword::UNORDERED};
     ParserKeyword s_cursor{Keyword::CURSOR};
     ParserKeyword s_watermark{Keyword::WATERMARK};
 
     auto stream_settings = make_intrusive<ASTStreamSettings>();
+
+    if (s_bounded.ignore(pos, expected))
+        stream_settings->setSubscribeForUpdates(false);
+
+    if (s_unordered.ignore(pos, expected))
+        stream_settings->setUnordered(true);
 
     if (s_cursor.ignore(pos, expected))
     {
@@ -137,7 +150,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!cursor.has_value())
             return false;
 
-        stream_settings->cursor = buildCursorTree(cursor.value());
+        stream_settings->setCursor(buildCursorTree(cursor.value()));
     }
 
     if (s_watermark.ignore(pos, expected))
@@ -146,7 +159,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!watermark.has_value())
             return false;
 
-        stream_settings->watermark = std::make_shared<WatermarkSettings>(std::move(watermark.value()));
+        stream_settings->setWatermark(std::make_shared<WatermarkSettings>(std::move(watermark.value())));
     }
 
     node = std::move(stream_settings);

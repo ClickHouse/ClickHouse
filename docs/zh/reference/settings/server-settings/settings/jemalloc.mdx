@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />可创建的 jemalloc 后台线程最大数量。设为 0 时，使用 jemalloc 的默认值
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />用于长期存在的 MergeTree 每个分片和每张表元数据的专用 jemalloc arena 数量。`0` 禁用专用 arena (元数据使用默认的每 CPU arena) 。`1` 使用单个共享 arena。`N > 1` 创建由 `N` 个 arena 组成的池，并按 CPU 分配内存；在多核机器上，这可避免元数据内存分配在单个 arena 的锁上串行化。该值上限为进程允许运行的 CPU 数量 (即其亲和性掩码) ，因此较大的值 (或核心数) 会为每个允许的 CPU 创建一个 arena。在启动时生效。
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>

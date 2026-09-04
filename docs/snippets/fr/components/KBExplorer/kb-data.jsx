@@ -93,14 +93,6 @@ export const kbIndex = {
       tags: ["Data Modelling"]
     },
     {
-      id: "tables-schema/schema-migration-tools",
-      title: "Automatic schema migration tools for ClickHouse",
-      description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time.",
-      href: "/fr/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
-      category: "Tables & schema",
-      tags: ["Tools and Utilities"]
-    },
-    {
       id: "cloud-services/aws-privatelink-setup-for-msk-clickpipes",
       title: "AWS PrivateLink setup to expose MSK for ClickPipes",
       description: "Setup steps to expose a private MSK via MSK multi-VPC connectivity to ClickPipes.",
@@ -176,7 +168,7 @@ export const kbIndex = {
     {
       id: "configuration-settings/change-the-prompt-in-clickhouse-client",
       title: "Change the prompt in clickhouse-client",
-      description: "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      description: "Cet article explique comment remplacer l’invite :) dans votre client ClickHouse et votre terminal clickhouse-local par un préfixe suivi de :)",
       href: "/fr/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       category: "Configuration & settings",
       tags: ["Settings", "Native Clients and Interfaces"]
@@ -196,14 +188,6 @@ export const kbIndex = {
       href: "/fr/resources/support-center/knowledge-base/queries-sql/comparing-metrics-between-queries",
       category: "Queries & SQL",
       tags: ["Performance and Optimizations"]
-    },
-    {
-      id: "configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      title: "Configurer les capacités CAP_IPC_LOCK et CAP_SYS_NICE dans Docker",
-      description: "Apprenez à résoudre les avertissements de capacité Docker pour `CAP_IPC_LOCK` et `CAP_SYS_NICE` lors de l'exécution de ClickHouse dans un conteneur.",
-      href: "/fr/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-      category: "Configuration & settings",
-      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -739,7 +723,7 @@ export const kbIndex = {
     },
     {
       id: "performance-optimization/finding-expensive-queries-by-memory-usage",
-      title: "Identification des requêtes coûteuses par utilisation de la mémoire dans ClickHouse",
+      title: "Identifier les requêtes coûteuses en fonction de leur consommation de mémoire dans ClickHouse",
       description: "Apprenez à utiliser la table `system.query_log` pour trouver les requêtes les plus gourmandes en mémoire dans ClickHouse, avec des exemples pour les configurations en cluster et autonomes.",
       href: "/fr/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
       category: "Performance & optimization",
@@ -874,20 +858,20 @@ export const kbIndex = {
       tags: ["Errors and Exceptions", "Data Formats"]
     },
     {
-      id: "troubleshooting/exception-too-many-parts",
-      title: 'Resolving "Too Many Parts" error in ClickHouse',
-      description: 'Learn how to address the "Too many parts" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.',
-      href: "/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      category: "Troubleshooting & errors",
-      tags: ["Errors and Exceptions"]
-    },
-    {
       id: "troubleshooting/certificate-verify-failed-error",
-      title: "Resolving SSL Certificate Verify Error in ClickHouse",
+      title: "Résoudre l’erreur de vérification du certificat SSL dans ClickHouse",
       description: "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
       href: "/fr/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
       category: "Troubleshooting & errors",
       tags: ["Security and Authentication", "Errors and Exceptions"]
+    },
+    {
+      id: "troubleshooting/exception-too-many-parts",
+      title: 'Résoudre l’exception "Too many parts" dans ClickHouse',
+      description: 'Découvrez comment diagnostiquer et résoudre l’exception "Too many parts" en regroupant les insertions en lots, en utilisant les insertions asynchrones et en choisissant une clé de partitionnement adaptée.',
+      href: "/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      category: "Troubleshooting & errors",
+      tags: ["Errors and Exceptions"]
     },
     {
       id: "troubleshooting/connection-timeout-remote-remoteSecure",
@@ -906,12 +890,28 @@ export const kbIndex = {
       tags: ["Runbooks", "Data Modelling"]
     },
     {
+      id: "tables-schema/schema-migration-tools",
+      title: "Outils de migration de schéma pour ClickHouse",
+      description: "Découvrez les outils de migration de schéma pour ClickHouse et comment gérer l’évolution des schémas de base de données au fil du temps.",
+      href: "/fr/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+      category: "Tables & schema",
+      tags: ["Tools and Utilities"]
+    },
+    {
       id: "tables-schema/search-across-node-for-tables-with-a-wildcard",
       title: "Searching across nodes for tables with a wildcard",
       description: "Learn how to search across nodes for tables with a wildcard.",
       href: "/fr/resources/support-center/knowledge-base/tables-schema/search-across-node-for-tables-with-a-wildcard",
       category: "Tables & schema",
       tags: ["Deployments and Scaling"]
+    },
+    {
+      id: "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      title: "Configurer le serveur MCP de la documentation ClickHouse",
+      description: "Connectez des outils d’IA à la documentation ClickHouse via le Model Context Protocol.",
+      href: "/fr/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      category: "Setup & installation",
+      tags: ["Tools and Utilities"]
     },
     {
       id: "performance-optimization/query-max-execution-time",
@@ -1074,6 +1074,14 @@ export const kbIndex = {
       href: "/fr/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
       category: "General & FAQs",
       tags: []
+    },
+    {
+      id: "security/set-role-not-persisting-in-sql-console",
+      title: "Pourquoi `SET ROLE` ne persiste pas dans la SQL Console de ClickHouse Cloud",
+      description: "Découvrez pourquoi `SET ROLE` ne persiste pas dans la SQL Console de ClickHouse Cloud et comment affecter des autorisations persistantes à chaque utilisateur.",
+      href: "/fr/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
+      category: "Security & access control",
+      tags: ["Security and Authentication", "Managing Cloud", "Troubleshooting"]
     },
     {
       id: "data-management/dictionaries-consistent-state",

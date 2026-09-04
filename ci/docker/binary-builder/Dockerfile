@@ -45,14 +45,18 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=9ba77fe643bd2b46b341a07320cf9b95a3e87384
+ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
+# S3 directory of that commit's artifacts. Praktika owns the prefix layout and
+# has changed it, so the location is pinned next to the commit instead of being
+# spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
+ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
         amd64) tarch=amd64 ;; \
         arm64) tarch=aarch64 ;; \
     esac && \
-    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
       | zstd -d | tar -xf - -C /usr/local/ && \
     echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
     ; fi
@@ -69,7 +73,7 @@ RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
     esac && \
     mkdir -p /opt/clickhouse-profiles && \
     for profile in clickhouse-pgo.profdata.zst clickhouse-bolt.fdata.zst; do \
-        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
+        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/optimizeclickhouse/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
         if curl -fsSL -o "/opt/clickhouse-profiles/${profile}" "$url"; then \
             zstd -d --rm "/opt/clickhouse-profiles/${profile}" && \
             echo "Downloaded ${profile}" ; \
@@ -117,6 +121,55 @@ RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/M
   && tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1 \
   && ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64 \
   && rm /MacOSX11.0.sdk.tar.xz
+
+# Emscripten SDK for the experimental WebAssembly build (see the `OS_WASM` arms in cmake/).
+# The version has to match the one the wasm64 target is verified with.
+ARG EMSDK_VERSION=6.0.5
+RUN curl -fsSL "https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSDK_VERSION}.tar.gz" | tar -xzf - -C /opt \
+  && mv "/opt/emsdk-${EMSDK_VERSION}" /opt/emsdk \
+  && /opt/emsdk/emsdk install "${EMSDK_VERSION}" \
+  && /opt/emsdk/emsdk activate "${EMSDK_VERSION}" \
+  && rm -rf /opt/emsdk/downloads
+
+ENV EMSDK=/opt/emsdk
+ENV PATH="$PATH:/opt/emsdk/upstream/emscripten"
+
+# Node.js for the wasm64 smoke test (see build_clickhouse.py). Emscripten 6 emits
+# Memory64 code, and its generated startup script refuses engines older than Node.js 24.
+ARG NODE_VERSION=24.19.0
+RUN case "${TARGETARCH}" in \
+      amd64) NODE_ARCH=x64 ;; \
+      arm64) NODE_ARCH=arm64 ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" | tar -xJf - -C /opt \
+  && ln -sf "/opt/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node" /usr/local/bin/node
+
+# Pre-generate the wasm64 variant of the Emscripten system libraries. `-sMEMORY64`,
+# `-fwasm-exceptions` and `-pthread` are ABI flags applied to every translation unit,
+# and the link settings select startup objects (`-sPROXY_TO_PTHREAD` links
+# `crt1_proxy_main.o` instead of `crt1.o`). The optimization level at the link selects
+# library variants too: an unoptimized link picks the `-debug` builds of libc, libc++
+# and the stubs (`libstubs-debug.a`), while the `-O3 ... -g0` CI link needs the release
+# ones (`libstubs.a`, `libc-mt.a`, ...). `emcc` compiles whatever the link needs
+# lazily at first use into its cache, and building libc, libc++ and friends would
+# cost the CI link several minutes - so the link flags here mirror the `clickhouse`
+# link. Keep them in sync with the `add_link_options` in the `OS_WASM` branch of
+# cmake/target.cmake plus the RelWithDebInfo optimization flags.
+RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
+  && em++ -O3 -sMEMORY64=1 -fwasm-exceptions -pthread \
+      -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
+      -g0 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
+      /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
+  && rm -f /tmp/em_prewarm.*
+
+# Pre-warming cannot cover everything: the link also writes `symbol_lists/<hash>.json`
+# cache entries whose hash covers the resolved settings, and some settings are derived
+# from the program being linked (e.g. `MAIN_READS_PARAMS`, from the signature of `main`),
+# so the real `clickhouse` link misses the entry the trivial program above cached and
+# generates its own. The build in CI runs as an unprivileged user, hence the cache has
+# to be writable for it.
+RUN chmod -R a+rwX /opt/emsdk/upstream/emscripten/cache
 
 ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \

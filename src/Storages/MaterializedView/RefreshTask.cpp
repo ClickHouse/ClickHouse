@@ -18,7 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
@@ -294,9 +294,9 @@ OwnedRefreshTask RefreshTask::create(
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
-    task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
+    task->scheduling_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
-    task->execution_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshExec",
+    task->execution_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshExec",
         [self = task.get()] { self->executeRefresh(); });
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -1329,6 +1329,20 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+            /// Publish the query status before interpreting the query, not just around the pipeline executor
+            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                execution.executing_query_status = process_list_entry->getQueryStatus();
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(execution.executor_mutex);
+                execution.executing_query_status = nullptr;
+            });
+
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
             /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
@@ -1362,23 +1376,21 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
             {
-                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+                CompletedPipelineExecutor executor(pipeline);
+                executor.initialize();
 
                 {
                     std::unique_lock exec_lock(execution.executor_mutex);
                     if (execution.interrupt_execution.load())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                     execution.executor = &executor;
-                    execution.executing_query_status = process_list_entry ? process_list_entry->getQueryStatus() : nullptr;
                 }
                 SCOPE_EXIT({
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
-                    execution.executing_query_status = nullptr;
                 });
 
-                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+                executor.execute();
 
                 /// A cancelled PipelineExecutor may return without exception but with incomplete results.
                 /// In this case make sure to:

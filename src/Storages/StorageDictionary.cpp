@@ -74,8 +74,14 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
     if (dictionary_structure.id)
     {
-        if (validate_id_type && dictionary_structure.id->type->getTypeId() != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", dictionary_structure.id->type->getFamilyName());
+        if (validate_id_type)
+        {
+            /// A simple key is always materialized as `UInt64`, so a `LowCardinality` wrapper around it is equivalent.
+            const auto & id_type = removeLowCardinality(dictionary_structure.id->type);
+
+            if (id_type->getTypeId() != TypeIndex::UInt64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", id_type->getFamilyName());
+        }
 
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     }
@@ -469,7 +475,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions) functions to get the dictionary data in this format.
+You can use the [dictGet\*](/reference/functions/regular-functions/ext-dict-functions) functions to get the dictionary data in this format.
 
 This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
@@ -501,7 +507,7 @@ SELECT * FROM products LIMIT 1;
 
 **See Also**
 
-- [Dictionary function](/sql-reference/table-functions/dictionary)
+- [Dictionary function](/reference/functions/table-functions/dictionary)
 )DOCS_MD",
         .syntax = "ENGINE = Dictionary(dictionary_name)"});
 }

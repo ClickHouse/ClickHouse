@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-ClickHouse server が[複数スレッド](/ja/reference/settings/session-settings#max_threads)を使用する同時実行クエリを多数実行しており、すべての CPU スロット が使用中になると、過負荷状態に入ります。過負荷状態では、解放された CPU スロット はすべて、スケジューリングポリシーに従って適切なワークロードに再割り当てされます。同じワークロードを共有するクエリでは、スロットはラウンドロビン方式で割り当てられます。別々のワークロードに属するクエリでは、ワークロードに設定された重み、優先度、制限に基づいてスロットが割り当てられます。
+ClickHouse server が[複数スレッド](/ja/reference/settings/session-settings/max-threads#max_threads)を使用する同時実行クエリを多数実行しており、すべての CPU スロット が使用中になると、過負荷状態に入ります。過負荷状態では、解放された CPU スロット はすべて、スケジューリングポリシーに従って適切なワークロードに再割り当てされます。同じワークロードを共有するクエリでは、スロットはラウンドロビン方式で割り当てられます。別々のワークロードに属するクエリでは、ワークロードに設定された重み、優先度、制限に基づいてスロットが割り当てられます。
 
 CPU 時間は、スレッドがブロックされておらず、CPU 負荷の高いタスクを実行しているときに消費されます。スケジューリングの目的上、スレッドは次の 2 種類に区別されます。
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 この設定例では、管理用と本番用に独立した CPU スロットプールを用意します。本番用プールは analytics とインジェストで共有されます。さらに、本番用プールが過負荷になると、解放された 10 個のスロットのうち 9 個は、必要に応じて分析クエリに再割り当てされます。過負荷時にインジェストクエリが受け取れるのは、10 個のスロットのうち 1 個だけです。これにより、ユーザー向けクエリのレイテンシが改善される可能性があります。analytics には同時実行スレッド数の上限が 60 という独自の制限があり、インジェストを支えるために常に少なくとも 40 スレッドが確保されます。過負荷でない場合、インジェストは 100 スレッドすべてを使用できます。
 
-CPU スケジューリングの対象からクエリを除外するには、クエリ設定 [use&#95;concurrency&#95;control](/ja/reference/settings/session-settings#use_concurrency_control) を 0 に設定します。
+CPU スケジューリングの対象からクエリを除外するには、クエリ設定 [use&#95;concurrency&#95;control](/ja/reference/settings/session-settings/use#use_concurrency_control) を 0 に設定します。
 
-CPU スケジューリングは、merges と mutations ではまだサポートされていません。
+CPU スケジューリングは、マージとミューテーションではまだサポートされていません。
 
 ワークロードに公平な割り当てを提供するには、クエリ実行中にプリエンプションとスケールダウンを行う必要があります。プリエンプションは `cpu_slot_preemption` サーバー設定で有効にします。これが有効な場合、各スレッドは CPU スロットを定期的に更新します (`cpu_slot_quantum_ns` サーバー設定に従います) 。この更新によって、CPU が過負荷のときは実行がブロックされることがあります。実行が長時間ブロックされると (`cpu_slot_preemption_timeout_ms` サーバー設定を参照) 、クエリはスケールダウンし、同時実行中のスレッド数が動的に減少します。CPU 時間の公平性はワークロード間では保証されますが、同じワークロード内のクエリ間では、一部の特殊なケースで損なわれる可能性があることに注意してください。
 
 <Warning>
-  スロットスケジューリングは [query concurrency](/ja/reference/settings/session-settings#max_threads) を制御する手段を提供しますが、サーバー設定 `cpu_slot_preemption` が `true` に設定されていない限り、公平な CPU 時間の割り当ては保証されません。`true` でない場合、公平性は競合するワークロード間での CPU スロット割り当て数に基づいて提供されます。これは CPU 秒数が等しくなることを意味しません。プリエンプションがないと、CPU スロットが無期限に保持される可能性があるためです。スレッドは開始時にスロットを取得し、処理が完了すると解放します。
+  スロットスケジューリングは [query concurrency](/ja/reference/settings/session-settings/max-threads#max_threads) を制御する手段を提供しますが、サーバー設定 `cpu_slot_preemption` が `true` に設定されていない限り、公平な CPU 時間の割り当ては保証されません。`true` でない場合、公平性は競合するワークロード間での CPU スロット割り当て数に基づいて提供されます。これは CPU 秒数が等しくなることを意味しません。プリエンプションがないと、CPU スロットが無期限に保持される可能性があるためです。スレッドは開始時にスロットを取得し、処理が完了すると解放します。
 </Warning>
 
 <Note>
-  CPU リソースを宣言すると、[`concurrent_threads_soft_limit_num`](/ja/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) および [`concurrent_threads_soft_limit_ratio_to_cores`](/ja/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores) 設定は効かなくなります。代わりに、特定のワークロードに割り当てる CPU 数の制限には、ワークロード設定 `max_concurrent_threads` が使用されます。従来の動作を再現するには、WORKER THREAD リソースのみを作成し、ワークロード `all` の `max_concurrent_threads` を `concurrent_threads_soft_limit_num` と同じ値に設定したうえで、クエリ設定 `workload = "all"` を使用してください。この構成は、[`concurrent_threads_scheduler`](/ja/reference/settings/server-settings/settings#concurrent_threads_scheduler) 設定を &quot;fair&#95;round&#95;robin&quot; にした場合に相当します。
+  CPU リソースを宣言すると、[`concurrent_threads_soft_limit_num`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) および [`concurrent_threads_soft_limit_ratio_to_cores`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 設定は効かなくなります。代わりに、特定のワークロードに割り当てる CPU 数の制限には、ワークロード設定 `max_concurrent_threads` が使用されます。従来の動作を再現するには、WORKER THREAD リソースのみを作成し、ワークロード `all` の `max_concurrent_threads` を `concurrent_threads_soft_limit_num` と同じ値に設定したうえで、クエリ設定 `workload = "all"` を使用してください。この構成は、[`concurrent_threads_scheduler`](/ja/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 設定を &quot;fair&#95;round&#95;robin&quot; にした場合に相当します。
 </Note>
 
 <div id="threads_vs_cpus">
@@ -305,7 +305,7 @@ stateDiagram-v2
   エビクションが防がれるか、十分なメモリを解放できない場合、新しい割り当ては十分なメモリが解放されるまでブロックされます。これらのルールにより、メモリ負荷に応じて過剰なクエリをキューに入れられるようになり、MEMORY&#95;LIMIT&#95;EXCEEDED エラーを回避する便利な方法が提供されます。
 
 <Note>
-  ワークロードの制限は、[max&#95;memory&#95;usage](/ja/reference/settings/session-settings#max_memory_usage) クエリ設定のような、メモリ消費量を制限するほかの方法とは独立しています。これらを組み合わせて使用することで、メモリ消費量をより適切に制御できます。ユーザー単位 (ワークロード単位ではなく) で個別のメモリ制限を設定することも可能です。ただし、こちらは柔軟性が低く、メモリ予約や保留中クエリのキューイングといった機能は提供しません。[メモリオーバーコミット](/ja/concepts/features/configuration/settings/memory-overcommit) を参照してください
+  ワークロードの制限は、[max&#95;memory&#95;usage](/ja/reference/settings/session-settings/max-memory-usage#max_memory_usage) クエリ設定のような、メモリ消費量を制限するほかの方法とは独立しています。これらを組み合わせて使用することで、メモリ消費量をより適切に制御できます。ユーザー単位 (ワークロード単位ではなく) で個別のメモリ制限を設定することも可能です。ただし、こちらは柔軟性が低く、メモリ予約や保留中クエリのキューイングといった機能は提供しません。[メモリオーバーコミット](/ja/concepts/features/configuration/settings/memory-overcommit) を参照してください
 </Note>
 
 ワークロード設定 `max_waiting_queries` は、そのワークロードで保留できる割り当て数を制限します。制限に達すると、server はエラー `SERVER_OVERLOADED` を返します。`max_waiting_queries` は子ワークロードには継承されず、リーフワークロードでのみ意味を持つ点に注意してください。
@@ -345,7 +345,7 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-ワークロード設定 `max_concurrent_queries` は、特定のワークロードで同時に実行できるクエリ数を制限します。これは、クエリ設定 [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings#max_concurrent_queries_for_all_users) およびサーバー設定 [max&#95;concurrent&#95;queries](/ja/reference/settings/server-settings/settings#max_concurrent_queries) に相当します。非同期 INSERT クエリと、KILL のような一部の特殊なクエリは、この上限にはカウントされません。
+ワークロード設定 `max_concurrent_queries` は、特定のワークロードで同時に実行できるクエリ数を制限します。これは、クエリ設定 [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) およびサーバー設定 [max&#95;concurrent&#95;queries](/ja/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) に相当します。非同期 INSERT クエリと、KILL のような一部の特殊なクエリは、この上限にはカウントされません。
 
 ワークロード設定 `max_queries_per_second` と `max_burst_queries` は、トークンバケットスロットラーを使用して、そのワークロードのクエリ数を制限します。これにより、任意の時間間隔 `T` において、実行を開始する新規クエリ数が `max_queries_per_second * T + max_burst_queries` を超えないことが保証されます。
 
@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - 静的な優先順位に基づいてエビクションを実施します (値が小さいほど優先順位が高くなります) 。優先順位の高い保留中の割り当ては、優先順位の低い割り当てをエビクションします。子ノードでは `precedence` を指定する必要があります (デフォルトは 0) 。
 * `queue` - 実行中および保留中の割り当てを保持できる階層のリーフです。
 
-<div id="deprecated-configuration">
-  ## 非推奨の XML 設定
-</div>
-
-リソースでどのディスクを使用するかを指定する別の方法として、server の `storage_configuration` があります。
-
-特定のディスクで I/O スケジューリングを有効にするには、ストレージ構成で `read_resource` および/または `write_resource` を指定する必要があります。これにより ClickHouse に、そのディスクに対する各読み取りリクエストおよび書き込みリクエストでどのリソースを使うかを指定できます。読み取りリソースと書き込みリソースは同じリソース名を参照でき、これはローカルSSD や HDD で有用です。複数の異なるディスクが同じリソースを参照することもでき、これはリモートディスクで有用です。たとえば、`"production"` ワークロードと `"development"` ワークロードの間でネットワーク帯域幅を公平に分配できるようにしたい場合に役立ちます。
-
-例:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-サーバー構成オプションは、SQLでリソースを定義する方法よりも優先される点に注意してください。
-
 <div id="see-also">
   ## 関連項目
 </div>
@@ -508,12 +469,12 @@ graph TD
 * [system.scheduler](/ja/reference/system-tables/scheduler)
 * [system.workloads](/ja/reference/system-tables/workloads)
 * [system.resources](/ja/reference/system-tables/resources)
-* [merge&#95;workload](/ja/reference/settings/merge-tree-settings#merge_workload) MergeTree 設定
-* [merge&#95;workload](/ja/reference/settings/server-settings/settings#merge_workload) グローバルなサーバー設定
-* [mutation&#95;workload](/ja/reference/settings/merge-tree-settings#mutation_workload) MergeTree 設定
-* [mutation&#95;workload](/ja/reference/settings/server-settings/settings#mutation_workload) グローバルなサーバー設定
-* [workload&#95;path](/ja/reference/settings/server-settings/settings#workload_path) グローバルなサーバー設定
-* [workload&#95;zookeeper&#95;path](/ja/reference/settings/server-settings/settings#workload_zookeeper_path) グローバルなサーバー設定
-* [cpu&#95;slot&#95;preemption](/ja/reference/settings/server-settings/settings#cpu_slot_preemption) グローバルなサーバー設定
-* [cpu&#95;slot&#95;quantum&#95;ns](/ja/reference/settings/server-settings/settings#cpu_slot_quantum_ns) グローバルなサーバー設定
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ja/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) グローバルなサーバー設定
+* [merge&#95;workload](/ja/reference/settings/merge-tree-settings/merge#merge_workload) MergeTree 設定
+* [merge&#95;workload](/ja/reference/settings/server-settings/settings/merge#merge_workload) グローバルなサーバー設定
+* [mutation&#95;workload](/ja/reference/settings/merge-tree-settings/other#mutation_workload) MergeTree 設定
+* [mutation&#95;workload](/ja/reference/settings/server-settings/settings/other#mutation_workload) グローバルなサーバー設定
+* [workload&#95;path](/ja/reference/settings/server-settings/settings/workload#workload_path) グローバルなサーバー設定
+* [workload&#95;zookeeper&#95;path](/ja/reference/settings/server-settings/settings/workload#workload_zookeeper_path) グローバルなサーバー設定
+* [cpu&#95;slot&#95;preemption](/ja/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) グローバルなサーバー設定
+* [cpu&#95;slot&#95;quantum&#95;ns](/ja/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) グローバルなサーバー設定
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/ja/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) グローバルなサーバー設定
