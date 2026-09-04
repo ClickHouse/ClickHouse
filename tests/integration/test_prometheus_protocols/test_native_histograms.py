@@ -14,7 +14,6 @@ from .prometheus_test_utils import (
     types_pb2,
 )
 
-
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
@@ -294,7 +293,9 @@ def test_invalid_histograms_rejected():
             make_write_request({"__name__": "test_bad"}, [histogram]),
         )
         assert response.status_code == requests.codes.bad_request
-        assert node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "0\n"
+        assert (
+            node.query("SELECT count() FROM timeSeriesHistograms(prometheus)") == "0\n"
+        )
 
     # Spans cover 3 buckets but only 2 delta values are given.
     assert_rejected(
@@ -494,16 +495,19 @@ def test_nhcb_accepted():
                     schema=-53,
                     positive_spans=[types_pb2.BucketSpan(offset=0, length=3)],
                     positive_deltas=[2, 1, 0],  # decoded to absolute values [2, 3, 3]
-                    custom_values=[0.5, 1.0],  # buckets 0..1 bounded, bucket 2 unbounded (+Inf)
+                    custom_values=[
+                        0.5,
+                        1.0,
+                    ],  # buckets 0..1 bounded, bucket 2 unbounded (+Inf)
                     timestamp=1704067227000,
                 )
             ],
         )
     )
 
-    assert node.query(
-        "SELECT count FROM timeSeriesHistograms(prometheus)"
-    ) == TSV([["4"]])
+    assert node.query("SELECT count FROM timeSeriesHistograms(prometheus)") == TSV(
+        [["4"]]
+    )
 
 
 # The HTTP JSON rendering of a coarse exponential schema: bucket indexes are negative on both
@@ -525,7 +529,9 @@ def test_http_json_coarse_schema():
         negative_deltas=[1, 1],  # bucket indexes 1, 2: [-4, -1) and [-16, -4)
         timestamp=1704067201000,
     )
-    send(make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram]))
+    send(
+        make_write_request({"__name__": "test_hist_coarse", "job": "test"}, [histogram])
+    )
 
     data = execute_query_via_http_api(
         node.ip_address, 9093, "/api/v1/query", "test_hist_coarse", timestamp=1704067201
@@ -603,7 +609,11 @@ def test_http_query_range_stale_only_series():
         "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS store_native_histograms = 1"
     )
     stale = types_pb2.Histogram(sum=STALE_NAN, timestamp=1704067203000)
-    send(make_write_request({"__name__": "test_hist_stale_range", "job": "test"}, [stale]))
+    send(
+        make_write_request(
+            {"__name__": "test_hist_stale_range", "job": "test"}, [stale]
+        )
+    )
 
     data = execute_range_query_via_http_api(
         node.ip_address,
