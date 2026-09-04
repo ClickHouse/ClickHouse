@@ -1,7 +1,11 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-detach
 -- no-fasttest: needs an object-storage disk (minio). Fast test passes --fast-test to
 -- tests/config/install.sh, which clears EXPORT_S3_STORAGE_POLICIES, so the s3 policies are not
 -- installed there at all.
+-- no-random-detach: the oracle is a profile-event comparison between a table whose part sizes are computed
+-- lazily and a control that computes them when the part is loaded. A random `DETACH`/`ATTACH` reloads the
+-- table between the statements, which resets that lazy state, so the two arms no longer differ in what the
+-- commit reads.
 
 -- `MergeTreeData::Transaction::commit` updates the table's per-column and per-secondary-index size
 -- aggregates inside a `NOEXCEPT_SCOPE` whose catch-all terminates the server. For a part whose sizes
