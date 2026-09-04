@@ -1,0 +1,15 @@
+-- only what something other than the default set
+index_granularity	8192	1	definition
+min_bytes_for_wide_part	12345	1	definition
+-- one setting, by name
+min_bytes_for_wide_part	12345	1	definition
+-- ILIKE is case-insensitive
+min_bytes_for_wide_part	12345	1	definition
+-- NOT inverts it
+index_granularity	8192	1	definition
+-- IN is accepted in place of FROM
+min_bytes_for_wide_part	12345	1	definition
+-- a database-qualified name parses and resolves
+-- the statements sharing its prefix still parse as themselves
+mt
+add_http_cors_header	Bool	0
