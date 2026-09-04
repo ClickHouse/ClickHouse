@@ -120,6 +120,14 @@ struct MergeTreeReadTaskInfo
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
+    /// `task_columns` with Arrays converted to subcolumns of Nested (see `convertRequestedColumns`),
+    /// computed once per part instead of once per reader. Call `fillConvertedColumns` after
+    /// `task_columns` is final.
+    NamesAndTypesList converted_columns;
+    NamesAndTypesLists converted_pre_columns;
+    NamesAndTypesLists converted_patch_columns;
+
+    void fillConvertedColumns(const MergeTreeSettings & storage_settings);
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
     /// Shared constant fields for virtual columns.

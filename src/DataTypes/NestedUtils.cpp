@@ -573,7 +573,10 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
 
         auto it = nested_types.find(split.first);
         if (it != nested_types.end())
-            name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+            /// The subcolumn type of a Nested member is `Array(<element type>)`, which is exactly the type of this
+            /// plain entry (the element type was taken from it); asking the Nested type would build its
+            /// whole serialization tree only to reconstruct the same thing.
+            name_type = NameAndTypePair{split.first, split.second, it->second, name_type.type};
     }
 
     return res;

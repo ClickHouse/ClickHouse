@@ -384,6 +384,8 @@ Pipe createMergeTreeSequentialSource(
             need_to_filter_deleted_rows);
     }
 
+    info->fillConvertedColumns(*info_for_reader.getStorageSettings());
+
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
         std::move(result_header),
         type,
