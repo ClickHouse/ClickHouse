@@ -77,7 +77,7 @@ MARK_CACHE_MISSES=$(${CLICKHOUSE_CLIENT} -q "
 # below that the query did not perform the read this test measures.
 MIN_MARKS=3
 if [ -z "${MARK_CACHE_MISSES}" ]; then
-    echo "FAIL: no query_log row for the measured query"
+    echo "FAIL: no QueryFinish row for the measured query"
 elif [ "${MARK_CACHE_MISSES}" -lt "${MIN_MARKS}" ]; then
     echo "FAIL: MarkCacheMisses (${MARK_CACHE_MISSES}) < ${MIN_MARKS}, the read was not measured"
 elif [ "${MARK_CACHE_MISSES}" -gt "${EXPECTED_MARKS}" ]; then
