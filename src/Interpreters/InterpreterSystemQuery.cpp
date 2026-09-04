@@ -74,6 +74,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
@@ -2183,7 +2184,12 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         if (i >= 100)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Materialized view targets form a cycle or a very long chain");
 
-        if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
+        /// With `lazy_load_tables` the catalog holds a stand-in until the table is first accessed, and a
+        /// stand-in is not a `StorageReplicatedMergeTree`: without resolving it first, this command would
+        /// report a replicated table as not replicated. `SYSTEM SYNC REPLICA` is an access to the table.
+        if (auto * proxy = dynamic_cast<StorageProxy *>(table.get()))
+            table = proxy->getNested();
+        else if (auto * storage_mv = dynamic_cast<StorageMaterializedView *>(table.get()))
             table = storage_mv->getTargetTable();
         else
             break;
