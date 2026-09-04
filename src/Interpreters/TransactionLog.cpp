@@ -15,6 +15,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
@@ -34,6 +35,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_force_unknown_state_after_commit[];
+    extern const char transaction_hold_unknown_state[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -353,6 +355,11 @@ void TransactionLog::removeOldEntries()
 
 void TransactionLog::tryFinalizeUnknownStateTransactions()
 {
+    /// Test-only: keep the lists non-empty so a test can observe the undetermined state instead
+    /// of racing this thread for it. Returning rather than pausing leaves `loadEntries` running,
+    /// so the rest of the server keeps making progress.
+    fiu_do_on(FailPoints::transaction_hold_unknown_state, { return; });
+
     /// We just recovered connection to [Zoo]Keeper.
     /// Check if transactions in unknown state were actually committed or not and finalize or rollback them.
     UnknownStateList list;
@@ -373,7 +380,13 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
         std::lock_guard lock{running_list_mutex};
         std::swap(list, unknown_state_list);
         std::swap(list, unknown_state_list_loaded);
+        unknown_state_finalizing = !list.empty();
     }
+
+    SCOPE_EXIT({
+        std::lock_guard lock{running_list_mutex};
+        unknown_state_finalizing = false;
+    });
 
     for (auto & [txn, state_guard] : list)
     {
@@ -389,6 +402,12 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
             rollbackTransaction(txn->shared_from_this());
         }
     }
+}
+
+bool TransactionLog::hasUnknownStateTransactions() const
+{
+    std::lock_guard lock{running_list_mutex};
+    return !unknown_state_list.empty() || !unknown_state_list_loaded.empty() || unknown_state_finalizing;
 }
 
 CSN TransactionLog::getLatestSnapshot() const

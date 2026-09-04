@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -232,6 +233,9 @@ StorageMergeTree::StorageMergeTree(
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
 
+    if (hasUniqueKey())
+        runUniqueKeySettleRound();
+
     increment.set(getMaxBlockNumber());
 
     loadMutations();
@@ -263,6 +267,7 @@ void StorageMergeTree::startup()
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
+        startUniqueKeyGCTaskIfNeeded();
     }
     catch (...)
     {
@@ -312,6 +317,9 @@ void StorageMergeTree::shutdown(bool)
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (unique_key_gc_task)
+        unique_key_gc_task->deactivate();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 

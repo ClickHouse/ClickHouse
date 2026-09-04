@@ -6,9 +6,11 @@
 /// is unavailable without RocksDB, and its only caller is guarded.
 #if USE_ROCKSDB
 
+#include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Common/Exception.h>
 
@@ -129,6 +131,24 @@ void SSTProbeTargetPart::findRowIndexBatch(
                 "SSTProbeTargetPart: error seeking UNIQUE KEY SST: {}", it->status().ToString());
         }
     }
+}
+
+void SSTProbeTargetPart::findRowIndexBatch(
+    const Block & block,
+    const Names & uk_names,
+    const IColumn::Permutation * subset,
+    UInt64 max_encoded_size,
+    std::vector<std::optional<UInt64>> & out) const
+{
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlockKeys(block, uk_names, subset, max_encoded_size, encoded);
+
+    std::vector<std::string_view> keys;
+    keys.reserve(encoded.size());
+    for (const auto & e : encoded)
+        keys.emplace_back(e);
+
+    findRowIndexBatch(keys, out);
 }
 
 bool SSTProbeTargetPart::isRowDead(UInt64 row_number) const

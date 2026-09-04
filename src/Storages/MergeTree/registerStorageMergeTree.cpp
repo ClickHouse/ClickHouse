@@ -757,11 +757,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
 
+        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
+        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
+        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
         if (args.storage_def->unique_key)
         {
-            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::allow_experimental_unique_key])
+            /// Fresh definitions only; previously validated metadata loads with the setting off.
+            if (is_fresh_definition && !local_settings[Setting::allow_experimental_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
@@ -950,9 +957,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
         }
 
-        /// UNIQUE KEY tables must reside on local-only storage policies.
-        /// CREATE only; ATTACH must still load existing tables.
-        if (metadata.hasUniqueKey() && args.mode <= LoadingStrictnessLevel::CREATE)
+        /// UNIQUE KEY tables must reside on local-only storage policies. Fresh definitions only.
+        if (metadata.hasUniqueKey() && is_fresh_definition)
         {
             StoragePolicyPtr resolved_storage_policy = (*storage_settings)[MergeTreeSetting::disk].changed
                 ? context->getStoragePolicyFromDisk((*storage_settings)[MergeTreeSetting::disk])
@@ -1217,11 +1223,17 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
-        .supports_unique_key = true,
+        .supports_unique_key = false,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
-    factory.registerStorage("MergeTree", create, features, Documentation{
+    /// Plain MergeTree only. Every other engine in the family can drop a row on its merge read, and
+    /// a unique-key merge may not: the delete bitmaps it reconciles are keyed by row, so a row that
+    /// vanishes takes its kill mark with it.
+    auto merge_tree_features = features;
+    merge_tree_features.supports_unique_key = true;
+
+    factory.registerStorage("MergeTree", create, merge_tree_features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -4335,7 +4347,6 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_replication = true;
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
-    features.supports_unique_key = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(

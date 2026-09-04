@@ -1,7 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/TransactionID.h>
+#include <Columns/IColumn.h>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -20,17 +23,26 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-/// UNIQUE KEY — monotonic version number of a per-part delete bitmap.
-/// Each install of a new bitmap uses a strictly higher version. Stored
-/// in the on-disk filename and in cache keys; readers pin a version and
-/// receive the bitmap with the highest installed version not above the
-/// pin. The source of the version (e.g., a per-partition commit sequence
-/// number) is the caller's concern; the bitmap layer only relies on
-/// monotonicity.
-using BitmapVersion = UInt64;
+using BitmapVersion = CSN;
 
-/** UNIQUE KEY per-part delete bitmap — row positions (within a part, 0-based)
-  * that are logically deleted.
+class DeleteBitmap;
+using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
+using ConstDeleteBitmapPtr = std::shared_ptr<const DeleteBitmap>;
+
+struct DeleteRowsWithPart
+{
+    String part_name;
+    DeleteBitmapPtr rows;
+};
+
+using DeleteRowsByPart = std::vector<DeleteRowsWithPart>;
+using DeleteRowsByPartition = std::map<String, DeleteRowsByPart>;
+
+constexpr CSN INVALID_CSN = Tx::UnknownCSN;
+constexpr CSN UNBOUNDED_CSN = Tx::MaxCommittedCSN;
+
+/** Per-part delete bitmap — row positions (within a part, 0-based) that are
+  * logically deleted.
   *
   * The bitmap picks its underlying roaring representation dynamically: a
   * narrow `roaring::Roaring` while every set value fits in `UInt32`, then
@@ -45,23 +57,14 @@ using BitmapVersion = UInt64;
   * the body uses. CRC covers the LE-encoded magic + version + body_size +
   * body bytes — its bytes-on-disk, so the check is host-independent.
   *
-  * Endian portability: this matches the conventional MergeTree sidecar
-  * pattern (`MergeTreeDataPartChecksum`, `MarkRange`, `MergeTreeIndexText`
-  * posting list, compressed-block checksums) — LE-explicit on the wire.
-  *   - Header fields (magic, version, body_size, crc) and `VERSION_R32`
-  *     bodies (roaring `portable=true`) are fully cross-endian portable.
-  *   - `VERSION_R64` bodies are the one known exception: the croaring C++
-  *     `Roaring64Map::write(portable=true)` writes its outer `map_size`
-  *     (`uint64_t`) and per-bucket high-32 keys (`uint32_t`) host-native.
-  *     Cross-endian reads of an R64 body fail loudly at
-  *     `Roaring64Map::readSafe` (the byteswapped `map_size` won't parse)
-  *     rather than silently mis-decode.
+  * Endian portability: header fields and `VERSION_R32` bodies are LE-explicit
+  * and fully portable, like other MergeTree sidecars. `VERSION_R64` bodies are
+  * not — croaring's `Roaring64Map::write` emits `map_size` and the per-bucket
+  * high-32 keys host-native, so a cross-endian read fails loudly at `readSafe`
+  * instead of mis-decoding.
   *
-  * TODO(UNIQUE KEY, endian): switch the R64 path from the croaring C++
-  * `Roaring64Map` to the C-API `roaring64_bitmap_t` so we can use
-  * `roaring64_bitmap_portable_serialize` /
-  * `roaring64_bitmap_portable_deserialize_safe` (RoaringFormatSpec 64-bit
-  * extension) and drop the cross-endian limitation above.
+  * TODO(unique-key): move the R64 path to the C-API
+  * `roaring64_bitmap_portable_serialize` and drop that limitation.
   */
 class DeleteBitmap
 {
@@ -81,12 +84,23 @@ public:
     /// *not* in the bitmap, 0 otherwise. `n == 0` is a no-op.
     void containsBulk(const UInt64 * rows, size_t n, uint8_t * out_keep) const;
 
+    /// Build a per-row keep mask for `rows` (1=keep, 0=deleted) into `out_keep`;
+    /// returns the number kept. Wraps `containsBulk`. Caller sizes `out_keep` to `n`.
+    size_t buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const;
+    size_t buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const;
+
     /// Set `row`.
     void add(UInt64 row);
     /// Set every entry of `rows`. Empty input is a no-op.
     void addMany(const std::vector<UInt64> & rows);
     /// In-place union: `*this |= other`.
     void merge(const DeleteBitmap & other);
+    /// In-place difference: `*this -= other`
+    void subtract(const DeleteBitmap & other);
+
+    /// Union of two bitmaps, sharing an operand when the other adds nothing. Null when both are
+    /// empty: there is no version worth writing. `rhs` may be null, `lhs` may not.
+    static ConstDeleteBitmapPtr cumulateTwo(const ConstDeleteBitmapPtr & lhs, const ConstDeleteBitmapPtr & rhs);
 
     /// Number of set bits.
     size_t cardinality() const;
@@ -99,6 +113,7 @@ public:
 
     /// All set row indices in ascending order. O(cardinality).
     std::vector<UInt64> toVector() const;
+    IColumn::Permutation toPermutation() const;
 
     /// Portable-serialized size + a small entry overhead. Stable proxy for
     /// the on-disk `.rbm` cost; empty bitmap returns a small non-zero constant
@@ -111,15 +126,27 @@ public:
     /// throws on mismatch. Returned bitmap is independent of `in`.
     static std::unique_ptr<DeleteBitmap> deserialize(ReadBuffer & in);
 
-    /// File name convention: `delete_bitmap_{csn}.rbm`.
+    /// File name convention:
+    ///   staged   `<owner>/delete_bitmap_for_{target_part_name}.rbm`
+    ///   settled  `<target>/delete_bitmap_{csn}.rbm`
     static std::string fileNameForCSN(BitmapVersion csn);
+    static std::string fileNameForStagedTarget(std::string_view target_part_name);
 
     /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
     static bool isDeleteBitmapFile(std::string_view file_name);
+    /// True if `file_name` matches the canonical `delete_bitmap_for_{target}.rbm` form.
+    static bool isStagedBitmapFile(std::string_view file_name);
+
+    static bool isAnyDeleteBitmapFile(std::string_view file_name)
+    {
+        return isDeleteBitmapFile(file_name) || isStagedBitmapFile(file_name);
+    }
 
     /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
     /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
     static BitmapVersion parseCSNFromFileName(std::string_view file_name);
+    /// Extract the target part name from `delete_bitmap_for_{target}.rbm`; same contract.
+    static std::string parseStagedTargetFromFileName(std::string_view file_name);
 
     /// File-format constants. Exposed so tests can corrupt bytes deterministically.
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian
@@ -140,8 +167,6 @@ private:
     bool is64Bit() const;
     void upgradeTo64();
 };
-
-using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
 
 /// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
 /// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is

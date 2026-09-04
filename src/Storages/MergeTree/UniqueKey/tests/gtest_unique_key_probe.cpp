@@ -204,10 +204,14 @@ TEST_F(UniqueKeyProbeTest, SinglePartAllDead)
     EXPECT_EQ(probeKey(probe, 7).outcome, ProbeOutcome::FOUND_ALL_DEAD);
 }
 
-TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlder)
+/// Newest-first resolution stops at the newest LIVE copy. The older copy is dead here on purpose:
+/// two live copies of one key violate the single-live-part invariant, which
+/// `UniqueKeyProbeSimple` throws on under `probe_validates_single_live_part` (debug), so a test
+/// built that way asserts a state a unique-key table cannot be in.
+TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlderDead)
 {
     auto newest = makeTarget({{5, 9}});
-    auto older = makeTarget({{5, 1}});
+    auto older = makeTarget({{5, 1}}, /*dead_rows=*/{1});
     ASSERT_NE(newest, nullptr);
     ASSERT_NE(older, nullptr);
     auto probe = probeOver({newest, older}); /// newest-first

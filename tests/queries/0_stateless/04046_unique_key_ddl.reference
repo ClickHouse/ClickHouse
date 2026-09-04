@@ -48,3 +48,5 @@ ORDER BY tuple(id)
 UNIQUE KEY (id)
 SETTINGS index_granularity = 8192
 (id)
+unique_key_engine_rejected_on_attach
+unique_key_attach_needs_experimental_setting
