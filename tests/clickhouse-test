@@ -5692,8 +5692,12 @@ def check_server_started(args):
 
             # HTTPError:
             # Code: 503. Code: 439. DB::Exception: Cannot schedule a task: failed to start the thread (threads=2, jobs=2). (CANNOT_SCHEDULE_TASK)
-            if isinstance(e, HTTPError):
-                check_server_started.last_server_error = str(e)
+            # Only an HTTP response is an answer from the server; a transport
+            # failure means it was not reached, so it must not leave an earlier
+            # answer standing. Keep only the outcome of the last retry.
+            check_server_started.last_server_error = (
+                str(e) if isinstance(e, HTTPError) else ""
+            )
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
             else:
@@ -5703,9 +5707,11 @@ def check_server_started(args):
             sleep(0.5)
             continue
         except TimeoutError:
+            check_server_started.last_server_error = ""
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
+            check_server_started.last_server_error = ""
             print(
                 "\nUnexpected exception, will not retry: ",
                 type(e).__name__,
