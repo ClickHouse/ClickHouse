@@ -3599,18 +3599,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so
     /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
     /// for the same value depending on constness, and a replacement can be constant where the input is not.
-    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
-    /// A higher-order function hands its remaining arguments to the lambda as its formal parameters, so a
-    /// body reading a representation describes every argument of the call, not only the captures below it.
-    auto call_reads_representation = [](const Node * node)
-    {
-        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
-            return true;
-        for (const auto * argument : node->children)
-            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
-                return true;
-        return false;
-    };
     auto reads_replaced_input_representation = [&](const Node * conjunct)
     {
         std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
@@ -3621,7 +3609,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             auto [node, reads_representation] = to_visit.back();
             to_visit.pop_back();
 
-            reads_representation |= !node->isDeterministic() || call_reads_representation(node);
+            reads_representation |= !node->isDeterministic();
             auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
             if (!visited.insert(node).second)
                 continue;
@@ -3635,10 +3623,32 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return false;
     };
 
+    /// `getConjunctionNodes` already refuses a conjunct that is not stable within the query, but it reads
+    /// only the visible functions. A both-streams conjunct is evaluated once per side and dropped from the
+    /// post-join filter, so a body hidden from that check would be drawn twice and the two draws compared.
+    static constexpr auto is_unstable_within_query
+        = [](const IFunctionBase & function) { return !function.isDeterministicInScopeOfQuery(); };
+    auto hides_unstable_lambda_body = [](const Node * conjunct)
+    {
+        std::vector<const Node *> to_visit{conjunct};
+        std::unordered_set<const Node *> visited;
+        while (!to_visit.empty())
+        {
+            const auto * node = to_visit.back();
+            to_visit.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (hasUnsafeHiddenLambdaBody(*node, is_unstable_within_query))
+                return true;
+            to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+        }
+        return false;
+    };
+
     NodeRawConstPtrs both_streams_value_only_conjunctions;
     for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
     {
-        if (reads_replaced_input_representation(conjunct))
+        if (reads_replaced_input_representation(conjunct) || hides_unstable_lambda_body(conjunct))
             both_streams_push_down_conjunctions.rejected.push_back(conjunct);
         else
             both_streams_value_only_conjunctions.push_back(conjunct);

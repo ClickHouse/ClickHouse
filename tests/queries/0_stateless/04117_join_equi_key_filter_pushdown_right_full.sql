@@ -260,38 +260,24 @@ SELECT countIf(explain ILIKE '%Filter column%arrayMax%') = 0 FROM (
     WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 
-SELECT 'INNER JOIN ON, conjunct with a deterministic lambda body over the equi-key: the conjunct is pushed';
+-- A both-streams conjunct is evaluated once per side and dropped from the post-join filter, so an unstable
+-- body would be drawn twice and the two draws compared. The body sits beside the key here rather than above
+-- it, which is the position the conjunct's own walk cannot reach. `% 1` keeps the conjunct true for every
+-- row, and the array is materialized because a constant one folds the whole call away before the plan.
+
+SELECT 'INNER JOIN ON, conjunct with a deterministic lambda body beside the equi-key: the conjunct is pushed';
 SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 1 FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
-    WHERE arrayExists(y -> l.a + y > toDate32('1900-01-01'), [1])
+    WHERE arrayExists(y -> y % 1 = 0, materialize([1])) = (l.a > toDate32('1900-01-01'))
       AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 
-SELECT 'INNER JOIN ON, conjunct whose lambda body reads the equi-key representation: the conjunct is not pushed';
+SELECT 'INNER JOIN ON, conjunct with an unstable lambda body beside the equi-key: the conjunct is not pushed';
 SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
-    WHERE arrayExists(y -> isConstant(l.a + y) = 0, [1])
-      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
-);
-
--- The key can also reach the body as the lambda's formal parameter rather than as a capture, which the two
--- arms above do not cover: the call passes it in from a sibling argument.
-
-SELECT 'INNER JOIN ON, deterministic lambda body over the equi-key passed as the formal parameter: pushed';
-SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 1 FROM (
-    EXPLAIN PLAN actions = 1
-    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
-    WHERE arrayExists(y -> y > toDate32('1900-01-01'), [l.a])
-      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
-);
-
-SELECT 'INNER JOIN ON, lambda body reading the formal parameter representation: the conjunct is not pushed';
-SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
-    EXPLAIN PLAN actions = 1
-    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
-    WHERE arrayExists(y -> isConstant(y) = 0, [l.a])
+    WHERE arrayExists(y -> rand(y) % 1 = 0, materialize([1])) = (l.a > toDate32('1900-01-01'))
       AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 

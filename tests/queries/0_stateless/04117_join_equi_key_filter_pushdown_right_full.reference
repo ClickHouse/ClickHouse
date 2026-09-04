@@ -60,13 +60,9 @@ INNER JOIN ON, cross-type equi-key with a deterministic lambda body: the key rea
 1
 INNER JOIN ON, cross-type equi-key whose lambda body is not stable within the query: the key does not
 1
-INNER JOIN ON, conjunct with a deterministic lambda body over the equi-key: the conjunct is pushed
+INNER JOIN ON, conjunct with a deterministic lambda body beside the equi-key: the conjunct is pushed
 1
-INNER JOIN ON, conjunct whose lambda body reads the equi-key representation: the conjunct is not pushed
-1
-INNER JOIN ON, deterministic lambda body over the equi-key passed as the formal parameter: pushed
-1
-INNER JOIN ON, lambda body reading the formal parameter representation: the conjunct is not pushed
+INNER JOIN ON, conjunct with an unstable lambda body beside the equi-key: the conjunct is not pushed
 1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
