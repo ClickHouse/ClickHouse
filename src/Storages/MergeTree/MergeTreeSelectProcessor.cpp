@@ -28,6 +28,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace
 {
 
@@ -426,21 +428,28 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
                         {
-                            if (!VirtualColumnUtils::isDeterministic(output))
+                            if (!VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
                                 continue;
+
+                            /// If output is an alias, resolve the original condition to cache it instead of the alias.
+                            /// Specifically matters for the queries served by projections which add an artificial alias node
+                            /// to the condition.
+                            const auto & condition_node = ActionsDAG::resolveAliases(*output);
 
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             const auto & data_part_info = task->getInfo().data_part_info;
 
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
+                            size_t condition_hash = condition_node.getHash(true /* skip_aliases */);
+                            if (reader_settings.query_condition_cache_top_k_salt)
+                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
+
+                            const auto part_name = QueryConditionCache::makePartNameFromDataPartInfoForReader(*data_part_info);
                             query_condition_cache->write(
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                output->getHash(),
-                                prewhere_info->prewhere_actions.getNames()[0],
+                                condition_hash,
+                                condition_node.result_name,
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),
                                 data_part_info->getIndexGranularity().hasFinalMark());

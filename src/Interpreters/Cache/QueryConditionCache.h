@@ -8,6 +8,8 @@
 
 namespace DB
 {
+class IMergeTreeDataPart;
+class IMergeTreeDataPartInfoForReader;
 
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
@@ -69,7 +71,6 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
-
 public:
     using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
 
@@ -85,6 +86,10 @@ public:
     /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
     /// either, so the mapping is unambiguous.
     static String makeFilePartName(const String & path, std::string_view version_token);
+
+    static String makePartNameFromDataPart(const IMergeTreeDataPart & data_part);
+
+    static String makePartNameFromDataPartInfoForReader(const IMergeTreeDataPartInfoForReader & data_part);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
@@ -112,6 +117,8 @@ private:
     LoggerPtr logger = getLogger("QueryConditionCache");
 
     friend class StorageSystemQueryConditionCache;
+
+    static String makePartName(const String & parent_name, const String & part_name);
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;

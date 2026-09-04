@@ -20,6 +20,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
@@ -254,7 +255,9 @@ static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG &
     std::vector<ActionsAndName> res;
 
     while (auto condition = trySplitSingleAndFilter(dag, filter_name))
+    {
         res.push_back(std::move(*condition));
+    }
 
     return res;
 }

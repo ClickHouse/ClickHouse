@@ -66,6 +66,23 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
 
+/// Like `isDeterministic`, but treats `__topKFilter` as deterministic.
+///
+/// `__topKFilter` is the only "officially" non-deterministic function we expect to appear in
+/// `query_info.filter_actions_dag` once `tryOptimizeTopK` has chosen the read step for TopK
+/// dynamic filtering: filter pushdown collects the PREWHERE `__topKFilter` together with the
+/// WHERE predicate. The non-determinism is bounded — for a fixed plan and data, the threshold
+/// trajectory only tightens, so any row whose sort-column value lies in the final top-N is
+/// kept by `__topKFilter` at every point during execution. Consequently a chunk that the
+/// outer `WHERE` reduces to zero rows, and equally a mark that PREWHERE leaves unmatched, holds
+/// no row that could have reached the final result, regardless of the threshold's exact path
+/// through the run and regardless of the run being cancelled once the `LIMIT` fills, which can
+/// only leave marks unrecorded. The query condition cache key is also salted with the TopK plan
+/// parameters, so cached granule decisions can only be reused under the same TopK plan that
+/// produced them. That decision is all this function is for; it is not a general-purpose
+/// determinism test.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);
+
 /// Checks recursively if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 

@@ -536,7 +536,7 @@ public:
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
     /// from minmax_indices, the first expression of primary key, and part rows.
     ///
-    /// has_filter - if query has no filter, bypass partition pruning completely
+    /// filter_output - if nullptr, bypass partition pruning completely
     ///
     /// query_info - used to filter unneeded parts
     ///
@@ -544,7 +544,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
-        const ActionsDAG * filter_dag,
+        const ActionsDAG::Node * filter_output,
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;

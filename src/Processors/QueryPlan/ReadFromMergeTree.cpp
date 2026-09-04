@@ -3570,6 +3570,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
+        const ActionsDAG::Node * condition_node = nullptr;
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
                 && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
@@ -3587,7 +3588,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
-                size_t hash = outputs.front()->getHash();
+                condition_node = &ActionsDAG::resolveAliases(*outputs.front());
+                size_t hash = condition_node->getHash(true /* skip_aliases */);
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;
@@ -3669,8 +3671,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 }
             }
 
+            chassert(condition_node);
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-            const auto * output = query_info_.filter_actions_dag->getOutputs().front();
             /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
             /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
             /// under a key salted with the effective skip-index profile so that only a query that
@@ -3680,13 +3682,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
-                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                                                 : data_part->name;
+                const auto part_name = QueryConditionCache::makePartNameFromDataPart(*data_part);
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
                     profiled_condition_hash,
-                    output->result_name,
+                    condition_node->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
                     data_part->index_granularity->hasFinalMark());
@@ -4940,6 +4941,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
+
+    if (reader_settings.use_query_condition_cache && top_k_filter_info)
+    {
+        reader_settings.query_condition_cache_top_k_salt = top_k_filter_info->condition_hash;
+    }
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
