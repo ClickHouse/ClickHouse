@@ -348,6 +348,15 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 }
 
 
+static String getDictionaryNameForLoader(const ASTSystemQuery & query)
+{
+    if (!query.database)
+        return query.getTable();
+
+    return backQuoteIfNeed(query.getDatabase()) + "." + backQuoteIfNeed(query.getTable());
+}
+
+
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
         : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
@@ -373,14 +382,6 @@ BlockIO InterpreterSystemQuery::execute()
     /// some experimental settings)
     bool check_constraints = false;
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
-
-    String dictionary_name;
-    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
-    {
-        dictionary_name = query.getTable();
-        if (query.database)
-            dictionary_name = backQuoteIfNeed(query.getDatabase()) + "." + backQuoteIfNeed(dictionary_name);
-    }
 
     /// Make canonical query for simpler processing
     if (query.type != Type::RELOAD_DICTIONARY && query.type != Type::UNLOAD_DICTIONARY && query.table)
@@ -781,6 +782,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            const String dictionary_name = getDictionaryNameForLoader(query);
             external_dictionaries_loader.reloadDictionary(dictionary_name, getContext());
 
             ExternalDictionariesLoader::resetAll();
@@ -801,6 +803,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            const String dictionary_name = getDictionaryNameForLoader(query);
             external_dictionaries_loader.unloadDictionary(dictionary_name, getContext());
             ExternalDictionariesLoader::resetAll();
             break;
