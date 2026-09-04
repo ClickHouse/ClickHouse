@@ -262,7 +262,7 @@ This ABI is experimental and subject to change in future releases.
 
 Processes entire blocks at once using a (de)serialization through WASM memory. Supports any argument and return types.
 
-Data is exchanged through buffers in WASM memory. A buffer is an 8-byte structure holding a pointer to the data and the size of the data (two little-endian `u32` values). Buffers are passed by handle — a pointer to this structure, not to the data itself. The guest code must export two functions to create and destroy these buffers.
+Data is exchanged through buffers in WASM memory. A buffer is an 8-byte structure holding a pointer to the data and the size of the data (two little-endian `u32` values). Buffers are passed by handle — a pointer to this structure, not to the data itself. The guest code must export two functions to create and destroy these buffers. When the size is non-zero, the data pointer must also be non-zero: a buffer that declares a positive size but points at linear-memory offset `0` is not a valid buffer, and the guest code must not produce one; ClickHouse rejects such a buffer and fails the query with a `WASM_ERROR`.
 
 For each input block, ClickHouse:
 
