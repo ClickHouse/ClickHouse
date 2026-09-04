@@ -21,11 +21,18 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// The threshold filter changes a block's rows: inside the PREWHERE each read step filters the block the
-/// next one sees, and a `WHERE` left above the read is handed blocks the read already shrank. `blockSize`
-/// and `rand` have that dependence on their own block without being stateful, hence both properties.
+/// next one sees, and a `WHERE` or a sort expression left above the read is handed blocks the read already
+/// shrank. `isDeterministicInScopeOfQuery` is the property that distinguishes a value derived from the
+/// block, such as `blockSize` or `rand`, from one that is merely non-deterministic across queries, such as
+/// `today`; filter pushdown separates the two the same way.
 static bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    return actions.hasStatefulFunctions() || actions.hasNonDeterministic();
+    for (const auto & node : actions.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION
+            && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery()))
+            return true;
+
+    return false;
 }
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
@@ -211,7 +218,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     {
         const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo();
         if ((prewhere_info && dependsOnItsBlock(prewhere_info->prewhere_actions))
-            || (filter_step && dependsOnItsBlock(filter_step->getExpression())))
+            || (filter_step && dependsOnItsBlock(filter_step->getExpression()))
+            || (expression_step && dependsOnItsBlock(expression_step->getExpression())))
             use_dynamic_filtering = false;
     }
 

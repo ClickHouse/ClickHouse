@@ -93,17 +93,25 @@ SELECT count() > 0 FROM (
     SELECT k FROM t_topk_prewhere PREWHERE blockSize() > 100 ORDER BY k LIMIT 10)
 WHERE explain ILIKE '%FUNCTION \_\_topKFilter%';
 
+-- What disqualifies a condition is depending on its own block, not being non-deterministic across
+-- queries: `currentUser` returns the same value throughout one query, so the filter is installed.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k FROM t_topk_prewhere PREWHERE currentUser() != '' ORDER BY k LIMIT 10)
+WHERE explain ILIKE '%FUNCTION \_\_topKFilter%';
+
 DROP TABLE t_topk_prewhere;
 
 -- Rows for that condition. It needs a read order unrelated to `k`, and enough rows for the threshold
 -- to cut inside a block, so it gets its own table. Compared arm to arm for the reason above.
 DROP TABLE IF EXISTS t_topk_blocksize;
 
-CREATE TABLE t_topk_blocksize (k UInt32)
+-- `grp` has ties, which the last section needs; the read order is unrelated to it as well.
+CREATE TABLE t_topk_blocksize (k UInt32, grp UInt32)
 ENGINE = MergeTree ORDER BY intHash32(k)
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_topk_blocksize SELECT number FROM numbers(100000);
+INSERT INTO t_topk_blocksize SELECT number, number % 100 FROM numbers(100000);
 
 SELECT
     (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
@@ -115,6 +123,12 @@ SELECT
 SELECT
     (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
   = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 WHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+
+-- A sort expression is handed those blocks too. `rowNumberInBlock` then decides the order inside the tie
+-- group the LIMIT cuts through, so the rows it selects would change.
+SELECT
+    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
+  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE k % 10 < 9 ORDER BY grp, rowNumberInBlock() LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
 
 DROP TABLE t_topk_blocksize;
 
