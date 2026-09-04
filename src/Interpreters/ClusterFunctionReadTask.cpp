@@ -1,7 +1,6 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/Context.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/Exception.h>
@@ -13,6 +12,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorBitmap.h>
 
 namespace DB
 {

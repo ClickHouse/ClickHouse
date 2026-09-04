@@ -2,11 +2,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
-namespace roaring
-{
-class Roaring;
-}
-
 namespace DB
 {
 
@@ -24,9 +19,10 @@ public:
 
     void transform(DB::Chunk & chunk) override;
 
+    /// Drops the rows of `chunk` whose row numbers belong to the deletion bitmap.
     static void transform(DB::Chunk & chunk, const ExcludedRows & excluded_rows);
 
 private:
-    ExcludedRowsPtr excluded_rows;
+    const ExcludedRowsPtr excluded_rows;
 };
 }
