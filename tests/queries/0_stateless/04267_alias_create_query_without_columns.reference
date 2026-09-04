@@ -1,0 +1,6 @@
+CREATE TABLE default.alias_create_query ENGINE = Alias(\'alias_create_query_target\')
+CREATE TABLE default.alias_create_query
+ENGINE = Alias('alias_create_query_target')
+id	UInt64
+value	String
+CREATE TABLE default.alias_create_query ENGINE = Alias(\'alias_create_query_target\')
