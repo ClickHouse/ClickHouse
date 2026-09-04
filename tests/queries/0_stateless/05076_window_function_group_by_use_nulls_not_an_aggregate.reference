@@ -36,6 +36,10 @@ b	1
 a	1	1
 b	1	1
 \N	1	2
+-- the resolved type of a window aggregate over the key, on a query that was already accepted
+a	Nullable(String)
+b	Nullable(String)
+\N	Nullable(String)
 -- WITH TOTALS, where `group_by_use_nulls` does not reach the key today
 a	1
 b	1

@@ -55,6 +55,10 @@ SELECT '-- GROUPING SETS';
 SELECT k, rank() OVER (PARTITION BY k) AS r, count() AS c
 FROM values('k String', ('a'), ('b')) GROUP BY GROUPING SETS ((k), ()) ORDER BY ALL;
 
+SELECT '-- the resolved type of a window aggregate over the key, on a query that was already accepted';
+SELECT k, toTypeName(min(k) OVER ()) AS t
+FROM values('k String', ('a'), ('b')) GROUP BY k WITH ROLLUP ORDER BY ALL;
+
 -- Guards below: these already worked and must keep working unchanged.
 
 SELECT '-- WITH TOTALS, where `group_by_use_nulls` does not reach the key today';
