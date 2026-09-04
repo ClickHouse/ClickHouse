@@ -51,7 +51,7 @@ permitted either. Named collection management is an exception: `readonly` does n
 Granting a privilege with `GRANT` is refused too, but not every access management statement is: a local
 `REVOKE` and `GRANT CURRENT GRANTS` are not gated by `readonly`, so a read-only session can still revoke
 a privilege it holds with grant option and propagate its own grants to another user.
-`REVOKE ... ON CLUSTER` is refused.
+Revoking a privilege `ON CLUSTER` is refused.
 
 Temporary tables are exempt from both settings: a session that may create one may also `ALTER` it,
 insert into it and drop it.
@@ -61,8 +61,8 @@ insert into it and drop it.
 Over the [HTTP interface](/concepts/features/interfaces/http), a request whose method is not `POST` runs
 with `readonly = 2` if the effective value would otherwise be 0. A stricter value already set by the
 user's settings or by a settings profile is kept. `PUT` and `DELETE` are exempt when they reach a
-SQL-defined handler created with `CREATE HANDLER` that accepts them, and such a handler can modify data;
-otherwise use the `POST` method to modify data.
+SQL-defined [handler](/reference/statements/create/handler) that accepts them, so such a request can
+modify data when the effective `readonly` is 0; otherwise use the `POST` method to modify data.
 
 On a request raised this way, a `readonly` parameter in the query string is refused with
 `Cannot modify 'readonly' setting in readonly mode` unless it names the value the request already has.
@@ -100,10 +100,11 @@ You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 `allow_ddl` does not restrict access management queries: `GRANT`, `REVOKE` and `CREATE`, `ALTER` and
 `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are unaffected by
 it. `CREATE TEMPORARY TABLE` and named collection management are unaffected too, as are
-`ALTER DATABASE ... MODIFY SETTING` and `ALTER DATABASE ... MODIFY COMMENT`, which `readonly` does not
-restrict either. A `SETTINGS allow_ddl` clause inside a `CREATE` or `ALTER` of a user, a role or a
-settings profile is refused when it changes the value, for the same reason `SET allow_ddl` is: an
-embedded setting is checked against the session's own settings constraints.
+`ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` and `UNDROP TABLE`, which
+`readonly` does not restrict either. Inside a `CREATE` or `ALTER` of a user, a role or a settings
+profile, a `SETTINGS allow_ddl = 1` clause is refused while the current session has `allow_ddl = 0`,
+and a `SETTINGS allow_ddl = 0` clause is accepted. An embedded setting is checked against the
+session's own settings constraints, which is also why `SET allow_ddl = 1` is refused.
 </Note>
 
 <Info>
