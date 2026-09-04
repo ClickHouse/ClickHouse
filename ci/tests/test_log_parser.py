@@ -11,6 +11,8 @@ though the message was right there in the log.
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -44,6 +46,48 @@ def test_parse_ast_fuzzer_oracle_mismatch(tmp_path):
     assert "AST Fuzzer oracle mismatch detected!" in info
     assert "Fuzzed query: SELECT g, count(), min(v), approx_top_k(v)" in info
     assert files == []
+
+
+# Every oracle-kind message emitted by `QueryOracleChecker` (src/Interpreters/
+# QueryOracleChecker.cpp), mapped to the kind the parser should extract. The
+# "Identity WHERE (...)" and DQP "Setting: <name>" variants are the tricky ones:
+# the kind carries a parenthesized label, and DQP appends a variable trailer
+# after the "!" that must be excluded.
+_ORACLE_KIND_CASES = [
+    ("TLP WHERE oracle mismatch!", "TLP WHERE"),
+    ("NoREC oracle mismatch!", "NoREC"),
+    ("TLP DISTINCT oracle mismatch!", "TLP DISTINCT"),
+    ("TLP GROUP BY oracle mismatch!", "TLP GROUP BY"),
+    ("TLP HAVING oracle mismatch!", "TLP HAVING"),
+    ("DQP oracle mismatch! Setting: allow_experimental_analyzer", "DQP"),
+    ("TLP Aggregate oracle mismatch!", "TLP Aggregate"),
+    ("Identity WHERE (NOT(NOT p)) oracle mismatch!", "Identity WHERE (NOT(NOT p))"),
+    ("Identity WHERE (p AND 1) oracle mismatch!", "Identity WHERE (p AND 1)"),
+    ("Identity WHERE (p OR 0) oracle mismatch!", "Identity WHERE (p OR 0)"),
+    ("Subquery wrap oracle mismatch!", "Subquery wrap"),
+]
+
+
+@pytest.mark.parametrize("oracle_line, expected_kind", _ORACLE_KIND_CASES)
+def test_oracle_kind_extraction(tmp_path, oracle_line, expected_kind):
+    # Each oracle kind must group under its own name, including the parenthesized
+    # "Identity WHERE (...)" variants that a word-only capture would have missed.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
+        "AST Fuzzer oracle mismatch detected!\n"
+        "Fuzzed query: SELECT 1\n"
+        f"{oracle_line}\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name == f"AST Fuzzer oracle mismatch: {expected_kind}"
 
 
 def test_parse_ast_fuzzer_oracle_mismatch_unknown_kind(tmp_path):

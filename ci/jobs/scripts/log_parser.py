@@ -342,14 +342,18 @@ class FuzzerLogParser:
         elif is_memory_limit_exceeded:
             result_name = "Server unresponsive: memory limit exceeded"
         elif is_oracle_mismatch:
-            # The oracle kind (e.g. "TLP Aggregate") is logged on a line of the
+            # The oracle kind is logged by `QueryOracleChecker` on a line of the
             # form "<kind> oracle mismatch!" after the "Fuzzed query:" line. Fold
             # it into the failure name so distinct oracles group separately in CI
             # DB, while a missing kind still yields a stable generic name. The
             # "Fuzzed query:" line captured in `error_output` is kept as the info.
+            # The kind may carry a parenthesized, but still fixed, label - e.g.
+            # "Identity WHERE (p AND 1)" or "Identity WHERE (NOT(NOT p))" - so
+            # allow parentheses in the capture; variable trailers like DQP's
+            # "Setting: <name>" come after the "!" and are excluded.
             result_name = "AST Fuzzer oracle mismatch"
             for line in error_lines:
-                match = re.search(r"(\w[\w ]*?) oracle mismatch!", line)
+                match = re.search(r"(\w[\w ()]*?) oracle mismatch!", line)
                 if match and "AST Fuzzer" not in match.group(1):
                     result_name = f"AST Fuzzer oracle mismatch: {match.group(1).strip()}"
                     break
