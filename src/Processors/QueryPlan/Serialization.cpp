@@ -31,6 +31,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_QUERY_PLAN;
@@ -97,10 +98,11 @@ static UInt64 writerSerializationVersion(UInt64 requested_version)
 {
     UInt64 writer_version = requested_version != 0 ? requested_version : DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION;
 
-    if (writer_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+    const UInt64 supported_version = QueryPlanStepRegistry::instance().supportedVersion();
+    if (writer_version > supported_version)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} was requested but this server writes up to {}",
-            writer_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            writer_version, supported_version);
 
     /// An operator can hold every writer at an older version while a fleet is mixed, so a plan the
     /// not-yet-upgraded servers cannot read is never written, whatever a query asks for. A missing
@@ -351,14 +353,15 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     std::vector<String> set_payloads;
     serializeEnvelopeSets(registry, flags, outline, set_payloads, min_reader_plan_version);
 
-    /// An honest writer never requires a reader newer than the version it writes: features are
-    /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate. Checked
-    /// in every build: sending the bytes anyway would make the receiver reject a plan this server
-    /// should not have written.
+    /// A writer held below the version a value needs, by the peer, by a query setting or by the
+    /// server ceiling, refuses the plan here, before any byte reaches the stream: a step declared
+    /// that an older reader would run the plan wrongly without that value, and the stream is
+    /// written for exactly such a reader.
     if (min_reader_plan_version > flags.version)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Query plan written at version {} declares that it needs a reader of version {}",
-            flags.version, min_reader_plan_version);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The query plan carries a value that needs serialization version {}, but it is written for version {}; "
+            "all nodes must run a version that reads {}",
+            min_reader_plan_version, flags.version, min_reader_plan_version);
 
     /// The payload sizes are known, so the body size the reader needs up front can be summed
     /// without joining the payloads together.
@@ -681,12 +684,13 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
                 "The query plan uses body format {} which this server does not know", format_kind);
         }
 
-        if (min_reader_plan_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+        const UInt64 supported_version = QueryPlanStepRegistry::instance().supportedVersion();
+        if (min_reader_plan_version > supported_version)
         {
             skipPlanBody(in, body_size);
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The query plan requires serialization version {} while this server supports up to {}",
-                min_reader_plan_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+                min_reader_plan_version, supported_version);
         }
 
         /// A writer cannot need a reader newer than itself: everything it wrote, it wrote at its own
@@ -727,10 +731,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         }
     }
 
-    if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+    if (version > QueryPlanStepRegistry::instance().supportedVersion())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
-            version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            version, QueryPlanStepRegistry::instance().supportedVersion());
 
     /// A legacy stream declares no size, so `max_serialized_query_plan_size` does not apply here:
     /// the reader consumes the plan field by field as it arrives, with per-field caps, rather than

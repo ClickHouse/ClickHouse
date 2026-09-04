@@ -11,10 +11,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+thread_local QueryPlanStepRegistry * registry_for_this_thread = nullptr;
+
+}
+
 QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 {
+    if (registry_for_this_thread)
+        return *registry_for_this_thread;
     static QueryPlanStepRegistry registry;
     return registry;
+}
+
+QueryPlanStepRegistry::ScopedInstance::ScopedInstance(QueryPlanStepRegistry & registry_)
+    : previous(registry_for_this_thread)
+{
+    registry_for_this_thread = &registry_;
+}
+
+QueryPlanStepRegistry::ScopedInstance::~ScopedInstance()
+{
+    registry_for_this_thread = previous;
 }
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
@@ -23,6 +43,25 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
 }
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info)
+{
+    registerStep(name, std::move(create_function), std::move(info), String{});
+}
+
+String QueryPlanStepRegistry::dumpManifests() const
+{
+    std::map<std::string, const String *> by_name;
+    for (const auto & [name, entry] : steps)
+        if (!entry.manifest_description.empty())
+            by_name.emplace(name, &entry.manifest_description);
+
+    String result;
+    for (const auto & [name, description] : by_name)
+        result += *description;
+    return result;
+}
+
+void QueryPlanStepRegistry::registerStep(
+    const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info, String manifest_description)
 {
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
@@ -40,7 +79,7 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
         ++expected_version;
     }
 
-    steps[name] = Entry{std::move(create_function), std::move(info)};
+    steps[name] = Entry{std::move(create_function), std::move(info), std::move(manifest_description)};
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(

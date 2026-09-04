@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 #include <map>
@@ -88,10 +89,36 @@ public:
 
     static QueryPlanStepRegistry & instance();
 
+    /// Tests act as another server in the same process, an older or a newer build that knows other
+    /// steps and formats and speaks another plan version. While an object of this class lives,
+    /// `instance()` on this thread returns the registry it was given.
+    class ScopedInstance
+    {
+    public:
+        explicit ScopedInstance(QueryPlanStepRegistry & registry_);
+        ~ScopedInstance();
+        ScopedInstance(const ScopedInstance &) = delete;
+        ScopedInstance & operator=(const ScopedInstance &) = delete;
+
+    private:
+        QueryPlanStepRegistry * previous;
+    };
+
+    /// The newest plan version this build reads and writes: `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`
+    /// for the server, whatever a test registry that acts as another build sets.
+    UInt64 supportedVersion() const { return supported_version; }
+    void setSupportedVersion(UInt64 version) { supported_version = version; }
+
     static void registerPlanSteps();
 
     void registerStep(const std::string & name, StepCreateFunction && create_function);
     void registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info);
+    /// A step declared by a manifest also leaves the description of its declaration, for the baseline test.
+    void registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info, String manifest_description);
+
+    /// The declarations of every step registered through a manifest, in their canonical text form,
+    /// sorted by name.
+    String dumpManifests() const;
 
     QueryPlanStepPtr createStep(
         const std::string & name,
@@ -107,9 +134,11 @@ private:
     {
         StepCreateFunction create_function;
         StepSerializationInfo info;
+        String manifest_description;
     };
 
     std::unordered_map<std::string, Entry> steps;
+    UInt64 supported_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 };
 
 }

@@ -193,7 +193,7 @@ TEST(StepManifestBaseline, DeclarationsAreUnchanged)
     if (!QueryPlanStepRegistry::instance().hasStep("Expression"))
         QueryPlanStepRegistry::registerPlanSteps();
 
-    String actual = StepManifestCatalog::instance().dump();
+    String actual = QueryPlanStepRegistry::instance().dumpManifests();
     EXPECT_EQ(actual, expected_manifests)
         << "The step manifests changed. If the change is a new name or a new appended format at the current plan version, "
            "replace the expected text with this:\n" << actual;

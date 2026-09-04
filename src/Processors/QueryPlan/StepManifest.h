@@ -21,8 +21,6 @@
 
 #include <fmt/format.h>
 
-#include <map>
-#include <mutex>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -730,22 +728,6 @@ String describeManifest(const Manifest & manifest)
     return out.str();
 }
 
-/// Where the descriptions of every registered manifest are kept, for the baseline test.
-class StepManifestCatalog
-{
-public:
-    static StepManifestCatalog & instance();
-
-    void add(const String & name, String description);
-
-    /// Every description, sorted by name.
-    String dump() const;
-
-private:
-    mutable std::mutex mutex;
-    std::map<String, String> descriptions;
-};
-
 /// The coverage rule: the manifest binds every member of the wire struct exactly once.
 template <typename Manifest>
 constexpr bool manifestCoversWire(const Manifest & manifest)
@@ -758,14 +740,14 @@ constexpr bool manifestCoversWire(const Manifest & manifest)
     return WireDetail::allDistinct<0>(bindings);
 }
 
-/// Registers a step by its manifest: the registry entry is derived, the description goes to the
-/// catalog. Fails to compile unless the manifest binds every member of the wire struct exactly once.
+/// Registers a step by its manifest: the registry entry is derived and the description of the
+/// declaration goes with it. Fails to compile unless the manifest binds every member of the wire
+/// struct exactly once.
 template <const auto & manifest>
 void registerManifest(QueryPlanStepRegistry & registry, QueryPlanStepRegistry::StepCreateFunction create)
 {
     static_assert(manifestCoversWire(manifest), "the manifest must bind every member of its wire struct exactly once");
-    registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest));
-    StepManifestCatalog::instance().add(manifest.name, describeManifest(manifest));
+    registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest), describeManifest(manifest));
 }
 
 /// Whether a stream is framed, and the generated path applies, or older, and the hand-written one does.
