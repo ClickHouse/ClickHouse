@@ -80,10 +80,7 @@ namespace
 /// Formats the fragment for the step description. `actions` and `indexes` are off on purpose: they make
 /// `describeActions` and `describeIndexes` ask every MergeTree read for its analysis result, so building
 /// a description string would run index analysis, which is expensive and can throw (for example when the
-/// analysis exceeds `max_rows_to_read`) even though nothing is being read yet. Only the description is
-/// built this way: the dump passed to `RemoteQueryExecutor` reaches the replica as the query text, where
-/// it is hashed into `normalized_query_hash` and buckets `NORMALIZED_QUERY_HASH` quotas, so dropping the
-/// actions from it would collapse distinct fragments into one quota bucket.
+/// analysis exceeds `max_rows_to_read`) even though nothing is being read yet.
 String dumpQueryPlanShape(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString buffer;
