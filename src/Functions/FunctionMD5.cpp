@@ -13,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 #include <base/unaligned.h>
 
@@ -25,7 +24,9 @@
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+/// Not tied to USE_MULTITARGET_CODE: the AVX2 kernel below is compiled whenever the build target has
+/// AVX2, which is independent of whether multi-target dispatch is on.
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #endif
 
@@ -36,6 +37,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #define USE_MD5_AARCH64_ASIMD 1
@@ -145,7 +147,14 @@ public:
         (w2) = Ops::add(x2, Ops::template rotl<s>(t2)); \
     }
 
-DECLARE_MULTITARGET_CODE(
+/// `Default` already holds whatever the build targets - AVX2 on x86 (the build target is `x86-64-v3`),
+/// NEON on AArch64, plain scalar below that - so an `x86-64-v3` copy of all this would only duplicate it.
+/// AVX-512 is the one level not implied by the build flags, so it is the only one with its own namespace.
+#define DECLARE_MD5_TARGET_CODE(...) \
+    DECLARE_DEFAULT_CODE(__VA_ARGS__) \
+    DECLARE_X86_64_V4_SPECIFIC_CODE(__VA_ARGS__)
+
+DECLARE_MD5_TARGET_CODE(
 
     template <typename Ops>
     struct MD5X2State
@@ -258,17 +267,6 @@ DECLARE_MULTITARGET_CODE(
     }
 
 
-    /// Extract lane `j` from a SIMD vector as uint32.
-    template <typename Ops>
-    inline uint32_t extractLane(typename Ops::Vec v, size_t j)
-    {
-        constexpr size_t N = Ops::lanes;
-        alignas(64) uint32_t tmp[N];
-        Ops::storeu(tmp, v);
-        return tmp[j];
-    }
-
-
     /// Compute MD5 for up to 2*N lanes, split into two groups of N.
     template <typename Ops>
     void md5MultiBufCompute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
@@ -366,15 +364,29 @@ DECLARE_MULTITARGET_CODE(
             a1 = st.a1; b1 = st.b1; c1 = st.c1; d1 = st.d1;
             a2 = st.a2; b2 = st.b2; c2 = st.c2; d2 = st.d2;
 
+            /// Spill both groups' state once and read the finished lanes out of the copies. Extracting a lane
+            /// straight from the vector re-stores the whole vector per lane and word, which is 4 * N vector
+            /// stores per block instead of 4 - the wider the vector, the more it costs.
+            alignas(64) uint32_t lanes1[4][N];
+            alignas(64) uint32_t lanes2[4][N];
+            Ops::storeu(lanes1[0], a1);
+            Ops::storeu(lanes1[1], b1);
+            Ops::storeu(lanes1[2], c1);
+            Ops::storeu(lanes1[3], d1);
+            Ops::storeu(lanes2[0], a2);
+            Ops::storeu(lanes2[1], b2);
+            Ops::storeu(lanes2[2], c2);
+            Ops::storeu(lanes2[3], d2);
+
             for (size_t j = 0; j < count1; ++j)
             {
                 if (blk + 1 == num_blocks[j])
                 {
                     uint8_t * out = output + j * 16;
-                    unalignedStoreLittleEndian<uint32_t>(out,      extractLane<Ops>(a1, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 4,  extractLane<Ops>(b1, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 8,  extractLane<Ops>(c1, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 12, extractLane<Ops>(d1, j));
+                    unalignedStoreLittleEndian<uint32_t>(out,      lanes1[0][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 4,  lanes1[1][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 8,  lanes1[2][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 12, lanes1[3][j]);
                 }
             }
             for (size_t j = 0; j < count2; ++j)
@@ -382,10 +394,10 @@ DECLARE_MULTITARGET_CODE(
                 if (blk + 1 == num_blocks[N + j])
                 {
                     uint8_t * out = output + (N + j) * 16;
-                    unalignedStoreLittleEndian<uint32_t>(out,      extractLane<Ops>(a2, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 4,  extractLane<Ops>(b2, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 8,  extractLane<Ops>(c2, j));
-                    unalignedStoreLittleEndian<uint32_t>(out + 12, extractLane<Ops>(d2, j));
+                    unalignedStoreLittleEndian<uint32_t>(out,      lanes2[0][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 4,  lanes2[1][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 8,  lanes2[2][j]);
+                    unalignedStoreLittleEndian<uint32_t>(out + 12, lanes2[3][j]);
                 }
             }
         }
@@ -490,7 +502,9 @@ DECLARE_MULTITARGET_CODE(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function MD5", arguments[0].column->getName());
     }
 
-    ) // DECLARE_MULTITARGET_CODE
+    ) // DECLARE_MD5_TARGET_CODE
+
+#undef DECLARE_MD5_TARGET_CODE
 
 #undef MD5_STEP_X2
 
@@ -561,20 +575,15 @@ struct ScalarMD5Ops
     }
 };
 
-class FunctionMD5Impl : public FunctionMD5Base
-{
-public:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return executeMD5Batch<ScalarMD5Ops>(arguments, input_rows_count);
-    }
-};
-
 ) // DECLARE_DEFAULT_CODE
 
 
-/// AVX2 (8 lanes x 2 groups = 16 parallel digests)
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+#if defined(__AVX2__)
+
+/// AVX2 (8 lanes x 2 groups = 16 parallel digests). Lives in `Default` rather than in an
+/// `x86-64-v3` namespace: AVX2 is the build baseline on x86, so this needs no target attribute
+/// and no runtime check.
+DECLARE_DEFAULT_CODE(
 
 struct AVX2MD5Ops
 {
@@ -667,16 +676,105 @@ struct AVX2MD5Ops
     }
 };
 
+) // DECLARE_DEFAULT_CODE
+
+#endif
+
+
+#if USE_MD5_AARCH64_ASIMD
+
+/// AArch64 ASIMD/NEON (4 lanes x 2 groups = 8 parallel digests).
+/// ASIMD is baseline for AArch64, so no runtime feature dispatch is needed.
+DECLARE_DEFAULT_CODE(
+
+struct ASIMDMD5Ops
+{
+    using Vec = uint32x4_t;
+    static constexpr size_t lanes = 4;
+
+    static inline Vec add(Vec a, Vec b)
+    {
+        return vaddq_u32(a, b);
+    }
+    static inline Vec set1(uint32_t v)
+    {
+        return vdupq_n_u32(v);
+    }
+    static inline Vec loadu(const void * p)
+    {
+        return vreinterpretq_u32_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)));
+    }
+    static inline void storeu(void * p, Vec v)
+    {
+        vst1q_u8(reinterpret_cast<uint8_t *>(p), vreinterpretq_u8_u32(v));
+    }
+
+    template <int N>
+    static inline Vec rotl(Vec x)
+    {
+        return vorrq_u32(vshlq_n_u32(x, N), vshrq_n_u32(x, 32 - N));
+    }
+
+    static inline Vec F(Vec b, Vec c, Vec d)
+    {
+        return veorq_u32(d, vandq_u32(b, veorq_u32(c, d)));
+    }
+    static inline Vec G(Vec b, Vec c, Vec d)
+    {
+        return veorq_u32(c, vandq_u32(d, veorq_u32(b, c)));
+    }
+    static inline Vec H(Vec b, Vec c, Vec d)
+    {
+        return veorq_u32(b, veorq_u32(c, d));
+    }
+    static inline Vec I(Vec b, Vec c, Vec d)
+    {
+        return veorq_u32(c, vorrq_u32(b, vmvnq_u32(d)));
+    }
+
+    static inline void gatherAllMessageWords(const uint8_t * const block_ptrs[], Vec msg[16])
+    {
+        for (size_t word = 0; word < 16; ++word)
+        {
+            const size_t offset = word * sizeof(uint32_t);
+            const uint32_t values[lanes] = {
+                unalignedLoadLittleEndian<uint32_t>(block_ptrs[0] + offset),
+                unalignedLoadLittleEndian<uint32_t>(block_ptrs[1] + offset),
+                unalignedLoadLittleEndian<uint32_t>(block_ptrs[2] + offset),
+                unalignedLoadLittleEndian<uint32_t>(block_ptrs[3] + offset),
+            };
+            msg[word] = loadu(values);
+        }
+    }
+};
+
+) // DECLARE_DEFAULT_CODE
+
+#endif
+
+
+/// The baseline kernel, decided entirely by the build flags. Guarded from outside the macro because
+/// preprocessor directives inside macro arguments are undefined behavior.
+#if defined(__AVX2__)
+DECLARE_DEFAULT_CODE(using BaselineMD5Ops = AVX2MD5Ops;)
+#elif USE_MD5_AARCH64_ASIMD
+DECLARE_DEFAULT_CODE(using BaselineMD5Ops = ASIMDMD5Ops;)
+#else
+DECLARE_DEFAULT_CODE(using BaselineMD5Ops = ScalarMD5Ops;)
+#endif
+
+DECLARE_DEFAULT_CODE(
+
 class FunctionMD5Impl : public FunctionMD5Base
 {
 public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return executeMD5Batch<AVX2MD5Ops>(arguments, input_rows_count);
+        return executeMD5Batch<BaselineMD5Ops>(arguments, input_rows_count);
     }
 };
 
-) // DECLARE_X86_64_V3_SPECIFIC_CODE
+) // DECLARE_DEFAULT_CODE
 
 
 /// AVX-512 (16 lanes x 2 groups = 32 parallel digests)
@@ -830,94 +928,12 @@ public:
 
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
 
-#if USE_MD5_AARCH64_ASIMD
-
-/// AArch64 ASIMD/NEON (4 lanes x 2 groups = 8 parallel digests).
-/// ASIMD is baseline for AArch64, so no runtime feature dispatch is needed.
-DECLARE_DEFAULT_CODE(
-
-struct ASIMDMD5Ops
-{
-    using Vec = uint32x4_t;
-    static constexpr size_t lanes = 4;
-
-    static inline Vec add(Vec a, Vec b)
-    {
-        return vaddq_u32(a, b);
-    }
-    static inline Vec set1(uint32_t v)
-    {
-        return vdupq_n_u32(v);
-    }
-    static inline Vec loadu(const void * p)
-    {
-        return vreinterpretq_u32_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)));
-    }
-    static inline void storeu(void * p, Vec v)
-    {
-        vst1q_u8(reinterpret_cast<uint8_t *>(p), vreinterpretq_u8_u32(v));
-    }
-
-    template <int N>
-    static inline Vec rotl(Vec x)
-    {
-        return vorrq_u32(vshlq_n_u32(x, N), vshrq_n_u32(x, 32 - N));
-    }
-
-    static inline Vec F(Vec b, Vec c, Vec d)
-    {
-        return veorq_u32(d, vandq_u32(b, veorq_u32(c, d)));
-    }
-    static inline Vec G(Vec b, Vec c, Vec d)
-    {
-        return veorq_u32(c, vandq_u32(d, veorq_u32(b, c)));
-    }
-    static inline Vec H(Vec b, Vec c, Vec d)
-    {
-        return veorq_u32(b, veorq_u32(c, d));
-    }
-    static inline Vec I(Vec b, Vec c, Vec d)
-    {
-        return veorq_u32(c, vorrq_u32(b, vmvnq_u32(d)));
-    }
-
-    static inline void gatherAllMessageWords(const uint8_t * const block_ptrs[], Vec msg[16])
-    {
-        for (size_t word = 0; word < 16; ++word)
-        {
-            const size_t offset = word * sizeof(uint32_t);
-            const uint32_t values[lanes] = {
-                unalignedLoadLittleEndian<uint32_t>(block_ptrs[0] + offset),
-                unalignedLoadLittleEndian<uint32_t>(block_ptrs[1] + offset),
-                unalignedLoadLittleEndian<uint32_t>(block_ptrs[2] + offset),
-                unalignedLoadLittleEndian<uint32_t>(block_ptrs[3] + offset),
-            };
-            msg[word] = loadu(values);
-        }
-    }
-};
-
-class FunctionMD5ImplASIMD : public FunctionMD5Base
-{
-public:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return executeMD5Batch<ASIMDMD5Ops>(arguments, input_rows_count);
-    }
-};
-
-) // DECLARE_DEFAULT_CODE
-
-#endif
-
 
 #ifndef MD5_GTEST_UNIT_TEST
 
-#if USE_MD5_AARCH64_ASIMD
-
-/// ASIMD/NEON is baseline on AArch64, so there is a single implementation.
-/// Dispatch directly through normal virtual calls instead of ImplementationSelector.
-class FunctionMD5 : public TargetSpecific::Default::FunctionMD5ImplASIMD
+/// The baseline kernel is fixed by the build flags, so the only thing left to decide at runtime is
+/// AVX-512. Everything except execution comes from the base class.
+class FunctionMD5 : public TargetSpecific::Default::FunctionMD5Impl
 {
 public:
     explicit FunctionMD5([[maybe_unused]] ContextPtr context)
@@ -926,46 +942,27 @@ public:
         if (OpenSSLInitializer::instance().isFIPSEnabled())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #endif
-    }
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMD5>(context); }
-};
-
-#else
-
-/// Runtime dispatch via ImplementationSelector: scalar baseline plus optional x86 AVX2/AVX-512 paths,
-/// chosen at runtime based on detected CPU features.
-class FunctionMD5 : public TargetSpecific::Default::FunctionMD5Impl
-{
-public:
-    explicit FunctionMD5(ContextPtr context)
-        : selector(context)
-    {
-#if USE_SSL
-        if (OpenSSLInitializer::instance().isFIPSEnabled())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
-#endif
-
-        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionMD5Impl>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionMD5Impl>();
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionMD5Impl>();
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionMD5Impl>();
+            return;
+        }
 #endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionMD5Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMD5>(context); }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
-
-#endif
 
 
 REGISTER_FUNCTION(MD5)

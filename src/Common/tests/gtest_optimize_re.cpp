@@ -60,7 +60,8 @@ TEST(OptimizeRE, analyze)
     test_f(R"([Bb]ai[Dd]u[Ss]pider(?:-[A-Za-z]{1,30})(?:-[A-Za-z]{1,30}|)|bingbot|\bYeti(?:-[a-z]{1,30}|)|Catchpoint(?: bot|)|[Cc]harlotte|Daumoa(?:-feedfetcher|)|(?:[a-zA-Z]{1,30}-|)Googlebot(?:-[a-zA-Z]{1,30}|))", "", {"pider-", "bingbot", "Yeti-", "Yeti", "Catchpoint bot", "Catchpoint", "harlotte", "Daumoa-feedfetcher", "Daumoa", "-Googlebot", "Googlebot"});
     test_f("abc|(:?xx|yy|zz|x?)def", "", {"abc", "def"});
     test_f("abc|(:?xx|yy|zz|x?){1,2}def", "", {"abc", "def"});
-    test_f(R"(\\A(?:(?:[-0-9_a-z]+(?:\\.[-0-9_a-z]+)*)/k8s1)\\z)", "/k8s1");
+    /// `\\z` is a literal backslash followed by `z`, so it belongs to the required substring.
+    test_f(R"(\\A(?:(?:[-0-9_a-z]+(?:\\.[-0-9_a-z]+)*)/k8s1)\\z)", R"(/k8s1\z)");
     test_f("[a-zA-Z]+(?P<num>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?<num>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?'num'\\d+)", "", {}, false, true, false);
@@ -126,9 +127,19 @@ TEST(OptimizeRE, anchoredLiteral)
     test_f("^(abc)$", Kind::General);
     test_f("a$b", Kind::General);                   /// `$` in the middle is an assertion, not an anchor
     test_f("a^b", Kind::General);
-    test_f("^ab\\d", Kind::General);                /// an escape which is not an escaped metacharacter
+    test_f("^ab\\d", Kind::General);                /// an escaped alphanumeric is a special sequence
     test_f("^ab\\", Kind::General);                 /// a dangling escape
     test_f("^\\Qa.c\\E$", Kind::General);
+
+    /// `RE2::QuoteMeta` escapes every non-alphanumeric byte, not only the metacharacters re2 needs escaped.
+    test_f("^a\\%b", Kind::Prefix, "a%b");
+    test_f("^a\\ b$", Kind::Exact, "a b");
+    test_f("^a\\:b", Kind::Prefix, "a:b");
+    test_f("a\\,b$", Kind::Suffix, "a,b");
+    test_f("^a\\@b", Kind::Prefix, "a@b");
+    test_f("^a\\_b", Kind::Prefix, "a_b");
+    test_f("^a\\\\b", Kind::Prefix, "a\\b");
+    test_f("^a\\x41b", Kind::General);            /// a hex escape stays a special sequence
 }
 
 TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)

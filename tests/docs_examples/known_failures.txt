@@ -6,6 +6,7 @@
 # shows, and `unstable` means its output is random and any outcome is accepted.
 # An entry is not an excuse: fix the example and drop the line whenever you can.
 
+AggregateFunction/groupArrayInsertAt#3    unstable  # every thread inserts at the same position, and the documentation says the surviving value is undetermined
 AggregateFunction/groupArraySample#0      unstable  # the output is not the same on every run
 AggregateFunction/groupArraySample#2      unstable  # the output is not the same on every run
 AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run

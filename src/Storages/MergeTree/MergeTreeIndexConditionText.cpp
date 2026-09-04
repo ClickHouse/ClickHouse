@@ -355,11 +355,16 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 3)
         return true;
 
+    const auto function_name = node.function_base->getName();
+    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike")
+        return true;
+
     RPNBuilderTreeContext rpn_tree_context(getContext());
     RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
     const auto function_node = rpn_node.toFunctionNode();
 
-    return tokenizerArgumentMatchesIndex(node.function_base->getName(), function_node.getArgumentAt(2));
+    return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
@@ -675,6 +680,43 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
+
+        /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
+        /// function call `like(col, pattern, escape_char)`. Fold the escape character into the
+        /// pattern and dispatch through the existing 2-argument handler.
+        if (function_arguments_size == 3 && (function_name == "like" || function_name == "ilike"))
+        {
+            auto lhs_argument = function.getArgumentAt(0);
+            auto pattern_argument = function.getArgumentAt(1);
+            auto escape_argument = function.getArgumentAt(2);
+
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
+                && escape_argument.tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`.
+                /// Without this, direct read from the text index can strip the `like` call,
+                /// so a query that should raise `BAD_ARGUMENTS` returns rows from the index.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        function_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                Field rewritten_field(std::move(rewritten));
+                if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                    return true;
+            }
+            return false;
+        }
 
         if (function_arguments_size == 3)
         {

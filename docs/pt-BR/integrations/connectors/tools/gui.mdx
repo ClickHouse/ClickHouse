@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## Comercial
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app) é um cliente para iOS e iPadOS para monitorar e consultar o ClickHouse.
+
+  Recursos:
+
+  * O ProbeDeck mostra consultas em execução, réplicas, partes, mesclagens, mutações, discos e métricas do servidor.
+  * Você pode interromper consultas com `KILL QUERY` e mutações com `KILL MUTATION`.
+  * Você pode navegar por esquemas e dados ou executar SQL no editor.
+  * O ProbeDeck se conecta por HTTP(S) pela rede do dispositivo ou por um túnel SSH.
+  * O ProbeDeck armazena credenciais no Keychain do iOS e oferece suporte a um modo somente leitura para cada conexão.
+  * O aplicativo inclui uma demonstração offline com dados integrados.
+
+  Usuários gratuitos podem monitorar um servidor e executar SQL em modo somente leitura. Eles podem salvar uma conexão. O ProbeDeck Pro adiciona controles para encerramento, operações de gravação, DDL e conexões salvas ilimitadas.
+
+  Consulte [Conectar o ProbeDeck ao ClickHouse](/pt-BR/integrations/connectors/sql-clients/probedeck) para obter instruções de conexão.
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) é uma IDE para bancos de dados da JetBrains com suporte dedicado ao ClickHouse. Também está integrado a outras ferramentas baseadas no IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm e outras.
 
@@ -487,16 +504,16 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) é uma ferramenta de BI self-service para exploração de dados e relatórios operacionais. Está disponível tanto como serviço na nuvem quanto em uma versão auto-hospedada. Os relatórios do SeekTable podem ser embutidos em qualquer aplicativo web.
+  [SeekTable](https://www.seektable.com) é uma ferramenta de BI de autoatendimento para exploração de dados e relatórios operacionais. Está disponível tanto como serviço em nuvem quanto em uma versão auto-hospedada. Os relatórios do SeekTable podem ser incorporados a qualquer aplicativo web.
 
   Recursos:
 
-  * Criador de relatórios amigável para usuários de negócio.
-  * Parâmetros de relatório avançados para filtragem SQL e personalizações de consulta específicas de cada relatório.
-  * Pode se conectar ao ClickHouse tanto por um endpoint TCP/IP nativo quanto por uma interface HTTP(S) (2 drivers diferentes).
-  * É possível usar todo o poder do dialeto SQL do ClickHouse nas definições de dimensões/medidas.
-  * [Web API](https://www.seektable.com/help/web-api-integration) para geração automatizada de relatórios.
-  * Suporta fluxo de desenvolvimento de relatórios com [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore) de dados; a configuração de modelos de dados (cubos) / relatórios é um XML legível e pode ser armazenada em um sistema de controle de versão.
+  * Construtor de relatórios fácil de usar para usuários de negócios.
+  * Parâmetros avançados de relatório para filtragem SQL e personalizações de consultas específicas de relatórios.
+  * Pode se conectar ao ClickHouse tanto com um endpoint TCP/IP nativo quanto com uma interface HTTP(S) (2 drivers diferentes).
+  * É possível usar todo o poder do dialeto SQL do ClickHouse nas definições de dimensões e medidas.
+  * [API Web](https://www.seektable.com/help/web-api-integration) para geração automatizada de relatórios.
+  * Oferece suporte ao fluxo de desenvolvimento de relatórios com [backup/restauração](https://www.seektable.com/help/self-hosted-backup-restore) dos dados da conta; a configuração dos modelos de dados (cubos) e dos relatórios é um XML legível por humanos e pode ser armazenada em um sistema de controle de versão.
 
   O SeekTable é [gratuito](https://www.seektable.com/help/cloud-pricing) para uso pessoal/individual.
 
@@ -504,11 +521,11 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) é uma UI simples que permite visualizar as consultas em execução no cluster ClickHouse, ver informações sobre elas e encerrá-las, se desejar.
+  [Chadmin](https://github.com/bun4uk/chadmin) é uma UI simples que permite visualizar as consultas em execução no seu cluster do ClickHouse, ver informações sobre elas e encerrá-las, se desejar.
 </Accordion>
 
 <Accordion title="TABLUM.IO">
-  [TABLUM.IO](https://tablum.io/) — uma ferramenta online de consultas e análises para ETL e visualização. Permite conectar-se ao ClickHouse, consultar dados por meio de um console SQL versátil e carregar dados de arquivos estáticos e serviços de terceiros. O TABLUM.IO pode visualizar os resultados dos dados em gráficos e tabelas.
+  [TABLUM.IO](https://tablum.io/) — uma ferramenta online de consultas e analytics para ETL e visualização. Permite conectar-se ao ClickHouse, consultar dados por meio de um console SQL versátil e carregar dados de arquivos estáticos e serviços de terceiros. O TABLUM.IO pode visualizar os resultados dos dados em gráficos e tabelas.
 
   Recursos:
 
@@ -546,7 +563,7 @@ doc_type: 'reference'
 
   Recursos:
 
-  * Visão geral do servidor ao se conectar — versão, uptime, consultas em execução, merges ativos, partes e tamanhos de armazenamento, status da réplica, clusters e nós de relance.
+  * Visão geral do servidor ao se conectar — versão, uptime, consultas em execução, mesclagens ativas, partes e tamanhos de armazenamento, status da réplica, clusters e nós de relance.
   * Construtor visual de consultas (seletores de coluna, filtros, ordenação, limite) junto com um editor SQL Monaco com destaque de sintaxe e histórico de consultas por conexão.
   * Assistente visual de `CREATE TABLE` com suporte a variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` e encapsulamento automático em `Nullable()`.
   * Suporte nativo aos tipos do ClickHouse — `Nullable`, `Array`, `LowCardinality` e objetos aninhados.

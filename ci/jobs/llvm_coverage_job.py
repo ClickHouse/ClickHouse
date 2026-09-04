@@ -5,10 +5,15 @@ import shlex
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.defs.defs import LLVM_ARTIFACTS_LIST, S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.defs.defs import (
+    LLVM_ARTIFACTS_LIST,
+    S3_BUCKET_HTTP_ENDPOINT,
+    S3_REPORT_BUCKET_HTTP_ENDPOINT,
+)
 
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
@@ -107,6 +112,22 @@ def get_lcov_summary(
 
 
 COVERAGE_DROP_TOLERANCE = 0.3
+
+
+def report_s3_base():
+    """Base URL of the artifacts this run uploads itself. Praktika owns the
+    prefix layout, so ask it instead of restating PRs/<pr>/<sha>."""
+    return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{Info().env.get_s3_prefix()}"
+
+
+def master_coverage_url(sha):
+    """Link to the `llvm_coverage.info` published by `MasterCI` at master
+    commit `sha`."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://{S3_BUCKET_HTTP_ENDPOINT}/{prefix}/llvm_coverage/llvm_coverage.info"
+
 
 # generate_diff_coverage_report.sh writes one of these tokens before every exit 0.
 DIFF_OUTCOME_MARKER_FILE = "diff_outcome.txt"
@@ -336,6 +357,9 @@ if __name__ == "__main__":
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
     os.environ["PREV_30_COMMITS"] = ",".join(master_track_commits)
+    os.environ["PREV_COVERAGE_URLS"] = ",".join(
+        master_coverage_url(sha) for sha in master_track_commits
+    )
 
     is_master_branch = branch == "master"
     _diff_ran = False
@@ -424,7 +448,7 @@ if __name__ == "__main__":
             gen_report_res.files.append(f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz")
             _html_files, _html_assets = collect_html_report_files("llvm_coverage_html_report")
             gen_report_res.files.extend(_html_files)
-            gen_report_res.assets.extend(_html_assets)
+            gen_report_res.set_assets(_html_assets)
     else:
         gen_report_res = Result.create_from(
             name="Generate LLVM Coverage Report",
@@ -539,7 +563,7 @@ if __name__ == "__main__":
                 "llvm_coverage_diff_html_report", entry_point="index_diff.html"
             )
             diff_res.files.extend(_diff_files)
-            diff_res.assets.extend(_diff_assets)
+            diff_res.set_assets(_diff_assets)
         else:
             _diff_msg = diff_report_message(_diff_outcome)
             print(_diff_msg)
@@ -604,12 +628,7 @@ if __name__ == "__main__":
             # Construct S3 artifact URLs from the known upload path structure:
             #   HTML files/assets → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(sub_result)>/<rel_path>
             #   log files         → https://<endpoint>/<s3_prefix>/<normalize(job)>/<normalize(result)>/<log_basename>
-            _s3_prefix = (
-                f"PRs/{pr_number}/{current_commit_sha}"
-                if pr_number > 0
-                else f"REFs/{branch}/{current_commit_sha}"
-            )
-            _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+            _s3_base = report_s3_base()
             _log_name = f"{Utils.normalize_string(print_res.name)}.log"
             uncovered_code_url = f"{_s3_base}/llvm_coverage/{Utils.normalize_string(print_res.name)}/{_log_name}"
 
@@ -703,8 +722,7 @@ if __name__ == "__main__":
                     f"{TEMP_DIR}/llvm_coverage.info"
                 )
                 print(f"Master coverage: lines={m_line_cov:.2f}% ({m_line_hit}/{m_line_total}) functions={m_function_cov:.2f}% ({m_func_hit}/{m_func_total}) branches={m_branch_cov:.2f}% ({m_branch_hit}/{m_branch_total})")
-                _s3_prefix = f"REFs/{branch}/{current_commit_sha}"
-                _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+                _s3_base = report_s3_base()
                 _master_data = {
                     "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                     "pull_request_number": 0,
@@ -748,12 +766,7 @@ if __name__ == "__main__":
     # the URL is deterministic: llvm_coverage/<normalize(sub_result_name)>/<filename>.
     report_links = []
     if not is_local_run:
-        _s3_prefix = (
-            f"PRs/{pr_number}/{current_commit_sha}"
-            if pr_number > 0
-            else f"REFs/{branch}/{current_commit_sha}"
-        )
-        _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+        _s3_base = report_s3_base()
         # Only publish a link when the artifact it addresses exists: on an
         # incomplete measurement no report is generated, and an unconditional
         # append would point the intended green SKIPPED result at a 404.
