@@ -34,6 +34,11 @@ INSERT INTO t_matching_alias VALUES ('{"some":"value"}'), ('{"foo":"bar"}');
 SELECT count() FROM t_matching_alias WHERE hasAllTokens(paths, ['xoo']);
 SELECT count() FROM t_matching_alias WHERE hasAllTokens(paths, ['foo']);
 
+-- Retyping the ALIAS column introduces the same mismatch without touching the index declaration,
+-- so it is rejected too. Exempting an index merely because its own definition is unchanged would
+-- let this through.
+ALTER TABLE t_matching_alias MODIFY COLUMN paths String ALIAS JSONExtractKeys(event); -- { serverError BAD_ARGUMENTS }
+
 -- An ALIAS column that is not indexed keeps converting as before.
 DROP TABLE IF EXISTS t_alias_no_index;
 CREATE TABLE t_alias_no_index
@@ -64,5 +69,9 @@ ATTACH TABLE db_05076_ord.t_grandfathered
 
 ALTER TABLE db_05076_ord.t_grandfathered ADD COLUMN x UInt8;
 SELECT count() FROM system.columns WHERE database = 'db_05076_ord' AND table = 't_grandfathered' AND name = 'x';
+
+-- The escape hatch stays open: the index can still be dropped.
+ALTER TABLE db_05076_ord.t_grandfathered DROP INDEX fts_paths;
+SELECT count() FROM system.data_skipping_indices WHERE database = 'db_05076_ord' AND table = 't_grandfathered';
 
 DROP DATABASE db_05076_ord;

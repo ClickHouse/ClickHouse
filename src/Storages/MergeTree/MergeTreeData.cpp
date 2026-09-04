@@ -1003,6 +1003,39 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
+namespace
+{
+
+/// A text index over an `ALIAS` column whose declared type differs from the type its expression
+/// produces can never be used, so such an index is rejected. Returns the name of the offending
+/// column, or nothing when `index` is not of that shape.
+///
+/// `index.data_types` comes from the alias expression, resolved by `IndexDescription::initExpressionInfo`,
+/// while `columns` holds the type the column was declared with. It is the disagreement between the
+/// two that makes the index unreachable.
+std::optional<String> findMistypedAliasColumnOfTextIndex(const IndexDescription & index, const ColumnsDescription & columns)
+{
+    if (index.data_types.empty())
+        return {};
+
+    const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+    ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+    const auto * identifier = index_expression ? index_expression->as<ASTIdentifier>() : nullptr;
+    if (!identifier)
+        return {};
+
+    const auto * column_description = columns.tryGet(identifier->name());
+    if (!column_description || column_description->default_desc.kind != ColumnDefaultKind::Alias)
+        return {};
+
+    if (column_description->type->equals(*index.data_types[0]))
+        return {};
+
+    return identifier->name();
+}
+
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -1203,42 +1236,38 @@ void MergeTreeData::checkProperties(
                 /// index files are written and merged all the same, so the cost is paid and nothing
                 /// reads them. Existing tables are left alone: `attach` must keep loading whatever
                 /// is already on disk.
-                /// Only a newly added or redefined index is checked. `checkProperties` also runs for
-                /// every `ALTER` (`checkAlterIsPossible`) and on the replica side of a committed
-                /// `ALTER_METADATA` (`setTableStructure` -> `setProperties`), both with `attach = false`,
-                /// so validating indexes that the operation does not touch would leave a table that
-                /// already carries such an index loadable but un-alterable - and would wedge the
-                /// replication queue of an upgraded replica behind an entry it can never apply.
-                /// On the create path `setProperties` is called with the same metadata as both
-                /// arguments, so "already present in `old_metadata`" only means "pre-existing" when
-                /// the two are actually different objects.
-                const bool is_alter = &old_metadata != &new_metadata;
-                const bool index_is_unchanged = is_alter
-                    && std::ranges::any_of(
-                        old_metadata.secondary_indices,
-                        [&](const auto & old_index)
-                        {
-                            return old_index.name == index.name && old_index.definition_ast && index.definition_ast
-                                && old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
-                                == index.definition_ast->getTreeHash(/*ignore_aliases=*/true);
-                        });
-
-                if (!attach && !index_is_unchanged && !index.data_types.empty())
+                if (!attach)
                 {
-                    const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
-                    ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
-
-                    /// Only a bare reference to an ALIAS column is diagnosable here. The expression
-                    /// stored in the index has the alias already expanded, so it is identical whether
-                    /// or not the declared type matched, and cannot be used to detect this.
-                    if (const auto * identifier = index_expression ? index_expression->as<ASTIdentifier>() : nullptr)
+                    if (auto mistyped_column = findMistypedAliasColumnOfTextIndex(index, new_metadata.columns))
                     {
-                        const auto * column_description = new_metadata.columns.tryGet(identifier->name());
+                        /// Reject only a violation this operation introduces, not one it inherits.
+                        /// `checkProperties` also runs for every `ALTER` (`checkAlterIsPossible`) and on
+                        /// the replica side of a committed `ALTER_METADATA` (`setTableStructure` ->
+                        /// `setProperties`), both with `attach = false`. Re-reporting a pre-existing
+                        /// violation there would leave a table grandfathered by the `attach` exemption
+                        /// loadable but un-alterable, and would wedge the replication queue of an
+                        /// upgraded replica behind an entry it can never apply.
+                        ///
+                        /// The condition is the violation itself rather than "the index declaration is
+                        /// unchanged": `ALTER TABLE ... MODIFY COLUMN` retypes the ALIAS column without
+                        /// touching the index, and that introduces the mismatch just as surely as
+                        /// declaring it outright.
+                        ///
+                        /// On the create path `setProperties` is called with the same metadata as both
+                        /// arguments, so there is no older state to inherit from and nothing to exempt.
+                        const bool inherited = &old_metadata != &new_metadata
+                            && std::ranges::any_of(
+                                   old_metadata.secondary_indices,
+                                   [&](const auto & old_index)
+                                   {
+                                       return old_index.name == index.name
+                                           && findMistypedAliasColumnOfTextIndex(old_index, old_metadata.columns)
+                                               == mistyped_column;
+                                   });
 
-                        if (column_description
-                            && column_description->default_desc.kind == ColumnDefaultKind::Alias
-                            && !column_description->type->equals(*index.data_types[0]))
+                        if (!inherited)
                         {
+                            const auto & declared_type = new_metadata.columns.get(*mistyped_column).type;
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
                                 "Text index {} is defined over ALIAS column {}, which is declared as {} while its "
@@ -1246,8 +1275,8 @@ void MergeTreeData::checkProperties(
                                 "type, so the index would never be used. Declare the column as {}, or index the "
                                 "expression directly.",
                                 backQuote(index.name),
-                                backQuote(identifier->name()),
-                                column_description->type->getName(),
+                                backQuote(*mistyped_column),
+                                declared_type->getName(),
                                 index.data_types[0]->getName(),
                                 index.data_types[0]->getName());
                         }
