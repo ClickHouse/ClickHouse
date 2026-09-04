@@ -352,9 +352,10 @@ public:
     size_t adaptivePressureDetachedBytesBudget() const;
 
     /// The bytes a claimed batch is expected to occupy once drained: the per-record
-    /// bookkeeping and aggregate states, plus the staged key bytes. Saturating, because an
-    /// absurd product only means "ask for the whole budget".
-    size_t estimateAdaptiveDrainBytes(size_t records, size_t key_bytes) const;
+    /// bookkeeping and aggregate states of the destination table, plus the batch's own staged
+    /// bytes, which stay resident beside that table until the drain returns. Saturating,
+    /// because an absurd product only means "ask for the whole budget".
+    size_t estimateAdaptiveDrainBytes(size_t records, size_t staged_bytes) const;
 
     /// For a producer back on the baseline path, which cannot free the shared drain table by
     /// flushing its own: writes that table out regardless of the part floor, then returns query

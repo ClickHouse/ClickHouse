@@ -1469,14 +1469,32 @@ size_t Aggregator::adaptivePressureDetachedBytesBudget() const
     return std::min(adaptive_pressure_detached_bytes_budget, std::max(params.max_bytes_before_external_group_by / 2, 2 * part_bytes));
 }
 
-size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t key_bytes) const
+size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t staged_bytes) const
 {
     const size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
     size_t estimated_bytes = 0;
     if (common::mulOverflow(records, per_record_bytes, estimated_bytes)
-        || common::addOverflow(estimated_bytes, key_bytes, estimated_bytes))
+        || common::addOverflow(estimated_bytes, staged_bytes, estimated_bytes))
         return std::numeric_limits<size_t>::max();
     return estimated_bytes;
+}
+
+/// The memory a published chunk holds, and keeps holding until the drain that claimed it
+/// returns: the staged keys, and the staged payload beside them - the run lengths of a
+/// count-only chunk, or the argument columns a general-aggregate chunk gathered at publish,
+/// whose variable-width values can outweigh everything the drained table itself will cost.
+static size_t stagedChunkBytes(const StagedChunk & chunk)
+{
+    size_t bytes = chunk.keys.routing_hashes.allocated_bytes() + chunk.keys.key_bytes.allocated_bytes()
+        + chunk.keys.key_offsets.allocated_bytes();
+
+    if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&chunk.payload))
+        return bytes + counts->multiplicities.allocated_bytes();
+
+    for (const auto & column : std::get<StagedChunk::AggregatePayload>(chunk.payload).argument_columns)
+        if (column)
+            bytes += column->allocatedBytes();
+    return bytes;
 }
 
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
@@ -1593,14 +1611,30 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 
         /// The batch is capped at the table's remaining capacity to the part bound, with a
         /// quarter of it as the minimum so a batch stays worth its bucket-major pass; a part
-        /// therefore overshoots by at most a quarter instead of a whole batch.
-        const size_t batch_target = std::max(
-            part_records - std::min(part_records, shared.early_drain_variants->size()), part_records / 4 + 1);
+        /// therefore overshoots by at most a quarter instead of a whole batch. The cap is read
+        /// in records and in bytes both, the same way the pressure sweep claims: a record
+        /// count derived from the fixed state width says nothing about a backlog of wide keys
+        /// or wide staged arguments, which would otherwise rebuild here the over-budget
+        /// working set the sweeps exist to avoid.
+        const size_t table_records = shared.early_drain_variants->size();
+        const size_t table_bytes = shared.early_drain_variants->allocatedBytes();
+        const size_t batch_target = std::max(part_records - std::min(part_records, table_records), part_records / 4 + 1);
+        const size_t batch_bytes_target = std::max(part_bytes - std::min(part_bytes, table_bytes), part_bytes / 4 + 1);
 
         size_t batch_records = 0;
+        size_t batch_staged_bytes = 0;
         size_t end = begin;
-        for (; end < chunks.size() && batch_records < batch_target; ++end)
+        for (; end < chunks.size(); ++end)
+        {
             batch_records += chunks[end]->keys.size();
+            batch_staged_bytes += stagedChunkBytes(*chunks[end]);
+            if (batch_records >= batch_target
+                || estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes) >= batch_bytes_target)
+            {
+                ++end;
+                break;
+            }
+        }
 
         const std::vector<StagedChunkPtr> batch(
             std::make_move_iterator(chunks.begin() + begin), std::make_move_iterator(chunks.begin() + end));
@@ -1644,18 +1678,22 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
         /// The claim is bounded in records and in the bytes the drain of those records is
         /// expected to take, so a batch of wide keys or wide states is cut short before the
-        /// drain builds a table the threshold cannot hold. A batch that reached either bound
-        /// is a part of its own, which is what tells the two regimes below apart; a batch that
-        /// merely ran out of chunks is the tail.
+        /// drain builds a table the threshold cannot hold. The byte side counts the chunks'
+        /// whole staged footprint - the gathered argument columns of a general-aggregate chunk
+        /// as much as its keys - because the batch keeps holding it until `drainStagedBatch`
+        /// returns, so a stream of wide arguments is a working set the destination table's
+        /// estimate alone does not see. A batch that reached either bound is a part of its
+        /// own, which is what tells the two regimes below apart; a batch that merely ran out
+        /// of chunks is the tail.
         bool batch_is_full = false;
-        size_t batch_key_bytes = 0;
+        size_t batch_staged_bytes = 0;
         size_t split = 0;
         for (; split < chunks.size(); ++split)
         {
             batch_records += chunks[split]->keys.size();
-            batch_key_bytes += chunks[split]->keys.key_bytes.size();
+            batch_staged_bytes += stagedChunkBytes(*chunks[split]);
             if (batch_records >= adaptive_pressure_spill_min_keys
-                || estimateAdaptiveDrainBytes(batch_records, batch_key_bytes) >= part_bytes)
+                || estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes) >= part_bytes)
             {
                 batch_is_full = true;
                 ++split;
@@ -1707,7 +1745,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
         /// Saturating rather than wrapping, and a request larger than the whole budget is
         /// granted when it is alone, so an absurd estimate cannot deadlock the valve.
-        estimated_bytes = estimateAdaptiveDrainBytes(batch_records, batch_key_bytes);
+        estimated_bytes = estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes);
     }
 
     /// The budget is claimed with the coordinator lock released, so a producer that must wait
