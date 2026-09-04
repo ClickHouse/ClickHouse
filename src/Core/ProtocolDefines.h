@@ -99,10 +99,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 10 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
-/// Version 11 adds the ReadInOrder info in the reading step in the plan and registers
-/// the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT` can be shipped under
-/// `make_distributed_plan`.
-/// Version 12 adds the ReadInOrder info in the reading step in the plan
+/// Version 11 adds the ReadInOrder info in the reading step in the plan
+/// Version 12 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
+/// can be shipped under `make_distributed_plan`.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
