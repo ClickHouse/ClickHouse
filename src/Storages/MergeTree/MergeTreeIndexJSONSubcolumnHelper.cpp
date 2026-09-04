@@ -145,6 +145,18 @@ bool isJSONPathFilterSafe(
             return false;
 
         enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
+
+        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
+        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
+        /// hold one, is absent from the converted value.
+        bool nested_source_type_lost = false;
+        unwrapped_value_type->forEachChild([&](const IDataType & nested)
+        {
+            const WhichDataType which_nested(nested);
+            nested_source_type_lost |= which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
+        });
+        if (nested_source_type_lost)
+            return false;
     }
     auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
     if (converted == key_expression_type->getDefault())

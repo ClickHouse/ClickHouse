@@ -6,6 +6,7 @@
 
 DROP TABLE IF EXISTS t_json_bf;
 DROP TABLE IF EXISTS t_json_tokenbf;
+DROP TABLE IF EXISTS t_json_tuple;
 
 CREATE TABLE t_json_bf (id UInt64, data JSON, INDEX idx JSONAllPaths(data) TYPE bloom_filter(0.001) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -39,5 +40,19 @@ SELECT arraySort(groupArray(id)) FROM t_json_bf WHERE data.alpha::String = '';
 SELECT arraySort(groupArray(id)) FROM t_json_bf      WHERE data.alpha::String = CAST('7', 'Enum8(''7'' = 3)') SETTINGS force_data_skipping_indices = 'idx';
 SELECT arraySort(groupArray(id)) FROM t_json_tokenbf WHERE data.alpha::String = CAST('7', 'Enum8(''7'' = 3)') SETTINGS force_data_skipping_indices = 'idx';
 
+-- A `Tuple` key expression takes the whole constant through one conversion, and that conversion
+-- recurses into the elements without their own types, so a nested empty `Enum` label is lost.
+CREATE TABLE t_json_tuple (id UInt64, data JSON, INDEX idx JSONAllPaths(data) TYPE bloom_filter(0.001) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_json_tuple VALUES (1, '{"alpha":"(''x'')"}'), (2, '{"beta":"y"}'), (3, '{"alpha":"('''')"}'), (4, '{}');
+
+-- Ids 2 and 4 carry no `alpha` path, so the non-nullable `Tuple(String)` reads as `('')` and they match.
+SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple(CAST('', 'Enum8('''' = 3)'));
+
+-- A tuple constant holding no `Enum` loses nothing in that conversion, so the index stays usable.
+SELECT arraySort(groupArray(id)) FROM t_json_tuple WHERE data.alpha::Tuple(String) = tuple('x') SETTINGS force_data_skipping_indices = 'idx';
+
 DROP TABLE t_json_bf;
 DROP TABLE t_json_tokenbf;
+DROP TABLE t_json_tuple;
