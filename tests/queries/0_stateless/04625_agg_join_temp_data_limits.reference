@@ -1,0 +1,2 @@
+join spill without per-query limit works
+aggregation spill on remote plan without per-query limit works
