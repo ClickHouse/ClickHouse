@@ -71,6 +71,8 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `reserved_log_items`               | How many coordination log records to store before compaction.                                                                                                                                                            | `100000`                                                                                                     |
 | `snapshot_distance`                | How often ClickHouse Keeper will create new snapshots (in the number of records in logs).                                                                                                                                | `100000`                                                                                                     |
 | `snapshots_to_keep`                | How many snapshots to keep.                                                                                                                                                                                              | `3`                                                                                                          |
+| `compress_snapshots_with_zstd_format` | Write snapshots in the ZSTD format instead of the custom ClickHouse LZ4 block format.                                                                                                                                    | `true`                                                                                                       |
+| `snapshot_zstd_compression_level`  | ZSTD compression level for snapshots. Lower levels use less CPU but produce larger snapshots. Negative values select ZSTD fast levels. Used only when `compress_snapshots_with_zstd_format` is enabled.                  | `3`                                                                                                          |
 | `stale_log_gap`                    | Threshold when leader considers follower as stale and sends the snapshot to it instead of logs.                                                                                                                          | `10000`                                                                                                      |
 | `fresh_log_gap`                    | When node became fresh.                                                                                                                                                                                                  | `200`                                                                                                        |
 | `max_requests_batch_size`          | Max size of batch in requests count before it will be sent to RAFT.                                                                                                                                                      | `100`                                                                                                        |
@@ -288,6 +290,7 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
@@ -561,6 +564,7 @@ After migration, consider tuning these settings for larger clusters or higher th
 | `force_sync` | `true` | `false` | Asynchronous log writes improve throughput |
 | `compress_logs` | `false` | `true` | Compresses Raft log files to reduce disk I/O |
 | `compress_snapshots_with_zstd_format` | `true` | — | Already enabled by default; compresses snapshots with zstd |
+| `snapshot_zstd_compression_level` | `3` | — | Lower values reduce snapshot compression CPU at the cost of larger snapshots |
 
 These settings are configured under `coordination_settings` in your [Keeper configuration](#internal-coordination-settings).
 

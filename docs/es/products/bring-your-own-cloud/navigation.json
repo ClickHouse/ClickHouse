@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Descripción general",
+      "group": "Overview",
       "pages": [
         "es/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "es/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuración",
+      "group": "Configuration",
       "pages": [
         "es/products/bring-your-own-cloud/configuration/configurations",
         "es/products/bring-your-own-cloud/configuration/connect",
@@ -17,11 +17,11 @@
       ]
     },
     {
-      "group": "Incorporación",
+      "group": "Onboarding",
       "pages": [
         "es/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Personalización",
+          "group": "Customization",
           "pages": [
             "es/products/bring-your-own-cloud/onboarding/customization-aws",
             "es/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -40,7 +40,27 @@
       ]
     },
     {
-      "group": "Referencia",
+      "group": "Connector",
+      "pages": [
+        "es/products/bring-your-own-cloud/connector/overview",
+        "es/products/bring-your-own-cloud/connector/onboarding",
+        "es/products/bring-your-own-cloud/connector/architecture",
+        "es/products/bring-your-own-cloud/connector/support-sessions",
+        "es/products/bring-your-own-cloud/connector/configuration",
+        "es/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "es/products/bring-your-own-cloud/connector/reference/cli",
+            "es/products/bring-your-own-cloud/connector/reference/configuration",
+            "es/products/bring-your-own-cloud/connector/reference/faq",
+            "es/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
       "pages": [
         "es/products/bring-your-own-cloud/reference/network-security",
         "es/products/bring-your-own-cloud/reference/privilege",

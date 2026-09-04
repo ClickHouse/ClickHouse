@@ -1,0 +1,12 @@
+-- narrowing enabled
+1
+-- narrowing disabled by the settings
+0
+-- ORDER BY with LIMIT: the sort is shipped and the children are read in order
+Limit Sorting Union Limit Sorting Union ReadFromMergeTree ReadFromParallelReplicas
+1	0
+0
+1
+2
+3
+4

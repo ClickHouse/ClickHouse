@@ -83,6 +83,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
+                                            | splitByRegexp(re)
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,6 +163,9 @@ ALTER TABLE table DROP INDEX text_idx;
   Os separadores podem ser especificados usando um parâmetro opcional; por exemplo, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Observe que cada string pode ser composta por vários caracteres (`', '` no exemplo).
   A lista padrão de separadores, se não for especificada explicitamente (por exemplo, `tokenizer = splitByString`), é um único espaço em branco `[' ']`.
+* `splitByRegexp(re)` divide strings usando um separador de expressão regular `re` definido pelo usuário (consulte a função [splitByRegexp](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  O argumento `re` é obrigatório; por exemplo, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
+  Diferentemente das strings separadoras fixas de `splitByString`, um separador de expressão regular pode preservar tokens que contêm caracteres especiais (como `C++` ou `C#`) que os outros tokenizadores separariam.
 * `asciiCJK` divide strings em tokens usando regras de limite de palavras do Unicode (semelhantes a [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Caracteres ASCII alfanuméricos e sublinhados formam tokens com conectores (ASCII `:` para letras, `.` e `'` para caracteres do mesmo tipo). Caracteres Unicode não ASCII, incluindo caracteres [CJK](https://en.wikipedia.org/wiki/CJK_characters), tornam-se tokens de um único caractere.
 * `chinese[(granularity)]` segmenta texto chinês em palavras usando um dicionário e um modelo oculto de Markov (o algoritmo segue [jieba](https://github.com/fxsjy/jieba); o dicionário e os dados do modelo embutidos são derivados de [cppjieba](https://github.com/yanyiwu/cppjieba)). Diferentemente de `asciiCJK`, que trata cada caractere não ASCII como um token de um único caractere, `chinese` agrupa caracteres chineses consecutivos em palavras (por exemplo, `北京大学` se torna um token `北京大学`, em vez de quatro tokens de um único caractere). Isso gera tokens mais significativos para texto chinês e maior qualidade de busca. Para texto geral/misto, use `asciiCJK`; para texto somente em chinês, use `chinese`. O argumento opcional `granularity` é `'coarse_grained'` (o padrão, se não for especificado) ou `'fine_grained'`. Este último também enumera subpalavras sobrepostas; por exemplo, `北京邮电大学` também gera `北京`, `邮电`, `大学`. A tokenização granular melhora o recall, ao custo de um índice maior.
   Pesquise um índice de texto `chinese` com [hasAnyTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens) (que tokenizam o termo buscado com o tokenizador `chinese`), e não com `hasToken` (que divide apenas em separadores ASCII).
@@ -176,7 +181,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Se o parâmetro `min_cutoff_length` for fornecido, somente n-grams com comprimento maior ou igual a `min_cutoff_length` serão retornados.
   Em comparação com `ngrams(N)`, o tokenizador `sparseGrams` produz N-grams de comprimento variável, permitindo uma representação mais flexível do texto original.
   Por exemplo, `tokenizer = sparseGrams(3, 5, 4)` gera internamente 3-, 4- e 5-grams a partir da string de entrada, mas apenas os 4- e 5-grams são retornados.
-* `array` não realiza tokenização, ou seja, cada valor da linha é um token (consulte a função [array](/pt-BR/reference/functions/regular-functions/array-functions#array)).
+* `array` não realiza tokenização, ou seja, cada valor da linha é um token (consulte a função [array](/pt-BR/reference/functions/regular-functions/array-functions#array)). Para compatibilidade com outros sistemas, `keyword` está disponível como um alias de `array`.
 
 Todos os tokenizadores disponíveis estão listados em [system.tokenizers](/pt-BR/reference/system-tables/tokenizers).
 
@@ -391,16 +396,16 @@ Casos de uso típicos para o argumento de pós-processador incluem:
    * **Abordagem com pós-processador**: use o tokenizador `splitByString` (divisão por espaços em branco) para que o timestamp inteiro se torne um único token e, em seguida, use `parseDateTimeOrNull` para detectá-lo e descartá-lo.
      Exemplo: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
      Para timestamps com offsets de timezone ou segundos fracionários, use `parseDateTimeBestEffortOrNull(str)` sem uma format string explícita.
-   * **Abordagem com preprocessador**: remova o timestamp da linha de log completa *antes* da tokenização com uma expressão regular.
+   * **Abordagem com pré-processador**: remova o timestamp da linha de log completa *antes* da tokenização com uma expressão regular.
      Exemplo: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
      Isso funciona com qualquer tokenizador e é mais eficiente, pois os caracteres do timestamp nunca são tokenizados.
-     As duas abordagens podem ser combinadas: o preprocessador remove o timestamp, enquanto o pós-processador normaliza ou filtra os tokens restantes (por exemplo, lowercase + remoção de palavras de severidade como `ERROR` ou `INFO`).
+     As duas abordagens podem ser combinadas: o pré-processador remove o timestamp, enquanto o pós-processador normaliza ou filtra os tokens restantes (por exemplo, lowercase + remoção de palavras de severidade como `ERROR` ou `INFO`).
 3. **Stemming**. Mapear cada token para seu radical melhora a abrangência da busca ao corresponder variantes morfológicas que compartilham a mesma raiz.
    Por exemplo, com stemming em inglês, &quot;running&quot;, &quot;runs&quot; e &quot;run&quot; são todos reduzidos a &quot;run&quot;, de modo que uma consulta por qualquer uma dessas variantes corresponde a todas elas.
    O ClickHouse fornece uma função interna [stem](/pt-BR/reference/functions/regular-functions/nlp-functions#stem) para vários idiomas.
    Exemplo: `stem(str, 'en')`
 4. **Normalização de maiúsculas/minúsculas**. Converter tokens para minúsculas ou maiúsculas para permitir correspondência sem diferenciar maiúsculas de minúsculas, por exemplo [lower](/pt-BR/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/pt-BR/reference/functions/regular-functions/string-functions#lowerUTF8).
-   Para conversão para minúsculas e maiúsculas, recomendamos um preprocessador em vez de um pós-processador.
+   Para conversão para minúsculas e maiúsculas, recomendamos um pré-processador em vez de um pós-processador.
 
 A expressão de pós-processador transforma tokens do tipo [String](/pt-BR/reference/data-types/string) em tokens do mesmo tipo.
 Além disso, a expressão de pós-processador deve referenciar apenas a coluna ou expressão sobre a qual o índice de texto é definido.
@@ -410,7 +415,7 @@ O uso de funções não determinísticas não é permitido.
 
 O pós-processador é aplicado a cada token gerado durante a construção do índice (para o tokenizador `array`, cada elemento do array é um token). Durante a consulta, o comportamento depende da função:
 
-* Para `hasToken`, `hasAllTokens`, `hasAnyTokens` e `hasPhrase` (com qualquer tokenizador compatível): o pós-processador é aplicado tanto aos tokens do haystack quanto ao needle de busca, permitindo correspondência totalmente normalizada (por exemplo, busca sem diferenciar maiúsculas de minúsculas). Para `hasPhrase`, os tokens pós-processados são posicionados de forma densa, portanto, um token que o pós-processador descarta não deixa nenhuma lacuna posicional e a frase ainda corresponde através dele — por exemplo, com um pós-processador de stop words que descarta `the`, `hasPhrase(col, 'see cat')` corresponde a um documento `see the cat`.
+* Para `hasToken`, `hasAllTokens`, `hasAnyTokens` e `hasPhrase` (com qualquer tokenizador compatível): o pós-processador é aplicado tanto aos tokens do haystack quanto ao needle de busca, permitindo correspondência totalmente normalizada (por exemplo, busca sem diferenciar maiúsculas de minúsculas). Para `hasPhrase`, os tokens pós-processados são posicionados de forma densa, portanto, um token que o pós-processador descarta não deixa nenhuma lacuna posicional e a frase ainda corresponde através dele — por exemplo, com um pós-processador de stop words que descarta `the`, `hasPhrase(col, 'see cat')` corresponde a um documento `see the cat`. A única exceção é `hasPhrase` em um índice `splitByRegexp`, que não oferece suporte a um pós-processador (a combinação é rejeitada com uma exceção).
 * Para todas as outras funções (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): apenas o needle de busca é pós-processado para a busca por dica de índice; o predicado no nível da linha ainda compara com os valores originais da coluna.
 
 Exemplos:
@@ -515,41 +520,43 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
 **Suporte a funções**.
 
-Para predicados que consultam o índice de texto, o preprocessador e o pós-processador são aplicados ao valor de busca antes da verificação no nível do grânulo, para que a consulta ao índice use os mesmos tokens armazenados na construção do índice.
+Para predicados que consultam o índice de texto, o pré-processador e o pós-processador são aplicados ao valor de busca antes da verificação no nível do grânulo, para que a consulta ao índice use os mesmos tokens armazenados na construção do índice.
 Para a maioria das funções (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), o índice de texto é usado apenas para ignorar blocos de dados irrelevantes; o ClickHouse ainda verifica cada linha restante usando o predicado original sobre os dados originais da coluna.
-Para funções de busca por token (`hasToken`, `hasAllTokens`, `hasAnyTokens`), o índice de texto é o principal caminho de avaliação: o ClickHouse normaliza o termo buscado por meio do mesmo preprocessador, tokenizador e pós-processador aplicados na construção do índice, e usa essa forma normalizada tanto para partes de tabela indexadas quanto não indexadas. Com um pós-processador, os tokens do texto pesquisado também são normalizados em tempo de consulta (para qualquer tokenizador, não apenas `array`), para que ambos os lados da comparação sejam transformados de forma consistente e o resultado não dependa de o índice ser lido diretamente (configuração `query_plan_direct_read_from_text_index`) nem de uma determinada parte ter um índice materializado — por exemplo, habilitando correspondência sem diferenciar maiúsculas de minúsculas para `hasAllTokens(col, ['FOO'])` com um pós-processador `lower`.
-Sem `support_phrase_search`, `hasPhrase` usa o índice apenas como uma dica e verifica cada linha restante com o predicado original; um pós-processador também normaliza a frase e os tokens do texto pesquisado da mesma forma, para que o resultado seja independente do caminho de leitura, e os tokens descartados pelo pós-processador não quebrem a adjacência da frase. Com `support_phrase_search = 1`, `hasPhrase` usa leituras diretas exatas (ainda aplicando o pós-processador, se houver).
+Para funções de busca por token (`hasToken`, `hasAllTokens`, `hasAnyTokens`), o índice de texto é o principal caminho de avaliação: o ClickHouse normaliza o termo buscado por meio do mesmo pré-processador, tokenizador e pós-processador aplicados na construção do índice, e usa essa forma normalizada tanto para partes de tabela indexadas quanto não indexadas. Com um pós-processador, os tokens do texto pesquisado também são normalizados em tempo de consulta (para qualquer tokenizador, não apenas `array`), para que ambos os lados da comparação sejam transformados de forma consistente e o resultado não dependa de o índice ser lido diretamente (configuração `query_plan_direct_read_from_text_index`) nem de uma determinada parte ter um índice materializado — por exemplo, habilitando correspondência sem diferenciar maiúsculas de minúsculas para `hasAllTokens(col, ['FOO'])` com um pós-processador `lower`.
+Sem `support_phrase_search`, `hasPhrase` usa o índice apenas como uma dica e verifica cada linha restante com o predicado original; um pós-processador também normaliza a frase e os tokens do texto pesquisado da mesma forma, para que o resultado seja independente do caminho de leitura, e os tokens descartados pelo pós-processador não quebrem a adjacência da frase. Com `support_phrase_search = 1`, `hasPhrase` usa leituras diretas exatas (ainda aplicando o pós-processador, se houver). Esse suporte ao pós-processador não se estende ao tokenizador `splitByRegexp`: `hasPhrase` em um índice `splitByRegexp` combinado com um pós-processador é rejeitado (consulte a nota de rodapé ³ abaixo).
 Os tokens de busca que o pós-processador mapeia para uma string vazia são ignorados, ou seja, tratados como ausentes da frase de busca.
 
-| Função                                                                                                  | Suporta preprocessador                                | Tokenizadores compatíveis                                       | Suporta pós-processador |
-| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
-| `=`                                                                                                     | sim                                                   | todos                                                           | sim                     |
-| `IN`                                                                                                    | sim                                                   | todos                                                           | sim                     |
-| [hasToken](/pt-BR/reference/functions/regular-functions/string-search-functions#hasToken)                     | sim                                                   | todos (concebido para `splitByNonAlpha`)                        | sim                     |
-| [hasAnyTokens(col, str)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | sim                                                   | todos                                                           | sim                     |
-| [hasAllTokens(col, str)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | sim                                                   | todos                                                           | sim                     |
-| [hasAnyTokens(col, arr)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | não (os elementos do array são tokens tal como estão) | todos                                                           | sim                     |
-| [hasAllTokens(col, arr)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | não (os elementos do array são tokens tal como estão) | todos                                                           | sim                     |
-| [hasPhrase](/pt-BR/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | sim                                                   | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | sim                     |
-| [startsWith](/pt-BR/reference/functions/regular-functions/string-functions#startsWith)                        | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | sim                     |
-| [endsWith](/pt-BR/reference/functions/regular-functions/string-functions#endsWith)                            | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | sim                     |
-| [like](/pt-BR/reference/functions/regular-functions/string-search-functions#like)                             | sim¹                                                  | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | sim¹                    |
-| [match](/pt-BR/reference/functions/regular-functions/string-search-functions#match)                           | sim¹                                                  | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | sim¹                    |
-| [ilike](/pt-BR/reference/functions/regular-functions/string-search-functions#like)                            | sim² (`lower`/`upper` apenas)                         | `splitByNonAlpha`, `array`²                                     | não²                    |
-| [mapContainsKey](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | sim                                                   | todos                                                           | sim                     |
-| [mapContainsValue](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | sim                                                   | todos                                                           | sim                     |
-| [mapContainsKeyLike](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | sim                     |
-| [mapContainsValueLike](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | sim                     |
-| [has](/pt-BR/reference/functions/regular-functions/array-functions#has)                                       | sim                                                   | `array`                                                         | sim                     |
-| [hasAny](/pt-BR/reference/functions/regular-functions/array-functions#hasAny)                                 | sim                                                   | `array`                                                         | sim                     |
-| [hasAll](/pt-BR/reference/functions/regular-functions/array-functions#hasAll)                                 | sim                                                   | `array`                                                         | sim                     |
+| Função                                                                                                  | Suporta pré-processador                                | Tokenizadores compatíveis                                                         | Suporta pós-processador |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------- |
+| `=`                                                                                                     | sim                                                   | todos                                                                             | sim                     |
+| `IN`                                                                                                    | sim                                                   | todos                                                                             | sim                     |
+| [hasToken](/pt-BR/reference/functions/regular-functions/string-search-functions#hasToken)                     | sim                                                   | todos (concebido para `splitByNonAlpha`)                                          | sim                     |
+| [hasAnyTokens(col, str)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | sim                                                   | todos                                                                             | sim                     |
+| [hasAllTokens(col, str)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | sim                                                   | todos                                                                             | sim                     |
+| [hasAnyTokens(col, arr)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | não (os elementos do array são tokens tal como estão) | todos                                                                             | sim                     |
+| [hasAllTokens(col, arr)](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | não (os elementos do array são tokens tal como estão) | todos                                                                             | sim                     |
+| [hasPhrase](/pt-BR/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | sim                                                   | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | sim³                    |
+| [startsWith](/pt-BR/reference/functions/regular-functions/string-functions#startsWith)                        | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | sim                     |
+| [endsWith](/pt-BR/reference/functions/regular-functions/string-functions#endsWith)                            | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | sim                     |
+| [like](/pt-BR/reference/functions/regular-functions/string-search-functions#like)                             | sim¹                                                  | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | sim¹                    |
+| [match](/pt-BR/reference/functions/regular-functions/string-search-functions#match)                           | sim¹                                                  | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | sim¹                    |
+| [ilike](/pt-BR/reference/functions/regular-functions/string-search-functions#like)                            | sim² (`lower`/`upper` apenas)                         | `splitByNonAlpha`, `array`²                                                       | não²                    |
+| [mapContainsKey](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | sim                                                   | todos                                                                             | sim                     |
+| [mapContainsValue](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | sim                                                   | todos                                                                             | sim                     |
+| [mapContainsKeyLike](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | sim                     |
+| [mapContainsValueLike](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | sim                                                   | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | sim                     |
+| [has](/pt-BR/reference/functions/regular-functions/array-functions#has)                                       | sim                                                   | `array`                                                                           | sim                     |
+| [hasAny](/pt-BR/reference/functions/regular-functions/array-functions#hasAny)                                 | sim                                                   | `array`                                                                           | sim                     |
+| [hasAll](/pt-BR/reference/functions/regular-functions/array-functions#hasAll)                                 | sim                                                   | `array`                                                                           | sim                     |
 
 ¹ `LIKE` e `match` usam leitura direta como dica para os tokenizadores listados; caso contrário, recorrem a uma varredura por força bruta.
-Além disso, `LIKE` oferece suporte a *leitura direta (sem dica)* (habilitada por `use_text_index_like_evaluation_by_dictionary_scan`) para os tokenizadores `splitByNonAlpha` e `array`, sem preprocessador nem pós-processador.
+Além disso, `LIKE` oferece suporte a *leitura direta (sem dica)* (habilitada por `use_text_index_like_evaluation_by_dictionary_scan`) para os tokenizadores `splitByNonAlpha` e `array`, sem pré-processador nem pós-processador.
 
 ² `ILIKE` é compatível apenas por meio de leitura direta (sem dica) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` ou `array`).
 Não há fallback para usar o índice como dica: se a configuração estiver desabilitada ou o tokenizador não estiver no conjunto compatível, o índice não será usado para `ILIKE`.
-O preprocessador, se presente, deve ser `lower` ou `upper`; pós-processadores não são compatíveis.
+O pré-processador, se presente, deve ser `lower` ou `upper`; pós-processadores não são compatíveis.
+
+³ `hasPhrase` em um índice de texto `splitByRegexp` **não** oferece suporte a um pós-processador: a combinação é rejeitada com uma exceção, pois a reescrita em nível de linha do pós-processador pressupõe tokens no estilo `splitByNonAlpha` divididos por espaço em branco. Sem um pós-processador, `splitByRegexp` é totalmente compatível com `hasPhrase`.
 
 **Experimental: argumento de suporte à busca por frase (opcional)**.
 
@@ -837,7 +844,7 @@ A função [hasPhrase](/pt-BR/reference/functions/regular-functions/string-searc
 Ao contrário de `hasAllTokens`, que exige apenas que todos os tokens estejam presentes em algum ponto, `hasPhrase` exige que eles apareçam em sequência.
 A frase de busca é tokenizada usando o mesmo tokenizador configurado para a coluna de índice.
 Quando o índice de texto usa um pós-processador, a frase de busca também é normalizada antes da consulta ao índice.
-Observe que a função requer um dos tokenizadores `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` ou `icu`.
+Observe que a função requer um dos tokenizadores `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` ou `icu`.
 
 Exemplo:
 
@@ -1276,7 +1283,7 @@ Dentro desses grânulos, o ClickHouse então verifica a adjacência exata dos to
 Esse processo é relativamente custoso e mais lento do que consultas comuns de busca textual.
 Para acelerar as consultas de busca por frase, habilite o armazenamento das posições no índice de texto (consulte `Optional parameters` acima).
 
-`hasPhrase` pode ser usado em conjunto com os tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` e `icu`.
+`hasPhrase` pode ser usado em conjunto com os tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK` e `icu`.
 A string da frase fornecida é tokenizada usando o tokenizer do índice.
 Os caracteres separadores na frase são ignorados: `hasPhrase(text, 'quick+brown')` é equivalente a `hasPhrase(text, 'quick brown')`, supondo que `splitByNonAlpha` seja usado como tokenizer.
 
@@ -1557,6 +1564,14 @@ No momento, o índice de texto tem as seguintes limitações:
 * A materialização de índices de texto com um grande número de tokens (por exemplo, 10 bilhões de tokens) pode consumir quantidades significativas de memória. A
   materialização de índices de texto pode ocorrer diretamente (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ou indiretamente durante mesclagens de partes.
 * Não é possível materializar índices de texto em partes com mais de 4.294.967.296 (= 2^32 = aprox. 4,2 bilhões) linhas. Sem um índice de texto materializado, as consultas recorrem a uma busca lenta por força bruta dentro da parte. Como estimativa de pior caso, suponha que uma parte contenha uma única coluna do tipo String e que a configuração do MergeTree `max_bytes_to_merge_at_max_space_in_pool` (padrão: 150 GB) não tenha sido alterada. Nesse caso, isso ocorre se a coluna contiver, em média, menos de 29,5 caracteres por linha. Na prática, as tabelas também contêm outras colunas, e esse limite é várias vezes menor do que isso (dependendo do número, tipo e tamanho das outras colunas).
+
+<div id="upgrade-notes">
+  ## Notas de upgrade
+</div>
+
+A versão do formato em disco dos índices de texto é controlada pela configuração de tabela [`text_index_serialization_version`](/pt-BR/reference/settings/merge-tree-settings/text-index) (padrão: `v2_with_positions`).
+A configuração é uma preferência, não uma restrição rígida: se a versão configurada não puder representar um índice, uma versão mais recente capaz de representá-lo será escolhida automaticamente. Portanto, a gravação de um índice de texto nunca falhará devido a essa configuração.
+Durante uma atualização gradual, fixe o formato com a configuração [`compatibility`](/pt-BR/reference/settings/session-settings/compatibility#compatibility) nos servidores já atualizados: quando definida como uma versão anterior à que introduziu o formato correspondente, `text_index_serialization_version` reverte automaticamente para um valor mais antigo, e os servidores mais recentes continuam gravando em um formato que os servidores mais antigos ainda conseguem ler.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## Índices de texto vs. índices baseados em filtro de Bloom

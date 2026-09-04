@@ -229,7 +229,9 @@ def _gh_auth_with_robot_token(gh_config_dir, robot_name):
     """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
     print(f"Using robot: {robot_name}")
     token = Secret.Config(
-        name=robot_name, type=Secret.Type.AWS_SSM_PARAMETER
+        name=robot_name,
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ).get_value()
     subprocess.run(
         ["gh", "auth", "login", "--with-token"],
@@ -276,7 +278,9 @@ def _run_codex_once(prompt, _robot_name):
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
         openai_key = Secret.Config(
-            name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
+            name=OPENAI_KEY_SECRET,
+            type=Secret.Type.AWS_SSM_PARAMETER,
+            region="us-east-1",
         ).get_value()
         subprocess.run(
             ["codex", "login", "--with-api-key"],

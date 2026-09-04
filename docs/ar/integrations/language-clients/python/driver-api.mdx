@@ -319,9 +319,11 @@ with clickhouse_connect.get_client(
   #### الربط من جهة الخادم
 </div>
 
-يدعم ClickHouse [الربط من جهة الخادم](/ar/concepts/features/interfaces/client#cli-queries-with-parameters) لقيم الاستعلام. تُرسَل القيمة المربوطة منفصلةً عن الاستعلام كمعامل HTTP. يستخدم ClickHouse Connect هذا الوضع عندما يكتشف تعبيرًا بالصيغة `{<name>:<datatype>}`. مرِّر القيم في قاموس بايثون.
+يدعم ClickHouse [الربط من جهة الخادم](/ar/concepts/features/interfaces/client#cli-queries-with-parameters) لقيم الاستعلام. تُرسَل القيمة المربوطة منفصلةً عن الاستعلام كمعلمة HTTP. يستخدم ClickHouse Connect هذا الوضع عندما يكتشف تعبيرًا بالصيغة `{<name>:<datatype>}`. مرِّر القيم في قاموس بايثون.
 
-استخدم `None` في بايثون للقيم القابلة لأن تكون NULL. القيم المتداخلة `None` مدعومة داخل معاملات `Array` و`Tuple`، وداخل القيم الحرفية `Map` عندما يُضبط `dict_parameter_format` على `"map"`.
+يجب أن تكون أسماء المعلمات أسماء BareWord ASCII في ClickHouse. يقبل برنامج التشغيل الرمز `$` في بداية الاسم أو داخله أو نهايته عندما يقبله الخادم، مثل `{$tenant_id:String}`. يُحجز مفتاح قاموس يبدأ وينتهي بـ `$` وتكون قيمته مخزنًا مؤقتًا مثل `bytes` أو `bytearray` أو `memoryview` لاتفاقية المعلمات الثنائية الخام في ClickHouse Connect. إذا استُخدم مثل هذا المفتاح لمعلمة غير ثنائية من جهة الخادم، فاحصره في عنصر نائب واحد `{name:Type}`. يمكن لـ ClickHouse تحليل أسماء `$tag$` المتكررة كوسوم Heredoc.
+
+استخدم `None` في بايثون للقيم القابلة لأن تكون NULL. القيم المتداخلة `None` مدعومة داخل معلمات `Array` و`Tuple`، وداخل القيم الحرفية `Map` عندما يُضبط `dict_parameter_format` على `"map"`.
 
 * الربط من جهة الخادم باستخدام قاموس بايثون، وقيمة DateTime، وقيمة نصية
 
@@ -904,7 +906,7 @@ finally:
     connection.close()
 ```
 
-يقبل كلٌّ من `Cursor.execute` و`Cursor.executemany` وسيطتَي الكلمات المفتاحية الإضافيتين `settings` و`query_formats`. تمرّر `settings` إعدادات ClickHouse. وتطبّق `query_formats` تنسيقات القراءة حسب نوع ClickHouse عندما تُرجع العبارة صفوفًا، باستخدام التعيين نفسه المستخدم في `Client.query`. ويستخدم `executemany` مسار الإدراج المجمّع Native الخاص ببرنامج التشغيل لعبارات `INSERT ... VALUES` المتوافقة مع تسلسل صفوف مُجسَّد. وتستهلك `fetchone` و`fetchmany` و`fetchall` النتيجة المُجسَّدة الحالية.
+يقبل كلٌّ من `Cursor.execute` و`Cursor.executemany` وسيطتَي الكلمات المفتاحية الإضافيتين `settings` و`query_formats`. تمرّر `settings` إعدادات ClickHouse. وتطبّق `query_formats` تنسيقات القراءة حسب نوع ClickHouse عندما تُرجع العبارة صفوفًا، باستخدام التعيين نفسه المستخدم في `Client.query`. ويقبل `Cursor.execute` أيضًا الوسيطة `pyformat_encoded` التي تُمرَّر بالكلمات المفتاحية فقط. وتتبع قيمتها الافتراضية `True` عقد DB-API الخاص بـ `pyformat`. ويضبطها نمط SQLAlchemy على `False` عندما يُصدر مصرّف العبارة علامات نسبة مئوية خامًا، لذا ينبغي للتطبيقات عادةً عدم ضبطها. ويستخدم `executemany` مسار الإدراج المجمّع Native الخاص ببرنامج التشغيل لعبارات `INSERT ... VALUES` المتوافقة مع تسلسل صفوف مُخزَّن فعليًا. وتستهلك `fetchone` و`fetchmany` و`fetchall` النتيجة المُخزَّنة فعليًا الحالية.
 
 يستمدّ `Cursor.description` القيمة `null_ok` من نوع كل عمود في النتيجة. وتُرجع الأنواع غير القابلة للقيم الفارغة `False`، بينما تُرجع الأنواع القابلة للقيم الفارغة `True`، بما في ذلك أغلفة `Nullable` و`Variant` و`Dynamic`. وتعني `None` أن قابلية القيم الفارغة غير معروفة. عندما لا يُرجع استعلام يبدأ بـ `SELECT` أو `WITH`، مع تجاهل التعليقات البادئة، أي صفوف أو بيانات وصفية للأعمدة، يشغّل المؤشّر استعلام بيانات وصفية بـ `LIMIT 0` لملء `description`. وإذا فشل استعلام البيانات الوصفية هذا، يُترك `description` فارغًا.
 

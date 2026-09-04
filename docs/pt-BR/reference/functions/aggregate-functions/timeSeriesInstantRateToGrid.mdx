@@ -13,7 +13,9 @@ doc_type: 'reference'
 
 Introduzido em: v25.6.0
 
-Função de agregação que recebe séries temporais como pares de timestamps e valores e calcula o [irate no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) a partir desses dados em uma grade temporal regular definida pelo timestamp inicial, timestamp final e passo. Para cada ponto da grade, as amostras usadas para calcular `irate` são consideradas dentro da janela de tempo especificada.
+Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula o [irate no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) a partir desses dados em uma grade temporal regular definida pelo timestamp inicial, timestamp final e passo. Para cada ponto da grade, as amostras usadas para calcular `irate` são consideradas dentro da janela de tempo especificada.
+
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor, portanto um valor NaN será usado apenas se todas as amostras nesse timestamp forem NaN.
 
 <Warning>
   Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
