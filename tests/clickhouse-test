@@ -1090,13 +1090,15 @@ LLDB_TIMEOUT = 30
 LLDB_SLOW_BUILD_TIMEOUT = 120
 
 LLDB_BACKTRACE_MARKER = "(lldb) thread backtrace all"
+LLDB_THREAD_HEADER_RE = re.compile(r"^[* ] *thread #\d+", re.M)
 
 
 def lldb_backtraces_only(dump: str) -> str:
     """The part of an lldb --batch dump from the backtraces on.
 
-    Attaching prints a stop summary with frame #0 and disassembly for every
-    thread before lldb echoes the first command.
+    Attaching prints a stop summary before lldb echoes the first command: a
+    `thread #N` header and `frame #0` for every thread, plus a few lines of
+    disassembly wherever lldb has no source line for that frame.
     """
     _, marker, rest = dump.partition(LLDB_BACKTRACE_MARKER)
     return marker + rest if marker else dump
@@ -1446,7 +1448,7 @@ def print_c_stacktraces(
             # The attach summary lists every thread too, so a dump that stopped
             # before the marker holds thread headers but no backtrace to count.
             threads = (
-                f" for {len(re.findall(r'^[* ] *thread #\d+', backtraces, re.M))} threads"
+                f" for {len(LLDB_THREAD_HEADER_RE.findall(backtraces))} threads"
                 if LLDB_BACKTRACE_MARKER in block
                 else ""
             )
