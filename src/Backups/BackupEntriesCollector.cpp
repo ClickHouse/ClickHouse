@@ -1,8 +1,8 @@
-#include <base/pathToString.h>
 #include <Access/AccessControl.h>
 #include <Common/CurrentThread.h>
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationStage.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupUtils.h>
@@ -28,13 +28,10 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <filesystem>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
-
-namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -211,9 +208,10 @@ void BackupEntriesCollector::calculateRootPathInBackup()
     {
         auto [shard_num, replica_num]
             = BackupSettings::Util::findShardNumAndReplicaNum(backup_settings.cluster_host_ids, backup_settings.host_id);
-        root_path_in_backup = root_path_in_backup / fs::path{"shards"} / std::to_string(shard_num) / "replicas" / std::to_string(replica_num);
+        root_path_in_backup = joinBackupPath(
+            root_path_in_backup, "shards", std::to_string(shard_num), "replicas", std::to_string(replica_num));
     }
-    LOG_TRACE(log, "Will use path in backup: {}", doubleQuoteString(String{pathToGenericString(root_path_in_backup)}));
+    LOG_TRACE(log, "Will use path in backup: {}", doubleQuoteString(root_path_in_backup));
 }
 
 /// Finds databases and tables which we will put to the backup.
@@ -496,7 +494,8 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
         database_info.create_database_query = create_database_query;
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
-        database_info.metadata_path_in_backup = pathToGenericString(root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql"));
+        database_info.metadata_path_in_backup
+            = joinBackupPath(root_path_in_backup, "metadata", escapeForFileName(new_database_name) + ".sql");
     }
 
     if (table_name)
@@ -545,20 +544,28 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path metadata_path_in_backup;
-            fs::path data_path_in_backup;
+            String metadata_path_in_backup;
+            String data_path_in_backup;
             auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
             if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
-                metadata_path_in_backup = root_path_in_backup / "temporary_tables" / "metadata" / (escapeForFileName(table_name_in_backup.table) + ".sql");
-                data_path_in_backup = root_path_in_backup / "temporary_tables" / "data" / escapeForFileName(table_name_in_backup.table);
+                metadata_path_in_backup = joinBackupPath(
+                    root_path_in_backup, "temporary_tables", "metadata", escapeForFileName(table_name_in_backup.table) + ".sql");
+                data_path_in_backup = joinBackupPath(
+                    root_path_in_backup, "temporary_tables", "data", escapeForFileName(table_name_in_backup.table));
             }
             else
             {
-                metadata_path_in_backup
-                    = root_path_in_backup / "metadata" / escapeForFileName(table_name_in_backup.database) / (escapeForFileName(table_name_in_backup.table) + ".sql");
-                data_path_in_backup = root_path_in_backup / "data" / escapeForFileName(table_name_in_backup.database)
-                    / escapeForFileName(table_name_in_backup.table);
+                metadata_path_in_backup = joinBackupPath(
+                    root_path_in_backup,
+                    "metadata",
+                    escapeForFileName(table_name_in_backup.database),
+                    escapeForFileName(table_name_in_backup.table) + ".sql");
+                data_path_in_backup = joinBackupPath(
+                    root_path_in_backup,
+                    "data",
+                    escapeForFileName(table_name_in_backup.database),
+                    escapeForFileName(table_name_in_backup.table));
             }
 
             const auto qualified_name = QualifiedTableName{database_name, table_name};
@@ -566,7 +573,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
-            res_table_info.metadata_path_in_backup = pathToGenericString(metadata_path_in_backup);
+            res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
             /// Record REPLACE targets of refreshable materialized views from the create query, not
@@ -868,7 +875,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         /// other replicas to fill the storage's data in the backup.
         /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
         if (table_info.replicated_table_zk_path)
-            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, pathToGenericString(data_path_in_backup));
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_zk_path, data_path_in_backup);
         return;
     }
 
@@ -877,7 +884,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
     try
     {
-        storage->backupData(*this, pathToGenericString(data_path_in_backup), table_info.partitions);
+        storage->backupData(*this, data_path_in_backup, table_info.partitions);
     }
     catch (Exception & e)
     {

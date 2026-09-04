@@ -5,6 +5,7 @@
 #include <ranges>
 #include <thread>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/MergeSelectorAlgorithm.h>
@@ -3618,10 +3619,10 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
+    const String mutations_path_in_backup = joinBackupPath(data_path_in_backup, "mutations");
     BackupEntries backup_entries;
     for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
-        backup_entries.emplace_back(pathToGenericString(mutations_path_in_backup / fmt::format("{:010}.txt", it->first)), it->second.backup());
+        backup_entries.emplace_back(joinBackupPath(mutations_path_in_backup, fmt::format("{:010}.txt", it->first)), it->second.backup());
     return backup_entries;
 }
 

@@ -16,6 +16,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
@@ -614,7 +615,7 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
             auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
-            table->backupData(backup_entries_collector, pathToGenericString(fs::path{data_path_in_backup} / kind_str), {});
+            table->backupData(backup_entries_collector, joinBackupPath(data_path_in_backup, kind_str), {});
         }
     }
 }
@@ -632,10 +633,10 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
             auto table = getTargetTable(target_kind, restorer.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
-            String target_data_path = pathToGenericString(fs::path{data_path_in_backup} / kind_str);
+            String target_data_path = joinBackupPath(data_path_in_backup, kind_str);
             /// Support legacy backups where the samples folder was named "data" instead of "samples".
             if (target_kind == ViewTarget::Samples && !restorer.getBackup()->hasFiles(target_data_path))
-                target_data_path = pathToGenericString(fs::path{data_path_in_backup} / "data");
+                target_data_path = joinBackupPath(data_path_in_backup, "data");
             table->restoreDataFromBackup(restorer, target_data_path, {});
         }
     }

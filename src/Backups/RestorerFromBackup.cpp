@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
@@ -38,7 +37,6 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
 
-#include <filesystem>
 #include <future>
 #include <ranges>
 
@@ -275,7 +273,7 @@ void RestorerFromBackup::loadSystemAccessTables()
         {
             if (!access_restorer)
                 access_restorer = std::make_unique<AccessRestorerFromBackup>(backup, restore_settings);
-            access_restorer->addDataPath(pathToGenericString(table_info.data_path_in_backup));
+            access_restorer->addDataPath(table_info.data_path_in_backup);
         }
     }
 
@@ -1005,7 +1003,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
-        data_path_in_backup = pathToGenericString(table_info.data_path_in_backup);
+        data_path_in_backup = table_info.data_path_in_backup;
         partitions = table_info.partitions;
     }
 

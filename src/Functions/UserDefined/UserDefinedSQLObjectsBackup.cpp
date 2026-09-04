@@ -1,6 +1,7 @@
 #include <base/pathToString.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -47,9 +48,8 @@ void backupUserDefinedSQLObjects(
 
     if (!storage.isReplicated())
     {
-        fs::path data_path_in_backup_fs{data_path_in_backup};
         for (const auto & [file_name, entry] : backup_entries)
-            backup_entries_collector.addBackupEntry(pathToGenericString(data_path_in_backup_fs / file_name), entry);
+            backup_entries_collector.addBackupEntry(joinBackupPath(data_path_in_backup, file_name), entry);
         return;
     }
 
@@ -72,10 +72,9 @@ void backupUserDefinedSQLObjects(
 
             for (const auto & dir : dirs)
             {
-                fs::path dir_fs{dir};
                 for (const auto & [file_name, entry] : my_backup_entries)
                 {
-                    backup_entries_collector.addBackupEntry(pathToGenericString(dir_fs / file_name), entry);
+                    backup_entries_collector.addBackupEntry(joinBackupPath(dir, file_name), entry);
                 }
             }
         });
@@ -92,7 +91,6 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         return {}; /// Other replica is already restoring user-defined SQL objects.
 
     auto backup = restorer.getBackup();
-    fs::path data_path_in_backup_fs{data_path_in_backup};
 
     Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     if (filenames.empty())
@@ -105,7 +103,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
             throw Exception(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
                 "Cannot restore user-defined SQL objects: File name {} doesn't have the extension .sql",
-                String{pathToGenericString(data_path_in_backup_fs / filename)});
+                String{joinBackupPath(data_path_in_backup, filename)});
         }
     }
 
@@ -116,7 +114,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         String escaped_object_name = filename.substr(0, filename.length() - strlen(".sql"));
         String object_name = unescapeForFileName(escaped_object_name);
 
-        String filepath = pathToGenericString(data_path_in_backup_fs / filename);
+        String filepath = joinBackupPath(data_path_in_backup, filename);
         auto in = backup->readFile(filepath);
         String statement_def;
         readStringUntilEOF(statement_def, *in);

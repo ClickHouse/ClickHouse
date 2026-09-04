@@ -1,5 +1,6 @@
 #include <base/pathToString.h>
 #include <string_view>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
@@ -433,7 +434,7 @@ void DataPartStorageOnDiskBase::backup(
     bool allow_backup_broken_projection) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
-    fs::path part_path_in_backup = fs::path{path_in_backup} / part_dir;
+    const String part_path_in_backup = joinBackupPath(path_in_backup, part_dir);
 
     auto disk = volume->getDisk();
 
@@ -448,7 +449,13 @@ void DataPartStorageOnDiskBase::backup(
 
         temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getRelativePath();
-        temp_part_dir = temp_dir / part_path_in_backup.relative_path();
+        /// A path in a backup is absolute, and the temporary directory mirrors it below
+        /// `temp_dir`, so drop the leading separator - which is what `relative_path` did while
+        /// this was an `fs::path`.
+        std::string_view part_path_below_root = part_path_in_backup;
+        while (part_path_below_root.starts_with('/'))
+            part_path_below_root.remove_prefix(1);
+        temp_part_dir = temp_dir / pathFromString(part_path_below_root);
         disk->createDirectories(pathToGenericString(temp_part_dir));
     }
 
@@ -476,7 +483,7 @@ void DataPartStorageOnDiskBase::backup(
     auto backup_file = [&](const String & filepath)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
-        auto filepath_in_backup = part_path_in_backup / filepath;
+        auto filepath_in_backup = joinBackupPath(part_path_in_backup, filepath);
 
         if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(pathToGenericString(filepath_on_disk)))
             return;
@@ -504,7 +511,7 @@ void DataPartStorageOnDiskBase::backup(
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
 
-        backup_entries.emplace_back(pathToGenericString(filepath_in_backup), std::move(backup_entry));
+        backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
     };
 
     auto * log = &Poco::Logger::get("DataPartStorageOnDiskBase::backup");

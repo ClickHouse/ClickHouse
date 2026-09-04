@@ -8,6 +8,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -231,7 +232,7 @@ std::pair<String, BackupEntryPtr> makeBackupEntryForAccessEntities(
     }
 
     String filename = fmt::format("access-{}.txt", UUIDHelpers::generateV4());
-    String file_path_in_backup = pathToGenericString(fs::path{data_path_in_backup} / filename);
+    String file_path_in_backup = joinBackupPath(data_path_in_backup, filename);
     return {file_path_in_backup, ab.toBackupEntry()};
 }
 
@@ -270,8 +271,7 @@ void AccessRestorerFromBackup::loadFromBackup()
     {
         const String & data_path_in_backup = data_paths_in_backup[data_path_index];
 
-        fs::path data_path_in_backup_fs = data_path_in_backup;
-        Strings filenames = backup->listFiles(pathToGenericString(data_path_in_backup_fs), /*recursive*/ false);
+        Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
         if (filenames.empty())
             continue;
 
@@ -279,12 +279,12 @@ void AccessRestorerFromBackup::loadFromBackup()
         {
             if (!filename.starts_with("access") || !filename.ends_with(".txt"))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} doesn't match the wildcard \"access*.txt\"",
-                                String{pathToGenericString(data_path_in_backup_fs / filename)});
+                                String{joinBackupPath(data_path_in_backup, filename)});
         }
 
         for (const String & filename : filenames)
         {
-            String filepath_in_backup = pathToGenericString(data_path_in_backup_fs / filename);
+            String filepath_in_backup = joinBackupPath(data_path_in_backup, filename);
             AccessEntitiesInBackup ab;
 
             try

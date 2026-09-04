@@ -60,6 +60,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/JSONBuilder.h>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
@@ -1216,7 +1217,7 @@ public:
         , tmp_data(tmp_data_)
         , with_retries(std::move(with_retries_))
     {
-        file_path = pathToGenericString(fs::path(data_path_in_backup) / backup_data_filename);
+        file_path = joinBackupPath(data_path_in_backup, backup_data_filename);
     }
 
 private:
@@ -1310,8 +1311,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
-            std::string source_path = pathToGenericString(fs::path(my_data_path_in_backup) / backup_data_filename);
-            std::string target_path = pathToGenericString(fs::path(path_with_data) / backup_data_filename);
+            std::string source_path = joinBackupPath(my_data_path_in_backup, backup_data_filename);
+            std::string target_path = joinBackupPath(path_with_data, backup_data_filename);
             backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
             return;
         }
@@ -1396,9 +1397,7 @@ void StorageKeeperMap::restoreDataImpl(
     auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataImpl");
     const auto & table_id = toString(getStorageID().uuid);
 
-    fs::path data_path_in_backup_fs = data_path_in_backup;
-
-    String data_file = pathToGenericString(data_path_in_backup_fs /  backup_data_filename);
+    String data_file = joinBackupPath(data_path_in_backup, backup_data_filename);
 
     if (!backup->fileExists(data_file))
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);

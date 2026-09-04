@@ -24,6 +24,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -8881,7 +8882,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             storage.backup(
                 projection_part.checksums,
                 projection_part.getFileNamesWithoutChecksums(),
-                pathToGenericString(fs::path{data_path_in_backup} / part->name),
+                joinBackupPath(data_path_in_backup, part->name),
                 backup_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
@@ -9060,7 +9061,6 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
         std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo());
 
-    fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
 
     for (const String & part_name : part_names)
@@ -9069,7 +9069,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
         if (!part_info)
         {
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File name {} is not a part's name",
-                            String{pathToGenericString(data_path_in_backup_fs / part_name)});
+                            String{joinBackupPath(data_path_in_backup, part_name)});
         }
 
         if (partition_ids && !partition_ids->contains(part_info->getPartitionId()))
@@ -9078,11 +9078,11 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
         restorer.addDataRestoreTask(
             [storage = std::static_pointer_cast<MergeTreeData>(shared_from_this()),
              backup,
-             part_path_in_backup = data_path_in_backup_fs / part_name,
+             part_path_in_backup = joinBackupPath(data_path_in_backup, part_name),
              my_part_info = *part_info,
              restore_broken_parts_as_detached,
              restored_parts_holder]
-            { storage->restorePartFromBackup(restored_parts_holder, my_part_info, pathToGenericString(part_path_in_backup), restore_broken_parts_as_detached); });
+            { storage->restorePartFromBackup(restored_parts_holder, my_part_info, part_path_in_backup, restore_broken_parts_as_detached); });
 
         ++num_parts;
     }
@@ -9100,9 +9100,8 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 
     /// Calculate the total size of the part.
     UInt64 total_size_of_part = 0;
-    fs::path part_path_in_backup_fs = part_path_in_backup;
     for (const String & filename : filenames)
-        total_size_of_part += backup->getFileSize(pathToGenericString(part_path_in_backup_fs / filename));
+        total_size_of_part += backup->getFileSize(joinBackupPath(part_path_in_backup, filename));
 
     std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
 
@@ -9144,11 +9143,11 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             || filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
         {
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
-            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(pathToGenericString(part_path_in_backup_fs / filename)));
+            ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(joinBackupPath(part_path_in_backup, filename)));
             continue;
         }
 
-        size_t file_size = backup->copyFileToDisk(pathToGenericString(part_path_in_backup_fs / filename), disk, pathToGenericString(temp_part_dir / filename), WriteMode::Rewrite, fsync_files);
+        size_t file_size = backup->copyFileToDisk(joinBackupPath(part_path_in_backup, filename), disk, pathToGenericString(temp_part_dir / filename), WriteMode::Rewrite, fsync_files);
         reservation->update(reservation->getSize() - file_size);
     }
 
