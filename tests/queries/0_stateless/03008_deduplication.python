@@ -659,12 +659,13 @@ def test_several_mv_into_one_table(parser):
             with_deduplication=args.deduplicate_dst_table,
         )
 
-        # 4 rows is the minimum that still needs >1 block (max_block_size=1 below) and still
-        # exercises all three branches of the two MVs' filters: b % 4 = 0 (row 0), b % 4 = 2
-        # i.e. even but not %4 (row 2), and b odd i.e. neither MV fires (rows 1, 3).
+        # Keep the original replicated-test coverage and reference output. The non-replicated
+        # variant uses the smaller input because four rows still exercise all three branches of
+        # the two MVs' filters.
+        rows = 8 if args.table_engine == "ReplicatedMergeTree" else 4
         insert_statement = instance_insert_statement(
             "table_src",
-            4,
+            rows,
             args.insert_method,
             args.insert_unique_blocks,
             args.use_insert_token,
@@ -679,17 +680,25 @@ def test_several_mv_into_one_table(parser):
 
         # Compute expected values once
         if args.insert_unique_blocks:
-            expected_first_src = 4
-            expected_first_dst = 3
-            expected_second_src = 4 if args.deduplicate_src_table else 8
-            expected_second_dst = 3 if args.deduplicate_dst_table else 6
+            expected_first_src = rows
+            expected_first_dst = rows * 3 // 4
+            expected_second_src = rows if args.deduplicate_src_table else rows * 2
+            expected_second_dst = (
+                expected_first_dst
+                if args.deduplicate_dst_table
+                else expected_first_dst * 2
+            )
         else:
             # new_unified_hash: identical blocks within one insert are kept (distinct source
             # numbers), so these counts no longer depend on insert_deduplication_token.
-            expected_first_src = 4
-            expected_first_dst = 8
-            expected_second_src = 4 if args.deduplicate_src_table else 8
-            expected_second_dst = 8 if args.deduplicate_dst_table else 16
+            expected_first_src = rows
+            expected_first_dst = rows * 2
+            expected_second_src = rows if args.deduplicate_src_table else rows * 2
+            expected_second_dst = (
+                expected_first_dst
+                if args.deduplicate_dst_table
+                else expected_first_dst * 2
+            )
 
         # Use the computed values in assertions
         assert_first_insert_statements = assert_count_statement(
