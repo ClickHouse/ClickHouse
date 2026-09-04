@@ -362,6 +362,34 @@ def test_get_session_options():
     assert result.session_options["max_threads"].string_value != ""
 
 
+def test_close_session_without_named_session():
+    """CloseSession succeeds as a no-op when no named session is used."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+    token = client.authenticate_basic_token(b"default", b"")
+    options = flight.FlightCallOptions(headers=[token])
+    results = list(client.do_action(flight.Action("CloseSession", b""), options))
+    assert len(results) == 1
+    # CloseSessionResult{status=CLOSED} serializes as field 1 varint 1.
+    assert results[0].body.to_pybytes() == b"\x08\x01"
+
+
+def test_close_session_closes_named_session():
+    """CloseSession releases prepared statements bound to the named session."""
+    close_session_id = "close_session_" + "".join(random.choices(string.ascii_letters, k=8))
+    client = FlightSQLClient(
+        host=node.ip_address,
+        port=8888,
+        insecure=True,
+        disable_server_verification=True,
+        metadata={"x-clickhouse-session-id": close_session_id},
+        features={"metadata-reflection": "true"},
+    )
+    stmt = client.prepare("SELECT 1")
+    assert client.close_session() == b"\x08\x01"
+    with pytest.raises(pa.lib.ArrowKeyError, match="Prepared statement handle not found"):
+        client.execute(stmt)
+
+
 def _query_setting(client, name):
     """Read the current value of a setting via SQL query."""
     flight_info = client.execute(f"SELECT value FROM system.settings WHERE name = '{name}'")
