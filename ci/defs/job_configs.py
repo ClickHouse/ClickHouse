@@ -1013,6 +1013,45 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
+    # optimized release binary instead of the plain `binary` build that PRs use (the
+    # `arm_binary` jobs of `functional_tests_jobs`). On master we want to exercise the
+    # actual release binary (PGO/BOLT). These replace the `arm_binary` jobs in the
+    # master workflow (see `ci/workflows/master.py`); PR/backport/release keep using
+    # `functional_tests_jobs`. The `arm_binary` build itself stays - integration tests
+    # and Keeper stress need it. The arm runner labels mirror the `arm_binary` jobs;
+    # the amd side has no plain full-suite job before this, so it mirrors `amd_debug`
+    # and is split into 2 batches per parallel/sequential flavor.
+    functional_tests_master_release_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_release, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1243,7 +1282,11 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # why it's master only?
+    # Despite the name, only release_branches.py uses these.
+    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
+    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
+    # however well they are balanced. At four batches this job timed out on roughly half of
+    # all release-branch runs.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1251,7 +1294,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (4,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1870,7 +1913,10 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     libfuzzer_corpus_minimization_job = Job.Config(
@@ -1882,7 +1928,10 @@ class JobConfigs:
         ),
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
