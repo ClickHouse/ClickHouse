@@ -1,0 +1,12 @@
+unsafe covered gram before materialization
+[2]
+unsafe covered gram does not select JSONAllValues index
+0
+safe gram before materialization
+[3]
+unsafe covered gram after materialization
+[2]
+safe gram after materialization
+[3]
+safe gram selects JSONAllValues index
+1

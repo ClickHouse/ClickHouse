@@ -1,0 +1,7 @@
+String subcolumn can use JSONAllValues index
+[1]
+1
+FixedString subcolumn keeps query semantics
+[1]
+FixedString subcolumn does not select JSONAllValues index
+0

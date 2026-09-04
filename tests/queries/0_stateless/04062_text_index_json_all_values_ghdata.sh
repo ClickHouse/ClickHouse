@@ -42,7 +42,14 @@ $MY_CLICKHOUSE_CLIENT --query "
 
     CREATE TABLE ghdata
     (
-        data JSON(max_dynamic_paths=100),
+        data JSON(
+            max_dynamic_paths=100,
+            actor.login String,
+            repo.id UInt64,
+            type String,
+            payload.action String,
+            repo.name String,
+            payload.pull_request.title String),
         INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lowerUTF8(JSONAllValues(data)))
     )
     ENGINE = MergeTree

@@ -1,0 +1,40 @@
+dynamic paths
+['dynamic_text']
+JSONAllValues tokenizer
+[3]
+JSONAllValues preprocessor
+[1,2]
+JSON subcolumn tokenizer
+[3]
+JSON subcolumn preprocessor with lowercase needle
+[1,2]
+JSON subcolumn preprocessor with uppercase needle
+[1,2]
+JSON subcolumn preprocessor without hint direct read
+[1,2]
+JSONAllValues index selected for subcolumn
+1
+text-index virtual column created for subcolumn
+1
+unmatched expression keeps default tokenizer semantics
+[1,2,3]
+unmatched expression does not select JSONAllValues index
+0
+unmatched expression does not create text-index virtual column
+0
+combined preprocessor and postprocessor
+[1]
+combined preprocessor and postprocessor without hint direct read
+[1]
+combined preprocessor and postprocessor with hasToken
+[1]
+combined preprocessor and postprocessor with hasPhrase
+[1]
+combined preprocessor and postprocessor on multiple paths
+[1]
+array subcolumn keeps default semantics
+[]
+array subcolumn does not select JSONAllValues index
+0
+array subcolumn does not create text-index virtual column
+0

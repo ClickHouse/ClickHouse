@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
@@ -46,9 +47,12 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
+#include <string_view>
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -602,20 +606,43 @@ private:
         return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    /// Returns true for functions that require applying the preprocessor to the haystack.
-    /// has/hasAll/hasAny bypass both transforms.
-    static bool needApplyPreprocessor(const String & function_name)
-    {
-        return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
-    }
-
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
     static bool needApplyPostprocessor(const String & function_name)
     {
         return function_name == "hasToken"
             || function_name == "hasAllTokens" || function_name == "hasAnyTokens"
             || function_name == "hasPhrase";
+    }
+
+    const ActionsDAG::Node * appendUnaryDAG(const ActionsDAG & source_dag, const ActionsDAG::Node * input, std::string_view description)
+    {
+        const auto & inputs = source_dag.getInputs();
+        const auto & outputs = source_dag.getOutputs();
+        if (inputs.size() != 1 || outputs.size() != 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Text index {} DAG must have exactly one input and one output, got {} inputs and {} outputs",
+                description,
+                inputs.size(),
+                outputs.size());
+
+        if (!input->result_type->equals(*inputs.front()->result_type))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot bind text index {} DAG input of type '{}' to type '{}'",
+                description,
+                inputs.front()->result_type->getName(),
+                input->result_type->getName());
+
+        ActionsDAG::NodeMapping source_to_target{{inputs.front(), input}};
+        auto cloned_dag = ActionsDAG::cloneSubDAG(outputs, source_to_target, false);
+        const auto * output = source_to_target.at(outputs.front());
+
+        /// The cloned output is an internal argument of the rewritten predicate. `unite` splices
+        /// the node lists, so pointers obtained from `cloned_dag` remain valid afterwards.
+        cloned_dag.getOutputs().clear();
+        actions_dag.unite(std::move(cloned_dag));
+        return output;
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
@@ -688,7 +715,8 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
+        bool need_transform_function
+            = needApplyTokenizer(function_name) || MergeTreeIndexConditionText::requiresPreprocessorForRowEvaluation(function_name);
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
@@ -745,7 +773,10 @@ private:
         auto function_name = replacement.node->function_base->getName();
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        const bool apply_preprocessor
+            = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed
+            && MergeTreeIndexConditionText::requiresPreprocessorForRowEvaluation(function_name)
+            && preprocessor && preprocessor->hasActions();
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
@@ -761,6 +792,7 @@ private:
             chassert(preprocessor_dag.getOutputs().size() == 1);
             const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
             auto haystack_name = getNameWithoutAliases(arg_haystack);
+            bool preprocessor_applied = false;
 
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
@@ -778,6 +810,36 @@ private:
                     new_children[0] = merged_outputs.front();
                 }
 
+                preprocessor_applied = true;
+            }
+            else if (condition.search_query->matchesJSONAllValuesSubcolumn())
+            {
+                /// `JSONAllValues(json)` is an `Array(String)`. Normalize a scalar JSON path to a
+                /// single-element array and reuse the same preprocessor DAG that processes the ready
+                /// index column, including its element-wise `arrayMap` transformation.
+                if (!isString(arg_haystack->result_type))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot apply a JSONAllValues text index preprocessor to a subcolumn of type '{}'",
+                        arg_haystack->result_type->getName());
+
+                auto array_function = FunctionFactory::instance().get("array", context);
+                const auto & subcolumn_array = actions_dag.addFunction(array_function, {arg_haystack}, "");
+                const auto * preprocessed_array
+                    = appendUnaryDAG(preprocessor->getIndexColumnPreprocessorDAG(), &subcolumn_array, "preprocessor");
+
+                auto index_type = std::make_shared<DataTypeUInt64>();
+                auto index_column = index_type->createColumnConst(0, Field(UInt64(1)));
+                const auto & index = actions_dag.addColumn(std::move(index_column), index_type, "1");
+
+                auto array_element_function = FunctionFactory::instance().get("arrayElement", context);
+                new_children[0] = &actions_dag.addFunction(array_element_function, {preprocessed_array, &index}, "");
+
+                preprocessor_applied = true;
+            }
+
+            if (preprocessor_applied)
+            {
                 /// Needles in array are not processed and passed as is.
                 if (needles_field.getType() == Field::Types::String)
                 {
@@ -825,16 +887,11 @@ private:
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (apply_postprocessor)
         {
-            /// Name the postprocessor's haystack input after the haystack node's actual result_name so
-            /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
-            /// an ALIAS/expression haystack (e.g. `ifNull(str, 'default')`), leaving a dangling input.
             const auto & haystack_name = new_children[0]->result_name;
-            ActionsDAG::NodeRawConstPtrs merged_outputs;
-            actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
-                &merged_outputs);
-            chassert(merged_outputs.size() == 1);
-            new_children[0] = merged_outputs.front();
+            auto postprocessor_dag
+                = postprocessor->getOriginalActionsDAG(
+                    haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast);
+            new_children[0] = appendUnaryDAG(postprocessor_dag, new_children[0], "postprocessor");
 
             /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
             /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,

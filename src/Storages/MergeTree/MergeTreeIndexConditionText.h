@@ -48,6 +48,7 @@ struct TextSearchQuery
         TextSearchMode search_mode_,
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
+        bool matches_json_all_values_subcolumn_ = false,
         std::vector<OptimizedRegularExpression> patterns_ = {},
         VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
@@ -57,6 +58,7 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
     const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    bool matchesJSONAllValuesSubcolumn() const { return matches_json_all_values_subcolumn; }
     UInt128 getHash() const { return hash; }
 
 private:
@@ -66,6 +68,8 @@ private:
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Match provenance used only by query DAG rewriting; it is not part of the dictionary query identity.
+    bool matches_json_all_values_subcolumn;
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
@@ -101,6 +105,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// Whether query DAG rewriting applies the index preprocessor to this function's row-level haystack.
+    static bool requiresPreprocessorForRowEvaluation(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -174,16 +180,31 @@ private:
         Field value_field,
         RPNElement & out) const;
 
+    bool traverseFunctionNodeImpl(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        DataTypePtr value_type,
+        Field value_field,
+        RPNElement & out) const;
+
+    bool textIndexConditionMayMatchDefaultString(const RPNElement & element) const;
+
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
+    /// Returns true if the node can use an index on `JSONAllValues` for a JSON subcolumn value.
+    bool canUseJSONAllValuesIndexForNode(const RPNBuilderTreeNode & node) const;
+
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// Produces the complete token set stored for a document. Unlike query-token preparation,
+    /// this must not apply tokenizer-specific compaction.
+    VectorWithMemoryTracking<String> stringToDocumentTokens(const Field & field) const;
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
