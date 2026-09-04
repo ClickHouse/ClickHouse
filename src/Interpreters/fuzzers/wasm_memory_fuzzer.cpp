@@ -12,15 +12,10 @@
 #    include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 #endif
 
-#if USE_WASMEDGE
-#    include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
-#endif
-
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <vector>
 
 using namespace DB;
 using namespace DB::WebAssembly;
@@ -42,31 +37,9 @@ static const uint8_t kMinimalWasm[] = {
 
 ContextMutablePtr context;
 
-namespace
-{
-
-/// A minimal module compiled by a single backend, together with the engine that
-/// owns it. One entry is created per WASM backend that is compiled in, so a build
-/// with both runtimes exercises both `getMemory` implementations over time
-/// instead of leaving one of them without any coverage.
-struct CompiledBackend
-{
-    std::unique_ptr<IWasmEngine> engine;
-    std::unique_ptr<WasmModule> module;
-};
-
-std::vector<CompiledBackend> backends;
-
-void addBackend(std::unique_ptr<IWasmEngine> engine)
-{
-    const std::string_view wasm_bytes(
-        reinterpret_cast<const char *>(kMinimalWasm), sizeof(kMinimalWasm));
-    /// The module carries no code (only a memory section), so fuel accounting is unnecessary.
-    auto module = engine->compileModule("wasm_memory_fuzzer", wasm_bytes, FuelMode::Disabled);
-    backends.push_back({std::move(engine), std::move(module)});
-}
-
-}
+/// The minimal module compiled once at startup, together with the engine that owns it.
+std::unique_ptr<IWasmEngine> engine;
+std::unique_ptr<WasmModule> minimal_module;
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***);
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
@@ -83,19 +56,18 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     MainThreadStatus::getInstance();
 
 #if USE_WASMTIME
-    addBackend(std::make_unique<WasmTimeRuntime>());
-#endif
-#if USE_WASMEDGE
-    addBackend(std::make_unique<WasmEdgeRuntime>());
+    engine = std::make_unique<WasmTimeRuntime>();
+    const std::string_view wasm_bytes(reinterpret_cast<const char *>(kMinimalWasm), sizeof(kMinimalWasm));
+    /// The module carries no code (only a memory section), so fuel accounting is unnecessary.
+    minimal_module = engine->compileModule("wasm_memory_fuzzer", wasm_bytes, FuelMode::Disabled);
 #endif
 
     return 0;
 }
 
 /// Fuzz input layout:
-///   [0]     backend selector (only meaningful when several WASM backends are built in)
-///   [1..4]  WasmPtr  ptr  (uint32_t, little-endian)
-///   [5..8]  WasmSizeT size (uint32_t, little-endian)
+///   [0..3]  WasmPtr  ptr  (uint32_t, little-endian)
+///   [4..7]  WasmSizeT size (uint32_t, little-endian)
 ///
 /// This targeted harness exercises WasmCompartment::getMemory with all possible
 /// (ptr, size) combinations, concentrating on integer-overflow edge cases that
@@ -112,23 +84,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         CurrentThread::get().memory_tracker.resetCounters();
         CurrentThread::get().memory_tracker.setHardLimit(256 * 1024 * 1024ULL);
 
-        if (size < 9 || backends.empty())
+        if (size < 8 || !minimal_module)
             return 0;
-
-        /// Byte 0 chooses which compiled backend to exercise, so that a build with
-        /// both runtimes gives `WasmTimeCompartment::getMemory` and
-        /// `WasmEdgeCompartment::getMemory` coverage over time.
-        const CompiledBackend & backend = backends[data[0] % backends.size()];
 
         uint32_t ptr_val = 0;
         uint32_t size_val = 0;
-        memcpy(&ptr_val, data + 1, 4);
-        memcpy(&size_val, data + 5, 4);
+        memcpy(&ptr_val, data, 4);
+        memcpy(&size_val, data + 4, 4);
 
         WasmModule::Config cfg(FuelMode::Disabled); /// no instruction budget needed (no code)
         cfg.memory_limit = 64 * 1024; /// 1 page (64 KiB) — matches kMinimalWasm
 
-        auto compartment = backend.module->instantiate(cfg, StopToken{});
+        auto compartment = minimal_module->instantiate(cfg, StopToken{});
 
         /// This call must throw (or return a valid in-bounds span) — it must
         /// never return an out-of-bounds span regardless of ptr_val + size_val

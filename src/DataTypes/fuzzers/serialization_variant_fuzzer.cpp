@@ -137,8 +137,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         ISerialization::DeserializeBinaryBulkStatePtr state;
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-        ColumnPtr column = variant_type->createColumn();
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
+        MutableColumnPtr column = variant_type->createColumn();
+        serialization->deserializeBinaryBulkWithMultipleStreams(*column, rows, settings, state, nullptr);
     }
     catch (...)
     {

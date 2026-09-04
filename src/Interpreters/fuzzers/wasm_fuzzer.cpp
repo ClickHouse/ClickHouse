@@ -11,10 +11,6 @@
 #    include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 #endif
 
-#if USE_WASMEDGE
-#    include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
-#endif
-
 #include <memory>
 
 using namespace DB;
@@ -48,30 +44,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         CurrentThread::get().memory_tracker.resetCounters();
         CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
-        /// Need at least 1 byte for backend selector and at least a few bytes of WASM bytecode.
-        if (size < 2)
+        /// An empty input is not a module.
+        if (size < 1)
             return 0;
 
-        /// Byte 0 selects the backend.
-        const uint8_t backend_selector = data[0];
-        const std::string_view wasm_bytes(reinterpret_cast<const char *>(data + 1), size - 1);
+        /// The whole input is the module: `wasmtime` is the only WebAssembly backend.
+        const std::string_view wasm_bytes(reinterpret_cast<const char *>(data), size);
 
-        std::unique_ptr<IWasmEngine> engine;
-
-#if USE_WASMTIME && USE_WASMEDGE
-        if (backend_selector & 1)
-            engine = std::make_unique<WasmTimeRuntime>();
-        else
-            engine = std::make_unique<WasmEdgeRuntime>();
-#elif USE_WASMTIME
-        (void)backend_selector;
-        engine = std::make_unique<WasmTimeRuntime>();
-#elif USE_WASMEDGE
-        (void)backend_selector;
-        engine = std::make_unique<WasmEdgeRuntime>();
+#if USE_WASMTIME
+        std::unique_ptr<IWasmEngine> engine = std::make_unique<WasmTimeRuntime>();
 #else
-        /// No WASM backend available — nothing to fuzz.
-        (void)backend_selector;
+        /// No WASM backend available - nothing to fuzz.
         (void)wasm_bytes;
         return 0;
 #endif
