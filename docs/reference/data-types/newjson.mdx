@@ -1316,6 +1316,9 @@ The `JSONAllPaths(json_column)` expression produces an `Array(String)` containin
 The skip index stores these path strings in its data structure (bloom filter or inverted index).
 When a query filters on `json.some.path`, the index checks whether the string `"some.path"` is present in the index for each granule and skips granules where it is absent.
 
+Only plain path access is matched against the index, optionally with a type hint or a cast (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Filters on the sub-object subcolumn (`json.^a`) and on the combined literal+sub-object subcolumn (``json.@`a``) do not use the index: these subcolumns are not `NULL` whenever any sub-path of `a` exists, so the presence of the path `a` itself in `JSONAllPaths` is not an equivalent condition.
+
 #### Safety with missing paths {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 When a JSON path is absent from a granule, the subcolumn evaluates to:
