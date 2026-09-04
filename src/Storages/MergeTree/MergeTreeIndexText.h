@@ -155,10 +155,10 @@ private:
 struct PostingListBuildContext
 {
     const IPostingListCodec & codec;
-    size_t segment_size;
-    bool enable_positions;
-    bool enable_scoring;
-    const PaddedPODArray<UInt8> * doc_lengths;
+    size_t segment_size = 0;
+    bool enable_positions = false;
+    bool enable_scoring = false;
+    const PaddedPODArray<UInt8> * doc_lengths = nullptr;
     UInt32 doc_lengths_first_row_id = 0;
 };
 
