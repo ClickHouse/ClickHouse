@@ -96,7 +96,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
-    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
+    extern const DatabaseReplicatedSettingsNonZeroUInt32 logs_to_keep;
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
@@ -3038,7 +3038,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         const auto & initial_storage_settings = args.context->getDatabaseReplicatedSettings();
         DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
-            database_replicated_settings.loadFromQuery(*engine_define);
+            database_replicated_settings.loadFromQuery(*engine_define, args.create_query.attach);
 
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
@@ -3203,7 +3203,7 @@ The following settings are supported:
 | `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
 | `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
+| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database. Bounded by the DDL log counter, which is 32-bit, so the value must not exceed `4294967295`; a larger value is rejected with `BAD_ARGUMENTS` on `CREATE` and clamped with a warning on `ATTACH`                                                                    |
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |

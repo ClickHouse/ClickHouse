@@ -36,6 +36,20 @@ node3 = cluster.add_instance(
     macros={"shard": "shard2", "replica": "1"},
     with_zookeeper=True,
 )
+# `logs_to_keep` used to be 64-bit, so a config an older server accepted may hold a value above
+# `UInt32::max`. A dedicated node, because the config default is read once per server lifetime and
+# would leak into every other test on the node.
+node_logs_to_keep_overflow = cluster.add_instance(
+    "node_logs_to_keep_overflow",
+    main_configs=[
+        "configs/config.xml",
+        "configs/database_replicated_settings_overflow.xml",
+    ],
+    user_configs=["configs/users.xml"],
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard1", "replica": "1"},
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +200,29 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_logs_to_keep_from_config_is_clamped(started_cluster):
+    db_name = "test_" + get_random_string()
+
+    # The out-of-range config default must not prevent creating a database (which on a restart is
+    # exactly the metadata replay path); the effective value is clamped to `UInt32::max` and written
+    # to Keeper as such.
+    node_logs_to_keep_overflow.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}')"
+    )
+
+    logs_to_keep_in_keeper = node_logs_to_keep_overflow.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
+    ).strip()
+    assert logs_to_keep_in_keeper == "4294967295"
+
+    assert node_logs_to_keep_overflow.contains_in_log(
+        "exceeds the maximum of 4294967295"
+    )
+
+    node_logs_to_keep_overflow.query(f"DROP DATABASE {db_name}")
+
 
 def test_create_database_replicated_with_default_args(started_cluster):
     db_name = "test_" + get_random_string()
