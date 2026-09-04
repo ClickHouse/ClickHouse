@@ -1056,6 +1056,9 @@ DataTypePtr tryGetAliasExpressionType(const String & column_name, const ColumnsD
     }
     catch (...)
     {
+        /// Swallowing this is Ok. An expression whose type cannot be worked out here is simply not
+        /// reported, which is the same fail-open behaviour as returning null above: this check is a
+        /// convenience and must never be the reason a legitimate statement fails.
         return nullptr;
     }
 }
