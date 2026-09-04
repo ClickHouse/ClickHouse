@@ -5,6 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+col_user="coluser_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ref_table="ref_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 data_table="data_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 dict_name="dict_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -13,6 +14,7 @@ db_name="${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP USER IF EXISTS ${user};
+    DROP USER IF EXISTS ${col_user};
     DROP VIEW IF EXISTS ${view_name};
     DROP TABLE IF EXISTS ${data_table} SYNC;
     DROP DICTIONARY IF EXISTS ${dict_name};
@@ -32,6 +34,10 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 
     CREATE USER ${user} IDENTIFIED WITH no_password;
     GRANT SELECT ON ${db_name}.${view_name} TO ${user};
+
+    CREATE USER ${col_user} IDENTIFIED WITH no_password;
+    GRANT SELECT(name) ON ${db_name}.${view_name} TO ${col_user};
+    GRANT dictGet ON ${db_name}.${dict_name} TO ${col_user};
 "
 
 # Sanity check: the user genuinely has no dictGet grant.
@@ -53,8 +59,24 @@ ${CLICKHOUSE_CLIENT} --user="${user}" -nm --query "
     SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
 "
 
+# Column-level RBAC check: a user granted SELECT only on the dictGet(...)-defined column ("name"),
+# not on the key column ("id") the rewrite would read, must not be forced to acquire an extra grant.
+# ${col_user} is also granted dictGet so the rewrite reaches the key-column check below instead of
+# being skipped earlier by the missing-dictGet-grant guard (a separate, already-covered case above).
+# The optimization must silently skip the rewrite here instead of tightening the view's access
+# contract, so both settings values succeed with the same result.
+${CLICKHOUSE_CLIENT} --user="${col_user}" -nm --query "
+    SELECT count() FROM ${db_name}.${view_name} WHERE name = 'match'
+    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 0;
+"
+${CLICKHOUSE_CLIENT} --user="${col_user}" -nm --query "
+    SELECT count() FROM ${db_name}.${view_name} WHERE name = 'match'
+    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
+"
+
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP USER IF EXISTS ${user};
+    DROP USER IF EXISTS ${col_user};
     DROP VIEW IF EXISTS ${view_name};
     DROP TABLE IF EXISTS ${data_table} SYNC;
     DROP DICTIONARY IF EXISTS ${dict_name};
