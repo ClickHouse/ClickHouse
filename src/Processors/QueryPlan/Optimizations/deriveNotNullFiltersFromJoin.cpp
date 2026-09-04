@@ -41,7 +41,7 @@ void collectColumnsThroughNullPropagatingFunctions(const ActionsDAG::Node * root
                 break;
 
             case ActionsDAG::ActionType::FUNCTION:
-                if (node->function && node->function->isNullPropagating())
+                if (node->function && node->function->isNullPropagating(node->result_type))
                     stack.insert(stack.end(), node->children.begin(), node->children.end());
                 break;
 

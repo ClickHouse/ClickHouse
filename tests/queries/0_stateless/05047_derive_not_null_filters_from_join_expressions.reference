@@ -30,3 +30,16 @@ Type: LEFT
 15	705
 Type: INNER
 Type: INNER
+-- An explicit CAST to a Nullable type propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- `toNullable` propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- A CAST to a non-Nullable type throws on a NULL instead of returning one, so no filter is derived.
+Type: INNER
+Type: LEFT

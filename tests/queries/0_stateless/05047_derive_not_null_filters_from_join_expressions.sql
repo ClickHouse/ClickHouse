@@ -94,6 +94,34 @@ SELECT trim(explain) FROM (
     SETTINGS join_use_nulls = 0
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
+SELECT '-- An explicit CAST to a Nullable type propagates NULLs and converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Nullable(Int64)) = CAST(s.val AS Nullable(Int64))
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Nullable(Int64)) = CAST(s.val AS Nullable(Int64));
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Nullable(Int64)) = CAST(s.val AS Nullable(Int64))
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- `toNullable` propagates NULLs and converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val)
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val);
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val)
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- A CAST to a non-Nullable type throws on a NULL instead of returning one, so no filter is derived.';
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON CAST(m.val AS Int64) = CAST(s.val AS Int64)
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
 DROP TABLE fact;
 DROP TABLE mid;
 DROP TABLE mid_two;
