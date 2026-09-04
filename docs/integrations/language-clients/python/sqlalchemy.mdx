@@ -119,6 +119,47 @@ with engine.connect() as conn:
 
 When SQLAlchemy inlines a bound value through `literal_binds` or `literal_execute`, the dialect uses ClickHouse quoting for generic string types and ClickHouse types. This also applies through `TypeDecorator` wrappers and `with_variant()` selections. String values retain percent signs and backslashes even when other bound parameters remain.
 
+### JSON type hints {#sqlalchemy-json-type-hints}
+
+Declare typed JSON paths with the `typed_paths` mapping. A path type can be a ClickHouse SQLAlchemy type class, a configured instance, or a ClickHouse type name string. Type name strings support types without a SQLAlchemy constructor, such as `Dynamic`, and can still be used for complex configured type expressions. They preserve names in a named `Tuple`.
+
+Type name strings can contain configured nested JSON types such as ``Array(JSON(`child` UInt32))``. Recognized ClickHouse type names are case-insensitive in these strings and are emitted with their canonical capitalization. A string must contain one complete type expression. Trailing text and malformed nested JSON arguments are rejected.
+
+An empty `Tuple()` is not supported as a JSON typed path because ClickHouse cannot serialize it through a JSON column's Native format. The core driver supports `Tuple()` in query and insert columns at any position, including nested in positional or named tuples, inside `Array`, and as `Nullable(Tuple())` where enabled by the server.
+
+```python
+from sqlalchemy import Column, MetaData, Table
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column(
+        "payload",
+        JSON(
+            typed_paths={
+                "event.id": UInt32,
+                "details": "Tuple(id UInt32, label Nullable(String))",
+                "attributes": "Variant(String, Array(String))",
+            },
+            max_dynamic_paths=256,
+            max_dynamic_types=16,
+            skip_paths=["internal.debug"],
+            skip_regexps=[r"^private\."],
+        ),
+    ),
+)
+```
+
+For simple Python identifier paths, keyword arguments are shorthand for `typed_paths`, for example `JSON(user_id=UInt32)`. Use `typed_paths` for dotted paths, spaces, backticks, `%2E` encoded dots, or names that match constructor options. A typed path named `SKIP` is supported through the mapping. Keys in `typed_paths` and values in `skip_paths` are decoded names. Leading or trailing backticks and double quotes are treated as literal path characters, not as pre-applied SQL quoting. Inside a raw type string, backticks and double quotes are ClickHouse identifier syntax.
+
+Up to 1000 typed paths can be configured. `max_dynamic_paths` accepts 0 through 10000. `max_dynamic_types` accepts 0 through 254. These ranges also apply inside raw nested JSON type strings. Explicit server defaults of 1024 and 32 are omitted from generated DDL. Plain skip paths are deduplicated. Regular expression strings are not validated by Python because ClickHouse uses RE2 syntax. Duplicate regular expressions are preserved.
+
+A plain skip path cannot be named exactly `REGEXP` because ClickHouse reserves that token for `SKIP REGEXP`. Names such as `REGEXP_foo` remain valid. In a raw JSON type string, a plain `SKIP` operand must be one ClickHouse identifier or a dot-separated compound identifier. An unquoted compound identifier cannot start with `REGEXP`; quote that first component when it is path data. `SKIP REGEXP` must have one single-quoted string literal. Quote identifier parts with backticks or double quotes when they contain spaces or punctuation. Raw JSON type hints support `Variant(...)`; standalone `Variant` has no public SQLAlchemy constructor. `Variant` members are ordered and deduplicated by the same canonical names used by ClickHouse.
+
+The constructor orders arguments in the same canonical form returned by ClickHouse. Reflected types, SQLAlchemy type copies, and Alembic autogeneration preserve the configuration.
+
 ### JSON subcolumns {#sqlalchemy-json-subcolumns}
 
 For a column declared or reflected as ClickHouse `JSON`, use square brackets to select one segment of a storage-backed subcolumn path at a time:
@@ -286,6 +327,8 @@ ClickHouse does not support recursive materialized CTEs. The SQLAlchemy helpers 
 ## DDL and reflection {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect provides ClickHouse data types, table engines, dictionary constructs, database DDL, and table reflection.
+
+Standalone `Variant` columns reflect through an internal SQLAlchemy type, and Alembic autogenerate preserves their canonical raw type names without repeated type changes. `Geometry` and `MultiPoint` columns reflect as public SQLAlchemy types.
 
 ```python
 import sqlalchemy as db
