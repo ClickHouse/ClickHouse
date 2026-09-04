@@ -568,13 +568,8 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
 {
-    const auto & query_context = planner_context->getQueryContext();
-
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
     /// buildQueryTree produces a FunctionNode at the top level instead of
@@ -598,13 +593,19 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
 
-    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
-    /// equalities into IN (important for row policies that produce many
-    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
-    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
-    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
+    return filter_query_tree;
+}
 
-    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
+    return buildFilterInfo(
+        buildFilterQueryTree(std::move(filter_expression), table_expression, planner_context->getQueryContext()),
+        table_expression,
+        planner_context,
+        std::move(table_expression_required_names_without_filter));
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
@@ -612,6 +613,14 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
+    const auto & query_context = planner_context->getQueryContext();
+
+    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
+    /// equalities into IN (important for row policies that produce many
+    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
+    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
+    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
+
     if (table_expression_required_names_without_filter.empty())
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);

@@ -53,8 +53,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -394,6 +393,105 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
+}
+
+/// Collect names of the columns of `table_expression` that a resolved filter expression reads
+class CollectFilterColumnNamesVisitor : public InDepthQueryTreeVisitor<CollectFilterColumnNamesVisitor, true /*const_visitor*/>
+{
+public:
+    explicit CollectFilterColumnNamesVisitor(const IQueryTreeNode * table_expression_)
+        : table_expression(table_expression_)
+    {
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        if (column_node->getColumnSourceOrNull().get() != table_expression)
+            return;
+
+        column_names.insert(column_node->getColumnName());
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
+    {
+        /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+        return !isAliasColumn(parent_node);
+    }
+
+    Names getColumnNames() const
+    {
+        return Names(column_names.begin(), column_names.end());
+    }
+
+private:
+    static bool isAliasColumn(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return false;
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        return column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE;
+    }
+
+    const IQueryTreeNode * table_expression;
+    NameSet column_names;
+};
+
+/// Check column-level SELECT for the columns a settings-provided filter reads.
+/// Such filters are user-supplied, so unlike row policies they must not grant access to columns the user cannot select.
+void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree, const QueryTreeNodePtr & table_expression, const ContextPtr & query_context)
+{
+    StoragePtr storage;
+    StorageID storage_id = StorageID::createEmpty();
+    StorageSnapshotPtr storage_snapshot;
+
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        storage = table_node->getStorage();
+        storage_id = table_node->getStorageID();
+        storage_snapshot = table_node->getStorageSnapshot();
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
+        /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
+        const auto & table_function_storage = table_function_node->getStorage();
+        const auto * storage_view = table_function_storage ? table_function_storage->as<StorageView>() : nullptr;
+        if (!storage_view || !storage_view->isParameterizedView())
+            return;
+
+        storage = table_function_storage;
+        storage_id = table_function_node->getStorageID();
+        storage_snapshot = table_function_node->getStorageSnapshot();
+    }
+    else
+    {
+        return;
+    }
+
+    CollectFilterColumnNamesVisitor visitor(table_expression.get());
+    visitor.visit(filter_query_tree);
+
+    auto column_names = visitor.getColumnNames();
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(storage, storage_id, storage_snapshot, column_names, query_context);
+}
+
+/// `buildFilterInfo` for a settings-provided filter, with a column-level SELECT check on the columns it reads
+FilterDAGInfo buildFilterInfoWithAccessCheck(ASTPtr filter_ast,
+    const TableExpressionNodePtr & table_expression,
+    PlannerContextPtr & planner_context)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    auto filter_query_tree = buildFilterQueryTree(std::move(filter_ast), table_expression, query_context);
+    checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context);
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -994,7 +1092,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfoWithAccessCheck(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into
@@ -1051,7 +1149,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
     if (!additional_filter_ast)
         return {};
 
-    auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
+    auto filter_info = buildFilterInfoWithAccessCheck(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
     if (prewhere_info)
     {
         for (const auto * input : filter_info.actions.getInputs())
@@ -2292,15 +2390,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// unaliased views, but a hard error for aliased ones).
                             if (auto & additional_filter_ast = table_expression_query_info.additional_filter_ast; additional_filter_ast)
                             {
-                                ASTPtr wrapped_filter_ast = additional_filter_ast;
-                                if (wrapped_filter_ast->as<ASTSubquery>() || wrapped_filter_ast->as<ASTSelectWithUnionQuery>())
-                                    wrapped_filter_ast = makeASTFunction("notEquals",
-                                        wrapped_filter_ast,
-                                        make_intrusive<ASTLiteral>(Field(UInt8(0))));
-
-                                auto filter_query_tree = buildQueryTree(wrapped_filter_ast, query_context);
-                                QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
-                                query_analysis_pass.run(filter_query_tree, query_context);
+                                auto filter_query_tree = buildFilterQueryTree(
+                                    additional_filter_ast, table_expression_query_info.table_expression, query_context);
+                                checkAccessRightsForFilter(
+                                    filter_query_tree, table_expression_query_info.table_expression, query_context);
 
                                 auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
                                 if (outer_query_node.hasWhere())
@@ -2323,6 +2416,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// and parseAdditionalFilterAstIfNeeded is a no-op when no entry matches.
                             parseAdditionalFilterAstIfNeeded(
                                 underlying_dist, dist_table_node->getAlias(), table_expression_query_info, inner_context);
+
+                            /// The filter AST itself is forwarded to the shards by `StorageDistributed`, so resolve it
+                            /// against the Distributed table node here only to check access to the columns it reads.
+                            if (table_expression_query_info.additional_filter_ast)
+                            {
+                                auto dist_filter_query_tree = buildFilterQueryTree(
+                                    table_expression_query_info.additional_filter_ast,
+                                    std::static_pointer_cast<ITableExpressionNode>(dist_table_node),
+                                    inner_context);
+                                checkAccessRightsForFilter(dist_filter_query_tree, dist_table_node, inner_context);
+                            }
 
                             /// Replace the view's table expression in the outer query with the
                             /// inlined inner query tree. StorageDistributed will then replace
