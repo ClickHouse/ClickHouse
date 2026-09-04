@@ -508,6 +508,14 @@ In case of non-graceful server termination, it is possible that we can have not 
 
 Default value: `21600` (6 hours).
 
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+A file whose `processing` node in keeper is held by another server is remembered as `Processing` in the in-memory file status cache, so that the following listing passes skip it without asking keeper again.
+
+Unlike `Processed` and `Failed`, this state is not final: the other processor can release the file without committing it, for instance if it dies. This setting defines for how long the cached `Processing` state is trusted; after that the file is rechecked in keeper and processed if it is free again. Zero means to always recheck keeper.
+
+Default value: `300` (5 minutes).
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](/reference/engines/table-engines/integrations/s3).
