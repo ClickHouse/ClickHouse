@@ -3540,6 +3540,43 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
 
+    /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so
+    /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
+    /// for the same value depending on constness, and a replacement can be constant where the input is not.
+    auto reads_replaced_input_representation = [&](const Node * conjunct)
+    {
+        std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
+        std::unordered_set<const Node *> visited_reading_value;
+        std::unordered_set<const Node *> visited_reading_representation;
+        while (!to_visit.empty())
+        {
+            auto [node, reads_representation] = to_visit.back();
+            to_visit.pop_back();
+
+            reads_representation |= !node->isDeterministic();
+            auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+            if (!visited.insert(node).second)
+                continue;
+
+            if (reads_representation && node->type == ActionType::INPUT && both_streams_allowed_nodes.contains(node))
+                return true;
+
+            for (const auto * child : node->children)
+                to_visit.emplace_back(child, reads_representation);
+        }
+        return false;
+    };
+
+    NodeRawConstPtrs both_streams_value_only_conjunctions;
+    for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+    {
+        if (reads_replaced_input_representation(conjunct))
+            both_streams_push_down_conjunctions.rejected.push_back(conjunct);
+        else
+            both_streams_value_only_conjunctions.push_back(conjunct);
+    }
+    both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
+
     /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
     /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
     /// or a folded `NULL`) satisfies this trivially, so it is classified as pushable to EVERY side,

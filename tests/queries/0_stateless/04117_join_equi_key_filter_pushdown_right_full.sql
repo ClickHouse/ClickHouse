@@ -230,6 +230,17 @@ SELECT count() > 0 FROM (
     WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 ) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
 
+-- Only a conjunct that reads the representation of a substituted key is unsafe, so a safe conjunct on
+-- that same key still reaches the opposite input when the two sit side by side. `isConstant` is true for
+-- every row of this read, so it constrains nothing and the granule counts describe the range alone.
+
+SELECT 'INNER JOIN ON, cross-type equi-key beside a predicate reading constness: right MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE isConstant(l.a) = 0 AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
+
 SELECT 'INNER JOIN ON, cross-type equi-key: result';
 SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
 WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;

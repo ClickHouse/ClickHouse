@@ -54,6 +54,8 @@ INNER JOIN ON, cross-type equi-key, wider key on the right: left MergeTree prune
 1
 INNER JOIN ON, matched types: right MergeTree prunes granules
 1
+INNER JOIN ON, cross-type equi-key beside a predicate reading constness: right MergeTree prunes granules
+1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02
