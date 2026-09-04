@@ -11,6 +11,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/TypedQueryParameters.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
@@ -48,6 +49,7 @@
 #include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/quoteString.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -163,6 +165,9 @@ namespace ProfileEvents
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
     extern const Event FileProgressCallbackInvocations;
+    extern const Event QueryParameterTextBytes;
+    extern const Event QueryParameterBinaryBytes;
+    extern const Event QueryParameterBinaryDecodeMicroseconds;
 }
 
 namespace DB::ErrorCodes
@@ -171,6 +176,7 @@ namespace DB::ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
     extern const int LOGICAL_ERROR;
@@ -2632,6 +2638,66 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     NameToNameMap passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         passed_params = readQueryParameters(*in);
+    for (const auto & [name, value] : passed_params)
+        ProfileEvents::increment(ProfileEvents::QueryParameterTextBytes, value.size());
+
+    TypedQueryParameters passed_typed_params;
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS)
+    {
+        Stopwatch decode_watch;
+        LimitReadBuffer limited_in(
+            *in,
+            {
+                .read_no_more = MAX_TYPED_QUERY_PARAMETER_WIRE_BYTES,
+                .expect_eof = false,
+                .excetion_hint = "binary query parameter block is too large",
+            });
+        NativeReader reader(limited_in, client_tcp_protocol_version, FormatSettings{});
+        Block block = reader.read();
+        ProfileEvents::increment(ProfileEvents::QueryParameterBinaryBytes, limited_in.count());
+        ProfileEvents::increment(ProfileEvents::QueryParameterBinaryDecodeMicroseconds, decode_watch.elapsedMicroseconds());
+
+        if (block.columns() > MAX_TYPED_QUERY_PARAMETERS)
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "The number of binary query parameters ({}) exceeds the maximum of {}",
+                block.columns(),
+                MAX_TYPED_QUERY_PARAMETERS);
+        if (block.columns() == 0 && block.rows() != 0)
+            throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Empty binary query parameter block must contain zero rows");
+        if (block.columns() != 0 && block.rows() != 1)
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Binary query parameter block must contain exactly one row, got {}",
+                block.rows());
+        if (block.bytes() > MAX_TYPED_QUERY_PARAMETER_UNCOMPRESSED_BYTES)
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Binary query parameter block uses {} uncompressed bytes, exceeding the maximum of {}",
+                block.bytes(),
+                MAX_TYPED_QUERY_PARAMETER_UNCOMPRESSED_BYTES);
+
+        for (auto & column : block)
+        {
+            if (column.name.empty())
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Binary query parameter name cannot be empty");
+            if (passed_typed_params.contains(column.name))
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "Duplicate binary query parameter {}",
+                    backQuote(column.name));
+            passed_typed_params.emplace(
+                column.name,
+                TypedQueryParameter{
+                    .type = column.type,
+                    .column = column.column,
+                    .value_hash = {},
+                    .scalar_name = {},
+                });
+        }
+
+        validateTypedQueryParameters(passed_typed_params, &passed_params);
+    }
 
     if (is_interserver_mode)
     {
@@ -2844,6 +2910,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     state->query_context->setCurrentQueryId(state->query_id);
 
     state->query_context->addQueryParameters(passed_params);
+    state->query_context->addTypedQueryParameters(passed_typed_params);
 
     state->allow_partial_result_on_first_cancel = state->query_context->getSettingsRef()[Setting::partial_result_on_first_cancel];
 
@@ -2873,6 +2940,9 @@ void TCPHandler::processUnexpectedQuery()
                                                                                                       : SettingsWriteFormat::BINARY;
     skip_settings.read(*in, settings_format);
 
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
+        readStringBinary(skip_string, *in);
+
     std::string skip_hash;
     bool interserver_secret = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET;
     if (interserver_secret)
@@ -2887,6 +2957,12 @@ void TCPHandler::processUnexpectedQuery()
 
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         skip_settings.read(*in, settings_format);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS)
+    {
+        NativeReader reader(*in, client_tcp_protocol_version, FormatSettings{});
+        reader.read();
+    }
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }

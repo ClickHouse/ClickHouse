@@ -159,6 +159,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | HTTP_HANDLER_IN_CLIENT_INFO     | 54490   | ClientInfo             | Adds `http_handler_name` and `http_request_url` (both `String`) to the **HTTP** branch of ClientInfo, immediately after `http_referer`. They carry the name of the matched SQL-defined HTTP handler and the request URL, so that `currentHandler`/`currentRequestURL` and the `http_handler_name`/`http_request_url` `system.query_log` columns stay populated on remote shards for distributed handler queries. Written only when `query_interface = HTTP` (empty strings for a non-handler HTTP query); required once negotiated version ≥ 54490 — omitting it desynchronizes the rest of the Query packet. |
 | QUANTILE_DETERMINISTIC_SKIP_DEGREE | 54491 | Block (Column) | Bumps the state version of `AggregateFunction(quantileDeterministic, ...)` (and the `quantiles`/`median` spellings of it) from `0` to `1`, which appends a trailing `UInt8 skip_degree` to each serialized state. Only the state payload of that one aggregate function changes; the column framing is untouched, and every other aggregate function keeps its own version. Below this revision the writer emits version `0` states, so an older peer is unaffected. |
 | STRING_WITH_SIZE_STREAM_SERIALIZATION | 54492 | Block (Column)         | `String` columns switch from the per-value length-prefixed layout to a separate stream of cumulative byte offsets (the same offsets layout an `Array` uses), sent as-is: `[UInt64 × num_rows offsets][data blob]`. Gated on the negotiated revision; below 54492 the writer uses the per-value length prefixes. The wire carries no per-column marker for this — both peers derive it from the revision alone. See [String column layout](/reference/interfaces/specs/NativeFormat#string-type). |
+| TYPED_QUERY_PARAMETERS          | 54493   | Query                  | Appends one Native `Block` after the text parameter list. Each column is one typed parameter and the block has exactly one row; an empty typed-parameter set is encoded as an empty block. See [Typed query parameter block](#typed-query-parameter-block). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -526,6 +527,7 @@ Client → Server.
 | 6 | compression    | VarUInt     | universal    | always                                   | 0 = disabled, 1 = enabled |
 | 7 | query_body     | String      | universal    | always                                   | SQL text |
 | 8 | parameters     | Parameter[] | client       | PARAMETERS (v54459)                      | See [Parameter](#parameter). Terminated by empty key. |
+| 9 | typed_parameters | Native Block | client     | TYPED_QUERY_PARAMETERS (v54493)          | See [Typed query parameter block](#typed-query-parameter-block). |
 
 ### ClientInfo (embedded in Query) {#clientinfo}
 
@@ -631,6 +633,24 @@ Query parameters, for parameterized queries like `SELECT {x:UInt64}`. Encoded id
 <Note>
 The parameter value is the SQL representation of the value, not a raw literal. String-typed parameters must be passed already single-quoted (for example, the value for `{name:String}` is `'Alice'`, not `Alice`); otherwise the server's value parser rejects them.
 </Note>
+
+### Typed query parameter block {#typed-query-parameter-block}
+
+At negotiated protocol revision `54493` and above, the Query body appends one Native `Block` immediately after the text [Parameter](#parameter) terminator. This block is part of the Query packet itself: it has no packet-type or `table_name` prefix and is not wrapped by the Query packet's `compression` setting. Chunked-protocol framing, when negotiated, still wraps the enclosing packet normally.
+
+Each block column represents one parameter:
+
+| Native column field | Meaning |
+|---------------------|---------|
+| `name`              | Query parameter name, without braces |
+| `type`              | Declared ClickHouse data type |
+| `data`              | Exactly one value, encoded using that type's Native column serialization |
+
+A non-empty block must contain exactly one row. An empty typed-parameter set is encoded as an empty block with zero columns and zero rows. Parameter names must be non-empty and unique. A name cannot appear in both the text parameter list and the typed block.
+
+The sender and receiver construct `NativeWriter` and `NativeReader` with the negotiated revision, so the block includes the revision-dependent `BlockInfo` and column metadata described by the [Native Format](/interfaces/specs/NativeFormat). The receiver limits the encoded block to 64 MiB, the decoded column data to 64 MiB, the parameter count to 1024, and the type nesting depth to 32. Types with custom serialization and types such as `AggregateFunction`, `Dynamic`, `JSON`/`Object`, `Variant`, `Function`, `Set`, and `QBit` are rejected.
+
+For a negotiated revision below `54493`, this field is absent. A compatible client must serialize typed values into the existing text parameter list instead; sending a Native block to an older peer desynchronizes the connection.
 
 ### Data (packet type 1 server→client, packet type 2 client→server) {#data}
 

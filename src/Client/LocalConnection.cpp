@@ -142,9 +142,36 @@ void LocalConnection::sendProfileEvents()
 }
 
 void LocalConnection::sendQuery(
-    const ConnectionTimeouts &,
+    const ConnectionTimeouts & timeouts,
     const String & query,
     const NameToNameMap & query_parameters,
+    const String & query_id,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    bool with_pending_data,
+    const std::vector<String> & external_roles,
+    std::function<void(const Progress &)> process_progress_callback)
+{
+    QueryParameterBindings bindings;
+    bindings.text = query_parameters;
+    sendQueryWithTypedParameters(
+        timeouts,
+        query,
+        bindings,
+        query_id,
+        stage,
+        settings,
+        client_info,
+        with_pending_data,
+        external_roles,
+        std::move(process_progress_callback));
+}
+
+void LocalConnection::sendQueryWithTypedParameters(
+    const ConnectionTimeouts &,
+    const String & query,
+    const QueryParameterBindings & query_parameters,
     const String & query_id,
     UInt64 stage,
     const Settings *,
@@ -221,7 +248,8 @@ void LocalConnection::sendQuery(
     if (!current_database.empty() && !session_diverged_database)
         query_context->setSetting("database", current_database);
 
-    query_context->addQueryParameters(query_parameters);
+    query_context->addQueryParameters(query_parameters.text);
+    query_context->addTypedQueryParameters(query_parameters.typed);
 
     state.reset();
     state.emplace();

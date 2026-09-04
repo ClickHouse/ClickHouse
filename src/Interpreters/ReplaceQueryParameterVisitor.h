@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/TypedQueryParameters.h>
 #include <Core/Types.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -21,6 +23,8 @@ public:
         : query_parameters(parameters)
     {}
 
+    explicit ReplaceQueryParameterVisitor(ContextPtr context);
+
     void visit(ASTPtr & ast);
 
     /// Resolve query parameters used as setting values (e.g. `max_threads = {threads:UInt64}`)
@@ -29,10 +33,14 @@ public:
     void visitSettingsChanges(SettingsChanges & changes);
 
     size_t getNumberOfReplacedParameters() const { return num_replaced_parameters; }
+    size_t getNumberOfReplacedTypedParameters() const { return num_replaced_typed_parameters; }
 
 private:
     const NameToNameMap & query_parameters;
+    const TypedQueryParameters * typed_query_parameters = nullptr;
+    ContextPtr context;
     size_t num_replaced_parameters = 0;
+    size_t num_replaced_typed_parameters = 0;
 
     const String & getParamValue(const String & name);
     void resolveParameterizedAlias(ASTPtr & ast);

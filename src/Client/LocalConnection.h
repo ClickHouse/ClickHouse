@@ -157,6 +157,18 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQueryWithTypedParameters(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const QueryParameterBindings & query_parameters,
+        const String & query_id,
+        UInt64 stage,
+        const Settings * settings,
+        const ClientInfo * client_info,
+        bool with_pending_data,
+        const std::vector<String> & external_roles,
+        std::function<void(const Progress &)> process_progress_callback) override;
+
     void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;

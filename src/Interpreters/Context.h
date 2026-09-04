@@ -13,6 +13,7 @@
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
+#include <Core/TypedQueryParameters.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
@@ -722,6 +723,7 @@ protected:
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
+    TypedQueryParameters typed_query_parameters;
 
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
@@ -1941,6 +1943,8 @@ public:
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
+    bool hasTypedQueryParameters() const;
+    const TypedQueryParameters & getTypedQueryParameters() const;
 
     /// Throws if parameter with the given name already set.
     void setQueryParameter(const String & name, const String & value);
@@ -1948,6 +1952,7 @@ public:
 
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
+    void addTypedQueryParameters(const TypedQueryParameters & parameters);
 
 
     IHostContextPtr & getHostContext();

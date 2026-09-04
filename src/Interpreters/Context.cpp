@@ -462,6 +462,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
@@ -1473,6 +1474,7 @@ ContextData::ContextData(const ContextData &o) :
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
+    typed_query_parameters(o.typed_query_parameters),
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
@@ -2916,6 +2918,11 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
+    if (!name.empty() && name[0] == '\0' && name.starts_with(String(1, '\0') + "query_parameter:") && scalars.contains(name))
+        throw Exception(
+            ErrorCodes::BAD_QUERY_PARAMETER,
+            "Cannot overwrite reserved binary query parameter scalar {}",
+            backQuote(name));
     scalars[name] = block;
 }
 
@@ -7942,9 +7949,25 @@ const NameToNameMap & Context::getQueryParameters() const
     return query_parameters;
 }
 
+bool Context::hasTypedQueryParameters() const
+{
+    return !typed_query_parameters.empty();
+}
+
+const TypedQueryParameters & Context::getTypedQueryParameters() const
+{
+    return typed_query_parameters;
+}
+
 
 void Context::setQueryParameter(const String & name, const String & value)
 {
+    if (typed_query_parameters.contains(name))
+        throw Exception(
+            ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} is specified in both text and binary form",
+            backQuote(name));
+
     if (!query_parameters.emplace(name, value).second)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
 }
@@ -7952,7 +7975,51 @@ void Context::setQueryParameter(const String & name, const String & value)
 void Context::addQueryParameters(const NameToNameMap & parameters)
 {
     for (const auto & [name, value] : parameters)
+    {
+        if (typed_query_parameters.contains(name))
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Query parameter {} is specified in both text and binary form",
+                backQuote(name));
         query_parameters.insert_or_assign(name, value);
+    }
+}
+
+void Context::addTypedQueryParameters(const TypedQueryParameters & parameters)
+{
+    validateTypedQueryParameters(parameters, &query_parameters);
+
+    TypedQueryParameters prepared_parameters;
+    Scalars prepared_scalars;
+    for (const auto & [name, value] : parameters)
+    {
+        auto parameter = value;
+        parameter.value_hash = calculateTypedQueryParameterHash(*parameter.type, *parameter.column);
+        parameter.scalar_name = makeTypedQueryParameterScalarName(name, parameter.value_hash);
+
+        Block scalar_block({{parameter.column, parameter.type, "_query_parameter"}});
+        prepared_scalars.emplace(parameter.scalar_name, std::move(scalar_block));
+        prepared_parameters.emplace(name, std::move(parameter));
+    }
+
+    std::lock_guard lock(mutex);
+    for (const auto & [name, parameter] : prepared_parameters)
+    {
+        if (typed_query_parameters.contains(name))
+            throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Duplicate binary query parameter {}", backQuote(name));
+        if (scalars.contains(parameter.scalar_name))
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Cannot overwrite reserved binary query parameter scalar {}",
+                backQuote(parameter.scalar_name));
+    }
+
+    typed_query_parameters.insert(
+        std::make_move_iterator(prepared_parameters.begin()),
+        std::make_move_iterator(prepared_parameters.end()));
+    scalars.insert(
+        std::make_move_iterator(prepared_scalars.begin()),
+        std::make_move_iterator(prepared_scalars.end()));
 }
 
 
