@@ -1,114 +1,1005 @@
--- Tags: stateful, no-msan, no-parallel
--- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
-
--- Check the same 1,000 counters as the original point-query workload, but aggregate
--- test.visits once. Running 1,000 separate scans exceeds the per-test timeout under
--- TSan when the suite has many parallel workers.
-WITH
-[
-    32152608, 9627212, 25152951, 22202319, 13848191, 27855803, 27944638, 16513894, 4314057, 11878090, 23005927, 17205778,
-    21296650, 12068702, 8446208, 8439835, 30344780, 2881921, 1828473, 27620040, 14960013, 103918, 9626742, 18370244,
-    813903, 22176733, 17175454, 31608140, 11802602, 12577104, 153437, 32240558, 27444870, 79306, 15222279, 11782937,
-    1677, 9527330, 23580782, 33027895, 199609, 29139484, 1700065, 30212873, 6773723, 21842879, 9460479, 16451704,
-    51267, 30489182, 11947625, 18776987, 25762358, 74905, 877422, 3465045, 2084559, 13828281, 30299683, 132115,
-    10919775, 12329250, 11525543, 32395537, 24537202, 2270964, 8518291, 11897183, 23805647, 22652078, 19363661, 32339088,
-    11394550, 1988179, 2135273, 14500371, 10463153, 18838936, 24492652, 26848923, 12495799, 12028938, 8934725, 18602951,
-    32404741, 19171705, 9831187, 20047182, 26690858, 126413, 31244775, 15690176, 28374997, 12717244, 9152092, 5397339,
-    12452068, 13626118, 46783, 11484344, 21453219, 7692388, 30879805, 27784549, 665663, 30535786, 11685143, 13652647,
-    9880318, 30148588, 32745436, 27390924, 17470663, 196859, 22123478, 87021, 25264218, 24125574, 26099981, 1141558,
-    220829, 15651875, 182483, 28430678, 31384642, 1008241, 10462834, 26829659, 29130002, 17891770, 26531140, 15014338,
-    15375411, 7952204, 41859, 21651593, 9527676, 107394, 23409492, 31407407, 29312961, 9705505, 29848510, 10187274,
-    112606, 15639744, 4375349, 1423039, 13933371, 20430236, 30679961, 37094, 23197674, 994587, 437496, 3904733,
-    19200606, 84668, 28581029, 11074306, 2470089, 12251899, 16996077, 12426411, 1034934, 4721601, 22026000, 21031300,
-    559124, 15492463, 21419604, 25632271, 14446476, 12684903, 23292922, 26976782, 20269131, 18309978, 5305320, 30926629,
-    14816057, 19523905, 18775058, 32507411, 25535479, 24858652, 32420158, 4805894, 8157258, 5759745, 12626987, 5342591,
-    10951832, 9729032, 27999107, 7302193, 30447727, 15764416, 15727130, 15116605, 527313, 16687935, 28304381, 17699739,
-    17339596, 29348067, 20861945, 12922065, 27019489, 18299445, 108465, 233447, 13042904, 31481509, 2267268, 26140306,
-    19094364, 25000943, 6860549, 30714288, 16289139, 1419182, 33436573, 30062358, 18167743, 27846382, 30148240, 32332238,
-    25129158, 14066924, 19832770, 29018190, 852275, 11328399, 28179212, 20155907, 30685297, 32783957, 1552720, 28110991,
-    4814424, 20171153, 14920591, 65690, 14357916, 26533001, 17014738, 11977336, 30142464, 14082365, 18851419, 27638649,
-    8798932, 717825, 6912378, 26898048, 5992218, 13422462, 21204372, 17845298, 6933004, 21627605, 3395439, 22315068,
-    24973444, 27751340, 6022884, 32417601, 18087198, 21940806, 23809389, 9510424, 30651933, 17818815, 9038457, 9153497,
-    29938964, 10471118, 12913162, 14933629, 7173707, 28680585, 1279785, 33276693, 573557, 27753414, 22968595, 25211823,
-    32687774, 6062762, 18866703, 5164840, 6462629, 25039797, 10789598, 33076990, 28960547, 32723171, 17888313, 29810654,
-    21760643, 16678170, 368520, 12506284, 9802670, 18488016, 227003, 15254606, 32580177, 30313645, 20879524, 27222776,
-    11266528, 17018146, 19902143, 19469853, 22823497, 56768, 136798, 16554922, 20627728, 6551053, 124145, 10881152,
-    17271030, 28213281, 15665842, 28264219, 29277533, 22926441, 31057728, 8027311, 14229492, 14782220, 29099258, 99953,
-    9334015, 16156945, 124031, 1670442, 21036594, 22954047, 16054043, 121765, 1482385, 25977258, 24596247, 550092,
-    1579438, 1205, 126296, 177248, 27523607, 15873699, 11971473, 18965085, 19035683, 29640643, 11929806, 9352219,
-    18492653, 7967264, 11391453, 4289, 3567, 13575826, 2566437, 21042675, 26498330, 23764459, 32664413, 10116935,
-    24572551, 26788657, 12830859, 530033, 6764575, 25219472, 10721285, 26254035, 15486693, 10323514, 23578364, 25449880,
-    13428298, 17679279, 27610140, 15346859, 535736, 513828, 20411888, 13595045, 33221835, 97601, 12819274, 18047205,
-    19900235, 27830172, 20839743, 29980468, 27417156, 17908689, 24471592, 32147490, 22966030, 21060870, 238185, 10152551,
-    11255139, 982334, 15199978, 15678357, 18206303, 10902608, 22494906, 22204221, 13097211, 30998656, 26656294, 922545,
-    9428510, 15137339, 15578624, 31695129, 15791360, 29571338, 5371768, 15163979, 16312681, 6126176, 16061128, 8528634,
-    136544, 3093873, 3994698, 8302978, 16115563, 21804036, 9785708, 10847072, 30692218, 15582824, 19802155, 20835290,
-    204284, 25636491, 30446517, 16761451, 456303, 17301839, 27472581, 24078399, 26345482, 451381, 8576994, 19418898,
-    10068353, 3767138, 758020, 13521375, 25968099, 26805240, 13051011, 901894, 33097016, 12545080, 29944288, 8250825,
-    12499373, 22535728, 11929724, 3615273, 24172869, 116132, 12002817, 23681158, 3938, 8468701, 1295067, 27469232,
-    32708119, 122578, 12139400, 12219626, 9262336, 9269892, 122701, 19589931, 29539889, 31115640, 6283044, 30642040,
-    18065262, 26714391, 15351586, 13090710, 16201652, 31960256, 2658509, 467277, 1274110, 23640128, 16197014, 28228612,
-    11659509, 24981440, 52285, 30583892, 31467341, 25512316, 2908472, 422752, 32718035, 14213540, 14951444, 6819113,
-    9532880, 4102488, 19537427, 7078160, 29521616, 5045377, 23131467, 22383622, 22079706, 29466380, 12045654, 30178011,
-    20821588, 21966434, 29390311, 19370159, 24857158, 31982180, 11990254, 3841725, 13993951, 31252290, 26398773, 891512,
-    27087947, 2097095, 26252354, 13928858, 4331960, 30552074, 27905732, 30049284, 2118697, 20849218, 11338538, 3348692,
-    17693905, 23502543, 8905975, 18343399, 15235863, 20356153, 10552704, 28875831, 1488561, 15012941, 25726446, 2601050,
-    27426912, 11269650, 14880200, 362337, 23533327, 26381021, 17522450, 31868526, 18276314, 1841289, 22234319, 11463222,
-    15251006, 24841412, 28755796, 9087442, 13734462, 9285105, 13289061, 29890926, 30509694, 17698850, 46229, 16541087,
-    11305551, 429238, 7583796, 8604476, 29759280, 1388922, 10884907, 18220244, 122157, 18069840, 6707469, 26818794,
-    14770800, 16652737, 25497243, 14747538, 21371935, 1681601, 5343898, 22040058, 752596, 9377867, 1848946, 1449313,
-    31332002, 10829982, 22431161, 29172033, 7631750, 898844, 21460344, 25387068, 30980374, 13021547, 27715925, 30292547,
-    18666245, 18954194, 29070192, 914290, 14807517, 23062682, 5132969, 15094854, 622095, 1244323, 14804701, 11656845,
-    17167258, 8959523, 23121135, 4339624, 22679035, 13127067, 18362622, 4189114, 18776826, 26792263, 13409810, 22183039,
-    16132723, 3925258, 14248840, 18135589, 11234961, 11179577, 178965, 10138078, 21048048, 8001235, 32833016, 32275374,
-    1430786, 12969140, 25529912, 18395861, 27380554, 16653574, 16372034, 28050494, 6886254, 7472729, 12646802, 6589761,
-    19556032, 10261903, 4389, 2415202, 20007939, 17957094, 9920354, 24840314, 5077718, 11650674, 19766470, 7854638,
-    9169290, 22873394, 30838169, 79894, 25792494, 25326672, 33123311, 33237554, 15130284, 18811870, 25418177, 17202302,
-    31836505, 28671820, 25643858, 16338596, 27288074, 9458517, 25163573, 15680967, 20413991, 19332304, 23159444, 24708786,
-    250297, 29944728, 14582542, 512441, 31273184, 30255145, 89813, 14959234, 26621829, 279206, 13041403, 33392742,
-    10895948, 20804625, 10129067, 13855355, 31007051, 4109301, 29492024, 28963180, 11530154, 31889101, 1713672, 16069992,
-    9075873, 14512529, 8632591, 33056094, 28349520, 26806792, 11496875, 11797321, 25795940, 33196708, 13243216, 25096876,
-    26974949, 27061789, 29686454, 5045092, 2893170, 21528033, 16980819, 30854698, 1041468, 215125, 91347, 22706469,
-    33038294, 1446406, 183702, 10246325, 13754526, 6854006, 26686232, 29345198, 15956574, 8558022, 14066782, 31710428,
-    6750831, 14832055, 29613113, 15159107, 6309003, 4311581, 28180829, 15131841, 20458889, 26250664, 31737265, 802571,
-    25064649, 21183784, 3218637, 3375471, 1690000, 18602620, 29918973, 8555235, 32152623, 19670163, 25856874, 6142197,
-    27822106, 8944163, 7596672, 129436, 33541084, 5199217, 10337246, 12718765, 10729131, 28049397, 1410155, 24924437,
-    16706889, 54647, 29407271, 1575071, 6861225, 30114382, 129970, 21103497, 3433579, 14174715, 8450741, 30033987,
-    11474175, 9601520, 7377941, 15646334, 18305797, 2057218, 17121933, 6870927, 19743903, 9019159, 21251610, 239704,
-    16170940, 31857931, 25174672, 31546315, 811438, 33135020, 28325470, 1196502, 117339, 19198214, 28046111, 27663162,
-    3651, 8443242, 6773651, 28957858, 15586212, 155469, 731800, 13198917, 2080118, 17987407, 1832110, 32960999,
-    13858070, 2800568, 381151, 26724412, 238149, 20458616, 16847984, 14870120, 4729620, 12886810, 109350, 17512881,
-    5250020, 184094, 3071553, 18940958, 16166873, 13648378, 32750584, 31167464, 21597707, 21992900, 16695153, 12272303,
-    18958518, 11827733, 12495926, 21022681, 32262727, 12082756, 15636497, 20081370, 26349655, 32832383, 18190567, 61749,
-    28596915, 28835938, 32924951, 15835912, 22905942, 12295903, 12461093, 27568271, 33525856, 10351138, 16804486, 24506501,
-    1336365, 19178381, 17921720, 25396786, 22031463, 19624501, 28665905, 14851585, 27554706, 14188052, 33301471, 32896955,
-    1134828, 27050219, 23641604, 22935857, 29805516, 25890338, 20710225, 3925036, 31404180, 25888177, 11074293, 30922753,
-    11403908, 25615656, 17652214, 16155802, 5565120, 5508217, 33281735, 11619273, 67148, 22687534, 17887682, 18506413,
-    1443226, 13761576, 30941622, 17681363, 187532, 95405, 31073741, 9706801, 12504322, 31779591, 18781661, 18284607,
-    10633383, 3249127, 17567300, 8789986, 30073024, 26477401, 32222832, 23098807, 50708, 25067039, 29132588, 22947337,
-    27778601, 25325678, 12822401, 8876685, 31096269, 17466070, 26058342, 1468384, 22665021, 24895973, 15423066, 26091197,
-    12103346, 15917190, 31527060, 3944, 24572480, 229185, 17038391, 27368675, 26899897, 13257515, 19531252, 21048946,
-    33104049, 20824535, 15014380, 25235392, 29560548, 2599836, 32842358, 5795232, 29588193, 19019850, 29580949, 15335748,
-    15094099, 6308405, 20762370, 14121177
-] AS counter_ids
-SELECT ifNull(users, 0), ifNull(signs, 0)
-FROM
-(
-    SELECT
-        tupleElement(counter, 1) AS CounterID,
-        tupleElement(counter, 2) AS position
-    FROM
-    (
-        SELECT arrayJoin(arrayZip(counter_ids, arrayEnumerate(counter_ids))) AS counter
-    )
-) AS ordered_ids
-LEFT JOIN
-(
-    SELECT CounterID, uniq(UserID) AS users, sum(Sign) AS signs
-    FROM test.visits
-    GROUP BY CounterID
-) AS aggregates USING CounterID
-ORDER BY position;
+-- Tags: stateful, no-parallel, no-msan
+-- no-parallel: Heavy
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32152608;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9627212;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25152951;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22202319;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13848191;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27855803;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27944638;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16513894;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4314057;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11878090;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23005927;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17205778;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21296650;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12068702;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8446208;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8439835;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30344780;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2881921;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1828473;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27620040;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14960013;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 103918;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9626742;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18370244;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 813903;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22176733;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17175454;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31608140;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11802602;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12577104;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 153437;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32240558;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27444870;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 79306;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15222279;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11782937;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1677;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9527330;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23580782;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33027895;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 199609;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29139484;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1700065;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30212873;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6773723;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21842879;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9460479;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16451704;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 51267;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30489182;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11947625;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18776987;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25762358;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 74905;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 877422;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3465045;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2084559;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13828281;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30299683;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 132115;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10919775;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12329250;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11525543;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32395537;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24537202;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2270964;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8518291;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11897183;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23805647;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22652078;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19363661;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32339088;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11394550;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1988179;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2135273;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14500371;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10463153;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18838936;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24492652;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26848923;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12495799;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12028938;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8934725;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18602951;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32404741;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19171705;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9831187;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20047182;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26690858;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 126413;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31244775;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15690176;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28374997;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12717244;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9152092;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5397339;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12452068;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13626118;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 46783;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11484344;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21453219;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7692388;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30879805;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27784549;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 665663;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30535786;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11685143;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13652647;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9880318;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30148588;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32745436;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27390924;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17470663;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 196859;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22123478;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 87021;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25264218;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24125574;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26099981;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1141558;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 220829;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15651875;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 182483;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28430678;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31384642;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1008241;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10462834;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26829659;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29130002;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17891770;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26531140;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15014338;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15375411;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7952204;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 41859;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21651593;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9527676;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 107394;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23409492;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31407407;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29312961;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9705505;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29848510;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10187274;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 112606;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15639744;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4375349;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1423039;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13933371;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20430236;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30679961;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 37094;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23197674;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 994587;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 437496;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3904733;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19200606;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 84668;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28581029;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11074306;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2470089;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12251899;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16996077;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12426411;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1034934;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4721601;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22026000;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21031300;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 559124;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15492463;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21419604;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25632271;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14446476;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12684903;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23292922;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26976782;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20269131;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18309978;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5305320;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30926629;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14816057;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19523905;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18775058;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32507411;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25535479;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24858652;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32420158;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4805894;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8157258;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5759745;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12626987;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5342591;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10951832;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9729032;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27999107;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7302193;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30447727;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15764416;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15727130;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15116605;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 527313;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16687935;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28304381;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17699739;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17339596;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29348067;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20861945;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12922065;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27019489;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18299445;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 108465;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 233447;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13042904;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31481509;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2267268;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26140306;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19094364;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25000943;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6860549;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30714288;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16289139;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1419182;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33436573;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30062358;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18167743;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27846382;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30148240;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32332238;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25129158;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14066924;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19832770;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29018190;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 852275;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11328399;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28179212;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20155907;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30685297;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32783957;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1552720;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28110991;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4814424;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20171153;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14920591;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 65690;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14357916;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26533001;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17014738;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11977336;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30142464;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14082365;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18851419;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27638649;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8798932;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 717825;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6912378;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26898048;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5992218;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13422462;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21204372;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17845298;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6933004;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21627605;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3395439;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22315068;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24973444;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27751340;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6022884;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32417601;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18087198;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21940806;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23809389;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9510424;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30651933;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17818815;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9038457;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9153497;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29938964;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10471118;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12913162;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14933629;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7173707;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28680585;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1279785;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33276693;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 573557;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27753414;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22968595;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25211823;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32687774;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6062762;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18866703;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5164840;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6462629;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25039797;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10789598;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33076990;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28960547;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32723171;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17888313;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29810654;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21760643;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16678170;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 368520;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12506284;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9802670;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18488016;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 227003;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15254606;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32580177;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30313645;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20879524;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27222776;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11266528;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17018146;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19902143;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19469853;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22823497;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 56768;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 136798;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16554922;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20627728;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6551053;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 124145;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10881152;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17271030;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28213281;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15665842;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28264219;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29277533;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22926441;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31057728;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8027311;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14229492;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14782220;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29099258;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 99953;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9334015;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16156945;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 124031;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1670442;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21036594;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22954047;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16054043;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 121765;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1482385;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25977258;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24596247;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 550092;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1579438;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1205;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 126296;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 177248;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27523607;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15873699;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11971473;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18965085;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19035683;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29640643;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11929806;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9352219;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18492653;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7967264;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11391453;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4289;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3567;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13575826;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2566437;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21042675;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26498330;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23764459;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32664413;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10116935;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24572551;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26788657;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12830859;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 530033;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6764575;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25219472;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10721285;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26254035;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15486693;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10323514;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23578364;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25449880;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13428298;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17679279;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27610140;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15346859;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 535736;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 513828;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20411888;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13595045;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33221835;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 97601;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12819274;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18047205;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19900235;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27830172;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20839743;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29980468;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27417156;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17908689;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24471592;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32147490;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22966030;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21060870;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 238185;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10152551;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11255139;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 982334;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15199978;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15678357;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18206303;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10902608;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22494906;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22204221;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13097211;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30998656;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26656294;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 922545;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9428510;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15137339;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15578624;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31695129;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15791360;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29571338;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5371768;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15163979;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16312681;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6126176;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16061128;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8528634;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 136544;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3093873;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3994698;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8302978;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16115563;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21804036;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9785708;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10847072;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30692218;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15582824;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19802155;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20835290;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 204284;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25636491;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30446517;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16761451;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 456303;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17301839;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27472581;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24078399;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26345482;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 451381;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8576994;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19418898;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10068353;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3767138;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 758020;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13521375;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25968099;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26805240;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13051011;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 901894;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33097016;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12545080;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29944288;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8250825;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12499373;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22535728;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11929724;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3615273;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24172869;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 116132;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12002817;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23681158;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3938;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8468701;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1295067;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27469232;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32708119;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 122578;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12139400;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12219626;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9262336;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9269892;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 122701;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19589931;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29539889;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31115640;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6283044;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30642040;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18065262;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26714391;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15351586;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13090710;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16201652;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31960256;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2658509;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 467277;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1274110;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23640128;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16197014;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28228612;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11659509;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24981440;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 52285;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30583892;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31467341;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25512316;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2908472;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 422752;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32718035;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14213540;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14951444;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6819113;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9532880;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4102488;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19537427;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7078160;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29521616;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5045377;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23131467;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22383622;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22079706;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29466380;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12045654;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30178011;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20821588;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21966434;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29390311;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19370159;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24857158;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31982180;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11990254;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3841725;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13993951;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31252290;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26398773;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 891512;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27087947;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2097095;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26252354;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13928858;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4331960;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30552074;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27905732;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30049284;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2118697;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20849218;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11338538;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3348692;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17693905;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23502543;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8905975;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18343399;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15235863;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20356153;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10552704;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28875831;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1488561;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15012941;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25726446;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2601050;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27426912;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11269650;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14880200;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 362337;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23533327;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26381021;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17522450;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31868526;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18276314;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1841289;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22234319;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11463222;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15251006;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24841412;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28755796;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9087442;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13734462;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9285105;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13289061;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29890926;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30509694;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17698850;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 46229;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16541087;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11305551;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 429238;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7583796;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8604476;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29759280;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1388922;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10884907;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18220244;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 122157;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18069840;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6707469;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26818794;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14770800;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16652737;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25497243;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14747538;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21371935;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1681601;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5343898;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22040058;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 752596;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9377867;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1848946;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1449313;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31332002;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10829982;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22431161;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29172033;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7631750;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 898844;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21460344;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25387068;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30980374;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13021547;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27715925;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30292547;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18666245;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18954194;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29070192;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 914290;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14807517;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23062682;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5132969;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15094854;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 622095;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1244323;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14804701;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11656845;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17167258;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8959523;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23121135;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4339624;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22679035;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13127067;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18362622;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4189114;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18776826;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26792263;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13409810;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22183039;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16132723;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3925258;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14248840;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18135589;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11234961;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11179577;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 178965;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10138078;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21048048;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8001235;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32833016;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32275374;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1430786;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12969140;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25529912;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18395861;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27380554;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16653574;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16372034;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28050494;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6886254;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7472729;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12646802;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6589761;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19556032;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10261903;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4389;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2415202;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20007939;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17957094;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9920354;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24840314;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5077718;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11650674;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19766470;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7854638;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9169290;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22873394;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30838169;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 79894;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25792494;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25326672;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33123311;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33237554;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15130284;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18811870;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25418177;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17202302;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31836505;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28671820;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25643858;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16338596;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27288074;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9458517;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25163573;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15680967;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20413991;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19332304;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23159444;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24708786;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 250297;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29944728;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14582542;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 512441;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31273184;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30255145;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 89813;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14959234;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26621829;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 279206;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13041403;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33392742;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10895948;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20804625;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10129067;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13855355;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31007051;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4109301;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29492024;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28963180;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11530154;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31889101;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1713672;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16069992;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9075873;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14512529;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8632591;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33056094;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28349520;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26806792;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11496875;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11797321;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25795940;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33196708;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13243216;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25096876;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26974949;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27061789;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29686454;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5045092;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2893170;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21528033;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16980819;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30854698;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1041468;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 215125;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 91347;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22706469;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33038294;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1446406;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 183702;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10246325;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13754526;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6854006;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26686232;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29345198;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15956574;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8558022;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14066782;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31710428;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6750831;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14832055;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29613113;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15159107;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6309003;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4311581;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28180829;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15131841;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20458889;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26250664;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31737265;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 802571;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25064649;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21183784;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3218637;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3375471;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1690000;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18602620;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29918973;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8555235;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32152623;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19670163;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25856874;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6142197;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27822106;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8944163;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7596672;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 129436;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33541084;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5199217;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10337246;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12718765;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10729131;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28049397;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1410155;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24924437;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16706889;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 54647;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29407271;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1575071;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6861225;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30114382;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 129970;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21103497;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3433579;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14174715;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8450741;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30033987;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11474175;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9601520;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 7377941;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15646334;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18305797;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2057218;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17121933;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6870927;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19743903;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9019159;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21251610;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 239704;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16170940;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31857931;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25174672;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31546315;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 811438;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33135020;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28325470;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1196502;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 117339;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19198214;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28046111;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27663162;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3651;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8443242;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6773651;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28957858;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15586212;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 155469;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 731800;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13198917;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2080118;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17987407;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1832110;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32960999;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13858070;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2800568;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 381151;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26724412;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 238149;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20458616;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16847984;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14870120;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 4729620;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12886810;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 109350;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17512881;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5250020;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 184094;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3071553;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18940958;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16166873;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13648378;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32750584;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31167464;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21597707;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21992900;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16695153;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12272303;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18958518;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11827733;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12495926;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21022681;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32262727;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12082756;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15636497;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20081370;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26349655;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32832383;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18190567;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 61749;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28596915;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28835938;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32924951;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15835912;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22905942;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12295903;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12461093;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27568271;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33525856;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10351138;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16804486;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24506501;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1336365;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19178381;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17921720;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25396786;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22031463;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19624501;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 28665905;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14851585;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27554706;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14188052;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33301471;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32896955;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1134828;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27050219;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23641604;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22935857;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29805516;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25890338;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20710225;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3925036;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31404180;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25888177;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11074293;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30922753;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11403908;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25615656;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17652214;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 16155802;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5565120;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5508217;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33281735;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 11619273;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 67148;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22687534;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17887682;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18506413;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1443226;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13761576;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30941622;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17681363;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 187532;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 95405;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31073741;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 9706801;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12504322;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31779591;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18781661;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 18284607;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 10633383;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3249127;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17567300;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8789986;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 30073024;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26477401;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32222832;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 23098807;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 50708;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25067039;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29132588;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22947337;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27778601;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25325678;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12822401;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 8876685;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31096269;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17466070;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26058342;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 1468384;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 22665021;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24895973;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15423066;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26091197;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 12103346;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15917190;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 31527060;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 3944;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 24572480;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 229185;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 17038391;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 27368675;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 26899897;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 13257515;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19531252;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 21048946;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 33104049;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20824535;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15014380;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 25235392;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29560548;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 2599836;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 32842358;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 5795232;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29588193;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 19019850;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 29580949;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15335748;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 15094099;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 6308405;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 20762370;
+SELECT uniq(UserID), sum(Sign) FROM test.visits WHERE CounterID = 14121177;
 
 SYSTEM CLEAR UNCOMPRESSED CACHE;
 
