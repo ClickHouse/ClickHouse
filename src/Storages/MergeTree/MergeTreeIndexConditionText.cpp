@@ -265,6 +265,14 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
+bool MergeTreeIndexConditionText::requiresPreprocessorForRowEvaluation(const String & function_name)
+{
+    return function_name == "hasToken"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+}
+
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
@@ -1087,15 +1095,18 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!traverseFunctionNodeImpl(function_node, index_column_node, std::move(value_type), std::move(value_field), candidate))
         return false;
 
-    const bool matches_json_all_values_subcolumn = std::ranges::any_of(candidate.text_search_queries, [](const auto & query)
+    const bool rewrites_json_all_values_subcolumn = std::ranges::any_of(candidate.text_search_queries, [](const auto & query)
     {
-        return query->matchesJSONAllValuesSubcolumn();
+        return query->matchesJSONAllValuesSubcolumn()
+            && requiresPreprocessorForRowEvaluation(query->getFunctionName());
     });
 
-    /// A preprocessor can turn the default empty `String` into tokens, while a missing path
-    /// contributes no element to `JSONAllValues`. Reject the index when its condition could
-    /// match those tokens, otherwise the missing row could be pruned as a false negative.
-    if (has_preprocessor && matches_json_all_values_subcolumn && textIndexConditionMayMatchDefaultString(candidate))
+    /// Rewriting a row predicate through the preprocessor can turn the default empty `String`
+    /// into tokens, while a missing path contributes no element to `JSONAllValues`. Reject the
+    /// index when the rewritten predicate could match those tokens, otherwise the missing row
+    /// could be pruned as a false negative. Predicates that keep their original row evaluation
+    /// can only get false positives from this asymmetry, and remain safe in hint mode.
+    if (has_preprocessor && rewrites_json_all_values_subcolumn && textIndexConditionMayMatchDefaultString(candidate))
         return false;
 
     out = std::move(candidate);

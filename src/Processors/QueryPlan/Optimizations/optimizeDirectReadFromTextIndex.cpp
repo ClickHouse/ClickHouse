@@ -606,14 +606,6 @@ private:
         return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    /// Returns true for functions that require applying the preprocessor to the haystack.
-    /// has/hasAll/hasAny bypass both transforms.
-    static bool needApplyPreprocessor(const String & function_name)
-    {
-        return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
-    }
-
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
     static bool needApplyPostprocessor(const String & function_name)
     {
@@ -723,7 +715,8 @@ private:
             return replacement;
 
         auto function_name = function_node.function_base->getName();
-        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
+        bool need_transform_function
+            = needApplyTokenizer(function_name) || MergeTreeIndexConditionText::requiresPreprocessorForRowEvaluation(function_name);
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
@@ -780,7 +773,10 @@ private:
         auto function_name = replacement.node->function_base->getName();
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
-        const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
+        const bool apply_preprocessor
+            = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed
+            && MergeTreeIndexConditionText::requiresPreprocessorForRowEvaluation(function_name)
+            && preprocessor && preprocessor->hasActions();
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 

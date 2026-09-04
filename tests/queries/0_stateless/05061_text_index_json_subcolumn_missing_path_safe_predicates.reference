@@ -1,0 +1,9 @@
+equals keeps the JSONAllValues index hint
+[2]
+1
+LIKE keeps the JSONAllValues index hint
+[2,3]
+1
+match keeps the JSONAllValues index hint
+[3]
+1

@@ -105,6 +105,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// Whether query DAG rewriting applies the index preprocessor to this function's row-level haystack.
+    static bool requiresPreprocessorForRowEvaluation(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
