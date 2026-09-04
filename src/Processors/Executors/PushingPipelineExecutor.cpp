@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -81,10 +81,9 @@ const Block & PushingPipelineExecutor::getHeader() const
     return pushing_source->getPort().getHeader();
 }
 
-[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)
 {
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+    if (pushing_source.isCancelled())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -101,7 +100,7 @@ void PushingPipelineExecutor::start()
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
     if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingPipelineExecutor::push(Chunk chunk)
@@ -112,7 +111,7 @@ void PushingPipelineExecutor::push(Chunk chunk)
     pushing_source->setData(std::move(chunk));
 
     if (!executor->executeStep(&input_wait_flag))
-        throwOnExecutionStatus(executor->getExecutionStatus());
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingPipelineExecutor::push(Block block)
