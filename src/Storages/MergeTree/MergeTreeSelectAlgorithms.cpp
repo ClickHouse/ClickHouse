@@ -44,14 +44,26 @@ MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
         return res;
     }
 
+    /// The whole task is read here, so the rows it read are reported here. A chunk that is still
+    /// buffered when the query stops early is never emitted, so progress left attached to it would
+    /// never be reported at all.
+    size_t num_read_rows = 0;
+    size_t num_read_bytes = 0;
+
     while (!task.isFinished())
-        chunks.push_back(task.read());
+    {
+        auto & chunk = chunks.emplace_back(task.read());
+        num_read_rows += std::exchange(chunk.num_read_rows, 0);
+        num_read_bytes += std::exchange(chunk.num_read_bytes, 0);
+    }
 
     if (chunks.empty())
         return {};
 
     res = std::move(chunks.back());
     chunks.pop_back();
+    res.num_read_rows = num_read_rows;
+    res.num_read_bytes = num_read_bytes;
     return res;
 }
 
