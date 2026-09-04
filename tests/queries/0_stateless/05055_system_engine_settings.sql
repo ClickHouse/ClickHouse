@@ -33,3 +33,12 @@ ON e.name = s.engine_name;
 
 -- Every setting must render; a value with no string form used to throw.
 SELECT count() > 0 FROM system.engine_settings WHERE name = 'storage_catalog_type';
+
+-- Engines of one data lake family are backed by the same settings struct, so each must report the
+-- same settings whichever storage backend it names. `DeltaLakeLocal` did not: it was registered
+-- with the plain object storage predicate while its creator builds `DataLakeStorageSettings`.
+-- Both answer 1 in a build without these engines, where the subquery is empty.
+SELECT countDistinct(n) <= 1 FROM (
+    SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'DeltaLake%' GROUP BY engine_name);
+SELECT countDistinct(n) <= 1 FROM (
+    SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'Iceberg%' GROUP BY engine_name);
