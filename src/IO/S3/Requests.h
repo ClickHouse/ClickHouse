@@ -6,6 +6,7 @@
 
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -28,36 +29,86 @@
 #include <aws/core/utils/HashingUtils.h>
 
 #include <base/defines.h>
+#include <Common/Exception.h>
+
+#include <optional>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+struct S3RequestSettings;
 
-/// Used only for S3Express
+/// Used for `S3Express` and user-requested upload checksums.
+/// `Algorithm` and the SDK-free helpers live in `IO/S3/ChecksumAlgorithm.h`.
 namespace RequestChecksum
 {
-inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
+inline Aws::S3::Model::ChecksumAlgorithm toSDKFlexibleChecksumAlgorithm(Algorithm algorithm)
 {
-    part.SetChecksumCRC32(checksum);
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            return Model::ChecksumAlgorithm::CRC32;
+        case Algorithm::SHA256:
+            return Model::ChecksumAlgorithm::SHA256;
+        case Algorithm::MD5:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MD5 cannot be used as an AWS flexible checksum algorithm");
+    }
+    UNREACHABLE();
 }
 
-inline void setRequestChecksum(Model::UploadPartRequest & req, const std::string & checksum)
+/// Set the flexible checksum on a request or a completed part; both expose `SetChecksumCRC32`/`SetChecksumSHA256`.
+template <typename T>
+inline void setChecksum(T & target, Algorithm algorithm, const std::string & checksum)
 {
-    req.SetChecksumCRC32(checksum);
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            target.SetChecksumCRC32(checksum);
+            return;
+        case Algorithm::SHA256:
+            target.SetChecksumSHA256(checksum);
+            return;
+        case Algorithm::MD5:
+            return;
+    }
+    UNREACHABLE();
 }
 
-inline std::string calculateChecksum(Model::UploadPartRequest & req)
+inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
 {
-    chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
-    return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
+    const auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm);
+
+    chassert(req.GetChecksumAlgorithm() == sdk_algorithm);
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
+        case Algorithm::SHA256:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(*(req.GetBody())));
+        case Algorithm::MD5:
+            break;
+    }
+    UNREACHABLE();
 }
+
+Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
 
 template <typename R>
-inline void setChecksumAlgorithm(R & request)
+inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
     if constexpr (requires { request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32); })
-        request.SetChecksumAlgorithm(Model::ChecksumAlgorithm::CRC32);
+    {
+        request.SetChecksumAlgorithm(toSDKFlexibleChecksumAlgorithm(algorithm));
+    }
 }
 };
 
@@ -89,7 +140,7 @@ public:
         /// AWSClient::AddChecksumToRequest [1] for more details).
         ///
         ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
-        if (!is_s3express_bucket && !checksum)
+        if (!hasFlexibleChecksum() && !checksum)
             return "";
         return BaseRequest::GetChecksumAlgorithmName();
     }
@@ -131,7 +182,25 @@ public:
     void setIsS3ExpressBucket()
     {
         is_s3express_bucket = true;
-        RequestChecksum::setChecksumAlgorithm(*this);
+        /// `S3Express` requires a flexible checksum. Keep an explicit `CRC32`/`SHA256` if one was already set
+        /// via `setUploadChecksumAlgorithm`; otherwise default to `CRC32`. This runs when the request is sent,
+        /// after the upload algorithm has been chosen, so it must not clobber that choice.
+        if (!RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm))
+            setUploadChecksumAlgorithm(RequestChecksum::Algorithm::CRC32);
+    }
+
+    void setUploadChecksumAlgorithm(RequestChecksum::Algorithm algorithm)
+    {
+        if (!RequestChecksum::usesFlexibleChecksumHeader(algorithm))
+            return;
+
+        upload_checksum_algorithm = algorithm;
+        RequestChecksum::setChecksumAlgorithm(*this, algorithm);
+    }
+
+    bool hasFlexibleChecksum() const
+    {
+        return RequestChecksum::usesFlexibleChecksumHeader(upload_checksum_algorithm);
     }
 
 protected:
@@ -140,6 +209,7 @@ protected:
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
     bool is_s3express_bucket = false;
+    RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
@@ -163,15 +233,15 @@ class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
 };
 
 class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket && checksum; }
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum() && checksum; }
 };
 
 class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
