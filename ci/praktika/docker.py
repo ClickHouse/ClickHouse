@@ -38,8 +38,6 @@ _IMAGE_PULL_RETRIES = 3
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
 # fast on the first attempt.
-# A tuple, not a list: both docker build jobs read this one object, so `+=` in either
-# of them would extend the other one's retry class too.
 _BUILDX_REGISTRY_TRANSIENT_ERRORS = (
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -64,6 +62,8 @@ _BUILDX_APT_TRANSIENT_ERRORS = (
     "Connection failed",
     "Connection timed out",
 )
+# A tuple, and shared with `ci/jobs/docker_server.py`: neither job can extend the other's
+# retry class.
 BUILDX_TRANSIENT_ERRORS = (
     _BUILDX_REGISTRY_TRANSIENT_ERRORS + _BUILDX_APT_TRANSIENT_ERRORS
 )
@@ -417,6 +417,8 @@ class Docker:
                 job_deadline - next_start < _IMAGE_BUILD_MIN_ATTEMPT_S
             ):
                 return exhausted(job_deadline - next_start)
+            if attempt == _IMAGE_BUILD_ATTEMPTS - 1:
+                break
             print(
                 f"Transient failure [{matched}] building {name}, "
                 f"retrying in {_IMAGE_BUILD_RETRY_INTERVAL_S}s"
