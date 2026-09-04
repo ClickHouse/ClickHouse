@@ -47,6 +47,8 @@ enum class ThreadName : uint8_t;
 /// `getResolvedSampleConfig` transparently falls through to `total_memory_tracker_sample_probability`.
 void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings);
 
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -55,8 +57,6 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
-/// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
-using ThrowIfQueryCanceledPredicate = std::function<void()>;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -109,6 +109,7 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+        std::weak_ptr<QueryStatus> query_status;
 
         // Since processors might be added on the fly within expand() function we use atomic_size_t.
         // These two fields are used for EXPLAIN PLAN / PIPELINE.
@@ -116,7 +117,6 @@ public:
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
-        ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -128,7 +128,7 @@ public:
 
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
-    void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
+    void attachQueryForLog(const QueryStatusPtr & query_status);
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
 
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
@@ -215,6 +215,9 @@ public:
 protected:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;
+
+    /// The query this thread works on, if it is registered in the process list.
+    QueryStatusPtr query_status;
 
     /// Is set once
     ContextWeakPtr global_context;
@@ -308,7 +311,7 @@ public:
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
     InternalProfileEventsQueuePtr getInternalProfileEventsQueue() const;
 
-    void attachQueryForLog(const String & query_);
+    void attachQueryForLog(const QueryStatusPtr & query_status_);
     const String & getQueryForLog() const;
 
     bool isQueryCanceled() const;

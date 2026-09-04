@@ -12,7 +12,6 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
-#include <Parsers/queryNormalization.h>
 #include <base/errnoToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -121,14 +120,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
             }
             return false;
     };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
-    {
-        if (auto context_locked = query_context.lock())
-        {
-            if (auto elem = context_locked->getProcessListElementSafe())
-                elem->throwIfKilled();
-        }
-    };
 }
 
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
@@ -162,14 +153,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
             return context_locked->isCurrentQueryKilled();
         }
         return false;
-    };
-    shared_data.throw_if_query_canceled_predicate = [this] ()
-    {
-        if (auto context_locked = query_context.lock())
-        {
-            if (auto elem = context_locked->getProcessListElementSafe())
-                elem->throwIfKilled();
-        }
     };
 }
 
@@ -274,24 +257,25 @@ ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, T
     return res_group;
 }
 
-void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
+void ThreadGroup::attachQueryForLog(const QueryStatusPtr & query_status)
 {
-    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
-
     std::lock_guard lock(mutex);
-    shared_data.query_for_logs = query_;
-    shared_data.normalized_query_hash = hash;
+    shared_data.query_for_logs = query_status->getQuery();
+    shared_data.normalized_query_hash = query_status->getNormalizedQueryHash();
+    shared_data.query_status = query_status;
 }
 
-void ThreadStatus::attachQueryForLog(const String & query_)
+void ThreadStatus::attachQueryForLog(const QueryStatusPtr & query_status_)
 {
-    local_data.query_for_logs = query_;
-    local_data.normalized_query_hash = normalizedQueryHash(query_, false);
+    query_status = query_status_;
+    local_data.query_for_logs = query_status_->getQuery();
+    local_data.normalized_query_hash = query_status_->getNormalizedQueryHash();
+    local_data.query_status = query_status_;
 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
 
-    thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
+    thread_group->attachQueryForLog(query_status_);
 }
 
 void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
@@ -316,11 +300,12 @@ void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEvents
     current_thread->attachInternalProfileEventsQueue(queue);
 }
 
-void CurrentThread::attachQueryForLog(const String & query_)
+void CurrentThread::attachQueryForLog(const QueryStatusPtr & query_status)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachQueryForLog(query_);
+
+    current_thread->attachQueryForLog(query_status);
 }
 
 void ThreadStatus::applyGlobalSettings()
@@ -396,6 +381,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         fatal_error_callback = thread_group->fatal_error_callback;
 
         local_data = thread_group->getSharedData();
+        query_status = local_data.query_status.lock();
 
         applyGlobalSettings();
         applyQuerySettings();
@@ -471,6 +457,7 @@ void ThreadStatus::detachFromGroup()
     clearQueryId();
     query_context.reset();
 
+    query_status.reset();
     local_data = {};
 
     fatal_error_callback = {};

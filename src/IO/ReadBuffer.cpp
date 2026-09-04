@@ -1,6 +1,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -102,6 +103,8 @@ void ReadBuffer::cancel()
 
 bool ReadBuffer::next()
 {
+    CurrentThread::checkIfNotCancelled();
+
     chassert(!hasPendingData());
     chassert(position() <= working_buffer.end());
     chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");

@@ -226,6 +226,16 @@ public:
         return client_info;
     }
 
+    const String & getQuery() const
+    {
+        return query;
+    }
+
+    UInt64 getNormalizedQueryHash() const
+    {
+        return normalized_query_hash;
+    }
+
     ProgressValues getProgressIn() const
     {
         return progress_in.getValues();
