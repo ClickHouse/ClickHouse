@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from ci.jobs.scripts import log_export
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
@@ -1446,6 +1447,45 @@ def is_empty_best_effort_skip(
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
+def setup_ci_logs_export_env(check_start_time: float) -> None:
+    """
+    Enable the export of system log tables to the CI Logs cluster for the
+    ClickHouse servers started by the integration tests, see
+    tests/integration/helpers/ci_logs_export.py. The credentials are passed to
+    pytest (and further into the server containers) through the process
+    environment only: they must never be materialized in files, since the
+    instance directories are collected as CI artifacts. Best effort: if the
+    credentials cannot be fetched, the tests run without the export.
+    """
+    try:
+        host, password = log_export.get_credentials()
+    except Exception as e:
+        print(
+            f"WARNING: Failed to fetch the CI Logs cluster credentials, the tests will run without logs export: {e}"
+        )
+        return
+    if not host or not password:
+        print(
+            "WARNING: Empty CI Logs cluster credentials, the tests will run without logs export"
+        )
+        return
+    os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
+    os.environ["CLICKHOUSE_CI_LOGS_USER"] = log_export.CLICKHOUSE_CI_LOGS_USER
+    os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
+    # Values for the extra columns of the destination tables, in two parts: the
+    # test framework fills in `test_name` and `node_name` per server, and the
+    # expression has to follow the EXTRA_COLUMNS order, see
+    # ci/jobs/scripts/log_export.py and
+    # tests/integration/helpers/ci_logs_export.py.
+    os.environ["EXTRA_COLUMNS_EXPRESSION_HEAD"] = (
+        log_export.extra_columns_expression_head(check_start_time)
+    )
+    os.environ["EXTRA_COLUMNS_EXPRESSION_TAIL"] = (
+        log_export.extra_columns_expression_tail()
+    )
+    print("Export of system logs to the CI Logs cluster is enabled")
+
+
 def finalize_llvm_coverage_status(R: Result, has_error: bool) -> bool:
     """Apply the coverage job's status rules to `R` and return the surviving `has_error`.
 
@@ -1801,6 +1841,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
         parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
         sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+
+    if not info.is_local_run:
+        setup_ci_logs_export_env(sw.start_time)
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():

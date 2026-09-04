@@ -114,6 +114,55 @@ def create_config(config_dir, host, password, users_dir=""):
     return True
 
 
+# The values for the extra columns of the destination tables. They have to come
+# in exactly the EXTRA_COLUMNS order of `setup_log_cluster.sh`: the local
+# `_sender` table is created as `SELECT {expression}, *`, so its header follows
+# the expression while the destination table follows EXTRA_COLUMNS, and a
+# `Distributed` table with a different header converts every batch by name and
+# logs a structure-mismatch warning for each of them - which `system.text_log`
+# then exports as well.
+#
+# `test_name` and `node_name` sit in the middle of that order. A job that
+# exports the logs of one server has nothing to put there, while the integration
+# tests fill them in per server, so the expression is built in two parts (see
+# `tests/integration/helpers/ci_logs_export.py`).
+
+
+def extra_columns_expression_head(
+    check_start_time, check_name_suffix="", commit_sha=""
+):
+    """The part of the expression before `test_name`."""
+    info = Info()
+    check_name = info.job_name + check_name_suffix
+    return (
+        f"toLowCardinality('{info.repo_name}') AS repo, "
+        f"CAST({info.pr_number} AS UInt32) AS pull_request_number, "
+        f"'{commit_sha or info.sha}' AS commit_sha, "
+        f"toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, "
+        f"toLowCardinality('{check_name}') AS check_name"
+    )
+
+
+def extra_columns_expression_tail():
+    """The part of the expression after `node_name`."""
+    info = Info()
+    return (
+        f"toLowCardinality('{info.instance_type}') AS instance_type, "
+        f"'{info.instance_id}' AS instance_id"
+    )
+
+
+def extra_columns_expression(check_start_time, check_name_suffix="", commit_sha=""):
+    """The whole expression, with empty `test_name` and `node_name`."""
+    head = extra_columns_expression_head(
+        check_start_time, check_name_suffix, commit_sha
+    )
+    return (
+        f"{head}, toLowCardinality('') AS test_name, toLowCardinality('') AS node_name, "
+        f"{extra_columns_expression_tail()}"
+    )
+
+
 def _set_server_port(port):
     if port:
         os.environ[SERVER_PORT_ENV] = str(port)
@@ -138,10 +187,8 @@ def start(
         os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
         os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
         os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
-    info = Info()
-    check_name = info.job_name + check_name_suffix
-    os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-        f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{commit_sha or info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+    os.environ["EXTRA_COLUMNS_EXPRESSION"] = extra_columns_expression(
+        check_start_time, check_name_suffix=check_name_suffix, commit_sha=commit_sha
     )
     _set_server_port(port)
 

@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from helpers.ci_logs_export import without_sender_user
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -177,13 +178,17 @@ def test_introspection():
             "[]",
         ],
     ]
-    assert node.query(
-        "SELECT * from system.row_policies ORDER BY short_name, database, table"
+    # Row policies are generated for every user of the users config when the
+    # access control improvements are disabled, and the CI logs export adds the
+    # `ci_logs_sender` user to every instance, see helpers/ci_logs_export.py
+    assert without_sender_user(
+        node.query("SELECT * from system.row_policies ORDER BY short_name, database, table")
     ) == TSV(policies)
 
 
 def test_dcl_introspection():
-    assert node.query("SHOW POLICIES") == TSV(
+    # See the comment in test_introspection about `without_sender_user`
+    assert without_sender_user(node.query("SHOW POLICIES")) == TSV(
         [
             "another ON mydb.filtered_table1",
             "another ON mydb.filtered_table2",
@@ -196,11 +201,13 @@ def test_dcl_introspection():
         ]
     )
 
-    assert node.query("SHOW POLICIES ON mydb.filtered_table1") == TSV(
+    assert without_sender_user(
+        node.query("SHOW POLICIES ON mydb.filtered_table1")
+    ) == TSV(["another", "default"])
+    assert without_sender_user(node.query("SHOW POLICIES ON mydb.local")) == TSV(
         ["another", "default"]
     )
-    assert node.query("SHOW POLICIES ON mydb.local") == TSV(["another", "default"])
-    assert node.query("SHOW POLICIES ON mydb.*") == TSV(
+    assert without_sender_user(node.query("SHOW POLICIES ON mydb.*")) == TSV(
         [
             "another ON mydb.filtered_table1",
             "another ON mydb.filtered_table2",
@@ -287,10 +294,10 @@ def test_dcl_introspection():
         "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
         "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default\n"
     )
-    assert expected_access in node.query("SHOW ACCESS")
+    assert expected_access in without_sender_user(node.query("SHOW ACCESS"))
 
     copy_policy_xml("all_rows.xml")
-    assert node.query("SHOW POLICIES") == TSV(
+    assert without_sender_user(node.query("SHOW POLICIES")) == TSV(
         [
             "another ON mydb.filtered_table1",
             "another ON mydb.filtered_table2",
@@ -314,7 +321,7 @@ def test_dcl_introspection():
     )
 
     copy_policy_xml("no_rows.xml")
-    assert node.query("SHOW POLICIES") == TSV(
+    assert without_sender_user(node.query("SHOW POLICIES")) == TSV(
         [
             "another ON mydb.filtered_table1",
             "another ON mydb.filtered_table2",
