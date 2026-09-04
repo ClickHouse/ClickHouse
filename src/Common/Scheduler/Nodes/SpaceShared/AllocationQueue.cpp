@@ -150,8 +150,16 @@ bool AllocationQueue::trySuspendIncrease(ResourceAllocation & allocation)
         /// The query setting decides whether entering the eviction queue starts a forced spill.
         /// The suction ceiling may end that spill early after reconciliation, but it must not bypass
         /// an explicitly forced spill before the query-side controller gets the request.
-        if (allocation.onGrowthPressure() == ResourceAllocation::GrowthPressureAction::Protect)
+        const auto pressure_action = allocation.onGrowthPressure();
+        if (pressure_action == ResourceAllocation::GrowthPressureAction::Protect)
             allocation.memory_growth_recovery_pending = true;
+        else if (allocation.canStartSuctionBeforeSpillCompletes())
+        {
+            /// The spill request remains controlled exclusively by the query setting. This
+            /// independent allocation threshold only decides whether suction must wait for it.
+            allocation.memory_growth_recovery_pending = true;
+            allocation.onGrowthPressureResolved();
+        }
         allocation.memory_growth_eviction_order = ++last_eviction_order;
         if (!suspended_growth)
             suspended_growth = &allocation;
@@ -667,13 +675,11 @@ void AllocationQueue::processActivation()
                     memory_growth_suspension_changed = true;
                 }
 
-                /// Stop waiting for the rest of the spill pass once the reconciled total allocation
-                /// is eligible for suction. An in-flight processor spill may finish, but no later
-                /// processor is forced to spill for this pressure epoch.
+                /// Stop waiting for the rest of the spill pass once the already allocated memory
+                /// permits suction to start. The prospective total is checked later, in suction.
                 if (recovering.increasing_hook.is_linked()
                     && recovering.isGrowthRecoveryActive()
-                    && recovering.hasSuctionAllocationCeiling()
-                    && recovering.canEnterSuction(recovering.increase.size))
+                    && recovering.canStartSuctionBeforeSpillCompletes())
                 {
                     recovering.memory_growth_recovery_pending = true;
                     recovering.onGrowthPressureResolved();

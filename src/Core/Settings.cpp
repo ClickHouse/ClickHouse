@@ -4043,7 +4043,7 @@ Give this query soft protection from memory-reservation eviction. The existing s
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Bool, memory_reservation_force_spill_before_eviction, true, R"(
-Run one exhaustive query-level spill pass before evicting this query when its total allocation is above `memory_reservation_suction_max_allocation_bytes`. The query proceeds to suction without spilling when it is already eligible, or as soon as spilling reduces its total allocation to the eligibility ceiling.
+Run one exhaustive query-level spill pass when this query enters the memory-reservation eviction queue. `memory_reservation_max_allocation_before_suction_bytes` may allow suction to start before the pass completes, but it does not initiate spilling.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Milliseconds, memory_reservation_suction_queue_timeout_ms, 0, R"(

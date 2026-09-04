@@ -632,6 +632,20 @@ struct ManualAllocation : public ResourceAllocation
         return total_pressure_events;
     }
 
+    bool recoveryActive()
+    {
+        std::unique_lock lock(mutex);
+        return recovery_active;
+    }
+
+    void waitDecreaseSynced()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return fail_reason || !decrease_enqueued; });
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+    }
+
     void recoveryCheckpoint()
     {
         {
@@ -2693,7 +2707,7 @@ TEST(SchedulerSpaceShared, LargestMemoryFirstSuctionQueuePolicy)
 }
 
 
-TEST(SchedulerSpaceShared, SuctionMaxAllocationEvictsAfterSpill)
+TEST(SchedulerSpaceShared, SuctionMaxAllocationRejectsProspectiveTotalAfterSpill)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -2701,21 +2715,132 @@ TEST(SchedulerSpaceShared, SuctionMaxAllocationEvictsAfterSpill)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    ResourceAllocation::MemoryPressurePolicy capped_suction;
-    capped_suction.suction_max_allocation_bytes = 5000;
-    ManualAllocation requester(queue, "requester", 3000, true, capped_suction);
-    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, capped_suction);
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.max_allocation_before_suction_bytes = 2000;
+    policy.suction_max_allocation_bytes = 5000;
+    ManualAllocation requester(queue, "requester", 3000, true, policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, policy);
     requester.protectAfterPressureRounds(1);
 
     requester.increaseAsync(3000);
     requester.waitPressureCount(1);
+    EXPECT_TRUE(requester.recoveryActive());
+
+    /// Completing the spill permits suction even though the existing allocation is still above
+    /// the pre-suction threshold. The prospective total is rejected only after suction starts.
     requester.recoveryCheckpoint();
     ASSERT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
     EXPECT_EQ(ordinary->killCount(), 0u);
 }
 
 
-TEST(SchedulerSpaceShared, SuctionEligibleAllocationSkipsForcedSpill)
+TEST(SchedulerSpaceShared, UnlimitedMaxAllocationBeforeSuctionStartsImmediately)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.max_allocation_before_suction_bytes = 0;
+    ManualAllocation requester(queue, "requester", 3000, true, policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 7000, true, policy);
+    requester.protectAfterPressureRounds(1);
+
+    requester.increaseAsync(3000);
+    requester.waitPressureCount(1);
+    ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)))
+        << "An unlimited pre-suction threshold waited for spill completion";
+    EXPECT_EQ(requester.killCount(), 0u);
+    EXPECT_EQ(requester.pressureCount(), 1u);
+}
+
+
+TEST(SchedulerSpaceShared, MaxAllocationBeforeSuctionWaitsUntilAllocationFalls)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.max_allocation_before_suction_bytes = 5000;
+    ManualAllocation requester(queue, "requester", 6000, true, policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 4000, true, policy);
+    requester.protectAfterPressureRounds(1);
+
+    requester.increaseAsync(3000);
+    requester.waitPressureCount(1);
+    EXPECT_TRUE(requester.recoveryActive());
+
+    /// Model memory reclaimed by the active spill. Reaching the existing-allocation threshold
+    /// ends spill waiting; the pending increase is deliberately irrelevant in this phase.
+    requester.decreaseAsync(1000);
+    requester.waitDecreaseSynced();
+
+    ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_FALSE(requester.recoveryActive());
+    EXPECT_EQ(requester.killCount(), 0u);
+}
+
+
+TEST(SchedulerSpaceShared, SpillCompletionStartsSuctionAboveAllocationThreshold)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.max_allocation_before_suction_bytes = 5000;
+    ManualAllocation requester(queue, "requester", 6000, true, policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 4000, true, policy);
+    requester.protectAfterPressureRounds(1);
+
+    requester.increaseAsync(3000);
+    requester.waitPressureCount(1);
+    EXPECT_TRUE(requester.recoveryActive());
+
+    requester.recoveryCheckpoint();
+    ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_EQ(requester.killCount(), 0u);
+}
+
+
+TEST(SchedulerSpaceShared, BothSuctionAllocationLimitsApplyInSequence)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceAllocation::MemoryPressurePolicy policy;
+    policy.max_allocation_before_suction_bytes = 5000;
+    policy.suction_max_allocation_bytes = 7000;
+    ManualAllocation requester(queue, "requester", 6000, true, policy);
+    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 4000, true, policy);
+    requester.protectAfterPressureRounds(1);
+
+    requester.increaseAsync(3000);
+    requester.waitPressureCount(1);
+    EXPECT_TRUE(requester.recoveryActive());
+
+    /// The existing allocation reaches the pre-suction limit, allowing the transition. Only then
+    /// does the suction limit reject the 5000 + 3000 prospective total.
+    requester.decreaseAsync(1000);
+    requester.waitDecreaseSynced();
+
+    ASSERT_TRUE(requester.waitKillsFor(1, std::chrono::seconds(5)));
+    EXPECT_FALSE(requester.recoveryActive());
+    EXPECT_EQ(ordinary->killCount(), 0u);
+}
+
+
+TEST(SchedulerSpaceShared, SuctionEligibleAllocationWithoutRecoveryControllerEvictsOrdinary)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -2732,33 +2857,6 @@ TEST(SchedulerSpaceShared, SuctionEligibleAllocationSkipsForcedSpill)
     ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)));
     EXPECT_EQ(requester.pressureCount(), 0u);
     EXPECT_EQ(requester.killCount(), 0u);
-}
-
-
-TEST(SchedulerSpaceShared, SpillStopsWhenAllocationBecomesSuctionEligible)
-{
-    SpaceSharedTest t;
-    SpaceSharedResourceHolder r(t);
-    r.addLimit("/", 10000);
-    AllocationQueue * queue = r.addQueue("/queue");
-    r.registerResource();
-
-    ResourceAllocation::MemoryPressurePolicy policy;
-    policy.suction_max_allocation_bytes = 5000;
-    ManualAllocation requester(queue, "requester", 4000, true, policy);
-    requester.protectAfterPressureRounds(1);
-    auto ordinary = std::make_unique<ManualAllocation>(queue, "ordinary", 6000, true, policy);
-
-    requester.increaseAsync(3000);
-    requester.waitPressureCount(1);
-    requester.reconcilePendingIncreaseTo(1000);
-    ordinary->decreaseAsync(500);
-    ordinary->waitSynced();
-
-    ASSERT_TRUE(ordinary->waitKillsFor(1, std::chrono::seconds(5)))
-        << "The query stayed in forced spill after its reconciled total became eligible for suction";
-    EXPECT_EQ(requester.killCount(), 0u);
-    EXPECT_EQ(requester.pressureCount(), 1u);
 }
 
 

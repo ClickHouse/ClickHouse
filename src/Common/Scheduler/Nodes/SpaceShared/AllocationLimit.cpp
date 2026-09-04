@@ -508,12 +508,12 @@ ResourceCost AllocationLimit::getEffectiveLimit(const IncreaseRequest & request)
 void AllocationLimit::selectAndKill(IncreaseRequest & killer)
 {
     String details;
-    if (killer.allocation.isSuctioned() && !killer.allocation.canEnterSuction(killer.size))
+    if (killer.allocation.isSuctioned() && !killer.allocation.canAllocateInSuction(killer.size))
     {
         if (killer.allocation.kill_requested)
             return;
         allocation_to_kill = &killer.allocation;
-        details = "The allocation remains above the suction eligibility ceiling after spilling.";
+        details = "The requested total allocation exceeds the maximum allowed in suction.";
     }
     else
         allocation_to_kill = selectAllocationToKill(killer, getEffectiveLimit(killer), details);
