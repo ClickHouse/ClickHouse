@@ -84,13 +84,29 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     ColumnCheckpoints nested;
 };
 
-struct ColumnsWithRowNumbers
+/// Shape of an encoded ref-word sequence (see RowRef / RowRefList in Interpreters/RowRefs.h) as
+/// handed from an emit producer to an emit consumer:
+///   Flat   - exactly one word per output row: 0 is a default row, anything else an inline
+///            (block_no, row_no) ref.
+///   Lists  - a word may be a `RowRefList` list word standing for every row of one key.
+///   Ranges - a word may be a range node (the reranged "sorted" build): a consumer emits one range
+///            operation per word and never flattens it, so sorted output stays O(ranges).
+enum class RefWordShape : uint8_t
 {
-    /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const StoredBlock *> columns;
-    VectorWithMemoryTracking<UInt32> row_numbers;
-    /// Whether `columns` contains any nullptr entry.
-    bool has_defaults = false;
+    Flat,
+    Lists,
+    Ranges,
+};
+
+/// One selection of right-table rows to emit: the ref words, their shape, and the number of output
+/// rows they expand to (a zero word counting as one default row). This is the single currency
+/// between the emit producers (the lazy-output builders, the not-joined scans) and the emit kernels.
+struct RefWordSelection
+{
+    const UInt64 * begin = nullptr;
+    const UInt64 * end = nullptr;
+    size_t rows = 0;
+    RefWordShape shape = RefWordShape::Flat;
 };
 
 struct RowStorePointers
@@ -789,19 +805,6 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
-    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
-    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
-    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    virtual void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated);
-
     /// Fills column values from row-store referenced by a RowRefList.
     virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map);
 
@@ -809,9 +812,6 @@ public:
     {
         fillFromRowRefsWithRowStore(type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, /*null_map=*/ nullptr);
     }
-
-    /// Fills column values from list of blocks and row numbers
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Fills column values from pre-resolved row-store pointers.
     virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
@@ -1098,21 +1098,8 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from encoded join row refs
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated) override;
-
     /// Fills column values from row-store referenced by a RowRefList
     void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
-
-    /// Fills column values from list of columns and row numbers
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Fills column values from pre-resolved row-store pointers
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;

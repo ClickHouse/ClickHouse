@@ -1,0 +1,67 @@
+<!-- Emit of fixed-width right-side columns through the gather, one query per stride class of the
+     gather's dispatch rather than one per type: the runner samples at most 10 queries per file, so
+     per-type queries would drop coverage at random. Per-type correctness is covered by
+     tests/queries/0_stateless/05054_hash_join_gather.sql.
+
+     Every query has to reach the COLUMNAR emit path, which the in-memory row store claims first
+     whenever it initializes. Queries 1 to 4, 8 and 9 arrange that with a fanout below
+     min_rows_ratio_for_hash_join_row_store (unique build keys, so the estimated result is about the
+     build size); queries 5 to 7 use a FixedString(40) payload, the only fixed and contiguous width
+     above the row store's inclusive 32-byte limit. The row store is never switched off by hand,
+     because that would measure a non-default configuration. -->
+<test>
+    <settings>
+        <join_algorithm>hash</join_algorithm>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+        <max_bytes_before_external_join>0</max_bytes_before_external_join>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <create_query>CREATE TABLE dg_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_s4 (k UInt64, a UInt32, b UInt32, c UInt32, d UInt32, e UInt32, f UInt32, g UInt32, h UInt32) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_s8 (k UInt64, a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64, g UInt64, h UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_s16 (k UInt64, a UUID, b UUID, c UUID, d UUID, e UUID, f UUID, g UUID, h UUID) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_s32 (k UInt64, a UInt256, b UInt256, c UInt256, d UInt256, e UInt256, f UInt256, g UInt256, h UInt256) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_wide (k UInt64, a FixedString(40), b FixedString(40), c FixedString(40), d FixedString(40), e FixedString(40), f FixedString(40), g FixedString(40), h FixedString(40)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_wide_x10 (k UInt64, a FixedString(40)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE dg_enum (k UInt64, a Enum8('x' = 1, 'y' = 2), b Enum8('x' = 1, 'y' = 2), c Enum8('x' = 1, 'y' = 2), d Enum8('x' = 1, 'y' = 2), e Enum8('x' = 1, 'y' = 2), f Enum8('x' = 1, 'y' = 2), g Enum8('x' = 1, 'y' = 2), h Enum8('x' = 1, 'y' = 2)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO dg_probe SELECT number FROM numbers(2000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO dg_s4 WITH toUInt32(number) AS n SELECT number, n, n + 1, n + 2, n + 3, n + 4, n + 5, n + 6, n + 7 FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO dg_s8 WITH number * 1000003 AS n SELECT number, n, n + 1, n + 2, n + 3, n + 4, n + 5, n + 6, n + 7 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO dg_s16 WITH reinterpretAsUUID(toFixedString(leftPad(toString(number), 16, '0'), 16)) AS n SELECT number, n, n, n, n, n, n, n, n FROM numbers(500000)</fill_query>
+    <fill_query>INSERT INTO dg_s32 WITH toUInt256(number) * toUInt256(18446744073709551557) AS n SELECT number, n, n + 1, n + 2, n + 3, n + 4, n + 5, n + 6, n + 7 FROM numbers(250000)</fill_query>
+    <fill_query>INSERT INTO dg_wide WITH toFixedString(leftPad(toString(number), 40, 'y'), 40) AS n SELECT number, n, n, n, n, n, n, n, n FROM numbers(200000)</fill_query>
+    <fill_query>INSERT INTO dg_wide_x10 SELECT number % 20000, toFixedString(leftPad(toString(number), 40, 'y'), 40) FROM numbers(200000)</fill_query>
+    <fill_query>INSERT INTO dg_enum WITH CAST(1 + number % 2, 'Enum8(\'x\' = 1, \'y\' = 2)') AS n SELECT number, n, n, n, n, n, n, n, n FROM numbers(2000000)</fill_query>
+
+    <!-- STRIDE 4. Stride 2 is the one class with no arm of its own: it has the same shape as 1 and 4,
+         which are both here, so a third arm of that shape would only take a slot from another. -->
+    <query>SELECT * FROM dg_probe p JOIN dg_s4 b ON p.k = b.k FORMAT Null</query>
+    <!-- STRIDE 8 -->
+    <query>SELECT * FROM dg_probe p JOIN dg_s8 b ON p.k = b.k FORMAT Null</query>
+    <!-- STRIDE 16 -->
+    <query>SELECT * FROM dg_probe p JOIN dg_s16 b ON p.k = b.k FORMAT Null</query>
+    <!-- STRIDE 32 -->
+    <query>SELECT * FROM dg_probe p JOIN dg_s32 b ON p.k = b.k FORMAT Null</query>
+    <!-- Runtime stride -->
+    <query>SELECT * FROM dg_probe p JOIN dg_wide b ON p.k = b.k FORMAT Null</query>
+    <!-- Row lists: ten build rows per key, forced onto the by-blocks builder -->
+    <query>SELECT * FROM dg_probe p JOIN dg_wide_x10 b ON p.k = b.k SETTINGS join_output_by_rowlist_perkey_rows_threshold = 1000000 FORMAT Null</query>
+    <!-- Limit and offset builder -->
+    <query>SELECT * FROM dg_probe p JOIN dg_wide_x10 b ON p.k = b.k SETTINGS join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1, max_joined_block_size_rows = 4096 FORMAT Null</query>
+    <!-- parallel_hash, inline rather than as a substitution: a substitution expands as a cartesian
+         product and would push this file past the runner's 10-query sample. -->
+    <query>SELECT * FROM dg_probe p JOIN dg_s8 b ON p.k = b.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+    <!-- STRIDE 1, through Enum8 - the narrowest fixed-width leaf a table can hold. -->
+    <query>SELECT * FROM dg_probe p JOIN dg_enum b ON p.k = b.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS dg_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_s4</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_s8</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_s16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_s32</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_wide_x10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dg_enum</drop_query>
+</test>

@@ -27,6 +27,17 @@ struct JoinFeatures
       */
     static constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
 
+    /// Whether a probe of this kind emits every row of a matched key at once, which `addFoundRowAll`
+    /// does by recording the key's whole cell word. Such a word may be a `RowRefList` one, so the
+    /// emit has to read the words in the `Lists` shape. `flag_per_row` is the exception: it appends
+    /// one ref at a time, to claim each row separately.
+    static constexpr bool emits_whole_key_per_word = is_all_join || ((is_any_join || is_semi_join) && right);
+
+    /// Always the same condition: emitting every row of a matched key at once is what makes one left
+    /// row come out several times. Written out separately because one sizes `offsets_to_replicate`
+    /// and the other picks the word shape, and this assert is what stops them drifting apart.
+    static_assert(emits_whole_key_per_word == need_replication);
+
     /// Whether we need to filter rows from the left table that do not have matches in the right table.
     static constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 

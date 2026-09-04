@@ -46,7 +46,8 @@
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
-#include <Interpreters/HashJoin/fillJoinOutputColumns.h>
+#include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
+#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
@@ -1429,33 +1430,29 @@ void HashJoin::updateNonJoinedRowsStatus()
     has_non_joined_rows_checked = true;
 }
 
+/// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. The row store
+/// also needs them resolved to pointers, so it keeps a parallel array.
 template <typename Mapped>
 struct CollectorNonJoined
 {
-    template <bool with_row_store, bool with_columns>
+    template <bool with_row_store>
     static void collect(
         const Mapped & mapped,
-        [[maybe_unused]] const StoredBlock * const * stored_columns,
         [[maybe_unused]] const RowDataStore * const * block_row_stores,
-        VectorWithMemoryTracking<const StoredBlock *> & blocks,
-        VectorWithMemoryTracking<UInt32> & row_numbers,
+        PaddedPODArray<UInt64> & words,
         RowStorePointers & row_store_ptrs,
         std::optional<size_t> & row_store_batch_size)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
 
-        [[maybe_unused]] auto collect_row = [&](UInt32 block_no, UInt32 row_no)
+        [[maybe_unused]] auto collect_word = [&](UInt64 ref_word)
         {
-            if constexpr (with_columns)
-            {
-                blocks.push_back(stored_columns[block_no]);
-                row_numbers.push_back(row_no);
-            }
+            words.push_back(ref_word);
             if constexpr (with_row_store)
             {
-                const auto * row_store = block_row_stores[block_no];
-                row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row_no));
+                const auto * row_store = block_row_stores[refWordBlockNo(ref_word)];
+                row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(refWordRowNo(ref_word)));
                 if (!row_store_batch_size)
                     row_store_batch_size = row_store->getBatchSize();
             }
@@ -1467,15 +1464,12 @@ struct CollectorNonJoined
         }
         else if constexpr (mapped_one)
         {
-            collect_row(mapped.blockNo(), mapped.rowNo());
+            collect_word(mapped.encode());
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
-            {
-                const UInt64 ref_word = *it;
-                collect_row(refWordBlockNo(ref_word), refWordRowNo(ref_word));
-            }
+                collect_word(*it);
         }
     }
 };
@@ -1513,23 +1507,37 @@ public:
         for (const auto & column : saved_block_sample)
             type_name.emplace_back(column.name, column.type);
 
+        const bool row_store_initialized = parent.data->row_store_state == HashJoin::RowStoreState::Initialized;
         output_access_indexes.reserve(saved_block_sample.columns());
-        if (parent.data->row_store_state == HashJoin::RowStoreState::Initialized)
+        /// The columnar (non-row-store) output columns, by position in `StoredBlock::columns`.
+        std::vector<EmitColumnRequest> columnar_requests;
+        columnar_requests.reserve(saved_block_sample.columns());
+        for (size_t dst_idx = 0; dst_idx < saved_block_sample.columns(); ++dst_idx)
         {
-            for (size_t i = 0; i < saved_block_sample.columns(); ++i)
-            {
-                const ColumnAccessIndex & access_index = access_indexes[i];
-                if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                    has_row_store = true;
-                else
-                    has_columns = true;
-                output_access_indexes.push_back(access_index);
-            }
+            const ColumnAccessIndex access_index
+                = row_store_initialized ? access_indexes[dst_idx] : ColumnAccessIndex{ColumnAccessIndex::Type::Columns, dst_idx};
+            output_access_indexes.push_back(access_index);
+            if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                has_row_store = true;
+            else
+                columnar_requests.push_back({access_index.index, type_name[dst_idx].type});
         }
-        else
+
+        /// The not-joined scan emits ref words like the probe, so it runs the same kernels.
+        const size_t columnar_columns_count = row_store_initialized
+            ? static_cast<size_t>(std::ranges::count_if(
+                  access_indexes, [](const auto & index) { return index.type == ColumnAccessIndex::Type::Columns; }))
+            : saved_block_sample.columns();
+
+        std::vector<GatherColumn> gather_by_position;
+        parent.data->stored_columns_index->resolveEmitColumns(columnar_columns_count, columnar_requests, gather_by_position);
+
+        emit_gather.assign(output_access_indexes.size(), {});
+        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
         {
-            for (size_t i = 0; i < saved_block_sample.columns(); ++i)
-                output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, i});
+            const auto & access_index = output_access_indexes[dst_idx];
+            if (access_index.type == ColumnAccessIndex::Type::Columns)
+                emit_gather[dst_idx] = gather_by_position[access_index.index];
         }
     }
 
@@ -1538,11 +1546,11 @@ public:
     size_t fillColumns(MutableColumns & columns_right) override
     {
         size_t rows_added = 0;
-        dispatchOutputs([&]<bool with_row_store, bool with_columns>()
+        dispatchOutputs([&]<bool with_row_store>()
         {
             auto fill_callback = [&](auto, auto, auto & map)
             {
-                rows_added = fillColumnsFromMap<with_row_store, with_columns>(map, columns_right);
+                rows_added = fillColumnsFromMap<with_row_store>(map, columns_right);
             };
             const bool prefer_use_maps_all = parent.preferUseMapsAll();
             if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
@@ -1552,9 +1560,9 @@ public:
 
         if (!flag_per_row)
         {
-            dispatchOutputs([&]<bool with_row_store, bool with_columns>()
+            dispatchOutputs([&]<bool with_row_store>()
             {
-                fillNullsFromBlocks<with_row_store, with_columns>(columns_right, rows_added);
+                fillNullsFromBlocks<with_row_store>(columns_right, rows_added);
             });
         }
 
@@ -1578,7 +1586,8 @@ private:
     ColumnAccessIndexes output_access_indexes;
     NamesAndTypes type_name;
     bool has_row_store = false;
-    bool has_columns = false;
+
+    std::vector<GatherColumn> emit_gather;
 
     bool isBucketInRange(size_t bucket) const
     {
@@ -1590,55 +1599,52 @@ private:
         return num_buckets <= 1 || (block_no % num_buckets) == bucket_idx;
     }
 
+    /// Only the row store needs a separate walk; the columnar columns are addressed by ref words.
     template <typename F>
     void dispatchOutputs(F && f) const
     {
-        if (!has_row_store)
-            f.template operator()<false, true>();
-        else if (!has_columns)
-            f.template operator()<true, false>();
+        if (has_row_store)
+            f.template operator()<true>();
         else
-            f.template operator()<true, true>();
+            f.template operator()<false>();
     }
 
-    template <bool with_row_store, bool with_columns, typename Maps>
+    template <bool with_row_store, typename Maps>
     size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_right)
     {
         switch (parent.data->type)
         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        return fillColumns<with_row_store, with_columns>(*maps.TYPE, columns_right);
+        return fillColumns<with_row_store>(*maps.TYPE, columns_right);
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
         }
         UNREACHABLE();
     }
 
-    template <bool with_row_store, bool with_columns, typename Map>
+    /// Flat here: a not-joined row is always one inline ref, never a list and never a default.
+    void emitColumnarOutputs(MutableColumns & columns_right, const PaddedPODArray<UInt64> & words) const
+    {
+        const RefWordSelection selection{
+            .begin = words.data(), .end = words.data() + words.size(), .rows = words.size(), .shape = RefWordShape::Flat};
+        EmitScratch scratch;
+
+        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+            if (output_access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
+                gatherColumn(*columns_right[dst_idx], emit_gather[dst_idx], selection, scratch);
+    }
+
+    template <bool with_row_store, typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns_right)
     {
-        ColumnsWithRowNumbers columns_with_row_numbers;
-        [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
-        [[maybe_unused]] auto & row_nums = columns_with_row_numbers.row_numbers;
-        if constexpr (with_columns)
-        {
-            many_columns.reserve(max_block_size);
-            row_nums.reserve(max_block_size);
-        }
+        PaddedPODArray<UInt64> words;
+        words.reserve(max_block_size);
 
         [[maybe_unused]] RowStorePointers row_store_ptrs;
         [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
             row_store_ptrs.ptrs.reserve(max_block_size);
-
-        auto collected = [&]() -> size_t
-        {
-            if constexpr (with_columns)
-                return row_nums.size();
-            else
-                return row_store_ptrs.ptrs.size();
-        };
 
         if (flag_per_row)
         {
@@ -1649,7 +1655,7 @@ private:
 
             auto end = parent.data->columns.end();
 
-            for (auto & it = *used_position; it != end && collected() < max_block_size; ++it)
+            for (auto & it = *used_position; it != end && words.size() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
                 if (!isBlockInRange(mapped_block.block_no))
@@ -1661,11 +1667,7 @@ private:
                 {
                     if (!parent.isUsed(mapped_block.block_no, row))
                     {
-                        if constexpr (with_columns)
-                        {
-                            many_columns.push_back(&mapped_block);
-                            row_nums.push_back(static_cast<UInt32>(row));
-                        }
+                        words.push_back(RowRef(mapped_block.block_no, row).encode());
                         if constexpr (with_row_store)
                         {
                             const auto & row_store = mapped_block.row_store;
@@ -1688,7 +1690,6 @@ private:
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
-            const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
             const RowDataStore * const * block_row_stores = parent.data->stored_columns_index->rowStoresData();
 
             /// case: two-level hash tables with parallel iteration
@@ -1712,13 +1713,13 @@ private:
                 if (!skipToNextOwnedBucket())
                     return 0;
 
-                while (it != end && collected() < max_block_size)
+                while (it != end && words.size() < max_block_size)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, block_row_stores, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
+                        CollectorNonJoined<Mapped>::template collect<with_row_store>(mapped, block_row_stores, words, row_store_ptrs, row_store_batch_size);
                     }
 
                     ++it;
@@ -1738,9 +1739,9 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, block_row_stores, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
+                    CollectorNonJoined<Mapped>::template collect<with_row_store>(mapped, block_row_stores, words, row_store_ptrs, row_store_batch_size);
 
-                    if (collected() >= max_block_size)
+                    if (words.size() >= max_block_size)
                     {
                         ++it;
                         break;
@@ -1749,11 +1750,13 @@ private:
             }
         }
 
-        fillJoinOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
-        return collected();
+        emitColumnarOutputs(columns_right, words);
+        if constexpr (with_row_store)
+            fillRowStoreOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, type_name);
+        return words.size();
     }
 
-    template <bool with_row_store, bool with_columns>
+    template <bool with_row_store>
     void fillNullsFromBlocks(MutableColumns & columns_right, size_t & rows_added)
     {
         /// for parallel iteration, only stream 0 handles nullmaps to avoid duplicates
@@ -1765,29 +1768,15 @@ private:
 
         auto end = parent.data->nullmaps.end();
 
-        ColumnsWithRowNumbers columns_with_row_numbers;
-        [[maybe_unused]] auto & many_columns = columns_with_row_numbers.columns;
-        [[maybe_unused]] auto & row_nums = columns_with_row_numbers.row_numbers;
-        if constexpr (with_columns)
-        {
-            many_columns.reserve(max_block_size);
-            row_nums.reserve(max_block_size);
-        }
+        PaddedPODArray<UInt64> words;
+        words.reserve(max_block_size);
 
         [[maybe_unused]] RowStorePointers row_store_ptrs;
         [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
             row_store_ptrs.ptrs.reserve(max_block_size);
 
-        auto collected = [&]() -> size_t
-        {
-            if constexpr (with_columns)
-                return row_nums.size();
-            else
-                return row_store_ptrs.ptrs.size();
-        };
-
-        for (auto & it = *nulls_position; it != end && rows_added + collected() < max_block_size; ++it)
+        for (auto & it = *nulls_position; it != end && rows_added + words.size() < max_block_size; ++it)
         {
             const auto * columns = it->columns;
             ConstNullMapPtr nullmap = nullptr;
@@ -1799,11 +1788,7 @@ private:
             {
                 if (nullmap && (*nullmap)[row])
                 {
-                    if constexpr (with_columns)
-                    {
-                        many_columns.push_back(columns);
-                        row_nums.push_back(static_cast<UInt32>(row));
-                    }
+                    words.push_back(RowRef(columns->block_no, row).encode());
                     if constexpr (with_row_store)
                     {
                         const auto & row_store = columns->row_store;
@@ -1815,8 +1800,10 @@ private:
             }
         }
 
-        fillJoinOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
-        rows_added += collected();
+        emitColumnarOutputs(columns_right, words);
+        if constexpr (with_row_store)
+            fillRowStoreOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, type_name);
+        rows_added += words.size();
     }
 };
 
