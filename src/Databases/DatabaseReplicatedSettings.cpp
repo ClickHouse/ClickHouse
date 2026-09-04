@@ -59,10 +59,12 @@ constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
 /// `max_log_ptr` is derived from the Keeper node value, so it's inherently 32-bit. Any value greater
 /// than `UInt32::max` is effectively "Keep all the log entries".
 ///
-/// We reject `CREATE` queries with `logs_to_keep` setting value out of [1; UInt32::max] range.
-/// However, existing databases/server configs may still contain values greater than `UInt32::max`;
-/// we clamp such values to `UInt32::max` with a corresponding warning message in the logs.
-/// Metadata files/server config remain intact.
+/// We reject definitions the user supplies now (`CREATE` and full-syntax `ATTACH`) with a
+/// `logs_to_keep` setting value out of [1; UInt32::max] range.
+/// However, metadata written by an older server, and old server configs, may still contain values
+/// greater than `UInt32::max`; when such a value is replayed (server startup, short-syntax `ATTACH`,
+/// RESTORE) or read from the config, we clamp it to `UInt32::max` with a corresponding warning
+/// message in the logs. Metadata files/server config remain intact.
 void checkOrClampLogsToKeep(Field & logs_to_keep, bool clamp_on_overflow)
 {
     /// Convert through the type the setting had before it was narrowed, so that everything an
@@ -94,7 +96,7 @@ void checkOrClampLogsToKeep(Field & logs_to_keep, bool clamp_on_overflow)
 
 }
 
-void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach)
+void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
@@ -107,7 +109,7 @@ void DatabaseReplicatedSettings::loadFromQuery(ASTStorage & storage_def, bool is
             if (change.name != "logs_to_keep" || change.shorthand)
                 continue;
 
-            checkOrClampLogsToKeep(change.value, is_attach);
+            checkOrClampLogsToKeep(change.value, loading_from_existing_metadata /* clamp_on_overflow */);
         }
 
         impl->applyChanges(changes);

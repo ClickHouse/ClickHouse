@@ -36,7 +36,7 @@ struct DatabaseReplicatedSettings
 
     DATABASE_REPLICATED_SETTINGS_SUPPORTED_TYPES(DatabaseReplicatedSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTStorage & storage_def, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     String toString() const;
