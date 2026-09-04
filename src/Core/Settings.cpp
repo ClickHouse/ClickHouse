@@ -8727,7 +8727,6 @@ With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeNam
 type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
 materialized during inserts and background merges instead of rewriting the historical data.
 )", BETA, enable_json_lazy_type_hints) \
-)", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
 Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
