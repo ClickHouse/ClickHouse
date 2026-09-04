@@ -194,11 +194,13 @@ private:
     ///
     /// Also updates current segment metadata (cardinality, payload size).
     ///
-    /// When scoring is enabled, a term-frequency block is appended after the deltas.
+    /// When scoring is enabled, a term-frequency block is appended after the deltas, and the block-max
+    /// metadata takes the doc lengths from `doc_lengths[row_id - doc_lengths_first_row_id]`.
     void encodeBlock(
         std::span<const UInt32> block_row_ids,
         std::span<const UInt32> term_frequencies,
-        std::span<const UInt8> doc_lengths);
+        std::span<const UInt8> doc_lengths,
+        UInt32 doc_lengths_first_row_id);
 
     /// Appends one block's `count` term frequencies to `compressed_data`, after its deltas.
     void encodeTermFrequencies(std::span<const UInt32> term_frequencies, size_t count);

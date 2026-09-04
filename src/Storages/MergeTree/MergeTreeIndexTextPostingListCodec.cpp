@@ -84,7 +84,8 @@ void SegmentedPostingListCodec::append(
             encodeBlock(
                 row_ids.subspan(pos + offset, block_size),
                 block_tf_minus_one,
-                doc_lengths);
+                doc_lengths,
+                context.doc_lengths_first_row_id);
         }
 
         pos += rows_in_chunk;
@@ -241,7 +242,8 @@ void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo
 void SegmentedPostingListCodec::encodeBlock(
     std::span<const UInt32> block_row_ids,
     std::span<const UInt32> term_frequencies,
-    std::span<const UInt8> doc_lengths)
+    std::span<const UInt8> doc_lengths,
+    UInt32 doc_lengths_first_row_id)
 {
     chassert(block_codec);
     chassert(!block_row_ids.empty() && block_row_ids.size() <= BLOCK_SIZE);
@@ -276,8 +278,10 @@ void SegmentedPostingListCodec::encodeBlock(
 
         for (UInt32 row_id : block_row_ids)
         {
-            chassert(row_id < doc_lengths.size());
-            min_dl_byte = std::min(min_dl_byte, doc_lengths[row_id]);
+            chassert(row_id >= doc_lengths_first_row_id);
+            const size_t doc_lengths_index = row_id - doc_lengths_first_row_id;
+            chassert(doc_lengths_index < doc_lengths.size());
+            min_dl_byte = std::min(min_dl_byte, doc_lengths[doc_lengths_index]);
         }
 
         const UInt32 max_tf_minus_one = term_frequencies.empty() ? 0 : std::ranges::max(term_frequencies);

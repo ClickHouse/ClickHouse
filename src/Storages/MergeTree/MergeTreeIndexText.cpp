@@ -1664,6 +1664,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         .enable_positions = params.enable_positions,
         .enable_scoring = params.enable_scoring,
         .doc_lengths = params.enable_scoring ? &doc_lengths : nullptr,
+        .doc_lengths_first_row_id = static_cast<UInt32>(num_docs - doc_lengths.size()),
     };
 
     auto sparse_index_block = serializeTokensAndPostings(
@@ -1860,11 +1861,12 @@ PostingListBuildContext MergeTreeIndexTextGranuleBuilder::buildContext() const
 
     return
     {
-        *posting_list_codec,
-        posting_list_codec->getSegmentSize(params.posting_list_block_size),
-        params.enable_positions,
-        params.enable_scoring,
-        &doc_lengths,
+        .codec = *posting_list_codec,
+        .segment_size = posting_list_codec->getSegmentSize(params.posting_list_block_size),
+        .enable_positions = params.enable_positions,
+        .enable_scoring = params.enable_scoring,
+        .doc_lengths = &doc_lengths,
+        .doc_lengths_first_row_id = static_cast<UInt32>(current_row - doc_lengths.size()),
     };
 }
 

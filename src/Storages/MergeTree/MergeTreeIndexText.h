@@ -159,6 +159,7 @@ struct PostingListBuildContext
     bool enable_positions;
     bool enable_scoring;
     const PaddedPODArray<UInt8> * doc_lengths;
+    UInt32 doc_lengths_first_row_id = 0;
 };
 
 /// Builds one token's posting list during the index build.
@@ -623,7 +624,14 @@ struct MergeTreeIndexTextGranuleBuilder
     void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
 
     void incrementCurrentRow();
-    void setCurrentRow(size_t row) { current_row = row; }
+
+    /// Continues the row numbering of an empty builder from `row`, so that the row ids of the next temporary
+    /// segment of the index materialization stay absolute within the part. Its `doc_lengths` start at `row`.
+    void setCurrentRow(size_t row)
+    {
+        chassert(is_empty && doc_lengths.empty());
+        current_row = row;
+    }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
