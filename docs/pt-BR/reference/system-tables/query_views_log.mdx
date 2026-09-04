@@ -39,7 +39,7 @@ Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/refere
 * `event_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — A data e a hora em que a VIEW terminou a execução.
 * `event_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — A data e a hora em que a VIEW terminou a execução, com precisão de microssegundos.
 * `view_duration_ms` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Duração da execução da VIEW (soma de seus estágios), em milissegundos.
-* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial (para execução distribuída de consultas).
+* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial na mesma cadeia de consultas.
 * `view_name` ([String](/pt-BR/reference/data-types/string)) — Nome da VIEW.
 * `view_uuid` ([UUID](/pt-BR/reference/data-types/uuid)) — UUID da VIEW.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/pt-BR/reference/data-types/enum)) — Tipo da VIEW. Valores: &#39;Default&#39; = 1 — VIEWs padrão. Não deve aparecer neste log, &#39;Materialized&#39; = 2 — VIEWs materializadas, &#39;Live&#39; = 3 — visualizações em tempo real.

@@ -23,6 +23,23 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 ClickHouse Cloud でのみ利用できます。マージ時に cache をプリウォームする対象となるパーツの合計最大サイズです。
 
+<div id="merge_use_batch_sorting_queue">
+  ## merge_use_batch_sorting_queue
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "通常の `MergeTree` マージでバッチソートキューを使用するための新しい設定。"}]}]} />
+
+ソート済みストリームをマージする際に、行ごとのキュー処理のオーバーヘッドを削減するため、バッチソートキューを使用します。
+
+行を変更しないマージ、すなわち通常の `MergeTree`
+(`Ordinary` マージモード) にのみ適用されます。`ReplacingMergeTree`、`CollapsingMergeTree`、
+`SummingMergeTree`、`AggregatingMergeTree`、`CoalescingMergeTree`、
+`GraphiteMergeTree`、`VersionedCollapsingMergeTree` など、マージ時の
+セマンティクスを持つエンジンには影響しません。これらのエンジンでは、この設定にかかわらず、
+引き続きデフォルトのキューが使用されます。
+
 <div id="merge_workload">
   ## merge_workload
 </div>

@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- The wildcard follows a specific address and precedes another one, covering both orders of
+         mixed wildcard/specific `listen_host` entries. The wildcard has to come before `127.0.0.1`
+         because otherwise the plain sockets bound for `127.0.0.1` would keep the wildcard from
+         binding, and the node would not be reachable at all. -->
+    <listen_host>::1</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <listen_host>127.0.0.1</listen_host>
+
+    <!-- Plain sockets do overlap in this configuration - `127.0.0.1` is already covered by
+         `0.0.0.0` - which must stay a warning instead of a startup failure. -->
+    <listen_try>1</listen_try>
+
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+</clickhouse>

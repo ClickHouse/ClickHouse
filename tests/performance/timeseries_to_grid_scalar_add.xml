@@ -15,8 +15,8 @@
         The data is dense: 200 series with one sample every 15 s over [1000000, 4000000), i.e. 200000
         samples per series, 40M rows total. The grid uses `step` = `window` = 300 s, so every in-range
         sample contributes to exactly one bucket and ~20 consecutive samples land in the same bucket -
-        exercising both the per-sample bucket math (Int64 fast path vs Int128 division) and the
-        cached-last-bucket optimization that skips the hash-map lookup for same-bucket runs.
+        exercising both the per-sample 64-bit bucket math and the cached-last-bucket optimization
+        that skips the hash-map lookup for same-bucket runs.
     -->
 
     <create_query>

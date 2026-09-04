@@ -28,11 +28,13 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HPOST\` URL '${P}/post' METHODS (POST) 
 # A lengthless non-chunked body ends only when the connection closes, so a server that waits for it deadlocks
 # against a client that waits for the response. Bound the request well below the test timeout, so that
 # such a regression shows up as a diff here instead of killing the whole test run.
+# Keep it silent and turn a nonzero exit into a stdout line: the harness fails on any stderr before it
+# compares the reference, so an error line there would take the place of that diff.
 CURL_BOUNDED="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time 30"
 
 echo "=== a lengthless non-chunked POST to a handler that does not read the body succeeds ==="
 # `-X POST` with no data sends neither Content-Length nor chunked Transfer-Encoding.
-${CURL_BOUNDED} -sS -X POST "${BASE}${P}/post"
+${CURL_BOUNDED} -X POST "${BASE}${P}/post" || echo "curl failed: $?"
 
 echo "=== a handler reading _request_body still requires the length up front ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HPARAM\` URL '${P}/param' METHODS (POST) AS SELECT {_request_body:String} AS a FORMAT TSV"

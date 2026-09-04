@@ -39,7 +39,7 @@ Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/set
 * `event_time` ([DateTime](/es/reference/data-types/datetime)) — La fecha y hora en que la vista finalizó su ejecución.
 * `event_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — La fecha y hora en que la vista finalizó su ejecución con precisión de microsegundos.
 * `view_duration_ms` ([UInt64](/es/reference/data-types/int-uint)) — Duración de la ejecución de la vista (suma de sus etapas) en milisegundos.
-* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial (para la ejecución distribuida de consultas).
+* `initial_query_id` ([String](/es/reference/data-types/string)) — ID de la consulta inicial en la misma cadena de consultas.
 * `view_name` ([String](/es/reference/data-types/string)) — Nombre de la vista.
 * `view_uuid` ([UUID](/es/reference/data-types/uuid)) — UUID de la vista.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/es/reference/data-types/enum)) — Tipo de la vista. Valores: &#39;Default&#39; = 1 — Vistas predeterminadas. No debería aparecer en este log, &#39;Materialized&#39; = 2 — vistas materializadas, &#39;Live&#39; = 3 — vistas Live.

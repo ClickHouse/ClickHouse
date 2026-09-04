@@ -84,14 +84,18 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 operator のデプロイメントオプションを設定するには、以下の手順に従ってください。
 
 <Steps>
-  <Step title="リポジトリをクローンする" id="clone-the-repository">
+  <Step>
+    ### リポジトリをクローンする
+
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step title="インストールオプションを設定する" id="configure-installation-options">
+  <Step>
+    ### インストールオプションを設定する
+
     必要に応じて機能を有効または無効にするため、config/default/kustomization.yaml を編集します。
 
     * webhooks を無効にするには、`[WEBHOOK]` セクションと `[CERTMANAGER]` セクションをコメントアウトします。
@@ -100,7 +104,9 @@ operator のデプロイメントオプションを設定するには、以下�
     * operator のネットワークポリシーを有効にするには、`[NETWORK POLICY]` セクションのコメントを解除します。
   </Step>
 
-  <Step title="ビルドしてデプロイする" id="build-and-deploy">
+  <Step>
+    ### ビルドしてデプロイする
+
     operator のマニフェストをビルドして適用します。
 
     ```bash

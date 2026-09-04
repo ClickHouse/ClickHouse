@@ -6,25 +6,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 0;
-
-SELECT toInt64(0) IN (materialize(toFloat64(-0.6)));
-SELECT toInt64(1) IN (materialize(toFloat64(1.0)));
-SELECT toInt64(0) NOT IN (materialize(toFloat64(-0.6)));
-SELECT toUInt64(0) IN (materialize(toFloat64(-0.6)));
-SELECT toInt128(0) IN (materialize(toFloat64(-0.6)));
-SELECT toInt128(1) IN (materialize(toFloat32(1)));
-SELECT toDecimal64(0.5, 2) IN (materialize(toFloat64(0.5)));
-SELECT toDecimal64(0.5, 2) IN (materialize(toFloat64(-0.6)));
-SELECT nullIn(toInt64(0), materialize(toFloat64(-0.6)));
-SELECT notNullIn(toInt64(0), materialize(toFloat64(-0.6)));
-SELECT materialize(CAST(0, 'Nullable(Int64)')) IN (materialize(CAST(-0.6, 'Nullable(Float64)')));
-SELECT materialize(CAST(NULL, 'Nullable(Int64)')) IN (materialize(CAST(-0.6, 'Nullable(Float64)')));
-SELECT nullIn(materialize(CAST(NULL, 'Nullable(Int64)')), materialize(CAST(-0.6, 'Nullable(Float64)')));
-
--- The row-dependent shape from SQLLogic: 0 IN (22 / col1 - col1) must match no row.
-SELECT count() FROM (SELECT arrayJoin([14, 5, 47]) AS col1) WHERE 0 IN (22 / col1 - col1);
-
 SET enable_analyzer = 1;
 
 SELECT toInt64(0) IN (materialize(toFloat64(-0.6)));

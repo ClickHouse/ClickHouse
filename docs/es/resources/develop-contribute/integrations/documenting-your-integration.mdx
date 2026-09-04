@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: 'Documenta tu integración'
 title: 'Documenta tu integración de ClickHouse'
-description: 'Cómo contribuir páginas de integración a clickhouse-docs, incluidas las secciones obligatorias y una plantilla para copiar y pegar.'
+description: 'Cómo contribuir páginas de integración a este repositorio, incluidas las secciones obligatorias y una plantilla para copiar y pegar.'
 keywords: ['partner', 'integración', 'documentación', 'contribución', 'pull request', 'documentación de integración']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ Empieza con [Crear integraciones](/es/resources/develop-contribute/integrations/
   ## Dónde está la documentación
 </div>
 
-* **Repositorio:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
-* **Formato:** Markdown, generado con Docusaurus
-* **Ubicación:** `/docs/integrations/<category>/<your-integration>/`, donde `<category>` refleja lo que hace tu producto (`data-visualization`, `data-ingestion`, `language-clients`, etc.)
-* **Proceso:** abre un pull request a `main`. El equipo de integraciones de ClickHouse lo revisará. Quienes contribuyen por primera vez firman el Contributor License Agreement cuando el bot lo solicita en la PR
+* **Repositorio:** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (`docs/` en este árbol)
+* **Formato:** MDX, generado con [Mintlify](https://www.mintlify.com/)
+* **Ubicación:** `docs/integrations/<category>/<your-integration>/`, donde `<category>` refleja lo que hace tu producto (`data-visualization`, `data-ingestion`, `language-clients`, etc.)
+* **Proceso:** abre un pull request a `master`. El equipo de integraciones de ClickHouse lo revisará. Quienes contribuyen por primera vez firman el Contributor License Agreement cuando el bot lo solicita en la PR. Consulta la [guía para contribuir a la documentación](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) para obtener una vista previa local (`mint dev` desde `docs/`)
 
 Las páginas de integración de este repositorio son la referencia principal para los usuarios finales. Desde tu página de integración, puedes enlazar a documentación complementaria en tu sitio para ofrecer detalles específicos del producto.
 
@@ -49,7 +49,7 @@ Cada página de integración debe cubrir lo siguiente, idealmente en este orden:
 </div>
 
 * **Muestra tanto Cloud como self-hosted.** Cloud suele usar HTTPS en el puerto `8443` y TCP nativo en `9440`. Self-hosted usa por defecto `8123` y `9000`
-* **Usa las admonitions de Docusaurus** (`:::note`, `:::warning`, `:::tip`) para las notas destacadas en lugar de párrafos en negrita
+* **Usa las notas destacadas de Mintlify** (`<Note>`, `<Warning>`, `<Tip>`) en lugar de párrafos en negrita
 * **Enlaza a la documentación para ampliar información.** Enlaza a la documentación existente sobre tipos de datos, formatos, JDBC, ClickPipes y temas similares en lugar de volver a explicarlos
 * **Sin marketing.** Las páginas de integración aquí son documentación de referencia técnica. El contenido promocional debe ir en tu sitio; podemos enlazarlo desde el directorio de socios
 
@@ -57,10 +57,17 @@ Cada página de integración debe cubrir lo siguiente, idealmente en este orden:
   ## Plantilla para copiar y pegar
 </div>
 
-Completa las secciones entre corchetes, guárdalo como `/docs/integrations/<category>/<your-integration>/index.md` y abre una PR.
+Completa las secciones entre corchetes, guárdalo como `docs/integrations/<category>/<your-integration>/index.mdx` y abre una PR.
 
-```markdown
-# [Your product] and ClickHouse
+```mdx
+---
+title: '[Your product] and ClickHouse'
+sidebarTitle: '[Your product]'
+slug: /integrations/[your-product]
+description: '[One sentence: what the integration does.]'
+doc_type: 'guide'
+keywords: ['[your product]', 'integration']
+---
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]

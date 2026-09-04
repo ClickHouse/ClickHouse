@@ -11,7 +11,7 @@ namespace DB
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark,
     bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, Columns & res_columns)
+    MutableColumns & res_columns)
 try
 {
     init();
@@ -28,14 +28,6 @@ try
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-
-        if (rows_to_read <= rows_offset)
-        {
-            rows_offset -= rows_to_read;
-            ++from_mark;
-            continue;
-        }
-        rows_to_read -= rows_offset;
 
         deserialize_binary_bulk_state_map.clear();
         deserialize_binary_bulk_state_map_for_subcolumns.clear();
@@ -68,7 +60,7 @@ try
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
             readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
+            readData(pos, *res_columns[pos], rows_to_read, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
         }
 
         /// If we have subcolumns and substreams marks, we read subcolumns separately, because we want to
@@ -87,23 +79,13 @@ try
                     if (!res_columns[pos])
                         continue;
 
-                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+                    readData(pos, *res_columns[pos], rows_to_read, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
-
-                /// Before dropping the substreams cache, verify the reference counts of the columns
-                /// shared with the result columns; see the comment near the same check in
-                /// MergeTreeReaderWide::readRows.
-                validateColumnsOwnership(res_columns, nullptr, nullptr, &substreams_cache, &deserialize_states_caches);
             }
         }
 
-        /// The same check for the full-column reads of this granule; see the comment near the same
-        /// check in MergeTreeReaderWide::readRows.
-        validateColumnsOwnership(res_columns, &columns_cache, &columns_cache_for_subcolumns, nullptr, &deserialize_states_caches);
-
         ++from_mark;
         read_rows += rows_to_read;
-        rows_offset = 0;
     }
 
     next_mark = from_mark;
@@ -121,7 +103,7 @@ catch (...)
     }
     catch (Exception & e)
     {
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
     }
 
     throw;

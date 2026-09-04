@@ -434,6 +434,7 @@ try
             {
                 asked_password = true;
                 config().setBool("ask-password", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -447,6 +448,7 @@ try
                     config().setString("password", connection_parameters.password);
                 config().setBool("ask-password", false);
                 config().setBool("ask-password-2fa", true);
+                preserve_announced_endpoint_for_retry = true;
                 continue;
             }
 
@@ -547,6 +549,12 @@ void Client::login()
 
 void Client::connect()
 {
+    /// Only the immediate password or 2FA retry may reuse the previous announcement. Any later
+    /// reconnect is a separate attempt and must announce its endpoint, even if an earlier reconnect failed.
+    if (!preserve_announced_endpoint_for_retry)
+        announced_endpoint.clear();
+    preserve_announced_endpoint_for_retry = false;
+
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
@@ -747,13 +755,28 @@ void Client::connect()
                 const bool secure_auto_detected = secure_unspecified && candidate.security == Protocol::Secure::Enable;
 
                 if (is_interactive)
-                    output_stream << "Connecting to "
-                              << (!connection_parameters.default_database.empty()
-                                      ? "database " + connection_parameters.default_database + " at "
-                                      : "")
-                              << connection_parameters.host << ":" << connection_parameters.port
-                              << (secure_auto_detected ? " (secure)" : "")
-                              << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+                {
+                    const auto announcement = fmt::format(
+                        "Connecting to {}{}:{}{}{}.",
+                        connection_parameters.default_database.empty()
+                            ? ""
+                            : "database " + connection_parameters.default_database + " at ",
+                        connection_parameters.host,
+                        connection_parameters.port,
+                        secure_auto_detected ? " (secure)" : "",
+                        connection_parameters.user.empty() ? "" : " as user " + connection_parameters.user);
+
+                    /// The same endpoint can be attempted more than once before the connection is
+                    /// established: a server that requires a password rejects the first attempt, and the
+                    /// client prompts for the password and attempts the very same endpoint again. Repeating
+                    /// the announcement tells the user nothing and reads as if the client had connected
+                    /// twice, so announce an endpoint only when it differs from the one announced last.
+                    if (announcement != announced_endpoint)
+                    {
+                        announced_endpoint = announcement;
+                        output_stream << announcement << std::endl;
+                    }
+                }
 
                 try
                 {

@@ -16,8 +16,8 @@ doc_type: 'guide'
 ClickHouse server se puede configurar con archivos de configuración en sintaxis XML o YAML.
 En la mayoría de los tipos de instalación, ClickHouse server se ejecuta con `/etc/clickhouse-server/config.xml` como archivo de configuración predeterminado, pero también es posible especificar manualmente la ubicación del archivo de configuración al iniciar el servidor mediante la opción de línea de comandos `--config-file` o `-C`.
 Se pueden colocar archivos de configuración adicionales en el directorio `config.d/`, relativo al archivo de configuración principal; por ejemplo, en el directorio `/etc/clickhouse-server/config.d/`.
-Los archivos de este directorio y la configuración principal se fusionan en una etapa de preprocesamiento antes de que la configuración se aplique en ClickHouse server.
-Los archivos de configuración se fusionan en orden alfabético.
+Los archivos de este directorio y la configuración principal se combinan en una etapa de preprocesamiento antes de que la configuración se aplique en ClickHouse server.
+Los fragmentos de configuración se combinan en orden lexicográfico según sus rutas completas. Para los archivos del directorio estándar `config.d/`, esto equivale a ordenarlos por nombre de archivo. También se combina el directorio heredado `conf.d/`; dado que `conf.d` se ordena antes que `config.d`, todos sus fragmentos se procesan primero cuando existen ambos directorios.
 Para simplificar las actualizaciones y mejorar la modularidad, se recomienda mantener el archivo `config.xml` predeterminado sin modificar y colocar la personalización adicional en `config.d/`.
 La configuración de ClickHouse Keeper se encuentra en `/etc/clickhouse-keeper/keeper_config.xml`.
 Del mismo modo, los archivos de configuración adicionales de Keeper deben colocarse en `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -330,6 +330,7 @@ El archivo `config.xml` puede especificar una configuración independiente con a
 La configuración de usuarios puede dividirse en archivos independientes, de forma similar a `config.xml` y `config.d/`.
 El nombre del directorio se define como la opción `users_config` sin el sufijo `.xml`, concatenada con `.d`.
 El directorio `users.d` se usa de forma predeterminada, ya que `users_config` tiene como valor predeterminado `users.xml`.
+Los fragmentos de configuración de usuarios se combinan en orden lexicográfico según sus rutas completas. Para los archivos del directorio estándar `users.d/`, esto equivale a ordenarlos por nombre de archivo. El directorio heredado `conf.d/` también se combina; dado que `conf.d` se ordena antes que `users.d`, todos sus fragmentos se procesan primero cuando existen ambos directorios.
 
 Tenga en cuenta que los archivos de configuración primero se [combinan](#merging) teniendo en cuenta la configuración, y después se procesan las inclusiones.
 

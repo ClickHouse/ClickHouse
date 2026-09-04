@@ -650,6 +650,16 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 
     auto e1 = getLogEntry("helloworld", 5555);
     changelog.write_at(7, e1);
+
+    /// writeAt must unlink superseded segments before the rewrite can be appended/acked (#112101).
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
+
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 7);
     EXPECT_EQ(changelog.start_index(), 1);
@@ -657,15 +667,6 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
     waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
 
     DB::KeeperLogStore changelog_read(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},

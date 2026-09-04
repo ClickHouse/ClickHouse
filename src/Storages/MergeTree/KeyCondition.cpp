@@ -30,6 +30,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -68,6 +69,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -1132,6 +1134,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
+    /// An inversion may only be pushed onto a node whose negation equals its two-valued complement.
+    /// `NOT NULL` is `NULL`, so absorb the inversion at an all-NULL node. That substitutes the
+    /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
+    if (need_inversion && boolean_context
+        && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
+        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
+
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
@@ -1405,10 +1414,16 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             && action.node->children.size() >= 2
             && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
+            /// A curve is only usable here through its key column position, so a curve that is
+            /// an intermediate value of the key expression rather than a key column is skipped.
+            auto it = key_columns.find(action.node->result_name);
+            if (it == key_columns.end())
+                continue;
+
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
             curve.type = space_filling_curve_name_to_type.at(curve.function_name);
-            curve.key_column_pos = key_columns.at(action.node->result_name);
+            curve.key_column_pos = it->second;
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -1454,7 +1469,8 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
-    bool skip_analysis_)
+    bool skip_analysis_,
+    bool require_ready_sets_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1479,7 +1495,10 @@ KeyCondition::KeyCondition(
         return;
     }
 
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
+    auto info = BuildInfo {
+        .key_expr = key_expr_,
+        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -1657,7 +1676,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+             || !canBeAccurateCastOrNullTarget(in_argument_type))
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
@@ -2160,7 +2180,10 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in the cast below.
+        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+            || !canBeAccurateCastOrNullTarget(probe_type))
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2572,7 +2595,9 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in `castColumnAccurateOrNull` below.
+        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
@@ -2676,6 +2701,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
+        return false;
+
+    /// `buildOrderedSetInplace` below executes the subquery and consumes its plan. `get()` is non-null
+    /// only for an already-built set, same check as `tryRewriteInTruthyCondition` above.
+    if (info.require_ready_sets && !future_set->get())
         return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
@@ -3700,6 +3730,46 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a
+        /// 3-argument function call `like(col, pattern, escape_char)`. Fold the escape
+        /// character into the pattern and dispatch through the existing 2-argument handler.
+        /// `ilike`/`notILike` are not in `atom_map` and were already rejected above.
+        Field rewritten_like_pattern;
+        DataTypePtr rewritten_like_pattern_type;
+        bool rewritten_like = false;
+        if (num_args == 3 && (func_name == "like" || func_name == "notLike"))
+        {
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (func.getArgumentAt(1).tryGetConstant(pattern_field, pattern_type)
+                && func.getArgumentAt(2).tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`
+                /// so a query with an invalid ESCAPE byte fails at planning time even if a
+                /// downstream optimization would otherwise drop the original predicate.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        func_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                rewritten_like_pattern = Field(std::move(rewritten));
+                rewritten_like_pattern_type = pattern_type;
+                rewritten_like = true;
+                num_args = 2;
+            }
+
+            if (!rewritten_like)
+                return false;
+        }
+
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
@@ -3849,7 +3919,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             /// Looking for func(key, const) or func(const, key).
             size_t const_arg_pos = 0;
-            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            if (rewritten_like)
+            {
+                /// `like(col, pattern, escape)` rewritten to `like(col, rewritten_pattern)`
+                /// above: the key is at position 0, the rewritten pattern is the constant.
+                const_value = rewritten_like_pattern;
+                const_type = rewritten_like_pattern_type;
+                const_arg_pos = 1;
+            }
+            else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
                 const_arg_pos = 0;
@@ -4152,6 +4230,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.key_columns.push_back(key_column_num);
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+
+        /// Outside an `Object` the key side carries the `UInt64` form of a boolean that `IColumn::get`
+        /// produces. `Field` comparison inside a container reads the tag before the value, so a
+        /// `Bool`-tagged element would order against the whole key domain, not against the booleans it holds.
+        normalizeBoolFields(const_value);
 
         return atom_it->second(out, const_value);
     }
@@ -6608,6 +6691,15 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 {
                     continue;
                 }
+
+                /// Sort and deduplicate the probe hashes once, here, instead of leaving that to every
+                /// lookup on every granule/row group: a filter can then intersect them with its own
+                /// sorted value set in one merge pass (see the Parquet `DictionaryLookup`), and the
+                /// duplicates that an `IN` set can produce - different values whose hashes collide, or
+                /// a tuple element repeated across set rows - are probed once instead of many times.
+                std::sort(hashes_for_column.begin(), hashes_for_column.end());
+                hashes_for_column.erase(
+                    std::unique(hashes_for_column.begin(), hashes_for_column.end()), hashes_for_column.end());
 
                 hashes.emplace_back(hashes_for_column);
 

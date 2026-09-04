@@ -86,11 +86,15 @@ engine = create_engine(
 
 이 모드에서는 바인딩된 모든 값이 ClickHouse와 호환되는 SQLAlchemy 타입이어야 합니다. 지원되는 `IN` 목록은 타입이 지정된 ClickHouse `Array` 매개변수로 변환됩니다. 컴파일러는 호환되는 타입을 추론할 수 없거나 바인딩을 안전하게 처리할 수 없는 경우 `CompileError`를 발생시킵니다.
 
+바인딩 이름은 ClickHouse ASCII BareWord 이름이어야 합니다. 핵심 드라이버가 원시 바이너리 쿼리 매개변수용으로 예약하므로 `$`로 시작하고 끝나는 이름은 거부됩니다.
+
 <div id="sqlalchemy-core-queries">
-  ## 핵심 쿼리
+  ## Core 쿼리
 </div>
 
-이 방언은 조인, 필터, 정렬, LIMIT 및 OFFSET, `DISTINCT`를 포함한 SQLAlchemy Core `SELECT` 쿼리를 지원합니다.
+이 방언은 조인, 필터, 정렬, LIMIT 및 OFFSET, `DISTINCT`, 복합 SELECT를 포함한 SQLAlchemy Core `SELECT` 쿼리를 지원합니다.
+
+SQLAlchemy `union()`, `intersect()`, `except_()`는 ClickHouse `UNION DISTINCT`, `INTERSECT DISTINCT`, `EXCEPT DISTINCT`로 컴파일됩니다. 이에 대응하는 `union_all()`, `intersect_all()`, `except_all()`은 해당 `ALL` 연산자로 컴파일됩니다. 이 명시적 매핑은 ClickHouse 집합 연산의 기본값과 관계없이 SQLAlchemy의 중복 처리 의미를 유지합니다.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### 리터럴 렌더링
+</div>
+
+SQLAlchemy가 `literal_binds` 또는 `literal_execute`를 통해 바인딩된 값을 인라인으로 삽입하면, 방언은 일반 String 타입과 ClickHouse 타입에 ClickHouse 인용 규칙을 사용합니다. 이는 `TypeDecorator` 래퍼와 `with_variant()` 선택에도 적용됩니다. 다른 바인딩된 매개변수가 남아 있어도 문자열 값의 퍼센트 기호와 백슬래시는 유지됩니다.
 
 <div id="sqlalchemy-json-subcolumns">
   ### JSON 서브컬럼
@@ -199,6 +209,20 @@ ClickHouse `Select` 메서드는 다음과 같습니다:
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                     |
 | `.ch_join(...)`                          | `strictness`, `distribution`, `using`, `cross` 옵션을 지원하는 ClickHouse 조인 |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                     |
+
+SQLAlchemy의 `Select.with_hint()`는 테이블 힌트 API입니다. ClickHouse 방언은 테이블 힌트를 렌더링하지 않습니다. 적용되는 와일드카드 또는 `clickhousedb` 힌트는 `SAWarning`을 발생시키며 생성된 SQL은 변경되지 않습니다. 해당 ClickHouse 절에는 `final()`, `sample()`, `prewhere()` 또는 `limit_by()`를 사용하십시오.
+
+`Select.with_statement_hint()`는 원시 후행 지시문 API입니다. ClickHouse 전용 유효성 검사 없이 제공된 텍스트를 `SELECT` 끝에 추가합니다. `SETTINGS max_threads=1`과 같은 신뢰할 수 있는 정적 SQL에 계속 사용할 수 있습니다:
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+ClickHouse 설정에는 드라이버가 SQL 텍스트와 별도로 설정을 처리할 수 있도록 실행 옵션을 사용하는 것이 좋습니다:
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 예를 들어, ClickHouse `GLOBAL ANY LEFT JOIN`은 사용자 정의 `FromClause`를 중첩하지 않고 체이닝할 수 있습니다:
 
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 리플렉션된 컬럼에는 `DEFAULT` 표현식용 `server_default`와, 있는 경우 `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized`, `clickhouse_alias` 같은 방언별 속성이 포함됩니다.
+
+`DEFAULT`, `MATERIALIZED`, `ALIAS`, `TTL` 절의 문자열 값에는 ClickHouse 문자열 이스케이프가 사용됩니다. Alembic에서 생성된 주석을 포함하여 테이블, 딕셔너리, 컬럼 주석에도 동일한 이스케이프가 적용됩니다.
 
 `order_by`, `partition_by`, `primary_key`, `sample_by`, `ttl` 등의 MergeTree 키 인수는 일반 문자열은 물론 SQLAlchemy 컬럼과 SQL 표현식도 받을 수 있습니다.
 

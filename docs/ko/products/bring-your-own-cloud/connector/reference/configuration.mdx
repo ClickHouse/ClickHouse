@@ -1,0 +1,294 @@
+---
+title: '구성 참고'
+sidebarTitle: '구성 참고'
+description: '모든 ClickHouse Connector 구성 키: 기본값과 함께 제공되는 VM config.yaml 및 Helm 차트 values'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration', 'reference']
+doc_type: 'reference'
+---
+
+이 페이지에서는 필요할 수 있는 모든 구성 키의 기본값과 의미를 설명합니다. 먼저 VM 설정 파일을, 이어서 Helm 차트 values를 다룹니다. 작업별 안내는 [구성 가이드](/ko/products/bring-your-own-cloud/connector/configuration)를 참조하십시오.
+
+<div id="vm-configuration-file">
+  ## VM 설정 파일
+</div>
+
+Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/config.yaml`을 읽습니다. `--force`를 지정하지 않으면 다시 실행해도 이 파일은 유지됩니다. 파일에서 생략된 키는 아래에 있는 컴파일된 기본값으로 폴백됩니다. 자격 증명은 이 파일에 저장되지 않습니다.
+
+<div id="vm-top-level">
+  ### 최상위 키
+</div>
+
+| 키                | 기본값         | 의미                                                                                 |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------- |
+| `pcm_infra_uuid` | `init`에서 생성 | 이 커넥터 배포의 고유 식별자로, 모든 upstream 요청에 포함됩니다. `--force`를 사용해 다시 실행해도 유지됩니다. 수정하지 마십시오. |
+| `cloud`          | `init`에서 감지 | 이 호스트의 클라우드 제공업체 레이블입니다. 필수 항목이며, 비어 있으면 데몬이 시작되지 않습니다.                            |
+| `region`         | `init`에서 감지 | 이 호스트의 리전 레이블입니다. 필수 항목이며, 비어 있으면 데몬이 시작되지 않습니다.                                   |
+| `api`            |             | upstream API 연결 블록입니다. [api](#vm-api)를 참조하십시오.                                     |
+| `instances`      | `{}`        | 이름별 ClickHouse 인스턴스 맵입니다. [instances](#vm-instances)를 참조하십시오.                      |
+| `scraper`        |             | 스크레이퍼 데몬 블록입니다. [scraper](#vm-scraper)를 참조하십시오.                                    |
+| `troubleshooter` |             | 문제 해결 도구 데몬 블록입니다. [troubleshooter](#vm-troubleshooter)를 참조하십시오.                   |
+| `observability`  |             | 공유 로깅 및 포트 블록입니다. [observability](#vm-observability)를 참조하십시오.                      |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| 키                         | 기본값                                      | 의미                                                                |
+| ------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
+| `api.endpoint`            | 등록 번들에서 가져옴                              | 조직의 커넥터 API 엔드포인트, `https://<subdomain>.<connector domain>`.      |
+| `api.access_key_file`     | `/etc/clicklink/access-key` (`init`이 생성) | HMAC 액세스 키가 저장된 파일(모드 0600).                                      |
+| `api.secret_key_file`     | `/etc/clicklink/secret-key` (`init`이 생성) | HMAC 시크릿 키가 저장된 파일(모드 0600).                                      |
+| `api.tls.enabled`         | `true`                                   | API 연결 시 mTLS 클라이언트 인증서를 제시합니다.                                   |
+| `api.tls.cert_file`       | `/etc/clicklink/tls/client.crt`          | mTLS 클라이언트 리프 인증서이며, 갱신 시 자동으로 재작성됩니다.                            |
+| `api.tls.key_file`        | `/etc/clicklink/tls/client.key`          | mTLS 클라이언트 프라이빗 키.                                                |
+| `api.tls.ca_file`         | `/etc/clicklink/tls/ca.crt`              | 서버 검증을 위해 시스템 루트에 추가되는 추가 CA 체인입니다. `init`이 등록 번들의 체인을 여기에 설치합니다. |
+| `api.retry.max_retries`   | `5`                                      | API 요청당 재시도 횟수.                                                   |
+| `api.retry.initial_delay` | `1s`                                     | 첫 재시도 백오프 지연 시간.                                                  |
+| `api.retry.max_delay`     | `30s`                                    | 백오프 최대 지연 시간.                                                     |
+| `api.retry.jitter_factor` | `0.25`                                   | 백오프 지연 시간에 적용되는 무작위 지터.                                           |
+
+<div id="vm-instances">
+  ### instances
+</div>
+
+`instances.<name>` 아래의 각 항목은 ClickHouse 네이티브 프로토콜 대상 하나를 설명합니다.
+
+| 키                | 기본값       | 의미                                                                         |
+| ---------------- | --------- | -------------------------------------------------------------------------- |
+| `host`           |           | ClickHouse 네이티브 리스너의 호스트명 또는 IP 주소입니다.                                     |
+| `port`           |           | 네이티브 프로토콜 포트입니다(TLS 사용 시 일반적으로 `9440`, 평문 사용 시 `9000`).                    |
+| `database`       |           | 커넥터 세션에서 기본으로 사용하는 데이터베이스입니다.                                              |
+| `secure`         | `false`   | 네이티브 연결에 TLS를 사용합니다.                                                       |
+| `max_open_conns` | unset     | 이 인스턴스에 열 수 있는 연결 수의 상한입니다.                                                |
+| `max_idle_conns` | unset     | 이 인스턴스에 유지할 수 있는 유휴 풀 연결 수의 상한입니다.                                         |
+| `namespace`      |           | 인스턴스의 Kubernetes 네임스페이스이며, troubleshooter의 Kubernetes 읽기 범위를 지정하는 데 사용됩니다. |
+| `cluster`        | `default` | 분산 쿼리에 사용할 ClickHouse 클러스터 이름입니다.                                          |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| 키                                    | 기본값                             | 의미                                                                                                                                                                           |
+| ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraper.enabled`                    | `false` (`init`가 `true`를 기록함)   | scraper 데몬을 실행합니다.                                                                                                                                                           |
+| `scraper.labels.platform`            |                                 | 내보내는 모든 메트릭에 추가되는 레이블입니다. scraper가 활성화된 경우 필수입니다.                                                                                                                            |
+| `scraper.labels.env`                 |                                 | 환경 레이블입니다. 예: `production`입니다. 필수입니다.                                                                                                                                        |
+| `scraper.labels.region`              |                                 | 리전 레이블입니다. 필수입니다.                                                                                                                                                            |
+| `scraper.scrape.interval`            | `2m`                            | 각 인스턴스를 스크레이프하는 주기입니다.                                                                                                                                                       |
+| `scraper.scrape.timeout`             | `30s`                           | 스크레이프별 쿼리 제한 시간입니다.                                                                                                                                                          |
+| `scraper.scrape.tables`              | 아래 참조                           | 인스턴스별로 스크레이프하는 시스템 테이블입니다. 기본값은 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`이며, 기본적으로 원시 SQL 텍스트가 외부로 유출되지 않도록 `query_log`는 의도적으로 제외됩니다. |
+| `scraper.buffer.path`                | `/var/lib/clicklink/buffer`     | API 엔드포인트에 연결할 수 없을 때 최소 한 번 이상 전송을 보장하기 위한 디스크 기반 스풀입니다.                                                                                                                 |
+| `scraper.buffer.retention`           | `168h`                          | 스풀 데이터의 최대 보관 기간입니다.                                                                                                                                                         |
+| `scraper.buffer.max_size_mb`         | `1024`                          | 스풀 크기 제한(MB)입니다.                                                                                                                                                             |
+| `scraper.sender.bandwidth_limit_mb`  | `1.0`                           | 업로드 속도 제한(MB/s)입니다.                                                                                                                                                          |
+| `scraper.observability.health_port`  | `8082`                          | scraper 상태 확인 엔드포인트 포트입니다.                                                                                                                                                |
+| `scraper.observability.metrics_port` | `9092`                          | scraper 메트릭 포트입니다.                                                                                                                                                           |
+| `scraper.access_directory`           | `/etc/clicklink/access/scraper` | scraper의 인스턴스별 액세스 번들 루트 디렉터리입니다.                                                                                                                                            |
+
+<div id="vm-troubleshooter">
+  ### troubleshooter
+</div>
+
+| 키                                                  | 기본값                                                  | 의미                                                                                     |
+| -------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                           | `false` (`init`가 `true`를 기록함)                        | troubleshooter 데몬을 실행합니다.                                                              |
+| `troubleshooter.poll_interval`                     | `5s`                                                 | 세션 상태 폴링 주기입니다.                                                                        |
+| `troubleshooter.command_timeout`                   | `60s`                                                | 명령별 실행 타임아웃입니다.                                                                     |
+| `troubleshooter.session_timeout`                   | `4h`                                                 | 기본 지원 세션 기간입니다.                                                                        |
+| `troubleshooter.session_file_path`                 | `/var/lib/clicklink/session.json`                    | `clicklink clctl troubleshoot session` 명령과 공유하는 세션 상태 파일입니다.                           |
+| `troubleshooter.access_directory`                  | `/etc/clicklink/access/troubleshooter`               | troubleshooter의 인스턴스별 액세스 번들 루트 디렉터리입니다.                                               |
+| `troubleshooter.allowed_tables`                    | [기본 테이블 허용 목록](#default-table-allowlist) 참조          | troubleshooter가 `SELECT`할 수 있는 시스템 테이블입니다.                                             |
+| `troubleshooter.max_open_conns`                    | `5`                                                  | 열려 있는 ClickHouse 연결 수의 상한입니다.                                                          |
+| `troubleshooter.max_idle_conns`                    | `5`                                                  | 유휴 연결 풀의 연결 수 상한입니다.                                                                   |
+| `troubleshooter.redaction.workers`                 | `4`                                                  | 병렬 마스킹 worker 수입니다.                                                                    |
+| `troubleshooter.redaction.patterns_file`           | `/etc/clicklink/redaction-patterns.yaml`             | 고객이 편집할 수 있는 마스킹 패턴입니다. 파일이 존재하지만 유효하지 않으면 데몬이 시작되지 않습니다.                              |
+| `troubleshooter.redaction.metrics_per_pattern`     | `false`                                              | 패턴별 일치 횟수 메트릭을 내보냅니다.                                                                  |
+| `troubleshooter.redaction.metrics_per_pattern_cap` | `50`                                                 | 패턴별 메트릭에 포함할 서로 다른 패턴 이름 수의 상한입니다.                                                     |
+| `troubleshooter.audit_log.path`                    | `/var/log/clicklink/troubleshoot-audit.log`          | 허용되거나 차단된 모든 명령을 기록하는 추가 전용 NDJSON 감사 로그입니다.                                           |
+| `troubleshooter.audit_log.max_size_mb`             | `128`                                                | 활성 로그 파일이 이 크기를 초과하면 순환합니다.                                                            |
+| `troubleshooter.audit_log.max_files`               | `5`                                                  | 유지할 순환 로그 파일 수입니다.                                                                     |
+| `troubleshooter.audit_log.max_age`                 | `168h`                                               | 이보다 오래된 순환 로그 파일은 제거됩니다.                                                               |
+| `troubleshooter.gateway.enabled`                   | `false`                                              | 세션 Gateway(OIDC를 통한 지원 세션)를 제공합니다.                                                     |
+| `troubleshooter.gateway.listen_addr`               | `":8443"` (`init`가 기록함)                              | Gateway 수신 주소입니다.                                                                      |
+| `troubleshooter.gateway.audience`                  | `clicklink-clctl` (`init`가 기록함)                      | 연산자 토큰에 필요한 audience 클레임입니다.                                                           |
+| `troubleshooter.gateway.required_hosted_domain`    | `""`                                                 | 선택적 호스팅 도메인 클레임 검증 설정입니다. 도메인 외부의 토큰은 허용 목록을 조회하기 전에 거부됩니다.                            |
+| `troubleshooter.gateway.allowed_operators_file`    | `/etc/clicklink/allowed-operators.txt` (`init`가 기록함) | 줄바꿈으로 구분된 연산자 이메일 허용 목록입니다. 비어 있으면 모두 차단됩니다.                                           |
+| `troubleshooter.gateway.rate_limit_per_minute`     | `0` (비활성화됨)                                          | 연산자별 요청 속도 제한입니다.                                                                      |
+| `troubleshooter.gateway.handler_timeout`           | 설정되지 않음                                              | 서버 측 요청 타임아웃입니다.                                                                    |
+| `troubleshooter.gateway.jwks_uri`                  | `""`                                                 | Google 이외 IdP(Identity Provider)를 위한 JWKS 엔드포인트입니다. 비어 있으면 Google의 엔드포인트를 사용합니다. |
+| `troubleshooter.gateway.issuer`                    | `""`                                                 | `jwks_uri`가 설정된 경우 고정할 issuer 클레임입니다.                                                  |
+| `troubleshooter.gateway.tls.enabled`               | `false` (지원 세션이 활성화된 VM에서는 `init`가 `true`를 기록함)      | 인증서가 없을 때 데몬이 생성하는 자체 서명 인증서를 사용하여 TLS로 Gateway를 제공합니다. 연산자는 해당 인증서의 지문을 고정합니다.        |
+| `troubleshooter.gateway.tls.cert_file`             | `/var/lib/clicklink/gateway/tls/server.crt`          | Gateway 제공용 인증서입니다.                                                                    |
+| `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`          | Gateway 제공용 키입니다.                                                                      |
+| `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init`가 호스트를 미리 채움)                            | 인증서가 없을 때 데몬이 자체 생성하는 자체 서명 인증서의 SAN입니다. IP 주소로 파싱되는 항목은 IP SAN이 됩니다.                  |
+
+<div id="vm-observability">
+  ### 관측성
+</div>
+
+| 키                            | 기본값    | 의미                        |
+| ---------------------------- | ------ | ------------------------- |
+| `observability.enabled`      | `true` | 상태 확인 및 메트릭 엔드포인트를 제공합니다. |
+| `observability.log_level`    | `info` | 로그 레벨입니다.                 |
+| `observability.health_port`  | `8080` | 공용 상태 확인 포트의 기준값입니다.      |
+| `observability.metrics_port` | `9090` | 공용 메트릭 포트의 기준값입니다.        |
+
+구성 요소별 `observability` 블록은 이 기본 설정을 덮어씁니다. scraper는 `8082`/`9092`를 사용하고, troubleshooter는 `8084`/`9094`를 사용하며, gateway는 활성화된 경우 `8443`에서 수신합니다.
+
+<div id="default-table-allowlist">
+  ### 기본 테이블 허용 목록
+</div>
+
+troubleshooter의 기본 `allowed_tables` Set은 차트의 기본 `troubleshooter.allowedTables`와 같습니다:
+
+```text
+system.build_options    system.clusters       system.columns
+system.databases        system.tables         system.parts
+system.parts_columns    system.parts_summary  system.detached_parts
+system.processes        system.merges         system.mutations
+system.replicas         system.replication_queue
+system.metrics          system.events         system.asynchronous_metrics
+system.disks            system.storage_policies
+system.settings         system.settings_profiles
+system.settings_profile_elements
+system.functions        system.formats        system.table_engines
+system.users            system.roles          system.grants
+```
+
+<div id="helm-chart-values">
+  ## Helm 차트 값
+</div>
+
+Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 구성됩니다. `clicklink clctl init`는 아래의 모든 항목이 채워진 `clicklink-values.yaml` 오버레이를 준비하며, `--force`를 지정하지 않는 한 다시 실행해도 이를 유지합니다. 표에는 차트의 기본값이 나열됩니다. 표준 워크로드 설정(`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`, `imagePullSecrets`)은 각 컴포넌트에 빈 기본값으로 제공되므로 표마다 반복해서 표시하지 않습니다.
+
+<div id="helm-cluster">
+  ### cluster
+</div>
+
+| 키                      | 기본값                | 의미                                                            |
+| ---------------------- | ------------------ | ------------------------------------------------------------- |
+| `cluster.pcmInfraUuid` | `""` (`init`에서 채움) | 이 커넥터 배포의 고유 식별자입니다. 구성 요소가 하나라도 활성화된 경우 필수이며, 다시 실행해도 유지됩니다. |
+| `cluster.region`       | `""` (`init`에서 채움) | 리전 레이블입니다. 필수입니다.                                         |
+| `cluster.cloud`        | `""` (`init`에서 채움) | 클라우드 제공업체 레이블입니다. 필수입니다.                                      |
+
+<div id="helm-image">
+  ### image
+</div>
+
+| 키                  | 기본값                                                  | 의미                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image.repository` | 게시된 차트에 사전 설정됨                                    | Connector 이미지 리포지토리입니다. 게시된 차트는 공개 레지스트리 이미지(멀티 아키텍처, cosign 서명됨)를 가리킵니다. 경계 내 미러와 같이 재정의해야 할 때만 설정하십시오. 게시된 값은 `helm show values`로 확인할 수 있습니다. |
+| `image.tag`        | `""` (차트의 `appVersion`을 따르며, `init`은 CLI 버전을 고정함) | 이미지 태그입니다.                                                                                                                                         |
+| `image.pullPolicy` | `IfNotPresent`                                       | Kubernetes 이미지 가져오기 정책입니다.                                                                                                                         |
+
+<div id="vm-api">
+  ### api
+</div>
+
+| 키                 | 기본값               | 의미                                                                                                                                                 |
+| ----------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.endpoint`    | `""` (`init`이 설정) | 두 구성 요소에서 공유하는 조직 커넥터 API 엔드포인트입니다.                                                                                                                |
+| `api.tls.enabled` | `true`            | API 연결 시 mTLS 클라이언트 인증서를 제시합니다.                                                                                                                    |
+| `api.tls.caFile`  | `""` (시스템 루트)     | 서버 검증을 위해 시스템 루트에 추가할 CA입니다. 엔드포인트가 private CA 인증서를 제공하는 경우 `/etc/clicklink/secrets/mtls/ca.crt`로 설정하거나 `--api-private-ca` 옵션으로 `init`을 다시 실행하십시오. |
+
+<div id="helm-secrets">
+  ### 시크릿
+</div>
+
+차트는 사전에 생성된 시크릿을 사용하며, `init`는 설치 전에 이를 생성합니다.
+
+| 키                        | 기본값              | 의미                                                                                                                                                         |
+| ------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets.mtlsSecretName` | `clicklink-mtls` | mTLS 클라이언트 키, 인증서 및 CA 체인을 담는 `kubernetes.io/tls` 시크릿입니다.                                                                                                  |
+| `secrets.hmacSecretName` | `clicklink-hmac` | 요청 서명용 `access-key` 및 `secret-key`를 담는 Opaque 시크릿입니다.                                                                                                      |
+| `secrets.mtlsWriteback`  | `true`           | 데몬이 자동 갱신된 mTLS 리프를 mTLS 시크릿에 다시 기록하도록 합니다. 정확한 이름으로 지정된 이 시크릿 하나에 대해서만 구성 요소 ServiceAccount에 `update` 권한을 부여합니다. 이를 설정하지 않으면 갱신된 인증서를 영구적으로 저장할 위치가 없습니다. |
+
+<div id="vm-scraper">
+  ### scraper
+</div>
+
+| 키                                                                        | 기본값                          | 의미                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scraper.enabled`                                                        | `false` (`init`가 `true`를 기록) | scraper를 배포합니다.                                                                                                                                                                                        |
+| `scraper.replicaCount`                                                   | `1`                          | scraper 레플리카 수입니다.                                                                                                                                                                                     |
+| `scraper.logLevel`                                                       | `info`                       | 로그 레벨입니다.                                                                                                                                                                                              |
+| `scraper.ports.health`                                                   | `8082`                       | 상태 확인 엔드포인트 포트입니다.                                                                                                                                                                                     |
+| `scraper.ports.metrics`                                                  | `9092`                       | 메트릭 포트입니다.                                                                                                                                                                                             |
+| `scraper.instances`                                                      | `{}`                         | ClickHouse 인스턴스 맵입니다. VM [instances](#vm-instances) 필드와 동일한 형식을 사용합니다.                                                                                                                                 |
+| `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""`                         | 내보내는 모든 메트릭에 삽입되는 레이블입니다. scraper를 활성화하려면 세 가지를 모두 지정해야 하며, 그렇지 않으면 차트 렌더링 시 오류가 발생합니다.                                                                                                                |
+| `scraper.config`                                                         | `{}`                         | 위에 정의되지 않은 모든 `scraper` 구성 키를 그대로 전달합니다(스크레이프 인터벌, 버퍼, sender 등). VM [scraper](#vm-scraper) 블록과 동일한 스키마를 사용합니다.                                                                                        |
+| `scraper.bufferSizeLimit`                                                | `2Gi`                        | scraper 스크래치 볼륨의 최대 크기입니다. scraper는 영구 디스크 상태를 저장하지 않습니다.                                                                                                                                              |
+| `scraper.rbac.extraSecretNames`                                          | `[]`                         | scraper ServiceAccount가 `get`할 수 있는 추가 시크릿 이름입니다. 정확한 이름만 지정할 수 있습니다.                                                                                                                                  |
+| `scraper.accessBundles`                                                  | `{}`                         | 인스턴스 이름을 키로 하는 인스턴스별 액세스 번들입니다. 각 번들은 `secretName`과 `serviceAccountName`을 포함합니다. `/etc/clicklink/access/scraper/<instance>/`에 마운트되며, `clicklink clctl scraper access provision --target helm`으로 생성됩니다. |
+
+<div id="vm-troubleshooter">
+  ### troubleshooter
+</div>
+
+| 키                                               | 기본값                                         | 의미                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `troubleshooter.enabled`                        | `false` (`init`가 `true`를 기록함)               | troubleshooter(단일 레플리카 StatefulSet)를 배포합니다.                                                                                                              |
+| `troubleshooter.logLevel`                       | `info`                                      | 로그 레벨입니다.                                                                                                                                                |
+| `troubleshooter.ports.health`                   | `8084`                                      | 상태 확인 엔드포인트 포트입니다.                                                                                                                                       |
+| `troubleshooter.ports.metrics`                  | `9094`                                      | 메트릭 포트입니다.                                                                                                                                               |
+| `troubleshooter.instances`                      | `{}`                                        | `scraper.instances`와 동일한 구조의 ClickHouse 인스턴스 맵입니다.                                                                                                       |
+| `troubleshooter.sessionTimeout`                 | `4h`                                        | 기본 지원 세션 기간입니다.                                                                                                                                          |
+| `troubleshooter.allowedTables`                  | [기본 테이블 허용 목록](#default-table-allowlist)    | troubleshooter의 ClickHouse 사용자가 `SELECT`할 수 있는 테이블입니다. 오버레이에서 수정해야 하는 보안 검토 대상이며, 여기에 나열된 항목과 관계없이 명령 검증기에는 하드코딩된 거부 목록(`query_log`, `text_log`)이 적용됩니다. |
+| `troubleshooter.auditLog.path`                  | `/var/log/clicklink/troubleshoot-audit.log` | 감사 로그 위치입니다. 파드가 재스케줄링되어도 기록이 유지되도록 state 볼륨에 저장됩니다.                                                                                                     |
+| `troubleshooter.auditLog.maxSizeMb`             | `128`                                       | 이 크기를 초과하면 순환합니다.                                                                                                                                        |
+| `troubleshooter.auditLog.maxFiles`              | `5`                                         | 유지할 순환 파일 수입니다.                                                                                                                                          |
+| `troubleshooter.auditLog.maxAge`                | `168h`                                      | 이보다 오래된 순환 파일은 프루닝됩니다.                                                                                                                                   |
+| `troubleshooter.redaction.workers`              | `4`                                         | 병렬 민감 정보 마스킹 워커 수입니다.                                                                                                                                    |
+| `troubleshooter.redaction.patternsConfigMap`    | `""`                                        | `redaction-patterns.yaml` 키에 사용자 정의 패턴이 포함된 ConfigMap의 이름입니다. 차트는 이를 `/etc/clicklink/redaction-patterns.yaml`에 마운트합니다. 비어 있으면 기본 제공 패턴만 적용됩니다.           |
+| `troubleshooter.redaction.metricsPerPattern`    | `false`                                     | 패턴별 일치 횟수 Counter 메트릭을 내보냅니다.                                                                                                                            |
+| `troubleshooter.redaction.metricsPerPatternCap` | `50`                                        | 패턴별 메트릭에서 허용되는 고유 패턴 이름 수의 상한입니다.                                                                                                                        |
+| `troubleshooter.config`                         | `{}`                                        | 위에 정의되지 않은 `troubleshooter` 구성 키(폴링 주기, 명령 타임아웃, connection 상한 등)를 그대로 전달합니다.                                                                         |
+| `troubleshooter.rbac.extraSecretNames`          | `[]`                                        | troubleshooter ServiceAccount가 `get`할 수 있는 추가 시크릿 이름입니다. 정확한 이름만 지정할 수 있습니다.                                                                             |
+| `troubleshooter.accessBundles`                  | `{}`                                        | `scraper.accessBundles`와 동일한 구조의 인스턴스별 액세스 번들이며, `/etc/clicklink/access/troubleshooter/<instance>/`에 마운트됩니다.                                             |
+
+<div id="helm-persistence">
+  ### 영속성
+</div>
+
+| 키                          | 기본값               | 의미                                                                                     |
+| -------------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| `persistence.enabled`      | `true`            | PersistentVolumeClaim로 troubleshooter의 상태 디렉터리를 뒷받침하여 재시작 후에도 세션 상태와 감사 추적이 유지되도록 합니다. |
+| `persistence.storageClass` | `""` (클러스터 기본값)   | 클레임에 사용할 StorageClass입니다. `init`가 `--storage-class` 또는 감지된 기본 StorageClass에서 값을 설정합니다. |
+| `persistence.size`         | `5Gi`             | 클레임 크기입니다.                                                                             |
+| `persistence.accessModes`  | `[ReadWriteOnce]` | 클레임 액세스 모드입니다.                                                                         |
+
+<div id="helm-clctl-gateway">
+  ### clctl.gateway
+</div>
+
+[지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 위한 세션 gateway입니다.
+
+| 키                                                                | 기본값                    | 의미                                                                                                                                   |
+| ---------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `clctl.gateway.enabled`                                          | `false`                | troubleshooter 내에서 세션 gateway를 제공합니다.                                                                                                |
+| `clctl.gateway.listenAddr`                                       | `":8443"`              | 파드 로컬 수신 주소입니다.                                                                                                                      |
+| `clctl.gateway.port`                                             | `8443`                 | troubleshooter Service 및 인그레스를 통해 노출되는 컨테이너 포트이며, `listenAddr`의 포트와 일치합니다.                                                           |
+| `clctl.gateway.audience`                                         | `clicklink-clctl`      | 연산자 token에 필요한 audience 클레임입니다. 세션 클라이언트도 기본적으로 동일한 값을 사용하므로, 이 값을 변경할 때만 둘을 함께 조정하면 됩니다.                                       |
+| `clctl.gateway.requiredHostedDomain`                             | `""`                   | 허용 목록 조회 전에 워크스페이스 외부 token을 거부하기 위해 gateway가 요구하는 선택적 hosted-domain 클레임입니다.                                                     |
+| `clctl.gateway.allowedOperators`                                 | `[]` (닫힘)              | ConfigMap으로 렌더링되는 연산자 이메일 허용 목록입니다. 교체하려면 values를 변경한 후 `helm upgrade`를 실행합니다.                                              |
+| `clctl.gateway.jwksUri`                                          | `""`                   | Google 이외 IdP(Identity Provider)를 위한 JWKS 엔드포인트 재정의입니다. 비어 있으면 Google의 엔드포인트를 사용합니다.                                           |
+| `clctl.gateway.issuer`                                           | `""`                   | 고정할 issuer 클레임입니다. `jwksUri`를 설정하는 실제 배포에서는 필수입니다.                                                                                   |
+| `clctl.gateway.jwksEgressCIDRs`                                  | `[]`                   | 기본 거부 NetworkPolicy에서 JWKS 유효성 검사를 위해 gateway가 연결해야 하는 CIDR입니다. 비어 있으면 모든 token 검사가 차단됩니다.                                           |
+| `clctl.gateway.ingressFromSelector`                              | `{}`                   | gateway 포트에 대한 NetworkPolicy 인그레스 소스입니다. 비어 있으면 차트의 네임스페이스에 있는 모든 파드를 허용합니다. 인그레스를 사용할 때는 Ingress controller의 네임스페이스 레이블로 설정하십시오. |
+| `clctl.gateway.rateLimit.requestsPerMinute`                      | `30`                   | 연산자별 요청 속도 제한입니다.                                                                                                               |
+| `clctl.gateway.ingress.enabled`                                  | `false`                | gateway용 인그레스를 렌더링합니다. 비활성화하면 연산자는 `kubectl port-forward`로 gateway에 연결합니다. ingress controller나 cert-manager는 필요하지 않습니다.         |
+| `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | 표준 Ingress 필드입니다. `tls`는 `kubernetes.io/tls` 시크릿을 참조합니다.                                                                             |
+
+<div id="helm-networkpolicy">
+  ### networkPolicy
+</div>
+
+| 키                                     | 기본값     | 의미                                                                                                                                |
+| ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `networkPolicy.enabled`               | `true`  | 이그레스 허용 목록을 포함하는 기본 거부 NetworkPolicy를 생성합니다. 적용하려면 이를 지원하는 CNI가 필요합니다.                                                            |
+| `networkPolicy.allowEgressCIDRs`      | `[]`    | 커넥터 API 엔드포인트가 위치한 CIDR입니다. 이를 지원하는 CNI에서는 이 값을 설정하기 전까지 커넥터의 이그레스가 허용되지 않습니다.                                                 |
+| `networkPolicy.allowEgressPorts`      | `[443]` | `allowEgressCIDRs`에 대해 열어 둘 포트입니다. 엔드포인트가 기본 포트가 아닌 포트에서 수신 대기하는 경우 재정의하십시오.                                                   |
+| `networkPolicy.clickhouseNamespaces`  | `[]`    | `kubernetes.io/metadata.name` 레이블과 일치하는 ClickHouse 서비스의 네임스페이스입니다. 비어 있으면 클러스터 내 ClickHouse 접근은 허용되지 않습니다.                        |
+| `networkPolicy.metricsScrapeSelector` | `{}`    | 레이블을 사용해 메트릭 스크레이프 인그레스를 특정 Prometheus 네임스페이스로 제한합니다. 비어 있으면 차트의 네임스페이스에 있는 모든 파드에서 스크레이프를 허용합니다.                                 |
+| `networkPolicy.kubeletProbeCIDRs`     | `[]`    | 큐블릿 상태 probe 요청의 출발지 CIDR(노드 IP)입니다. 비어 있으면 대부분의 CNI에서 적용되는 큐블릿 예외와 동일하게 모든 출발지의 probe 인그레스를 허용합니다. 엄격한 기본 거부 환경에서는 명시적으로 설정하십시오. |
+| `networkPolicy.apiserverCIDRs`        | `[]`    | Kubernetes API server CIDR입니다. 비어 있으면 API server 이그레스 규칙이 생성되지 않으며, 관리형 Kubernetes에서는 이를 설정할 때까지 데몬이 첫 번째 token 요청에 실패합니다.        |

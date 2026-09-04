@@ -105,6 +105,8 @@ private:
     void forgetOutOfOrderBucketsOfInput(size_t input);
     /// Ids of the buckets smaller than `bucket` which still can be pushed after it.
     std::vector<Int32> getDelayedBucketsBefore(Int32 bucket) const;
+    /// Whether no input which can still send something is at `bucket` or before it.
+    bool everyLiveInputIsPastBucket(Int32 bucket);
     /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
     /// Push chunks from ready bucket if has one.

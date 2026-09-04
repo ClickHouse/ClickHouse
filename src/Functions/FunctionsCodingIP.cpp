@@ -1250,7 +1250,7 @@ SELECT MACNumToString(149809441867716) AS mac_address;
         )",
         R"(
 ┌─mac_address───────┐
-│ 88:00:11:22:33:44 │
+│ 88:40:3A:91:07:C4 │
 └───────────────────┘
         )"
     }
@@ -1445,7 +1445,7 @@ Interprets the input using big-endian byte ordering.
     FunctionDocumentation::Examples example_ipv4numtostring = {
     {
         "Usage example",
-        "IPv4NumToString(3232235521)",
+        "SELECT IPv4NumToString(3232235521)",
         "192.168.0.1"
     }
     };
@@ -1468,24 +1468,19 @@ similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the 
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
-FROM test.hits
+FROM VALUES('ClientIP UInt32',
+    (toUInt32(toIPv4('83.149.9.10'))), (toUInt32(toIPv4('83.149.9.11'))), (toUInt32(toIPv4('83.149.9.12'))),
+    (toUInt32(toIPv4('217.118.81.5'))), (toUInt32(toIPv4('217.118.81.6'))),
+    (toUInt32(toIPv4('213.87.129.1'))))
 GROUP BY k
-ORDER BY c DESC
-LIMIT 10
+ORDER BY c DESC, k
         )",
         R"(
-┌─k──────────────┬─────c─┐
-│ 83.149.9.xxx   │ 26238 │
-│ 217.118.81.xxx │ 26074 │
-│ 213.87.129.xxx │ 25481 │
-│ 83.149.8.xxx   │ 24984 │
-│ 217.118.83.xxx │ 22797 │
-│ 78.25.120.xxx  │ 22354 │
-│ 213.87.131.xxx │ 21285 │
-│ 78.25.121.xxx  │ 20887 │
-│ 188.162.65.xxx │ 19694 │
-│ 83.149.48.xxx  │ 17406 │
-└────────────────┴───────┘
+┌─k──────────────┬─c─┐
+│ 83.149.9.xxx   │ 3 │
+│ 217.118.81.xxx │ 2 │
+│ 213.87.129.xxx │ 1 │
+└────────────────┴───┘
         )"
     }
     };
@@ -1508,7 +1503,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation::Examples examples_ipv4stringtonum = {
     {
         "Usage example",
-        "IPv4StringToNum('192.168.0.1')",
+        "SELECT IPv4StringToNum('192.168.0.1')",
         "3232235521"
     }
     };
@@ -1600,55 +1595,51 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
      {
          "IPv6 with hits analysis",
          R"(
+CREATE TABLE hits_all (EventDate Date, ClientIP6 FixedString(16)) ENGINE = Memory;
+
+INSERT INTO hits_all SELECT today(), IPv6StringToNum(addr) FROM VALUES('addr String',
+    ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'), ('2a02:2168:aaa:bbbb::2'),
+    ('2a02:6b8:0:fff::ff'), ('2a02:6b8:0:fff::ff'),
+    ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'), ('::ffff:94.26.111.111'),
+    ('::ffff:37.143.222.4'));
+
+-- The addresses that are not an IPv4 address mapped into the IPv6 space.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today() AND substring(ClientIP6, 1, 12) != unhex('00000000000000000000FFFF')
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
          )",
          R"(
-┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
-│ 2a02:2168:aaa:bbbb::2                   │ 24695 │
-│ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
-│ 2a02:6b8:0:fff::ff                      │ 16389 │
-│ 2a01:4f8:111:6666::2                    │ 16016 │
-│ 2a02:2168:888:222::1                    │ 15896 │
-│ 2a01:7e00::ffff:ffff:ffff:222           │ 14774 │
-│ 2a02:8109:eee:ee:eeee:eeee:eeee:eeee    │ 14443 │
-│ 2a02:810b:8888:888:8888:8888:8888:8888  │ 14345 │
-│ 2a02:6b8:0:444:4444:4444:4444:4444      │ 14279 │
-│ 2a01:7e00::ffff:ffff:ffff:ffff          │ 13880 │
-└─────────────────────────────────────────┴───────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+└───────────────────────┴───┘
         )"
     },
     {
         "IPv6 mapped IPv4 addresses",
         R"(
+-- Without the filter, the mapped IPv4 addresses show up as well.
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
 FROM hits_all
 WHERE EventDate = today()
 GROUP BY k
-ORDER BY c DESC
+ORDER BY c DESC, k
 LIMIT 10
         )",
         R"(
-┌─IPv6NumToString(ClientIP6)─┬──────c─┐
-│ ::ffff:94.26.111.111       │ 747440 │
-│ ::ffff:37.143.222.4        │ 529483 │
-│ ::ffff:5.166.111.99        │ 317707 │
-│ ::ffff:46.38.11.77         │ 263086 │
-│ ::ffff:79.105.111.111      │ 186611 │
-│ ::ffff:93.92.111.88        │ 176773 │
-│ ::ffff:84.53.111.33        │ 158709 │
-│ ::ffff:217.118.11.22       │ 154004 │
-│ ::ffff:217.118.11.33       │ 148449 │
-│ ::ffff:217.118.11.44       │ 148243 │
-└────────────────────────────┴────────┘
+┌─IPv6NumToString(k)────┬─c─┐
+│ ::ffff:94.26.111.111  │ 4 │
+│ 2a02:2168:aaa:bbbb::2 │ 3 │
+│ 2a02:6b8:0:fff::ff    │ 2 │
+│ ::ffff:37.143.222.4   │ 1 │
+└───────────────────────┴───┘
         )"
     }
     };
@@ -1676,11 +1667,10 @@ HEX can be uppercase or lowercase.
     {
         "Basic example",
         R"(
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
         )",
         R"(
 ┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
 │ 127.0.0.1  │ ::ffff:127.0.0.1                     │
 │ 1111::ffff │ 1111::ffff                           │
 └────────────┴──────────────────────────────────────┘
@@ -1742,7 +1732,7 @@ SELECT
         )",
         R"(
 ┌─valid───────┬─invalid─┐
-│ 2001:db8::1 │    ᴺᵁᴸᴸ │
+│ 2001:db8::1 │ ᴺᵁᴸᴸ    │
 └─────────────┴─────────┘
         )"
     }

@@ -7,8 +7,14 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/ReadBufferFromNuraftBuffer.h>
+#include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
+
+#include <IO/CompressionMethod.h>
+#include <IO/ReadHelpers.h>
+#include <IO/copyData.h>
 
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
@@ -37,8 +43,10 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace DB::CoordinationSetting
 {
@@ -272,6 +280,73 @@ private:
     std::atomic_bool armed{true};
 };
 
+/// Records, for every removeFile(), which directories held a live sync guard at that moment.
+/// Delegates to DiskLocal, so a genuine directory fsync still happens.
+class DirSyncCountingDisk : public DB::DiskLocal
+{
+public:
+    DirSyncCountingDisk(const std::string & disk_name, const std::string & disk_path)
+        : DB::DiskLocal(disk_name, disk_path)
+    {
+    }
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        auto inner = DB::DiskLocal::getDirectorySyncGuard(path);
+        /// Only a real underlying guard fsyncs, so a null one must not count as live.
+        if (!inner)
+            return nullptr;
+        ++live_guards[path];
+        return std::make_unique<TrackedGuard>(*this, path, std::move(inner));
+    }
+
+    void removeFile(const String & path) override
+    {
+        removals.push_back({path, liveGuardPaths()});
+        DB::DiskLocal::removeFile(path);
+    }
+
+    struct Removal
+    {
+        std::string path;
+        std::set<std::string> live_guard_paths;
+    };
+
+    const std::vector<Removal> & removalLog() const { return removals; }
+
+    /// Directories that currently hold an undestroyed guard.
+    std::set<std::string> liveGuardPaths() const
+    {
+        std::set<std::string> result;
+        for (const auto & [path, count] : live_guards)
+            if (count > 0)
+                result.insert(path);
+        return result;
+    }
+
+private:
+    /// Decrements the live count when the guard the production code holds goes out of scope, so
+    /// the test can tell "acquired and still held" from "acquired and already released".
+    class TrackedGuard final : public DB::ISyncGuard
+    {
+    public:
+        TrackedGuard(const DirSyncCountingDisk & disk_, std::string path_, DB::SyncGuardPtr inner_)
+            : disk(disk_), path(std::move(path_)), inner(std::move(inner_))
+        {
+        }
+
+        ~TrackedGuard() override { --disk.live_guards[path]; }
+
+    private:
+        const DirSyncCountingDisk & disk;
+        std::string path;
+        DB::SyncGuardPtr inner;
+    };
+
+    mutable std::map<std::string, int> live_guards;
+    std::vector<Removal> removals;
+};
+
 /// All persisted snapshot names are unique (snapshot_<idx>_<uuid>.bin[.zstd]) — tests
 /// locate files by parsed index instead of literal names.
 /// With `include_tmp_markers` the result also counts `tmp_` marker files for the index.
@@ -293,6 +368,25 @@ std::vector<std::string> snapshotFilesForIdx(const std::string & dir, uint64_t i
             result.push_back(entry.path().filename().string());
     }
     return result;
+}
+
+nuraft::ptr<nuraft::buffer> serializeSnapshotWithZstdLevel(
+    const DB::KeeperStorageSnapshot & snapshot,
+    const DB::KeeperContextPtr & keeper_context,
+    int compression_level)
+{
+    auto writer = std::make_unique<DB::WriteBufferFromNuraftBuffer>();
+    auto * buffer_writer = writer.get();
+    auto compressed_writer = DB::wrapWriteBufferWithCompressionMethod(
+        std::move(writer), DB::CompressionMethod::Zstd, compression_level);
+    DB::KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
+    compressed_writer->finalize();
+    return buffer_writer->getBuffer();
+}
+
+bool nuraftBuffersEqual(const nuraft::ptr<nuraft::buffer> & lhs, const nuraft::ptr<nuraft::buffer> & rhs)
+{
+    return lhs->size() == rhs->size() && std::memcmp(lhs->data_begin(), rhs->data_begin(), lhs->size()) == 0;
 }
 
 template <typename Manager>
@@ -708,6 +802,147 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
     ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.getSeqNum(), large_seq_num);
+}
+
+TEST(KeeperSnapshotCompressionLevel, ConfiguredLevelIsUsedForMemoryAndDiskSnapshots)
+{
+    ChangelogDirTest snapshots("./snapshots_zstd_level");
+    auto keeper_context = makeKeeperContext(false);
+    auto snapshot_disk = std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots_zstd_level");
+    keeper_context->setSnapshotDisk(snapshot_disk);
+
+    auto storage = DB::KeeperStorage::create(500, "", keeper_context);
+    std::string payload;
+    for (size_t i = 0; i < 2048; ++i)
+        payload += fmt::format("keeper-snapshot-compression-pattern-{:03};", i % 251);
+    for (size_t i = 0; i < 32; ++i)
+        addNode(*storage, fmt::format("/node_{}", i), payload + std::to_string(i));
+
+    const auto serialize_at_level = [&](int level)
+    {
+        DB::KeeperStorageSnapshot snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+        return serializeSnapshotWithZstdLevel(snapshot, keeper_context, level);
+    };
+
+    auto expected_level_1 = serialize_at_level(1);
+    auto expected_level_3 = serialize_at_level(DB::DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
+    ASSERT_FALSE(nuraftBuffersEqual(expected_level_1, expected_level_3));
+
+    DB::KeeperSnapshotManager manager(3, keeper_context, true, 1);
+    DB::KeeperStorageSnapshot memory_snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto memory_buffer = manager.serializeSnapshotToBuffer(memory_snapshot);
+    EXPECT_TRUE(nuraftBuffersEqual(memory_buffer, expected_level_1));
+
+    DB::KeeperStorageSnapshot disk_snapshot(storage.get(), 10, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto file_info = manager.serializeSnapshotToDisk(disk_snapshot);
+    auto disk_reader = snapshot_disk->readFile(file_info->path, {});
+    std::string disk_contents;
+    DB::readStringUntilEOF(disk_contents, *disk_reader);
+    ASSERT_EQ(disk_contents.size(), expected_level_1->size());
+    EXPECT_EQ(std::memcmp(disk_contents.data(), expected_level_1->data_begin(), disk_contents.size()), 0);
+}
+
+TEST(KeeperSnapshotCompressionLevel, RejectsUnsupportedLevel)
+{
+    ChangelogDirTest snapshots("./snapshots_invalid_zstd_level");
+    auto keeper_context = makeKeeperContext(false);
+    keeper_context->setSnapshotDisk(
+        std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots_invalid_zstd_level"));
+
+    EXPECT_THROW(
+        DB::KeeperSnapshotManager(3, keeper_context, true, std::numeric_limits<int64_t>::min()),
+        DB::Exception);
+    EXPECT_THROW(
+        DB::KeeperSnapshotManager(3, keeper_context, true, std::numeric_limits<int64_t>::max()),
+        DB::Exception);
+}
+
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSerializeToDisk)
+{
+    ChangelogDirTest test("./snapshots_to_disk");
+    this->setSnapshotDirectory("./snapshots_to_disk");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 2, nullptr, this->keeper_context->getWriteSnapshotVersion());
+
+    manager.serializeSnapshotToDisk(snapshot);
+
+    auto files = snapshotFilesForIdx("./snapshots_to_disk", 2);
+    ASSERT_EQ(files.size(), 1);
+    EXPECT_GT(fs::file_size(fs::path("./snapshots_to_disk") / files.at(0)), 0);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
+    auto restored = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    manager.deserializeSnapshotFromBuffer(debuf, *restored);
+    EXPECT_EQ(committedNodeData(*restored, "/hello"), "world");
+}
+
+/// Every snapshot write path must fsync the snapshot directory across the tmp_ marker unlink, at
+/// all three marker-removal sites: writeSnapshotBufferToFile, finalizeSnapshotReceiveToDisk and
+/// writeSnapshotFile.
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotDirectoryFsync)
+{
+    ChangelogDirTest test("./snapshots");
+
+    auto counting_disk = std::make_shared<DirSyncCountingDisk>("SnapshotDisk", "./snapshots");
+    this->keeper_context->setSnapshotDisk(counting_disk);
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+
+    /// The snapshot root ("") must hold a live guard at the instant the tmp_ marker is unlinked,
+    /// and release it afterwards: that release is what fsyncs the directory. The file counts then
+    /// show the on-disk state is unambiguously complete, so a restart keeps the snapshot.
+    const auto assert_synced_and_complete = [&](uint64_t idx, size_t removals_before)
+    {
+        const auto & log = counting_disk->removalLog();
+        ASSERT_GT(log.size(), removals_before);
+        bool marker_unlinked_under_root_guard = false;
+        for (size_t i = removals_before; i < log.size(); ++i)
+            if (log[i].path.starts_with("tmp_") && log[i].live_guard_paths.contains(""))
+                marker_unlinked_under_root_guard = true;
+        EXPECT_TRUE(marker_unlinked_under_root_guard);
+        EXPECT_FALSE(counting_disk->liveGuardPaths().contains(""));
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", idx).size(), 1);
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", idx, /*include_tmp_markers=*/true).size(), 1);
+    };
+
+    /// writeSnapshotBufferToFile: KeeperStateMachine routes remote snapshot disks here.
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 1, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        size_t before = counting_disk->removalLog().size();
+        manager.writeSnapshotBufferToFile(*buf, 1);
+        assert_synced_and_complete(1, before);
+    }
+
+    /// finalizeSnapshotReceiveToDisk: chunked snapshot install from the leader.
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 2, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        auto receive_ctx = manager.beginSnapshotReceiveToDisk(2);
+        DB::ReadBufferFromNuraftBuffer reader(*buf);
+        DB::copyData(reader, *receive_ctx->write_buf);
+        size_t before = counting_disk->removalLog().size();
+        manager.finalizeSnapshotReceiveToDisk(*receive_ctx);
+        assert_synced_and_complete(2, before);
+    }
+
+    /// writeSnapshotFile: KeeperStateMachine routes local snapshot disks here.
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 3, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        size_t before = counting_disk->removalLog().size();
+        manager.writeSnapshotFile(snapshot);
+        assert_synced_and_complete(3, before);
+    }
 }
 
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
@@ -1951,6 +2186,23 @@ TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFile
     assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 50);
 }
 
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFilesOnSyncException)
+{
+    ChangelogDirTest snapshots("./snapshots");
+
+    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
+        "SnapshotDisk", "./snapshots", "snapshot_57_", SnapshotDiskFailureMode::SyncFile));
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+    DB::KeeperStorageSnapshot snapshot(&storage, 57, nullptr, this->keeper_context->getWriteSnapshotVersion());
+
+    EXPECT_THROW(manager.serializeSnapshotToDisk(snapshot), std::exception);
+    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 57);
+}
+
 TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");
@@ -2068,9 +2320,7 @@ TEST_P(CoordinationTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterF
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto settings = std::make_shared<DB::CoordinationSettings>();
-    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
-    ctx->setLocalLogsPreprocessed();
+    auto ctx = this->makeKeeperContext();
     auto throwing_disk = std::make_shared<ThrowingSnapshotDisk>(
         "SnapshotDisk", "./snapshots", "snapshot_2_", SnapshotDiskFailureMode::OpenFileAfterCreate);
     ctx->setSnapshotDisk(throwing_disk);
