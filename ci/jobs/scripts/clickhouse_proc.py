@@ -587,7 +587,11 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None,
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        build_type=None,
+        step_timeout=None,
         stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
