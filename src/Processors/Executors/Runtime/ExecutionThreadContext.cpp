@@ -1,5 +1,5 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Processors/Executors/ExecutionThreadContext.h>
+#include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>

@@ -48,6 +48,8 @@ public:
         bool is_bypassed = false;
         /// This part was built with an incompatible tokenizer configuration.
         bool is_unavailable = false;
+        /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
+        bool is_analysis_incomplete = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
