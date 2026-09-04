@@ -660,8 +660,17 @@ private:
             /// With two cursors this costs no comparisons at all.
             Cursor top = queue[0];
             size_t upper = arrayUpperBound(top, 2);
-            std::move(queue.begin() + 1, queue.begin() + upper, queue.begin());
-            queue[upper - 1] = top;
+            if (upper == 2)
+            {
+                /// The common case of interleaved keys (and the only case with two cursors):
+                /// a swap instead of a call to `memmove` for a single element.
+                std::swap(queue[0], queue[1]);
+            }
+            else
+            {
+                std::move(queue.begin() + 1, queue.begin() + upper, queue.begin());
+                queue[upper - 1] = top;
+            }
 
             if constexpr (strategy == SortingQueueStrategy::Batch)
                 updateBatchSize();
@@ -714,30 +723,36 @@ private:
             updateBatchSize();
     }
 
-    /// Update batch size of elements that client can extract from current cursor
-    void updateBatchSize()
+    /// Update batch size of elements that client can extract from current cursor.
+    /// The common cases are handled inline: a single cursor takes its whole remainder, and a
+    /// batch of one row (interleaved keys) costs exactly one comparison - the same comparison the
+    /// heap would spend to notice that the advanced front cursor is not the minimum anymore, so
+    /// the batch strategy is never more expensive than the default one here. Longer batches are
+    /// detected out of line, so that the hot loops of the merging algorithms stay compact.
+    void ALWAYS_INLINE updateBatchSize()
     {
         chassert(!queue.empty());
 
         auto & begin_cursor = *queue.begin();
-        size_t min_cursor_size = begin_cursor->getSize();
-        size_t min_cursor_pos = begin_cursor->getPosRef();
+        size_t rows_left = begin_cursor->getSize() - begin_cursor->getPosRef();
 
         if (queue.size() == 1)
         {
-            batch_size = min_cursor_size - min_cursor_pos;
+            batch_size = rows_left;
             return;
         }
 
         batch_size = 1;
-        size_t rows_left = min_cursor_size - min_cursor_pos;
-        size_t child_idx = nextChildIndex();
-        auto & next_child_cursor = *(queue.begin() + child_idx);
+        auto & next_child_cursor = *(queue.begin() + nextChildIndex());
 
         if (batch_size < rows_left && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
-            ++batch_size;
-        else
-            return;
+            updateBatchSizeSlow(begin_cursor, next_child_cursor, rows_left);
+    }
+
+    /// The second row of the front cursor is known to be extractable too: find the end of the batch.
+    void NO_INLINE updateBatchSizeSlow(const Cursor & begin_cursor, const Cursor & next_child_cursor, size_t rows_left)
+    {
+        batch_size = 2;
 
         /// Linear detection at most 16 elements to quickly find a small batch size.
         /// This heuristic helps to avoid the overhead of the checks below for small batches.
