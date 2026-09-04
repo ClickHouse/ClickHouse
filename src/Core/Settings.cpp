@@ -9369,7 +9369,8 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+    /// Indexes (not names) of the settings, so that reverting them needs no name lookup.
+    UnorderedSetWithMemoryTracking<size_t> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9524,18 +9525,71 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
-        settings_changed_by_compatibility_setting.erase(final_name);
+    else if (!settings_changed_by_compatibility_setting.empty())
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
+            settings_changed_by_compatibility_setting.erase(index);
+    }
 
     BaseSettings::set(name, value);
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    for (const auto & setting_name : settings_changed_by_compatibility_setting)
-        resetToDefault(setting_name);
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t index : settings_changed_by_compatibility_setting)
+        accessor.resetValueToDefault(*this, index);
 
     settings_changed_by_compatibility_setting.clear();
+}
+
+namespace
+{
+
+/// A change from the settings changes history with its name already resolved to a setting index.
+/// Applying a `compatibility` value walks the whole history - thousands of changes for an old value,
+/// on every query that sets it - so the names are resolved once and the obsolete settings, which the
+/// walk always skips, are left out. `previous_value` points into the history, which is immutable and
+/// lives until the process ends.
+struct ResolvedCompatibilityChange
+{
+    size_t index;
+    const Field * previous_value;
+};
+
+using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
+
+const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
+{
+    static const ResolvedCompatibilityHistory resolved_history = []
+    {
+        const auto & accessor = SettingsTraits::Accessor::instance();
+        ResolvedCompatibilityHistory result;
+        for (const auto & [version, changes] : getSettingsChangesHistory())
+        {
+            std::vector<ResolvedCompatibilityChange> resolved_changes;
+            resolved_changes.reserve(changes.size());
+            for (const auto & change : changes)
+            {
+                /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
+                const size_t index = accessor.find(SettingsTraits::resolveName(change.name));
+                if (index == static_cast<size_t>(-1))
+                    BaseSettingsHelpers::throwSettingNotFound(change.name);
+
+                if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
+                    continue;
+
+                resolved_changes.push_back({index, &change.previous_value});
+            }
+            result.emplace_back(version, std::move(resolved_changes));
+        }
+        return result;
+    }();
+
+    return resolved_history;
+}
+
 }
 
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
@@ -9549,10 +9603,10 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
     ClickHouseVersion version(compatibility_value);
     const auto & accessor = Traits::Accessor::instance();
-    const auto & settings_changes_history = getSettingsChangesHistory();
+    const auto & resolved_history = getResolvedCompatibilityHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
-    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
     {
         if (version >= it->first)
             break;
@@ -9560,28 +9614,16 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
-            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
-            auto final_name = SettingsTraits::resolveName(change.name);
-
-            /// Look the name up once. The history holds thousands of changes to walk for an old
-            /// `compatibility` value, and each of the accessors below would hash the name again.
-            const size_t index = accessor.find(final_name);
-            if (index == static_cast<size_t>(-1))
-                BaseSettingsHelpers::throwSettingNotFound(final_name);
-
-            if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
-                continue;
-
             /// If this setting was changed manually, we don't change it
-            if (accessor.isValueChanged(*this, index) && !settings_changed_by_compatibility_setting.contains(final_name))
+            if (accessor.isValueChanged(*this, change.index) && !settings_changed_by_compatibility_setting.contains(change.index))
                 continue;
 
             /// Don't mark as changed if the value isn't really changed
-            if (accessor.getValue(*this, index) == change.previous_value)
+            if (accessor.getValue(*this, change.index) == *change.previous_value)
                 continue;
 
-            accessor.setValue(*this, index, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(final_name);
+            accessor.setValue(*this, change.index, *change.previous_value);
+            settings_changed_by_compatibility_setting.insert(change.index);
         }
     }
 }
