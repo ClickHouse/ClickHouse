@@ -1,6 +1,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -141,6 +143,11 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// Resolving a table of this database requires the read source grant. It is checked here, above the
+    /// cache, because the cache is keyed on the table name alone: an entry resolved by one user is
+    /// handed to every later caller. `file` reports no URI, so the grant is checked with no filter.
+    context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     /// Check if table exists in loaded tables map.
     if (auto table = tryGetTableFromCache(name))
         return table;
