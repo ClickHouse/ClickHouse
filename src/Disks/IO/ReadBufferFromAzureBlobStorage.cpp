@@ -68,11 +68,12 @@ void checkReturnedRange(const Azure::Storage::Blobs::Models::DownloadBlobResult 
 /// Pins a download to the generation of the object that was selected at read setup. Without it a
 /// blob that is overwritten in place between two requests of the same logical read - the first
 /// `Download` and a reopen after a premature end of the response, or a retry - would hand the
-/// caller bytes stitched together from two different objects.
+/// caller bytes stitched together from two different objects. The expected tag usually comes from
+/// a listing, where it is bare, while `If-Match` takes the quoted entity-tag form.
 void setExpectedETag(Azure::Storage::Blobs::DownloadBlobOptions & download_options, const String & expected_etag)
 {
     if (!expected_etag.empty())
-        download_options.AccessConditions.IfMatch = Azure::ETag(expected_etag);
+        download_options.AccessConditions.IfMatch = Azure::ETag(AzureBlobStorage::toQuotedETag(expected_etag));
 }
 
 /// Defence in depth for an endpoint that ignores `If-Match` and answers with the new generation
@@ -83,8 +84,10 @@ void checkReturnedETag(const Azure::Storage::Blobs::Models::DownloadBlobResult &
     if (expected_etag.empty())
         return;
 
+    /// The listing spells the tag bare and the response header spells it quoted, so the two are
+    /// compared by their opaque part - see `normalizeETag`.
     const String response_etag = AzureBlobStorage::getETagOrEmpty(result.Details.ETag);
-    if (response_etag.empty() || response_etag == expected_etag)
+    if (response_etag.empty() || AzureBlobStorage::normalizeETag(response_etag) == AzureBlobStorage::normalizeETag(expected_etag))
         return;
 
     throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,

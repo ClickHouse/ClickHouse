@@ -83,6 +83,9 @@ struct ETagBehaviour
 {
     static constexpr const char * first_generation = "\"0x8DA000000000000\"";
     static constexpr const char * second_generation = "\"0x8DA111111111111\"";
+    /// The same tag as `first_generation` in the spelling of a blob listing, whose `Etag` element
+    /// carries the bare tag, while the `ETag` header of a response carries it quoted.
+    static constexpr const char * first_generation_bare = "0x8DA000000000000";
 
     /// The `ETag` reported by the first response.
     std::string etag = first_generation;
@@ -728,6 +731,39 @@ TEST(AzureReadPinnedToETag, ETagChangedOnReopen)
     }
 }
 
+/// The expected tag normally comes from a blob listing, which spells it bare, while the endpoint
+/// spells the same tag quoted in the `ETag` header and expects the quoted form in `If-Match`. The
+/// two spellings of one tag must be recognized as the same generation: the `If-Match` sent must
+/// satisfy an endpoint that evaluates it literally, and the response tag must not be mistaken for
+/// a change of the object.
+TEST(AzureReadPinnedToETag, BareExpectedETag)
+{
+    std::string data;
+    ASSERT_NO_THROW(data = readPinnedToETag(
+        /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+        ETagBehaviour::first_generation_bare, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// The difference in spelling must not hide a real change of the object either.
+TEST(AzureReadPinnedToETag, BareExpectedETagChangedOnReopen)
+{
+    try
+    {
+        readPinnedToETag(
+            /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+            ETagBehaviour::first_generation_bare,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false});
+        FAIL() << "Expected an exception on a response that carries a different ETag than the read is pinned to";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
 /// A positioned read is pinned to the generation of the object as well: `readBigAt` is used for
 /// column chunks of the same file, and mixing generations between them is just as wrong.
 TEST(AzureReadBigAt, ETagChanged)
@@ -752,6 +788,20 @@ TEST(AzureReadBigAt, ETagUnchanged)
 {
     auto buffer = makeFreshBufferPinnedToETag(
         /* blob_size */ 100, ETagBehaviour::first_generation, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+
+    std::string destination(16, '\0');
+    size_t bytes_read = 0;
+    ASSERT_NO_THROW(bytes_read = buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {}));
+
+    ASSERT_EQ(bytes_read, destination.size());
+    assertCountsUpFromZero(destination);
+}
+
+/// The same for a positioned read pinned to a tag in the bare spelling of a listing.
+TEST(AzureReadBigAt, BareExpectedETag)
+{
+    auto buffer = makeFreshBufferPinnedToETag(
+        /* blob_size */ 100, ETagBehaviour::first_generation_bare, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
 
     std::string destination(16, '\0');
     size_t bytes_read = 0;

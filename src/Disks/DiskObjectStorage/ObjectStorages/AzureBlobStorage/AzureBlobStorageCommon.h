@@ -16,6 +16,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <mutex>
+#include <string_view>
 
 namespace DB
 {
@@ -181,6 +182,32 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 inline String getETagOrEmpty(const Azure::ETag & etag)
 {
     return etag.HasValue() ? etag.ToString() : "";
+}
+
+/// The same `ETag` reaches us in two spellings: the `Etag` element of a blob listing carries the
+/// bare tag (`0x8D...`), while the `ETag` header of a download or a `HEAD` response carries it
+/// quoted (`"0x8D..."`), as RFC 7232 requires of an entity-tag. Comparing the two spellings
+/// literally would report every object as replaced during the read, so the tag is reduced to its
+/// opaque part first: the surrounding quotes and a `W/` weak-validator prefix are dropped.
+inline String normalizeETag(const String & etag)
+{
+    std::string_view tag = etag;
+    if (tag.starts_with("W/"))
+        tag.remove_prefix(2);
+    if (tag.size() >= 2 && tag.front() == '"' && tag.back() == '"')
+    {
+        tag.remove_prefix(1);
+        tag.remove_suffix(1);
+    }
+    return String(tag);
+}
+
+/// The quoted entity-tag form of `etag`, which is the form a conditional header such as
+/// `If-Match` requires: an `ETag` taken from a listing is bare and must be quoted before it goes
+/// into a request.
+inline String toQuotedETag(const String & etag)
+{
+    return "\"" + normalizeETag(etag) + "\"";
 }
 
 #endif
