@@ -5,6 +5,9 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -33,6 +36,8 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -69,6 +74,12 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace ErrorCodes
@@ -113,6 +124,94 @@ namespace
         for (const auto & column : select_query_output_columns)
             if (!target_table_columns.has(column.name))
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+
+    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    {
+        auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
+        if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a single SELECT query");
+
+        auto * select = union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (!select)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a plain SELECT query");
+
+        auto tables = select->tables();
+        if (!tables || tables->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires exactly one source table (no joins)");
+
+        auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+        if (!table_element || !table_element->table_expression)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a source table");
+
+        auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr || !table_expr->database_and_table_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh source must be a table, not a subquery or table function");
+
+        return *table_expr;
+    }
+
+    size_t countTableExpressions(const IAST & ast)
+    {
+        size_t count = ast.as<ASTTableExpression>() ? 1 : 0;
+        for (const auto & child : ast.children)
+            count += countTableExpressions(*child);
+        return count;
+    }
+
+    void validateIncrementalDefinition(const ASTPtr & select_with_union, const ContextPtr & context)
+    {
+        auto & source_table_expr = getIncrementalSourceTableExpression(select_with_union);
+
+        /// The cursor advances only on the source, so any other table (a JOIN or a subquery) would silently diverge from a full refresh.
+        if (countTableExpressions(*select_with_union) != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
+
+        const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            return;
+        auto source = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(identifier->getTableId()), context);
+        if (!source)
+            return;
+
+        /// The source engine must support STREAM, otherwise every refresh would re-scan and re-append the whole source.
+        if (!source->supportsStreaming())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}, which does not support streaming",
+                source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source.get());
+        if (merge_tree)
+        {
+            if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Incremental refresh source table {} uses a merging engine that rewrites historical rows on merge; only plain MergeTree is supported",
+                    source->getStorageID().getNameForLogs());
+
+            const auto settings = merge_tree->getSettings();
+            if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Incremental refresh source table {} must set enable_block_number_column = 1 and enable_block_offset_column = 1",
+                    source->getStorageID().getNameForLogs());
+        }
+    }
+
+    /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
+    /// SELECT, so each refresh reads only the safe snapshot committed since `stream_cursor` (null on the first refresh).
+    void injectIncrementalStreamModifier(const ASTPtr & select_with_union, const CursorTreeNodePtr & stream_cursor)
+    {
+        auto & table_expr = getIncrementalSourceTableExpression(select_with_union);
+
+        auto stream_settings = make_intrusive<ASTStreamSettings>();
+        stream_settings->setSubscribeForUpdates(false);   /// BOUNDED: read the first safe snapshot and finish.
+        stream_settings->setUnordered(true);              /// UNORDERED: skip the commit-order sort.
+        if (stream_cursor)
+            stream_settings->setCursor(stream_cursor);
+
+        table_expr.stream_settings = stream_settings;
+        table_expr.children.push_back(stream_settings);
     }
 }
 
@@ -173,6 +272,17 @@ StorageMaterializedView::StorageMaterializedView(
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
+    const bool is_fresh_definition = mode == LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
+    if (query.refresh_strategy && query.refresh_strategy->isIncremental() && is_fresh_definition)
+    {
+        /// A replacement builds a fresh cursor, so the next refresh would replay the source and duplicate rows.
+        if (query.create_or_replace || query.replace_view)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE and REPLACE are not supported for incremental refreshable materialized views");
+        validateIncrementalDefinition(select.select_query, mv_db_context);
+    }
+
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -193,7 +303,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
-        fixed_uuid = query.refresh_strategy->append;
+        fixed_uuid = query.refresh_strategy->isAppend();
 
         /// The temporary view of a CREATE OR REPLACE shares the target with the view being replaced.
         /// Start its refresh paused so it cannot touch the target before the rename commits.
@@ -655,14 +765,31 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 }
 
 std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
+StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
+    const CursorTreeNodePtr & stream_cursor) const
 {
+    const bool append = mode != RefreshMode::Replace;
+    const bool incremental = mode == RefreshMode::AppendIncremental;
+
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
     auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);
     auto select_query = view_metadata->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
+
+    if (incremental)
+    {
+        validateIncrementalDefinition(select_query, refresh_context);
+
+        injectIncrementalStreamModifier(select_query, stream_cursor);
+
+        /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
+        refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
+        refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
+        refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
+        refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
+    }
 
     if (!append)
     {
@@ -842,7 +969,7 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     for (const auto & command : commands)
     {
@@ -856,7 +983,15 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         if (command.isCommentAlter())
             continue;
         if (command.type == AlterCommand::MODIFY_QUERY)
+        {
+            const auto metadata = IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+            const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
+            /// The incremental cursor is keyed to the current source, so changing the query would leave it stale.
+            if (refresh_strategy && refresh_strategy->isIncremental())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "MODIFY QUERY is not supported for incremental refreshable materialized views");
             continue;
+        }
         if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
         {
             refresher->checkAlterIsPossible(*command.refresh->as<ASTRefreshStrategy>());

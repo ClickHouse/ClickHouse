@@ -314,6 +314,14 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+struct StreamingCursor
+{
+    std::mutex mutex;
+    CursorTreeNodePtr tree;
+};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -743,6 +751,10 @@ protected:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+
+    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
+    /// parallel reading streams serialize their merges into the one tree.
+    std::shared_ptr<StreamingCursor> streaming_cursor;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1315,6 +1327,11 @@ public:
     void cancelAllBackupsAndRestores() const;
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
+
+    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
+    /// it (under its mutex), and the outer query reads it back.
+    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
+    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(

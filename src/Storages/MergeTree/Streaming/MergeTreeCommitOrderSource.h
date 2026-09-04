@@ -28,6 +28,7 @@ class MergeTreeCommitOrderSource final : public IProcessor
     Status handleShutdown();
     Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
+    void surfaceFinalCursor();
 
     bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleEmitGlobalIdle();

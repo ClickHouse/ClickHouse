@@ -1648,7 +1648,7 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
 
     /// Toggle APPEND
     if (fuzz_rand() % 10 == 0)
-        strategy.append = !strategy.append;
+        strategy.mode = strategy.isAppend() ? RefreshMode::Replace : RefreshMode::AppendFull;
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)

@@ -192,4 +192,21 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
     return root;
 }
 
+void mergeCursors(const CursorTreeNodePtr & into, const CursorTreeNodePtr & from)
+{
+    for (const auto & [key, value] : *from)
+    {
+        if (std::holds_alternative<Int64>(value))
+        {
+            chassert(!into->hasSubtree(key));
+            into->setValue(key, std::get<Int64>(value));
+        }
+        else
+        {
+            chassert(!into->hasValue(key));
+            mergeCursors(into->getSubtreeOrCreate(key), std::get<CursorTreeNodePtr>(value));
+        }
+    }
+}
+
 }
