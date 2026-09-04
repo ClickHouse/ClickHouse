@@ -4991,8 +4991,7 @@ std::vector<ChangelogFileOperationPtr> Changelog::removeChangelogAndRecoveryCopi
     std::vector<ChangelogFileOperationPtr> operations;
     operations.push_back(removeChangelogAsync(std::move(changelog)));
 
-    if (auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
-        duplicate_it != retained_duplicate_changelogs.end())
+    if (auto duplicate_it = retained_duplicate_changelogs.find(from_log_index); duplicate_it != retained_duplicate_changelogs.end())
     {
         operations.reserve(operations.size() + duplicate_it->second.size());
         for (auto & duplicate : duplicate_it->second)
