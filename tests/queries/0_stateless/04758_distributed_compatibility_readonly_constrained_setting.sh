@@ -6,10 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `compatibility` reverts `network_compression_method` / `network_zstd_compression_level` to their old
 # defaults. The interserver senders (`MultiplexedConnections`, `HedgedConnections`) and distributed
-# INSERT (`RemoteInserter`) must not serialize those compatibility-derived values as explicit changes
-# to the remote shard: a remote profile that pins one of them CONST would reject the query. They send
-# `compatibility` itself and let the remote server re-derive, exactly as the native client does for
-# the initial query (see 04612 for the client-path coverage).
+# INSERT (`RemoteInserter`) send `compatibility` itself and let the remote server re-derive those
+# values, exactly as the native client does for the initial query (see 04612 for the client-path
+# coverage).
+#
+# This test covers the end-to-end path: a distributed query under an old `compatibility` runs against a
+# shard whose profile pins the new defaults read-only, and an explicit override is still rejected. It
+# does not, on its own, prove the sender-side demotion: `TCPHandler` clamps a secondary query's setting
+# violations instead of throwing (`clampToSettingsConstraints`), so serializing the derived values would
+# not fail here - it would silently make the shard run under its pinned value instead of the one
+# `compatibility` selects. The demotion itself is pinned by `gtest_secondary_query_settings`.
 
 user="user_${CLICKHOUSE_DATABASE}"
 profile="profile_${CLICKHOUSE_DATABASE}"

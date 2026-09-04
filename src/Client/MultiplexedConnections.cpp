@@ -1,6 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 
 #include <Client/scaleInteractiveDelayByFanout.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -16,7 +17,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsDialect dialect;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -167,20 +167,9 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
-    /// Settings whose values were derived from `compatibility` must not be serialized as explicit
-    /// changes: the remote server re-derives them from `compatibility` itself (which stays `changed`
-    /// and is serialized), and a remote profile may pin them as read-only. Keep the values - they
-    /// still select this side's network codec in `Connection::sendQuery` - but clear the `changed`
-    /// flags, exactly as `ClientBase::settingsWithoutCompatibilityDerived` does for the initial
-    /// client query. The demotion runs before the overrides below, so every override is marked
-    /// changed afterwards and is serialized.
-    modified_settings.markSettingsChangedByCompatibilityAsUnchanged();
-
-    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-    /// The override must stay `changed`, otherwise `Connection::sendQuery` - which serializes only
-    /// changed settings - drops it and the shard re-parses the already rewritten ClickHouse-SQL under
-    /// whatever `dialect` its own user or profile defaults to.
-    modified_settings[Setting::dialect] = Dialect::clickhouse;
+    /// Demote the `compatibility`-derived values and force ClickHouse SQL. Runs before the overrides
+    /// below, so all of them are marked changed afterwards and are serialized.
+    prepareSecondaryQuerySettings(modified_settings);
 
     modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
         modified_settings[Setting::interactive_delay],

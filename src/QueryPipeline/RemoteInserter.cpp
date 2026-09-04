@@ -1,6 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
@@ -9,7 +10,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
 
 
 namespace DB
@@ -17,7 +17,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsDialect dialect;
     extern const SettingsLogsLevel send_logs_level;
 }
 
@@ -50,17 +49,9 @@ void RemoteInserter::initialize()
 
     Settings settings = insert_settings;
 
-    /// Do not serialize compatibility-derived values as explicit changes: the remote server
-    /// re-derives them from the serialized `compatibility` setting and a remote profile may pin
-    /// them read-only. Keep the values for this side's codec selection, clear the `changed`
-    /// flags; the overrides below are marked changed afterwards, so they are still serialized
-    /// (see `MultiplexedConnections::sendQuery`).
-    settings.markSettingsChangedByCompatibilityAsUnchanged();
-
-    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before
-    /// sending, exactly as the `SELECT` senders do: without it the shard parses the rewritten
-    /// ClickHouse-SQL under whatever `dialect` its own user or profile defaults to.
-    settings[Setting::dialect] = Dialect::clickhouse;
+    /// Demote the `compatibility`-derived values and force ClickHouse SQL, exactly as the `SELECT`
+    /// senders do. Runs before the overrides below, so they stay changed and are serialized.
+    prepareSecondaryQuerySettings(settings);
 
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
