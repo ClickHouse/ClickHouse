@@ -18,12 +18,22 @@ namespace DB
 /// serialises a scan over many parts; this transform restores the parallelism while keeping
 /// the reads wasted under a `LIMIT` bounded.
 ///
-/// A lane's bound is the sort key of the latest chunk it pulled: the key of a virtual row, or
-/// the last row of a real chunk. The K lanes with the smallest bounds (the set) read ahead up
-/// to the frontier, the smallest bound of a lane outside the set: the merge cannot consume
-/// beyond that key without another lane, so anything further is premature. A lane the merge
-/// demands always reads. With a limit, the set starts reading only once the merge has demanded
-/// a second lane parked behind a virtual row, and stops once the rows pulled reach the limit.
+/// Terms:
+/// - Bound of a lane: the sort key of the latest chunk it pulled, i.e. the key of its virtual
+///   row or the last row of its latest block. Everything the lane produces next is >= its bound.
+/// - Set: the K unfinished lanes under their caps with the smallest bounds, K being the
+///   read-ahead window. They are the lanes allowed to read ahead of the merge.
+/// - Frontier: the smallest bound among the lanes outside the set. The merge emits rows in key
+///   order, so it cannot get past the frontier without reading the lane that owns it; a set
+///   lane therefore reads only while its own bound is below the frontier, anything beyond would
+///   sit in memory until that other lane is read.
+/// With K = 2 and parts holding keys [0, 10), [10, 20), [20, 30), [30, 40): the set is parts 1
+/// and 2, the frontier is 20, both read to their ends; when part 1 is done, part 3 enters the
+/// set and the frontier moves to 30.
+///
+/// A lane the merge demands always reads. With a limit, the set starts reading only once the
+/// merge has demanded a second lane parked behind a virtual row, and stops once the rows
+/// pulled reach the limit.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
 public:
@@ -43,43 +53,50 @@ public:
     Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
 
 private:
-    struct BoundLess
-    {
-        const VirtualRowReadAheadTransform * self;
-        bool operator()(size_t lhs, size_t rhs) const;
-    };
-
-    using RankedLanes = std::set<size_t, BoundLess>;
-
     struct Lane
     {
         InputPort * input = nullptr;
         OutputPort * output = nullptr;
 
-        /// Real chunks with rows in arrival order. A pending virtual row, if any, is the last element.
+        /// Chunks pulled and not yet pushed, in order: data, then at most one virtual row.
         std::deque<Chunk> buffer;
-        bool pending_virtual_row = false;
+        /// Rows and bytes of the data chunks in `buffer`: what the caps count.
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
 
-        /// Sort key of the latest chunk pulled; empty until the first one.
+        /// See the class comment; empty until the first chunk.
         Columns bound;
         bool bound_from_virtual_row = false;
-        bool ranked = false;
-        RankedLanes::iterator rank_it;
+        bool ranked = false; /// in `ranked_lanes`
 
+        /// Rows of data pulled since the start: the budget under a limit, and what closes the
+        /// input once it reaches the limit.
         UInt64 rows_pulled = 0;
-        /// Rows pulled since the latest virtual row. A virtual row arriving while this is 0 after
-        /// an earlier one means the lane just passed a fully filtered block.
-        UInt64 rows_since_announcement = 0;
-        bool announced = false;
+        /// Rows of data pulled since the latest virtual row. A virtual row arriving while this
+        /// is still 0 means the blocks between the two announcements were fully filtered.
+        UInt64 rows_since_virtual_row = 0;
+        bool announced = false; /// has pulled a virtual row at all
 
         bool in_set = false;
-        /// Granted by a filtered stretch on the demanded lane: may pull one block, then parks.
+        /// May pull one block of data regardless of the window: granted to the lanes next in
+        /// line when the demanded lane passes a fully filtered stretch.
         bool warmup_credit = false;
         bool output_finished = false;
-        bool input_finished_noted = false;
+        bool exhausted_noted = false;
         bool queued = false;
+
+        /// The output can take a chunk and nothing is buffered: the merge is waiting on this lane.
+        bool isDemanded() const;
+        /// A virtual row waits at the tail of the buffer.
+        bool holdsVirtualRow() const;
+        bool underCaps(size_t max_rows, size_t max_bytes) const;
+    };
+
+    /// Orders lanes by (bound, lane index); the bounds live in `lanes`.
+    struct BoundLess
+    {
+        const VirtualRowReadAheadTransform * self;
+        bool operator()(size_t lhs, size_t rhs) const;
     };
 
     Status prepareImpl(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs);
@@ -88,23 +105,22 @@ private:
     Columns virtualRowKey(const Chunk & chunk) const;
     Columns lastRowKey(const Chunk & chunk) const;
 
-    bool underCaps(const Lane & lane) const;
-    bool isDemanded(const Lane & lane) const;
     bool mayRead(size_t lane_num) const;
+    bool isFrontierCandidate(size_t lane_num) const;
     ssize_t frontierFor(size_t lane_num) const;
     bool passedFrontier(size_t lane_num) const;
 
     void enqueue(size_t lane_num);
+    void invalidateSet() { set_stale = true; }
     void runLanes();
     void recomputeSet();
     void driveLane(size_t lane_num);
-    void noteInputFinished(size_t lane_num);
     void pushFromBuffer(Lane & lane);
     void consume(size_t lane_num, Chunk chunk);
     void setBound(size_t lane_num, Columns key, bool from_virtual_row);
-    void noteBoundChanged(size_t lane_num);
     void noteDemand(size_t lane_num);
     void grantWarmup(size_t lane_num);
+    void onInputExhausted(size_t lane_num);
     void finishLane(size_t lane_num);
 
     SharedHeader header;
@@ -119,13 +135,15 @@ private:
     std::vector<Lane> lanes;
     std::unordered_map<const Port *, size_t> lane_by_port;
 
-    /// Lanes with a known bound and an unfinished output, in (bound, lane index) order.
-    RankedLanes ranked_lanes;
-    /// The set and the two smallest-bound ranked lanes outside it (-1 = none). Two are kept so
-    /// that a lane reading outside the set can take the frontier excluding itself.
+    /// Lanes with a known bound and an unfinished output, in (bound, lane index) order. An
+    /// ordered set rather than a heap because a lane's bound moves with every chunk it pulls,
+    /// so lanes are re-keyed all the time, and because the set and the frontier are the first
+    /// K + 1 lanes of this order, which a heap cannot walk.
+    std::set<size_t, BoundLess> ranked_lanes;
     std::vector<size_t> set_lanes;
     std::vector<size_t> previous_set_lanes;
-    ssize_t frontier_lanes[2] = {-1, -1};
+    /// The smallest-bound lane outside the set, -1 if there is none.
+    ssize_t frontier_lane = -1;
 
     bool window_open;
     ssize_t first_demanded_lane = -1;
@@ -134,8 +152,11 @@ private:
     UInt64 budget_rows = 0;
     size_t finished_outputs = 0;
     bool initialized = false;
-    /// Raised by every state transition that can change the set, the frontier or a lane's reading rights.
-    bool recompute_needed = true;
+    /// The set and the frontier must be recomputed before lanes are driven again. Raised by
+    /// `invalidateSet` on every transition that can change who may read: a bound moving past the
+    /// frontier or on a lane outside the set, a lane reaching or leaving its caps, the budget
+    /// running out, a lane finishing or running out of input, the window opening.
+    bool set_stale = true;
 
     std::vector<size_t> candidates;
 };
