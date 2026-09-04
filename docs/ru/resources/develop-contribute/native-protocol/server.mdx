@@ -32,15 +32,15 @@ keywords: ['собственный протокол', 'TCP-протокол', '�
 
 Ответ на [client hello](/ru/resources/develop-contribute/native-protocol/client#hello).
 
-| поле              | тип     | значение        | описание                 |
-| ----------------- | ------- | --------------- | ------------------------ |
-| name              | String  | `Clickhouse`    | Имя сервера              |
-| version&#95;major | UVarInt | `21`            | Мажорная версия сервера  |
-| version&#95;minor | UVarInt | `12`            | Минорная версия сервера  |
-| revision          | UVarInt | `54452`         | Ревизия сервера          |
-| tz                | String  | `Europe/Moscow` | Часовой пояс сервера     |
-| display&#95;name  | String  | `Clickhouse`    | Имя сервера в интерфейсе |
-| version&#95;patch | UVarInt | `3`             | Патч-версия сервера      |
+| поле              | тип     | значение                     | описание                 |
+| ----------------- | ------- | ---------------------------- | ------------------------ |
+| name              | String  | `ClickHouse`                 | Имя сервера              |
+| version&#95;major | UVarInt | `21`                         | Мажорная версия сервера  |
+| version&#95;minor | UVarInt | `12`                         | Минорная версия сервера  |
+| revision          | UVarInt | `54452`                      | Ревизия сервера          |
+| tz                | String  | `Europe/Moscow`              | Часовой пояс сервера     |
+| display&#95;name  | String  | `<display_name-or-hostname>` | Имя сервера в интерфейсе |
+| version&#95;patch | UVarInt | `3`                          | Патч-версия сервера      |
 
 <div id="exception">
   ## Исключение

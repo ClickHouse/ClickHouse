@@ -13,6 +13,55 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="http_allow_database_as_path">
+  ## http_allow_database_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de reconnaître un nom de base de données dans le chemin d’URL des requêtes HTTP."}]}]} />
+
+Lorsqu’elle est activée, l’interface HTTP reconnaît le composant `/database/` dans le chemin d’URL et l’utilise comme base de données courante.
+
+Ce paramètre, défini par utilisateur, détermine si une requête de type chemin routée est interprétée. Le routage lui-même est contrôlé globalement par le paramètre de configuration `http_allow_path_requests` au niveau du serveur (désactivé par défaut). Celui-ci doit être activé pour que l’interface HTTP route une requête de type chemin (telle que `/my_db/my_table.csv`) vers le gestionnaire de requêtes. Cette décision de routage étant prise avant l’authentification de la requête, elle ne peut pas dépendre d’un paramètre par utilisateur. Lorsque `http_allow_path_requests` est désactivé, les chemins inconnus renvoient simplement un `404`. Après le routage, ce paramètre est vérifié à nouveau au regard des paramètres effectifs de l’utilisateur authentifié, ce qui permet de l’activer de manière sélective pour un utilisateur, un rôle ou un profil.
+
+<div id="http_allow_filters_as_path">
+  ## http_allow_filters_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de reconnaître les filtres `name=value` de style Hive dans le chemin d’URL des requêtes HTTP."}]}]} />
+
+Lorsqu’elle est activée, l’interface HTTP reconnaît les composants `/name=value/` dans le chemin (style de partitionnement Hive) et les traduit en filtres combinés par AND. Les opérateurs `>`, `<`, `>=`, `<=`, `!=`, `<>` sont également reconnus.
+
+Comme [`http_allow_database_as_path`](/fr/reference/settings/session-settings/http#http_allow_database_as_path), il s’agit d’un paramètre par utilisateur ; le routage des requêtes avec chemin est contrôlé globalement par le paramètre de configuration `http_allow_path_requests` au niveau du serveur (le routage a lieu avant l’authentification).
+
+<div id="http_allow_filters_as_unrecognized_url_parameters">
+  ## http_allow_filters_as_unrecognized_url_parameters
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de traiter les paramètres d’URL non reconnus comme des expressions de filtre dans les requêtes HTTP."}]}]} />
+
+Si cette option est activée, tout paramètre d’URL non reconnu comme paramètre, réglage ou préfixe `param_*` connu est traité comme un filtre et combiné avec AND. Deux formes sont acceptées :
+
+* Un simple `name=value` devient une expression d’égalité : `` `name` = 'value' `` (l’identifiant est entouré d’accents graves et la valeur est entre guillemets en tant que littéral de chaîne).
+* Un opérateur de comparaison (`!=`, `>`, `<`, `>=`, `<=`, `<>`) en fait une comparaison : soit séparé dans le paramètre (`?a!=2`, `?a>=2`), soit écrit directement lorsque l’URL ne contient aucun `=` permettant de le séparer (`?a<>2`, `?f(x)>3`) ; dans ce cas, le `name[=value]` reconstitué est analysé comme une expression SQL complète.
+
+<div id="http_allow_table_as_file">
+  ## http_allow_table_as_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de reconnaître un nom de table dans le chemin d’URL des requêtes HTTP, avec des extensions de format/compression facultatives."}]}]} />
+
+Lorsqu’elle est activée, l’interface HTTP interprète le dernier composant du chemin d’URL comme un nom de table sous la forme `table`, `table.format` ou `table.format.compression`. Le chemin est interprété comme `SELECT * FROM table`.
+
+Comme [`http_allow_database_as_path`](/fr/reference/settings/session-settings/http#http_allow_database_as_path), il s’agit d’un paramètre par utilisateur ; le routage des requêtes avec un chemin d’URL est contrôlé globalement par le paramètre de configuration `http_allow_path_requests` au niveau du serveur (le routage s’effectue avant l’authentification).
+
 <div id="http_connection_timeout">
   ## http_connection_timeout
 </div>

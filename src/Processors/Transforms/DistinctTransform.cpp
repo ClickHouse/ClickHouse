@@ -1,12 +1,16 @@
 #include <vector>
 #include <Processors/Transforms/DistinctTransform.h>
+
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/NullableUtils.h>
+#include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <Common/assert_cast.h>
-#include <Columns/ColumnsNumber.h>
 #include <base/types.h>
 
 static inline size_t intHash32(UInt64 x)
@@ -19,6 +23,11 @@ static inline size_t intHash32(UInt64 x)
     x = x ^ ((x >> 22) | (x << 42));
 
     return x;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistinctTransformsAbandonedDeduplication;
 }
 
 namespace CurrentMetrics
@@ -40,6 +49,42 @@ namespace ErrorCodes
 /// A `hashed_two_level` set is only worth its overhead once it holds at least this many keys,
 /// because only then can a chunk be deduplicated by `buildSetParallelFilter` over its buckets.
 static constexpr size_t PARALLEL_DISTINCT_THRESHOLD = 1000000;
+
+namespace
+{
+
+/// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
+/// the filter lazily on the first such row.
+void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
+{
+    const size_t null_index = column.getDictionary().getNullValueIndex();
+    const IColumn & indexes_column = *column.getIndexesPtr();
+
+    auto process = [&](const auto & indexes)
+    {
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (static_cast<size_t>(indexes[row]) == null_index)
+            {
+                if (keep.empty())
+                    keep.assign(num_rows, static_cast<UInt8>(1));
+                keep[row] = 0;
+            }
+        }
+    };
+
+    switch (column.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): process(assert_cast<const ColumnUInt8 &>(indexes_column).getData()); break;
+        case sizeof(UInt16): process(assert_cast<const ColumnUInt16 &>(indexes_column).getData()); break;
+        case sizeof(UInt32): process(assert_cast<const ColumnUInt32 &>(indexes_column).getData()); break;
+        case sizeof(UInt64): process(assert_cast<const ColumnUInt64 &>(indexes_column).getData()); break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
+    }
+}
+
+}
 
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
 {
@@ -63,11 +108,29 @@ void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chu
     }
 }
 
+void DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
+{
+    if (abandoned)
+        return;
+
+    ++chunks_observed;
+    rows_observed += num_rows;
+    unique_rows_observed += num_unique_rows;
+
+    if (chunks_observed < OBSERVATION_CHUNK_COUNT && set_bytes < MAX_OBSERVATION_SET_BYTES)
+        return;
+
+    double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
+    abandoned = unique_rate >= UNIQUE_RATE_THRESHOLD;
+}
+
 DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
     const Names & columns_,
+    bool allow_abandoning_,
+    bool skip_null_keys_,
     bool is_pre_distinct_,
     UInt64 set_limit_for_enabling_bloom_filter_,
     UInt64 bloom_filter_bytes_,
@@ -82,17 +145,10 @@ DistinctTransform::DistinctTransform(
     , pass_ratio_threshold_for_disabling_bloom_filter(pass_ratio_threshold_for_disabling_bloom_filter_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , set_size_limits(set_size_limits_)
-
+    , skip_null_keys(skip_null_keys_)
 {
-    const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
-    key_columns_pos.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
-        const auto & col = header_->getByPosition(pos).column;
-        if (col && !isColumnConst(*col))
-            key_columns_pos.emplace_back(pos);
-    }
+    if (allow_abandoning_)
+        abandon_controller.emplace();
 
     if (is_pre_distinct_)
     {
@@ -120,7 +176,17 @@ DistinctTransform::DistinctTransform(
             pool = nullptr;
     }
 
-    setInputNotNeededAfterRead(true);
+    const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
+    key_columns_pos.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
+        const auto & col = header_->getByPosition(pos).column;
+        if (col && !isColumnConst(*col))
+            key_columns_pos.emplace_back(pos);
+        else if (skip_null_keys && col && col->isNullAt(0))
+            const_null_key = true;
+    }
 }
 
 void DistinctTransform::checkBloomFilterWorthiness()
@@ -144,7 +210,7 @@ void DistinctTransform::buildCombinedFilter(
     IColumnFilter & filter,
     const size_t rows,
     SetVariants & variants,
-    size_t &  passed_bf) const
+    size_t & passed_bf) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
     typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
@@ -176,7 +242,6 @@ void DistinctTransform::buildCombinedFilter(
         }
     }
 }
-
 
 template <typename Method>
 void DistinctTransform::buildSetFilter(
@@ -436,16 +501,43 @@ void DistinctTransform::buildSetParallelFilter(
     runner.waitForAllToFinishAndRethrowFirstError();
 }
 
+void DistinctTransform::maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows)
+{
+    if (!abandon_controller)
+        return;
+
+    abandon_controller->update(num_rows, num_unique_rows, data->getTotalByteCount());
+    if (abandon_controller->isAbandoned())
+    {
+        data.reset();
+        bloom_filter.reset();
+        use_bf = false;
+        try_init_bf = false;
+        lc_dict_states.clear();
+        ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
+    }
+}
+
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
         return;
 
+    if (abandon_controller && abandon_controller->isAbandoned())
+        return;
+
+    if (const_null_key)
+    {
+        chunk.setColumns(chunk.cloneEmptyColumns(), 0);
+        stopReading();
+        return;
+    }
+
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
 
-    const auto num_rows = chunk.getNumRows();
+    auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
     /// Special case, - only const columns, return single row
@@ -459,11 +551,53 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
     }
 
-
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(key_columns_pos.size());
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
+
+    /// The consumer skips rows with a NULL in any key component (a set fill with
+    /// `transform_null_in = 0` strips `LowCardinality` and then drops such rows), so they carry no
+    /// value downstream: drop them before deduplication and before the abandon accounting. Plain
+    /// `Nullable` keys are then hashed by their nested columns, the same way the set fill hashes them.
+    ColumnPtr null_map_holder;
+    if (skip_null_keys)
+    {
+        ConstNullMapPtr null_map = nullptr;
+        null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+
+        IColumn::Filter keep;
+        if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
+        {
+            keep.resize(num_rows);
+            for (size_t i = 0; i < num_rows; ++i)
+                keep[i] = !(*null_map)[i];
+        }
+
+        for (const auto * column : column_ptrs)
+            if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
+                low_cardinality && low_cardinality->nestedIsNullable())
+                markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
+
+        if (!keep.empty())
+        {
+            const auto num_kept = countBytesInFilter(keep);
+            for (auto & column : columns)
+                column = column->filter(keep, num_kept);
+            num_rows = num_kept;
+
+            if (num_rows == 0)
+            {
+                chunk.setColumns(std::move(columns), 0);
+                return;
+            }
+
+            column_ptrs.clear();
+            for (auto pos : key_columns_pos)
+                column_ptrs.emplace_back(columns[pos].get());
+            null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+        }
+    }
 
     std::optional<IColumn::Filter> lc_mask;
 
@@ -475,13 +609,34 @@ void DistinctTransform::transform(Chunk & chunk)
             lc_optimization_controller.update(num_rows, new_indices_count);
             lc_mask.emplace(std::move(mask));
 
-            /// Empty mask -> no candidate rows in this chunk, emit nothing.
+            /// Empty mask -> no candidate rows in this chunk, emit nothing. The chunk is fully
+            /// duplicate, which is the strongest evidence in favor of keeping the deduplication, so
+            /// the abandon accounting must see it.
             if (lc_mask->empty())
+            {
+                maybeAbandonDeduplication(num_rows, 0);
                 return;
+            }
         }
     }
 
-    const auto old_set_size = data.getTotalRowCount();
+    if (data->empty())
+    {
+        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
+
+        /// A two-level table is usually slower than a single-level one on its own; it only pays off
+        /// because it can be probed in parallel bucket by bucket. Without a thread pool (e.g.
+        /// `max_threads = 1`) that never happens, so don't switch to it - the cost could never be
+        /// recovered. The same holds for a small `LIMIT`: reading stops long before the set grows
+        /// past `PARALLEL_DISTINCT_THRESHOLD`, which is what enables the parallel path.
+        if (!is_pre_distinct && pool && !(limit_hint && limit_hint < PARALLEL_DISTINCT_THRESHOLD)
+            && type == SetVariants::Type::hashed)
+            data->init(SetVariants::Type::hashed_two_level);
+        else
+            data->init(type);
+    }
+
+    const auto old_set_size = data->getTotalRowCount();
     const auto old_bf_size = total_passed_bf;
     const auto old_check_only_size = total_passed_check_only;
 
@@ -493,35 +648,20 @@ void DistinctTransform::transform(Chunk & chunk)
         use_bf = true;
     }
 
-    if (data.empty())
-    {
-        auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
-
-        /// A two-level table is usually slower than a single-level one on its own; it only pays off
-        /// because it can be probed in parallel bucket by bucket. Without a thread pool (e.g.
-        /// `max_threads = 1`) that never happens, so don't switch to it - the cost could never be
-        /// recovered. The same holds for a small `LIMIT`: reading stops long before the set grows
-        /// past `PARALLEL_DISTINCT_THRESHOLD`, which is what enables the parallel path.
-        if (!is_pre_distinct && pool && !(limit_hint && limit_hint < PARALLEL_DISTINCT_THRESHOLD)
-            && type == SetVariants::Type::hashed)
-            data.init(SetVariants::Type::hashed_two_level);
-        else
-            data.init(type);
-    }
-
-    if ((total_passed_bf - bf_worthless_last_bf_pass)*2 > (bf_worthless_total_set_bits - bf_worthless_last_set_bits))
+    if (use_bf && (total_passed_bf - bf_worthless_last_bf_pass) * 2 > (bf_worthless_total_set_bits - bf_worthless_last_set_bits))
         checkBloomFilterWorthiness();
 
     /// As with the bloom-filter path, `check_only` does not retain every new key. Do not use it
     /// when an exact row limit is configured.
-    auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2)
+    const bool check_only = is_pre_distinct
         && set_limit_for_enabling_bloom_filter > 0
+        && old_set_size > set_limit_for_enabling_bloom_filter * 2
         && set_size_limits.max_rows == 0;
     auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
 
     IColumn::Filter filter(num_rows);
 
-    switch (data.type)
+    switch (data->type)
     {
         case SetVariants::Type::EMPTY:
             break;
@@ -529,25 +669,25 @@ void DistinctTransform::transform(Chunk & chunk)
 #define M(NAME) \
         case SetVariants::Type::NAME: \
         { \
-            auto & set = *data.NAME; \
+            auto & set = *data->NAME; \
             const auto build = [&] \
             { \
-                buildSetFilter(set, column_ptrs, filter, num_rows, data, lc_mask_ptr); \
+                buildSetFilter(set, column_ptrs, filter, num_rows, *data, lc_mask_ptr); \
             }; \
             \
             if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
             { \
                 if (old_set_size > PARALLEL_DISTINCT_THRESHOLD && pool && num_rows > 10000) \
-                    buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool); \
+                    buildSetParallelFilter(set, column_ptrs, filter, num_rows, *data, *pool); \
                 else \
                     build(); \
             } \
             else if (!is_pre_distinct) \
                 build(); \
             else if (check_only) \
-                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_check_only); \
+                checkSetFilter(set, column_ptrs, filter, num_rows, *data, total_passed_check_only); \
             else if (use_bf) \
-                buildCombinedFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+                buildCombinedFilter(set, column_ptrs, filter, num_rows, *data, total_passed_bf); \
             else \
                 build(); \
             \
@@ -558,20 +698,24 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
     }
 
-    size_t new_bf_size = total_passed_bf;
-    size_t new_set_size = data.getTotalRowCount();
+    const size_t new_bf_size = total_passed_bf;
+    const size_t new_set_size = data->getTotalRowCount();
 
-    size_t rows_passed
-        = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size) + (total_passed_check_only - old_check_only_size));
+    /// Rows forwarded by this chunk: new keys in the hash set, new keys absorbed by the bloom
+    /// filter and rows forwarded unrecorded by the `check_only` mode.
+    const size_t rows_passed
+        = (new_set_size - old_set_size) + (new_bf_size - old_bf_size) + (total_passed_check_only - old_check_only_size);
+
+    maybeAbandonDeduplication(num_rows, rows_passed);
 
     /// Just go to the next chunk if there isn't any new record in the current one.
-    if (!rows_passed)
+    if (rows_passed == 0)
         return;
 
     /// The bloom filter allocation is resident state and must be accounted for by
     /// `max_bytes_in_distinct`. The optimization is disabled when `max_rows_in_distinct` is set,
     /// because the Bloom filter alone cannot provide an exact distinct-key count.
-    size_t new_set_bytes = data.getTotalByteCount();
+    size_t new_set_bytes = data ? data->getTotalByteCount() : 0;
     if (bloom_filter)
         new_set_bytes += bloom_filter->getFilterSizeBytes();
 
@@ -582,17 +726,24 @@ void DistinctTransform::transform(Chunk & chunk)
     if (!set_size_limits.check(new_set_size, new_set_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
-    if (rows_passed != num_rows)
+    if (rows_passed == num_rows)
+    {
+        /// Every row is a new distinct value: keep the chunk unchanged, without copying it.
+        chunk.setColumns(std::move(columns), num_rows);
+    }
+    else
+    {
         for (auto & column : columns)
             column = column->filter(filter, rows_passed);
+
+        chunk.setColumns(std::move(columns), rows_passed);
+    }
 
     /// The bloom filter pays off only on high-cardinality data, where most rows are new and can be
     /// absorbed by the filter instead of the hash set. When the pass ratio drops below the threshold
     /// the data is duplicate-heavy: most rows end up in the hash set anyway, so the extra bloom
     /// filter lookup is pure overhead - disable it (permanently) and fall back to the plain set.
     use_bf = use_bf && (static_cast<Float64>(rows_passed) > (pass_ratio_threshold_for_disabling_bloom_filter * static_cast<Float64>(num_rows)));
-
-    chunk.setColumns(std::move(columns), rows_passed);
 
     /// Stop reading if we already reach the limit.
     /// Only keys that were actually recorded (in the hash set or in the bloom filter) may be counted
@@ -601,10 +752,7 @@ void DistinctTransform::transform(Chunk & chunk)
     /// counted - they are not recorded anywhere, so one key repeated `limit_hint` times would stop the
     /// stream before it emitted `limit_hint` distinct values, losing later distinct values from it.
     if (limit_hint && (new_set_size >= limit_hint || new_bf_size >= limit_hint))
-    {
         stopReading();
-        return;
-    }
 }
 
 }

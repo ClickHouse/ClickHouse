@@ -1,16 +1,40 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Changelog do ClickHouse Cloud - 2026'
+title: 'Changelog do Cloud - 2026'
 description: 'Changelog do ClickHouse Cloud com descrições das novidades de cada lançamento do ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'alterações na nuvem']
+keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'alterações no Cloud']
 rss: true
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Além deste Cloud changelog do ClickHouse Cloud, consulte também a página [Compatibilidade com a Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+Além deste changelog do ClickHouse Cloud, consulte a página de [Compatibilidade da Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+
+<Update label="17 de agosto de 2026">
+  As atualizações desta semana ampliam o alcance da plataforma e melhoram a visibilidade operacional. O Managed Postgres agora está disponível no GCP para parceiros de design selecionados, os recursos do ClickStack podem ser gerenciados por meio do Terraform provider oficial e novas notificações de cobrança avisam os clientes antecipadamente antes que os créditos expirem ou o serviço seja interrompido. Também lançamos tracing aprimorado para ClickHouse Agents e uma experiência de login com SAML mais fluida.
+
+  ### Managed Postgres agora disponível no GCP
+
+  O [ClickHouse Cloud Managed Postgres](/pt-BR/products/managed-postgres/overview) agora está disponível no GCP para parceiros de design selecionados em todas as regiões públicas do GCP, com `us-west1` como a primeira região privada. Isso amplia a disponibilidade do Managed Postgres para clientes que desenvolvem no GCP, com prévia privada planejada para 2026-08.
+
+  ### Gerencie recursos do ClickStack com o Terraform
+
+  O suporte ao ClickStack agora está disponível em beta por meio da versão 3.25.0 do Terraform provider oficial [`ClickHouse/clickhouse` para Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). As equipes podem criar, atualizar, importar e remover dashboards, alertas, sources, saved searches, connections e webhooks usando o workflow padrão `terraform plan` e `terraform apply`. A integração oferece suporte tanto ao Managed ClickStack quanto a implantações self-hosted.
+
+  ### Novas notificações de cobrança para créditos e pagamentos
+
+  As notificações de cobrança agora são gerenciadas pela central de notificações do ClickHouse Cloud, com entrega pelo console, e-mail e Slack. Os clientes recebem aviso antecipado quando créditos pré-pagos ou de teste estão prestes a expirar ou se esgotar, além de notificações quando créditos são adicionados, métodos de pagamento mudam ou uma conta entra em um período de carência por inadimplência. Isso dá mais tempo para renovar, adicionar créditos ou resolver problemas de pagamento antes que o serviço seja interrompido.
+
+  ### Abra traces de sessões do Langfuse pelo ClickHouse Agents
+
+  Os administradores da organização agora podem abrir a sessão correspondente do Langfuse diretamente em um chat do [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents/index) e inspecionar os traces de toda a conversa. Isso facilita a investigação do comportamento do agente e a depuração de execuções de várias etapas. A melhoria está disponível em beta pública para chats recém-criados.
+
+  ### Redirecionamentos SAML ajudam a evitar contas duplicadas
+
+  Quando um usuário tenta fazer login com Google ou Microsoft enquanto o SAML está configurado para sua organização, o ClickHouse Cloud agora o redireciona para o fluxo correto de login com SAML. Isso ajuda a evitar que os usuários criem acidentalmente uma organização separada quando pretendiam acessar uma conta existente.
+</Update>
 
 <Update label="13 de julho de 2026">
   As atualizações desta semana incluem roteamento sticky de réplicas por HTTPS padrão, datas de início personalizadas para o período de faturamento e novos controles de carga inicial para ClickPipes de armazenamento de objetos.

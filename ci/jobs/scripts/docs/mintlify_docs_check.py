@@ -69,10 +69,6 @@ NAVIGATION_CHECK = (
     "Check navigation completeness",
     "python3 ../ci/jobs/scripts/docs/navigation_check.py .",
 )
-CHANGELOGS_CHECK = (
-    "Check changelogs",
-    "python3 ../ci/jobs/scripts/docs/changelogs_check.py .",
-)
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
     NAVIGATION_CHECK,

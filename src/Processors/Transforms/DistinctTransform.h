@@ -11,6 +11,7 @@
 #include <Common/ColumnsHashing.h>
 #include <base/types.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -56,20 +57,69 @@ private:
     size_t new_indices_observed = 0;
 };
 
+/// Preliminary per-stream deduplication (the preliminary `DISTINCT`, see `DistinctStep`, or the
+/// pre-deduplication in front of a set fill, see `CreatingSetStep`) pays off only when it removes
+/// rows: the consumer deduplicates anyway, so on mostly-unique input the transform removes almost
+/// nothing while its hash table duplicates the memory of the structure being filled downstream.
+///
+/// This controller accumulates, over all chunks seen so far, how many rows survived deduplication.
+/// Once enough chunks have been observed for the rate to be meaningful, it is checked after every
+/// chunk; when nearly all rows survive, the transform abandons: it drops the accumulated hash table
+/// and passes the remaining chunks through untouched.
+class DeduplicationAbandonController
+{
+public:
+    bool isAbandoned() const { return abandoned; }
+
+    void update(size_t num_rows, size_t num_unique_rows, size_t set_bytes);
+
+private:
+    /// Number of chunks to observe before the rate is checked.
+    static constexpr size_t OBSERVATION_CHUNK_COUNT = 5;
+
+    /// The observation itself retains memory: until the first check, the hash table keeps every unique
+    /// key seen, which for wide keys is chunk count * block size * key size per stream. One chunk of
+    /// rows already gives a meaningful rate, so once the set is this large the check starts immediately
+    /// instead of waiting out the chunk window. Integer keys stay on the full window (their set is
+    /// about half this size at the fifth chunk).
+    static constexpr size_t MAX_OBSERVATION_SET_BYTES = 16 * 1024 * 1024;
+
+    /// Fraction of the observed rows that survived deduplication. Above this rate the removal is too
+    /// small to help the consumer, while the hash table keeps growing with the unique rows.
+    static constexpr double UNIQUE_RATE_THRESHOLD = 0.9;
+
+    bool abandoned = false;
+    size_t chunks_observed = 0;
+    size_t rows_observed = 0;
+    size_t unique_rows_observed = 0;
+};
+
 class DistinctTransform final : public ISimpleTransform
 {
 public:
+    /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
+    /// the output is then no longer fully deduplicated, so it must only be enabled when the consumer
+    /// deduplicates the output anyway.
+    /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them, mirroring a
+    /// set fill with `transform_null_in = 0`, which skips such rows; it must only be enabled when the
+    /// consumer drops them anyway.
+    /// `is_pre_distinct_` selects the preliminary (per-stream) mode: there the transform may absorb
+    /// new keys into a bloom filter instead of the hash set once the set has grown past
+    /// `set_limit_for_enabling_bloom_filter_` (0 disables it). In the final mode the transform may
+    /// instead switch to a two-level hash set probed in parallel on `max_threads_` threads.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        bool is_pre_distinct_,
-        UInt64 set_limit_for_enabling_bloom_filter_,
-        UInt64 bloom_filter_bytes_,
-        Float64 pass_ratio_threshold_for_disabling_bloom_filter_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        size_t max_threads_);
+        bool allow_abandoning_ = false,
+        bool skip_null_keys_ = false,
+        bool is_pre_distinct_ = false,
+        UInt64 set_limit_for_enabling_bloom_filter_ = 0,
+        UInt64 bloom_filter_bytes_ = 0,
+        Float64 pass_ratio_threshold_for_disabling_bloom_filter_ = 0,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_ = 0,
+        size_t max_threads_ = 1);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -78,10 +128,10 @@ protected:
 
 private:
     ColumnNumbers key_columns_pos;
-    SetVariants data;
+    /// Reset after the controller abandons deduplication, freeing the accumulated set.
+    std::optional<SetVariants> data{std::in_place};
     std::unique_ptr<BloomFilter> bloom_filter;
     std::unique_ptr<ThreadPool> pool;
-
 
     Sizes key_sizes;
     const UInt64 limit_hint;
@@ -127,6 +177,14 @@ private:
 
     LCOptimizationController lc_optimization_controller;
 
+    std::optional<DeduplicationAbandonController> abandon_controller;
+
+    bool skip_null_keys = false;
+
+    /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
+    /// keys drops all rows; the transform then emits nothing and stops the input.
+    bool const_null_key = false;
+
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
     void buildSetFilter(
@@ -144,7 +202,7 @@ private:
         IColumnFilter & filter,
         size_t rows,
         SetVariants & variants,
-        size_t &  passed_bf) const;
+        size_t & passed_bf) const;
 
     template <typename Method>
     void checkSetFilter(
@@ -153,7 +211,7 @@ private:
         IColumnFilter & filter,
         size_t rows,
         SetVariants & variants,
-        size_t &  passed_bf) const;
+        size_t & passed_bf) const;
 
     template <typename Method>
     void buildSetParallelFilter(
@@ -172,6 +230,10 @@ private:
     /// rows need to be checked for distinctness.
     /// Returns {mask, new_indices_count}.
     std::pair<IColumn::Filter, size_t> buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows);
+
+    /// Feed the observed chunk to the abandon controller and, once it abandons, free the accumulated
+    /// state: the remaining chunks then pass through untouched. A no-op when abandoning is not allowed.
+    void maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows);
 };
 
 }

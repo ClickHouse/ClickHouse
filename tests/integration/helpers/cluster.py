@@ -170,6 +170,10 @@ def _create_env_file(path, variables):
     return path
 
 
+# The python-side budget a command gets when its caller forwards none.
+RUN_AND_CHECK_DEFAULT_TIMEOUT = 300
+
+
 def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
@@ -177,7 +181,7 @@ def run_and_check(
     input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
-    timeout=300,
+    timeout=RUN_AND_CHECK_DEFAULT_TIMEOUT,
     nothrow=False,
     detach=False,
 ) -> str:
@@ -2226,9 +2230,12 @@ class ClickHouseCluster:
         self.keeper_required_feature_flags = keeper_required_feature_flags
 
         # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build)
+        # (affect only WITH_COVERAGE=1 build).
+        # %c enables continuous mode: counters are memory-mapped into the file,
+        # so the profile survives SIGKILL / `docker kill` intact instead of being
+        # lost or half-written by an exit-time dump interrupted by the kill.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%4m.profraw"
+            "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -5153,6 +5160,10 @@ class ClickHouseInstance:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
+        if not sanitizer_name:
+            # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
+            # also matches CFI, which traps on a bad vcall or cast with no sanitizer runtime attached.
+            return "-DSANITIZER" in build_opts
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
     def is_debug_build(self):
@@ -5821,12 +5832,18 @@ class ClickHouseInstance:
         look_behind_lines=10000,
     ):
         start_time = time.time()
+        # The outer (python) budget must exceed the container-side `timeout` below, so
+        # that one expires first and the pipeline can exit with the lines it collected.
+        # It is also never shorter than the default: the container-side `timeout` signals
+        # only its direct child, while `docker exec` returns once the whole pipeline has
+        # exited, so a short inner value does not bound the outer wait.
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
                 f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
-            ]
+            ],
+            timeout=max(timeout + 60, RUN_AND_CHECK_DEFAULT_TIMEOUT),
         )
 
         # if repetitions>1 grep will return success even if not enough lines were collected,

@@ -34,6 +34,11 @@ namespace ErrorCodes
 static constexpr UInt64 MAX_DISTINCT_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
 static constexpr UInt64 DEFAULT_DISTINCT_BLOOM_FILTER_BYTES = 512 * 1024;
 
+bool preliminaryDistinctIsUseful(size_t max_threads)
+{
+    return max_threads > 1;
+}
+
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
@@ -92,7 +97,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
@@ -101,7 +106,19 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
+    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
+    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
+    const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+
+    /// The final `DISTINCT` may probe its two-level hash set in parallel on a thread pool of its own.
+    /// `getNumThreads` is the budget of the whole pipeline, while `addSimpleTransform` creates one
+    /// transform per stream: after `resize(1)` that is a single transform, but with
+    /// `skip_stream_merging` every surviving stream gets its own pool, so share the budget between
+    /// them instead of letting the query run `streams * max_threads` workers.
     size_t threads = pipeline.getNumThreads();
+    if (!pre_distinct && skip_stream_merging)
+        threads = std::max<size_t>(1, threads / std::max<size_t>(1, pipeline.getNumStreams()));
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -120,13 +137,14 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 set_size_limits,
                 limit_hint,
                 columns,
+                allow_abandoning,
+                /*skip_null_keys_=*/false,
                 pre_distinct,
                 set_limit_for_enabling_bloom_filter,
                 bloom_filter_bytes,
                 pass_ratio_threshold_for_disabling_bloom_filter,
                 max_ratio_of_set_bits_in_bloom_filter,
-                threads
-            );
+                threads);
         });
 }
 
@@ -224,8 +242,7 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
         set_limit_for_enabling_bloom_filter,
         bloom_filter_bytes,
         pass_ratio_threshold_for_disabling,
-        max_ratio_of_set_bits_in_bloom_filter
-    );
+        max_ratio_of_set_bits_in_bloom_filter);
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
