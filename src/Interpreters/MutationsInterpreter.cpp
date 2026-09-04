@@ -158,7 +158,8 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     for (const MutationCommand & command : commands)
     {
         auto alter = command.ast();
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(
+                alter.get(), command.resolved_partition_id, storage, context))
             conditions.push_back(std::move(condition));
     }
 
@@ -263,7 +264,11 @@ IsStorageTouched isStorageTouchedByMutations(
 
             if (alter->partition)
             {
-                const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+                /// Use the scope resolved when the mutation was created, if it is known: the partition
+                /// literal may no longer parse against the current partition key (see `resolved_partition_id`).
+                const String partition_id = command.resolved_partition_id
+                    ? *command.resolved_partition_id
+                    : storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
@@ -337,6 +342,7 @@ IsStorageTouched isStorageTouchedByMutations(
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
+    const std::optional<String> & resolved_partition_id,
     const StoragePtr & storage,
     ContextPtr context
 )
@@ -368,14 +374,24 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
-        if (storage_merge_tree)
-            partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        else if (storage_from_merge_tree_data_part)
-            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+        if (resolved_partition_id)
+        {
+            /// The partition scope of the command was resolved when the mutation was created and
+            /// persisted with it, so the partition literal must not be resolved again here: it may
+            /// no longer parse against the current partition key (see `resolved_partition_id`).
+            partition_id = *resolved_partition_id;
+        }
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
+        {
+            auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+            auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+            if (storage_merge_tree)
+                partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            else if (storage_from_merge_tree_data_part)
+                partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            else
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
+        }
 
         partition_predicate_as_ast_func = makeASTOperator("equals",
                     make_intrusive<ASTIdentifier>("_partition_id"),
@@ -1023,7 +1039,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             auto alter = command.ast();
-            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
+            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.resolved_partition_id))
                 all_filters.push_back(std::move(filter));
         }
 
@@ -1055,7 +1071,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!settings.return_mutated_rows)
             {
                 auto alter = command.ast();
-                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.resolved_partition_id);
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
             }
@@ -1082,7 +1098,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// For a single command with returned mutated rows it is already checked by the prefilter.
             ASTPtr base_condition = condition_checked_by_prefilter
                 ? nullptr
-                : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+                : getPartitionAndPredicateExpressionForMutationCommand(alter.get(), command.resolved_partition_id);
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -2705,9 +2721,10 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(
+    const ASTAlterCommand * alter, const std::optional<String> & resolved_partition_id) const
 {
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, source.getStorage(), context);
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, resolved_partition_id, source.getStorage(), context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const

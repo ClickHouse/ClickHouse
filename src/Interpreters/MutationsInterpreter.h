@@ -48,8 +48,11 @@ IsStorageTouched isStorageTouchedByMutations(
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
 /// other accesses; the function does not call `MutationCommand::ast` itself.
+/// `resolved_partition_id` is `MutationCommand::resolved_partition_id`: when it is
+/// set, the partition literal of the AST must not be resolved again.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
+    const std::optional<String> & resolved_partition_id,
     const StoragePtr & storage,
     ContextPtr context
 );
@@ -224,7 +227,8 @@ private:
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
+        const ASTAlterCommand * alter, const std::optional<String> & resolved_partition_id) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;

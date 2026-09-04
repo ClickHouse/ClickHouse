@@ -1,0 +1,15 @@
+against finished_mutations_to_keep=0
+mutations after first cleanup for table data_mt
+mutation_3.txt
+mutation_4.txt
+mutations after second cleanup for table data_mt
+mutation_3.txt
+mutation_4.txt
+mutation_5.txt
+mutation_6.txt
+mutation_7.txt
+against finished_mutations_to_keep=1
+mutations after first cleanup for table data_mt
+mutation_4.txt
+mutations after second cleanup for table data_mt
+mutation_7.txt

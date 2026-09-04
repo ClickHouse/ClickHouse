@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -797,7 +798,7 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, const DataPartsAnyLock & lock) const;
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
-    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
+    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const PartitionIds & partition_ids) const;
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
@@ -1213,7 +1214,37 @@ public:
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
-    std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+
+    /// Rewrites the `IN PARTITION <value>` clause of every partition-scoped command into the
+    /// `IN PARTITION ID '<id>'` form, resolving the partition value through the current table
+    /// metadata once, pins the resolved id into `MutationCommand::resolved_partition_id` and
+    /// returns the set of partitions affected by the mutation as a whole. The returned set is
+    /// empty when at least one command is not partition-scoped, i.e. when the mutation affects
+    /// all partitions.
+    /// Unlike a partition value, a partition id is decoded without the partition key, so the
+    /// rewritten command can be serialized, re-parsed and executed after a key-safe partition
+    /// key type change (e.g. `Enum8 -> Int8`) that makes the original value literal
+    /// unparseable. Mutation entries persist their commands only in the serialized text form,
+    /// so this keeps their on-disk (and ZooKeeper) shape unchanged while making the scope
+    /// survive such a change.
+    PartitionIds rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
+
+    /// Does any command still carry an `IN PARTITION <value>` literal, i.e. a scope that has
+    /// not been rewritten into the `IN PARTITION ID` form yet (a legacy mutation entry)?
+    static bool hasUnresolvedPartitionScope(const MutationCommands & commands);
+
+    /// Pins `MutationCommand::resolved_partition_id` for partition-scoped commands of a legacy
+    /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
+    /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`
+    /// literals. When the entry is scoped to a single partition, the id is recovered from the
+    /// block numbers allocated at the creation of the entry, without decoding the literals
+    /// through the current partition key; otherwise the literals are decoded through it (and
+    /// the commands are left unpinned if that fails, e.g. after a partition key type change).
+    void pinPartitionScopeOfLegacyCommands(
+        MutationCommands & commands, const std::map<String, Int64> & block_numbers, ContextPtr query_context) const;
+
     /// Returns the set of partition IDs affected by mutation commands.
     /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
     /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
@@ -1244,7 +1275,7 @@ public:
         std::unordered_set<String> * analyzed_partition_ids) const;
 
     /// Returns set of partition_ids of all Active parts
-    std::unordered_set<String> getAllPartitionIds() const;
+    PartitionIds getAllPartitionIds() const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM

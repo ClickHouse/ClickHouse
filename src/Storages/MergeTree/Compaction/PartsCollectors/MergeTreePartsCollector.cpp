@@ -4,6 +4,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 namespace DB
 {

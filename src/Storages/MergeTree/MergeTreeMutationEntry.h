@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MutationCommands.h>
 #include <Common/TransactionID.h>
 
@@ -10,6 +11,7 @@
 namespace DB
 {
 class IBackupEntry;
+class StorageMergeTree;
 
 /// A mutation entry for non-replicated MergeTree storage engines.
 /// Stores information about mutation in file mutation_*.txt.
@@ -51,6 +53,17 @@ struct MergeTreeMutationEntry
     String latest_fail_reason;
     String latest_fail_error_code_name;
 
+    /// If empty, applied to all partitions.
+    PartitionIds partition_ids;
+
+    /// True if the entry was loaded from a legacy `mutation_*.txt` file whose commands still
+    /// carry an `IN PARTITION <value>` literal instead of the pinned `IN PARTITION ID` form.
+    /// Such a file has to be rewritten after loading (see
+    /// `upgradeFileWithResolvedPartitionScope`), otherwise every load resolves the
+    /// `IN PARTITION` literal through the current table metadata again, which can throw
+    /// after a safe partition key type change and make the table unloadable.
+    bool needs_file_upgrade = false;
+
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::NonTransactionalTID;
     /// CSN of transaction which has created mutation
@@ -59,7 +72,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           PartitionIds && partition_ids, const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     /// Must clear the moved-from ownership token (`file_name`, `is_temp`,
     /// `is_registered`); a defaulted move leaves `file_name` unspecified (SSO
@@ -74,14 +87,29 @@ struct MergeTreeMutationEntry
 
     void writeCSN(CSN csn_);
 
+    /// Rewrite a legacy on-disk file (see `needs_file_upgrade`) with the partition scope of
+    /// its commands pinned to `IN PARTITION ID`. The shape of the file is unchanged, so a
+    /// rewritten file is still readable by a binary without this feature.
+    void upgradeFileWithResolvedPartitionScope(const WriteSettings & settings);
+
     std::shared_ptr<const IBackupEntry> backup() const;
+
+    bool affectsPartition(const String & partition_id) const
+    {
+        return containsInPartitionIdsOrEmpty(partition_ids, partition_id);
+    }
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);
     static UInt64 parseFileName(const String & file_name_);
 
     /// Load an existing entry.
-    MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
+    MergeTreeMutationEntry(
+        DiskPtr disk_,
+        const String & path_prefix_,
+        const String & file_name_,
+        StorageMergeTree * storage_,
+        ContextPtr context_);
 
     ~MergeTreeMutationEntry();
 };

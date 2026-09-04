@@ -118,6 +118,14 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
+    /// The partition this command is scoped to (`IN PARTITION`), resolved when the mutation
+    /// was created and persisted together with the mutation entry. When it is set, executors
+    /// must use it instead of resolving the partition literal of the AST again: after a
+    /// key-safe partition key type change (e.g. `Enum8 -> Int8`) the original literal no
+    /// longer parses against the current partition key. It is not set for commands that are
+    /// not partition-scoped, and for mutations whose entry does not carry the resolved scope.
+    std::optional<String> resolved_partition_id = {};
+
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
     /// captured into the returned command so subsequent on-demand re-parsing
