@@ -52,7 +52,7 @@ SELECT 'NOT IN (empty result)';
 SELECT l.x FROM t_04650_l AS l INNER JOIN (SELECT x FROM t_04650_r) AS r ON l.x = r.x
 WHERE l.x NOT IN r ORDER BY l.x;
 
--- A table function source: same abort before the fix, reported as __table1.number.
+-- A table function source: same abort before the fix, reported as `__table1.number`.
 SELECT 'table function source';
 SELECT t1.number FROM numbers(3) AS t1 INNER JOIN numbers(3) AS t2 ON t1.number = t2.number
 WHERE t1.number IN t2 ORDER BY t1.number;
@@ -123,7 +123,7 @@ SELECT 'control: old analyzer rejects the shape';
 SELECT l.x FROM t_04650_l AS l INNER JOIN (SELECT x FROM t_04650_r) AS r ON l.x = r.x
 WHERE l.x IN r ORDER BY l.x SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_TABLE }
 
--- A Set-engine table on the right of IN is looked up by tree hash in CollectSets and is never the
+-- A `Set`-engine table on the right of IN is looked up by tree hash in `CollectSets` and is never the
 -- shared join-tree node, so the clone cannot reach it.
 CREATE TABLE t_04650_set (x Int32) ENGINE = Set;
 INSERT INTO t_04650_set VALUES (2), (3);
