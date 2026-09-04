@@ -130,7 +130,7 @@ OK: dependency database is dumped/confirmed before the dependent database
 cross-database note present: 1
 --- database names colliding only by case are rejected for --dump-schema-dir ---
 OK: non-zero exit code
-would all be written to the same file
+would be written to the same file
 --- circular cross-database table dependencies are rejected for --dump-schema-dir ---
 OK: non-zero exit code
 circular cross-database table dependencies
@@ -238,7 +238,7 @@ dump still emits the view: 1
 without a database; no dumped database contains it
 --- an object whose credentials came back masked is reported, not silently emitted ---
 OK: zero exit code
-masked table still dumped: 1
+masked dictionary still dumped: 1
 masked credential reported: 1
 secret in the dump: 0
 --- a materialized view accepted under a relaxed check replays through the prelude ---

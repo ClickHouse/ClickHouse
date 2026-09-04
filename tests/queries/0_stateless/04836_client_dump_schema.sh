@@ -554,7 +554,7 @@ rm -rf "$CASE_DIR"
 $CLICKHOUSE_CLIENT --dump-schema="${CASE_DB1},${CASE_DB2}" --dump-schema-dir="$CASE_DIR" > /dev/null 2>"$ERR_FILE"
 rc=$?
 [[ $rc -ne 0 ]] && echo 'OK: non-zero exit code' || echo 'FAIL: expected non-zero exit code'
-grep -o -m1 'would all be written to the same file' "$ERR_FILE"
+grep -o -m1 'would be written to the same file' "$ERR_FILE"
 $CLICKHOUSE_CLIENT -mq "
 DROP DATABASE \`${CASE_DB1}\`;
 DROP DATABASE \`${CASE_DB2}\`;
@@ -1360,17 +1360,21 @@ rm -rf "$DBLESS_PATH" "$DBLESS_DUMP_FILE"
 
 echo '--- an object whose credentials came back masked is reported, not silently emitted ---'
 # Masked CREATE credentials replay as literal [HIDDEN] values, so the dump must report them.
+# A dictionary source password is masked like any other credential and needs no optional
+# library, unlike the S3 engine, which the fast test build leaves out.
 MASKED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_masked"
 MASKED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_masked.sql"
 rm -rf "$MASKED_PATH"
 $CLICKHOUSE_LOCAL --path "$MASKED_PATH" --multiquery --query "
 CREATE DATABASE ${DB};
-CREATE TABLE ${DB}.s3t (a Int64) ENGINE = S3('http://example.com/f.csv', 'AKIAEXAMPLEKEY', 'SuperSecret123', 'CSV');
+CREATE TABLE ${DB}.src (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY ${DB}.masked_dict (id UInt64, val String) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(TABLE 'src' DB '${DB}' PASSWORD 'SuperSecret123')) LAYOUT(FLAT()) LIFETIME(0);
 "
 $CLICKHOUSE_LOCAL --path "$MASKED_PATH" --dump-schema="${DB}" > "$MASKED_DUMP_FILE" 2>"$ERR_FILE"
 rc=$?
 [[ $rc -eq 0 ]] && echo 'OK: zero exit code' || echo 'FAIL: expected zero exit code'
-echo "masked table still dumped: $(grep -c "CREATE TABLE ${DB}\.s3t" "$MASKED_DUMP_FILE")"
+echo "masked dictionary still dumped: $(grep -c "CREATE DICTIONARY ${DB}\.masked_dict" "$MASKED_DUMP_FILE")"
 echo "masked credential reported: $(grep -c 'credentials masked as \[HIDDEN\]' "$ERR_FILE")"
 echo "secret in the dump: $(grep -c 'SuperSecret123' "$MASKED_DUMP_FILE")"
 rm -rf "$MASKED_PATH" "$MASKED_DUMP_FILE"
