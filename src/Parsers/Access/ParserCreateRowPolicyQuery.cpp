@@ -446,7 +446,7 @@ row_is_visible = (one or more of the conditions from the permissive policies tha
                  (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
 
-If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom none of a table's policies apply therefore sees every row in it, unless `access_control_improvements.throw_on_unmatched_row_policies` is enabled, which throws an exception instead.
+If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom no condition applies therefore sees every row, and `access_control_improvements.throw_on_unmatched_row_policies`, disabled by default, raises an exception instead when the table does have conditions and none of them apply.
 
 For example, the following policies:
 
