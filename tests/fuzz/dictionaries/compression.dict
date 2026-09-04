@@ -1,7 +1,7 @@
 # Compression codec method bytes and common header patterns.
 # Values from CompressionInfo.h CompressionMethodByte enum.
 
-# CompressionMethodByte values
+# CompressionMethodByte values (keep in sync with the enum).
 "\x02"  # NONE
 "\x82"  # LZ4
 "\x90"  # ZSTD
@@ -10,12 +10,17 @@
 "\x93"  # T64
 "\x94"  # DoubleDelta
 "\x95"  # Gorilla
-"\x97"  # Encrypted
+"\x96"  # AES_128_GCM_SIV
+"\x97"  # AES_256_GCM_SIV
 "\x98"  # FPC
-"\x99"  # DeflateQpl
 "\x9A"  # GCD
-"\x9B"  # ZSTD_QPL
-"\x9C"  # SZ3
+"\x9C"  # ALP
+"\x9D"  # SZ3
+"\x9E"  # Quantized
+"\x9F"  # ZXC
+# 0x99 (DeflateQpl) and 0x9B (ZSTD_QPL) were removed from the enum and are
+# rejected by `CompressionCodecFactory::get` before any codec code runs, so they
+# are deliberately not listed here.
 
 # Common data_bytes_size values for Delta/GCD/Gorilla (1, 2, 4, 8)
 "\x01"  # 1-byte elements
