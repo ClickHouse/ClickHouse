@@ -134,7 +134,7 @@ UInt32 generateRandomUInt32()
 /// session-management commands as plain, unparameterized statements, so there is no reason to run
 /// them through the extended `Parse` / `Bind` / `Execute` flow, and the extended path deliberately
 /// performs no such driver-specific rewriting.
-std::optional<String> classifyNoOpDriverCommand(const String & query)
+[[maybe_unused]] std::optional<String> classifyNoOpDriverCommand(const String & query)
 {
     /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
     /// packet may contain several `;`-separated statements; if we shortcut on the leading keyword
