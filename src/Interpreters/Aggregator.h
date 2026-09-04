@@ -166,6 +166,31 @@ public:
 
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
+        /// Log one line per merged bucket of the two-level final merge with its wall-clock timing
+        /// (see `ConvertingAggregatedToChunksWithMergingSource`). Kept out of the constructor and
+        /// of the plan serialization deliberately, like `bucket_top_k`: a deserialized plan re-runs
+        /// with the instrument off, which is the safe direction (it never changes results).
+        bool log_per_bucket_merge_timings = false;
+
+        /// In the two-level final merge, merge each destination key's parallelizable aggregate
+        /// states (currently uniqExact) from all source variants in one multi-way wave instead of
+        /// folding the sources in pairwise (see `Aggregator::mergeBucketMultiWayImpl`). Kept out
+        /// of the constructor and of the plan serialization deliberately, like `bucket_top_k`:
+        /// the merge order never changes the result, and a deserialized plan re-running at the
+        /// default (off) is the safe direction.
+        bool enable_multi_way_keyed_merge = false;
+
+        /// At the start of the final merge, when no variant crossed the two-level conversion
+        /// thresholds during execution, convert all of them to two-level anyway if the multi-way
+        /// keyed merge could engage (see `prepareVariantsToMerge`): a query at the conversion
+        /// boundary otherwise alternates run to run between the per-bucket merge, where the
+        /// multi-way waves parallelize the heavy uniqExact states, and the single-level merge,
+        /// where they never run. Kept out of the constructor and of the plan serialization
+        /// deliberately, like `enable_multi_way_keyed_merge`: the promotion never changes
+        /// results, and a deserialized plan re-running at the default (off) is the safe
+        /// direction.
+        bool enable_two_level_promotion_for_parallel_merge = false;
+
         /// Merge the per-thread single-level hash tables in parallel, partitioned by the key hash,
         /// instead of the serial merge.
         bool enable_parallel_single_level_merge = false;
@@ -418,6 +443,13 @@ public:
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
+    /// Mean number of elements in the parallelizable aggregate's single-level states, sampled over
+    /// up to a small cap of cells across the (all single-level) variants. The per-key state-weight
+    /// discriminator of the merge-time two-level promotion gate; reads only cells already owned
+    /// before the merge, so it costs microseconds. `offset` is the state's offset inside the row.
+    double sampleParallelizableStateMeanCardinality(
+        const ManyAggregatedDataVariants & non_empty_data, const IAggregateFunction & aggregate_function, size_t offset) const;
+
     /// Whether the variants' single-level method can be merged in hash partitions
     /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
     /// bucket function defines the partition partition.
@@ -440,6 +472,19 @@ public:
         size_t max_source_table_size,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+
+    /// Merges one bucket of two-level variants into the first variant and converts it to one
+    /// output chunk (the per-bucket unit of the two-level final merge).
+    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
+    /// `convertOneBucketToChunk`).
+    AggregatedChunk mergeAndConvertOneBucketToChunk(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+        size_t * full_group_count) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
@@ -1046,17 +1091,6 @@ private:
     AggregatedChunk convertOneBucketToChunkTopK(
         Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
 
-    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
-    /// `convertOneBucketToChunk`).
-    AggregatedChunk mergeAndConvertOneBucketToChunk(
-        ManyAggregatedDataVariants & variants,
-        Arena * arena,
-        bool final,
-        Int32 bucket,
-        std::atomic<bool> & is_cancelled,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count) const;
-
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
@@ -1153,6 +1187,15 @@ private:
     template <typename Method>
     void mergeBucketImpl(
         ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> & is_cancelled) const;
+
+    /// Multi-way variant of the bucket merge (`enable_multi_way_keyed_merge`): phase 1 routes
+    /// every source table into the destination and groups the colliding source states per
+    /// destination state; phase 2 merges each destination key's states in one multi-way wave
+    /// for aggregate functions that support parallel merge, pairwise otherwise.
+    template <typename Method>
+    requires MapAggregationMethod<Method>
+    void mergeBucketMultiWayImpl(
+        ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, bool prefetch, std::atomic<bool> & is_cancelled) const;
 
     template <typename Method>
     void convertBlockToTwoLevelImpl(

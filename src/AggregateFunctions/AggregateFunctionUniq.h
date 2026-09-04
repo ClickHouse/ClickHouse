@@ -645,6 +645,14 @@ public:
         }
     }
 
+    size_t parallelizeMergeStateCardinality(ConstAggregateDataPtr place) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.size();
+        else
+            return 0;
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).set.write(buf);
@@ -750,6 +758,14 @@ public:
         {
             IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
         }
+    }
+
+    size_t parallelizeMergeStateCardinality(ConstAggregateDataPtr place) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.size();
+        else
+            return 0;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

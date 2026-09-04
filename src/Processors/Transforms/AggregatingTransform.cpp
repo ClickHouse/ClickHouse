@@ -17,6 +17,7 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -25,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 
 namespace CurrentMetrics
 {
@@ -240,7 +242,8 @@ public:
         SharedDataPtr shared_data_,
         Arena * arena_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        AdaptiveAggregationSessionPtr adaptive_session_,
+        UInt32 instance_index_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
@@ -248,6 +251,7 @@ public:
         , arena(arena_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
+        , instance_index(instance_index_)
     {
     }
 
@@ -273,6 +277,13 @@ protected:
             data.reset();
             return {};
         }
+
+        /// Per-bucket timing instrument (`log_per_bucket_merge_timings`): time the synchronous
+        /// per-bucket work (adaptive drain, merge, conversion to a chunk) with a steady clock.
+        /// Everything is behind the setting, so the default path stays byte-neutral.
+        std::optional<Stopwatch> timing_watch;
+        if (params->params.log_per_bucket_merge_timings)
+            timing_watch.emplace();
 
         /// The adaptive merge gives every bucket its own arena (see the setup in
         /// `createSources`), so a retired bucket's drained and merged states free with its
@@ -315,6 +326,14 @@ protected:
 
         shared_data->is_bucket_processed[bucket_num] = true;
 
+        if (timing_watch)
+            LOG_DEBUG(
+                log,
+                "PerBucketMergeTiming: bucket={} actual_us={} instance={}",
+                bucket_num,
+                timing_watch->elapsedMicroseconds(),
+                instance_index);
+
         return chunk;
     }
 
@@ -325,6 +344,9 @@ private:
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
+    /// Stable index of this merging source among its siblings, for the per-bucket timing log.
+    UInt32 instance_index;
+    LoggerPtr log = getLogger("ConvertingAggregatedToChunksWithMergingSource");
 };
 
 /// Worker of the parallel single-level merge: atomically takes the next hash partition, merges it out of
@@ -1045,7 +1067,7 @@ private:
             /// per bucket instead.
             Arena * arena = adaptive_session ? nullptr : first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
-                params, data, shared_data, arena, updater, adaptive_session);
+                params, data, shared_data, arena, updater, adaptive_session, static_cast<UInt32>(thread));
 
             processors.emplace_back(std::move(source));
         }

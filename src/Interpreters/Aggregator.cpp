@@ -15,6 +15,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
+#include <limits>
 #include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
@@ -35,6 +36,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldAccurateComparison.h>
+#include <AggregateFunctions/MergeWaveStats.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
@@ -4552,6 +4555,234 @@ void Aggregator::resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_va
         data_variants[i]->aggregator = nullptr;
 }
 
+/// One-wave multi-source bucket merge (`enable_multi_way_keyed_merge`).
+///
+/// The pairwise `mergeBucketImpl` folds source variants into the destination one link at a time,
+/// so a destination key colliding in k sources pays k separate merges, and each uniqExact pair
+/// takes its own trip through the thread pool. Here the merge runs in two phases instead:
+///
+/// - Phase 1 (routing): for every source variant, only the outer-map half of `mergeDataImpl`
+///   runs - `mergeToViaEmplace` with the existing callback semantics (a key new to the
+///   destination moves the source state pointer in; a collision is recorded) and `clearAndShrink`
+///   on the source table. Collisions accumulate into per-destination-state groups, preserving the
+///   source variant order, instead of being merged immediately per link.
+///
+/// - Phase 2 (grouped dispatch): each aggregate function dispatches every group independently.
+///   A function that supports parallel merge (uniqExact) with at least 3 collected sources takes
+///   one multi-way wave per destination state: `parallelizeMergePrepare` when the function needs
+///   it (parallel two-level conversion, internally gated by size), then `parallelizeMergeMulti`
+///   (bucket-parallel; falls back to a pairwise loop internally when not all participants are
+///   two-level), then immediate destruction of the k merged source sub-states - per key, never
+///   deferred to the end of the bucket, so the huge uniqExact states do not accumulate. All other
+///   functions and smaller groups take the unchanged pairwise `mergeAndDestroyBatch` path
+///   (combinator wrappers do not forward the capability virtuals, so -If/-State and similar
+///   degrade to it automatically).
+///
+/// The per-key merge order equals the pairwise fold's (sources in variant order), so results are
+/// identical, including for order-sensitive floating-point states.
+///
+/// Exception safety matches the existing paths: the pairwise fallback keeps `mergeAndDestroyBatch`'s
+/// per-element merge-then-destroy ordering; the wave destroys its sources only after it returns,
+/// and on exception propagates after the wave's barrier without destroying (the same
+/// leak-on-exception the without-key path has). Cancellation stops the routing of further
+/// variants (their tables keep owning their states), while phase 2 still runs for everything
+/// already collected - the internal cancellation checks of the merges short-circuit the work -
+/// so every source state already unlinked from its table is destroyed, not leaked.
+template <typename Method>
+requires MapAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeBucketMultiWayImpl(
+    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, bool prefetch, std::atomic<bool> & is_cancelled) const
+{
+    AggregatedDataVariantsPtr & res = data[0];
+    auto & table_dst = getDataVariant<Method>(*res).data.impls[bucket];
+
+    /// Groups are keyed by the destination *state pointer*, which is stable for the whole phase 1:
+    /// routing never merges, and a destination's pointer is written at most once (either it
+    /// pre-existed in the destination table or the first source owning the key moved it in).
+    /// Table cells are not stable (rehashing moves them), state pointers are.
+    struct CollisionGroup
+    {
+        AggregateDataPtr dst;
+        size_t last_entry;  /// index of the group's last collision in `collision_entries`
+        size_t num_sources;
+    };
+    /// Per-group collision lists as chains through one flat array: entry i holds a source state
+    /// and the index of the group's previous entry (walked backwards by count in phase 2).
+    struct CollisionEntry
+    {
+        AggregateDataPtr src;
+        size_t prev_entry;
+    };
+    PaddedPODArray<CollisionGroup> groups;
+    PaddedPODArray<CollisionEntry> collision_entries;
+    HashMap<UInt64, size_t> dst_to_group;
+
+    static constexpr size_t chain_end = std::numeric_limits<size_t>::max();
+
+    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    {
+        if (!inserted)
+        {
+            typename HashMap<UInt64, size_t>::LookupResult group_it;
+            bool group_inserted;
+            dst_to_group.emplace(reinterpret_cast<UInt64>(dst), group_it, group_inserted);
+            if (group_inserted)
+            {
+                group_it->getMapped() = groups.size();
+                groups.push_back(CollisionGroup{dst, collision_entries.size(), 1});
+                collision_entries.push_back(CollisionEntry{src, chain_end});
+            }
+            else
+            {
+                auto & group = groups[group_it->getMapped()];
+                collision_entries.push_back(CollisionEntry{src, group.last_entry});
+                group.last_entry = collision_entries.size() - 1;
+                ++group.num_sources;
+            }
+        }
+        else
+        {
+            dst = src;
+        }
+
+        src = nullptr;
+    };
+
+    /// Phase timers (`log_per_bucket_merge_timings`): wall of phase 1 (the routing) and of the
+    /// pairwise fallback merges of phase 2, logged once per bucket. The conversion of the merged
+    /// bucket into a block happens at the caller's site (`mergeAndConvertOneBucketToChunk`), not
+    /// here, so the line carries no convert_us; the existing PerBucketMergeTiming line covers the
+    /// whole bucket including that conversion.
+    const bool log_timings = params.log_per_bucket_merge_timings;
+    std::optional<Stopwatch> phase_watch;
+    if (log_timings)
+        phase_watch.emplace();
+    UInt64 route_us = 0;
+    UInt64 pairwise_us = 0;
+
+    for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
+    {
+        /// Stop routing further variants on cancellation: their tables keep their states and the
+        /// ordinary destruction of the variants stays responsible for them. Phase 2 still runs
+        /// for what is already collected.
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            break;
+
+        auto & table_src = getDataVariant<Method>(*data[result_num]).data.impls[bucket];
+        if (prefetch)
+            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        else
+            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+        table_src.clearAndShrink();
+    }
+
+    if (log_timings)
+        route_us = phase_watch->elapsedMicroseconds();
+
+    if (groups.empty())
+    {
+        if (log_timings)
+            LOG_DEBUG(log, "MergePhaseTiming: bucket={} route_us={} pairwise_us=0", bucket, route_us);
+        return;
+    }
+
+    /// The wave needs enough sources for the bucket-parallel merge to beat the pairwise fold;
+    /// below that the pairwise path is the wave's own internal fallback anyway.
+    static constexpr size_t min_sources_for_wave = 3;
+
+    /// Scratch buffers reused across groups.
+    AggregateDataPtrs wave_places;
+    PaddedPODArray<AggregateDataPtr> group_src_places;
+    PaddedPODArray<AggregateDataPtr> group_dst_places;
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto * aggregate_function = aggregate_functions[i];
+        const size_t offset = offsets_of_aggregate_states[i];
+        const bool function_takes_wave = aggregate_function->isAbleToParallelizeMerge() && thread_pool != nullptr;
+
+        for (const auto & group : groups)
+        {
+            /// Materialize the group's sources in their original variant order (the chain links backwards).
+            group_src_places.resize(group.num_sources);
+            for (size_t entry = group.last_entry, j = group.num_sources; j > 0; --j)
+            {
+                group_src_places[j - 1] = collision_entries[entry].src;
+                entry = collision_entries[entry].prev_entry;
+            }
+
+            if (function_takes_wave && group.num_sources >= min_sources_for_wave)
+            {
+                wave_places.clear();
+                wave_places.reserve(group.num_sources + 1);
+                wave_places.push_back(group.dst + offset);
+                for (const auto & src : group_src_places)
+                    wave_places.push_back(src + offset);
+
+                auto run_wave = [&]
+                {
+                    if (aggregate_function->isParallelizeMergePrepareNeeded())
+                        aggregate_function->parallelizeMergePrepare(wave_places, *thread_pool, is_cancelled);
+
+                    aggregate_function->parallelizeMergeMulti(wave_places, *thread_pool, is_cancelled, arena);
+                };
+
+                if (log_timings)
+                {
+                    /// One wave = this group's prepare + multi. The pooled tasks account their
+                    /// thread-CPU time and worker identity to the ambient sink (see
+                    /// `MergeWaveStats`); the wall clock runs from the wave's construction to its
+                    /// barrier. cpu_us counts pooled tasks only, so a wave whose work degrades to
+                    /// the coordinating thread (the serial single-level fallback inside
+                    /// `parallelizeMergeMulti`) shows cpu_us ~ 0 and workers=0 under a non-trivial
+                    /// wall_us - exactly the signature of a wave that did not spread out.
+                    MergeWaveStats wave_stats;
+                    MergeWaveStatsScope stats_scope(&wave_stats);
+                    Stopwatch wave_watch;
+                    run_wave();
+                    LOG_DEBUG(
+                        log,
+                        "MergeWaveTiming: bucket={} group_sources={} cpu_us={} wall_us={} workers={}",
+                        bucket,
+                        group.num_sources,
+                        wave_stats.cpu_ns.load(std::memory_order_relaxed) / 1000,
+                        wave_watch.elapsedMicroseconds(),
+                        wave_stats.distinctWorkers());
+                }
+                else
+                {
+                    run_wave();
+                }
+
+                /// Mandatory memory guard: the k merged source sub-states die now, per key. On
+                /// exception the wave rethrows after its barrier and nothing is destroyed here.
+                for (const auto & src : group_src_places)
+                    aggregate_function->destroy(src + offset);
+            }
+            else
+            {
+                group_dst_places.clear();
+                group_dst_places.resize_fill(group.num_sources, group.dst);
+                if (log_timings)
+                    phase_watch->restart();
+                aggregate_function->mergeAndDestroyBatch(
+                    group_dst_places.data(),
+                    group_src_places.data(),
+                    group.num_sources,
+                    offset,
+                    *thread_pool,
+                    is_cancelled,
+                    arena);
+                if (log_timings)
+                    pairwise_us += phase_watch->elapsedMicroseconds();
+            }
+        }
+    }
+
+    if (log_timings)
+        LOG_DEBUG(log, "MergePhaseTiming: bucket={} route_us={} pairwise_us={}", bucket, route_us, pairwise_us);
+}
+
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
     ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> & is_cancelled) const
@@ -4565,6 +4796,23 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
+
+    /// The multi-way keyed merge covers plain map methods only: set methods have no states to
+    /// group; the null-key slot of the low-cardinality / nullable-key optimizations and the
+    /// inline counters of the simple-count layout keep the unchanged path; JIT-compiled
+    /// functions keep the unchanged path too (the flat JIT pair merge does not group).
+    if constexpr (MapAggregationMethod<Method> && !Method::low_cardinality_optimization && !Method::one_key_nullable_optimization)
+    {
+        bool use_multi_way = params.enable_multi_way_keyed_merge && !is_simple_count && thread_pool != nullptr;
+#if USE_EMBEDDED_COMPILER
+        use_multi_way = use_multi_way && compiled_aggregate_functions_holder == nullptr;
+#endif
+        if (use_multi_way)
+        {
+            mergeBucketMultiWayImpl<Method>(data, bucket, arena, prefetch, is_cancelled);
+            return;
+        }
+    }
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
@@ -4590,6 +4838,47 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 is_cancelled);
         }
     }
+}
+
+double Aggregator::sampleParallelizableStateMeanCardinality(
+    const ManyAggregatedDataVariants & non_empty_data, const IAggregateFunction & aggregate_function, size_t offset) const
+{
+    /// A small cap: a few dozen cells give a stable mean for the uniform-weight queries the gate
+    /// targets, and forEachMapped breaks as soon as the cap is reached (hash order makes the first
+    /// cells an effectively random sample of keys).
+    static constexpr size_t max_state_samples = 64;
+    size_t samples = 0;
+    size_t sum_cardinality = 0;
+
+    auto sample_table = [&](auto & table)
+    {
+        table.forEachMapped(
+            [&](AggregateDataPtr place) -> bool
+            {
+                sum_cardinality += aggregate_function.parallelizeMergeStateCardinality(place + offset);
+                return ++samples < max_state_samples;
+            });
+    };
+
+    for (const auto & variant : non_empty_data)
+    {
+        if (samples >= max_state_samples)
+            break;
+
+        switch (variant->type)
+        {
+#define M(NAME) \
+            case AggregatedDataVariants::Type::NAME: \
+                sample_table(variant->NAME->data); \
+                break;
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+            default:
+                break;
+        }
+    }
+
+    return samples ? static_cast<double>(sum_cardinality) / static_cast<double>(samples) : 0.0;
 }
 
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
@@ -4631,6 +4920,80 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         {
             has_at_least_one_two_level = true;
             break;
+        }
+    }
+
+    /// Merge-time two-level promotion (`enable_two_level_promotion_for_parallel_merge`): a query
+    /// sitting at the single-level/two-level conversion boundary produces all-single-level
+    /// variants in some runs, and the merge then takes the single-level path, where the multi-way
+    /// keyed merge (`enable_multi_way_keyed_merge`) never engages. When the multi-way waves could
+    /// do real work - the multi-way merge is on and has its thread pool, at least one aggregate
+    /// function supports the parallel merge, and there are enough sources (>= 3, below which the
+    /// wave is the pairwise fold anyway) - convert all variants to two-level here, through the
+    /// unchanged conversion machinery below, so the merge takes the per-bucket path. The floor of
+    /// 1024 groups summed across the variants is a tunable, not a measured constant: it only
+    /// keeps trivial merges, whose 256-bucket bookkeeping would cost more than the merge itself,
+    /// off the promoted path.
+    ///
+    /// Gate retry (state-weight component): the group-count floor alone still promoted
+    /// COUNT(DISTINCT)-bearing queries with LIGHT per-key states (few distinct values per key),
+    /// where the wave pays the conversion + 256-way bucketed merge for almost no work and the
+    /// promotion regressed the query (measured: Q22 +4.96%). So the gate also requires the
+    /// parallelizable aggregate's per-key states to be heavy on average - the mean single-level
+    /// state cardinality, sampled cheaply from cells already owned pre-merge, must clear a floor.
+    /// Heavy-state queries (Q10/Q11 class, hundreds of distinct per key) clear it and keep the
+    /// win; light-state ones (Q22/Q04/Q05 class, single digits per key) do not and are left on
+    /// the unchanged merge path.
+    if (!has_at_least_one_two_level
+        && params.enable_two_level_promotion_for_parallel_merge
+        && params.enable_multi_way_keyed_merge
+        && thread_pool != nullptr
+        && non_empty_data.size() >= 3)
+    {
+        static constexpr size_t min_total_groups_for_promotion = 1024;
+        static constexpr double min_mean_state_cardinality_for_promotion = 16;
+
+        size_t parallelizable_index = params.aggregates_size;
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+            {
+                parallelizable_index = i;
+                break;
+            }
+
+        /// All variants are single-level here (no two-level one was found above), but the method
+        /// may have no two-level form at all (e.g. the fixed-array key8/key16 methods).
+        bool all_convertible = true;
+        size_t total_groups = 0;
+        for (const auto & variant : non_empty_data)
+        {
+            all_convertible = all_convertible && variant->isConvertibleToTwoLevel();
+            total_groups += variant->sizeWithoutOverflowRow();
+        }
+
+        if (parallelizable_index < params.aggregates_size && all_convertible
+            && total_groups >= min_total_groups_for_promotion)
+        {
+            const double mean_state_cardinality = sampleParallelizableStateMeanCardinality(
+                non_empty_data, *aggregate_functions[parallelizable_index],
+                offsets_of_aggregate_states[parallelizable_index]);
+
+            /// Diagnostic (byte-neutral when the flag is off): the gate inputs and verdict, for
+            /// tuning the two floors against real workloads.
+            if (params.log_per_bucket_merge_timings)
+                LOG_DEBUG(
+                    log,
+                    "TwoLevelPromotionGate: sources={} total_groups={} mean_state_cardinality={:.1f} "
+                    "groups_floor={} cardinality_floor={} promote={}",
+                    non_empty_data.size(),
+                    total_groups,
+                    mean_state_cardinality,
+                    min_total_groups_for_promotion,
+                    min_mean_state_cardinality_for_promotion,
+                    mean_state_cardinality >= min_mean_state_cardinality_for_promotion);
+
+            if (mean_state_cardinality >= min_mean_state_cardinality_for_promotion)
+                has_at_least_one_two_level = true;
         }
     }
 

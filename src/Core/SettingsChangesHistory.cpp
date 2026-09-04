@@ -69,6 +69,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
+            {"enable_multi_way_keyed_merge", false, true, "New setting to merge each destination key's parallelizable aggregate states (currently uniqExact) from all source threads in one multi-way wave in the final merge of two-level aggregation, instead of folding the sources in pairwise. Enabled by default; previous versions had no multi-way merge."},
+            {"enable_two_level_promotion_for_parallel_merge", false, true, "New setting to convert all single-level aggregation hash tables to two-level at the start of the final merge when the multi-way keyed merge could engage, so queries at the two-level conversion boundary reliably take the per-bucket merge path. Enabled by default; previous versions had no merge-time promotion."},
+            {"log_per_bucket_merge_timings", false, false, "New setting to log the wall-clock time of every merged bucket of the two-level aggregation final merge."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

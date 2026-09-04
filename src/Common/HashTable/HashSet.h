@@ -123,9 +123,73 @@ public:
         }
     }
 
+    /// Const counterpart of `mergeToViaEmplace`: iterate *this strictly read-only and emplace every key into
+    /// `that`, growing `that` incrementally (with optional prefetch). Constness is load-bearing, not cosmetic:
+    /// the source may be a shared pointee read concurrently by several merge destinations (see
+    /// `UniqExactSet::getTwoLevelSet`), so nothing here may mutate *this. Like `mergeToViaEmplace`, it does NOT
+    /// preemptively resize `that` to dst+src - that over-allocates and triggers a full rehash for high-overlap
+    /// aggregation merges. The hash is forwarded from the source iterator: `getHash` returns the stored hash
+    /// for cells that save it and recomputes it otherwise.
+    ///
+    /// Unlike `merge`, there is no explicit zero-key block. Zero-key propagation holds by three behaviors of
+    /// the emplace chain: `HashTable::begin` yields the zero-storage cell first when `hasZero()`,
+    /// `iterator_base::operator++` then moves from the zero cell into the main buffer, and `that.emplace`
+    /// routes a zero key back into the destination's zero-value storage via `emplaceIfZero`.
+    ///
+    /// `That` may be any hash table with the same cell type - in particular `TwoLevelHashSetTable`, whose
+    /// `emplace`/`prefetchByHash` route by hash to the right sub-table.
+    template <bool prefetch = false, typename That>
+    void ALWAYS_INLINE mergeInto(That & that) const
+    {
+        /// The destination must agree on the key and hash function (both are baked into the cell type)
+        /// for hash values computed by the source to be valid in the destination.
+        static_assert(std::is_same_v<typename That::cell_type, Cell>);
+
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
+
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
+
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
+        {
+            if constexpr (prefetch)
+            {
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
+                }
+
+                if (prefetch_it != end)
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
+            }
+
+            typename That::LookupResult res_it;
+            bool inserted = false;
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
+        }
+    }
+
 private:
     using Iterator = typename Base::iterator;
+    using ConstIterator = typename Base::const_iterator;
+
     Iterator advanceIterator(Iterator it, size_t n)
+    {
+        size_t i = 0;
+        while (i < n && it != this->end())
+        {
+            ++i;
+            ++it;
+        }
+        return it;
+    }
+
+    ConstIterator advanceIterator(ConstIterator it, size_t n) const
     {
         size_t i = 0;
         while (i < n && it != this->end())

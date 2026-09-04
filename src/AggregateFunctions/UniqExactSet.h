@@ -1,5 +1,7 @@
 #pragma once
 
+#include <AggregateFunctions/MergeWaveStats.h>
+
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
@@ -8,6 +10,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <base/defines.h>
 #include <base/getL2CacheSize.h>
 
 #include <atomic>
@@ -141,12 +144,24 @@ public:
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
         if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
+            /// Wave diagnostics (`log_per_bucket_merge_timings`): the coordinating thread set the
+            /// sink before dispatching this wave; the pooled tasks account their thread-CPU time
+            /// and worker identity to it.
+            MergeWaveStats * wave_stats = current_merge_wave_stats;
+
+            /// The conversions go through a local runner that tracks its own tasks and waits only
+            /// for them, same as `parallelizeMergeMulti` below: prepare is called from
+            /// concurrently running bucket mergers sharing `thread_pool`, so a bare
+            /// `thread_pool.wait()` would block on unrelated jobs and steal their exceptions.
+            /// The runner switches its tasks to the enqueuer's thread group and names them, so the
+            /// manual `ThreadGroupSwitcher` of the detached-job pattern is not needed here.
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_CONVERT);
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, wave_stats]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
+                    MergeWaveTaskTimer task_timer(wave_stats);
 
                     while (true)
                     {
@@ -161,15 +176,14 @@ public:
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
-                    thread_pool.scheduleOrThrowOnError(thread_func);
-
-                thread_pool.wait();
+                    runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
             {
-                thread_pool.wait();
+                is_cancelled.store(true);
                 throw;
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
     }
 
@@ -208,6 +222,18 @@ public:
         }
 
         /// All sets are two-level, perform parallel bucket-wise merge.
+        ///
+        /// Every participant is materialized through `asTwoLevelChecked()` below, so a shared
+        /// pointee here would silently take the serial 256-sub-table deep copy in
+        /// `doDeepCopyIfNeeded` inside the wave. Callers must hand in exclusively owned states
+        /// (the keyed and without-key merge paths do: their states come straight from the
+        /// aggregation hash tables and never escape before the merge).
+        for (size_t i = 0; i < places.size(); ++i)
+            chassert(
+                !accessor(places[i])->hasSharedTwoLevelPointee(),
+                "UniqExactSet::parallelizeMergeMulti: a participating state's two-level pointee is shared; "
+                "the deep copy in doDeepCopyIfNeeded must not fire inside the merge wave");
+
         auto & first_two_level = first->asTwoLevelChecked();
         constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
 
@@ -217,13 +243,23 @@ public:
         for (size_t i = 0; i < places.size(); ++i)
             two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
 
+        /// The same L2 gate as `insertMany` on the destination's total buffer, decided once before the
+        /// workers start mutating it (summing sub-table sizes mid-merge would race them).
+        const bool prefetch_merge = first_two_level.getBufferSizeInBytes() > getL2CacheSize();
+
+        /// Wave diagnostics (`log_per_bucket_merge_timings`), same sink as in
+        /// `parallelizeMergePrepare`. The pairwise fallback above needs no read of its own: it
+        /// runs `merge` on this same thread, which reads the sink at its pooled section.
+        MergeWaveStats * wave_stats = current_merge_wave_stats;
         ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
         try
         {
             auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled]()
+            auto thread_func = [&two_level_ptrs, &first_two_level, prefetch_merge, next_bucket_to_merge, &is_cancelled, wave_stats]()
             {
+                MergeWaveTaskTimer task_timer(wave_stats);
+
                 while (true)
                 {
                     if (is_cancelled.load(std::memory_order_seq_cst))
@@ -238,7 +274,11 @@ public:
                         if (is_cancelled.load(std::memory_order_seq_cst))
                             return;
 
-                        first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
+                        /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                        if (prefetch_merge && !first_two_level.impls[bucket].empty())
+                            two_level_ptrs[j]->impls[bucket].template mergeInto</*prefetch=*/ true>(first_two_level.impls[bucket]);
+                        else
+                            first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
                     }
                 }
             };
@@ -269,14 +309,34 @@ public:
 
         if (isSingleLevel())
         {
-            asSingleLevel().merge(other.asSingleLevel());
+            auto & lhs = asSingleLevel();
+            /// Once the destination spills out of L2 the merge is cache-miss bound (same gate as `insertMany`):
+            /// take the prefetching `mergeInto`, which also skips `merge`'s preemptive dst+src resize - for
+            /// high-overlap merges that over-allocates and forces a full rehash. Below the gate keep `merge`
+            /// unchanged, including its empty-destination buffer-copy fast path (an above-gate destination
+            /// cannot be empty: its buffer only grows past L2 by holding elements).
+            if (lhs.getBufferSizeInBytes() > getL2CacheSize())
+                other.asSingleLevel().template mergeInto</*prefetch=*/ true>(lhs);
+            else
+                lhs.merge(other.asSingleLevel());
         }
         else
         {
             auto & lhs = asTwoLevelChecked();
 
+            /// The same L2 gate on the two-level destination's total buffer, decided once up front: the buffer
+            /// only grows during the merge, and in the pool path summing sub-table sizes mid-merge would race
+            /// the worker threads.
+            const bool prefetch_merge = lhs.getBufferSizeInBytes() > getL2CacheSize();
+
             if (other.isSingleLevel())
-                return lhs.merge(other.asSingleLevel());
+            {
+                if (prefetch_merge)
+                    other.asSingleLevel().template mergeInto</*prefetch=*/ true>(lhs);
+                else
+                    lhs.merge(other.asSingleLevel());
+                return;
+            }
 
             /// `getTwoLevelSet` marked the pointee shared, so no other holder mutates it in place while we read it.
             const auto rhs_ptr = other.getTwoLevelSet();
@@ -285,20 +345,30 @@ public:
             {
                 for (size_t i = 0; i < rhs.NUM_BUCKETS; ++i)
                 {
-                    lhs.impls[i].merge(rhs.impls[i]);
+                    /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                    if (prefetch_merge && !lhs.impls[i].empty())
+                        rhs.impls[i].template mergeInto</*prefetch=*/ true>(lhs.impls[i]);
+                    else
+                        lhs.impls[i].merge(rhs.impls[i]);
                 }
             }
             else
             {
 
                 /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
+                /// Wave diagnostics (`log_per_bucket_merge_timings`): non-null only when this
+                /// merge runs inside a multi-way wave (the internal pairwise fallback of
+                /// `parallelizeMergeMulti`), whose coordinating thread set the sink.
+                MergeWaveStats * wave_stats = current_merge_wave_stats;
                 ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
+                    auto thread_func = [&lhs, &rhs, prefetch_merge, next_bucket_to_merge, is_cancelled, wave_stats]()
                     {
+                        MergeWaveTaskTimer task_timer(wave_stats);
+
                         while (true)
                         {
                             if (is_cancelled->load())
@@ -307,7 +377,11 @@ public:
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
                             if (bucket >= rhs.NUM_BUCKETS)
                                 return;
-                            lhs.impls[bucket].merge(rhs.impls[bucket]);
+                            /// An empty destination sub-table keeps `merge` for its buffer-copy fast path.
+                            if (prefetch_merge && !lhs.impls[bucket].empty())
+                                rhs.impls[bucket].template mergeInto</*prefetch=*/ true>(lhs.impls[bucket]);
+                            else
+                                lhs.impls[bucket].merge(rhs.impls[bucket]);
                         }
                     };
 
@@ -396,6 +470,16 @@ public:
 
     bool isSingleLevel() const { return !two_level_set; }
     bool isTwoLevel() const { return !!two_level_set; }
+
+    /// True when this set holds a two-level pointee that has escaped to another holder (`is_shared`
+    /// set by `getTwoLevelSet`, e.g. when an empty destination adopted it in `merge`): the next
+    /// mutating access through `asTwoLevelChecked` forks it - the serial 256-sub-table deep copy in
+    /// `doDeepCopyIfNeeded` - instead of mutating in place. `parallelizeMergeMulti` asserts this is
+    /// false for every participant, so that the deep copy never silently fires inside the wave.
+    bool hasSharedTwoLevelPointee() const
+    {
+        return two_level_set && two_level_set->is_shared.load(std::memory_order_acquire);
+    }
 
 private:
     static constexpr size_t insert_prefetch_look_ahead = 16;

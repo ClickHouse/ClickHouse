@@ -13,7 +13,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Aggregator.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -176,6 +178,46 @@ struct Scenario
             for (const auto & [key, value] : renderChunk(finalized, params.keys_size))
             {
                 EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two partitions";
+            }
+        }
+        return united;
+    }
+
+    /// Runs only the merge preparation, so a test can assert what `prepareVariantsToMerge`
+    /// decided (e.g. whether the merge-time two-level promotion converted the variants).
+    ManyAggregatedDataVariants prepare(std::vector<AggregatedDataVariantsPtr> sources) const
+    {
+        ManyAggregatedDataVariants many(sources.begin(), sources.end());
+        return aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
+    }
+
+    /// The whole single-level merge as one partition (the unpromoted merge of all-single-level
+    /// variants takes this shape).
+    std::map<String, String> mergeSingleLevel(ManyAggregatedDataVariants & prepared) const
+    {
+        std::atomic<bool> cancelled{false};
+        size_t max_table_size = 0;
+        for (const auto & variants : prepared)
+            max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
+        auto agg_chunk = aggregator.mergeSingleLevelPartitionAndConvertToChunk(
+            prepared, /*final=*/true, /*partition=*/0, /*num_partitions=*/1, max_table_size, cancelled, /*updater=*/nullptr);
+        return renderChunk(agg_chunk.chunk, params.keys_size);
+    }
+
+    /// The per-bucket merge of two-level variants (the path the merge-time promotion routes an
+    /// all-single-level merge onto), united across all 256 buckets.
+    std::map<String, String> mergeTwoLevelBuckets(ManyAggregatedDataVariants & prepared) const
+    {
+        std::atomic<bool> cancelled{false};
+        Arena * arena = prepared.at(0)->aggregates_pool;
+        std::map<String, String> united;
+        for (Int32 bucket = 0; bucket < 256; ++bucket)
+        {
+            auto agg_chunk = aggregator.mergeAndConvertOneBucketToChunk(
+                prepared, arena, /*final=*/true, bucket, cancelled, /*updater=*/nullptr, /*full_group_count=*/nullptr);
+            for (const auto & [key, value] : renderChunk(agg_chunk.chunk, params.keys_size))
+            {
+                EXPECT_TRUE(united.emplace(key, value).second) << "key " << key << " produced by two buckets";
             }
         }
         return united;
@@ -559,4 +601,163 @@ TEST_F(AggregatorParallelPartitionMerge, EmptySourceAmongTables)
     auto expected = scenario.referenceOf({block.front()});
     auto empty = std::make_shared<AggregatedDataVariants>();
     EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block), empty}, 4), expected);
+}
+
+/// Merge-time two-level promotion (`enable_two_level_promotion_for_parallel_merge`): all variants
+/// stay single-level during execution while carrying parallelizable states (uniqExact). Without
+/// the promotion the merge stays single-level; with it `prepareVariantsToMerge` converts every
+/// variant to two-level and the merge takes the per-bucket path, where the multi-way waves of
+/// `enable_multi_way_keyed_merge` engage (every key is present in all 4 sources, so each
+/// destination state collects 3 collided sources - exactly the wave's minimum). Both merges must
+/// produce the serial reference result.
+TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionForParallelMerge)
+{
+    /// The factory hands out the parallel-merge variant of uniqExact only when the query settings
+    /// carry max_threads > 1 (see registerAggregateFunctionsUniq), and the promotion gate
+    /// requires a parallelizable function, so the aggregates must be created under a query scope.
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("two_level_promotion_test");
+    query_context->setSetting("max_threads", UInt64(4));
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto make_scenario = [](bool promotion)
+    {
+        auto params = makeParams(
+            {"k"}, {makeAggregate("uniqExact", {"v"}, {uint64_type}), makeAggregate("sum", {"v"}, {uint64_type})});
+        params.max_threads = 4;
+        params.enable_multi_way_keyed_merge = true;
+        params.enable_two_level_promotion_for_parallel_merge = promotion;
+        return std::make_unique<Scenario>(makeHeader(uint64_type), std::move(params));
+    };
+
+    /// 4 sources of 400 groups each (1600 summed, above the group-count floor of 1024). Each key
+    /// carries 40 distinct values per source, so the single-level uniqExact states the gate
+    /// samples average ~40 elements - above the state-weight floor (16) - and the query promotes,
+    /// standing in for the heavy-state Q10/Q11 class.
+    auto make_block = [](size_t source)
+    {
+        std::vector<Field> keys;
+        std::vector<Field> values;
+        keys.reserve(400 * 40);
+        values.reserve(400 * 40);
+        for (UInt64 key = 0; key < 400; ++key)
+            for (UInt64 r = 0; r < 40; ++r)
+            {
+                keys.emplace_back(key);
+                values.emplace_back(source * 1000000 + key * 40 + r);
+            }
+        return Columns{makeColumn(uint64_type, keys), makeColumn(uint64_type, values)};
+    };
+    std::vector<Columns> blocks{make_block(0), make_block(1), make_block(2), make_block(3)};
+
+    auto promoted = make_scenario(true);
+    auto expected = promoted->referenceOf(blocks);
+    EXPECT_EQ(expected.size(), 400u);
+
+    {
+        auto prepared = promoted->prepare(
+            {promoted->aggregate({blocks[0]}),
+             promoted->aggregate({blocks[1]}),
+             promoted->aggregate({blocks[2]}),
+             promoted->aggregate({blocks[3]})});
+        ASSERT_FALSE(prepared.empty());
+        EXPECT_TRUE(prepared.at(0)->isTwoLevel());
+        EXPECT_EQ(promoted->mergeTwoLevelBuckets(prepared), expected);
+    }
+
+    {
+        auto unpromoted = make_scenario(false);
+        auto prepared = unpromoted->prepare(
+            {unpromoted->aggregate({blocks[0]}),
+             unpromoted->aggregate({blocks[1]}),
+             unpromoted->aggregate({blocks[2]}),
+             unpromoted->aggregate({blocks[3]})});
+        ASSERT_FALSE(prepared.empty());
+        EXPECT_FALSE(prepared.at(0)->isTwoLevel());
+        EXPECT_EQ(unpromoted->mergeSingleLevel(prepared), expected);
+    }
+}
+
+/// Below the promotion floor (1024 groups summed across the variants) the promotion must not
+/// fire: the merge stays single-level even with both settings on.
+TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionRespectsGroupsFloor)
+{
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("two_level_promotion_floor_test");
+    query_context->setSetting("max_threads", UInt64(4));
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto params = makeParams({"k"}, {makeAggregate("uniqExact", {"v"}, {uint64_type})});
+    params.max_threads = 4;
+    params.enable_multi_way_keyed_merge = true;
+    params.enable_two_level_promotion_for_parallel_merge = true;
+    Scenario scenario(makeHeader(uint64_type), std::move(params));
+
+    auto make_block = [](size_t source)
+    {
+        std::vector<UInt64> keys;
+        keys.reserve(600);
+        for (size_t i = 0; i < 600; ++i)
+            keys.push_back(i % 200);
+        return makeUInt64Block(keys, source * 100000);
+    };
+    std::vector<Columns> blocks{make_block(0), make_block(1), make_block(2), make_block(3)};
+
+    auto expected = scenario.referenceOf(blocks);
+    EXPECT_EQ(expected.size(), 200u);
+
+    /// 4 x 200 = 800 groups summed: below the floor.
+    auto prepared = scenario.prepare(
+        {scenario.aggregate({blocks[0]}),
+         scenario.aggregate({blocks[1]}),
+         scenario.aggregate({blocks[2]}),
+         scenario.aggregate({blocks[3]})});
+    ASSERT_FALSE(prepared.empty());
+    EXPECT_FALSE(prepared.at(0)->isTwoLevel());
+    EXPECT_EQ(scenario.mergeSingleLevel(prepared), expected);
+}
+
+/// Above the group-count floor but with LIGHT per-key states (one distinct value per key per
+/// source), the state-weight component of the gate must keep the promotion off: the sampled mean
+/// state cardinality (~1) is below the floor (16). This is the Q22/Q04/Q05 class the gate retry
+/// added the component for. Results still identical, on the unchanged single-level path.
+TEST_F(AggregatorParallelPartitionMerge, TwoLevelPromotionRespectsStateWeightFloor)
+{
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("two_level_promotion_state_weight_test");
+    query_context->setSetting("max_threads", UInt64(4));
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto params = makeParams({"k"}, {makeAggregate("uniqExact", {"v"}, {uint64_type})});
+    params.max_threads = 4;
+    params.enable_multi_way_keyed_merge = true;
+    params.enable_two_level_promotion_for_parallel_merge = true;
+    Scenario scenario(makeHeader(uint64_type), std::move(params));
+
+    /// 400 groups per source (1600 summed, clears the 1024 group floor), but value == key so each
+    /// key holds exactly one distinct value per source - a weightless uniqExact state.
+    auto make_block = [](size_t source)
+    {
+        std::vector<UInt64> keys;
+        keys.reserve(1200);
+        for (size_t i = 0; i < 1200; ++i)
+            keys.push_back(i % 400);
+        return makeUInt64Block(keys, source * 100000);
+    };
+    std::vector<Columns> blocks{make_block(0), make_block(1), make_block(2), make_block(3)};
+
+    auto expected = scenario.referenceOf(blocks);
+    EXPECT_EQ(expected.size(), 400u);
+
+    auto prepared = scenario.prepare(
+        {scenario.aggregate({blocks[0]}),
+         scenario.aggregate({blocks[1]}),
+         scenario.aggregate({blocks[2]}),
+         scenario.aggregate({blocks[3]})});
+    ASSERT_FALSE(prepared.empty());
+    EXPECT_FALSE(prepared.at(0)->isTwoLevel());
+    EXPECT_EQ(scenario.mergeSingleLevel(prepared), expected);
 }
