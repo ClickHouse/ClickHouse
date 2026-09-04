@@ -13,6 +13,7 @@ FROM
            timeSeriesTagsToGroup([]) AS empty_group
 );
 
+SELECT '';
 SELECT 'timeSeriesTagsToGroup FixedString:';
 
 SELECT timeSeriesGroupToTags(fixed_group),
