@@ -210,18 +210,7 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
-
-# `long` tests keep the pre-parallelization 600s budget: the default per-test
-# `--timeout` (300s) is calibrated for ordinary tests on a loaded worker, while
-# `long` tests legitimately run for minutes and slow down further when the rest
-# of the suite runs in parallel around them.
-LONG_TEST_TIMEOUT_SECONDS = 600
-
-
-def get_case_run_timeout(tags: Set[str], default_timeout: int) -> int:
-    if tags and "long" in tags:
-        return max(default_timeout, LONG_TEST_TIMEOUT_SECONDS)
-    return default_timeout
+MAX_TEST_TIMEOUT_SECONDS = 300
 
 NO_PARALLEL_GROUP_PREFIX = "no-parallel:"
 NO_PARALLEL_GROUPS = {
@@ -925,7 +914,7 @@ def kill_process_group(pgid, fatal_log):
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
-        # options, since the default time for each test is 10min,
+        # options, since the hard time limit for each test is 5 minutes,
         # and this is way bigger than the timeout for each
         # timeout(1) invocation.
         #
@@ -4088,7 +4077,7 @@ class TestCase:
         write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
-            proc.wait(get_case_run_timeout(self.tags, args.timeout))
+            proc.wait(args.timeout)
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -5421,9 +5410,7 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(
-                    int(get_case_run_timeout(test_case.tags, args.timeout) * 1.1) + 60
-                )
+                signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -7495,8 +7482,8 @@ def parse_args():
         "-t",
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout for each test case in seconds",
+        default=MAX_TEST_TIMEOUT_SECONDS,
+        help=f"Timeout for each test case in seconds (maximum: {MAX_TEST_TIMEOUT_SECONDS})",
     )
     parser.add_argument(
         "--global_time_limit",
@@ -7981,7 +7968,10 @@ def parse_args():
         help="Kill all processes from the group pid file and exit (used by CI hooks for orphan cleanup)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.timeout > MAX_TEST_TIMEOUT_SECONDS:
+        parser.error(f"--timeout cannot exceed {MAX_TEST_TIMEOUT_SECONDS} seconds")
+    return args
 
 
 def cleanup_test_groups():

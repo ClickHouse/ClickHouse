@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, zookeeper, no-fasttest, no-async-insert, no-parallel
 # Tag no-parallel: runs many concurrent ALTERs on ReplicatedMergeTree tables and is CPU/ZooKeeper
-# heavy (~50s in isolation); under parallel contention it exceeds the 600s long-test limit and is
+# heavy (~50s in isolation); under parallel contention it exceeds the 300s hard limit and is
 # killed, so it must run fully sequentially
 # no-async-insert: concurrent ALTER MODIFY COLUMN changes column types while inserts are in flight.
 # With async inserts, the buffered block type may not match the altered column type at flush time,
