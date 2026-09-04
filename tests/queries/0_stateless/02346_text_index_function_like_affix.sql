@@ -245,8 +245,9 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE 'ClickHouse%');
 SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION endsWith(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE '%Cloud');
 
+-- A needle containing `k` is not eligible: see 02346_text_index_ilike_utf8_case_folding.
 SELECT 'ilike prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION ilike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clickhouse%');
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clic%');
 
 DROP TABLE tab;
 

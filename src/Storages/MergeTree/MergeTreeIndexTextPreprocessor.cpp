@@ -148,19 +148,17 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
 {
     if (expression_ast)
     {
-        /// Detect pure case-folding preprocessors of the exact form lower(expr), lowerUTF8(expr),
-        /// upper(expr), or upperUTF8(expr), where expr is the index expression itself.
-        /// Nested expressions such as lower(trim(col)) are not considered pure case folding
-        /// because the additional transformation would change the dictionary tokens in a way
-        /// that the ILIKE case-insensitive regex can no longer match them correctly.
+        /// Only ASCII lower/upper applied directly to the index column maps 1:1 by byte and therefore
+        /// preserves the substrings the ILIKE matcher finds in the original string. Nested expressions and
+        /// lowerUTF8/upperUTF8 (ICU full case mapping, e.g. `ß` -> `SS`) fold code points ILIKE does not.
         const auto * func = expression_ast->as<ASTFunction>();
         if (func && func->arguments && func->arguments->children.size() == 1)
         {
             const auto & name = getFunctionCanonicalNameIfAny(func->name);
-            if (name == "lower" || name == "lowerUTF8" || name == "upper" || name == "upperUTF8")
+            if (name == "lower" || name == "upper")
             {
                 const auto & arg = func->arguments->children.front();
-                is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
+                is_ascii_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
             }
         }
     }
