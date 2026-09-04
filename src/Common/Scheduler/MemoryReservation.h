@@ -59,7 +59,7 @@ public:
     void setReclaimable(ResourceCost reclaimable_total);
     void finishSpill(ResourceCost reclaimable_total);
 
-    ResourceCost spillDemand();
+    [[nodiscard]] ResourceCost takeSpillRequest();
 
 private:
     void throwIfNeeded();
@@ -103,7 +103,10 @@ private:
         void apply();
     } metrics;
 
-    ResourceCost spill_at_least_bytes TSA_GUARDED_BY(mutex) = 0;
+    /// Scheduler requested spilling
+    ResourceCost enqueued_spill = 0;
+    /// Pipeline process spilling request
+    ResourceCost processing_spill = 0;
 
     /// Introspection
     CurrentMetrics::Increment approved_increment;

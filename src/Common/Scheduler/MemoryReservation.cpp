@@ -1,4 +1,5 @@
 #include <mutex>
+#include <utility>
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/IAllocationQueue.h>
@@ -121,6 +122,11 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     {
         std::unique_lock lock(mutex);
 
+        // All allocations are blocked if spilling is in progress
+        // TODO: make this optional
+        if (processing_spill != 0)
+            cv.wait(lock, [this] { return processing_spill == 0; });
+
         // Serialization: block all threads while an increase is pending.
         // Multiple query threads may call syncWithMemoryTracker concurrently
         // (the MemoryTracker reflects total memory across all threads).
@@ -190,17 +196,23 @@ void MemoryReservation::setReclaimable(ResourceCost reclaimable_total)
 
 void MemoryReservation::finishSpill(ResourceCost reclaimable_total)
 {
+    size_t effective_reclaimed = std::max(reclaimable_total, processing_spill);
     {
         std::lock_guard lock(mutex);
-        spill_at_least_bytes -= reclaimable_total;
+        enqueued_spill -= effective_reclaimed;
+        processing_spill = 0;
     }
     queue.finishSpill(*this, reclaimable_total);
 }
 
-ResourceCost MemoryReservation::spillDemand()
+ResourceCost MemoryReservation::takeSpillRequest()
 {
-    std::lock_guard lock(mutex);
-    return spill_at_least_bytes;
+    std::unique_lock lock(mutex);
+    // Only one concurrent request is allowed
+    if (processing_spill > 0)
+        cv.wait(lock, [this] { return processing_spill == 0; });
+    std::exchange(enqueued_spill, processing_spill);
+    return processing_spill;
 }
 
 void MemoryReservation::throwIfNeeded()
@@ -238,7 +250,7 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 void MemoryReservation::spillAllocation(ResourceCost at_least_bytes)
 {
     std::lock_guard lock(mutex);
-    spill_at_least_bytes = at_least_bytes;
+    enqueued_spill = at_least_bytes;
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
