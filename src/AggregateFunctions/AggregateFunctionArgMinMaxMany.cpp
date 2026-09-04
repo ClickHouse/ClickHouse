@@ -441,12 +441,14 @@ void registerAggregateFunctionsArgMinMaxMany(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_argMaxMany = R"(
 Returns an array of the `arg` values corresponding to the `N` largest `val` values, sorted in descending order of `val`.
 If there are fewer than `N` rows, all `arg` values are returned.
-Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/`argMin`).
+If there are multiple rows with equal `val`, which of the associated `arg` values are returned, and in which order, is not deterministic.
+Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
+A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
 
 **See also**
 
-- [argMax](/sql-reference/aggregate-functions/reference/argMax.md)
-- [argMinMany](/sql-reference/aggregate-functions/reference/argMinMany.md)
+- [argMax](/reference/functions/aggregate-functions/argMax)
+- [argMinMany](/reference/functions/aggregate-functions/argMinMany)
     )";
     FunctionDocumentation::Syntax syntax_argMaxMany = "argMaxMany(N)(arg, val)";
     FunctionDocumentation::Parameters parameters_argMaxMany = {
@@ -496,12 +498,14 @@ SELECT argMaxMany(2)(user, salary) FROM salary;
     FunctionDocumentation::Description description_argMinMany = R"(
 Returns an array of the `arg` values corresponding to the `N` smallest `val` values, sorted in ascending order of `val`.
 If there are fewer than `N` rows, all `arg` values are returned.
-Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/`argMin`).
+If there are multiple rows with equal `val`, which of the associated `arg` values are returned, and in which order, is not deterministic.
+Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
+A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
 
 **See also**
 
-- [argMin](/sql-reference/aggregate-functions/reference/argMin.md)
-- [argMaxMany](/sql-reference/aggregate-functions/reference/argMaxMany.md)
+- [argMin](/reference/functions/aggregate-functions/argMin)
+- [argMaxMany](/reference/functions/aggregate-functions/argMaxMany)
     )";
     FunctionDocumentation::Syntax syntax_argMinMany = "argMinMany(N)(arg, val)";
     FunctionDocumentation::Parameters parameters_argMinMany = {

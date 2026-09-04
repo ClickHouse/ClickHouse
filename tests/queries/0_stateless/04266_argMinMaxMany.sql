@@ -162,3 +162,8 @@ SELECT argMinManyMerge(1)(s) FROM
     UNION ALL
     SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, tuple(toFloat64(1), 0) AS val)
 );
+
+-- A NULL stored inside a Dynamic arg is not a Nullable value: the Null combinator only wraps
+-- Nullable arguments, so such rows are kept and the NULL is returned as-is (documented behaviour).
+SELECT argMaxMany(2)(d, number) FROM (SELECT number, if(number = 4, NULL, number)::Dynamic AS d FROM numbers(5));
+SELECT argMinMany(2)(d, number) FROM (SELECT number, if(number = 0, NULL, number)::Dynamic AS d FROM numbers(5));
