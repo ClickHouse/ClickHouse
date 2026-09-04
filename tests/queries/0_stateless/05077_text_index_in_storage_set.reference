@@ -1,0 +1,14 @@
+-- map key: the index is used for a set that stores no elements
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+-- and the answer is the same as without the index
+0
+0
+-- JSON path: the index is used for a set that stores no elements
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+-- and the answer is the same as without the index
+0
+0

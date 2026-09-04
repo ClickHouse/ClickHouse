@@ -18,7 +18,7 @@ SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1, min_rows_for_wide_p
 INSERT INTO t_text_in_set VALUES (0, {'hello world':'val0'}), (1, {'foo bar':'val1'}), (2, {'baz qux':'val2'});
 
 SELECT '-- set elements are stored: index is used';
-SELECT trim(explain) FROM (
+SELECT trim(replaceRegexpOne(explain, '^[^A-Za-z]+', '')) FROM (
     EXPLAIN indexes = 1
     SELECT id FROM t_text_in_set
     WHERE m['hello world'] IN (SELECT arrayJoin(['val0', 'val1', 'val2']))
@@ -26,7 +26,7 @@ SELECT trim(explain) FROM (
 ) WHERE explain LIKE '%Granules:%';
 
 SELECT '-- set is above the limit, so its elements are dropped: index is still used';
-SELECT trim(explain) FROM (
+SELECT trim(replaceRegexpOne(explain, '^[^A-Za-z]+', '')) FROM (
     EXPLAIN indexes = 1
     SELECT id FROM t_text_in_set
     WHERE m['hello world'] IN (SELECT arrayJoin(['val0', 'val1', 'val2']))
