@@ -917,10 +917,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        in.readStrict(&describe, 1);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Describe message", [this](ReadBuffer & payload_in)
+        {
+            payload_in.readStrict(&describe, 1);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -938,10 +939,11 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(portal_name, in);
-        readBinaryBigEndian(max_rows, in);
+        deserializePayload(in, "Execute message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(portal_name, payload_in);
+            readBinaryBigEndian(max_rows, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -986,12 +988,13 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
-        readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
-        readNullTerminated(function_name, in);
+        deserializePayload(in, "Close message", [this](ReadBuffer & payload_in)
+        {
+            Int8 byte = 0;
+            readBinaryBigEndian(byte, payload_in);
+            close_target = static_cast<char>(byte);
+            readNullTerminated(function_name, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1029,8 +1032,11 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in Sync message, it must be 4", size);
     }
 
     MessageType getMessageType() const override

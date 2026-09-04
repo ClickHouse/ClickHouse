@@ -1044,8 +1044,8 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.close()
 
 
-def test_negative_count_recovers(started_cluster):
-    # Reject negative `Parse` and `Bind` counts without desynchronizing recovery.
+def test_malformed_extended_message_recovers(started_cluster):
+    # Reject malformed extended messages without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -1079,11 +1079,28 @@ def test_negative_count_recovers(started_cluster):
         )
         return _fe("B", b)
 
+    # `Describe` must not read the following `Sync` as its missing payload.
+    def describe_incomplete_payload():
+        return _fe("D", b"")
+
+    # A named portal is rejected after deserialization. The embedded `Sync` must
+    # remain in the `Execute` payload until recovery reaches the real `Sync`.
+    def execute_named_portal():
+        b = b"named\x00" + struct.pack("!I", 0) + sync()
+        return _fe("E", b)
+
+    # An invalid close target is rejected after deserialization for the same reason.
+    def close_invalid_target():
+        return _fe("C", b"X\x00" + sync())
+
     for make_message in (
         parse_neg_num_params,
         bind_neg_param_formats,
         bind_neg_num_params,
         bind_neg_result_formats,
+        describe_incomplete_payload,
+        execute_named_portal,
+        close_invalid_target,
     ):
         sock, read_until_ready = _pg_raw_extended_query_session(node)
         sock.sendall(make_message() + sync())

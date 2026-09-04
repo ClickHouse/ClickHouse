@@ -49,7 +49,7 @@ std::string framePayload(std::string payload)
 {
     std::string bytes;
     putInt32(bytes, static_cast<Int32>(4 + payload.size()));
-    bytes += std::move(payload);
+    bytes += payload;
     return bytes;
 }
 
@@ -93,6 +93,22 @@ void expectUnknownPacketAndAligned(std::string payload)
     char marker = 0;
     in.readStrict(marker);
     EXPECT_EQ(marker, 'X');
+}
+
+template <typename TMessage>
+void expectIncompletePayloadAndAligned(std::string payload = {})
+{
+    /// The following `Sync` must remain unread if the current payload is incomplete.
+    std::string bytes = framePayload(std::move(payload));
+    bytes.append("S\0\0\0\4", 5);
+
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    TMessage msg;
+    EXPECT_THROW(msg.deserialize(in), Exception);
+
+    char message_type = 0;
+    in.readStrict(message_type);
+    EXPECT_EQ(message_type, 'S');
 }
 
 }
@@ -261,6 +277,30 @@ TEST(PostgreSQLProtocol, ParseRejectsNegativeCountAndKeepsStreamAligned)
     payload.push_back('\0');
     putInt16(payload, -1); /// negative parameter count
     expectUnknownPacketAndAligned<Messaging::ParseQuery>(std::move(payload));
+}
+
+TEST(PostgreSQLProtocol, ExtendedQueryMessagesKeepIncompletePayloadsAligned)
+{
+    expectIncompletePayloadAndAligned<Messaging::DescribeQuery>();
+    expectIncompletePayloadAndAligned<Messaging::ExecuteQuery>();
+    expectIncompletePayloadAndAligned<Messaging::CloseQuery>();
+}
+
+TEST(PostgreSQLProtocol, SyncRejectsNonEmptyPayload)
+{
+    for (Int32 size : {0, 1, 2, 3, 5})
+    {
+        std::string bytes;
+        putInt32(bytes, size);
+        if (size > 4)
+            bytes.append(static_cast<size_t>(size - 4), '\0');
+
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        {
+            Messaging::SyncQuery msg;
+            msg.deserialize(in);
+        })) << "size = " << size;
+    }
 }
 
 TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
