@@ -38,6 +38,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -11620,6 +11621,79 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 }
 
+/// Canonicalize data type names spelled as plain string literals inside functions that resolve
+/// them through DataTypeFactory, so that logically-equal definitions compare equal as text.
+/// E.g. CAST(x, 'INT') and CAST(x, 'Int32'), or x + defaultValueOfTypeName('INT') and
+/// x + defaultValueOfTypeName('Int32'), would otherwise be seen as different keys/indices in
+/// checkStructureAndGetMergeTreeData (REPLACE/ATTACH PARTITION FROM). Names that DataTypeFactory
+/// cannot parse are left untouched.
+static void canonicalizeDataTypeNameLiterals(IAST * ast)
+{
+    if (!ast)
+        return;
+
+    if (auto * func = ast->as<ASTFunction>())
+    {
+        /// The type-name arguments of every function that resolves a string literal through
+        /// DataTypeFactory - see the getReturnTypeImpl of each function. The conversion family
+        /// takes (value, 'Type'[, ...]): the type is always the second argument, and
+        /// accurateCastOrDefault may carry a third (default value) argument, so match on the type
+        /// slot, not the arity. defaultValueOfTypeName and getTypeSerializationStreams take only
+        /// the type. JSONExtract and JSONExtractKeysAndValues (also CaseInsensitive) are variadic
+        /// and take the type last.
+        static const std::unordered_set<std::string> type_in_second_argument
+            = {"CAST", "_CAST", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault", "reinterpret"};
+        static const std::unordered_set<std::string> type_in_only_argument
+            = {"defaultValueOfTypeName", "getTypeSerializationStreams"};
+        static const std::unordered_set<std::string> type_in_last_argument
+            = {"JSONExtract",
+               "JSONExtractCaseInsensitive",
+               "JSONExtractKeysAndValues",
+               "JSONExtractKeysAndValuesCaseInsensitive"};
+
+        if (func->arguments && !func->arguments->children.empty())
+        {
+            const auto is_type_literal = [](const ASTPtr & argument) -> bool
+            {
+                const auto * literal = argument->as<ASTLiteral>();
+                return literal && literal->value.getType() == Field::Types::String;
+            };
+
+            const auto canonicalize = [](ASTLiteral & literal)
+            {
+                try
+                {
+                    literal.value = DataTypeFactory::instance().get(literal.value.safeGet<String>())->getName();
+                }
+                catch (...) /// NOLINT(bugprone-empty-catch)
+                {
+                    /// Ok: not a valid type name, leave the literal exactly as written.
+                }
+            };
+
+            const auto & arguments = func->arguments->children;
+            if (type_in_second_argument.contains(func->name) && arguments.size() >= 2 && is_type_literal(arguments[1]))
+                canonicalize(*arguments[1]->as<ASTLiteral>());
+            else if (type_in_only_argument.contains(func->name) && arguments.size() == 1 && is_type_literal(arguments[0]))
+                canonicalize(*arguments[0]->as<ASTLiteral>());
+            else if (type_in_last_argument.contains(func->name) && is_type_literal(arguments.back()))
+                canonicalize(*arguments.back()->as<ASTLiteral>());
+        }
+    }
+
+    for (auto & child : ast->children)
+        canonicalizeDataTypeNameLiterals(child.get());
+}
+
+static String canonicalKeyString(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    auto canonical = ast->clone();
+    canonicalizeDataTypeNameLiterals(canonical.get());
+    return canonical->formatIgnoringRedundantParentheses();
+}
+
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
@@ -11635,7 +11709,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatIgnoringRedundantParentheses() : "";
+        return canonicalKeyString(ast);
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -11660,10 +11734,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
+            my_query_strings.insert(canonicalKeyString(description.definition_ast));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
+            if (!my_query_strings.contains(canonicalKeyString(src_description.definition_ast)))
                 return false;
 
         return true;
