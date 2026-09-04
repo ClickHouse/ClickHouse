@@ -146,6 +146,15 @@ struct Plan
 };
 
 /// Cheap pre-check for `compactIcebergManifests`: read just the current manifest list and report whether its entry count exceeds `threshold`.
+/// A table with no current snapshot spells it three ways: the key absent, the key present but JSON null,
+/// or a negative id. `getValue<Int64>` throws on a null Var, so normalize all three to -1 in one place.
+static Int64 getCurrentSnapshotIdOrNegative(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+        return -1;
+    return metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+}
+
 static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
@@ -155,9 +164,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-        return false;
-    Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    const Int64 current_snapshot_id = getCurrentSnapshotIdOrNegative(metadata_object);
     if (current_snapshot_id < 0)
         return false;
 
@@ -217,6 +224,12 @@ static Plan getPlan(
     /// next_row_id).
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
+
+    /// The rewrite is based on this object, so validate it here rather than at the caller: a live
+    /// `current-snapshot-id` missing from `snapshots` yields a partial history, and `clearOldFiles`
+    /// then deletes every listed object - losing the files only that head still referenced.
+    MetadataGenerator::validateParentSnapshotResolvable(
+        initial_metadata_object, getCurrentSnapshotIdOrNegative(initial_metadata_object));
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
@@ -434,19 +447,13 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-    {
-        LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
-        return true;
-    }
-    Int64 current_snapshot_id_val = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
-    if (current_snapshot_id_val < 0)
+    const Int64 current_snapshot_id = getCurrentSnapshotIdOrNegative(metadata_object);
+    if (current_snapshot_id < 0)
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
     }
 
-    Int64 current_snapshot_id = current_snapshot_id_val;
     String current_manifest_list_path;
 
     {
@@ -1063,7 +1070,9 @@ static void writeMetadataFiles(
             0,
             0,
             history_record.snapshot_id,
-            history_record.made_current_at.value);
+            history_record.made_current_at.value,
+            MetadataGenerator::SnapshotOperation::Append,
+            /* tolerate_missing_parent_snapshot */ true);
 
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
@@ -1396,6 +1405,16 @@ void compactIcebergManifests(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
                 "row-lineage 'first_row_id' round-trip is not implemented");
+
+        /// A live `current-snapshot-id` must be resolvable in `snapshots`. Both the threshold
+        /// pre-check below and `writeConsolidatedManifestFile` treat an unresolvable one as
+        /// "no current snapshot" and report success, so without this `OPTIMIZE TABLE ... MANIFEST`
+        /// silently no-ops on metadata that inserts and mutations already reject. Validate here,
+        /// on the freshly-fetched metadata, so both paths are covered in one place. A table with no
+        /// current snapshot yields -1 and the helper ignores it, so only the "claims a snapshot that
+        /// is not there" case throws.
+        MetadataGenerator::validateParentSnapshotResolvable(
+            metadata_object, getCurrentSnapshotIdOrNegative(metadata_object));
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(

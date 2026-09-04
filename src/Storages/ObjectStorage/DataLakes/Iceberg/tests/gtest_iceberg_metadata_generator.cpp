@@ -44,7 +44,7 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     return metadata;
 }
 
-void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
+void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1, bool tolerate_missing_parent_snapshot = false)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -58,7 +58,24 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
         /*added_files_size=*/ 100,
         /*num_partitions=*/ 1,
         /*added_delete_files=*/ 0,
-        /*num_deleted_rows=*/ 0);
+        /*num_deleted_rows=*/ 0,
+        /*user_defined_snapshot_id=*/ std::nullopt,
+        /*user_defined_timestamp=*/ std::nullopt,
+        MetadataGenerator::SnapshotOperation::Append,
+        tolerate_missing_parent_snapshot);
+}
+
+void expectAppendRejectsUnresolvableParent(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
+{
+    try
+    {
+        appendSnapshot(metadata, parent_snapshot_id);
+        FAIL() << "Expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
+    }
 }
 
 /// Generate one snapshot with explicit delete-file / operation parameters and return its `operation` summary field.
@@ -128,10 +145,11 @@ TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
 /// Var extracted in getParentSnapshot), a missing log array dereferences a null Array::Ptr
 /// (Poco::NullPointerException, "Null pointer").
 ///
-/// The exception is a missing `snapshots` combined with a live current snapshot: the commit
-/// preserves previous table contents by locating the parent snapshot's manifest list in
-/// `snapshots`, so seeding an empty list there would silently drop all previous data. Such
-/// self-contradictory metadata must keep failing, with a spec-violation error.
+/// The exception is a live current snapshot that cannot be resolved in `snapshots` (the whole
+/// array missing, empty, or its entry pruned): the commit preserves previous table contents by
+/// locating the parent snapshot's manifest list in `snapshots`, so proceeding would silently
+/// drop all previous data. Such self-contradictory metadata must keep failing, with a
+/// spec-violation error.
 
 TEST(IcebergMetadataGenerator, AppendsSnapshotWhenAllOptionalArraysPresent)
 {
@@ -173,21 +191,81 @@ TEST(IcebergMetadataGenerator, AppendsSnapshotWhenAllOptionalArraysMissing)
     EXPECT_NO_THROW(appendSnapshot(metadata));
 }
 
+TEST(IcebergMetadataGenerator, AppendsOnTopOfExistingParentSnapshot)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_NO_THROW(appendSnapshot(metadata));
+    const auto first_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    EXPECT_NO_THROW(appendSnapshot(metadata, first_snapshot_id));
+    EXPECT_EQ(metadata->getArray(Iceberg::f_snapshots)->size(), 2u);
+}
+
 TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotExists)
 {
     auto metadata = makeMinimalV2Metadata();
     metadata->set(Iceberg::f_current_snapshot_id, 42);
     metadata->remove(Iceberg::f_snapshots);
+    expectAppendRejectsUnresolvableParent(metadata, /*parent_snapshot_id=*/ 42);
+}
+
+TEST(IcebergMetadataGenerator, ThrowsWhenParentSnapshotMissingFromEmptySnapshotsArray)
+{
+    auto metadata = makeMinimalV2Metadata();
+    metadata->set(Iceberg::f_current_snapshot_id, 42);
+    expectAppendRejectsUnresolvableParent(metadata, /*parent_snapshot_id=*/ 42);
+}
+
+TEST(IcebergMetadataGenerator, ThrowsWhenParentSnapshotEntryPrunedFromSnapshotsArray)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_NO_THROW(appendSnapshot(metadata));
+    /// Make the metadata genuinely self-contradictory: the array stays non-empty (one entry
+    /// from the append above), but the live current snapshot points at an id absent from it.
+    /// Pick a fixed id guaranteed to differ from the appended one (snapshot ids span the whole
+    /// Int64 range, so `first_snapshot_id + 1` could signed-overflow).
+    const auto first_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    const Int64 missing_snapshot_id = first_snapshot_id == 0 ? 1 : 0;
+    metadata->set(Iceberg::f_current_snapshot_id, missing_snapshot_id);
+    expectAppendRejectsUnresolvableParent(metadata, missing_snapshot_id);
+}
+
+/// The up-front check the write paths run before uploading any data files. It enforces the same
+/// invariant as the commit, so a self-contradictory table fails without orphaning objects.
+TEST(IcebergMetadataGenerator, ValidateParentSnapshotResolvable)
+{
+    auto metadata = makeMinimalV2Metadata();
+    EXPECT_NO_THROW(appendSnapshot(metadata));
+    const auto present_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+
+    /// A live parent that resolves in `snapshots` is fine; so is "no live parent" (-1).
+    EXPECT_NO_THROW(MetadataGenerator::validateParentSnapshotResolvable(metadata, present_id));
+    EXPECT_NO_THROW(MetadataGenerator::validateParentSnapshotResolvable(metadata, -1));
+
+    /// A live parent absent from `snapshots` is rejected.
+    const Int64 missing_id = present_id == 0 ? 1 : 0;
     try
     {
-        appendSnapshot(metadata, /*parent_snapshot_id=*/ 42);
+        MetadataGenerator::validateParentSnapshotResolvable(metadata, missing_id);
         FAIL() << "Expected ICEBERG_SPECIFICATION_VIOLATION";
     }
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
     }
-    EXPECT_FALSE(metadata->has(Iceberg::f_snapshots));
+}
+
+/// Compaction replays a filtered history where a record's parent may be a legitimately
+/// skipped snapshot; `tolerate_missing_parent_snapshot` keeps such appends committing,
+/// with the summary totals restarting from the appended deltas.
+TEST(IcebergMetadataGenerator, ToleratesUnresolvableParentWhenRequested)
+{
+    auto metadata = makeMinimalV2Metadata();
+    metadata->set(Iceberg::f_current_snapshot_id, 42);
+    EXPECT_NO_THROW(appendSnapshot(metadata, /*parent_snapshot_id=*/ 42, /*tolerate_missing_parent_snapshot=*/ true));
+
+    const auto snapshot = metadata->getArray(Iceberg::f_snapshots)->getObject(0);
+    EXPECT_EQ(snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id), 42);
+    EXPECT_EQ(snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_records), "1");
 }
 
 /// `refs` is optional per the Iceberg spec too, so a manifest-only rewrite (OPTIMIZE ... MANIFEST)

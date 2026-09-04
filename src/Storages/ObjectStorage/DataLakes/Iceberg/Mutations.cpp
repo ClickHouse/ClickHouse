@@ -717,6 +717,16 @@ void mutate(
         validateSnapshotDataFileFormatsForMutation(
             metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
 
+        /// Fail before writing any data/delete files if the current snapshot is missing from
+        /// `snapshots`: writeMetadataFiles (generateNextMetadata) rejects it too, but only after
+        /// those files are uploaded, which would then be orphaned.
+        {
+            Int64 current_snapshot_id = -1;
+            if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
+                current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+            MetadataGenerator::validateParentSnapshotResolvable(metadata, current_snapshot_id);
+        }
+
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;
         current_iceberg_snapshot.metadata_version = last_version;

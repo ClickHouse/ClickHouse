@@ -32,6 +32,9 @@ public:
         Replace,
     };
 
+    /// Fails close on a live parent snapshot that cannot be found in `snapshots`,
+    /// except when `tolerate_missing_parent_snapshot` is set: compaction replays a
+    /// filtered history where a record's parent may be a legitimately skipped snapshot.
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -44,7 +47,14 @@ public:
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt,
-        SnapshotOperation operation = SnapshotOperation::Append);
+        SnapshotOperation operation = SnapshotOperation::Append,
+        bool tolerate_missing_parent_snapshot = false);
+
+    /// Throws if `parent_snapshot_id` is a live snapshot (>= 0) absent from the metadata's
+    /// `snapshots` list. `generateNextMetadata` enforces the same invariant, but only at commit
+    /// time, after a write has already uploaded its data files; call this up front (before any
+    /// data is written) so a self-contradictory table fails without leaving orphaned objects.
+    static void validateParentSnapshotResolvable(const Poco::JSON::Object::Ptr & metadata_object, Int64 parent_snapshot_id);
 
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
