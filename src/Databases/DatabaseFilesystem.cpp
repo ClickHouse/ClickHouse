@@ -283,7 +283,9 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
     }, Documentation{
-        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path. "
+                       "Resolving a table requires read access to the source (`GRANT READ ON FILE`), because the structure of the table is "
+                       "inferred from the data of the file.",
         .syntax = "ENGINE = Filesystem([path])",
         .related = {"S3", "HDFS"}});
 }
