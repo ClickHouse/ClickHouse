@@ -117,7 +117,7 @@ Returns an array containing the path component of the URL, truncated at the end 
         {"url", "The URL to process.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of progressively longer URL path components forming a hierarchy.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT URLPathHierarchy('https://example.com/a/b?c=1')", "['/a/','/a/b','/a/b?c=1']"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT URLPathHierarchy('https://example.com/a/b?c=1')", "['/a/','/a/b?','/a/b?c=1']"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1,1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::URL;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
