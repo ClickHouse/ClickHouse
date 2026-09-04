@@ -2757,7 +2757,7 @@ TEST_P(CoordinationTest, StartupScanKeepsLatestIndexDuplicatesForRecovery)
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(90), *restored_storage);
         EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/latest_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
-    catch (...) // An exception means the registered copy is corrupt and the recovery path below is required.
+    catch (...) // Ok: an exception means the registered copy is corrupt and the recovery path below is required.
     {
         registered_copy_is_valid = false;
     }
@@ -2818,7 +2818,7 @@ TEST_P(CoordinationTest, StartupScanKeepsRetainedIndexDuplicatesForDrillRecovery
         auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(80), *restored_storage);
         EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/drill_valid", /*out_stats=*/nullptr, /*out_data=*/nullptr));
     }
-    catch (...) // An exception means the registered copy is corrupt and the recovery path below is required.
+    catch (...) // Ok: an exception means the registered copy is corrupt and the recovery path below is required.
     {
         registered_copy_is_valid = false;
     }
