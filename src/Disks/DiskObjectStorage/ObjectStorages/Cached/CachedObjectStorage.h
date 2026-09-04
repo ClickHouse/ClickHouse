@@ -139,6 +139,11 @@ public:
         return object_storage->getS3StorageClient();
     }
 
+    std::shared_ptr<const S3Settings> tryGetS3StorageSettings() const override
+    {
+        return object_storage->tryGetS3StorageSettings();
+    }
+
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
     {
         return object_storage->tryGetS3StorageClient();

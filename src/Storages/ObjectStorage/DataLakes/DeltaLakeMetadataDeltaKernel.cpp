@@ -38,6 +38,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace FailPoints
@@ -151,46 +154,106 @@ getSnapshotVersion(const Settings & settings)
         value);
 }
 
+DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resolveLatestSnapshot() const
+{
+    DeltaLake::TableSnapshotPtr snapshot;
+    const auto client_options = kernel_helper->resolveClientOptions();
+    {
+        std::lock_guard lock(snapshots_mutex);
+        /// Concurrent callers share one TableSnapshot, and with it one in-flight kernel build,
+        /// instead of each starting their own `snapshot_builder_build` for the same table.
+        /// A latest-version load is never repeated on one object (it could resolve a different
+        /// version), so once every waiter gave up on the shared one — or when this query's
+        /// client options differ from the ones the shared build runs with — a fresh object
+        /// takes over.
+        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->isAbandonedWithoutWaiters()
+            || !latest_snapshot_in_flight->canShareInflightLoad(client_options))
+        {
+            /// Constructor itself is lightweight.
+            latest_snapshot_in_flight = std::make_shared<DeltaLake::TableSnapshot>(
+                /* version */std::nullopt,
+                kernel_helper,
+                object_storage,
+                log);
+            /// Reserved before publishing, so that a concurrent caller with other options does
+            /// not grab this object in the window before its first load has started.
+            latest_snapshot_in_flight->reserveClientOptions(client_options);
+        }
+        snapshot = latest_snapshot_in_flight;
+    }
+
+    /// Resolving the version builds the kernel snapshot, which may block on object storage.
+    /// Never do that under `snapshots_mutex`: every other query on this table would sleep
+    /// inside the mutex, unreachable by `KILL QUERY`. On failure the shared object stays
+    /// in flight, so the next caller retries through it rather than starting a duplicate.
+    const SnapshotVersion version = snapshot->getVersion();
+
+    std::lock_guard lock(snapshots_mutex);
+    if (latest_snapshot_in_flight == snapshot)
+        latest_snapshot_in_flight = nullptr;
+
+    /// A slower resolution must not move "latest" backwards.
+    if (!latest_snapshot_version.has_value() || version >= latest_snapshot_version.value())
+        latest_snapshot_version = version;
+
+    /// Keep an existing, initialized entry for this version (it carries cached schema and
+    /// statistics, and its credentials-rotation check must keep running against the state it
+    /// installed). Only an entry which never got a state — e.g. poisoned by a still-stuck
+    /// in-flight load — is replaced by this freshly loaded snapshot.
+    auto [cached, created] = snapshots.getOrSet(version, [&]() { return snapshot; });
+    if (!created && cached != snapshot && !cached->isInitialized())
+    {
+        snapshots.set(version, snapshot);
+        cached = snapshot;
+        created = true;
+    }
+    return LatestSnapshot{.snapshot = cached, .version = version, .created = created};
+}
+
 DeltaLake::TableSnapshotPtr
 DeltaLakeMetadataDeltaKernel::getTableSnapshot(std::optional<SnapshotVersion> version) const
 {
-    std::lock_guard lock(snapshots_mutex);
-
-    /// Fallback to latest_snapshot_version.
-    /// In case we needed a newer version - update() must
-    /// have been called to reload latest_snapshot_version.
-    std::optional<SnapshotVersion> result_snapshot_version = version.has_value()
-        ? version
-        : latest_snapshot_version;
-
-    auto snapshot_creator = [&]()
-    {
-        /// Constructor itself is lightweight.
-        return std::make_shared<DeltaLake::TableSnapshot>(
-            result_snapshot_version,
-            kernel_helper,
-            object_storage,
-            log);
-    };
-
     DeltaLake::TableSnapshotPtr snapshot;
     bool created = true;
-    if (result_snapshot_version.has_value())
+    std::optional<SnapshotVersion> result_snapshot_version;
     {
-        std::tie(snapshot, created) = snapshots.getOrSet(
-            result_snapshot_version.value(), std::move(snapshot_creator));
-    }
-    else
-    {
-        snapshot = snapshot_creator();
-        latest_snapshot_version = snapshot->getVersion();
-        snapshots.set(latest_snapshot_version.value(), snapshot);
+        std::lock_guard lock(snapshots_mutex);
+
+        /// Fallback to latest_snapshot_version.
+        /// In case we needed a newer version - update() must
+        /// have been called to reload latest_snapshot_version.
+        result_snapshot_version = version.has_value() ? version : latest_snapshot_version;
+
+        if (result_snapshot_version.has_value())
+        {
+            std::tie(snapshot, created) = snapshots.getOrSet(
+                result_snapshot_version.value(),
+                [&]()
+                {
+                    /// Constructor itself is lightweight.
+                    return std::make_shared<DeltaLake::TableSnapshot>(
+                        result_snapshot_version,
+                        kernel_helper,
+                        object_storage,
+                        log);
+                });
+        }
     }
 
-    LOG_TEST(
-        log, "Using snapshot version: {}, latest loaded snapshot version: {}, reused cached snapshot: {}",
-        result_snapshot_version.has_value() ? result_snapshot_version.value() : snapshot->getVersion(),
-        latestSnapshotVersionToStr(), !created);
+    if (!result_snapshot_version.has_value())
+    {
+        auto latest = resolveLatestSnapshot();
+        snapshot = latest.snapshot;
+        result_snapshot_version = latest.version;
+        created = latest.created;
+    }
+
+    {
+        std::lock_guard lock(snapshots_mutex);
+        LOG_TEST(
+            log, "Using snapshot version: {}, latest loaded snapshot version: {}, reused cached snapshot: {}",
+            result_snapshot_version.value(), latestSnapshotVersionToStr(), !created);
+    }
 
     return snapshot;
 }
@@ -216,6 +279,18 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     {
         return getTableSnapshot(snapshot_version)->getTotalRows();
     }
+    catch (const Exception & e)
+    {
+        /// Cancellation, the snapshot-load timeout and the worker cap are control flow, not
+        /// "statistics unavailable": swallowing them would make the query fall back to the read
+        /// path and wait through a second full snapshot load (#117431).
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK)
+            throw;
+        DB::tryLogCurrentException(
+            log, "Failed to get total rows for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
+    }
     catch (...)
     {
         DB::tryLogCurrentException(
@@ -239,6 +314,18 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     {
         return getTableSnapshot(snapshot_version)->getTotalBytes();
     }
+    catch (const Exception & e)
+    {
+        /// Cancellation, the snapshot-load timeout and the worker cap are control flow, not
+        /// "statistics unavailable": swallowing them would make the query fall back to the read
+        /// path and wait through a second full snapshot load (#117431).
+        if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK)
+            throw;
+        DB::tryLogCurrentException(
+            log, "Failed to get total bytes for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
+    }
     catch (...)
     {
         DB::tryLogCurrentException(
@@ -252,21 +339,12 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     if (!snapshot_version.has_value())
     {
+        const auto latest = resolveLatestSnapshot();
+
         std::lock_guard lock(snapshots_mutex);
-        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
-                /* version */std::nullopt,
-                kernel_helper,
-                object_storage,
-                log);
-
-        size_t version = latest_snapshot->getVersion();
-        snapshots.getOrSet(version, [&]() { return latest_snapshot; });
-
         LOG_TEST(
-            log, "Updating latest snapshot version from {} to {}",
-            latestSnapshotVersionToStr(), version);
-
-        latest_snapshot_version = version;
+            log, "Updated latest snapshot version: resolved {}, published {}",
+            latest.version, latestSnapshotVersionToStr());
     }
 }
 
