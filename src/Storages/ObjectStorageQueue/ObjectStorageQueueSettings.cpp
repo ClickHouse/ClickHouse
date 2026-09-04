@@ -61,7 +61,8 @@ namespace ErrorCodes
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
-    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
+    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name. If false and several processed files map to the same destination (equal file names under different prefixes), only the first is moved and the rest are left in place", 0) \
+    DECLARE(Bool, after_processing_move_preserve_tags, false, "S3 only; setting it on any other object storage is an error. Opt-in: if true, a guarded move (after_processing_move_preserve_path = 0) restates the source object's tag set on the destination, which requires permission to read those tags (s3:GetObjectTagging); a move whose tags cannot be read then fails and leaves the source in place. The default moves without restating tags, preserving the pre-guard contract for existing tables", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
@@ -111,7 +112,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     };
     auto is_changeable = [&](const std::string & setting_name) -> bool
     {
-        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
+        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode], storage.getType());
     };
 
     for (const auto & change : impl->all())

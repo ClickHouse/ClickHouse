@@ -148,6 +148,8 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
+    /// S3 only, and only on buckets with versioning enabled; empty otherwise.
+    std::string version_id;
     ObjectAttributes tags;
     ObjectAttributes attributes;
 

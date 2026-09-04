@@ -19,6 +19,7 @@ public:
         String after_processing_move_uri;
         String after_processing_move_prefix;
         bool after_processing_move_preserve_path = false;
+        bool after_processing_move_preserve_tags = false;
         String after_processing_move_access_key_id;
         String after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
@@ -31,7 +32,6 @@ public:
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
-        String engine_name_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_);
 
@@ -40,9 +40,9 @@ public:
     void process(const StoredObjects & objects) const;
 
 private:
-    String getName() const { return engine_name; }
-
     void doWithRetries(std::function<void()> action) const;
+    bool copyAndRemoveObject(const StoredObject & object, const std::function<bool()> & copy_object) const;
+    void reportMoveCollision(const StoredObject & source, const StoredObject & destination) const;
 
     /// Move processed objects to another prefix
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const;
@@ -53,7 +53,6 @@ private:
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
-    const String engine_name;
     const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
 

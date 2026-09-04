@@ -142,6 +142,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
+    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_tags;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -173,7 +174,8 @@ namespace
 {
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
-        bool is_attach)
+        bool is_attach,
+        ObjectStorageType type)
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
@@ -193,6 +195,14 @@ namespace
                 "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        /// Only the S3 move path reads and restates tags, so accepting either value elsewhere would be a no-op.
+        if (type != ObjectStorageType::S3 && queue_settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags].changed)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                type);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -305,6 +315,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
         .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+        .after_processing_move_preserve_tags = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_tags],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -340,7 +351,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings_, is_attach);
+    validateSettings(*queue_settings_, is_attach, type);
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
@@ -1183,13 +1194,7 @@ void StorageObjectStorageQueue::postProcess(
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
     {
         std::lock_guard lock(mutex);
-        post_processor.emplace(
-            getContext(),
-            type,
-            object_storage,
-            getName(),
-            metadata.getTableMetadata(),
-            after_processing_settings);
+        post_processor.emplace(getContext(), type, object_storage, metadata.getTableMetadata(), after_processing_settings);
     }
 
     if (post_processor)
@@ -1395,6 +1400,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1429,6 +1435,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1455,9 +1462,12 @@ static void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type)
 {
     checkNormalizedSetting(name);
+
+    if (storage_type != ObjectStorageType::S3 && name == "after_processing_move_preserve_tags")
+        return false;
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
@@ -1543,7 +1553,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         {
             /// `new_settings` contains a full set of settings, changed and non-changed together.
             /// So we check whether setting is allowed to be changed only if it is actually changed.
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1668,7 +1678,7 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1756,6 +1766,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_preserve_path")
                 after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
+            else if (change.name == "after_processing_move_preserve_tags")
+                after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
@@ -1890,6 +1902,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
         settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
+        settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags] = after_processing_settings.after_processing_move_preserve_tags;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;

@@ -336,7 +336,17 @@ Default value: empty string.
 
 ### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
 
-If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened.
+If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened. With flattening, several processed files can map to the same destination path (equal file names under different source prefixes); only the first is moved, and a later file whose destination already holds a different source object is left in place at the source.
+
+Possible values:
+
+- `true` / `false`.
+
+Default value: `false`.
+
+### `after_processing_move_preserve_tags` {#after_processing_move_preserve_tags}
+
+S3 only; setting it on any other object storage is an error. If `true`, a flattening move (`after_processing_move_preserve_path = 0`) restates the source object's tag set on the destination, which requires permission to read those tags (`s3:GetObjectTagging`); a move whose tags cannot be read fails and the file is left in place at the source. If `false`, files are moved without restating tags.
 
 Possible values:
 

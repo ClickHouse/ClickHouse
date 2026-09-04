@@ -1838,12 +1838,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
         auto postProcessor = ObjectStorageQueuePostProcessor(
-            getContext(),
-            configuration->getType(),
-            object_storage,
-            getName(),
-            files_metadata->getTableMetadata(),
-            after_processing_settings);
+            getContext(), configuration->getType(), object_storage, files_metadata->getTableMetadata(), after_processing_settings);
         postProcessor.process(successful_objects);
     }
 

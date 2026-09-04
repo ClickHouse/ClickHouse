@@ -1,11 +1,14 @@
+import io
 import json
 import logging
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
+import boto3
 import pytest
-from minio.commonconfig import Tags
+from minio.commonconfig import ENABLED, Tags
+from minio.versioningconfig import VersioningConfig
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -493,6 +496,511 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
     assert counts[(src_bucket, files_path)] == 0, (
         f"objects left: {counts[(src_bucket, files_path)]}"
     )
+
+
+def wait_until(condition, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return
+        time.sleep(0.1)
+    assert condition()
+
+
+def move_collisions(node):
+    return int(
+        node.query(
+            "SELECT value FROM system.events "
+            "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+            "SETTINGS system_events_show_zero_values = 1"
+        )
+    )
+
+
+def read_s3_object(cluster, bucket, key):
+    response = cluster.minio_client.get_object(bucket, key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def move_counts(cluster, engine_name, destination, source_prefix, destination_prefix):
+    if engine_name == "S3Queue":
+        source = cluster.minio_bucket
+        destination = destination or source
+        return (
+            count_minio_objects(cluster, destination, destination_prefix),
+            count_minio_objects(cluster, source, source_prefix),
+        )
+
+    source = cluster.azurite_container
+    destination = destination or source
+    return (
+        count_azurite_blobs(cluster, destination, destination_prefix),
+        count_azurite_blobs(cluster, source, source_prefix),
+    )
+
+
+def test_move_after_processing_basename_collision(started_cluster):
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_collision_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_data = {
+        f"{files_path}/a/part.csv": b"1,2,3\n",
+        f"{files_path}/b/part.csv": b"4,5,6\n",
+    }
+    collisions_before = move_collisions(node)
+
+    for key, data in source_data.items():
+        put_s3_file_content(started_cluster, key, data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": f"/clickhouse/{table_name}"},
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        hive_partitioning_path="*/",
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 2)
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (1, 1)
+    )
+
+    remaining = []
+    for prefix in (processed_prefix, files_path):
+        for obj in started_cluster.minio_client.list_objects(
+            started_cluster.minio_bucket, prefix=prefix, recursive=True
+        ):
+            remaining.append(
+                read_s3_object(
+                    started_cluster, started_cluster.minio_bucket, obj.object_name
+                )
+            )
+    assert sorted(remaining) == sorted(source_data.values())
+    assert move_collisions(node) > collisions_before
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("external_destination", [False, True])
+def test_move_after_processing_existing_destination(
+    started_cluster, engine_name, external_destination
+):
+    """A foreign destination must remain unchanged and the source must survive."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_existing_{engine_name}_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    destination = f"{token}-destination" if external_destination else None
+    source_key = f"{files_path}/a/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    sentinel = b"9,9,9\n"
+    is_s3 = engine_name == "S3Queue"
+    collisions_before = move_collisions(node)
+
+    if destination:
+        if is_s3:
+            recreate_minio_bucket(started_cluster, destination)
+        else:
+            recreate_azurite_container(started_cluster, destination)
+
+    if is_s3:
+        put_s3_file_content(started_cluster, source_key, b"1,2,3\n")
+        put_s3_file_content(
+            started_cluster, destination_key, sentinel, bucket=destination
+        )
+    else:
+        put_azure_file_content(started_cluster, source_key, b"1,2,3\n")
+        put_azure_file_content(
+            started_cluster, destination_key, sentinel, bucket=destination
+        )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": f"/clickhouse/{table_name}"},
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=destination,
+        hive_partitioning_path="*/",
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
+    wait_until(
+        lambda: move_counts(
+            started_cluster, engine_name, destination, files_path, processed_prefix
+        )
+        == (1, 1)
+    )
+    assert move_collisions(node) > collisions_before
+
+    if is_s3:
+        data = read_s3_object(
+            started_cluster,
+            destination or started_cluster.minio_bucket,
+            destination_key,
+        )
+    else:
+        client = started_cluster.blob_service_client.get_blob_client(
+            destination or started_cluster.azurite_container, destination_key
+        )
+        data = client.download_blob().readall()
+    assert data == sentinel
+
+
+@pytest.mark.parametrize("external_destination", [False, True])
+@pytest.mark.parametrize("preserve_tags", [False, True])
+def test_move_after_processing_preserves_s3_properties(
+    started_cluster, external_destination, preserve_tags
+):
+    """Guarded S3 moves preserve metadata and headers, and optionally tags."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_properties_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    destination = f"{token}-destination" if external_destination else None
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    expires = datetime(2030, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    if destination:
+        recreate_minio_bucket(started_cluster, destination)
+
+    client.put_object(
+        Bucket=started_cluster.minio_bucket,
+        Key=source_key,
+        Body=b"1,2,3\n",
+        ContentType="text/csv",
+        Expires=expires,
+        Metadata={"owner": "queue"},
+        Tagging="classification=sensitive&team=data%20platform",
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"/clickhouse/{table_name}",
+            "after_processing_move_preserve_tags": int(preserve_tags),
+        },
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=destination,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", destination, files_path, processed_prefix
+        )
+        == (1, 0)
+    )
+    destination = destination or started_cluster.minio_bucket
+    head = client.head_object(Bucket=destination, Key=destination_key)
+    assert head["ContentType"] == "text/csv"
+    assert head["Expires"] == expires
+    assert head["Metadata"]["owner"] == "queue"
+
+    tags = {
+        item["Key"]: item["Value"]
+        for item in client.get_object_tagging(Bucket=destination, Key=destination_key)[
+            "TagSet"
+        ]
+    }
+    expected_tags = (
+        {"classification": "sensitive", "team": "data platform"}
+        if preserve_tags
+        else {}
+    )
+    assert tags == expected_tags
+
+
+def test_move_preserve_tags_setting(started_cluster):
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_tags_setting_{token}"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        f"{table_name}_data",
+        additional_settings={"after_processing_move_preserve_tags": 1},
+        after_processing="move",
+        move_to_prefix=f"{token}_moved",
+    )
+    assert (
+        node.query(
+            f"SELECT alterable FROM system.s3_queue_settings "
+            f"WHERE table = '{table_name}' "
+            "AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "1"
+    )
+    node.query(
+        f"ALTER TABLE {table_name} MODIFY SETTING "
+        "after_processing_move_preserve_tags = 0"
+    )
+    assert (
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE table = '{table_name}' "
+            "AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "false"
+    )
+
+    azure_table = f"{table_name}_azure"
+    create_table(
+        started_cluster,
+        node,
+        azure_table,
+        "unordered",
+        f"{azure_table}_data",
+        engine_name="AzureQueue",
+    )
+    assert (
+        node.query(
+            f"SELECT alterable FROM system.azure_queue_settings "
+            f"WHERE table = '{azure_table}' "
+            "AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "0"
+    )
+    alter_error = node.query_and_get_error(
+        f"ALTER TABLE {azure_table} MODIFY SETTING "
+        "after_processing_move_preserve_tags = 1"
+    )
+    assert "after_processing_move_preserve_tags" in alter_error
+
+    error = create_table(
+        started_cluster,
+        node,
+        f"{azure_table}_invalid",
+        "unordered",
+        f"{azure_table}_data",
+        additional_settings={"after_processing_move_preserve_tags": 1},
+        engine_name="AzureQueue",
+        expect_error=True,
+    )
+    assert "after_processing_move_preserve_tags" in error
+    assert "only for S3" in error
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("external_destination", [False, True])
+def test_move_retry_recognizes_committed_copy(
+    started_cluster, engine_name, external_destination
+):
+    """A retry must remove the source after its guarded copy already committed."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_retry_{engine_name}_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    destination = f"{token}-destination" if external_destination else None
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    is_s3 = engine_name == "S3Queue"
+
+    if destination:
+        if is_s3:
+            recreate_minio_bucket(started_cluster, destination)
+        else:
+            recreate_azurite_container(started_cluster, destination)
+
+    if is_s3:
+        put_s3_file_content(started_cluster, source_key, b"1,2,3\n")
+    else:
+        blob = started_cluster.blob_service_client.get_blob_client(
+            started_cluster.azurite_container, source_key
+        )
+        blob.upload_blob(
+            io.BytesIO(b"1,2,3\n"),
+            "BlockBlob",
+            6,
+            metadata={"owner": "queue"},
+        )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"after_processing_retries": 2},
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=destination,
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_until(
+            lambda: move_counts(
+                started_cluster,
+                engine_name,
+                destination,
+                files_path,
+                processed_prefix,
+            )
+            == (1, 0)
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    if not is_s3:
+        metadata = (
+            started_cluster.blob_service_client.get_blob_client(
+                destination or started_cluster.azurite_container, destination_key
+            )
+            .get_blob_properties()
+            .metadata
+        )
+        assert metadata["owner"] == "queue"
+
+
+@pytest.mark.parametrize(
+    "destination_version, expect_move",
+    [(None, True), ("foreign-version", False)],
+    ids=["pre_upgrade_destination", "foreign_destination"],
+)
+def test_move_versioned_source_provenance(
+    started_cluster, destination_version, expect_move
+):
+    """A destination with no version attribute was written before the upgrade and is still ours."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"move_versioned_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    data = b"1,2,3\n"
+    client = started_cluster.minio_client
+    client.make_bucket(bucket)
+    client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    put_s3_file_content(started_cluster, source_key, data, bucket=bucket)
+
+    source = client.stat_object(bucket, source_key)
+    assert source.version_id, "the source must carry a version id"
+    metadata = {
+        "clickhouse_move_source_path": source_key,
+        "clickhouse_move_source_etag": f'"{source.etag}"',
+        "clickhouse_move_source_last_modified": str(
+            int(source.last_modified.timestamp())
+        ),
+    }
+    if destination_version:
+        metadata["clickhouse_move_source_version_id"] = destination_version
+    client.put_object(
+        bucket,
+        destination_key,
+        io.BytesIO(data),
+        len(data),
+        metadata=metadata,
+    )
+    collisions_before = move_collisions(node)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
+    if expect_move:
+        wait_until(
+            lambda: count_minio_objects(started_cluster, bucket, files_path) == 0
+        )
+        assert move_collisions(node) == collisions_before
+    else:
+        wait_until(lambda: move_collisions(node) > collisions_before)
+        assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+
+
+def test_move_after_processing_many_objects(started_cluster):
+    """Smoke test for the concurrent move path: every destination must hold its own source's bytes."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_many_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    files_num = 24
+    source_data = {
+        f"{files_path}/part_{i}.csv": f"{i},{i},{i}\n".encode()
+        for i in range(files_num)
+    }
+    for key, data in source_data.items():
+        put_s3_file_content(started_cluster, key, data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (files_num, 0),
+        timeout=120,
+    )
+    moved = {
+        obj.object_name: read_s3_object(
+            started_cluster, started_cluster.minio_bucket, obj.object_name
+        )
+        for obj in started_cluster.minio_client.list_objects(
+            started_cluster.minio_bucket, prefix=processed_prefix, recursive=True
+        )
+    }
+    assert moved == {
+        f"{processed_prefix}/{key.rsplit('/', 1)[1]}": data
+        for key, data in source_data.items()
+    }
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])

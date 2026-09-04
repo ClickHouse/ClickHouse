@@ -198,6 +198,7 @@ private:
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     .etag = object.GetETag(),
+                    .version_id = {},
                     .tags = {},
                     .attributes = {},
                 };
@@ -378,15 +379,17 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
-                ObjectMetadata{
-                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
-                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
-                    .tags = {},
-                    .attributes = {},
-                }));
+            children.emplace_back(
+                std::make_shared<RelativePathWithMetadata>(
+                    object.GetKey(),
+                    ObjectMetadata{
+                        .size_bytes = static_cast<uint64_t>(object.GetSize()),
+                        .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                        .etag = object.GetETag(),
+                        .version_id = {},
+                        .tags = {},
+                        .attributes = {},
+                    }));
 
         if (max_keys)
         {
@@ -521,7 +524,6 @@ void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::strin
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
-    auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
@@ -532,6 +534,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = object_info.tags;
     result.attributes = object_info.metadata;
 
@@ -571,6 +574,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     result.is_size_known = object_info.is_size_known;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.version_id = object_info.version_id;
     result.tags = std::move(object_info.tags);
     result.attributes = object_info.metadata;
 
@@ -645,12 +649,24 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
+    const bool guarded_copy = !write_settings.object_storage_write_if_none_match.empty();
+    auto source_info = S3::getObjectInfo(
+        *current_client,
+        uri.bucket,
+        object_from.remote_path,
+        /*version_id=*/{},
+        /*with_metadata=*/false,
+        /*with_tags=*/false);
+    /// A guarded copy re-uploads the object, so the tags are read explicitly rather than through the
+    /// `HeadObject` tag count, which restricted credentials do not get to see.
+    std::optional<ObjectAttributes> source_tags;
+    if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
+        source_tags = S3::getObjectTags(*current_client, uri.bucket, object_from.remote_path);
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -658,7 +674,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*src_s3_client=*/current_client,
         /*src_bucket=*/uri.bucket,
         /*src_key=*/object_from.remote_path,
-        /*src_size=*/size,
+        /*src_size=*/source_info.size,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/uri.bucket,
         /*dest_key=*/object_to.remote_path,
@@ -666,8 +682,13 @@ void S3ObjectStorage::copyObject( // NOLINT
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),
         scheduler,
-        [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+        [&, this] { return readObject(object_from, read_settings_to_use); },
+        object_to_attributes,
+        S3CopyFileSettings{
+            .if_none_match = write_settings.object_storage_write_if_none_match,
+            .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
+                                           : std::optional<S3::ObjectHeaders>{},
+            .source_tags = std::move(source_tags)});
 }
 
 void S3ObjectStorage::shutdown()
