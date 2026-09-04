@@ -4,6 +4,8 @@
 1
 -- and neither may the other verbatim codec
 1
+-- a valid nested frame still executes
+1
 -- and neither may a nested one, which the top-level parser never sees
 1
 -- engines keep working on ordinary data

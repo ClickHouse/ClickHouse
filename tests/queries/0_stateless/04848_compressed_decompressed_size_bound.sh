@@ -41,14 +41,16 @@ sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', 9 + len(pa
 # A Multiple frame's body is [codec count][one method byte per codec][nested frame], and the nested
 # frame is parsed by CompressionCodecMultiple::doDecompressData, which never calls the top-level
 # header parser. Both frames declare the same size, so the only rule such a frame breaks is that a
-# codec storing data verbatim has a body as long as it declares.
+# codec storing data verbatim has a body as long as it declares. The nested size_compressed comes
+# from the declaration too, so the two nested header fields agree with each other and only the real
+# body length contradicts them.
 multiple_none_frame() { # $1 = size_decompressed, declared by the outer and the nested frame alike
     python3 -c "
 import struct, sys
 NONE, MULTIPLE = 0x02, 0x91
 declared = int(sys.argv[1])
 payload = b'SELECT 1'
-nested = bytes([NONE]) + struct.pack('<I', 9 + len(payload)) + struct.pack('<I', declared) + payload
+nested = bytes([NONE]) + struct.pack('<I', 9 + declared) + struct.pack('<I', declared) + payload
 body = bytes([1, NONE]) + nested
 sys.stdout.buffer.write(bytes([MULTIPLE]) + struct.pack('<I', 9 + len(body)) + struct.pack('<I', declared) + body)
 " "$1" | xxd -p | tr -d '\n'
@@ -60,17 +62,20 @@ echo '-- a valid frame still executes (proves the arms below fail for the intend
 frame 2 8 'SELECT 1' | post
 
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
-frame 2 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
+frame 2 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
 # Quantized is the other codec reporting isNone(). The read path builds it from the method byte
 # alone, so the check applies to it without allow_experimental_codecs.
 echo '-- and neither may the other verbatim codec'
-frame 158 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
+frame 158 999 'SELECT 1' | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
+
+echo '-- a valid nested frame still executes'
+emit "$(multiple_none_frame 8)" | post
 
 # The top-level parser never reads a nested header, so only the check inside `Multiple` can
 # produce this message. Observing it pins that the nested layer refuses the frame, not where
 # within that layer the check runs.
 echo '-- and neither may a nested one, which the top-level parser never sees'
-emit "$(multiple_none_frame 999)" | post 2>&1 | grep -c 'does not match size_decompressed (999)'
+emit "$(multiple_none_frame 999)" | post 2>&1 | grep -c '(8) does not match size_decompressed (999)'
 
 # No-regression control: engines reading frames they wrote themselves keep working, now that the
 # frame size bound applies to every reader with no per-call-site escape.
