@@ -67,6 +67,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
@@ -135,7 +136,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const String & comment)
+    const String & comment,
+    const char * documentation_source = SYSTEM_LOG_DOCUMENTATION_SOURCE)
 {
     if (!config.has(config_prefix))
     {
@@ -165,6 +167,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         log_settings.queue_settings.database = default_database_name;
     }
+
+    registerSystemTableDocumentationSource(log_settings.queue_settings.table, documentation_source, comment);
 
     if (config.has(config_prefix + ".engine"))
     {
@@ -235,9 +239,23 @@ std::shared_ptr<TSystemLog> createSystemLog(
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
-    const char * comment_addendum = "\n\nIt is safe to truncate or drop this table at any time.";
-    if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
+    constexpr std::string_view comment_addendum = "It is safe to truncate or drop this table at any time.";
+    String merged_comment = comment;
+    if (storage_with_comment.comment)
+    {
+        const String configured_comment = storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>();
+        if (!configured_comment.empty())
+            merged_comment += "\n\n.description\n" + configured_comment;
+
+        /// Replace the configured comment instead of appending a second `COMMENT` clause.
+        log_settings.engine = storage_with_comment.storage->formatWithSecretsOneLine();
+    }
+    if (!merged_comment.contains(comment_addendum))
+    {
+        merged_comment += "\n\n.description\n";
+        merged_comment += comment_addendum;
+    }
+    log_settings.engine += fmt::format(" COMMENT {} ", quoteString(merged_comment));
 
     /// The optional `create_union_system_log_tables` section requests the creation of `all_...`
     /// tables querying the set of rotated tables (`query_log`, `query_log_0`, `query_log_1`, ...)
@@ -352,6 +370,24 @@ String escapeStringForRegexp(const String & s)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
+/// Register default names even for disabled logs whose old tables may still be attached.
+#define REGISTER_DOCUMENTATION_SOURCE(log_type, member, descr) \
+    registerSystemTableDocumentationSource(#member, SYSTEM_LOG_DOCUMENTATION_SOURCE, descr); \
+
+    LIST_OF_ALL_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #endif
+#undef REGISTER_DOCUMENTATION_SOURCE
+
+    /// These schema variants are configured under the canonical `metric_log` name, so register their complete
+    /// comments even when another schema is active. This lets rotated tables retain the source of the schema they
+    /// actually contain instead of inheriting the source of the new live schema.
+    registerSystemTableDocumentationSource(
+        "transposed_metric_log", TransposedMetricLog::DOCUMENTATION_SOURCE, TransposedMetricLog::DOCUMENTATION);
+    registerSystemTableDocumentationSource(
+        "bucketed_metric_log", BucketedMetricLog::DOCUMENTATION_SOURCE, BucketedMetricLog::DOCUMENTATION);
+
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
@@ -369,10 +405,22 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         auto schema = config.getString("metric_log.schema_type", "wide");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             transposed_metric_log = createSystemLog<TransposedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                TransposedMetricLog::DOCUMENTATION,
+                TransposedMetricLog::DOCUMENTATION_SOURCE);
         else if (schema == "bucketed")
             bucketed_metric_log = createSystemLog<BucketedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                BucketedMetricLog::DOCUMENTATION,
+                BucketedMetricLog::DOCUMENTATION_SOURCE);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
@@ -868,13 +916,60 @@ void SystemLog<LogElement>::prepareTable()
 
         if (old_create_query != create_query)
         {
-            /// TODO: Handle altering comment, because otherwise all table will be renamed.
+            auto old_create_query_ast = getCreateTableQueryClean(table_id, getContext());
+            auto expected_create_query_ast = getCreateTableQuery();
 
+            auto & expected_create = expected_create_query_ast->template as<ASTCreateQuery &>();
+            const String expected_comment = expected_create.comment
+                ? expected_create.comment->template as<ASTLiteral &>().value.template safeGet<String>()
+                : String{};
+
+            auto format_without_comment = [](ASTPtr query_ast)
+            {
+                auto & create = query_ast->as<ASTCreateQuery &>();
+                create.reset(create.comment);
+                return query_ast->formatWithSecretsOneLine();
+            };
+
+            if (format_without_comment(old_create_query_ast) == format_without_comment(expected_create_query_ast))
+            {
+                LOG_DEBUG(log, "Updating the comment of existing system log table {}", description);
+
+                auto alter_context = Context::createCopy(context);
+                alter_context->makeQueryContext();
+                addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                auto alter_command = make_intrusive<ASTAlterCommand>();
+                alter_command->type = ASTAlterCommand::MODIFY_COMMENT;
+                alter_command->set(alter_command->comment, make_intrusive<ASTLiteral>(expected_comment));
+
+                auto alter_commands = make_intrusive<ASTExpressionList>();
+                alter_commands->children.push_back(alter_command);
+
+                auto alter_query = make_intrusive<ASTAlterQuery>();
+                alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                alter_query->setDatabase(table_id.database_name);
+                alter_query->setTable(table_id.table_name);
+                alter_query->command_list = alter_commands.get();
+                alter_query->children.push_back(alter_commands);
+
+                InterpreterAlterQuery(alter_query, alter_context).execute();
+                old_create_query = create_query;
+            }
+        }
+
+        if (old_create_query != create_query)
+        {
             /// Rename the existing table.
             int suffix = 0;
             while (DatabaseCatalog::instance().isTableExist(
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
+
+            const String rotated_table_name = table_id.table_name + "_" + toString(suffix);
+            const auto old_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+            const char * rotated_documentation_source
+                = getSystemTableDocumentationSourceFromComment(old_metadata_snapshot->comment);
 
             ASTRenameQuery::Element elem
             {
@@ -886,7 +981,7 @@ void SystemLog<LogElement>::prepareTable()
                 ASTRenameQuery::Table
                 {
                     table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
-                    make_intrusive<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                    make_intrusive<ASTIdentifier>(rotated_table_name)
                 }
             };
 
@@ -910,6 +1005,9 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
+            if (rotated_documentation_source)
+                registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
+
             /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
             /// This prevents the old table from wasting CPU on background operations.
             ///
@@ -932,7 +1030,7 @@ void SystemLog<LogElement>::prepareTable()
             /// the current batch of log entries.
             try
             {
-                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                StorageID old_table_id(table_id.database_name, rotated_table_name);
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
 
                 bool old_table_has_ttl = false;

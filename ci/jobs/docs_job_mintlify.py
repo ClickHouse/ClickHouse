@@ -210,4 +210,19 @@ if __name__ == "__main__":
             )
         )
 
+    # This self-contained check validates source extraction and Python page
+    # rewriting. Runtime `StorageSystemDocumentation` behavior is covered by
+    # `05042_system_documentation_full_system_table_pages` and
+    # `05054_system_documentation_asynchronous_metrics_in_local`.
+    if selected("Check system-table documentation sources"):
+        results.append(
+            Result.from_commands_run(
+                name="Check system-table documentation sources",
+                command=(
+                    "python3 ci/jobs/scripts/docs/autogenerate/"
+                    "test_system_table_pages.py"
+                ),
+            )
+        )
+
     Result.create_from(results=results).complete_job()

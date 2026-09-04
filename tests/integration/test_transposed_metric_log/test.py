@@ -70,15 +70,47 @@ def test_table_rotation(start_cluster):
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "metric" in node1.query("SHOW CREATE TABLE system.metric_log")
     assert "ORDER BY (event_date, event_time)" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert (
+        node1.query(
+            "SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/TransposedMetricLog.h\n"
+    )
+    documentation = node1.query(
+        "SELECT description FROM system.documentation"
+        " WHERE type = 'System Table' AND name = 'metric_log' FORMAT TSVRaw"
+    )
+    assert "This is the `transposed` schema" in documentation
+    assert "## Description {#description}" in documentation
+    assert "## Columns {#columns}" in documentation
+    assert "## Examples {#examples}" in documentation
+    assert "## See also {#see-also}" in documentation
 
     assert int(node1.query("select countDistinct(metric) from system.metric_log").strip()) > 1000
 
     in_old_metric_log = int(node1.query("select count() from system.metric_log_0").strip())
 
     assert in_old_metric_log > 0
+    assert (
+        node1.query(
+            "SELECT source FROM system.documentation"
+            " WHERE type = 'System Table' AND name = 'metric_log_0'"
+        )
+        == "src/Interpreters/SystemLog.h\n"
+    )
 
     node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
     node1.restart_clickhouse()
+
+    assert node1.query(
+        "SELECT name, source FROM system.documentation"
+        " WHERE type = 'System Table' AND name IN ('metric_log', 'metric_log_0', 'metric_log_1')"
+        " ORDER BY name"
+    ) == (
+        "metric_log\tsrc/Interpreters/SystemLog.h\n"
+        "metric_log_0\tsrc/Interpreters/SystemLog.h\n"
+        "metric_log_1\tsrc/Interpreters/TransposedMetricLog.h\n"
+    )
 
 
 def test_bucketed_schema(start_cluster):
@@ -103,6 +135,21 @@ def test_bucketed_schema(start_cluster):
     assert "max_buckets_in_map = 128" in create_query
     assert "map_buckets_strategy = 'constant'" in create_query
     assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+    assert (
+        node2.query(
+            "SELECT source FROM system.documentation WHERE type = 'System Table' AND name = 'metric_log'"
+        )
+        == "src/Interpreters/BucketedMetricLog.h\n"
+    )
+    documentation = node2.query(
+        "SELECT description FROM system.documentation"
+        " WHERE type = 'System Table' AND name = 'metric_log' FORMAT TSVRaw"
+    )
+    assert "This is the `bucketed` schema" in documentation
+    assert "## Description {#description}" in documentation
+    assert "## Columns {#columns}" in documentation
+    assert "## Examples {#examples}" in documentation
+    assert "## See also {#see-also}" in documentation
 
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
