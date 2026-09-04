@@ -17,6 +17,7 @@
 #include <Parsers/parseQuery.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
+#include <base/scope_guard.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnString.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -296,11 +297,22 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
     inner_context->setCurrentQueryId("");
 
     Block res;
+
+    /// Outlives the read below, because the columns the scan allocates are released under this group.
+    auto scan_group = ThreadGroup::createForQuery(inner_context);
+
+    /// This group's memory accounts to the global tracker and the caller's to their user's tracker, so
+    /// a column allocated here and released under the caller credits a tracker never charged for it.
+    Columns scan_owned;
+    SCOPE_EXIT({
+        ThreadGroupSwitcher switcher(scan_group, getThreadName(), /*allow_existing_group=*/ true);
+        scan_owned.clear();
+    });
+
     {
         /// The scan sees every user's row before the filter above, so it runs in a thread group of its
         /// own: its rows are neither charged to the caller's memory, quota and profile events nor
         /// reported to them. The thread keeps its name, only the group it accounts to changes.
-        auto scan_group = ThreadGroup::createForQuery(inner_context);
         ThreadGroupSwitcher switcher(scan_group, getThreadName(), /*allow_existing_group=*/ true);
 
         /// The scan must not be accounted to the caller's group, and the switcher's constructor cannot throw.
@@ -311,6 +323,11 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
 
         res = runInternalSelect(select_query, std::move(inner_context));
     }
+
+    scan_owned.reserve(res.columns());
+    for (const auto & elem : res)
+        scan_owned.push_back(elem.column);
+
     rebuildLowCardinalityDictionaries(res);
     return res;
 }
