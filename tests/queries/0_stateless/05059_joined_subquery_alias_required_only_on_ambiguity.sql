@@ -38,6 +38,14 @@ SELECT x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS y), (SELECT 3 AS x); -- { serve
 SELECT x FROM (SELECT 1 AS x) AS a JOIN (SELECT 2 AS y) ON true JOIN (SELECT 3 AS x) ON true; -- { serverError ALIAS_REQUIRED }
 SELECT x FROM (SELECT 1 AS x) JOIN (SELECT 2 AS x) AS b ON true; -- { serverError ALIAS_REQUIRED }
 
+SELECT '-- Two structurally identical table expressions resolve the identifier by the alias, so it is ambiguous as well';
+SELECT number FROM numbers(2) AS x, numbers(2) WHERE x.number = 0; -- { serverError ALIAS_REQUIRED }
+SELECT number FROM numbers(2), numbers(2) AS y WHERE y.number = 0; -- { serverError ALIAS_REQUIRED }
+SELECT number FROM numbers(2), numbers(2); -- { serverError ALIAS_REQUIRED }
+SELECT a FROM (SELECT number AS a FROM numbers(2)) AS x LEFT JOIN (SELECT number AS a FROM numbers(2)) ON x.a = 0; -- { serverError ALIAS_REQUIRED }
+SELECT a FROM (SELECT number AS a FROM numbers(2)) LEFT JOIN (SELECT number AS a FROM numbers(2)) AS y ON y.a = 0; -- { serverError ALIAS_REQUIRED }
+SELECT number FROM numbers(2) AS x, numbers(2) AS y WHERE x.number = 0 ORDER BY number;
+
 SELECT '-- Virtual columns of a sibling table participate in the ambiguity';
 SELECT _part FROM mt, (SELECT '' AS _part); -- { serverError ALIAS_REQUIRED }
 SELECT id FROM mt, (SELECT '' AS not_a_column) ORDER BY id;
@@ -72,6 +80,13 @@ SELECT COLUMNS('brand') FROM item, (SELECT 100 AS brand); -- { serverError ALIAS
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x)), (SELECT 3 AS y);
+
+SELECT '-- PASTE JOIN allows equally named columns, but only for the columns it combines itself';
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS a); -- { serverError AMBIGUOUS_COLUMN_NAME }
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b), (SELECT 3 AS c) FORMAT TSVWithNames;
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b), (SELECT 3 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT COLUMNS('a') FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b), (SELECT 3 AS a); -- { serverError ALIAS_REQUIRED }
+SELECT a FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b), (SELECT 3 AS a); -- { serverError ALIAS_REQUIRED }
 
 SELECT '-- The restriction can be disabled entirely';
 SELECT brand FROM item, (SELECT s_brand AS brand FROM sales) ORDER BY brand SETTINGS joined_subquery_requires_alias = 0;

@@ -7,6 +7,9 @@
 6
 1
 -- Ambiguous identifier from an unaliased subquery or table function: the alias is required
+-- Two structurally identical table expressions resolve the identifier by the alias, so it is ambiguous as well
+0
+0
 -- Virtual columns of a sibling table participate in the ambiguity
 1
 2
@@ -40,6 +43,9 @@ item_id
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3
+-- PASTE JOIN allows equally named columns, but only for the columns it combines itself
+a	b	c
+1	2	3
 -- The restriction can be disabled entirely
 100
 100
