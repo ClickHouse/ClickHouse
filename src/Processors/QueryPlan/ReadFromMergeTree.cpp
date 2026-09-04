@@ -3875,12 +3875,14 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     updateSortDescription();
 }
 
-void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
+void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column, const PrewhereInfoPtr & new_prewhere_info)
 {
     if (isVectorColumnReplaced())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
             "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
+    if (new_prewhere_info)
+        query_info.prewhere_info = new_prewhere_info;
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(

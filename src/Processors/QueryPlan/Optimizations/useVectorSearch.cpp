@@ -250,6 +250,211 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     return no_layers_updated;
 }
 
+namespace
+{
+
+/// Does the node refer to the vector column? Both analyzers are handled, same as in the first pass.
+bool isSearchColumnNode(const ActionsDAG::Node * node, const String & search_column)
+{
+    if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.at(0);
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return false;
+
+    String name = node->result_name;
+    if (name.contains('.')) /// old analyzer qualifies the name
+        name = name.substr(name.find('.') + 1);
+
+    return name == search_column;
+}
+
+/// Read a reference vector out of a COLUMN node, or return nullopt if the node is not an array literal.
+std::optional<VectorWithMemoryTracking<Float64>> tryGetReferenceVector(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+        return std::nullopt;
+
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(node->result_type.get());
+    if (!data_type_array)
+        return std::nullopt;
+
+    Field field = node->column->getField();
+    if (field.getType() != Field::Types::Array)
+        return std::nullopt;
+
+    VectorWithMemoryTracking<Float64> reference_vector;
+    for (const auto & element : field.safeGet<Array>())
+    {
+        if (element.getType() != Field::Types::Float64)
+            return std::nullopt;
+        reference_vector.push_back(element.safeGet<Float64>());
+    }
+
+    if (reference_vector.empty())
+        return std::nullopt;
+
+    return reference_vector;
+}
+
+/// True if `dag` feeds `search_column` into a function, as opposed to merely carrying it through to
+/// its outputs.
+///
+/// This distinguishes a filter above the read that only passes the vector column along - which the
+/// planner does routinely so the ORDER BY above can use it, and whose pass-through alias
+/// replaceVectorColumnWithDistanceColumn() removes - from one that actually computes with it, such
+/// as `WHERE length(vec) = 2`. Only the latter breaks once the column leaves the read list.
+bool searchColumnFeedsIntoFunction(const ActionsDAG & dag, const String & search_column)
+{
+    std::unordered_map<const ActionsDAG::Node *, bool> reaches_search_column;
+
+    auto reaches = [&](const ActionsDAG::Node * node, auto & self) -> bool
+    {
+        auto [it, inserted] = reaches_search_column.try_emplace(node, false);
+        if (!inserted)
+            return it->second;
+
+        /// isSearchColumnNode also unwraps an ALIAS and strips the qualification the old analyzer
+        /// adds, so `tab.vec` is recognised as well as `vec`.
+        bool result = isSearchColumnNode(node, search_column);
+        if (!result)
+        {
+            for (const auto * child : node->children)
+            {
+                if (self(child, self))
+                {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        /// try_emplace may have rehashed while recursing, so look the slot up again.
+        reaches_search_column[node] = result;
+        return result;
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION && node.type != ActionsDAG::ActionType::ARRAY_JOIN)
+            continue;
+        for (const auto * child : node.children)
+            if (reaches(child, reaches))
+                return true;
+    }
+
+    return false;
+}
+
+/// Find the distance-function nodes in `dag` that the `_distance` virtual column can stand in for.
+///
+/// A node qualifies only if it computes exactly the same thing the vector index already returned,
+/// i.e. the same distance function over the same vector column and the *same* reference vector as
+/// the ORDER BY. A query may well filter on a different reference vector than it sorts by, and
+/// `_distance` only holds the distances belonging to the ORDER BY, so substituting it there would
+/// silently return wrong results.
+///
+/// Returns an empty result if the vector column is reachable in any other way, because then the
+/// column still has to be read and there is nothing to gain.
+ActionsDAG::NodeRawConstPtrs findDistanceNodesReplaceableByDistanceColumn(
+    const ActionsDAG & dag, const VectorSearchParameters & parameters)
+{
+    ActionsDAG::NodeRawConstPtrs distance_nodes;
+    std::unordered_set<const ActionsDAG::Node *> vector_column_users;
+
+    for (const auto & node : dag.getNodes())
+    {
+        for (const auto * child : node.children)
+        {
+            if (isSearchColumnNode(child, parameters.column))
+                vector_column_users.insert(&node);
+        }
+    }
+
+    for (const auto * node : vector_column_users)
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return {};
+
+        if (node->function_base->getName() != parameters.distance_function)
+            return {};
+
+        if (node->children.size() != 2)
+            return {};
+
+        /// One child is the vector column, the other must be a literal equal to the ORDER BY reference vector.
+        const auto * reference_child = isSearchColumnNode(node->children.at(0), parameters.column)
+            ? node->children.at(1)
+            : node->children.at(0);
+
+        auto reference_vector = tryGetReferenceVector(reference_child);
+        if (!reference_vector.has_value())
+            return {};
+
+        if (reference_vector->size() != parameters.reference_vector.size()
+            || !std::equal(reference_vector->begin(), reference_vector->end(), parameters.reference_vector.begin()))
+            return {};
+
+        distance_nodes.push_back(node);
+    }
+
+    return distance_nodes;
+}
+
+/// Rewrite `distance_nodes` (interior nodes of `dag`) to read the `_distance` virtual column instead
+/// of recomputing the distance. Each node keeps its name and result type, so its parents are
+/// unaffected: it simply becomes an alias of the value the vector index handed us for free.
+void replaceDistanceNodesWithDistanceColumn(
+    ActionsDAG & dag,
+    const ActionsDAG::NodeRawConstPtrs & distance_nodes,
+    const VectorSearchParameters & parameters,
+    const ContextPtr & context)
+{
+    const auto * distance_input = &dag.addInput("_distance", std::make_shared<DataTypeFloat32>());
+
+    /// usearch returns L2 *squared* to avoid repeated sqrt computations.
+    const auto * distance_node = distance_input;
+    if (parameters.distance_function == "L2Distance")
+    {
+        auto sqrt_function = FunctionFactory::instance().get("sqrt", context);
+        distance_node = &dag.addFunction(sqrt_function, {distance_node}, {});
+    }
+
+    for (const auto * node_to_replace : distance_nodes)
+    {
+        /// `_distance` is always Float32 while the distance function may return Float64 (bug #85514),
+        /// so cast to the type the node already had rather than changing it under its parents.
+        const auto * replacement = distance_node;
+        if (!replacement->result_type->equals(*node_to_replace->result_type))
+            replacement = &dag.addCast(*replacement, node_to_replace->result_type, "_CAST_distance_prewhere", context);
+
+        /// Mutating nodes in place is how the other query plan optimizations rewire a DAG
+        /// (see filterPushDown.cpp and mergeFilterIntoJoinCondition.cpp).
+        auto * mutable_node = const_cast<ActionsDAG::Node *>(node_to_replace);
+        mutable_node->type = ActionsDAG::ActionType::ALIAS;
+        mutable_node->children = {replacement};
+        mutable_node->function_base = nullptr;
+        mutable_node->function = nullptr;
+        mutable_node->is_function_compiled = false;
+    }
+
+    /// The vector column is usually also an output of the PREWHERE actions, passed through so that
+    /// the ORDER BY above can compute the distance from it. Swap that pass-through for `_distance`:
+    /// only the outputs of these actions survive into the step's header, so `_distance` has to be
+    /// among them for the ORDER BY (rewritten the same way) to find it. Dropping the vector column
+    /// has to be explicit as well, since outputs are roots that removeUnusedActions() would keep
+    /// alive, and not reading that column is the point of this optimization.
+    auto & outputs = dag.getOutputs();
+    std::erase_if(outputs, [&](const auto * output) { return isSearchColumnNode(output, parameters.column); });
+
+    if (std::ranges::find(outputs, distance_input) == outputs.end())
+        outputs.push_back(distance_input);
+
+    dag.removeUnusedActions();
+}
+
+}
+
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
@@ -341,7 +546,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (read_from_mergetree_step->isParallelReadingFromReplicas())
         return false;
 
-    /// If there is an explicit PREWHERE, we disable the optimization. The PREWHERE optimization
+    /// An explicit PREWHERE generally disables the optimization. The PREWHERE optimization
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
@@ -353,8 +558,47 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
     /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
+    ///
+    /// The one exception is a PREWHERE that only reaches the vector column through the very distance
+    /// function the ORDER BY sorts by, e.g.
+    ///     PREWHERE cosineDistance(vec, reference) < 0.5 ORDER BY cosineDistance(vec, reference)
+    /// There the filter recomputes a distance the vector index already returned, so the whole (heavy)
+    /// vector column gets read only to derive a number we were handed for free. Such a PREWHERE can be
+    /// rewritten onto the `_distance` virtual column, which keeps the optimization and drops the vector
+    /// column from the read list. Any other use of the vector column keeps the bail-out below.
+    ActionsDAG::NodeRawConstPtrs prewhere_distance_nodes;
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
-        return false;
+    {
+        if (settings.vector_search_with_rescoring)
+            return false;
+
+        /// FINAL may add PK-overlapping ranges after vector index analysis, so the vector row hints
+        /// describe only the pre-FINAL candidates. The rescoring row filter is disabled under FINAL
+        /// for exactly this reason (see apply_row_filter_for_rescoring below), but the rewrite keeps
+        /// the hints active, so an explicit PREWHERE under FINAL has to keep the bail-out.
+        if (read_from_mergetree_step->isQueryWithFinal())
+            return false;
+
+        /// The rewrite drops the vector column from the read list, so a step above the read that
+        /// computes something from it would reference a column that is no longer produced, e.g.
+        ///     PREWHERE cosineDistance(vec, reference) < 0.5 WHERE length(vec) = 2
+        /// Merely carrying the column through to the outputs is fine and common - the planner keeps
+        /// it available for the ORDER BY above - and replaceVectorColumnWithDistanceColumn() drops
+        /// that pass-through alias. So a filter such as `WHERE id % 2 = 0` stays eligible, and only
+        /// a filter that feeds the column into a function bails out.
+        if (filter_step || prewhere_expression_step)
+        {
+            const ActionsDAG & dag_above_read
+                = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+            if (searchColumnFeedsIntoFunction(dag_above_read, vector_search_parameters.value().column))
+                return false;
+        }
+
+        prewhere_distance_nodes
+            = findDistanceNodesReplaceableByDistanceColumn(prewhere_info->prewhere_actions, vector_search_parameters.value());
+        if (prewhere_distance_nodes.empty())
+            return false;
+    }
 
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();
@@ -430,8 +674,24 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
         if (optimize_plan)
         {
+            /// Rewrite an explicit PREWHERE onto `_distance` before the read list changes: the header is
+            /// recomputed from both, so they have to be swapped together. `_distance` is filled in
+            /// MergeTreeRangeReader::startReadingChain(), which runs before the prewhere actions.
+            PrewhereInfoPtr new_prewhere_info;
+            if (!prewhere_distance_nodes.empty())
+            {
+                new_prewhere_info = std::make_shared<PrewhereInfo>(read_from_mergetree_step->getPrewhereInfo()->clone());
+                auto nodes_to_replace = findDistanceNodesReplaceableByDistanceColumn(
+                    new_prewhere_info->prewhere_actions, vector_search_parameters.value());
+                replaceDistanceNodesWithDistanceColumn(
+                    new_prewhere_info->prewhere_actions,
+                    nodes_to_replace,
+                    vector_search_parameters.value(),
+                    read_from_mergetree_step->getContext());
+            }
+
             /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
-            read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
+            read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column, new_prewhere_info);
 
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
