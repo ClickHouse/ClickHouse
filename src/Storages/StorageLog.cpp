@@ -165,8 +165,6 @@ private:
             }
             else
                 compressed.emplace(*plain);
-
-            compressed->allowUnboundedDecompressedSize();
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;

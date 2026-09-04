@@ -122,8 +122,6 @@ void MergeTreeReaderStream::init()
             uncompressed_cache,
             /* allow_different_codecs */ true);
 
-        buffer->allowUnboundedDecompressedSize();
-
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
 
@@ -138,8 +136,6 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
             build_read_buffer(), /* allow_different_codecs */ true);
-
-        buffer->allowUnboundedDecompressedSize();
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
