@@ -2388,6 +2388,81 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 }
 
 
+/// Whether the join tree `join_tree_node` has `table_expression` somewhere below it.
+static bool joinTreeContainsTableExpression(const QueryTreeNodePtr & join_tree_node, const IQueryTreeNode * table_expression)
+{
+    if (!join_tree_node)
+        return false;
+
+    if (join_tree_node.get() == table_expression)
+        return true;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = join_tree_node->as<const JoinNode &>();
+            return joinTreeContainsTableExpression(join_node.getLeftTableExpressionNode(), table_expression)
+                || joinTreeContainsTableExpression(join_node.getRightTableExpressionNode(), table_expression);
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            for (const auto & operand : join_tree_node->as<const CrossJoinNode &>().getTableExpressions())
+            {
+                if (joinTreeContainsTableExpression(operand, table_expression))
+                    return true;
+            }
+            return false;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return joinTreeContainsTableExpression(join_tree_node->as<const ArrayJoinNode &>().getTableExpressionNode(), table_expression);
+        default:
+            return false;
+    }
+}
+
+/** The innermost join of `join_tree_node` that has the two table expressions in different operands - the join whose kind
+  * decides whether their equally named columns may coexist. Returns nullptr when the join tree does not contain both.
+  */
+static const IQueryTreeNode * findInnermostJoinCombiningTableExpressions(
+    const QueryTreeNodePtr & join_tree_node,
+    const IQueryTreeNode * first_table_expression,
+    const IQueryTreeNode * second_table_expression)
+{
+    if (!joinTreeContainsTableExpression(join_tree_node, first_table_expression)
+        || !joinTreeContainsTableExpression(join_tree_node, second_table_expression))
+        return nullptr;
+
+    QueryTreeNodes operands;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = join_tree_node->as<const JoinNode &>();
+            operands = {join_node.getLeftTableExpressionNode(), join_node.getRightTableExpressionNode()};
+            break;
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+            operands = join_tree_node->as<const CrossJoinNode &>().getTableExpressions();
+            break;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return findInnermostJoinCombiningTableExpressions(
+                join_tree_node->as<const ArrayJoinNode &>().getTableExpressionNode(), first_table_expression, second_table_expression);
+        default:
+            return nullptr;
+    }
+
+    for (const auto & operand : operands)
+    {
+        if (joinTreeContainsTableExpression(operand, first_table_expression)
+            && joinTreeContainsTableExpression(operand, second_table_expression))
+            return findInnermostJoinCombiningTableExpressions(operand, first_table_expression, second_table_expression);
+    }
+
+    return join_tree_node.get();
+}
+
 /** Columns matched from different table expressions of a join that end up with the same projection name can be told apart
   * only when the matcher qualifies them with the name or alias of their table expression (see qualifyColumnNodesWithProjectionNames).
   * A subquery, union or table function without an alias has no such name, so with `joined_subquery_requires_alias` enabled
@@ -2404,18 +2479,14 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
     if (matched_nodes.size() < 2 || !scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
 
-    /// `PASTE JOIN` concatenates the operands positionally and allows equally named columns. Its duplicate column names are
-    /// validated separately (see checkDuplicateTableNamesOrAliasForPasteJoin).
     const auto * nearest_query_scope = scope.getNearestQueryScope();
     const auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-    if (!nearest_query_node || !nearest_query_node->getJoinTreeNode())
+    if (!nearest_query_node)
         return;
 
-    for (const auto & table_expression : buildTableExpressionsStack(nearest_query_node->getJoinTreeNode()))
-    {
-        if (const auto * join_node = table_expression->as<JoinNode>(); join_node && join_node->getKind() == JoinKind::Paste)
-            return;
-    }
+    const auto & join_tree_node = nearest_query_node->getJoinTreeNode();
+    if (!join_tree_node)
+        return;
 
     /// The table expression a matched node originates from. Subcolumns and `Nested` columns are wrapped into functions.
     auto get_column_source = [](const QueryTreeNodePtr & node) -> const IQueryTreeNode *
@@ -2446,7 +2517,17 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
             continue;
 
         const auto & first_node = matched_nodes[it->second];
-        if (get_column_source(first_node) == get_column_source(matched_nodes[i]))
+        const auto * first_column_source = get_column_source(first_node);
+        const auto * second_column_source = get_column_source(matched_nodes[i]);
+        if (first_column_source == second_column_source)
+            continue;
+
+        /// `PASTE JOIN` concatenates its operands positionally and allows equally named columns. Its duplicate column names
+        /// are validated separately (see checkDuplicateTableNamesOrAliasForPasteJoin). Only the join that actually combines
+        /// these two columns is exempt: a `PASTE JOIN` elsewhere in the tree says nothing about them.
+        const auto * combining_join = findInnermostJoinCombiningTableExpressions(join_tree_node, first_column_source, second_column_source);
+        if (const auto * combining_join_node = combining_join ? combining_join->as<JoinNode>() : nullptr;
+            combining_join_node && combining_join_node->getKind() == JoinKind::Paste)
             continue;
 
         auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(first_node);
