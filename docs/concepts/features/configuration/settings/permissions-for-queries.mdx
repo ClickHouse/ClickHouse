@@ -43,7 +43,7 @@ mode.
 For any value above 0, none of the following is permitted on a persistent table: write data queries
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) or DDL
 queries (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE`). `SYSTEM` statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER`
+`TRUNCATE TABLE`). `SYSTEM` statements that require a privilege from the `SYSTEM` group, and `CREATE`, `ALTER`
 and `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are not
 permitted either. Named collection management is an exception: `readonly` does not restrict
 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` or `DROP NAMED COLLECTION`.

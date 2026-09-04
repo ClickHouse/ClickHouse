@@ -85,6 +85,7 @@ cat numbers.csv
 
 <Note>
 
-Most table functions need the `CREATE TEMPORARY TABLE` privilege, so you can't use them when
+Most table functions need the `CREATE TEMPORARY TABLE` privilege to run, so a `SELECT` or `INSERT`
+that executes one is refused when
 [`readonly`](/concepts/features/configuration/settings/permissions-for-queries#readonly) is set to 1.
 </Note>
