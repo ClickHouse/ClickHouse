@@ -8,16 +8,20 @@ DROP TABLE IF EXISTS t_reverse_read_progress;
 
 -- Wide parts are required: a Compact part returns the whole range in one read, so nothing is
 -- left buffered. `max_block_size` is deliberately not a multiple of `index_granularity`, which
--- makes a full-size range span two reads.
+-- makes a full-size range span two reads, and full serialization is pinned because the byte
+-- assertions below assume eight bytes per row.
 CREATE TABLE t_reverse_read_progress (a UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_reverse_read_progress SELECT number FROM numbers(100);
 
 -- Each counter assertion below is about the reverse read-in-order algorithm, and a plan that reads
 -- the table any other way satisfies all of them without running it. `ReadType` is printed only by
 -- the legacy plan format.
+-- `ast_fuzzer_runs` is pinned because the stress profile enables the server-side AST fuzzer for any
+-- query, and a fuzzed re-execution inherits `log_comment`.
 SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
     EXPLAIN PLAN actions = 1 SELECT a FROM t_reverse_read_progress ORDER BY a DESC LIMIT 13
     SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
@@ -33,7 +37,7 @@ SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
          preferred_block_size_bytes = 0, use_query_condition_cache = 0,
          read_in_order_use_virtual_row = 0, query_plan_optimize_lazy_materialization = 0,
          use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0,
-         enable_parallel_replicas = 0,
+         enable_parallel_replicas = 0, ast_fuzzer_runs = 0,
          log_comment = 'reverse_read_in_order_buffered_progress';
 
 SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
@@ -54,7 +58,7 @@ SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
          preferred_block_size_bytes = 0, use_query_condition_cache = 0,
          read_in_order_use_virtual_row = 0, query_plan_optimize_lazy_materialization = 0,
          use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0,
-         enable_parallel_replicas = 0,
+         enable_parallel_replicas = 0, ast_fuzzer_runs = 0,
          log_comment = 'reverse_read_in_order_full_drain';
 
 SYSTEM FLUSH LOGS query_log;
@@ -65,7 +69,19 @@ WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now()
   AND current_database = currentDatabase()
   AND log_comment = 'reverse_read_in_order_buffered_progress';
 
+SELECT ProfileEvents['SelectedBytes'] = ProfileEvents['RowsReadByMainReader'] * 8
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase()
+  AND log_comment = 'reverse_read_in_order_buffered_progress';
+
 SELECT ProfileEvents['SelectedRows'] = ProfileEvents['RowsReadByMainReader']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase()
+  AND log_comment = 'reverse_read_in_order_full_drain';
+
+SELECT ProfileEvents['SelectedBytes'] = ProfileEvents['RowsReadByMainReader'] * 8
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase()
