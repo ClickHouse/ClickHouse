@@ -32,10 +32,6 @@ class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
 
-/// Throws if any (already-normalized) header name is "Range" (case-insensitive). URL storages must
-/// not send a Range header: schema inference and reads would run against a partial-content response.
-void rejectRangeHeaders(const HTTPHeaderEntries & headers);
-
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 

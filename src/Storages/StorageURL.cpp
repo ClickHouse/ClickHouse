@@ -1077,16 +1077,18 @@ namespace
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
-}
 
-/// Range headers are not allowed for URL storages: schema inference and reads must not run against a
-/// partial-content response. Matched on already-normalized names (case-insensitive), so a padded or
-/// mixed-case spelling like "R ange" that normalizes to "Range" is rejected too.
+/// A "Range" header must not reach the wire during schema inference: it would make inference read a
+/// partial-content response. Applied on the already-normalized names (case-insensitive), so a
+/// padded/mixed-case spelling that normalizes to "Range" is caught too. Only the fresh-request
+/// inference path uses this; the read/ATTACH paths keep their existing behaviour so that attaching
+/// a table stored with such a header does not start failing.
 void rejectRangeHeaders(const HTTPHeaderEntries & headers)
 {
     for (const auto & entry : headers)
         if (boost::to_lower_copy(entry.name) == "range")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
+}
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromDataImpl(
@@ -1619,7 +1621,6 @@ StorageURL::StorageURL(
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     headers = context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers));
-    rejectRangeHeaders(headers);
 }
 
 
