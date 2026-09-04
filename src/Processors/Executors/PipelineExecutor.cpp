@@ -348,6 +348,9 @@ void PipelineExecutor::finalizeExecution()
 
     if (!all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+
+    for (auto & node : graph->nodes)
+        node.processor()->onPipelineFinished();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
