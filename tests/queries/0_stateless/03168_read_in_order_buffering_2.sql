@@ -1,4 +1,6 @@
--- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-object-storage
+-- Tags: long, no-random-settings, no-tsan, no-asan, no-msan, no-object-storage, no-flaky-check
+
+SET use_reader_executor = 0;
 
 DROP TABLE IF EXISTS t_read_in_order_2;
 

@@ -74,6 +74,7 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
     Lead claimLeadRole(ByteRange range) override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
+    bool frontierInPartial(size_t frontier) const override;
 
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);

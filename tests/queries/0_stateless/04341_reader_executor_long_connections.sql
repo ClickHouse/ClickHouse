@@ -11,14 +11,22 @@
 DROP TABLE IF EXISTS t_reader_executor_lc_on;
 DROP TABLE IF EXISTS t_reader_executor_lc_off;
 
+-- Two randomized MergeTree settings can void this test's subject and are pinned:
+-- min_bytes_for_full_part_storage = 0 pins FULL part storage (on a packed part the stream
+-- buffers are views into data.packed built by the part storage itself, which does not wire
+-- a long-connection limit into the read pipeline - no long connection can open);
+-- string_serialization_version = 'single_stream' keeps the string payload INLINE in s.bin
+-- (with a size stream, `length(s)` is served from the tiny sizes substream, the 33 MB
+-- payload is never read, and no file is long enough to warrant a held connection).
 CREATE TABLE t_reader_executor_lc_on (id UInt64, v UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, min_bytes_for_wide_part = 0;
+SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0, string_serialization_version = 'single_stream';
 
 CREATE TABLE t_reader_executor_lc_off AS t_reader_executor_lc_on;
 
-INSERT INTO t_reader_executor_lc_on SELECT number, number * 2, repeat('x', 64) FROM numbers(500000);
-INSERT INTO t_reader_executor_lc_off SELECT number, number * 2, repeat('x', 64) FROM numbers(500000);
+INSERT INTO t_reader_executor_lc_on SELECT number, number * 2, randomPrintableASCII(64) FROM numbers(500000);
+INSERT INTO t_reader_executor_lc_off SELECT number, number * 2, randomPrintableASCII(64) FROM numbers(500000);
 
 SET use_reader_executor = 1;
 SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage

@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
@@ -99,6 +100,15 @@ public:
     MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// Sticky level for THIS group's transient memory pressure (per-query /
+    /// per-user tracker chain), so pressure-scaled consumers do not flap on
+    /// the query's own alloc/free cycles at a threshold. Scoped to the group
+    /// on purpose: the state dies with the query and follows its threads (and
+    /// fibers) across carriers - a thread-scoped machine would leak one
+    /// query's spike into the next query on the pool thread. Classification
+    /// stays on the global monitor's ladder; this machine only cools down.
+    PressureLevelMachine memory_pressure_machine{PressureLevelMachine::QUERY_COOLDOWN_NS};
 
     struct SharedData
     {
@@ -246,6 +256,7 @@ protected:
 
         UInt64 elapsedMilliseconds() const;
         UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        UInt64 elapsedMicroseconds() const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };

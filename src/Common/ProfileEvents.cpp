@@ -274,19 +274,6 @@
     M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
-    M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
-    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
-    M(ReaderExecutorDeliveredBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).", ValueType::Bytes) \
-    M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
-    M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
-    M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
-    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
-    M(ReaderExecutorDecryptMicroseconds, "Time ReaderExecutor spent decrypting served payload in place (CTR, position-addressable). Zero for unencrypted reads and in builds without SSL.", ValueType::Microseconds) \
-    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorDeliveredBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
-    M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
-    M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
-    M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
-    M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -893,6 +880,35 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteStopped, "Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache", ValueType::Number) \
     M(CachedWriteBufferCoveringSegmentShrunk, "Number of times write-through caching shrunk a covering file segment which stayed behind the offset being written at (the ranges in between went to another distributed cache server), in order to continue caching in a new file segment", ValueType::Number) \
     M(CachedWriteBufferCoveringSegmentShrinkFailed, "Number of times write-through caching had to stop because a covering file segment which stayed behind the offset being written at could not be shrunk (it is held by someone else, so the hole in it cannot be resolved) or was concurrently evicted", ValueType::Number) \
+    \
+    M(ReaderExecutorBytesFromPageCache, "Physical bytes ReaderExecutor issued from the page cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromFilesystemCache, "Physical bytes ReaderExecutor issued from the filesystem cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
+    M(ReaderExecutorCacheGetRequests, "Number of CacheReader::read invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorCachePopulateRequests, "Number of CacheWriter::write invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
+    M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment.", ValueType::Number) \
+    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorDeliveredBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorDeliveredBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).", ValueType::Bytes) \
+    M(ReaderExecutorCacheGetMicroseconds, "Time spent inside CacheReader::read serving cache hits in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorCachePopulateMicroseconds, "Time spent inside CacheWriter::write populating caches in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorSourceReadMicroseconds, "Time spent in source reads driven by ReaderExecutor (foreground and prefetch worker combined).", ValueType::Microseconds) \
+    M(ReaderExecutorDecryptMicroseconds, "Time spent in ReaderExecutor decryption layers.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchWaitMicroseconds, "Time the consumer thread blocked on a not-yet-ready prefetch future. Contributes directly to query latency.", ValueType::Microseconds) \
+    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (planning, cache reads, source reads and prefetch waits for the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchHits, "Number of times a ReaderExecutor read was served by an in-flight prefetch.", ValueType::Number) \
+    M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
+    M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submitJob returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
+    M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's cancelMachine blocked on a running read-ahead's release because the revoke lost the race; the work the worker did is wasted.", ValueType::Number) \
+    M(ReaderExecutorPrefetchIssuedSourceBytes, "Bytes ReaderExecutor prefetch reads fetched from the source (a bandwidth cost), whether or not later consumed.", ValueType::Bytes) \
+    M(ReaderExecutorMachineInterrupted, "Number of times a ReaderExecutor background machine wrapped up early at an interrupt point on request (collect takeover or cancel).", ValueType::Number) \
+    M(ReaderExecutorPartialCollects, "Number of ReaderExecutor collects that served a non-empty partial prefix fetched before the machine was interrupted; the remainder is read by the normal dispatch.", ValueType::Number) \
+    M(ReaderExecutorPutFailed, "Number of ReaderExecutor put steps that threw; logged and abandoned, never the query's error - a read must not fail because cache population failed.", ValueType::Number) \
+    M(ReaderExecutorObservations, "Number of ReaderExecutor observeAndSchedule (residency-plan rebuild) invocations. The plan is reused across mark-range advances and rebuilds - recreating the held cache readers - only on a want_replan (the cursor leaves plan_start..plan_end); a high count per query means short-lived readers that cannot amortise cache-segment acquisition.", ValueType::Number) \
+    M(ReaderExecutorPlanExtensions, "Number of ReaderExecutor extendPlan invocations: the plan grew forward in place - held cache buffers kept, only the new span observed - where an epoch rebuild (an Observation) would have re-probed everything.", ValueType::Number) \
+    M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a chain that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
+    M(ReaderExecutorReadThroughDetachedSegments, "Number of cache segments the ReaderExecutor served read-through because FileCache returned them detached (a segment being evicted or removed): such a segment cannot be filled, so its bytes come from the source and nothing is cached.", ValueType::Number) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
@@ -1522,6 +1538,7 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPConnectionsExpired, "Number of expired client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
     M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
+    M(SilkSocketsCreated, "Number of HTTP connections created on Silk fiber sockets.", ValueType::Number) \
     \
     M(HTTPServerConnectionsCreated, "Number of created server HTTP connections", ValueType::Number) \
     M(HTTPServerConnectionsReused, "Number of reused server HTTP connections", ValueType::Number) \
@@ -1674,6 +1691,10 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
     M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \

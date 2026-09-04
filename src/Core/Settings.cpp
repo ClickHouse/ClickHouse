@@ -827,6 +827,12 @@ Drain bound for the experimental `ReaderExecutor`: a long source connection drop
 Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be at least 4 KiB.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, DEFAULT_READER_EXECUTOR_BLOCK_SIZE, R"(
 Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be at least 4 KiB.)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_fibers, false, R"(
+Run the experimental `ReaderExecutor`'s read-ahead fetch steps as Silk fibers instead of prefetch pool threads. Requires the server setting `disk_connections_use_silk` (a running Silk scheduler).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 33554432, R"(
+Plan look-ahead target (bytes) for the experimental `ReaderExecutor`: residency is planned until this span is covered and reused across mark-range advances; the last probed cache segment or fill cell may extend the plan slightly past the target. Floored at `reader_executor_window_size`. The default (32 MiB) keeps the plan wider than the fill-ahead lead (16 MiB), so the plan never caps the prefetch distance.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_hold_consumed, 0, R"(
+Trailing retention window (bytes) for the experimental `ReaderExecutor`: how many already-consumed bytes the read buffer keeps in memory behind its position, so a backward seek within that distance re-serves from memory instead of refetching from the source. `0` (default) releases bytes as they are consumed.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -7248,6 +7254,9 @@ Cloud default value: `1`.
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
 )", 0) \
+    DECLARE(Bool, enable_reader_executor_log, false, R"(
+Allows recording one row per `ReaderExecutor` (at destruction) into `system.reader_executor_log`. Useful for diagnosing read pipeline behavior on a per-reader basis: per-tier byte counters (page cache, filesystem cache, source), request counts, and a latency breakdown. Disabled by default because high-fan-out queries can create many rows.
+)", EXPERIMENTAL) \
     DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
 Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0) \

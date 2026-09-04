@@ -9,10 +9,16 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <algorithm>
 #include <cstring>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorReadThroughDetachedSegments;
+}
 
 namespace DB
 {
@@ -356,6 +362,11 @@ CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
     }
 
     /// Acquire the role for the tail. Never nested (one claim per write), so we do not already hold it.
+    /// Diagnostic for the detached-segment claim race: a sibling read may have completed and removed this
+    /// shared segment while our non-owning writer_view still points at it, and `getOrSetDownloader` below
+    /// aborts (LOGICAL_ERROR) on a detached segment. Log the segment identity so a CI recurrence is traceable.
+    if (seg.isDetached())
+        LOG_ERROR(log, "claimLeadRole: file segment unexpectedly DETACHED before acquiring the downloader role: {}", seg.getInfoForLog());
     chassert(!seg.isDownloader());
     const bool won = seg.getOrSetDownloader() == FileSegment::getCallerId();
 
@@ -438,6 +449,27 @@ ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
     }
 
     return read(subrange);
+}
+
+bool DiskCacheWriter::frontierInPartial(size_t frontier) const
+{
+    /// True if `frontier` lands inside our one segment still being filled - a PARTIAL with some
+    /// committed bytes. `frontier` is file-level; shift to object-local. Diagnostic only: the
+    /// buffer keeps such a segment non-releasable, so it survives eviction / a cache drop; this
+    /// just gates the read-ahead pause failpoint.
+    if (frontier < object_file_offset)
+        return false;
+    const size_t frontier_obj = frontier - object_file_offset;
+
+    FileSegment & seg = segment();
+    const auto & seg_range = seg.range();
+    if (!seg_range.contains(frontier_obj))
+        return false;
+    const auto state = seg.state();
+    const bool partial = state == FileSegmentState::DOWNLOADING
+                      || state == FileSegmentState::PARTIALLY_DOWNLOADED
+                      || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    return partial && seg.getCurrentWriteOffset() > seg_range.left && !seg.isDetached();
 }
 
 bool DiskCacheWriter::tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset)
@@ -634,12 +666,14 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         out.push_back(std::move(miss));
     };
 
-    /// A writer-less miss clamped to the ask: read from source, cache nothing. The clamp keeps a
-    /// detached edge cell's grid overhang from being fetched uncached, as the bypass path above does.
-    auto emit_uncacheable_miss = [&](size_t seg_left, size_t seg_end)
+    /// `getOrSet` (via `getImpl`) hands back a born-DETACHED copy for a segment that is being
+    /// evicted or removed: it carries no data and cannot take a downloader. Serve such a segment
+    /// read-through - a writer-less miss clamped to the ask, exactly as the bypass path above does -
+    /// because building a writer and claiming the downloader role would abort on the detached state.
+    auto emit_readthrough_miss = [&](size_t lo_obj, size_t hi_obj)
     {
-        const size_t lo = std::max(seg_left, ask_lo_obj);
-        const size_t hi = std::min(seg_end, ask_hi_obj);
+        const size_t lo = std::max(lo_obj, ask_lo_obj);
+        const size_t hi = std::min(hi_obj, ask_hi_obj);
         if (hi <= lo)
             return;
         ICacheProvider::CacheResolution miss;
@@ -658,15 +692,14 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         const size_t seg_left = seg_range.left;
         const size_t seg_end = seg_range.right + 1;
 
-        /// A DETACHED placeholder holds no bytes and cannot take a downloader; serve it from source.
         if (segment.isDetached())
         {
-            emit_uncacheable_miss(seg_left, seg_end);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorReadThroughDetachedSegments);
+            emit_readthrough_miss(seg_left, seg_end);
             continue;
         }
 
         const size_t committed_end = segmentCommittedEnd(segment);
-
         if (committed_end > seg_left)
             emit_hit(seg_holder, seg_left, committed_end);
         if (committed_end < seg_end)

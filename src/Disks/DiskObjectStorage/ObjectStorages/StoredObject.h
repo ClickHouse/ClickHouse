@@ -16,11 +16,12 @@ namespace DB
 /// Object metadata: path, size, path_key_for_cache.
 struct StoredObject
 {
-    /// Sentinel meaning "size is not known yet", set by callers that can't
-    /// determine the size up-front (S3 `HEAD` without `Content-Length`, local
-    /// `stat` failure). Consumers doing offset arithmetic (`OffsetMap`,
-    /// `ReaderExecutor`) must check for it and stream until EOF instead of
-    /// treating it as a real file size.
+    /// Sentinel meaning "size is not known yet" — used by callers that
+    /// can't determine the size up-front (S3 `HEAD` without
+    /// `Content-Length`, local `stat()` failure). Consumers that need the
+    /// size for offset arithmetic (`OffsetMap`, `ReaderExecutor`) MUST
+    /// check for this value and switch to streaming-until-EOF behaviour
+    /// instead of treating it as a real file size.
     static constexpr uint64_t UnknownSize = std::numeric_limits<uint64_t>::max();
 
     String remote_path; /// abs path

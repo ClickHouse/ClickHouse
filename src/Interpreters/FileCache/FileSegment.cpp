@@ -17,6 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/SilkScheduler.h>
 #include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 
@@ -257,6 +258,15 @@ String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
         return fmt::format("None:{}:{}", getThreadName(), toString(getThreadId()));
+
+    /// A `ReaderExecutor` fetch step runs as a Silk fiber that MIGRATES between OS threads at
+    /// every socket-I/O suspension: `getThreadId()` would give the same logical caller two
+    /// different identities across a single `claim`/`write`/release sequence, so key off the
+    /// fiber instead - it stays the same across the migration. The "f" marker keeps this
+    /// disjoint from the thread-id-keyed identity below (thread ids and fiber ids are drawn
+    /// from unrelated ranges, but the marker makes the distinction explicit in logs).
+    if (const uint64_t fiber_id = currentSilkFiberId())
+        return std::string(CurrentThread::getQueryId()) + ":f" + toString(fiber_id);
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
@@ -1445,6 +1455,7 @@ bool FileSegment::isCompleted(bool sync) const
 
 void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
 {
+    LOG_TRACE(getLog(), "setDetachedState: {}", getInfoForLogUnlocked(lock));
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     queue_iterator = nullptr;

@@ -43,6 +43,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <base/sleep.h>
 
 #include <boost/range/adaptor/map.hpp>
 

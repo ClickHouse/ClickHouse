@@ -148,7 +148,71 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
+    /// Announce the reader's TRUE final boundary in this stream's file: the end
+    /// of the LAST mark range any task of this part will read. The per-task
+    /// `adjustRightMark` keeps advancing the serve bound below it; read-ahead
+    /// must not speculate past it (`ReadBuffer::setPlannedReadEnd`).
+    if (planned_last_mark)
+        if (size_t planned_right_offset = getRightOffset(std::min(planned_last_mark, marks_count)))
+            data_buffer->setPlannedReadEnd(planned_right_offset);
+
+    announceRequestMap();
+
     initialized = true;
+}
+
+void MergeTreeReaderStream::announceRequestMap()
+{
+    if (planned_mark_ranges.empty() || marks_count == 0)
+        return;
+
+    std::vector<std::pair<size_t, size_t>> file_ranges;
+    file_ranges.reserve(planned_mark_ranges.size());
+    for (const auto & [begin_mark, end_mark] : planned_mark_ranges)
+    {
+        const auto left = getLeftOffset(std::min(begin_mark, marks_count));
+        if (!left)
+            return;
+        const size_t right = getRightOffset(std::min(end_mark, marks_count));
+        if (right <= *left)
+            continue;
+        /// Adjacent mark ranges can convert to overlapping file ranges (a
+        /// shared compressed block across the mark gap; LC dictionary marks
+        /// pointing at one offset) - coalesce to keep the advertised map
+        /// sorted and disjoint.
+        if (!file_ranges.empty() && *left <= file_ranges.back().first + file_ranges.back().second)
+            file_ranges.back().second = std::max(file_ranges.back().second, right - file_ranges.back().first);
+        else
+            file_ranges.emplace_back(*left, right - *left);
+    }
+    if (!file_ranges.empty())
+        data_buffer->setRequestMap(std::move(file_ranges));
+}
+
+void MergeTreeReaderStream::updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges)
+{
+    if (mark_ranges == planned_mark_ranges)
+        return;
+
+    const bool withdrawn = mark_ranges.empty() && !planned_mark_ranges.empty();
+    planned_mark_ranges = std::move(mark_ranges);
+    if (!initialized)
+        return;
+    if (withdrawn)
+        data_buffer->setRequestMap({});   /// downstream treats empty as a clear
+    else
+        announceRequestMap();
+}
+
+void MergeTreeReaderStream::updatePlannedLastMark(size_t planned_last_mark_)
+{
+    if (planned_last_mark_ == planned_last_mark)
+        return;
+
+    planned_last_mark = planned_last_mark_;
+    if (initialized && planned_last_mark)
+        if (size_t planned_right_offset = getRightOffset(std::min(planned_last_mark, marks_count)))
+            data_buffer->setPlannedReadEnd(planned_right_offset);
 }
 
 void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_position)
@@ -275,6 +339,18 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
+}
+
+std::optional<size_t> MergeTreeReaderStreamSingleColumn::getLeftOffset(size_t mark)
+{
+    /// Metadata streams read both structure parts (head prefix + suffix) before
+    /// the data - marks cannot describe what they touch (mirrors `getRightOffset`).
+    if (marks_count == 0 || settings.is_metadata_file)
+        return std::nullopt;
+    if (mark >= marks_count)
+        return file_size;
+    loadMarks();
+    return marks_getter->getMark(mark, 0).offset_in_compressed_file;
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

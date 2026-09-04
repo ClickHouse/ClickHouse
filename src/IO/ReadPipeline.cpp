@@ -1,5 +1,15 @@
 #include <IO/ReadPipeline.h>
 
+#include <IO/BufferSourceReader.h>
+#include <IO/LocalSourceReader.h>
+#include <IO/ObjectStorageSourceReader.h>
+#include <IO/PageCacheProvider.h>
+#include <IO/DiskCacheProvider.h>
+#include <IO/PipelineReadBuffer.h>
+#include <IO/ReaderExecutor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ReaderExecutorLog.h>
+
 #include <Backups/IBackup.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -12,17 +22,14 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReaderExecutor.h>
-#include <IO/DiskCacheProvider.h>
-#include <IO/PageCacheProvider.h>
-#include <IO/PipelineReadBuffer.h>
-#include <IO/LocalSourceReader.h>
-#include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/SilkScheduler.h>
+#include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
@@ -34,6 +41,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -74,10 +83,28 @@ void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, const 
 void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings)
 {
     chassert(!source.has_value(), "ReadPipeline: source is already set");
+    /// Backups produce their own file reader (memory-backed via
+    /// `ReadBufferFromOwnMemoryFile` for `BackupInMemory`, or disk-backed
+    /// elsewhere). Treat the source as already-complete so neither the
+    /// executor nor the legacy stage assembly wraps it. Wrapping a
+    /// memory-backed backup buffer with the executor would lose data —
+    /// the buffer's `nextImpl` does not honor an external-buffer pointer.
+    /// Disk-backed backups already carry their own seek/read semantics; the
+    /// executor's caching/prefetch is uniformly unhelpful at the backup
+    /// boundary.
+    auto creator = [backup, captured_path = std::move(path)](
+        const StoredObject & /*object*/,
+        const ReadSettings & /*settings*/,
+        bool /*use_external_buffer*/,
+        bool /*restrict_seek*/) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return backup->readFile(captured_path);
+    };
     source = SourceStage{
         .objects = std::move(objects),
-        .source = BackupSource{.backup = std::move(backup), .path = std::move(path)},
-        .read_settings = read_settings};
+        .source = CustomSource{.creator = std::move(creator)},
+        .read_settings = read_settings,
+        .already_complete = true};
 }
 
 void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
@@ -87,6 +114,16 @@ void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const
         .objects = std::move(objects),
         .source = CustomSource{.creator = std::move(creator)},
         .read_settings = read_settings};
+}
+
+void ReadPipeline::setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
+{
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = CustomSource{.creator = std::move(creator)},
+        .read_settings = read_settings,
+        .already_complete = true};
 }
 
 void ReadPipeline::needGather()
@@ -156,17 +193,22 @@ void ReadPipeline::needAsyncPrefetch(
         .prefetches_log = std::move(prefetches_log)};
 }
 
+void ReadPipeline::needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
+{
+    prefetch_pool = std::move(pool);
+}
+
+void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
+{
+    long_connection_limit = std::move(limit);
+}
+
 void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
 {
     decryption_stages.push_back(DecryptionStage{
         .path = std::move(path),
         .buffer_size = buffer_size,
         .key_finder = std::move(key_finder)});
-}
-
-void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
-{
-    long_connection_limit = std::move(limit);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
@@ -178,75 +220,165 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    /// The executor owns the whole read, so it returns before the `wrap*` stages.
-    if (auto pipeline_buf = tryBuildReaderExecutor())
-        return pipeline_buf;
+    /// An already-complete source is itself a full reader (e.g. a packed-archive
+    /// view with its own caches/decryption); wrapping it again would be wrong
+    /// (e.g. trips `ReadBufferFromFileView`'s swap-state under external-buffer
+    /// mode), so no stage may be configured on it.
+    if (source->already_complete)
+    {
+        /// Throw in release too, not just `chassert`: a `prepareRead` wrapper
+        /// (e.g. `DiskEncrypted`) can append a stage on top of an
+        /// already-complete delegate, and silently dropping it would hand
+        /// encrypted bytes to the caller.
+        if (gather || memory_cache || !filesystem_caches.empty()
+            || async_prefetch || !decryption_stages.empty() || distributed_cache
+            || prefetch_pool || long_connection_limit)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage: "
+                "gather={}, memory_cache={}, filesystem_caches={}, async_prefetch={}, "
+                "decryption_stages={}, distributed_cache={}, prefetch_pool={}, "
+                "long_connection_limit={}",
+                gather, memory_cache.has_value(), filesystem_caches.size(),
+                async_prefetch.has_value(), decryption_stages.size(),
+                distributed_cache.has_value(),
+                static_cast<bool>(prefetch_pool),
+                static_cast<bool>(long_connection_limit));
+        }
+        const auto & custom = std::get<CustomSource>(source->source);
+        return custom.creator(
+            source->objects.front(),
+            source->read_settings,
+            /*use_external_buffer=*/false,
+            /*restrict_seek=*/false);
+    }
 
     /// Capture the query id once here (on the calling thread, which has the
     /// query context). Subsequent cached-buffer creations happen lazily inside
     /// gather/impl creators that may run on threadpool workers without query
-    /// context, so calling `CurrentThread::getQueryId` there would return "".
+    /// context, so calling `CurrentThread::getQueryId()` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
-    auto impl = gather
-        ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
-        : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
+    /// The ReaderExecutor owns prefetch / memory-cache / decryption internally,
+    /// so it must bypass the legacy wraps below — e.g. an
+    /// `AsynchronousBoundedReadBuffer` wrap asserts `buffer().begin() ==
+    /// request.buf`, which `PipelineReadBuffer` (refcounted chain memory) can't
+    /// satisfy. Returning early avoids them.
+    if (auto pipeline_buf = tryBuildReaderExecutor(query_id))
+        return pipeline_buf;
 
-    impl = wrapMemoryCache(std::move(impl));   // Stage 4
-    impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
-    impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
+    auto impl = gather
+        ? buildGatherStage(query_id)
+        : buildSingleObjectStage(query_id);
+
+    impl = wrapMemoryCache(std::move(impl));
+    impl = wrapAsyncPrefetch(std::move(impl));
+    impl = wrapDecryption(std::move(impl));
 
     return impl;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() const
+String ReadPipeline::describe() const
+{
+    String result;
+    auto append = [&](const char * name)
+    {
+        if (!result.empty())
+            result += " -> ";
+        result += name;
+    };
+
+    if (source)
+    {
+        std::visit(Overloaded{
+            [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
+            [&](const LocalFileSource &) { append("Source(LocalFile)"); },
+            [&](const BackupSource &) { append("Source(Backup)"); },
+            [&](const CustomSource &) { append("Source(Custom)"); }
+        }, source->source);
+    }
+    for (size_t i = 0; i < filesystem_caches.size(); ++i)
+        append("FilesystemCache");
+    if (gather)
+        append("Gather");
+    if (distributed_cache)
+        append("DistributedCache");
+    if (memory_cache)
+        append("MemoryCache");
+    if (async_prefetch)
+        append("AsyncPrefetch");
+    if (!decryption_stages.empty())
+        append("Decrypt");
+
+    return result.empty() ? "(empty)" : result;
+}
+
+ReadPipeline ReadPipeline::clone() const
+{
+    return *this;
+}
+
+const StoredObjects & ReadPipeline::getStoredObjects() const
+{
+    if (!source)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set");
+    return source->objects;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & query_id) const
 {
     const auto & settings = source->read_settings;
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor implements neither async prefetch nor the distributed cache, so fall back rather
-    /// than silently drop those stages. Decryption, the filesystem cache, and the page (memory) cache
-    /// ARE supported (fed below).
-    if (distributed_cache || async_prefetch)
+    /// Distributed cache is not yet wired into the executor — fall back to
+    /// the legacy path when it's requested.
+    if (distributed_cache)
     {
         LOG_DEBUG(log,
-            "use_reader_executor: falling back to the legacy read path "
-            "(distributed cache or async prefetch not supported by the executor)");
+            "use_reader_executor: falling back to the legacy read path (distributed cache not supported by the executor)");
         return nullptr;
     }
 
-    const std::string query_id(CurrentThread::getQueryId());
-
-    /// Only local files and object storage are supported; other sources fall back.
+    /// Returns nullptr (so the caller falls back to the legacy path) for
+    /// source variants the executor does not yet support.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
-    /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
-    CacheChain cache_chain;
+    size_t min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek;
+
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src->path);
         source_reader = std::make_shared<LocalSourceReader>(settings);
+        min_bytes_for_seek = 0; /// Local seeks are free.
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
-        /// An object of unknown size (HEAD without Content-Length) arrives with
-        /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
-        /// the executor cannot stream to EOF yet, so fall back rather than read it
-        /// as empty.
-        for (const auto & object : source->objects)
-        {
-            if (object.bytes_size == 0 || object.bytes_size == StoredObject::UnknownSize)
-            {
-                LOG_DEBUG(log,
-                    "use_reader_executor: falling back to the legacy read path (object size unknown)");
-                return nullptr;
-            }
-        }
-
         LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
+    }
+    else if (const auto * backup_src = std::get_if<BackupSource>(&source->source))
+    {
+        LOG_DEBUG(log, "build: using ReaderExecutor for backup, path={}", backup_src->path);
+        auto backup = backup_src->backup;
+        auto backup_path = backup_src->path;
+        source_reader = std::make_shared<BufferSourceReader>(
+            [backup, backup_path](const StoredObject &) { return backup->readFile(backup_path); },
+            "BackupSource");
+    }
+    else if (const auto * custom_src = std::get_if<CustomSource>(&source->source))
+    {
+        LOG_DEBUG(log, "build: using ReaderExecutor for custom source");
+        auto creator = custom_src->creator;
+        auto captured_settings = settings;
+        source_reader = std::make_shared<BufferSourceReader>(
+            [creator, captured_settings](const StoredObject & object)
+            {
+                /// External-buffer mode: ReaderExecutor drives reads via set()+next().
+                return creator(object, captured_settings, /*use_external_buffer=*/true, /*restrict_seek=*/false);
+            },
+            "CustomSource");
     }
 
     if (!source_reader)
@@ -256,59 +388,117 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    /// PageCache (memory) goes first in the chain (fastest). It's file-level: one `PageCacheFile`
-    /// derived from the front object serves every lookup. Skipped when any object has unknown size —
-    /// cells are sized to the file's real byte length (so the tail block has no past-EOF region),
-    /// which needs the total size up front. Object storage with an unknown-size object already fell
-    /// back above; this guard also covers any future unknown-size source.
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
+
+    /// PageCache (memory) goes first in the chain (fastest). It's file-level:
+    /// one `PageCacheFile` derived from the front object serves every lookup.
+    /// Skipped when any object has unknown size — cells are sized to the file's
+    /// real byte length (so the tail block has no past-EOF region), which needs
+    /// the total size up front.
     bool any_unknown_size = false;
     size_t total_file_size = 0;
-    for (const auto & object : source->objects)
+    for (const auto & obj : source->objects)
     {
-        if (object.bytes_size == StoredObject::UnknownSize)
+        if (obj.bytes_size == StoredObject::UnknownSize)
         {
             any_unknown_size = true;
             break;
         }
-        total_file_size += object.bytes_size;
+        total_file_size += obj.bytes_size;
     }
 
     if (memory_cache && memory_cache->page_cache_settings.cache && !any_unknown_size)
     {
-        const auto & page_cache_settings = memory_cache->page_cache_settings;
+        const auto & pcs = memory_cache->page_cache_settings;
         PageCacheFile cache_file;
         cache_file.path = memory_cache->custom_cache_path.value_or(
             memory_cache->cache_path_prefix + source->objects.front().remote_path);
         cache_file.file_version = memory_cache->custom_file_version.value_or("");
-        cache_chain.push_back(std::make_shared<PageCacheProvider>(
-            page_cache_settings.cache,
+        executor_caches.push_back(std::make_shared<PageCacheProvider>(
+            pcs.cache,
             std::move(cache_file),
-            page_cache_settings.block_size,
-            page_cache_settings.random_eviction_for_tests,
-            page_cache_settings.read_if_exists_otherwise_bypass,
+            pcs.block_size,
+            pcs.random_eviction_for_tests,
+            pcs.read_if_exists_otherwise_bypass,
             total_file_size));
     }
 
-    /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
-    /// queries the front first, so reverse it.
+    /// FileCache (disk) goes second. `custom_cache_key`/`custom_origin` carry
+    /// caller-specified cache identity per object. Iterate in reverse:
+    /// `filesystem_caches` is stored inner-to-outer, and the executor queries
+    /// `caches[0]` first, so reversing gives the legacy outer-first order
+    /// (a no-op for the single-cache common case). `local_throttler` is
+    /// forwarded so cache-hit reads honour `max_local_read_bandwidth`.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
-        chassert(it->cache);
-        cache_chain.push_back(std::make_shared<DiskCacheProvider>(
-            it->cache, it->cache_settings, query_id, settings.local_throttler,
-            it->custom_cache_key, it->custom_origin));
+        const auto & dc = *it;
+        if (dc.cache)
+        {
+            executor_caches.push_back(std::make_shared<DiskCacheProvider>(
+                dc.cache, dc.cache_settings, query_id, settings.local_throttler,
+                dc.custom_cache_key, dc.custom_origin));
+        }
     }
 
+    String log_file_path = source->objects.empty() ? "" : source->objects.front().remote_path;
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = settings.reader_executor.window_size;
+    executor_options.plan_look_ahead_max_window = settings.reader_executor.plan_look_ahead_max_window;
+    executor_options.min_bytes_for_seek = min_bytes_for_seek;
+    executor_options.block_size = settings.reader_executor.block_size;
+    executor_options.log_file_path = std::move(log_file_path);
+    executor_options.max_tail_for_drain = settings.reader_executor.max_tail_for_drain;
+    executor_options.fill_ahead_lead = settings.reader_executor.fill_ahead_lead;
+    executor_options.prefetch_pool = prefetch_pool;
+    /// Fibers replace the pool as the read-ahead substrate but must respect the same async
+    /// gate the caller applied to the pool: no `prefetch_pool` attached means the caller
+    /// requires synchronous reads (`remote_filesystem_read_method='read'`), fibers included.
+    executor_options.use_fiber_runner = settings.reader_executor.use_fiber_runner && executor_options.prefetch_pool != nullptr;
+    if (executor_options.use_fiber_runner)
+    {
+        /// Three distinct reasons the fiber runner can be unavailable, each needing its own
+        /// message so an operator can tell what to actually do about it:
+#if !USE_SILK
+        /// (c) This build has no Silk support at all. Catch it here, before `ReaderExecutor`'s
+        /// own ctor-level `#if USE_SILK` gate would throw the same code with a less specific
+        /// message - this call site knows the setting name the user actually needs to react to.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Setting reader_executor_use_fibers requires a build with Silk support");
+#else
+        if (!isSilkSchedulerInitialized())
+        {
+            /// (b) The setting is on, but the scheduler was never started. The scheduler only
+            /// ever starts once, at boot; the hot-reload half-state below happens when the
+            /// setting is turned on later via `SYSTEM RELOAD CONFIG`, where it now looks "on" in
+            /// `system.server_settings` even though nothing behaves as if it were.
+            if (isSilkConfiguredButNotStarted())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Setting reader_executor_use_fibers requires the Silk scheduler: server setting "
+                    "disk_connections_use_silk is set, but the Silk scheduler was not started at boot; "
+                    "a server restart is required");
+            /// (a) The setting is genuinely off.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting reader_executor_use_fibers requires the server setting disk_connections_use_silk "
+                "(Silk scheduler is not running)");
+        }
+#endif
+    }
+    executor_options.long_connection_limit = long_connection_limit;
+    if (settings.reader_executor.log_enabled)
+    {
+        if (auto global = Context::getGlobalContextInstance())
+            executor_options.reader_executor_log = global->getReaderExecutorLog();
+    }
+
+    /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
+    executor_options.encryption_header_cache = encryption_header_cache;
+
     auto executor = std::make_unique<ReaderExecutor>(
-        source_reader, source->objects, ReaderExecutor::Options{
-            .window_size = settings.reader_executor.window_size,
-            .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
-            .block_size = settings.reader_executor.block_size,
-            .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
-            .long_connection_limit = long_connection_limit,
-            /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
-            .encryption_header_cache = encryption_header_cache,
-            .cache_chain = std::move(cache_chain)});
+        source_reader,
+        source->objects,
+        std::move(executor_caches),
+        std::move(executor_options));
 
     /// Feed the decryption layers (if any): the executor owns decryption internally and serves
     /// plaintext, so it replaces the legacy `ReadBufferFromEncryptedFile` wrapping. `initDecryption`
@@ -317,15 +507,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         executor->addDecryptionLayer(dec.path, dec.key_finder);
     executor->initDecryption();
 
-    return std::make_unique<PipelineReadBuffer>(std::move(executor));
+    return std::make_unique<PipelineReadBuffer>(std::move(executor), settings.reader_executor.hold_consumed);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
 {
-    /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
-    /// Object storage path: wrap per-object buffers with optional filesystem cache,
-    /// then join all objects via ReadBufferFromRemoteFSGather.
-
     const auto & settings = source->read_settings;
 
     const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
@@ -410,20 +596,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         };
     }
 
-    /// External buffer only when a downstream stage drives the reader via `set()`: the memory cache
-    /// or async prefetch (distributed cache reads from TCP and manages its own buffer). `usesMemoryCache`
-    /// (not `memory_cache.has_value`) skips unknown-size objects -- see its definition.
+    /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
+    /// manages the working buffer. Distributed cache does NOT require it — it reads from TCP
+    /// and manages its own buffer, so memory_cache/async_prefetch are the only stages that
+    /// hand external memory to the inner reader via `set()`. `usesMemoryCache()` (not a bare
+    /// `memory_cache.has_value()`) so an unknown-size object — for which the memory cache stage is
+    /// skipped — does not leave this reader in external-buffer mode without a driver.
     bool use_external_buffer = usesMemoryCache() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
     size_t effective_buffer_size = settings.remote_fs_settings.buffer_size;
     size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
-    if (!use_external_buffer && total_objects_size > 0)
+    if (!use_external_buffer && total_objects_size > 0 && total_objects_size != StoredObject::UnknownSize)
         buffer_size = std::min(buffer_size, total_objects_size);
 
-    /// -- Stage 3.5: Distributed cache --
-    /// When enabled, reads go through distributed cache servers with fallback to
-    /// direct object storage reads via a Gather reader.
 #if ENABLE_DISTRIBUTED_CACHE
     if (distributed_cache)
     {
@@ -474,9 +660,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
 {
-    /// -- Stages 1+2 (+2.5 DC) without gather --
-    /// Single-object path (e.g. StorageObjectStorageSource, local disk).
-    /// No gather wrapping — preserves readBigAt support for the parquet prefetcher.
+    /// Single-object path: no gather wrapping, which preserves `readBigAt` for
+    /// the parquet prefetcher (`ReadBufferFromRemoteFSGather` does not support it).
     ///
     /// Three mutually exclusive sub-paths, each returns its own final impl:
     ///   1. distributed_cache  → DC owns the chain, source impl is never built.
@@ -491,12 +676,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     const auto & settings = source->read_settings;
     const auto & object = source->objects[0];
 
-    /// External buffer when a downstream stage (memory cache / async prefetch) drives the reader;
-    /// inner cache layers always do (the outer cache calls `set()`). `usesMemoryCache` (not
-    /// `memory_cache.has_value`) skips unknown-size objects -- see its definition.
+    /// use_external_buffer for the outermost buffer: true when a downstream
+    /// stage (memory cache, async prefetch) manages the working buffer.
+    /// Inner cache layers always use external buffer (the outer cache calls set()).
+    /// `usesMemoryCache()` (not a bare `memory_cache.has_value()`) so an unknown-size object — for
+    /// which the memory cache stage is skipped — does not leave this reader in external-buffer
+    /// mode without a driver.
     bool use_ext_buf = usesMemoryCache() || async_prefetch.has_value();
 
-    /// -- Stage 2.5 (non-gather): Distributed cache --
     /// When DC is active it owns the whole chain and assigns `impl` outright.
     /// Filesystem cache + DC without gather is rejected: a filesystem-cache layer
     /// built above would be unreachable (DC would replace it). The gather path
@@ -541,8 +728,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 /* use_external_buffer */ true, /* restrict_seek */ false);
         };
 
-        /// DC uses external buffer mode when a downstream stage (memory cache or
-        /// async prefetch) wraps it — consistent with the gather path above.
         auto impl = DistributedCache::readWithDistributedCache(
             object.local_path,
             source->objects,
@@ -631,8 +816,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             };
         }
 
-        /// Build the outermost CachedOnDiskReadBufferFromFile.
-        /// The impl_creator now produces the full inner cache chain.
         const auto & outermost = filesystem_caches.back();
         auto fs_cache_settings = outermost.cache_settings;
         auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
@@ -656,7 +839,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             settings.local_throttler);
     }
 
-    /// -- Stage 1 only: Source (no cache, no DC, no gather) --
     return std::visit(Overloaded{
         [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -726,9 +908,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::uniqu
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
-    /// -- Stage 5: Async prefetch --
-    /// Only applied when a caller explicitly requests it via `needAsyncPrefetch`.
-    /// Today that's `DiskObjectStorage::prepareRead` (for remote reads with
+    /// Applied only when callers request it via `needAsyncPrefetch`:
+    /// `DiskObjectStorage::prepareRead` (remote reads with
     /// `remote_fs_method=threadpool` or distributed cache) and
     /// `StorageObjectStorageSource`. Local reads do not use this stage — they
     /// rely on `createReadBufferFromFileBase` (which can itself be async at the
@@ -774,7 +955,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
-    /// -- Stage 6: Decryption (may have multiple layers for double encryption) --
+    /// Multiple layers exist when an encrypted source is wrapped in another
+    /// encrypted layer (double encryption).
 #if USE_SSL
     for (const auto & dec : decryption_stages)
     {
@@ -801,53 +983,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique
     }
 #endif
     return impl;
-}
-
-String ReadPipeline::describe() const
-{
-    String result;
-    auto append = [&](const char * name)
-    {
-        if (!result.empty())
-            result += " -> ";
-        result += name;
-    };
-
-    if (source)
-    {
-        std::visit(Overloaded{
-            [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
-            [&](const LocalFileSource &) { append("Source(LocalFile)"); },
-            [&](const BackupSource &) { append("Source(Backup)"); },
-            [&](const CustomSource &) { append("Source(Custom)"); }
-        }, source->source);
-    }
-    for (size_t i = 0; i < filesystem_caches.size(); ++i)
-        append("FilesystemCache");
-    if (gather)
-        append("Gather");
-    if (distributed_cache)
-        append("DistributedCache");
-    if (memory_cache)
-        append("MemoryCache");
-    if (async_prefetch)
-        append("AsyncPrefetch");
-    if (!decryption_stages.empty())
-        append("Decrypt");
-
-    return result.empty() ? "(empty)" : result;
-}
-
-ReadPipeline ReadPipeline::clone() const
-{
-    return *this;
-}
-
-const StoredObjects & ReadPipeline::getStoredObjects() const
-{
-    if (!source)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set");
-    return source->objects;
 }
 
 }

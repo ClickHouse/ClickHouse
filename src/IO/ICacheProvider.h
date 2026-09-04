@@ -140,6 +140,11 @@ public:
     /// downloader commits `subrange`, then serve those bytes from this writer's own held segments. On
     /// a timeout the read can be short. Default: plain read (no wait).
     virtual ChainedBuffers waitAndRead(ByteRange subrange) { return read(subrange); }
+
+    /// True if `frontier` lands inside a segment this buffer is still filling (a partial).
+    /// Diagnostic only: the plan's writer holder keeps such a segment non-releasable across
+    /// eviction / a cache drop; this merely gates the read-ahead pause failpoint. Default false.
+    virtual bool frontierInPartial(size_t /*frontier*/) const { return false; }
 };
 
 using CacheReaderPtr = std::unique_ptr<CacheReader>;

@@ -1,7 +1,11 @@
 #include <Server.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryPressureMonitor.h>
+#include <Common/SilkScheduler.h>
+#include <IO/LongConnectionLimit.h>
 
+#include <atomic>
 #include <memory>
 #include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
@@ -254,6 +258,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsBool disk_connections_use_silk;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -333,6 +338,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
+    extern const ServerSettingsUInt64 max_remote_read_connections;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_1_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_2_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_3_pct;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
@@ -349,7 +358,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -1606,6 +1614,27 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
+    if (server_settings[ServerSetting::disk_connections_use_silk])
+    {
+#if USE_SILK
+        /// Failure here is intentional fail-close (see `initializeSilkScheduler`'s doc comment):
+        /// e.g. an io_uring probe failure propagates out of this call and aborts server startup
+        /// via the top-level `catch (...)` below, rather than starting a scheduler that can't
+        /// actually submit I/O.
+        initializeSilkScheduler();
+        LOG_INFO(log, "Silk fiber scheduler started (disk_connections_use_silk = 1)");
+#else
+        LOG_WARNING(log, "Setting disk_connections_use_silk is ignored: the build has no Silk support");
+#endif
+    }
+
+    /// Latched once, here, and never re-evaluated: fiber sockets on the disk connection group
+    /// take effect only at server startup, because the scheduler above is only ever started once.
+    /// The config-reload lambda below must keep pushing exactly this value to
+    /// `HTTPConnectionPools`, never whatever `disk_connections_use_silk` reads as at reload time.
+    const bool silk_disk_sockets_boot_effective
+        = server_settings[ServerSetting::disk_connections_use_silk] && isSilkSchedulerInitialized();
+
     getFetchPartitionThreadPool().initialize(
         server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
         0, // FETCH PARTITION is relatively rare, no need to keep threads
@@ -2445,6 +2474,15 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
+            /// Reject an invalid memory-pressure threshold triple BEFORE applying any
+            /// live setting below: `setThresholds` validates too, but it runs after the
+            /// pools/throttlers/workloads are already reloaded, so a late throw would
+            /// leave those earlier settings from the same rejected reload published.
+            validateMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
@@ -2719,6 +2757,14 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
+            /// Apply the thresholds (already validated above, so this won't throw)
+            /// and reset the monitor's cooldown so the next sample reclassifies
+            /// against the new ladder.
+            memoryPressureMonitor().setThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+
             if (config().has("resources") || config().has("workload_classifiers"))
             {
                 LOG_WARNING(
@@ -2820,6 +2866,44 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            /// `disk_connections_use_silk` takes effect only at server startup (see
+            /// `silk_disk_sockets_boot_effective` above): a reload can never start or stop the
+            /// scheduler, so it must never change which sockets `HTTPConnectionPools` hands out
+            /// either - only the latched boot value is ever pushed below. When the freshly
+            /// reloaded config disagrees with that boot value, warn once per state change (not
+            /// every reload tick) instead of silently ignoring the operator's config change.
+#if USE_SILK
+            /// Builds without Silk skip this entirely: there the effective value is a
+            /// hard-wired false, so the mismatch check would fire spuriously on the first
+            /// reload tick of every boot with the setting configured - and those builds
+            /// already emit their own one-shot boot warning ("the build has no Silk support").
+            {
+                static std::atomic<bool> silk_disk_sockets_reload_mismatch{false};
+                const bool silk_disk_sockets_configured = new_server_settings[ServerSetting::disk_connections_use_silk];
+                /// Fix-1's half-state: the setting is on, but sockets stay off because the
+                /// scheduler was never started at boot (as opposed to the setting being off).
+                setSilkConfiguredButNotStarted(silk_disk_sockets_configured && !silk_disk_sockets_boot_effective);
+                if (silk_disk_sockets_configured != silk_disk_sockets_boot_effective)
+                {
+                    if (!silk_disk_sockets_reload_mismatch.exchange(true))
+                        global_context->addOrUpdateWarningMessage(
+                            Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD,
+                            PreformattedMessage::create(
+                                "disk_connections_use_silk changed by config reload from {} to {}; the setting "
+                                "takes effect only at server startup - restart required",
+                                silk_disk_sockets_boot_effective,
+                                silk_disk_sockets_configured));
+                }
+                else if (silk_disk_sockets_reload_mismatch.exchange(false))
+                    global_context->addOrUpdateWarningMessage(Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD, std::nullopt);
+            }
+#endif
+
+            HTTPConnectionPools::instance().setUseSilkSockets(
+                silk_disk_sockets_boot_effective,
+                /*storage*/ false,
+                /*http*/ false);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 

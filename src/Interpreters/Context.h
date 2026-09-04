@@ -149,6 +149,7 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class ReaderExecutorLog;
 class DistributedCacheLog;
 class DistributedCacheServerLog;
 class FilesystemReadPrefetchesLog;
@@ -160,6 +161,7 @@ class DeadLetterQueue;
 class HypotheticalObjectStore;
 class IAsynchronousReader;
 class IOUringReader;
+class PrefetchThreadPool;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
@@ -820,6 +822,7 @@ public:
         AVAILABLE_MEMORY_TOO_LOW,
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
+        DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
         LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
         LINUX_MDRAID_IS_DEGRADED,
@@ -1776,6 +1779,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<ReaderExecutorLog> getReaderExecutorLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
 #if ENABLE_DISTRIBUTED_CACHE
@@ -2019,6 +2023,7 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+    std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;
 #endif

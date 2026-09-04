@@ -1,0 +1,6 @@
+<clickhouse>
+        <reader_executor_log>
+                <database>system</database>
+                <table>reader_executor_log</table>
+        </reader_executor_log>
+</clickhouse>

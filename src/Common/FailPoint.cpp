@@ -132,6 +132,8 @@ static struct InitFiu
     REGULAR(smt_simulate_part_removed_during_load) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    PAUSEABLE_ONCE(reader_executor_pause_after_window) \
+    PAUSEABLE_ONCE(reader_executor_pause_after_cache_status) \
     REGULAR(file_cache_background_eviction_push_fail) \
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \

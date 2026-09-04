@@ -21,9 +21,10 @@ class FileCache;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
+class PrefetchThreadPool;
+class LongConnectionLimit;
 class IAsynchronousReader;
 class IBackup;
-class LongConnectionLimit;
 class EncryptionHeaderCache;
 struct AsyncReadCounters;
 
@@ -31,15 +32,11 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
-/// ReadPipeline: a declarative specification for creating a read buffer chain.
+/// Declarative specification for a read buffer chain: subsystems annotate the
+/// pipeline with their requirements (stages) and `build` assembles the chain.
 ///
-/// Instead of imperatively nesting read buffers (the "matryoshka" pattern),
-/// subsystems annotate a ReadPipeline with their requirements (stages).
-/// The `build` method assembles the actual buffer chain in a fixed order.
-///
-/// Usage:
 ///   ReadPipeline pipeline;
-///   disk->prepareRead(path, settings, read_hint, pipeline);  // sets source, settings, stages
+///   disk->prepareRead(path, settings, read_hint, pipeline);
 ///   auto buf = pipeline.build();
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
@@ -97,27 +94,30 @@ public:
     ReadPipeline(ReadPipeline &&) = default;
     ReadPipeline & operator=(ReadPipeline &&) = default;
 
-    /// -- Source stage --
-    /// Each setter takes ReadSettings which are stored alongside the source
-    /// and used by build() for buffer sizing and readObject() calls.
-
-    /// Set source from an object storage.
+    /// Each source setter stores its `ReadSettings` on the pipeline; `build()`
+    /// reads them for buffer sizing and the eventual `readObject` call.
     void setSource(ObjectStoragePtr storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
-    /// Set source from a local file path.
     void setLocalFileSource(String path, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
-    /// Set source from a backup.
     void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings);
 
-    /// Set source with a custom buffer creator (for testing or custom backends).
+    /// Custom buffer creator — used by tests and custom backends.
     void setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
+
+    /// Source whose creator returns a buffer that is already a complete reader —
+    /// e.g. a packed-archive file view that internally wraps its own real-file
+    /// reader (with caches, decryption, prefetch applied to the underlying
+    /// `disk->readFile` call). The pipeline must NOT wrap such a source with
+    /// the executor or any stage; `build()` returns whatever the creator
+    /// produces unchanged. Calling any `needX` setter after this is a contract
+    /// violation and trips a `chassert` in `build()`.
+    void setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
     /// Joins an object's multiple blobs into one seekable buffer (object storage only, not local disk).
     void needGather();
 
-    /// -- Filesystem cache stage --
     void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
@@ -129,8 +129,8 @@ public:
         FilesystemCacheSettings cache_settings,
         std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
-    /// -- Memory cache stage --
-    /// The cache pointer travels inside `page_cache_settings.cache`; a null cache disables the stage.
+    /// The cache pointer travels inside `page_cache_settings.cache`; a null
+    /// `cache` disables the stage.
     void needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
@@ -149,32 +149,29 @@ public:
     ///        where different users may access the same path with different credentials.
     void needDistributedCache(bool include_credentials_in_cache_key = false);
 
-    /// -- Async prefetch stage --
     void needAsyncPrefetch(
         IAsynchronousReader & reader,
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
-    /// -- Decryption stage --
-    /// The key_finder callback is called at build time with the key fingerprint
-    /// read from the encryption header. It must return the decryption key.
-    void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
+    /// Used only by the `ReaderExecutor` path.
+    void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
     /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit. When it is
     /// not set, the executor uses the stateless one-shot path.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
+
+    /// `key_finder` is invoked at build time with the key fingerprint parsed
+    /// from the encryption header and must return the decryption key.
+    void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
     /// Let the executor cache this file's encryption headers in `cache`. Set it only for encrypted
     /// disks on random-object-key backends (see `DiskEncrypted::prepareRead`). Deterministic-path
     /// backends and url or external reads leave it null, so a reused key cannot serve a stale header.
     void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
 
-    /// -- Build the final ReadBuffer chain --
-    /// Uses the ReadSettings stored in the source stage.
     std::unique_ptr<ReadBufferFromFileBase> build() const;
 
-    /// Returns a human-readable description of active stages,
-    /// e.g. "Source -> FilesystemCache -> Gather -> Async".
     String describe() const;
 
     ReadPipeline clone() const;
@@ -188,6 +185,10 @@ private:
         StoredObjects objects;
         std::variant<ObjectStorageSource, LocalFileSource, BackupSource, CustomSource> source;
         ReadSettings read_settings;
+        /// Set by `setAlreadyCompleteSource`. Tells `build()` to invoke the
+        /// CustomSource creator and return the buffer unchanged — no executor,
+        /// no stage wraps. See the setter's doc for the contract.
+        bool already_complete = false;
     };
 
     struct FilesystemCacheStage
@@ -227,41 +228,38 @@ private:
         bool include_credentials_in_cache_key = false;
     };
 
+    /// `ReaderExecutor` path. Returns nullptr when the setting is off or the
+    /// source variant is not supported (the caller falls back to the legacy
+    /// matryoshka pipeline). When it returns a buffer, `build` must NOT apply
+    /// the wrap stages - the executor handles them internally. `query_id` is
+    /// captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+
     std::optional<SourceStage> source;
     bool gather = false;
-    std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
+    std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+    std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
     LoggerPtr log = getLogger("ReadPipeline");
 
-    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`). Returns nullptr when the
-    /// setting is off, the source variant is not supported, or a stage the executor cannot handle is
-    /// configured (the page cache, the distributed cache, or async prefetch). The caller then falls
-    /// back to the legacy nested-buffer pipeline. When it returns a buffer, `build` must NOT apply the
-    /// `wrap*` stages.
-    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
-
-    /// Whether the memory (page) cache stage will actually run. `needMemoryCache` requests it, but it
-    /// is skipped for objects of unknown size: the page cache addresses the file by absolute offset
-    /// and reads `getFileSize()` up front, which an object served without `Content-Length` cannot
-    /// provide. The source stages gate `use_external_buffer` on this, so the inner reader is not left
-    /// in external-buffer mode without a driver.
+    /// Whether the memory (page) cache stage will actually be applied. It is requested via
+    /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
+    /// the file by absolute offset and reads `getFileSize()` up front, which is impossible for an
+    /// object served without `Content-Length`. The source stages gate `use_external_buffer` on
+    /// this so the inner reader is not left in external-buffer mode without a driver.
     bool usesMemoryCache() const;
-
-    /// build() helpers: one per logical stage group.
-    /// Each helper reads private state and returns the (partial) impl buffer.
-    /// `query_id` is captured once on the calling thread before any stage runs.
-    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
-    std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;
-    std::unique_ptr<ReadBufferFromFileBase> wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const;
 };
 
 }

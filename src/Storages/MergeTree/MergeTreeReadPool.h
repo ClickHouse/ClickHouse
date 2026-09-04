@@ -99,6 +99,11 @@ private:
         {
             size_t part_idx{};
             MarkRanges ranges;
+            /// This thread's whole STRIPE of the part in marks, fixed at fill
+            /// time (`ranges` above is consumed as tasks are cut): every task
+            /// announces the STRIPE - the reader reused across the tasks reads
+            /// under one stable request map and planned end.
+            std::vector<std::pair<size_t, size_t>> planned_ranges;
         };
 
         std::vector<PartIndexAndRange> parts_and_ranges;
@@ -112,13 +117,13 @@ private:
     /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
     /// Outputs the queue and the intended task size so that the caller can continue cutting from
     /// the same part with cutMoreRangesToRead when the ranges refiner drops a part of the cut.
-    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part);
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part, std::vector<std::pair<size_t, size_t>> & planned_ranges);
 
     /// Cuts up to need_marks more marks of the same part, or returns false if the part
     /// is not on top of the given thread's queue anymore.
     bool cutMoreRangesToRead(size_t thread_idx, size_t part_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part);
 
-    void cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part) TSA_REQUIRES(mutex);
+    void cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part, std::vector<std::pair<size_t, size_t>> & planned_ranges) TSA_REQUIRES(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

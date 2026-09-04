@@ -48,6 +48,10 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_window_size;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_plan_look_ahead_max_window;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_fill_ahead_lead;
+    extern const MergeTreeSettingsUInt64 merge_reader_executor_hold_consumed;
 }
 
 /// Lightweight (in terms of logic) stream for reading single part from
@@ -171,6 +175,19 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.local_fs_settings.direct_io_threshold = 1;
+
+    /// Merges/mutations read through the executor with a streaming profile, set by the
+    /// `merge_reader_executor_*` MergeTree settings: one long connection streams the
+    /// whole part (a whole-object extent takes the structural open rule in
+    /// `shouldOpenLongConnection`), so the window does not drive the request count and
+    /// is sized for memory - the compact acceptance shape reads at 2 GETs / 1.0x
+    /// amplification, matching legacy.
+    const auto & merge_tree_settings = *storage.getSettings();
+    read_settings.reader_executor.window_size = merge_tree_settings[MergeTreeSetting::merge_reader_executor_window_size];
+    read_settings.reader_executor.plan_look_ahead_max_window
+        = merge_tree_settings[MergeTreeSetting::merge_reader_executor_plan_look_ahead_max_window];
+    read_settings.reader_executor.fill_ahead_lead = merge_tree_settings[MergeTreeSetting::merge_reader_executor_fill_ahead_lead];
+    read_settings.reader_executor.hold_consumed = merge_tree_settings[MergeTreeSetting::merge_reader_executor_hold_consumed];
 
     /// Configure throttling
     switch (type)
@@ -348,6 +365,23 @@ Pipe createMergeTreeSequentialSource(
     /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
     /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
     info->const_virtual_fields.emplace("_sample_factor", 1.0);
+    /// The reader's true end: the given ranges, or the whole part. Keeps the
+    /// executor's long connection spanning the ranges of a merge/mutation read
+    /// now that per-range extents no longer carry the reach past themselves.
+    if (mark_ranges)
+    {
+        info->planned_ranges.reserve(mark_ranges->size());
+        for (const auto & range : *mark_ranges)
+        {
+            info->planned_last_mark = std::max(info->planned_last_mark, range.end);
+            info->planned_ranges.emplace_back(range.begin, range.end);
+        }
+    }
+    else
+    {
+        info->planned_last_mark = info->data_part_info->getMarksCount();
+        info->planned_ranges.emplace_back(0, info->planned_last_mark);
+    }
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();

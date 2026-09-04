@@ -85,4 +85,85 @@ size_t IntervalSet::totalBytes() const
     return total;
 }
 
+VectorWithMemoryTracking<ByteRange> IntervalSet::intersect(ByteRange r) const
+{
+    VectorWithMemoryTracking<ByteRange> out;
+    if (r.size == 0)
+        return out;
+    const size_t rs = r.offset;
+    const size_t re = r.end();
+    for (const auto & i : intervals)
+    {
+        if (i.end() <= rs)
+            continue;
+        if (i.offset >= re)
+            break;
+        const size_t lo = std::max(rs, i.offset);
+        const size_t hi = std::min(re, i.end());
+        out.push_back({lo, hi - lo});
+    }
+    return out;
+}
+
+std::optional<ByteRange> IntervalSet::coveringInterval(size_t pos) const
+{
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it == intervals.begin())
+        return std::nullopt;
+    --it;
+    if (pos < it->end())
+        return *it;
+    return std::nullopt;
+}
+
+std::optional<ByteRange> IntervalSet::nextIntervalAfter(size_t pos) const
+{
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it == intervals.end())
+        return std::nullopt;
+    return *it;
+}
+
+size_t IntervalSet::contiguousEnd(size_t pos, size_t bridge_gap) const
+{
+    /// Start from the interval covering `pos`, or the next one when the gap to
+    /// it is narrow (bridgeable).
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it != intervals.begin() && pos < std::prev(it)->end())
+        --it;
+    else if (it == intervals.end() || it->offset - pos >= bridge_gap)
+        return pos;
+
+    size_t end = it->end();
+    for (++it; it != intervals.end() && it->offset - end < bridge_gap; ++it)
+        end = it->end();
+    return end;
+}
+
+size_t IntervalSet::contiguousStart(size_t pos, size_t bridge_gap) const
+{
+    auto it = std::upper_bound(intervals.begin(), intervals.end(), pos,
+        [](size_t p, const ByteRange & r) { return p < r.offset; });
+    if (it == intervals.begin())
+        return pos;
+    --it;
+    /// `pos` past the interval by a wide gap: no demand run here.
+    if (pos >= it->end() && pos - it->end() >= bridge_gap)
+        return pos;
+
+    size_t start = it->offset;
+    while (it != intervals.begin())
+    {
+        auto prev = std::prev(it);
+        if (start - prev->end() >= bridge_gap)
+            break;
+        start = prev->offset;
+        it = prev;
+    }
+    return std::min(start, pos);
+}
+
 }

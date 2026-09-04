@@ -1,6 +1,9 @@
--- Tags: no-parallel, no-random-settings, no-object-storage
+-- Tags: no-parallel, no-random-settings, no-object-storage, no-flaky-check
 -- add_minmax_index_for_numeric_columns=0, auto_statistics_types='': otherwise the auto minmax index / column
 -- statistics open extra files and this test counts opened files precisely.
+
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
 
 -- Does additional index analysis round that the test doesn't expect
 set enable_parallel_replicas=0;

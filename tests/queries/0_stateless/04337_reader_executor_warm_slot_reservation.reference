@@ -1,0 +1,4 @@
+== warm read, prefetch=1: served_from_cache, no_slot_churn ==
+1	1
+== warm read, prefetch=0: served_from_cache, no_slot_churn ==
+1	1

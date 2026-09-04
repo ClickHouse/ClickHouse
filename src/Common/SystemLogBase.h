@@ -32,6 +32,7 @@
     M(TextLogElement) \
     M(ObjectStorageQueueLogElement) \
     M(FilesystemCacheLogElement) \
+    M(ReaderExecutorLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \

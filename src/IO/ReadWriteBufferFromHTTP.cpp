@@ -2,6 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <base/sleep.h>
 #include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>

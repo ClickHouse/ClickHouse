@@ -16,6 +16,8 @@ SET use_reader_executor = 1;
 SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage
 SET enable_filesystem_cache = 0;               -- avoid the filesystem-cache stage so the executor engages
 SET max_read_buffer_size = 65536;              -- small transport buffer
+-- The structural open rule fires when the predicted contiguous run exceeds the executor's read
+-- window; shrink the window so this small file's Parquet column chunks qualify as "long".
 SET reader_executor_window_size = 65536;       -- small serve windows -> many sequential reads per object
 SET max_threads = 1;
 

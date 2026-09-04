@@ -78,9 +78,10 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         size_t part_idx = 0;
         size_t thread_idx = 0;
         size_t need_marks = 0;
+        std::vector<std::pair<size_t, size_t>> planned_ranges;
         MarkRanges cut_ranges;
 
-        if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges))
+        if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges, planned_ranges))
             return nullptr;
 
         MarkRanges task_ranges;
@@ -123,11 +124,11 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
             continue;
 
         /// createTask() is costly and not needed guarded by mutex.
-        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, updater);
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, updater, std::move(planned_ranges));
     }
 }
 
-bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part)
+bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part, std::vector<std::pair<size_t, size_t>> & planned_ranges)
 {
     const std::lock_guard lock{mutex};
 
@@ -174,7 +175,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size
     else /// Get whole part to read if it is small enough.
         need_marks = std::min(marks_in_part, min_marks_per_task);
 
-    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
+    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part, planned_ranges);
     return true;
 }
 
@@ -188,13 +189,15 @@ bool MergeTreeReadPool::cutMoreRangesToRead(size_t thread_idx, size_t part_idx, 
     if (thread_tasks.parts_and_ranges.empty() || thread_tasks.parts_and_ranges.back().part_idx != part_idx)
         return false;
 
-    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
+    std::vector<std::pair<size_t, size_t>> planned_ranges_unused;
+    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part, planned_ranges_unused);
     return true;
 }
 
-void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part)
+void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part, std::vector<std::pair<size_t, size_t>> & planned_ranges)
 {
     auto & thread_task = thread_tasks.parts_and_ranges.back();
+    planned_ranges = thread_task.planned_ranges;
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
     const auto min_marks_per_task = per_part_infos[thread_task.part_idx]->min_marks_per_task;
 
@@ -375,7 +378,11 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
                 }
             }
 
-            threads_tasks[i].parts_and_ranges.push_back({part_idx, ranges_to_get_from_part});
+            std::vector<std::pair<size_t, size_t>> stripe_ranges;
+            stripe_ranges.reserve(ranges_to_get_from_part.size());
+            for (const auto & range : ranges_to_get_from_part)
+                stripe_ranges.emplace_back(range.begin, range.end);
+            threads_tasks[i].parts_and_ranges.push_back({part_idx, ranges_to_get_from_part, std::move(stripe_ranges)});
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);

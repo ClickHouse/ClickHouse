@@ -282,6 +282,7 @@ namespace Setting
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_reader_executor;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -714,6 +715,15 @@ Pipe ReadFromMergeTree::readFromPool(
       * execution for big tables with small limit.
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+
+    /// The ReaderExecutor does its own prefetch and coalesces a contiguous run into one long
+    /// connection. The prefetched read pool defeats that: it splits the scan into per-mark-range
+    /// prefetch readers, so each executor sees a single read and never builds a forward run.
+    /// Let the executor own prefetching instead - but only when the executor will actually run:
+    /// a distributed-cache read falls back to the legacy path (`tryBuildReaderExecutor`), which
+    /// must keep its prefetched pool.
+    if (settings[Setting::use_reader_executor] && !reader_settings.read_settings.read_through_distributed_cache)
+        use_prefetched_read_pool = false;
 
     if (use_prefetched_read_pool)
     {

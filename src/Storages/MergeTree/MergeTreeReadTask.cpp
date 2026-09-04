@@ -80,6 +80,22 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updatePlannedLastMark(size_t planned_last_mark)
+{
+    main->updatePlannedLastMark(planned_last_mark);
+
+    for (auto & reader : prewhere)
+        reader->updatePlannedLastMark(planned_last_mark);
+}
+
+void MergeTreeReadTask::Readers::updateRequestMap(std::vector<std::pair<size_t, size_t>> planned_mark_ranges)
+{
+    main->updateRequestMap(planned_mark_ranges);
+
+    for (auto & reader : prewhere)
+        reader->updateRequestMap(planned_mark_ranges);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -177,9 +193,23 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    std::vector<std::pair<size_t, size_t>> planned_ranges)
 {
     Readers new_readers;
+
+    /// The FALLBACK: no per-task stripe means the reader consumes the part's
+    /// whole assignment (in-order, projection-index, merges) - its map.
+    if (planned_ranges.empty())
+        planned_ranges = read_info->planned_ranges;
+
+    size_t planned_last_mark = 0;
+    for (const auto & [begin_mark, end_mark] : planned_ranges)
+        planned_last_mark = std::max(planned_last_mark, end_mark);
+
+    auto reader_settings = extras.reader_settings;
+    reader_settings.planned_last_mark = planned_last_mark ? planned_last_mark : read_info->planned_last_mark;
+    reader_settings.planned_mark_ranges = std::move(planned_ranges);
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
@@ -193,7 +223,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.uncompressed_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
-            extras.reader_settings,
+            reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
