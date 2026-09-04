@@ -1350,6 +1350,22 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
 {
     assertIndexColumnsType(index.sample_block);
 
+    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
+    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
+    /// primitive type only. Such an index is accepted at DDL and then fails every insert, merge and
+    /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
+    /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
+    /// a table created before this check must still load, so that its index can be dropped.
+    if (!attach)
+    {
+        for (const auto & type : index.sample_block.getDataTypes())
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (array_type && array_type->getNestedType()->isNullable())
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+        }
+    }
+
     if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.

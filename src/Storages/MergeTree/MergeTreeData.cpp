@@ -1113,12 +1113,15 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
+
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
 
         for (const String & col : used_columns)
         {
