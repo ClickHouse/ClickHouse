@@ -633,7 +633,9 @@ def main():
                         f"docker buildx build"
                         f" --platform=linux/amd64,linux/arm64"
                         f" --provenance=true"
-                        f" --sbom=true"
+                        # Pinned scanner: the floating stable-1 tag can move to a
+                        # version whose scan exceeds the runner's memory.
+                        f" --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11"
                         f" --output=type=registry"
                         f"{target_arg}"
                         f" --label=com.clickhouse.build.version={label_version}"

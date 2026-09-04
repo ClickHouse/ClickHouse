@@ -141,7 +141,6 @@
     {"prefix":"stream_like","mode":"token","target":"/reference/settings/session-settings/stream-like"},
     {"prefix":"use_iceberg","mode":"token","target":"/reference/settings/session-settings/use-iceberg"},
     {"prefix":"use_variant","mode":"token","target":"/reference/settings/session-settings/use-variant"},
-    {"prefix":"window_view","mode":"token","target":"/reference/settings/session-settings/window-view"},
     {"prefix":"additional","mode":"token","target":"/reference/settings/session-settings/additional"},
     {"prefix":"allow_push","mode":"token","target":"/reference/settings/session-settings/allow-push"},
     {"prefix":"ast_fuzzer","mode":"token","target":"/reference/settings/session-settings/ast-fuzzer"},

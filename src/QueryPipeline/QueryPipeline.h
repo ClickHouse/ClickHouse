@@ -99,7 +99,7 @@ public:
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
-    /// Use PipelineExecutor. Call execute() to build one.
+    /// Use CompletedPipelineExecutor.
     bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
@@ -121,6 +121,7 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
+    QueryStatusPtr getProcessListElement() const { return process_list_element; }
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
@@ -149,6 +150,8 @@ public:
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
+    /// Do not account rows read by this pipeline in the query progress and read limits.
+    void disableReadProgress() { report_read_progress = false; }
 
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
@@ -173,6 +176,7 @@ private:
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
+    bool report_read_progress = true;
     StepWallClockRegistryPtr step_wall_clock_registry;
 
     std::shared_ptr<Processors> processors;
@@ -195,7 +199,6 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
-    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

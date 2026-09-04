@@ -39,22 +39,16 @@ ClickHouse는 JSON Web Token(JWT)을 사용해 사용자를 인증할 수 있습
 
 ClickHouse에 제시되는 모든 JWT에는 다음 클레임이 포함되어야 합니다:
 
-| Claim | Description                                               |
-| ----- | --------------------------------------------------------- |
-| `alg` | 서명 알고리즘(헤더 클레임)입니다. 지원되는 값은 `HS256`, `RS256`, `ES256`입니다. |
-| `exp` | 만료 시간입니다. 임시 사용자의 `valid_until`을 설정합니다.                   |
-| `iat` | 발급 시각입니다. 동일한 아이덴티티에 대해 이전 토큰이 재사용되는 것을 방지하는 데 사용됩니다.     |
-| `iss` | 발급자입니다. provider에 설정된 예상 발급자와 일치하는지 확인합니다.                |
-| `sub` | 주체입니다. 생성된 사용자 이름의 일부가 됩니다.                               |
-| `aud` | 대상입니다. provider에 설정된 예상 대상과 일치하는지 확인합니다.                  |
+| Claim | Description                                                                                 |
+| ----- | ------------------------------------------------------------------------------------------- |
+| `alg` | 서명 알고리즘(헤더 클레임)입니다. 지원되는 값은 `RS256`입니다. 버전 26.8부터 EC 알고리즘 `ES256`, `ES384`, `ES512`도 지원됩니다. |
+| `exp` | 만료 시간입니다. 임시 사용자의 `valid_until`을 설정합니다.                                                     |
+| `iat` | 발급 시각입니다. 동일한 아이덴티티에 대해 이전 토큰이 재사용되는 것을 방지하는 데 사용됩니다.                                       |
+| `iss` | issuer입니다. IdP(Identity Provider)에 설정된 예상 issuer와 일치하는지 확인합니다.                                                  |
+| `sub` | 주체입니다. 생성된 사용자 이름의 일부가 됩니다.                                                                 |
+| `aud` | audience입니다. IdP(Identity Provider)에 설정된 예상 audience와 일치하는지 확인합니다.                                                    |
 
 JWKS 기반 키 해상도를 사용하는 경우 `kid` (key ID) 헤더 클레임도 필요합니다.
-
-<Info>
-  **JWKS 모드는 RSA 키만 지원합니다**
-
-  정적 키 provider는 `HS256`, `RS256`, `ES256`을 모두 허용하지만, JWKS 기반 provider는 `kty`가 `RSA`인 JWK만 허용합니다(즉, `RS256`으로 서명된 토큰만 허용). HMAC(`HS256`) 또는 EC(`ES256`) 키로 서명된 토큰은 JWKS 엔드포인트를 기준으로 검증할 수 없으므로 거부됩니다.
-</Info>
 
 <div id="other-recognized-claims">
   ### 기타 인식되는 클레임
@@ -263,20 +257,17 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" support="true" />
+<EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" />
 
-기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있는 베타 기능입니다. 활성화하려면 다음 설정 정보를 포함해 [지원 티켓](https://clickhouse.com/support/program)을 제출하십시오.
+기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있는 베타 기능입니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
 
-| 매개변수         | 설명                                                                                                                                                                                                                                                  |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 서비스 ID       | JWT 인증을 활성화할 ClickHouse Cloud 서비스의 UUID입니다. 서비스를 열면 Cloud Console URL에서 확인할 수 있습니다.                                                                                                                                                                 |
-| Issuer       | IdP(Identity Provider)가 발급한 토큰의 `iss` 클레임 값으로, 일반적으로 IdP의 URL입니다(예: `https://your-tenant.okta.com`). ClickHouse는 발급자가 이 값과 일치하지 않는 토큰을 거부합니다.                                                                                                  |
-| 대상     | IdP(Identity Provider)가 이 서비스를 대상으로 하는 토큰에 넣는 `aud` 클레임 값입니다. ClickHouse는 다른 대상을 대상으로 발급된 토큰을 거부합니다.                                                                                                                                        |
-| JWKS URL     | IdP(Identity Provider)가 JSON Web Key Set을 게시하는 HTTPS 엔드포인트입니다(예: `https://idp.example.com/.well-known/jwks.json`). ClickHouse는 토큰 서명을 확인하기 위해 이 엔드포인트에서 public key를 가져옵니다. [필수 클레임](#required-claims)에 설명된 대로 JWKS 검증은 RSA 키(`RS256`)에서만 작동합니다. |
-| 역할 클레임  | 임시 사용자의 ClickHouse 역할을 포함하는 토큰 클레임의 이름입니다(기본값은 `clickhouse:roles`). 이 클레임에는 역할 이름으로 구성된 JSON 배열이 포함되어야 합니다(예: `["analyst", "reader"]`).                                                                                                 |
-| 권한 부여 클레임 | 임시 사용자의 SQL `GRANT` fragment를 포함하는 토큰 클레임의 이름입니다(기본값은 `clickhouse:grants`). 이 클레임에는 권한 부여 fragment로 구성된 JSON 배열이 포함되어야 합니다(예: `["SELECT ON analytics.*", "INSERT ON analytics.events"]`).                                               |
-
-역할 클레임에 지정된 역할은 서비스에 미리 존재해야 합니다(`CREATE ROLE`로 생성). [접근 권한](#access-rights)에 설명된 대로 권한 한도은 역할 및 권한 부여 클레임에서 얻는 유효 접근 권한을 제한합니다.
+| 매개변수          | 설명                                                                                                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 이름            | 서비스에서 IdP(Identity Provider)를 식별하는 고유한 이름입니다.                                                                                                                                                                                                                                                                      |
+| issuer        | IdP(Identity Provider)가 발급한 토큰의 `iss` 클레임 값으로, 일반적으로 IdP의 URL입니다(예: `https://your-tenant.okta.com`). ClickHouse는 issuer가 이 값과 일치하지 않는 토큰을 거부합니다.                                                                                                                                                                   |
+| audience      | IdP(Identity Provider)가 이 서비스를 대상으로 하는 토큰에 넣는 `aud` 클레임 값입니다. ClickHouse는 다른 audience를 대상으로 발급된 토큰을 거부합니다.                                                                                                                                                                                                         |
+| JWKS URL      | IdP(Identity Provider)가 JSON Web Key Set을 게시하는 HTTPS 엔드포인트입니다(예: `https://idp.example.com/.well-known/jwks.json`). ClickHouse는 토큰 서명을 확인하기 위해 이 엔드포인트에서 public key를 가져옵니다. [필수 클레임](#required-claims)에 설명된 대로 JWKS 검증은 RSA 키(`RS256`)와 버전 26.8부터 P-256, P-384, P-521 곡선의 EC 키(`ES256`, `ES384`, `ES512`)에서도 작동합니다. |
+| 역할 클레임(선택 사항) | 임시 사용자의 ClickHouse 역할을 포함하는 토큰 클레임의 이름입니다. 기본 클레임 이름인 `clickhouse:roles`을 사용하려면 비워 두십시오. 이 클레임에는 역할 이름으로 구성된 JSON 배열이 포함되어야 합니다(예: `["analyst", "reader"]`).                                                                                                                                                       |
 
 <div id="interserver-communication">
   ## 서버 간 통신

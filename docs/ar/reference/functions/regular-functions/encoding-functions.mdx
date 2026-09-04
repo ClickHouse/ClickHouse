@@ -27,13 +27,13 @@ doc_type: 'reference'
   على عكس دالة الترميز، يتعامل `bech32Decode` تلقائيًا مع FixedStrings ذات الحشو.
 </Note>
 
-**البنية**
+**الصياغة**
 
 ```sql
 bech32Decode(address[, 'raw'])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `address` — سلسلة Bech32 المطلوب فك ترميزها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `mode` — اختياري. مرّر `'raw'` لفك الترميز من دون إزالة البايت الأول باعتباره إصدار الشاهد. استخدم هذا مع العناوين غير التابعة لـ SegWit (مثل Cosmos SDK). [`String`](/ar/reference/data-types/string)
@@ -47,21 +47,25 @@ bech32Decode(address[, 'raw'])
 **فك ترميز العنوان**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **عنوان الشبكة التجريبية**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -79,13 +83,13 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
   متأكدًا من أن أطوالها جميعًا متساوية، وأن عمود `FixedString` لديك مضبوط على هذا الطول أيضًا.
 </Note>
 
-**البنية**
+**الصياغة**
 
 ```sql
 bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `hrp` — سلسلة `String` تتكوّن من `1 - 83` حرفًا صغيرًا وتحدّد &quot;الجزء المقروء بشريًا&quot; من الشيفرة. تكون عادةً &#39;bc&#39; أو &#39;tb&#39;. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 * `data` — سلسلة `String` من البيانات الثنائية المطلوب ترميزها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
@@ -105,7 +109,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **خوارزمية Bech32**
@@ -116,7 +120,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
 **HRP مخصّص**
@@ -128,7 +132,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **عنوان Cosmos SDK ‏(BIP173، من دون witness version)**
@@ -140,7 +144,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -235,13 +239,13 @@ SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS bin_uuid
 تُرجع هذه الدالة مواقع البتات ذات القيمة 1 (بترتيب تصاعدي) في التمثيل الثنائي لعدد صحيح غير موقَّع.
 تُحوَّل أعداد الإدخال الصحيحة الموقَّعة أولًا إلى عدد صحيح غير موقَّع.
 
-**البنية**
+**الصياغة**
 
 ```sql
 bitPositionsToArray(arg)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `arg` — قيمة صحيحة. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
@@ -270,16 +274,16 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
   ## bitmaskToArray
 </div>
 
-قُدِّمت في: v1.1.0
+أُضيف في: v1.1.0
 
 تفكّك هذه الدالة عددًا صحيحًا إلى مجموع قوى العدد اثنين.
 وتُعاد قوى العدد اثنين في مصفوفة مرتبة تصاعديًا.
@@ -290,7 +294,7 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 bitmaskToArray(num)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `num` — قيمة صحيحة. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
@@ -307,12 +311,12 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
-**قيمة واحدة من قوى العدد 2**
+**قوة واحدة للعدد 2**
 
 ```sql title=Query
 SELECT bitmaskToArray(8) AS powers_of_two
@@ -332,13 +336,13 @@ SELECT bitmaskToArray(8) AS powers_of_two
 
 تشبه bitmaskToArray، لكنها تُرجع قوى العدد اثنين على هيئة سلسلة نصية مفصولة بفواصل.
 
-**البنية**
+**الصياغة**
 
 ```sql
 bitmaskToList(num)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `num` — قيمة عددية صحيحة. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
@@ -355,9 +359,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -532,7 +536,7 @@ SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex
 hilbertDecode(tuple_size, code)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `tuple_size` — قيمة عدد صحيح لا تزيد على `2`. [`UInt8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Tuple(UInt8/16/32/64)`](/ar/reference/data-types/tuple)
 * `code` — شيفرة `UInt64`. [`UInt64`](/ar/reference/data-types/int-uint)
@@ -550,7 +554,7 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **وسيطة واحدة**
@@ -561,10 +565,10 @@ SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
-**الوضع المُوسَّع**
+**الوضع الموسّع**
 
 ```sql title=Query
 -- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
@@ -572,7 +576,7 @@ SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **استخدام الأعمدة**
@@ -592,7 +596,7 @@ SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -725,11 +729,11 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 
 **الوضع البسيط**
 
-يقبل حجم tuple الناتجة بوصفه المعامل الأول، والشيفرة بوصفها المعامل الثاني.
+يقبل حجم tuple الناتجة بوصفه وسيطات الدالة الأول، والشيفرة بوصفها وسيطات الدالة الثاني.
 
 **الوضع الموسَّع**
 
-يقبل قناع نطاق (tuple) بوصفه المعامل الأول، والشيفرة بوصفها المعامل الثاني.
+يقبل قناع نطاق (tuple) بوصفه وسيطات الدالة الأول، والشيفرة بوصفها وسيطات الدالة الثاني.
 ويحدّد كل رقم في القناع مقدار تقليص النطاق:
 
 * `1` - بدون تقليص
@@ -743,7 +747,7 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
 و&#39;Country code&#39; `(0...FF)`. وكما هو الحال مع دالة الترميز، يقتصر ذلك على
 8 أرقام كحد أقصى.
 
-**البنية**
+**الصياغة**
 
 ```sql
 -- Simple mode
@@ -753,11 +757,11 @@ mortonDecode(tuple_size, code)
 mortonDecode(range_mask, code)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `tuple_size` — قيمة عددية صحيحة لا تتجاوز 8. [`UInt8/16/32/64`](/ar/reference/data-types/int-uint)
 * `range_mask` — في الوضع الموسّع، القناع الخاص بكل معامل. القناع هو Tuple من أعداد صحيحة غير موقّعة. ويحدّد كل رقم في القناع مقدار تقليص النطاق. [`Tuple(UInt8/16/32/64)`](/ar/reference/data-types/tuple)
-* `code` — رمز من النوع UInt64. [`UInt64`](/ar/reference/data-types/int-uint)
+* `code` — شيفرة من النوع UInt64. [`UInt64`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
@@ -772,7 +776,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **وسيطة واحدة**
@@ -782,7 +786,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **الوضع الموسَّع، تقليص معامل واحد**
@@ -792,7 +796,7 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **استخدام الأعمدة**
@@ -818,7 +822,7 @@ SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FR
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -957,7 +961,7 @@ SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
 sqidDecode(sqid)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `sqid` — معرّف `sqid` المطلوب فك ترميزه. [`String`](/ar/reference/data-types/string)
 
@@ -974,9 +978,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1021,7 +1025,7 @@ SELECT sqidEncode(1, 2, 3, 4, 5);
   ## unbin
 </div>
 
-قُدِّمت في: v21.8.0
+أُضيف في: v21.8.0
 
 تفسِّر كل زوج من الخانات الثنائية (في الوسيطة) على أنه عدد، ثم تحوِّله إلى البايت الذي يمثِّله هذا العدد. وتنفِّذ هذه الدالة العملية العكسية للدالة `bin`.
 
@@ -1034,13 +1038,13 @@ SELECT sqidEncode(1, 2, 3, 4, 5);
 تدعم الخانات الثنائية `0` و`1`. ولا يلزم أن يكون عدد الخانات الثنائية من مضاعفات الثمانية. وإذا احتوت سلسلة الوسيطة على أي شيء غير الخانات الثنائية،
 فستكون النتيجة غير معرّفة (من دون طرح أي استثناء).
 
-**الصيغة**
+**الصياغة**
 
 ```sql
 unbin(arg)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `arg` — سلسلة تحتوي على أي عدد من الخانات الثنائية. [`String`](/ar/reference/data-types/string)
 
@@ -1057,7 +1061,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1102,7 +1106,7 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 unhex(arg)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `arg` — سلسلة تحتوي على أي عدد من المحارف السداسية العشرية. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
 
@@ -1119,7 +1123,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```

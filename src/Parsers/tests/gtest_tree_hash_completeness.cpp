@@ -252,7 +252,6 @@ TEST(TreeHashCompleteness, CloneHashesEqual)
         "SHOW CREATE TABLE db.t INTO OUTFILE 'x'",
         "CHECK TABLE db.t PARTITION 1 FORMAT JSONEachRow",
         "CHECK DATABASE db FORMAT JSONEachRow",
-        "WATCH db.t LIMIT 5 FORMAT JSONEachRow",
         "OPTIMIZE TABLE db.t PARTITION 1 FINAL DEDUPLICATE BY a, b",
         "ALTER TABLE db.t ADD COLUMN x UInt64 FORMAT JSONEachRow",
         "DROP TABLE db.t",
@@ -325,24 +324,19 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
 
 TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
 {
-    /// `ASTCheckTableQuery::partition` / `part_name`, `ASTWatchQuery::limit_length` /
-    /// `is_watch_events` and `ASTOptimizeQuery::deduplicate_by_columns` are kept outside `children`,
+    /// `ASTCheckTableQuery::partition` / `part_name` and `ASTOptimizeQuery::deduplicate_by_columns`
+    /// are kept outside `children`,
     /// so `CloneHashesEqual` above would pass for them even if a clone dropped them.
     EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PARTITION 1"));
     EXPECT_NE(hashOf("CHECK TABLE t PARTITION 1"), hashOf("CHECK TABLE t PARTITION 2"));
     EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PART 'all_1_1_0'"));
     EXPECT_NE(hashOf("CHECK TABLE t PART 'all_1_1_0'"), hashOf("CHECK TABLE t PART 'all_2_2_0'"));
 
-    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t LIMIT 5"));
-    EXPECT_NE(hashOf("WATCH t LIMIT 5"), hashOf("WATCH t LIMIT 6"));
-    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t EVENTS"));
-
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"));
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY b"));
 
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
-             "WATCH db.t EVENTS LIMIT 5 FORMAT JSONEachRow",
              "OPTIMIZE TABLE t PARTITION 1",
              "OPTIMIZE TABLE t DRY RUN PARTS 'p1'",
              "OPTIMIZE TABLE t DEDUPLICATE BY a",
@@ -353,7 +347,6 @@ TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
              "CHECK TABLE t PART 'all_1_1_0'",
-             "WATCH t EVENTS LIMIT 5",
              "OPTIMIZE TABLE t DEDUPLICATE BY a, b",
          })
     {
@@ -591,15 +584,14 @@ TEST(TreeHashCompleteness, CreateQueryUpdatesEveryDirectChildPointer)
     /// in `children` and then asks the node to update its member pointer; a member missing here
     /// keeps pointing at the node that was just released.
     const std::string query =
-        "CREATE WINDOW VIEW v ENGINE = Memory WATERMARK = INTERVAL 1 SECOND "
-        "ALLOWED_LATENESS = INTERVAL 2 SECOND AS SELECT count(a) FROM t "
-        "GROUP BY tumble(timestamp, INTERVAL 5 SECOND) AS wid";
+        "CREATE MATERIALIZED VIEW v ENGINE = Memory DEFINER = CURRENT_USER SQL SECURITY DEFINER "
+        "COMMENT 'c' AS SELECT count(a) FROM t";
     ASTPtr ast = parse(query);
     auto & create = ast->as<ASTCreateQuery &>();
-    ASSERT_TRUE(create.watermark_function);
-    ASSERT_TRUE(create.lateness_function);
+    ASSERT_TRUE(create.sql_security);
+    ASSERT_TRUE(create.comment);
 
-    for (IAST ** member : {&create.watermark_function, &create.lateness_function})
+    for (IAST ** member : {&create.sql_security, &create.comment})
     {
         ASTPtr replacement = (*member)->clone();
         ast->updatePointerToChild(*member, replacement);
