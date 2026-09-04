@@ -135,6 +135,22 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, this->result_type, arena);

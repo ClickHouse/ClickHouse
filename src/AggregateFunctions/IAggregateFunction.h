@@ -16,6 +16,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
 
 #include <cstddef>
 #include <memory>
@@ -271,6 +272,16 @@ public:
     /// Devirtualize serialize call.
     virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
+    /// An upper bound on the bytes `serialize` writes, if one exists. When it does, `serializeBatch`
+    /// fills the destination buffer with states back to back through `serializeToMemory` instead of
+    /// going through the WriteBuffer once per field. Returning a value requires overriding
+    /// `serializeToMemory` too.
+    virtual std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /*version*/) const { return std::nullopt; }
+
+    /// Writes exactly what `serialize` writes into `dst`, which holds at least
+    /// `getSerializedSizeBound` bytes, and returns the position past the last byte written.
+    virtual char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const;
+
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
 
@@ -514,6 +525,47 @@ private:
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
 
+    /// Fills the buffer with states back to back, so the write cursor stays in a register across a
+    /// run instead of being reloaded from the WriteBuffer for every field.
+    void ALWAYS_INLINE serializeBatchToMemory(
+        const Derived * function,
+        const PaddedPODArray<AggregateDataPtr> & data,
+        size_t start,
+        size_t end,
+        WriteBuffer & buf,
+        size_t size_bound,
+        std::optional<size_t> version) const
+    {
+        chassert(size_bound > 0);
+
+        /// Hoisted: a store into the buffer may alias `data`, which would force a reload per state.
+        const AggregateDataPtr * places = data.data();
+
+        size_t i = start;
+        while (i < end)
+        {
+            buf.nextIfAtEnd();
+
+            if (buf.available() < size_bound)
+            {
+                /// The rest of the buffer cannot hold a whole state; let the generic path split it.
+                function->serialize(places[i], buf, version);
+                ++i;
+                continue;
+            }
+
+            char * dst = buf.position();
+            for (size_t run_end = i + std::min(end - i, buf.available() / size_bound); i < run_end; ++i)
+            {
+                char * state_begin = dst;
+                dst = function->serializeToMemory(places[i], dst, version);
+                /// Overrunning the declared bound would corrupt the buffer past working_buffer.end().
+                chassert(static_cast<size_t>(dst - state_begin) <= size_bound);
+            }
+            buf.position() = dst;
+        }
+    }
+
 public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
         : IAggregateFunction(argument_types_, parameters_, result_type_) {}
@@ -558,8 +610,20 @@ public:
 
     void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
     {
+        if (start >= size)
+            return;
+
+        const auto * derived = static_cast<const Derived *>(this);
+
+        if (std::optional<size_t> size_bound = derived->getSerializedSizeBound(version))
+        {
+            serializeBatchToMemory(derived, data, start, size, buf, *size_bound, version);
+            return;
+        }
+
+        const AggregateDataPtr * places = data.data();
         for (size_t i = start; i < size; ++i)
-            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
+            derived->serialize(places[i], buf, version);
     }
 
     void createAndDeserializeBatch(

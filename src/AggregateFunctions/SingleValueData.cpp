@@ -174,14 +174,6 @@ void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
-{
-    writeBinary(has(), buf);
-    if (has())
-        writeBinaryLittleEndian(value, buf);
-}
-
-template <typename T>
 void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *)
 {
     readBinary(has_value, buf);

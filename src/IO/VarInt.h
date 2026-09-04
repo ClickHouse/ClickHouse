@@ -13,6 +13,9 @@ namespace DB
 [[noreturn]] void throwReadAfterEOF();
 
 
+/// The most bytes writeVarUInt emits for a UInt64: nine continuation bytes plus a final one.
+constexpr size_t VAR_UINT_MAX_SIZE = 10;
+
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
     while (x > 0x7F)
