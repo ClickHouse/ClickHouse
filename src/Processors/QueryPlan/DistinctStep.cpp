@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -9,6 +10,8 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SortDescription.h>
+
+#include <numeric>
 
 namespace DB
 {
@@ -80,7 +83,32 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
     if (!pre_distinct && !skip_stream_merging)
-        pipeline.resize(1);
+    {
+        /// Instead of the merge, the streams can be hash-partitioned by the DISTINCT columns: equal rows land
+        /// in the same stream, so every stream is still deduplicated completely and all threads stay busy.
+        /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), and the size limits
+        /// are global, so both keep the merge. A single thread gains nothing from the partitioning either.
+        const bool has_size_limits = set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0;
+        if (settings.allow_parallel_final_distinct && pipeline.getNumStreams() > 1 && pipeline.getNumThreads() > 1
+            && distinct_sort_desc.empty() && !has_size_limits)
+        {
+            const auto & header = pipeline.getHeader();
+            ColumnNumbers key_columns;
+            if (columns.empty())
+            {
+                key_columns.resize(header.columns());
+                std::iota(key_columns.begin(), key_columns.end(), 0);
+            }
+            else
+            {
+                for (const auto & column : columns)
+                    key_columns.push_back(header.getPositionByName(column));
+            }
+            scatterByPartition(pipeline, pipeline.getNumStreams(), key_columns);
+        }
+        else
+            pipeline.resize(1);
+    }
 
     /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
     /// mostly-unique input the transform may abandon it and free its hash table - unless a limit

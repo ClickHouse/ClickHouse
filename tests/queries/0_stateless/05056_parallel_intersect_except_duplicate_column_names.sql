@@ -29,13 +29,14 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SEL
 
 -- The scatter partitions by column position, while the disjointness property is matched by column
 -- name downstream. A duplicate-name header cannot express that partitioning, so the property is
--- dropped and the final DISTINCT keeps merging the streams into one.
+-- dropped and the final DISTINCT does not skip the stream merging: it repartitions the streams by
+-- itself instead of relying on the scatter of the set operation.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%ScatterByPartition%';
 
 -- The same query with a header whose names are unique does keep the property.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
-SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%ScatterByPartition%';
 
 -- { echoOff }
 
