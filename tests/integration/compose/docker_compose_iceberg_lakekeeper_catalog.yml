@@ -1,6 +1,6 @@
 services:
   lakekeeper:
-    image: vakamo/lakekeeper:v0.9.4
+    image: vakamo/lakekeeper:v0.13.1
     environment:
       - LAKEKEEPER__PG_ENCRYPTION_KEY=This-is-NOT-Secure!
       - LAKEKEEPER__PG_DATABASE_URL_READ=postgresql://postgres:postgres@db:5432/postgres
@@ -23,7 +23,7 @@ services:
     cpus: 3
 
   migrate:
-    image: vakamo/lakekeeper:v0.9.4
+    image: vakamo/lakekeeper:v0.13.1
     environment:
       - LAKEKEEPER__PG_ENCRYPTION_KEY=This-is-NOT-Secure!
       - LAKEKEEPER__PG_DATABASE_URL_READ=postgresql://postgres:postgres@db:5432/postgres

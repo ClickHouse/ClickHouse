@@ -24,6 +24,12 @@ bool isRetryableAzureException(const Azure::Core::RequestFailedException & e)
     return e.StatusCode >= Azure::Core::Http::HttpStatusCode::InternalServerError;
 }
 
+bool isAzureAccessTokenExpiredError(const Azure::Core::RequestFailedException & e)
+{
+    return e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized
+        || e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden;
+}
+
 }
 
 #endif
