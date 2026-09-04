@@ -3599,9 +3599,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so
     /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
     /// for the same value depending on constness, and a replacement can be constant where the input is not.
-    /// A lambda keeps its body out of the walk below, and a higher-order function hands its remaining
-    /// arguments to that body as its formal parameters, so a body reading a representation describes every
-    /// argument of the call and not only the captures below the node holding it.
+    /// A lambda body describes every argument of its call: the ones it does not capture arrive as its
+    /// formal parameters.
     static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
     auto call_reads_representation = [](const Node * node)
     {
@@ -3636,9 +3635,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return false;
     };
 
-    /// `getConjunctionNodes` already refuses a conjunct that is not stable within the query, but it reads
-    /// only the visible functions. A both-streams conjunct is evaluated once per side and dropped from the
-    /// post-join filter, so a body hidden from that check would be drawn twice and the two draws compared.
+    /// `getConjunctionNodes` asserts stability within the query over the visible functions only.
     static constexpr auto is_unstable_within_query = [](const IFunctionBase & function)
     { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
     auto hides_unstable_lambda_body = [](const Node * conjunct)
