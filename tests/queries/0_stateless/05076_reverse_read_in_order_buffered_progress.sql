@@ -15,6 +15,19 @@ SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', min_bytes_for_
 
 INSERT INTO t_reverse_read_progress SELECT number FROM numbers(100);
 
+-- Each counter assertion below is about the reverse read-in-order algorithm, and a plan that reads
+-- the table any other way satisfies all of them without running it. `ReadType` is printed only by
+-- the legacy plan format.
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
+    EXPLAIN PLAN actions = 1 SELECT a FROM t_reverse_read_progress ORDER BY a DESC LIMIT 13
+    SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
+             preferred_block_size_bytes = 0, use_query_condition_cache = 0,
+             read_in_order_use_virtual_row = 0, query_plan_optimize_lazy_materialization = 0,
+             use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0,
+             enable_parallel_replicas = 0,
+             explain_query_plan_default = 'legacy'
+) WHERE explain like '%ReadType%';
+
 SELECT a FROM t_reverse_read_progress ORDER BY a DESC LIMIT 13 FORMAT Null
 SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
          preferred_block_size_bytes = 0, use_query_condition_cache = 0,
@@ -23,6 +36,27 @@ SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
          enable_parallel_replicas = 0,
          log_comment = 'reverse_read_in_order_buffered_progress';
 
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
+    EXPLAIN PLAN actions = 1 SELECT a FROM t_reverse_read_progress ORDER BY a DESC LIMIT 100
+    SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
+             preferred_block_size_bytes = 0, use_query_condition_cache = 0,
+             read_in_order_use_virtual_row = 0, query_plan_optimize_lazy_materialization = 0,
+             use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0,
+             enable_parallel_replicas = 0,
+             explain_query_plan_default = 'legacy'
+) WHERE explain like '%ReadType%';
+
+-- The same read taking every row, so the buffer is drained instead of abandoned. Here the reported
+-- total has to match the reader exactly: an upper bound cannot express that a drained chunk is
+-- also not counted a second time.
+SELECT a FROM t_reverse_read_progress ORDER BY a DESC LIMIT 100 FORMAT Null
+SETTINGS optimize_read_in_order = 1, max_threads = 1, max_block_size = 10,
+         preferred_block_size_bytes = 0, use_query_condition_cache = 0,
+         read_in_order_use_virtual_row = 0, query_plan_optimize_lazy_materialization = 0,
+         use_skip_indexes_for_top_k = 0, use_top_k_dynamic_filtering = 0,
+         enable_parallel_replicas = 0,
+         log_comment = 'reverse_read_in_order_full_drain';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedRows'] >= ProfileEvents['RowsReadByMainReader']
@@ -30,6 +64,12 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase()
   AND log_comment = 'reverse_read_in_order_buffered_progress';
+
+SELECT ProfileEvents['SelectedRows'] = ProfileEvents['RowsReadByMainReader']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase()
+  AND log_comment = 'reverse_read_in_order_full_drain';
 
 -- The rows left in the buffer count towards `max_rows_to_read`. This also guards the assertion
 -- above against becoming vacuous: if the query stopped leaving nothing buffered, the reported
