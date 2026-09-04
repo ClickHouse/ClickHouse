@@ -1116,6 +1116,23 @@ def test_malformed_extended_message_recovers(started_cluster):
         sock.close()
 
 
+def test_incomplete_simple_query_payload_recovers(started_cluster):
+    # A length-only `Query` must not wait for or consume the next frontend message.
+    node = started_cluster.instances["node"]
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(_fe("Q", b""))
+    types = read_until_ready()
+    assert "E" in types, f"incomplete Query must be rejected, got {types}"
+    assert types.count("Z") == 1, (
+        f"incomplete Query must emit one ReadyForQuery, got {types}"
+    )
+
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay usable after incomplete Query, got {types}"
+    sock.close()
+
+
 def test_flush_error_discards_until_sync(started_cluster):
     # A `FLUSH` error discards the rest of the cycle through `Sync`.
     node = started_cluster.instances["node"]

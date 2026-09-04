@@ -286,6 +286,11 @@ TEST(PostgreSQLProtocol, ExtendedQueryMessagesKeepIncompletePayloadsAligned)
     expectIncompletePayloadAndAligned<Messaging::CloseQuery>();
 }
 
+TEST(PostgreSQLProtocol, QueryKeepsIncompletePayloadAligned)
+{
+    expectIncompletePayloadAndAligned<Messaging::Query>();
+}
+
 TEST(PostgreSQLProtocol, SyncRejectsNonEmptyPayload)
 {
     for (Int32 size : {0, 1, 2, 3, 5})
@@ -298,6 +303,23 @@ TEST(PostgreSQLProtocol, SyncRejectsNonEmptyPayload)
         EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
         {
             Messaging::SyncQuery msg;
+            msg.deserialize(in);
+        })) << "size = " << size;
+    }
+}
+
+TEST(PostgreSQLProtocol, CopyDoneRejectsNonEmptyPayload)
+{
+    for (Int32 size : {0, 1, 2, 3, 5})
+    {
+        std::string bytes;
+        putInt32(bytes, size);
+        if (size > 4)
+            bytes.append(static_cast<size_t>(size - 4), '\0');
+
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        {
+            Messaging::CopyDone msg;
             msg.deserialize(in);
         })) << "size = " << size;
     }

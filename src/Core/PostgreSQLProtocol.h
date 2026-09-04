@@ -747,9 +747,10 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        readNullTerminated(query, in);
+        deserializePayload(in, "Query message", [this](ReadBuffer & payload_in)
+        {
+            readNullTerminated(query, payload_in);
+        });
     }
 
     MessageType getMessageType() const override
@@ -1279,8 +1280,11 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        if (size != 4)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyDone message, it must be 4", size);
     }
 
     MessageType getMessageType() const override
