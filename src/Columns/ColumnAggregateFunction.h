@@ -97,7 +97,7 @@ private:
 
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -198,6 +198,38 @@ public:
     /// are sized from sizeOfData() without serializing; variable-size states are serialized exactly so the
     /// figure never underestimates a skewed column. Used to honor index_granularity_bytes at write time.
     size_t serializedSizeEstimate() const;
+
+    /// Size of the states on the wire: exactly the bytes `SerializationAggregateFunction` writes for them,
+    /// without the pointer array and without assuming that a state's serialized size is sizeOfData() - `count`,
+    /// for one, serializes as a varint. At most `max_states_to_serialize` states are serialized and the total
+    /// is extrapolated from them; the figure is exact when the limit is not smaller than the column's size.
+    size_t sampledSerializedStateBytes(size_t max_states_to_serialize) const;
+
+    struct SampledStateSizes
+    {
+        /// Serialized size of all states, extrapolated from the sample; the same figure as
+        /// `sampledSerializedStateBytes` returns for the same limit.
+        size_t bytes = 0;
+        /// Serialized size of the sample itself.
+        size_t sample_bytes = 0;
+        /// Size of the sample after compression, clamped to `sample_bytes`: a sample smaller than the
+        /// compressed format's per-block framing measures the framing, not the states' compressibility,
+        /// so it is reported as incompressible rather than as expanding.
+        size_t compressed_bytes = 0;
+    };
+
+    /// Wire and compressed sizes measured on one and the same periodic sample of at most
+    /// `max_states_to_serialize` states, so that an uncompressed estimate and a compression ratio derived
+    /// from the result describe the same population of states even when state size or compressibility
+    /// changes along the column.
+    ///
+    /// `repetitions` is how many times the whole column appears on the wire: `NativeWriter::writeData`
+    /// materializes constants, so a state-bearing `ColumnConst` sends its stored payload once per row of
+    /// the block. All three figures describe the repeated payload. Identical copies compress far better
+    /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
+    /// compressed figure is measured on a repeated sample rather than scaled from one copy.
+    /// `skip_rows` omits leading values not written by their carrier, such as `ColumnSparse`'s implicit default.
+    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize, size_t repetitions = 1, size_t skip_rows = 0) const;
 
     size_t byteSizeAt(size_t n) const override;
 

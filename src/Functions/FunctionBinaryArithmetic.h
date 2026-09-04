@@ -20,6 +20,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -1265,7 +1266,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName new_arguments = arguments;
         if (WhichDataType(new_arguments[1].type).isAggregateFunction())
@@ -1281,10 +1282,13 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
+        const auto * result_aggregate_type = checkAndGetDataType<DataTypeAggregateFunction>(result_type.get());
+        chassert(result_aggregate_type);
+        const size_t version = result_aggregate_type->getVersion();
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, version);
         column_to->reserve(size);
 
         auto column_from = ColumnAggregateFunction::create(function);
@@ -1353,7 +1357,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Merge two aggregation states together.
-    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const IColumn & lhs_column = *arguments[0].column;
         const IColumn & rhs_column = *arguments[1].column;
@@ -1367,10 +1371,13 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
 
         AggregateFunctionPtr function = lhs.getAggregateFunction();
+        const auto * result_aggregate_type = checkAndGetDataType<DataTypeAggregateFunction>(result_type.get());
+        chassert(result_aggregate_type);
+        const size_t version = result_aggregate_type->getVersion();
 
         size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, version);
         column_to->reserve(size);
 
         for (size_t i = 0; i < size; ++i)

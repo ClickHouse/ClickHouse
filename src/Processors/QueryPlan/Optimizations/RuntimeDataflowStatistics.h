@@ -69,10 +69,18 @@ class RuntimeDataflowStatisticsCacheUpdater
     {
         std::atomic_size_t counter{0};
 
+        /// Aggregate-state values covered by `serialized_state_bytes` below. Written under the mutex,
+        /// but read without it to decide whether a block that is not sampled can be extrapolated instead
+        /// of serialized (the value only grows, so a non-zero read stays valid).
+        std::atomic_size_t serialized_state_values{0};
+
         std::mutex mutex;
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
+        /// Serialized size of the aggregate-state columns of the sampled blocks; together with
+        /// `serialized_state_values` it gives the per-value figure used to extrapolate unsampled blocks.
+        size_t serialized_state_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
 #include <Core/Settings.h>
@@ -292,20 +293,59 @@ size_t getMinBytesForPrefetch()
 namespace DB
 {
 
-size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
+namespace
 {
+
+/// The compressed format writes a checksum and a block header in front of every compressed block, so a sample
+/// of a few bytes comes out of `CompressedWriteBuffer` larger than it went in. When the states are actually sent,
+/// that framing is amortized over `min_compress_block_size` of data, so a sample that is dominated by it says
+/// nothing about how well the states compress. Report such a sample as incompressible instead of as expanding:
+/// the compression ratio derived from it stays at 1, exactly what the caller assumed before the ratio was measured.
+size_t compressedSampleSize(size_t sample_bytes, size_t compressed_bytes)
+{
+    return std::min(sample_bytes, compressed_bytes);
+}
+
+}
+
+Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
+{
+    /// `NativeWriter` serializes the states through the `SerializationAggregateFunction` of the output
+    /// header's `DataTypeAggregateFunction` (see `prepareOutputBlockColumns`), which passes the type's
+    /// version to `IAggregateFunction::serialize`. Resolve the same versions here, so that states with
+    /// an explicit older version - e.g. `AggregateFunction(0, sumMap, ...)` on the merge path, where
+    /// `aggregate_state_types` preserves the input header's type - are measured in the format that is
+    /// actually sent, not in the default one.
+    std::vector<std::optional<size_t>> state_versions(params.aggregates_size);
+    for (size_t j = 0; j < params.aggregates_size; ++j)
+        if (const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(aggregate_state_types[j].get()))
+            state_versions[j] = state_type->getVersion();
+
     auto estimate_size_of_compressed_state = [&](auto & table)
     {
-        size_t res = 0;
+        CompressedStateSizeEstimate res;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             /// We only interested in the size of compressed state, not the serialized representation itself.
-            NullWriteBuffer wb;
-            CompressedWriteBuffer wbuf(wb);
+            /// The states have to be serialized through `compressed_buf` and not into `null_buf` directly,
+            /// otherwise nothing gets compressed and we measure the serialized size instead of the compressed one.
+            NullWriteBuffer null_buf;
+            CompressedWriteBuffer compressed_buf(null_buf);
 
-            /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
-            /// In two-level case we sample across 256 buckets, so we can use a larger period.
-            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
+            /// The total is extrapolated from the sample mean, so the sample must be large enough for
+            /// skewed distributions - e.g. `uniqExact` or `groupArray` states where a few giant states
+            /// hold most of the bytes: whether the giants land on the sampled positions swings the
+            /// extrapolation several-fold, and the layout of a hash table depends on the insertion order,
+            /// so with a small sample the estimate is also unstable from run to run. In the single-level
+            /// case (bucket == -1) there is one hash table, and we aim at ~1000 samples from it, measuring
+            /// tables of up to a thousand states exactly. In the two-level case we sample across 256
+            /// buckets, taking at most one sample per 100 states, which also yields at least ~1000 samples
+            /// for any table large enough to have been converted. The samples have to span the whole
+            /// table: iteration over the fixed-key hash tables goes in key order, so sampling only a
+            /// prefix would be biased whenever the state size correlates with the key.
+            const auto period = bucket == -1
+                ? std::max<size_t>((table.size() + 999) / 1000, 1)
+                : std::max<size_t>((table.size() + 99) / 100, 100);
 
             size_t it = 0;
             table.forEachMapped(
@@ -314,15 +354,21 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        is_simple_count
+                            ? writeVarUInt(getInlineCountState(place), compressed_buf)
+                            : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);
                     }
-                    /// A hundred samples should be enough to get a good estimate.
-                    return it < 100 * period;
                 });
 
-            wbuf.finalize();
-            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
+            compressed_buf.finalize();
+            if (it)
+            {
+                /// `compressed_buf.count()` is the size of the sample before compression, `null_buf.count()`
+                /// is the size of the compressed data that reached the underlying buffer.
+                res.bytes += static_cast<size_t>(table.size() * compressed_buf.count() / ((it + period - 1) / period));
+                res.sample_bytes += compressed_buf.count();
+                res.compressed_bytes += compressedSampleSize(compressed_buf.count(), null_buf.count());
+            }
         }
         return res;
     };
@@ -336,15 +382,18 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         if (!result.without_key)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
 
-        size_t res = 0;
+        CompressedStateSizeEstimate res;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            NullWriteBuffer wb;
-            CompressedWriteBuffer wbuf(wb);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
-            wbuf.finalize();
-            res += wb.count();
+            NullWriteBuffer null_buf;
+            CompressedWriteBuffer compressed_buf(null_buf);
+            is_simple_count
+                ? writeVarUInt(getCountState(result.without_key), compressed_buf)
+                : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);
+            compressed_buf.finalize();
+            res.bytes += compressed_buf.count();
+            res.sample_bytes += compressed_buf.count();
+            res.compressed_bytes += compressedSampleSize(compressed_buf.count(), null_buf.count());
         }
         return res;
     }

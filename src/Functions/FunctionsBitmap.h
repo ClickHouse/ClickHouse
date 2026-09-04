@@ -155,7 +155,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * array_type = typeid_cast<const DataTypeArray *>(from_type);
@@ -164,29 +164,32 @@ public:
         DataTypes argument_types = {nested_type};
 
         WhichDataType which(nested_type);
+        const auto & aggregate_result_type = assert_cast<const DataTypeAggregateFunction &>(*result_type);
+        const size_t version = aggregate_result_type.getVersion();
+
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count, version);
         if (which.isUInt16())
-            return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count, version);
         if (which.isUInt32())
-            return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count, version);
         if (which.isUInt64())
-            return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count, version);
         if (which.isInt8())
-            return executeBitmapData<Int8>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int8>(argument_types, arguments, input_rows_count, version);
         if (which.isInt16())
-            return executeBitmapData<Int16>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int16>(argument_types, arguments, input_rows_count, version);
         if (which.isInt32())
-            return executeBitmapData<Int32>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int32>(argument_types, arguments, input_rows_count, version);
         if (which.isInt64())
-            return executeBitmapData<Int64>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int64>(argument_types, arguments, input_rows_count, version);
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, size_t version) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
@@ -201,7 +204,7 @@ private:
         auto action = NullsAction::EMPTY;
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
             AggregateFunctionGroupBitmapData<T>::name(), action, argument_types, params_row, properties);
-        auto col_to = ColumnAggregateFunction::create(bitmap_function);
+        auto col_to = ColumnAggregateFunction::create(bitmap_function, version);
         col_to->reserve(input_rows_count);
 
         size_t pos = 0;
@@ -357,21 +360,21 @@ public:
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            return executeIntType<UInt8>(arguments, input_rows_count);
+            return executeIntType<UInt8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt16())
-            return executeIntType<UInt16>(arguments, input_rows_count);
+            return executeIntType<UInt16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt32())
-            return executeIntType<UInt32>(arguments, input_rows_count);
+            return executeIntType<UInt32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt64())
-            return executeIntType<UInt64>(arguments, input_rows_count);
+            return executeIntType<UInt64>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt8())
-            return executeIntType<Int8>(arguments, input_rows_count);
+            return executeIntType<Int8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt16())
-            return executeIntType<Int16>(arguments, input_rows_count);
+            return executeIntType<Int16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt32())
-            return executeIntType<Int32>(arguments, input_rows_count);
+            return executeIntType<Int32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt64())
-            return executeIntType<Int64>(arguments, input_rows_count);
+            return executeIntType<Int64>(arguments, input_rows_count, aggr_type->getVersion());
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
@@ -380,7 +383,7 @@ private:
     using ToType = UInt64;
 
     template <typename T>
-    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, size_t version) const
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
@@ -419,7 +422,7 @@ private:
         else
             container2 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[2]).getData();
 
-        auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
+        auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction(), version);
         col_to->reserve(input_rows_count);
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -544,21 +547,21 @@ public:
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            return executeIntType<UInt8>(arguments, input_rows_count);
+            return executeIntType<UInt8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt16())
-            return executeIntType<UInt16>(arguments, input_rows_count);
+            return executeIntType<UInt16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt32())
-            return executeIntType<UInt32>(arguments, input_rows_count);
+            return executeIntType<UInt32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt64())
-            return executeIntType<UInt64>(arguments, input_rows_count);
+            return executeIntType<UInt64>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt8())
-            return executeIntType<Int8>(arguments, input_rows_count);
+            return executeIntType<Int8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt16())
-            return executeIntType<Int16>(arguments, input_rows_count);
+            return executeIntType<Int16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt32())
-            return executeIntType<Int32>(arguments, input_rows_count);
+            return executeIntType<Int32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt64())
-            return executeIntType<Int64>(arguments, input_rows_count);
+            return executeIntType<Int64>(arguments, input_rows_count, aggr_type->getVersion());
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
@@ -567,7 +570,7 @@ private:
     using ToType = UInt64;
 
     template <typename T>
-    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeIntType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, size_t version) const
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
@@ -618,7 +621,7 @@ private:
 
         const ColumnArray::Offsets & to_offsets = array2->getOffsets();
         const ColumnVector<UInt64>::Container & to_container = typeid_cast<const ColumnVector<UInt64> &>(array2->getData()).getData();
-        auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
+        auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction(), version);
         col_to->reserve(input_rows_count);
 
         size_t from_start = 0;
@@ -1149,28 +1152,28 @@ public:
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(arguments, input_rows_count);
+            return executeBitmapData<UInt8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt16())
-            return executeBitmapData<UInt16>(arguments, input_rows_count);
+            return executeBitmapData<UInt16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt32())
-            return executeBitmapData<UInt32>(arguments, input_rows_count);
+            return executeBitmapData<UInt32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isUInt64())
-            return executeBitmapData<UInt64>(arguments, input_rows_count);
+            return executeBitmapData<UInt64>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt8())
-            return executeBitmapData<Int8>(arguments, input_rows_count);
+            return executeBitmapData<Int8>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt16())
-            return executeBitmapData<Int16>(arguments, input_rows_count);
+            return executeBitmapData<Int16>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt32())
-            return executeBitmapData<Int32>(arguments, input_rows_count);
+            return executeBitmapData<Int32>(arguments, input_rows_count, aggr_type->getVersion());
         if (which.isInt64())
-            return executeBitmapData<Int64>(arguments, input_rows_count);
+            return executeBitmapData<Int64>(arguments, input_rows_count, aggr_type->getVersion());
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeBitmapData(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, size_t version) const
     {
         const ColumnAggregateFunction * column_ptrs[2];
         bool is_column_const[2];
@@ -1188,7 +1191,7 @@ private:
             }
         }
 
-        auto col_to = ColumnAggregateFunction::create(column_ptrs[0]->getAggregateFunction());
+        auto col_to = ColumnAggregateFunction::create(column_ptrs[0]->getAggregateFunction(), version);
 
         col_to->reserve(input_rows_count);
 
