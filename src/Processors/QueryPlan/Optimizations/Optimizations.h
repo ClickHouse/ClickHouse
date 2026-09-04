@@ -299,6 +299,7 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeStreamingWindowFunctions(QueryPlan::Node & root, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);

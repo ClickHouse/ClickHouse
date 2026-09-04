@@ -37,6 +37,11 @@ public:
 
         /// Merges multiple sorted streams into a single sorted output.
         MergingSorted,
+
+        /// Merges K streams into one (by `prefix_description`) without finish-sorting.
+        /// Used when the downstream `WindowStep` runs `StreamingLagTransform`:
+        /// all rows for a given prefix-key group must arrive in a single stream.
+        MergeOnly,
     };
 
     struct Settings
@@ -109,7 +114,12 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const override { return result_description; }
+    const SortDescription & getSortDescription() const override
+    {
+        if (type == Type::MergeOnly)
+            return merge_sort_description;
+        return result_description;
+    }
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
@@ -136,6 +146,17 @@ public:
     const Settings & getSettings() const { return sort_settings; }
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
+
+    /// Convert to `MergeOnly`: merges K streams into one ordered by `merge_desc` (the full
+    /// storage ORDER BY) so that `StreamingLagTransform` downstream sees rows in
+    /// the correct per-partition order.
+    void convertToMergeOnly(SortDescription merge_desc)
+    {
+        type = Type::MergeOnly;
+        merge_sort_description = std::move(merge_desc);
+    }
+
+    const SortDescription & getPrefixDescription() const { return prefix_description; }
 
     /// Switch to a full sort that scatters the input by the hash of the sort key into exactly
     /// `partitions` independent partitions and sorts each partition separately, producing one sorted
@@ -217,6 +238,11 @@ private:
 
     SortDescription prefix_description;
     const SortDescription result_description;
+
+    /// Non-empty only when `type == Type::MergeOnly`. The sort description used for
+    /// `mergingSorted` — typically the full storage ORDER BY, which is a superset of
+    /// `prefix_description` and guarantees correct per-partition ordering downstream.
+    SortDescription merge_sort_description;
 
     SortDescription partition_by_description;
     /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the

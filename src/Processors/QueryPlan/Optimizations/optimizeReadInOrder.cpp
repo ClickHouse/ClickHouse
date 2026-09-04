@@ -32,7 +32,11 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <optional>
 
 #include <stack>
 
@@ -1959,6 +1963,327 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     return 0;
+}
+
+/// After `optimizeReadInOrder` has converted a `SortingStep` to `FinishSorting`,
+/// check whether the downstream `WindowStep` can be replaced with
+/// `StreamingLagTransform` to eliminate the blocking `FinishSortingTransform`
+/// and its O(N) peak memory footprint.
+///
+/// Streaming is applicable when:
+///   1. All window functions are `lagInFrame` with offset 1.  Accepted call forms:
+///      `lagInFrame(col)`, `lagInFrame(col, 1)`, `lagInFrame(col, 1, const_default)`.
+///      For the two- and three-argument forms the offset must be a constant column
+///      equal to 1; non-constant or other offsets fall back to `WindowTransform`.
+///   2. The `SortingStep` is in `FinishSorting` mode (storage ordering is already
+///      providing the prefix).
+///   3. `prefix_description` is a strict prefix of `window.partition_by`
+///      (i.e. some suffix partition columns exist beyond the storage-order prefix).
+///
+/// When streaming is applied:
+///   - `SortingStep` is converted to `MergeOnly`: it merges K input streams into one
+///     (by `prefix_description`) without finish-sorting, so that all rows for a given
+///     prefix-key group arrive in a single stream.
+///   - `WindowStep` is set to streaming mode; its `transformPipeline` creates a single
+///     `StreamingLagTransform` instead of `WindowTransform`.
+static void tryStreamWindowFunctions(QueryPlan::Node & node)
+{
+    auto * window = typeid_cast<WindowStep *>(node.step.get());
+    if (!window)
+        return;
+
+    if (node.children.size() != 1)
+        return;
+
+    auto * sorting_node = node.children.front();
+    auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting || sorting->getType() != SortingStep::Type::FinishSorting)
+        return;
+
+    const auto & prefix_description = sorting->getPrefixDescription();
+    if (prefix_description.empty())
+        return;
+
+    /// All window functions must be `lagInFrame` with offset 1.  Accepted forms:
+    ///   lagInFrame(col)              — one argument, offset defaults to 1
+    ///   lagInFrame(col, 1)           — two arguments, offset must be constant 1
+    ///   lagInFrame(col, 1, default)  — three arguments, offset constant 1, explicit default
+    const auto & window_funcs = window->getWindowFunctions();
+    if (window_funcs.empty())
+        return;
+
+    const Block & window_input = *window->getInputHeaders()[0];
+
+    for (const auto & func : window_funcs)
+    {
+        if (func.aggregate_function->getName() != "lagInFrame")
+            return;
+        const size_t nargs = func.argument_types.size();
+        if (nargs < 1 || nargs > 3)
+            return;
+        if (nargs >= 2)
+        {
+            /// Verify the offset argument is a constant column with value 1.
+            const auto * offset_col_entry = window_input.findByName(func.argument_names[1]);
+            if (!offset_col_entry || !offset_col_entry->column || !isColumnConst(*offset_col_entry->column))
+                return;
+            const Field offset_val = (*offset_col_entry->column)[0];
+            if (offset_val != Field(Int64(1)) && offset_val != Field(UInt64(1)))
+                return;
+        }
+    }
+
+    /// Validate the window frame.  `lagInFrame(col, 1)` equals "previous row in
+    /// partition order (or default if first)" exactly when the immediately
+    /// preceding row is guaranteed to lie inside the frame.  That holds when:
+    ///   - frame start is UNBOUNDED PRECEDING (frame_start == partition_start), AND
+    ///   - frame end is not a fixed PRECEDING offset (which would place frame_end
+    ///     before the preceding row and make lagInFrame always return the default).
+    /// Concretely this accepts the default RANGE BETWEEN UNBOUNDED PRECEDING AND
+    /// CURRENT ROW as well as ROWS BETWEEN UNBOUNDED PRECEDING AND <anything that
+    /// is not N PRECEDING>.  Any other frame falls back to WindowTransform.
+    {
+        const auto & frame = window->getWindowDescription().frame;
+        if (frame.begin_type != WindowFrame::BoundaryType::Unbounded || !frame.begin_preceding)
+            return;
+        if (frame.end_type == WindowFrame::BoundaryType::Offset && frame.end_preceding)
+            return;
+    }
+
+    /// `prefix_description` must be a strict prefix of `partition_by`.
+    const auto & partition_by = window->getWindowDescription().partition_by;
+    if (prefix_description.size() >= partition_by.size())
+        return;
+
+    for (size_t i = 0; i < prefix_description.size(); ++i)
+    {
+        if (prefix_description[i].column_name != partition_by[i].column_name)
+            return;
+    }
+
+    /// Collect the suffix partition column names (the non-prefix PARTITION BY columns).
+    std::vector<std::string> suffix_col_names;
+    suffix_col_names.reserve(partition_by.size() - prefix_description.size());
+    for (size_t i = prefix_description.size(); i < partition_by.size(); ++i)
+        suffix_col_names.push_back(partition_by[i].column_name);
+
+    /// `StreamingLagTransform` delimits partitions by `SipHash` of the raw bytes of the
+    /// partition-key columns (`IColumn::updateHashWithValue`), whereas `WindowTransform` uses
+    /// `compareAt`.  For floating-point values the two disagree: `compareAt` treats `-0.0` and
+    /// `+0.0` as equal and treats all `NaN` values as equal, while the raw-byte hash does not.
+    /// A float-bearing partition key would therefore be split into several `state_map_` entries
+    /// and yield `lagInFrame` results different from the non-optimised `WindowTransform` path.
+    /// The same disagreement can happen through a runtime-typed column (`Dynamic`, `JSON`/`Object`,
+    /// or a `Variant` holding one of those) even though its declared type gives no static hint of
+    /// a nested float: `forEachChild` only walks statically-declared child types, so it cannot see
+    /// the actual type stored in a `Dynamic`/`Object` value.  Reject those via `hasDynamicStructure`,
+    /// which recurses through wrapping containers (`Array`, `Map`, `Tuple`, `Nullable`,
+    /// `LowCardinality`) as well.
+    /// Skip the optimisation whenever any partition-key column (prefix or suffix) is or contains
+    /// a floating-point type, or has a dynamic internal structure; the canonicalisation needed to
+    /// lift this restriction is tracked in https://github.com/ClickHouse/ClickHouse/issues/105941.
+    {
+        auto contains_float = [](const IDataType & type)
+        {
+            if (isFloat(type))
+                return true;
+            bool found = false;
+            type.forEachChild([&](const IDataType & child)
+            {
+                if (isFloat(child))
+                    found = true;
+            });
+            return found;
+        };
+
+        auto is_unsafe_partition_key_type = [&](const IDataType & type)
+        {
+            return contains_float(type) || type.hasDynamicStructure();
+        };
+
+        for (const auto & desc : prefix_description)
+        {
+            const auto * entry = window_input.findByName(desc.column_name);
+            if (!entry || is_unsafe_partition_key_type(*entry->type))
+                return;
+        }
+        for (const auto & name : suffix_col_names)
+        {
+            const auto * entry = window_input.findByName(name);
+            if (!entry || is_unsafe_partition_key_type(*entry->type))
+                return;
+        }
+    }
+
+    /// Collect value column names and optional explicit defaults for each function.
+    std::vector<std::string> value_col_names;
+    std::vector<std::optional<Field>> default_values;
+    value_col_names.reserve(window_funcs.size());
+    default_values.reserve(window_funcs.size());
+    for (const auto & func : window_funcs)
+    {
+        value_col_names.push_back(func.argument_names[0]);
+        if (func.argument_names.size() == 3)
+        {
+            const auto * default_col_entry = window_input.findByName(func.argument_names[2]);
+            if (!default_col_entry || !default_col_entry->column || !isColumnConst(*default_col_entry->column))
+                return;
+            /// Materialize the default through the same accurate typed-column cast that
+            /// `WindowFunctionLagLeadImpl::castColumn` applies in `WindowTransform`, so the
+            /// streaming path yields the identical value (`convertFieldToType` is not equivalent:
+            /// it loses the source type for nested `Tuple`/`Array`/`Map` elements).
+            ColumnWithTypeAndName default_arg{
+                default_col_entry->column->cloneResized(1), func.argument_types[2], func.argument_names[2]};
+            ColumnPtr cast_column = castColumnAccurate(default_arg, func.argument_types[0]);
+            default_values.push_back((*cast_column)[0]);
+        }
+        else
+            default_values.push_back(std::nullopt);
+    }
+
+    /// Find `ReadFromMergeTree` below `sorting_node` (there may be an `ExpressionStep` in between).
+    if (sorting_node->children.size() != 1)
+        return;
+    auto * read_node = sorting_node->children.front();
+    if (typeid_cast<ExpressionStep *>(read_node->step.get()))
+    {
+        if (read_node->children.size() != 1)
+            return;
+        read_node = read_node->children.front();
+    }
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+    if (!read_from_merge_tree)
+        return;
+
+    const auto & input_order = read_from_merge_tree->getInputOrder();
+    if (!input_order)
+        return;
+
+    const size_t full_key_size = read_from_merge_tree->getStorageMetadata()->getSortingKey().column_names.size();
+    if (full_key_size == 0)
+        return;
+
+    const auto & window_order_by = window->getWindowDescription().order_by;
+
+    /// `lagInFrame` does not require an `ORDER BY`.  Without one the regular window path
+    /// still sorts by the full `partition_by` (`full_sort_description` degenerates to it),
+    /// while the streaming path would merge by `prefix_description` alone and visit the rows
+    /// of each suffix partition in storage-key order instead.  `lagInFrame` is
+    /// order-sensitive, so toggling the setting would change which row is considered
+    /// "previous" inside a partition.  The suffix partition columns are by definition not
+    /// covered by the storage-order prefix, so the full `partition_by` order cannot be
+    /// preserved without an actual sort — fall back to `WindowTransform`.
+    if (window_order_by.empty())
+        return;
+
+    /// The storage key must fully cover prefix + window ORDER BY columns.
+    if (prefix_description.size() + window_order_by.size() > full_key_size)
+        return;
+
+    /// Build merge sort description: prefix columns + window ORDER BY columns.
+    SortDescription merge_sort_description = prefix_description;
+    for (const auto & col : window_order_by)
+        merge_sort_description.push_back(col);
+
+    /// The storage order must extend the already-established prefix with the window `ORDER BY`
+    /// columns.  Reuse the read-in-order matcher instead of comparing column names against the
+    /// sorting key by hand: the sort description holds plan column names, which the analyzer
+    /// qualifies (`__table1.ts`) and which may be aliases or monotonic expressions of key
+    /// columns, so a plain name comparison rejects every query on the default (analyzer +
+    /// `query_plan_read_in_order`) path.  The matcher resolves those names through the
+    /// expression DAG below the sort and also handles reverse storage keys, collations, nulls
+    /// ordering and fixed (constant) key columns.
+    std::optional<ActionsDAG> sorting_dag;
+    FixedColumns fixed_columns;
+    size_t dag_limit = 0;
+    buildSortingDAG(*sorting_node->children.front(), sorting_dag, fixed_columns, dag_limit);
+    if (sorting_dag && !fixed_columns.empty())
+        enrichFixedColumns(*sorting_dag, fixed_columns);
+
+    auto extended_order
+        = buildInputOrderFromSortDescription(read_from_merge_tree, fixed_columns, sorting_dag, merge_sort_description, /*limit=*/0);
+
+    /// Every column of `prefix + window ORDER BY` must be matched, and widening the prefix must
+    /// not change the direction the read was already set up with.
+    if (!extended_order.input_order
+        || extended_order.input_order->sort_description_for_merging.size() != merge_sort_description.size()
+        || extended_order.input_order->direction != input_order->direction)
+        return;
+
+    const size_t merge_prefix_size = extended_order.input_order->used_prefix_of_sorting_key_size;
+    if (merge_prefix_size < input_order->used_prefix_of_sorting_key_size)
+        return;
+
+    /// Expand the read-in-order prefix so per-layer internal merges also use the extended key.
+    /// Keep the read limit that the earlier `requestReadingInOrder` installed: `ReadFromMergeTree`
+    /// uses `input_order_info->limit` to stop in-order scans early (e.g. for
+    /// `SELECT lagInFrame(...) OVER (...) FROM t LIMIT 10`), and re-requesting with `0` here makes
+    /// it read more granules than the limit needs.  The limit stays valid because the widened
+    /// prefix only refines an order the read already delivers.
+    if (!read_from_merge_tree->requestReadingInOrder(merge_prefix_size, input_order->direction, input_order->limit))
+        return;
+
+    /// Apply the transformation.
+    sorting->convertToMergeOnly(std::move(merge_sort_description));
+    window->enableStreamingMode(
+        prefix_description,
+        std::move(suffix_col_names),
+        std::move(value_col_names),
+        std::move(default_values));
+}
+
+/// Walk the plan from the root and apply the streaming-lag rewrite to every eligible
+/// `WindowStep`, skipping candidates that have an order-dependent `WindowStep` ancestor.
+///
+/// The rewrite weakens the order the sort below the window delivers: instead of the
+/// window's `full_sort_description` (`partition_by + order_by`) the pipeline only
+/// produces `prefix_description + order_by`.  Plan construction
+/// (`InterpreterSelectQuery::executeWindow` and the analyzer's `addWindowSteps`)
+/// decides whether a later window needs its own `SortingStep` by checking prefixes of
+/// the previous window's original `full_sort_description` — before this optimization
+/// runs.  So if a `WindowStep` sits above the candidate without a full `SortingStep`
+/// in between, it may be relying on the candidate's original output order (e.g.
+/// `lagInFrame(x) OVER (PARTITION BY a, b ORDER BY t)` followed by
+/// `row_number() OVER (PARTITION BY a, b)` on storage `ORDER BY (a, t)`), and
+/// weakening that order would feed it improperly sorted data.  Only a full sort
+/// re-establishes an order independent of its input; every other step (including
+/// `FinishSorting`/`MergingSorted`, which merely refine or merge an existing order)
+/// conservatively keeps the dependency.
+void optimizeStreamingWindowFunctions(
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & /*nodes*/,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.reuse_storage_ordering_for_window_functions)
+        return;
+
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        bool has_order_dependent_window_above;
+    };
+
+    std::vector<Frame> stack;
+    stack.push_back({.node = &root, .has_order_dependent_window_above = false});
+
+    while (!stack.empty())
+    {
+        const auto [node, has_order_dependent_window_above] = stack.back();
+        stack.pop_back();
+
+        if (!has_order_dependent_window_above)
+            tryStreamWindowFunctions(*node);
+
+        bool children_flag = has_order_dependent_window_above;
+        if (typeid_cast<WindowStep *>(node->step.get()))
+            children_flag = true;
+        else if (const auto * sorting = typeid_cast<SortingStep *>(node->step.get());
+                 sorting && sorting->getType() == SortingStep::Type::Full)
+            children_flag = false;
+
+        for (auto * child : node->children)
+            stack.push_back({.node = child, .has_order_dependent_window_above = children_flag});
+    }
 }
 
 }
