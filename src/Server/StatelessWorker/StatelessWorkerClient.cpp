@@ -8,6 +8,10 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
+#include <Common/logger_useful.h>
+#include <Core/Field.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -116,6 +120,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
+    uri.addQueryParameter("task_status_version", toString(DBMS_TCP_PROTOCOL_VERSION));
 
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -125,8 +130,17 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
         .withDelayInit(false)
         .create(creds);
 
+    /// In case no version is sent back, the version protocl is  DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS
+    UInt64 response_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
+    for (const auto & header : in->getResponseHeaders())
+    {
+        const auto & name_and_value = header.safeGet<Tuple>();
+        if (name_and_value.at(0).safeGet<String>() == "X-ClickHouse-Task-Status-Version")
+            response_version = parse<UInt64>(name_and_value.at(1).safeGet<String>());
+    }
+
     DistributedQueryTaskStatus result;
-    result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
+    result.read(*in, response_version);
     in->eof();
 
     return result;

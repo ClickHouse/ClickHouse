@@ -14,6 +14,10 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+#include <Columns/IColumn.h>
 #include <exception>
 #include <mutex>
 
@@ -30,6 +34,12 @@ namespace DB
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
+}
+
+namespace Setting
+{
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
 }
 
 /// TODO: move
@@ -101,6 +111,15 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
 
+    /// Collect this task's logs for forwarding to the coordinator when the initiator asked for them
+    const LogsLevel client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
+    if (client_logs_level != LogsLevel::none)
+    {
+        task_state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+        task_state->logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
+        task_state->logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
+    }
+
     {
         std::lock_guard lock(tasks_mutex);
         /// If two starts of the same id race, keep the first; overwriting would orphan the running task.
@@ -122,40 +141,54 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         task_progress->incrementPiecewiseAtomically(progress);
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress]() mutable
+    auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress,
+        logs_queue = task_state->logs_queue, client_logs_level] mutable
     {
+        /// The promise must be fulfilled strictly after the last log line of this task:
+        /// `getStatus` treats a ready future as a terminal state
+        std::optional<TaskFailure> task_failure;
         try
         {
-            /// QueryScope and process-list insertion can throw (e.g. the worker is at its query
-            /// limit); keep them inside the try so a failure completes the promise with the error
-            /// rather than leaving it unfulfilled (which would make get_status hang or throw).
+            /// QueryScope creation can throw, hence outer try-catch
             auto query_scope = QueryScope::create(query_context);
 
-            Stopwatch start_watch(CLOCK_MONOTONIC);
-            ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
-            auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
-            auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
-            query_context->setProcessListElement(process_list_entry->getQueryStatus());
+            if (logs_queue)
+                CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
+            try
+            {
+                Stopwatch start_watch(CLOCK_MONOTONIC);
+                ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
+                auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
+                /// Process-list insertion can throw (query limit); keep it inside the try.
+                auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
+                query_context->setProcessListElement(process_list_entry->getQueryStatus());
 
-            /// A dispatched task is by definition not the initiator's in-process execution, so its
-            /// exchanges use the streaming/persisted transports rather than in-memory queues.
-            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
-                /*execute_locally=*/false, is_task_cancelled, update_progress);
-            task_promise->set_value(std::nullopt);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("StatelessTaskExecutor"),
-                fmt::format("Task {} failed", task_description.task.task_id));
-            auto failure = currentTaskFailure();
-            /// Lets the failures this one causes in the connected tasks reach the initiator first.
-            fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
+                /// A dispatched task is by definition not the initiator's in-process execution, so its
+                /// exchanges use the streaming/persisted transports rather than in-memory queues.
+                doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
+                    /*execute_locally=*/false, is_task_cancelled, update_progress);
+            }
+            catch (...)
+            {
+                /// Log while still attached to the thread group, so the failure summary reaches
+                /// the client's log stream along with the exception context the query machinery
+                /// already logged from inside doExecuteTask.
+                tryLogCurrentException(getLogger("StatelessTaskExecutor"),
+                    fmt::format("Task {} failed", task_description.task.task_id));
+                fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
             {
                 if (!DistributedQueryCancellation::isConsequence(failure.code))
                     sleepForMilliseconds(1000);
             });
-            task_promise->set_value(std::move(failure));
+                task_failure = currentTaskFailure();
+            }
         }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            task_failure = currentTaskFailure();
+        }
+        task_promise->set_value(task_failure);
     };
 
     try
@@ -177,31 +210,81 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     return Result::Ok;
 }
 
+namespace
+{
+
+// Pops everything held in log currently
+Block drainLogs(const InternalTextLogsQueuePtr & logs_queue)
+{
+    if (!logs_queue)
+        return {};
+
+    MutableColumns logs_columns;
+    MutableColumns curr_logs_columns;
+    size_t chunks = 0;
+
+    for (; logs_queue->tryPop(curr_logs_columns); ++chunks)
+    {
+        if (chunks == 0)
+        {
+            logs_columns = std::move(curr_logs_columns);
+        }
+        else
+        {
+            for (size_t j = 0; j < logs_columns.size(); ++j)
+                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+        }
+    }
+
+    if (chunks == 0)
+        return {};
+
+    Block block = InternalTextLogsQueue::getSampleBlock();
+    block.setColumns(std::move(logs_columns));
+
+
+    for (size_t r = 0; r < block.rows(); ++r)                                   // TEMP
+        LOG_DEBUG(getLogger("drainLogs"), "drained[{}] {} <{}> {}", r,          // TEMP
+            block.getByName("query_id").column->getDataAt(r),                   // TEMP
+            block.getByName("priority").column->getDataAt(r),                   // TEMP (raw byte; ignore)
+            block.getByName("text").column->getDataAt(r));                      // TEMP
+    return block;
+}
+
+}
+
 StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id, UInt64 wait_milliseconds)
 {
     /// Make a copy of task completion future to wait for it outside of the lock
     std::shared_future<std::optional<TaskFailure>> completion_future;
     std::shared_ptr<Progress> progress;
+    InternalTextLogsQueuePtr logs_queue;
     {
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
-            return TaskStatus{Result::UnknownTaskId, "", {}};
+            return TaskStatus{Result::UnknownTaskId, "", {}, {}};
         completion_future = it->second->completion_future;
         progress = it->second->progress;
+        logs_queue = it->second->logs_queue;
     }
 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
     {
         Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
-        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta)};
+        return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, drainLogs(logs_queue)};
     }
 
+    auto error_message = completion_future.get();
+    /// Drain only after the future is ready
+    Block logs = drainLogs(logs_queue);
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
     const auto & failure = completion_future.get();
+
     if (!failure)
-        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta)};
-    return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code};
+        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), 0, std::move(logs)};
+    else
+        return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs)};
 }
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & task_id)
