@@ -1,11 +1,15 @@
 <test>
-    <create_query>CREATE TABLE agg_in_order_if_null_map (k UInt32, x Nullable(Float64), cond UInt8) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE agg_in_order_if_null_map (k UInt32, x Nullable(Float64), cond UInt8, y Float64, cn Nullable(UInt8), w Nullable(Float64)) ENGINE = MergeTree ORDER BY k</create_query>
 
-    <fill_query>INSERT INTO agg_in_order_if_null_map SELECT intDiv(number, 8), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0 FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO agg_in_order_if_null_map SELECT intDiv(number, 8), if(number % 17 = 0, NULL, toFloat64(number % 1000)), number % 3 != 0, toFloat64(number % 1000), if(number % 23 = 0, NULL, toUInt8(number % 3 != 0)), if(number % 13 = 0, NULL, toFloat64(number % 97)) FROM numbers_mt(5000000)</fill_query>
     <fill_query>OPTIMIZE TABLE agg_in_order_if_null_map FINAL</fill_query>
 
     <query>SELECT k, sumIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
     <query>SELECT k, avgIfOrDefault(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT k, minIf(x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT k, sumIf(y, cn) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT k, argMinIf(y, x, cond) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT k, corr(x, w) FROM agg_in_order_if_null_map GROUP BY k SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS agg_in_order_if_null_map</drop_query>
 </test>
