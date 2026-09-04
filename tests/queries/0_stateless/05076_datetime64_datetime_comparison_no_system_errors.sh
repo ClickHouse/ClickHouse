@@ -44,4 +44,17 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_dt64_cmp
     WHERE A = 'x' AND Timestamp >= toDateTime64('2020-01-01 00:00:00.5', 9)"
 
+# The same narrowing exists for the time-of-day pair, and `enable_time_time64_type` is on by default.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_t64_cmp"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_t64_cmp (k UInt8, T Time64(9)) ENGINE = MergeTree ORDER BY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_t64_cmp VALUES (1, '12:00:00'), (2, '13:00:00')"
+
+time_query_id="05076_t64_${CLICKHOUSE_DATABASE}_${RANDOM}"
+$CLICKHOUSE_CLIENT --query_id="${time_query_id}" -q "
+    SELECT count() FROM t_t64_cmp WHERE k = 1 AND T >= toTime('11:00:00')"
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() = 0 FROM system.errors
+    WHERE name = 'TYPE_MISMATCH' AND query_id = '${time_query_id}'"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_t64_cmp"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_dt64_cmp"

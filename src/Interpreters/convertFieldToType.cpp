@@ -402,7 +402,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::Decimal64)
+        /// `Time64` is carried in a `Field` as `DecimalField<Decimal64>` too, but counts seconds of day
+        /// rather than seconds of epoch, so both narrowing branches below are keyed on the source type
+        /// rather than on the `Field` tag alone - otherwise a `Time64` constant aimed at a `DateTime`
+        /// column would be silently reinterpreted as an epoch.
+        if (which_type.isDateTime() && which_from_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// A `DateTime64` narrowed back to whole seconds. This is the reverse of the `DateTime64`
             /// branch below, and `LogicalExpressionOptimizerPass` round-trips through both to check that
@@ -413,9 +417,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & from_value = src.safeGet<Decimal64>();
             const UInt32 from_scale = from_value.getScale();
 
-            /// A sub-second part is not representable as `DateTime`, which is exactly the lossiness the
-            /// round trip is looking for. Report it as unconvertible instead of truncating silently.
-            if (strict && DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+            /// A sub-second part is not representable as `DateTime`. Reject it whatever `strict` says:
+            /// non-strict callers push the converted constant down as an exact comparison bound - see
+            /// `StorageMongoDB::visitWhereFunctionArguments` building a BSON filter - so truncating here
+            /// would turn `!=` and `<` at a sub-second boundary into silently missing rows.
+            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
                 return {};
 
             const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
@@ -426,6 +432,26 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 return {};
 
             return Field(static_cast<UInt64>(whole));
+        }
+
+        if (which_type.isTime() && which_from_type.isTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            /// The same narrowing for the time-of-day pair: `tryConvertToColumnType` round-trips a `Time`
+            /// constant through a `Time64` column exactly as it does for `DateTime`, and
+            /// `enable_time_time64_type` is on by default, so this leg was reachable too.
+            const auto & from_value = src.safeGet<Decimal64>();
+            const UInt32 from_scale = from_value.getScale();
+
+            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+                return {};
+
+            const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
+
+            /// `Time` holds an `Int32`, and its canonical `Field` type is `Int64`.
+            if (whole < std::numeric_limits<Int32>::min() || whole > std::numeric_limits<Int32>::max())
+                return {};
+
+            return Field(whole);
         }
 
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
