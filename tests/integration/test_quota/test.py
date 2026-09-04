@@ -1422,32 +1422,35 @@ def test_reload_users_xml_by_timer():
     time.sleep(1)  # The modification time of the 'quota.xml' file should be different,
     # because config files are reload by timer only when the modification time is changed.
     copy_quota_xml("tiny_limits.xml", reload_immediately=False)
-    assert_eq_with_retry(
-        instance,
-        "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
-        [
+    try:
+        assert_eq_with_retry(
+            instance,
+            "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
             [
-                "myQuota",
-                "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users_xml",
-                ["user_name"],
-                "[31556952]",
-                0,
-                "['default']",
-                "[]",
-            ]
-        ],
-        user="user_with_no_quota",
-    )
-    assert_eq_with_retry(
-        instance,
-        "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
-        user="user_with_no_quota",
-    )
+                [
+                    "myQuota",
+                    "e651da9c-a748-8703-061a-7e5e5096dae7",
+                    "users_xml",
+                    ["user_name"],
+                    "[31556952]",
+                    0,
+                    "['default']",
+                    "[]",
+                ]
+            ],
+            user="user_with_no_quota",
+        )
+        assert_eq_with_retry(
+            instance,
+            "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
+            [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
+            user="user_with_no_quota",
+        )
+    finally:
+        # Restore a clean config so later periodic reloads do not fail.
+        copy_quota_xml("no_quotas.xml")
 
-    # Restore a clean config so later periodic reloads do not fail.
-    copy_quota_xml("no_quotas.xml")
+    check_system_quotas("")
 
 
 def test_dcl_introspection():
