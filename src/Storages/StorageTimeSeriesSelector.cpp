@@ -775,8 +775,8 @@ namespace
                 = WholeMetricProbeNegativeMemo::makeKey(tags_table_id, counterexample->getTreeHash(/*ignore_aliases=*/true));
             if (WholeMetricProbeNegativeMemo::instance().tryUseCounterexampleFound(memo_key))
             {
-                LOG_DEBUG(log, "Keeping the id set condition for index analysis: reusing a recent whole-metric probe result for metric {}",
-                          quoteString(metric_name));
+                LOG_DEBUG(log, "Keeping the id set condition for index analysis: reusing a remembered whole-metric probe result for metric {} of tags table {}",
+                          quoteString(metric_name), tags_table_id.getNameForLogs());
                 return {};
             }
 

@@ -4,7 +4,7 @@
 
 # `timeSeriesSelector` gates its whole-metric primary-key range on a probe query over the tags
 # table, and the probe's counterexample-found verdict is reused for a bounded number of later
-# queries of the same shape. Two properties of that reuse are checked here.
+# queries of the same shape. Three properties of that reuse are checked here.
 #
 # A. The opposite verdict is never reused. A selector that matches the whole metric today stops
 #    matching it once a series is written with an id outside the metric's range; reusing the old
@@ -13,6 +13,9 @@
 #    whole-metric again is probed again. The reuse key excludes the query's time bounds, so a
 #    narrowed window - whose own probe finds no counterexample - reuses the entry until it expires;
 #    that is what this scenario uses to make the retirement observable.
+# C. Reuse skips the probe query itself. A and B read the emitted plan, which is the same whether
+#    the probe ran or its result was reused, so on their own they would stay green for an
+#    implementation that probes and then discards the answer.
 #
 # The range conditions carry the max-UUID literal, which is how the emission is detected below.
 
@@ -22,12 +25,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CH="${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --session_timezone UTC"
 
+# Scenario B counts statements to count verdict uses, which needs one plan build per statement. A
+# non-zero `automatic_parallel_replicas_mode` builds a second complete plan to decide whether
+# parallel replicas pay off, and that second build consumes a second use of the same verdict.
+ONE_PLAN_BUILD='SETTINGS automatic_parallel_replicas_mode = 0'
+
 # Prints 1 if the built plan carries the whole-metric id range, 0 otherwise. Each call builds the
 # plan once, i.e. consumes exactly one probe verdict.
 has_id_range_query() {
     echo "SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%'
           FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan
-                FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector($1, '$2', $3, $4)));"
+                FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector($1, '$2', $3, $4) $ONE_PLAN_BUILD));"
 }
 
 has_id_range() {
@@ -35,7 +43,7 @@ has_id_range() {
 }
 
 selector_rows() {
-    $CH -q "SELECT timestamp, value FROM timeSeriesSelector($1, '$2', $3, $4) ORDER BY value, timestamp;"
+    $CH -q "SELECT timestamp, value FROM timeSeriesSelector($1, '$2', $3, $4) ORDER BY value, timestamp $ONE_PLAN_BUILD;"
 }
 
 echo "-- A. the whole-metric verdict is not reused after an out-of-range series appears"
@@ -93,12 +101,48 @@ echo "reuse returns the same rows: $([ "$(selector_rows ts_b "$NARROW_SELECTOR" 
 
 # Build the plan repeatedly in one call and find the first query that is probed again. A verdict
 # that never expires would keep every value at 0.
-MAX_USES=200
+MAX_USES=40
 VERDICTS=$($CH -q "$(for _ in $(seq 1 $MAX_USES); do has_id_range_query ts_b "$NARROW_SELECTOR" 0 200; done)" | tr -d '\n')
-echo "probed again within $MAX_USES queries: $([ "${VERDICTS%%1*}" != "$VERDICTS" ] && echo 1 || echo 0)"
-echo "the verdict was reused at least once before that: $([ "${VERDICTS:0:1}" = 0 ] && echo 1 || echo 0)"
+REUSED_IN_LOOP=${VERDICTS%%1*}
+echo "probed again within $MAX_USES queries: $([ "$REUSED_IN_LOOP" != "$VERDICTS" ] && echo 1 || echo 0)"
+echo "plan builds that reused the verdict before the re-probe: $(( 2 + ${#REUSED_IN_LOOP} ))"
 echo "rows unchanged after the verdict was retired: $([ "$(selector_rows ts_b "$NARROW_SELECTOR" 0 200)" = "$ROWS_FRESH" ] && echo 1 || echo 0)"
 echo "rows in the narrow window:"
 echo "$ROWS_FRESH"
 
-$CH -q "DROP TABLE ts_b SYNC; DROP TABLE ts_a SYNC;"
+echo "-- C. reuse skips the probe's work, not just its emitted range"
+
+# Its own table, so this scenario cannot consume the reuse budget scenario B measures.
+$CH -q "
+DROP TABLE IF EXISTS ts_c SYNC;
+CREATE TABLE ts_c ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
+INSERT INTO ts_c (metric_name, tags, time_series) VALUES
+    ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
+    ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
+"
+
+# The series that fails the matcher is time-eligible, so the probe finds a counterexample and both
+# queries fall back to the id set condition. The query text is identical and the data does not
+# change between them, so their plans and their own reads are identical and the whole difference in
+# marks is the probe's read of the tags table - which the second query must not repeat.
+for comment in 05076_probe_1 05076_probe_2; do
+    $CH --log_comment "$comment" -q \
+        "SELECT sum(value) FROM timeSeriesSelector(ts_c, 'foo{env=\"prod\"}', 0, 1000) FORMAT Null"
+done
+
+$CH -q "SYSTEM FLUSH LOGS query_log;"
+
+marks_of() {
+    $CH -q "SELECT ProfileEvents['SelectedMarks'] FROM system.query_log
+            WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+                  AND log_comment = '$1'
+            ORDER BY event_time_microseconds DESC LIMIT 1;"
+}
+MARKS_PROBED=$(marks_of 05076_probe_1)
+MARKS_REUSED=$(marks_of 05076_probe_2)
+
+echo "reuse reads fewer marks than the probe: $([ "$MARKS_PROBED" -gt "$MARKS_REUSED" ] && echo 1 || echo 0)"
+# Positive control: without it two zeros - a query that read nothing at all - would also pass above.
+echo "the reusing query still reads marks of its own: $([ "$MARKS_REUSED" -gt 0 ] && echo 1 || echo 0)"
+
+$CH -q "DROP TABLE ts_c SYNC; DROP TABLE ts_b SYNC; DROP TABLE ts_a SYNC;"
