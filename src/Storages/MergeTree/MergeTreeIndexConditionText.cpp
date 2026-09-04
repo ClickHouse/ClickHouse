@@ -1741,8 +1741,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
         return false;
 
     /// A map element reads the value type's default for a key the map does not hold, while the index
-    /// stores terms only for the elements it does hold. So the index can be used only for a function
-    /// that returns false for that default.
+    /// stores terms only for the elements it does hold.
     const auto * function_dag_node = function_node.getDAGNode();
     const auto * element_dag_node = index_column_node.getDAGNode();
 
