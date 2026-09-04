@@ -47,7 +47,7 @@ The `clickhouse_postgres_service` resource has the following arguments:
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `name` | Yes | Human-readable name for the service. Immutable — changing it destroys and recreates the service. |
-| `cloud_provider` | For a standard create | Cloud provider hosting the instance. Currently only `aws` is supported. Omit for a read replica or point-in-time restore (inherited from the source). |
+| `cloud_provider` | For a standard create | Cloud provider hosting the instance: `aws`, or `gcp` (\[Private Preview\](TODO KG GCP Waitlist HERE)). Omit for a read replica or point-in-time restore (inherited from the source). |
 | `region` | For a standard create | Cloud region (for example, `us-east-1`). Omit for a read replica or point-in-time restore (inherited from the source). |
 | `size` | For a standard create | Instance size (VM SKU), for example `m6gd.large`. Resizable in place. Omit for a point-in-time restore (the restored instance comes up at the backup's size). |
 | `postgres_version` | No | Major Postgres version (for example, `18`). Changing the major version destroys and recreates the service. |

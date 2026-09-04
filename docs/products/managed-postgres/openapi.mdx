@@ -11,17 +11,11 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-Use the [ClickHouse OpenAPI](/products/cloud/features/admin-features/api/api-overview) to programmatically
-control your ClickHouse Managed Postgres services just like ClickHouse services. The
-same API also exposes a [Prometheus endpoint] for scraping service metrics.
-Already familiar with [OpenAPI]? Get your [API keys] and jump right to the
-[ClickHouse Managed Postgres API reference][pg-openapi]. Otherwise, follow along for a
-quick run-through.
+Use the [ClickHouse OpenAPI](/products/cloud/features/admin-features/api/api-overview) to programmatically control your ClickHouse Managed Postgres services just like ClickHouse services. The same API also exposes a [Prometheus endpoint][Prometheus endpoint] for scraping service metrics. Already familiar with [OpenAPI][OpenAPI]? Get your [API keys][API keys] and jump right to the [ClickHouse Managed Postgres API reference][pg-openapi]. Otherwise, follow along for a quick run-through.
 
 ## API Keys {#api-keys}
 
-Using the ClickHouse OpenAPI requires authentication; see [API keys] for how
-to create them. Then use them via basic auth credentials like so:
+Using the ClickHouse OpenAPI requires authentication; see [API keys][API keys] for how to create them. Then use them via basic auth credentials like so:
 
 ```bash
 KEY_ID=mykeyid
@@ -48,9 +42,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" | jq
 ```
 
-Now you've made your first Postgres API request: [list API] above lists all of
-the Postgres servers in your organization. The output should be something
-like:
+Now you've made your first Postgres API request: [list API][list API] above lists all of the Postgres servers in your organization. The output should be something like:
 
 ```json
 {
@@ -81,18 +73,15 @@ Let's explore the lifecycle of a Postgres service.
 
 ### Create {#create}
 
-First, create a new one
-using the [create API]. It requires the following properties in the JSON body
-of the request:
+First, create a new one using the [create API][create API]. It requires the following properties in the JSON body of the request:
 
 *   `name`: Name of the new Postgres service
-*   `provider`: Name of the cloud provider
+*   `provider`: Name of the cloud provider: `aws` (or `gcp` in \[Private Preview\](TODO KG GCP Waitlist HERE))
 *   `region`: Region within the provider's network in which to deploy the
     service
 *   `size`: The VM size
 
-See the [create API] docs for the possible values for these properties. In
-addition, let's specify Postgres 18 rather than the default, 17:
+See the [create API][create API] docs for the possible values for these properties. In addition, let's specify Postgres 18 rather than the default, 17:
 
 ```bash
 create_data='{
@@ -104,10 +93,7 @@ create_data='{
 }'
 ```
 
-Now use this data to create a new instance; note that it requires the content
-type header. Save the response: it is the only one that includes the service
-credentials (the [password reset] response also returns them when the request
-does not supply a password):
+Now use this data to create a new instance; note that it requires the content type header. Save the response: it is the only one that includes the service credentials (the [password reset][password reset] response also returns them when the request does not supply a password):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -168,8 +154,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 "running"
 ```
 
-Now you can use the `connectionString` property saved from the create response
-to connect, for example via [psql]:
+Now you can use the `connectionString` property saved from the create response to connect, for example via [psql][psql]:
 
 ```bash
 $ psql "$(echo "$pg_created" | jq -r .result.connectionString)"
@@ -181,13 +166,11 @@ Type "help" for help.
 postgres=#
 ```
 
-Type `\q` to exit [psql].
+Type `\q` to exit [psql][psql].
 
 ### Update {#update}
 
-The [patch API] supports updating a subset of the properties of a Managed
-Postgres service via [RFC 7396] JSON Merge Patch. Tags may be of particular
-interest for complex deployments; simply send them alone in the request:
+The [patch API][patch API] supports updating a subset of the properties of a Managed Postgres service via [RFC 7396][RFC 7396] JSON Merge Patch. Tags may be of particular interest for complex deployments; simply send them alone in the request:
 
 ```bash
 curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -221,9 +204,7 @@ The returned data should include the new tags:
 }
 ```
 
-The OpenAPI provides additional endpoints to update properties not supported
-by the [patch API]. For example, to update the [Postgres configuration],
-use the [config API]:
+The OpenAPI provides additional endpoints to update properties not supported by the [patch API][patch API]. For example, to update the [Postgres configuration][Postgres configuration], use the [config API][config API]:
 
 ```bash
 curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -262,7 +243,7 @@ Additional update APIs include:
 
 ### Delete {#delete}
 
-Use the [delete API] to delete a Postgres service.
+Use the [delete API][delete API] to delete a Postgres service.
 
 <Warning>
 Deleting a Postgres service completely removes the service and all of its
@@ -287,24 +268,15 @@ On success, the response will report status code 200, e.g.:
 
 ## Monitoring {#monitoring}
 
-Two Prometheus-compatible endpoints expose CPU, memory, I/O, connection, and
-transaction metrics for ClickHouse Managed Postgres services: one returns metrics for
-every service in the organization, the other for a single service. See the
-[Prometheus endpoint] page for setup and the [metrics reference] for the full
-list of metrics.
+Two Prometheus-compatible endpoints expose CPU, memory, I/O, connection, and transaction metrics for ClickHouse Managed Postgres services: one returns metrics for every service in the organization, the other for a single service. See the [Prometheus endpoint][Prometheus endpoint] page for setup and the [metrics reference][metrics reference] for the full list of metrics.
 
 ## Query insights {#query-insights}
 
-The per-statement telemetry behind the [Query Insights] tab in the cloud
-console is also available programmatically. Two endpoints expose the slowest
-query patterns on a service: one lists every pattern ranked by impact, the
-other returns a single pattern with its recent executions.
+The per-statement telemetry behind the [Query Insights][Query Insights] tab in the cloud console is also available programmatically. Two endpoints expose the slowest query patterns on a service: one lists every pattern ranked by impact, the other returns a single pattern with its recent executions.
 
 ### List slow query patterns {#list-slow-query-patterns}
 
-The [slow patterns API] returns aggregate metrics for the slowest query
-patterns observed over a time window. The window is required — pass
-`from_date` and `to_date` as RFC 3339 timestamps:
+The [slow patterns API][slow patterns API] returns aggregate metrics for the slowest query patterns observed over a time window. The window is required — pass `from_date` and `to_date` as RFC 3339 timestamps:
 
 ```bash
 FROM=2026-05-25T00:00:00Z
@@ -361,10 +333,7 @@ single pattern.
 
 ### Get a slow query pattern {#get-slow-query-pattern}
 
-Pass a `queryId` from the list response to the [slow pattern API] to get that
-pattern's aggregate metrics alongside its most recent individual executions.
-The `db_name`, `db_user`, and `db_operation` that identify the pattern are
-required:
+Pass a `queryId` from the list response to the [slow pattern API][slow pattern API] to get that pattern's aggregate metrics alongside its most recent individual executions. The `db_name`, `db_user`, and `db_operation` that identify the pattern are required:
 
 ```bash
 QUERY_ID=-4748036479882663975
@@ -374,11 +343,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-The response carries the same aggregate as the list endpoint under
-`aggregate`, plus a `recentExecutions` array. Each execution includes the
-full per-execution counters — shared and temp block I/O, CPU user and system
-time, parallel workers, JIT, and WAL — the same counters the
-[detail flyout] breaks down in the console:
+The response carries the same aggregate as the list endpoint under `aggregate`, plus a `recentExecutions` array. Each execution includes the full per-execution counters — shared and temp block I/O, CPU user and system time, parallel workers, JIT, and WAL — the same counters the [detail flyout][detail flyout] breaks down in the console:
 
 ```json
 {
@@ -415,16 +380,11 @@ time, parallel workers, JIT, and WAL — the same counters the
 }
 ```
 
-The example trims both objects for brevity; the API returns the complete
-counter set documented under [per-execution counters].
+The example trims both objects for brevity; the API returns the complete counter set documented under [per-execution counters][per-execution counters].
 
 ## Server logs {#server-logs}
 
-The PostgreSQL server logs behind the logs viewer in the cloud console are also
-available programmatically. The [logs API] returns individual log entries for a
-service over a time window. As with query insights, the window is required, so
-pass `from_date` and `to_date` as RFC 3339 timestamps. The range must not exceed
-30 days, and `to_date` must be after `from_date`:
+The PostgreSQL server logs behind the logs viewer in the cloud console are also available programmatically. The [logs API][logs API] returns individual log entries for a service over a time window. As with query insights, the window is required, so pass `from_date` and `to_date` as RFC 3339 timestamps. The range must not exceed 30 days, and `to_date` must be after `from_date`:
 
 ```bash
 FROM=2026-05-25T00:00:00Z
