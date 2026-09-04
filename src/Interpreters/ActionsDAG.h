@@ -577,6 +577,14 @@ public:
      */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
+    /// The two halves both `splitActionsForFilterPushDown` overloads share: find the predicate to split
+    /// (null when it is constant and there is nothing to split), and turn an already-partitioned
+    /// conjunction into the pushed-down actions, rebuilding this DAG around what stayed.
+    Node * findPredicateToSplit(const std::string & filter_name);
+    std::optional<ActionsForFilterPushDown> splitConjunction(
+        NodeRawConstPtrs allowed, NodeRawConstPtrs rejected, Node * predicate,
+        const ColumnsWithTypeAndName & all_inputs, bool removes_filter);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 

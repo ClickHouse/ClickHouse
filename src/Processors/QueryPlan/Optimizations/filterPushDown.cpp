@@ -1125,16 +1125,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// satisfying any position of the sort key, so `WHERE tenant = 42` can turn a read into an in-order
 /// one, while `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
 ///
-/// Deliberately coarse: any equality anywhere in the condition counts, whatever it compares and
-/// whether or not the column it fixes is ever read. Narrowing it to the columns a sort key is built
-/// from would mean following the condition's inputs down through the fragment's own projections and
-/// renames, which this pass - standing above a fragment it does not look inside - cannot do. So
-/// `WHERE b = 'x'` against a table sorted by `a` is refused along with the conditions that matter.
-///
-/// `appendFixedColumnsFromFilterExpression` is the analysis that collects those columns, but it only
-/// walks `and` chains: an equality under any other node is invisible to it. Missing one costs that
-/// analysis an optimization, while missing one here would cost correctness, so look for the equality
-/// anywhere in the condition rather than reusing it.
+/// Deliberately coarse - any equality anywhere counts, whatever it compares - because narrowing it to
+/// the sort key's own columns would mean following the condition's inputs through the fragment's
+/// projections and renames, which this pass cannot do from above an opaque fragment. Nor can it reuse
+/// `appendFixedColumnsFromFilterExpression`, which walks only `and` chains: missing an equality costs
+/// that analysis an optimization and would cost this one correctness.
 static bool mayFixColumn(const ActionsDAG::Node * condition)
 {
     std::vector<const ActionsDAG::Node *> stack{condition};
@@ -1160,13 +1155,10 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
     return false;
 }
 
-/// Whether a fixed column could change how `plan` reads. Coarse in the same way as `mayFixColumn`:
-/// it asks only whether anything in the fragment reads by a sorting key, never whether that key has
-/// anything to do with the column the condition fixes. Its job is just to spare the fragments where
-/// the question cannot arise at all - a read declared `ORDER BY ()` reads the same way with or
-/// without the condition. Any other source is left as "it could": a step that only expands into its
-/// real reads later (`ReadFromMerge`) has nothing to inspect yet, and being wrong here costs the mode
-/// mismatch this whole gate exists to prevent.
+/// Whether a fixed column could change how `plan` reads: does anything in the fragment read by a
+/// sorting key at all. Coarse like `mayFixColumn` - it never asks whether that key involves the fixed
+/// column - and only meant to spare fragments where the question cannot arise, `ORDER BY ()`. A source
+/// it cannot inspect yet (`ReadFromMerge`) counts as yes; being wrong here costs the mode mismatch.
 static bool fixedColumnMayChangeReadMode(const QueryPlan * plan)
 {
     if (!plan || !plan->isInitialized())
@@ -1466,21 +1458,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        /// Only the initiator's own share of the read gets the condition here; the replicas plan from
-        /// their own query, which carries it only when `parallel_replicas_filter_pushdown` splices it in
-        /// - and only in the configurations `parallel_replicas_filter_pushdown_reaches_replicas` names.
-        /// A condition the replicas do not have may not change what the local fragment announces to the
-        /// shared coordinator - an equality fixes a sort key column, which lets a sort or an aggregation
-        /// inside the fragment read in order, and the initiator would then announce `WithOrder` against
-        /// the replicas' `Default`. Only a condition that fixes a column can do that, and only against a
-        /// fragment that reads by a sorting key - both over-approximated, see `mayFixColumn` and
-        /// `fixedColumnMayChangeReadMode`, so plenty of harmless conditions wait for the setting too.
-        /// What must not wait for it is a join runtime filter, the one condition the setting could never
-        /// mirror: `addFilters` drops non-deterministic functions.
+        /// Only the initiator's share of the read gets the condition here, so a condition the replicas do
+        /// not also have may not change what this fragment announces to the shared coordinator: an
+        /// equality fixes a sort key column, the fragment then reads in order, and the initiator
+        /// announces `WithOrder` against the replicas' `Default`.
         ///
-        /// The setting alone is not a promise that the replicas end up with the condition: it is spliced
-        /// into their query, and that splice declines for queries it cannot rewrite and for conditions it
-        /// cannot express. `shippedQueryCanCarry` puts this very condition to it and takes the answer.
+        /// The replicas get it only by the splice into their query, which declines for queries it cannot
+        /// rewrite and conditions it cannot express - so put this condition to it rather than trusting
+        /// the setting. A join runtime filter it can never carry, and never has to: see `mayFixColumn`.
         const bool replicas_get_the_condition = settings.parallel_replicas_filter_pushdown_reaches_replicas
             && parallel_replicas_local_plan->shippedQueryCanCarry(filter->getExpression());
 
