@@ -43,6 +43,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include "config.h"
@@ -256,12 +257,28 @@ public:
         /// stored with the dot escaped, and only a serialization that sees that setting unescapes it back,
         /// so a default-settings cast would produce `{"a%2Eb": 42}` and the reparsed text would not match
         /// the value the caller stored.
+        /// At the same time, the text produced here is not user-facing output but an internal
+        /// representation that is parsed straight back, so the settings that change how a value is
+        /// presented in JSON output must not apply: `output_format_json_quote_64bit_integers` would turn
+        /// `{"n": 18446744073709551615}` into `{"n": "18446744073709551615"}` and `JSONType` would report
+        /// `String` instead of `UInt64`. Those switches are reset to the values that reconstruct
+        /// parse-equivalent JSON, while the settings that describe how the value is stored are kept.
         static ColumnPtr serializeObjectColumnToJSONText(
             const ColumnWithTypeAndName & column, size_t input_rows_count, const FormatSettings & format_settings)
         {
             const auto * col_const = typeid_cast<const ColumnConst *>(column.column.get());
             const IColumn & object_column = col_const ? col_const->getDataColumn() : *column.column;
             const size_t num_rows = col_const ? 1 : input_rows_count;
+
+            FormatSettings round_trip_settings = format_settings;
+            round_trip_settings.json.quote_64bit_integers = false;
+            round_trip_settings.json.quote_64bit_floats = false;
+            round_trip_settings.json.quote_decimals = false;
+            /// A bare `inf` or `nan` is not valid JSON and would make the whole document unparseable.
+            round_trip_settings.json.quote_denormals = true;
+            round_trip_settings.json.write_named_tuples_as_objects = true;
+            round_trip_settings.json.skip_null_value_in_named_tuples = false;
+            round_trip_settings.json.write_map_as_array_of_tuples = false;
 
             auto serialization = column.type->getDefaultSerialization();
             auto col_str = ColumnString::create();
@@ -273,7 +290,7 @@ public:
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
                 for (size_t i = 0; i < num_rows; ++i)
                 {
-                    serialization->serializeText(object_column, i, write_buffer, format_settings);
+                    serialization->serializeText(object_column, i, write_buffer, round_trip_settings);
                     offsets_to[i] = write_buffer.count();
                 }
                 write_buffer.finalize();
@@ -341,6 +358,13 @@ public:
                         "Function {} with JSON type input supports only constant string path arguments",
                         String(TName::name));
                 }
+
+                /// With `json_type_escape_dots_in_keys` a literal dot inside a key is stored escaped, so
+                /// `{"a.b": "x"}` lives under the path `a%2Eb` while `{"a": {"b": "y"}}` lives under
+                /// `a.b`. The requested key is escaped the same way so that it addresses the literal key,
+                /// exactly as it does for a JSON string, instead of the nested path with the same text.
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
 
                 /// The separator is added for every key after the first one, not only when the path
                 /// built so far is non-empty: an empty key is a legal JSON key, and `{"": {"b": 1}}`

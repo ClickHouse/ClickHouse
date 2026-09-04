@@ -185,3 +185,45 @@ SELECT 'nonconst key', id,
     JSONExtractRawCaseInsensitive(j, upper(k)) = JSONExtractRawCaseInsensitive(s, upper(k))
 FROM t_04092_nonconst ORDER BY id;
 DROP TABLE t_04092_nonconst;
+
+-- The call shapes that go through the serialize-and-reparse fallback must not be affected by the
+-- settings that change how values are presented in JSON output: the serialized text is internal and
+-- has to be parse-equivalent to the stored value.
+SET output_format_json_quote_64bit_integers = 1, output_format_json_quote_64bit_floats = 1, output_format_json_quote_decimals = 1;
+SELECT 'quoted 64bit type',
+    JSONType('{"n": 18446744073709551615}'::JSON, 'n'), JSONType('{"n": 18446744073709551615}', 'n'),
+    JSONType('{"f": 1.5}'::JSON, 'f'), JSONType('{"f": 1.5}', 'f'),
+    JSONType('{"i": -9223372036854775808}'::JSON, 'i'), JSONType('{"i": -9223372036854775808}', 'i');
+SELECT 'quoted 64bit raw', JSONExtractRaw('{"n": 18446744073709551615, "f": 1.5}'::JSON), JSONExtractRaw('{"n": 18446744073709551615, "f": 1.5}');
+SELECT 'quoted 64bit index', JSONExtractRaw('{"n": 18446744073709551615}'::JSON, 1), JSONExtractRaw('{"n": 18446744073709551615}', 1);
+SELECT 'quoted 64bit typed path', JSONType('{"d": 1.5}'::JSON(d Decimal(10, 2)), 'd'), JSONExtractRaw('{"d": 1.5}'::JSON(d Decimal(10, 2)));
+SET output_format_json_quote_64bit_integers = 0, output_format_json_quote_64bit_floats = 0, output_format_json_quote_decimals = 0;
+
+-- With `json_type_escape_dots_in_keys` a literal dot in a key is stored escaped, so the subcolumn
+-- fast path must escape the requested key too: `'a.b'` is the literal key, `'a', 'b'` is the nested one.
+SET json_type_escape_dots_in_keys = 1;
+SELECT 'escaped dots literal key',
+    JSONExtractString('{"a.b": "x", "a": {"b": "y"}}'::JSON, 'a.b'), JSONExtractString('{"a.b": "x", "a": {"b": "y"}}', 'a.b'),
+    JSONExtractString('{"a.b": "x", "a": {"b": "y"}}'::JSON, 'a', 'b'), JSONExtractString('{"a.b": "x", "a": {"b": "y"}}', 'a', 'b');
+SELECT 'escaped dots literal key has',
+    JSONHas('{"a.b": "x"}'::JSON, 'a.b'), JSONHas('{"a.b": "x"}', 'a.b'),
+    JSONHas('{"a.b": "x"}'::JSON, 'a', 'b'), JSONHas('{"a.b": "x"}', 'a', 'b');
+SELECT 'escaped dots literal key raw',
+    JSONExtractRaw('{"a.b": {"c": 1}, "a": {"b": 2}}'::JSON, 'a.b'), JSONExtractRaw('{"a.b": {"c": 1}, "a": {"b": 2}}', 'a.b'),
+    JSONExtractRaw('{"a.b": {"c": 1}, "a": {"b": 2}}'::JSON, 'a', 'b'), JSONExtractRaw('{"a.b": {"c": 1}, "a": {"b": 2}}', 'a', 'b');
+SELECT 'escaped dots literal key ci',
+    JSONExtractStringCaseInsensitive('{"A.b": "x", "a": {"b": "y"}}'::JSON, 'a.B'), JSONExtractStringCaseInsensitive('{"A.b": "x", "a": {"b": "y"}}', 'a.B'),
+    JSONExtractStringCaseInsensitive('{"A.b": "x", "a": {"b": "y"}}'::JSON, 'A', 'B'), JSONExtractStringCaseInsensitive('{"A.b": "x", "a": {"b": "y"}}', 'A', 'B');
+DROP TABLE IF EXISTS t_04092_escaped_dots;
+CREATE TABLE t_04092_escaped_dots (id UInt32, j JSON, s String) ENGINE = Memory;
+INSERT INTO t_04092_escaped_dots VALUES
+    (1, '{"A.b": "x", "a": {"b": "y"}}', '{"A.b": "x", "a": {"b": "y"}}'),
+    (2, '{"a.B": "z", "a": {"b": "w"}}', '{"a.B": "z", "a": {"b": "w"}}'),
+    (3, '{"a": {"b": "v"}}', '{"a": {"b": "v"}}');
+SELECT 'escaped dots literal key ci rows', id,
+    JSONExtractStringCaseInsensitive(j, 'A.B'), JSONExtractStringCaseInsensitive(s, 'A.B'),
+    JSONExtractStringCaseInsensitive(j, 'A', 'B'), JSONExtractStringCaseInsensitive(s, 'A', 'B'),
+    JSONExtractString(j, 'a.b'), JSONExtractString(s, 'a.b')
+FROM t_04092_escaped_dots ORDER BY id;
+DROP TABLE t_04092_escaped_dots;
+SET json_type_escape_dots_in_keys = 0;
