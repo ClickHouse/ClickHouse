@@ -216,21 +216,30 @@
     err))
 
 (defn killed-by-deadline?
-  "Was this apt-get killed by the deadline it was run under rather than
+  "Was this apt-get update killed by the deadline it was run under rather than
   finished? `timeout` reports 124 for the signal it sends, and 137 for the KILL
-  it follows up with when the command does not take the first one."
+  it follows up with when the command does not take the first one. Asked of an
+  update alone: nothing else here is run under a deadline, so the same status
+  from an install is a signal from elsewhere - the OOM killer, say - and is
+  neither ours nor an archive's fault to retry."
   [{:keys [exit]}]
   (contains? #{124 137} exit))
 
 (defn failure-message
-  "What to report for a failed apt-get: apt's own message, or what became of it
+  "What to report for a failed apt-get: apt's own message, or its exit status
   when it was stopped before it could print one."
   [{:keys [exit] :as failure}]
   (or (apt-error failure)
-      (if (killed-by-deadline? failure)
-        (str "apt-get was killed after " apt-update-timeout-seconds
-             " s without finishing, exit status " exit)
-        (str "apt-get exited with status " exit " and printed nothing"))))
+      (str "apt-get exited with status " exit " without printing a message")))
+
+(defn update-failure-message
+  "What to report for a failed apt-get update, which is the only apt-get run
+  under a deadline, and so the only one whose missing message has an answer."
+  [{:keys [exit] :as failure}]
+  (if (killed-by-deadline? failure)
+    (str "apt-get update did not finish in " apt-update-timeout-seconds
+         " s and was killed, exit status " exit)
+    (failure-message failure)))
 
 (defn lists-lock-held?
   "Did this apt-get fail because another apt holds /var/lib/apt/lists/lock?"
@@ -241,12 +250,10 @@
 (defn archive-unavailable?
   "Is this failed apt-get a failure to download from the archive, rather than a
   rejection of what was asked for? Matched on the message, because apt reports
-  both with exit status 100, and on the exit status when the deadline stopped
-  it, which is a mirror that answered nothing at all."
+  both with exit status 100."
   [failure]
-  (or (killed-by-deadline? failure)
-      (boolean (when-let [err (apt-error failure)]
-                 (some #(str/includes? err %) archive-fetch-errors)))))
+  (boolean (when-let [err (apt-error failure)]
+             (some #(str/includes? err %) archive-fetch-errors))))
 
 (defn stale-index?
   "Did this download fail because the package lists name a file the archive
@@ -314,22 +321,23 @@
                            :err (apt-error failure)}
                           nil
                           "apt could not take /var/lib/apt/lists/lock after %d ms:\n%s"
-                          waited (failure-message failure))))
+                          waited (update-failure-message failure))))
 
               ;; An archive that could not be downloaded from, with nothing on
               ;; the node to install from either: worth another attempt while
               ;; the run still has time for one.
-              (and (archive-unavailable? failure)
+              (and (or (killed-by-deadline? failure)
+                       (archive-unavailable? failure))
                    (zero? (readable-package-index-count))
                    (may-retry-archive?))
               (do (warn "apt could not fetch the package lists on" c/*host*
                         (str "(attempt " attempt "), retrying:\n")
-                        (failure-message failure))
+                        (update-failure-message failure))
                   (Thread/sleep (long apt-archive-retry-interval-ms))
                   (recur (inc attempt)))
 
               :else
-              (failure-message failure))))]
+              (update-failure-message failure))))]
     (let [indexes (readable-package-index-count)]
       (when (zero? indexes)
         (throw+ {:type ::apt-package-lists-empty

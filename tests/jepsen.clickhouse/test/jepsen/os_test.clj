@@ -207,7 +207,7 @@
                 chos/apt-archive-retry-seconds 0]
     (let [e (setup-error (fake-node {:updates [{:exit 124 :out "" :err ""}]}))]
       (is (= :jepsen.clickhouse.os/apt-package-lists-empty (:type e)))
-      (is (str/includes? (:err e) "apt-get was killed after 300 s")))))
+      (is (str/includes? (:err e) "apt-get update did not finish in 300 s")))))
 
 (deftest an-update-that-failed-but-fetched-indexes-continues
   (let [node (setup! (fake-node {:updates [{:exit 100 :out "" :err mirror-503}]
@@ -237,6 +237,15 @@
       ;; Reported rather than retried: nothing of the retry window is spent.
       (is (> 60000 (- (System/currentTimeMillis) start)))
       (is (= 2 (count (cmds-matching node "apt-get install")))))))
+
+(deftest an-install-killed-by-a-signal-is-not-an-unavailable-archive
+  ;; Nothing but the update runs under a deadline, so 137 from an install is a
+  ;; signal from elsewhere and there is no archive to wait for.
+  (with-redefs [chos/apt-archive-retry-interval-ms 10]
+    (let [node (fake-node {:installs [{:exit 137 :out "" :err ""}]})
+          e (setup-error node)]
+      (is (= :jepsen.control/nonzero-exit (:type e)))
+      (is (= 1 (count (cmds-matching node "apt-get install")))))))
 
 (deftest a-package-apt-refuses-to-install-is-reported-at-once
   (let [node (fake-node {:installs [{:exit 100 :out "" :err held-packages}]})
