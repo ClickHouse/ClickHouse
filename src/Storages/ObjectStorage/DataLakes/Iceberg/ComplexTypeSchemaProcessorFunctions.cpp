@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 #include <base/defines.h>
-#include <Common/typeid_cast.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -22,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
 }
 
 namespace Iceberg
@@ -63,95 +61,6 @@ public:
 
     std::vector<size_t> permutation;
 };
-
-namespace
-{
-
-const DataTypeTuple & getTupleType(const DataTypePtr & type)
-{
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-    if (!tuple_type)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected Tuple while resolving an Iceberg schema evolution path, got {}",
-            type->getName());
-    return *tuple_type;
-}
-
-size_t getElementIndexInTuple(const DataTypeTuple & tuple_type, const String & element_name)
-{
-    const auto & element_names = tuple_type.getElementNames();
-    for (size_t i = 0; i < element_names.size(); ++i)
-    {
-        if (element_names[i] == element_name)
-            return i;
-    }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", element_name);
-}
-
-DataTypePtr getArrayElementType(const DataTypePtr & type)
-{
-    const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-    if (!array_type)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected Array while resolving an Iceberg schema evolution path, got {}",
-            type->getName());
-    return array_type->getNestedType();
-}
-
-DataTypePtr getMapValueType(const DataTypePtr & type)
-{
-    const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
-    if (!map_type)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected Map while resolving an Iceberg schema evolution path, got {}",
-            type->getName());
-    DataTypePtr key_value_type = getArrayElementType(map_type->getNestedType());
-    return getTupleType(key_value_type).getElement(1);
-}
-
-std::vector<int> resolveSchemaPath(
-    const std::vector<IcebergChangeSchemaOperation::Edge> & path, DataTypePtr & type, bool use_new_names)
-{
-    std::vector<int> index_path;
-    index_path.reserve(path.size());
-
-    for (const auto & edge : path)
-    {
-        switch (edge.parent_type)
-        {
-            case TransformType::STRUCT:
-            {
-                const String & element_name = use_new_names ? edge.new_path : edge.path;
-                const auto & tuple_type = getTupleType(type);
-                size_t element_index = getElementIndexInTuple(tuple_type, element_name);
-                DataTypePtr element_type = tuple_type.getElement(element_index);
-
-                index_path.push_back(static_cast<int>(element_index));
-                type = std::move(element_type);
-                break;
-            }
-            case TransformType::ARRAY:
-            {
-                index_path.push_back(-1);
-                type = getArrayElementType(type);
-                break;
-            }
-            case TransformType::MAP:
-            {
-                index_path.push_back(-1);
-                type = getMapValueType(type);
-                break;
-            }
-        }
-    }
-
-    return index_path;
-}
-
-}
 
 IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_)
     : path(path_)
@@ -436,17 +345,60 @@ public:
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
-        index_path = resolveSchemaPath(operation_.getPath(), old_type, false);
+        for (const auto & path : operation_.getPath())
+        {
+            switch (path.parent_type)
+            {
+                case TransformType::STRUCT:
+                {
+                    auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
-        const auto & element_names = getTupleType(old_type).getElementNames();
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
+                    {
+                        if (element_names[i] == path.path)
+                        {
+                            result_index = i;
+                            break;
+                        }
+                    }
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
 
-        index_to_delete = element_names.size();
-        for (size_t i = 0; i < element_names.size(); ++i)
+                    index_path.push_back(static_cast<Int32>(result_index));
+                    old_type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY:
+                {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP:
+                {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeTuple>(
+                                   std::static_pointer_cast<const DataTypeArray>(
+                                       std::static_pointer_cast<const DataTypeMap>(old_type)->getNestedType())
+                                       ->getNestedType())
+                                   ->getElement(1);
+                    break;
+                }
+            }
+        }
+
+        auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+        auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
+
+        index_to_delete = current_types.size();
+        for (size_t i = 0; i < current_types.size(); ++i)
         {
             if (element_names[permutation[i]] == operation.field_name)
                 index_to_delete = i;
         }
-        if (index_to_delete == element_names.size())
+        if (index_to_delete == current_types.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find field {} in data", operation.field_name);
     }
 
@@ -466,12 +418,75 @@ public:
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
-        index_path = resolveSchemaPath(operation_.getPath(), old_type, false);
-        resolveSchemaPath(operation_.getPath(), type, true);
+        for (const auto & path : operation_.getPath())
+        {
+            switch (path.parent_type)
+            {
+                case TransformType::STRUCT:
+                {
+                    auto old_current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+                    auto old_element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
-        const auto & tuple_type = getTupleType(type);
-        current_types = tuple_type.getElements();
-        const auto & element_names = tuple_type.getElementNames();
+                    size_t old_result_index = old_current_types.size();
+                    for (size_t i = 0; i < old_current_types.size(); ++i)
+                    {
+                        if (old_element_names[i] == path.path)
+                        {
+                            old_result_index = i;
+                            break;
+                        }
+                    }
+                    if (old_result_index == old_current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in old data", path.path);
+
+                    index_path.push_back(static_cast<Int32>(old_result_index));
+                    old_type = old_current_types[old_result_index];
+
+                    current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
+
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
+                    {
+                        if (element_names[i] == path.new_path)
+                        {
+                            result_index = i;
+                            break;
+                        }
+                    }
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in new data", path.new_path);
+
+                    type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY:
+                {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
+                    type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP:
+                {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeTuple>(
+                                   std::static_pointer_cast<const DataTypeArray>(
+                                       std::static_pointer_cast<const DataTypeMap>(old_type)->getNestedType())
+                                       ->getNestedType())
+                                   ->getElement(1);
+                    type = std::static_pointer_cast<const DataTypeTuple>(
+                               std::static_pointer_cast<const DataTypeArray>(
+                                   std::static_pointer_cast<const DataTypeMap>(type)->getNestedType())
+                                   ->getNestedType())
+                               ->getElement(1);
+                    break;
+                }
+            }
+        }
+
+        current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
+        auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
 
         index_to_insert = current_types.size();
         for (size_t i = 0; i < current_types.size(); ++i)
@@ -502,7 +517,49 @@ public:
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
-        index_path = resolveSchemaPath(operation_.getPath(), type, false);
+        for (const auto & path : operation_.getPath())
+        {
+            switch (path.parent_type)
+            {
+                case TransformType::STRUCT:
+                {
+                    current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
+
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
+                    {
+                        if (element_names[i] == path.path)
+                        {
+                            result_index = i;
+                            break;
+                        }
+                    }
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
+
+                    index_path.push_back(static_cast<Int32>(result_index));
+                    type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY:
+                {
+                    index_path.push_back(-1);
+                    type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP:
+                {
+                    index_path.push_back(-1);
+                    type = std::static_pointer_cast<const DataTypeTuple>(
+                               std::static_pointer_cast<const DataTypeArray>(
+                                   std::static_pointer_cast<const DataTypeMap>(type)->getNestedType())
+                                   ->getNestedType())
+                               ->getElement(1);
+                    break;
+                }
+            }
+        }
     }
 
     void transformChildNode(Tuple & initial_node) override
@@ -515,6 +572,7 @@ public:
 
 private:
     IcebergReorderingOperation operation;
+    DataTypes current_types;
 };
 
 ColumnPtr ExecutableEvolutionFunction::executeImpl(
