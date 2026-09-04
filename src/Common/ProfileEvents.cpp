@@ -130,6 +130,9 @@
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
+    M(SkippingIndexCacheHits, "Number of times a block of skipping index granules has been found in the skipping index cache.", ValueType::Number) \
+    M(SkippingIndexCacheMisses, "Number of times a block of skipping index granules has not been found in the skipping index cache and had to be read from disk.", ValueType::Number) \
+    M(SkippingIndexCacheWeightLost, "Approximate number of bytes evicted from the skipping index cache.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
     M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \

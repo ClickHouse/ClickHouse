@@ -152,6 +152,8 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    bool supportsGranuleCache() const override { return true; }
+
 private:
     size_t bits_per_row;
     size_t hash_functions;

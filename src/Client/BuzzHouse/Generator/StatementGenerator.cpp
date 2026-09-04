@@ -2755,6 +2755,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {3, [&] { sc->set_flush_async_insert_queue(true); }},
         {3, [&] { sc->set_sync_filesystem_cache(true); }},
         {3, [&] { sc->set_drop_vector_similarity_index_cache(true); }},
+        {3, [&] { sc->set_drop_skipping_index_cache(true); }},
         /// Dictionaries
         {1 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries)),
          [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_reload_dictionary()); }},

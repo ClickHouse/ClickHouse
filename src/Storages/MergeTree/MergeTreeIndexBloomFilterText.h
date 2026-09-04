@@ -176,6 +176,8 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    bool supportsGranuleCache() const override { return true; }
+
     BloomFilterParameters params;
     /// Function for selecting next token.
     std::unique_ptr<ITokenizer> tokenizer;

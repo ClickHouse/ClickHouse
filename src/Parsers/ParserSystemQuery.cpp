@@ -312,6 +312,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
             {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
             {"DROP VECTOR SIMILARITY INDEX CACHE", Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE},
+            {"DROP SKIPPING INDEX CACHE", Type::CLEAR_SKIPPING_INDEX_CACHE},
             {"DROP TEXT INDEX TOKENS CACHE", Type::CLEAR_TEXT_INDEX_TOKENS_CACHE},
             {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
             {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
@@ -1307,6 +1308,10 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
 Clears the vector similarity index cache.
+
+## SYSTEM CLEAR|DROP SKIPPING INDEX CACHE {#drop-skipping-index-cache}
+
+Clears the cache of deserialized data skipping index granules (`bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`).
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 

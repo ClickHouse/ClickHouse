@@ -7149,6 +7149,8 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         }
     }
 
+    /// A part with the same name may be fetched into the same path later, so drop the cached data of this one.
+    asMutableDeletingPart(part)->clearCaches();
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());

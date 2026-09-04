@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 
 
 namespace DB
@@ -25,6 +26,7 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        SkippingIndexCache * skipping_index_cache,
         MergeTreeReaderSettings settings_);
     virtual ~MergeTreeIndexReader();
 
@@ -43,7 +45,14 @@ private:
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
     VectorSimilarityIndexCache * vector_similarity_index_cache;
+    SkippingIndexCache * skipping_index_cache;
     MergeTreeReaderSettings settings;
+
+    /// Empty if the part is not Active: such parts are removed soon, so their granules are not cached.
+    String cache_key_prefix;
+    /// Only the block number changes between lookups.
+    SkippingIndexCacheKey skipping_index_cache_key;
+    std::shared_ptr<SkippingIndexCacheCell> current_block;
 
     StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;
@@ -52,6 +61,8 @@ private:
     size_t stream_mark = 0;
 
     void initStreamIfNeeded();
+    void loadGranule(MergeTreeIndexGranulePtr & res, size_t mark, const IMergeTreeIndexCondition * condition, const MarkRanges * readable_ranges);
+    MergeTreeIndexGranules loadBlockOfGranules(size_t block_number);
 };
 
 }

@@ -345,6 +345,12 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
+
+    /// Whether deserialized granules of this index may be kept in the skipping index cache and shared between queries.
+    /// Requires that deserialization does not depend on the condition or readable ranges, that the granule
+    /// is never modified after deserialization, and that `memoryUsageBytes` of the granule is accurate.
+    virtual bool supportsGranuleCache() const { return false; }
+
     virtual bool isTextIndex() const { return false; }
 
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old

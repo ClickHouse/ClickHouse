@@ -732,8 +732,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache->remove(key);
+    index_cache->remove(PrimaryIndexCache::hash(getIndexCacheKeyPrefix()));
 }
 
 /// Remove all vector similarity index cache entries for this part.
@@ -744,7 +743,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getIndexCacheKeyPrefix());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -1078,6 +1077,40 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+    removeFromSkippingIndexCache(storage.getContext()->getSkippingIndexCache().get());
+}
+
+void IMergeTreeDataPart::removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const
+{
+    if (!skipping_index_cache)
+        return;
+
+    /// Bypass QueryMetadataCache for the same reason as in `removeIndexMarksFromCache`.
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    if (secondary_indices.empty())
+        return;
+
+    auto key_prefix = getIndexCacheKeyPrefix();
+    auto part_checksum = checksums.getTotalChecksumUInt128();
+
+    for (const auto & index_description : secondary_indices)
+    {
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
+        if (!skip_index->supportsGranuleCache())
+            continue;
+
+        auto index_name = skip_index->getFileName();
+        if (!skip_index->getPhysicalFormat(*this, index_name))
+            continue;
+
+        /// The definition hash is computed from the current metadata, so entries inserted by a reader that held
+        /// an older definition of a same-named index are not found here. That is only a missed eviction: their
+        /// key contains the removed part's path and checksum, so they can never be hit again and age out via LRU.
+        auto marks_count = index_granularity->getMarksCountForSkipIndex(index_description.granularity);
+        skipping_index_cache->removeEntriesFromCache(
+            key_prefix, part_checksum, index_name, SkippingIndexCache::hashIndexDefinition(index_description), marks_count);
+    }
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -2778,6 +2811,11 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
         return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
     return {};
+}
+
+String IMergeTreeDataPart::getIndexCacheKeyPrefix() const
+{
+    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
 String IMergeTreeDataPart::getRelativePathOfActivePart() const
