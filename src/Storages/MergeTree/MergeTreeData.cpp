@@ -423,6 +423,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
     extern const int ILLEGAL_INDEX;
+    /// Not used in this file yet: the check in `checkAlterIsPossible` added by
+    /// https://github.com/ClickHouse/ClickHouse/pull/115882 uses it, so the declaration is kept
+    /// to make the merge with that change compile without a manual repair.
+    extern const int ILLEGAL_STATISTICS; // NOLINT
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
