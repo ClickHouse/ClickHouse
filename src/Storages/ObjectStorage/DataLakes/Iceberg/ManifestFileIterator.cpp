@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 #include "config.h"
 
@@ -93,7 +94,11 @@ namespace
             for (UInt32 i = 1; i < scale; ++i)
                 scaler *= 10;
 
-            unscaled_value += scaler;
+            /// A bound is read from the manifest and is never checked against the declared precision,
+            /// so a full width one can still leave the type when it is widened by an integral unit.
+            /// That is signed overflow, which aborts a build with the undefined behaviour sanitizer.
+            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                return std::nullopt;
         }
 
         return DB::DecimalField<DecimalType>(unscaled_value, scale);
