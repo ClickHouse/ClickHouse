@@ -270,7 +270,9 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT 'C26', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
--- A setting written twice in one clause takes its last value, so the name is the alias (7).
+-- A nested clause is clamped to the constraints before it is applied, and that drops an entry
+-- repeating the value already in effect. Of a setting written twice only the entry that changes it
+-- survives, so here the value is 0 and the nested SELECT reads the updated table's `src` (2).
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH src AS (SELECT 7 AS id)
                 SELECT (SELECT max(id) FROM src

@@ -26,6 +26,7 @@
 #include <deque>
 #include <optional>
 #include <set>
+#include <utility>
 
 namespace DB
 {
@@ -122,7 +123,6 @@ private:
     ContextPtr context;
 
     const String database_name;
-    const bool inherit_with_aliases = true;
     std::set<String> external_tables;
     mutable std::unordered_set<String> expression_aliases;
 
@@ -131,8 +131,9 @@ private:
     {
         /// `enable_global_with_statement` in effect at this `SELECT`.
         bool inherit_from_outer = true;
-        /// The `SETTINGS` clauses of this `SELECT` and of the ones enclosing it, in that order.
-        SettingsChanges settings;
+        /// The settings in effect at this `SELECT`. A nested `SETTINGS` clause is applied on top of
+        /// these, as the query tree does, so an inner clause sees what the enclosing ones left.
+        ContextPtr settings_context;
         std::unordered_set<String> recursive;
         std::unordered_set<String> plain;
     };
@@ -145,11 +146,11 @@ private:
 
     struct WithAliasesScope
     {
-        WithAliasesScope(std::deque<Scope> & scopes_, SettingsChanges settings, bool inherit_from_outer)
+        WithAliasesScope(std::deque<Scope> & scopes_, ContextPtr settings_context, bool inherit_from_outer)
             : scopes(scopes_)
         {
             Scope & scope = scopes.emplace_back();
-            scope.settings = std::move(settings);
+            scope.settings_context = std::move(settings_context);
             scope.inherit_from_outer = inherit_from_outer;
         }
         ~WithAliasesScope() { scopes.pop_back(); }
@@ -173,14 +174,9 @@ private:
 
     static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
 
-    bool evaluateWithAliasInheritance(const SettingsChanges & changes) const;
-
-    SettingsChanges settingsReaching(const ASTSelectQuery & select) const
-    {
-        SettingsChanges changes = scopes.empty() ? SettingsChanges{} : scopes.back().settings;
-        appendSettings(changes, select);
-        return changes;
-    }
+    /// The settings in effect at `select`, and whether a plain `WITH` alias of an enclosing
+    /// `SELECT` is visible in it.
+    std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select) const;
 
     /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
     Scope * findScopeDeclaring(const String & name) const
@@ -214,9 +210,8 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// An alias is visible only inside the subtree of the `SELECT` that declares it.
-        SettingsChanges settings = settingsReaching(select);
-        const bool inherit = evaluateWithAliasInheritance(settings);
-        WithAliasesScope with_aliases_scope(scopes, std::move(settings), inherit);
+        auto [settings_context, inherit] = scopeSettings(select);
+        WithAliasesScope with_aliases_scope(scopes, std::move(settings_context), inherit);
         Scope & scope = scopes.back();
 
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
