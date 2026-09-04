@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
-    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -397,17 +396,21 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     if (!storage_id.hasDatabase())
         return;
 
-    const auto access = context->getAccess();
+    /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
+    /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
+    /// `system` and `information_schema` databases is granted after implications are derived.
+    const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
     for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
     {
-        if (access->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
             return;
     }
 
-    throw Exception(ErrorCodes::ACCESS_DENIED,
-        "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
-        context->getUserName(),
-        storage_id.getFullTableName());
+    /// Not a single column of the table is visible to the user. Report the denial through the
+    /// standard check, so the message and the query log get the table-level requirement without
+    /// naming any column.
+    context->checkAccess(AccessType::SELECT, storage_id);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)

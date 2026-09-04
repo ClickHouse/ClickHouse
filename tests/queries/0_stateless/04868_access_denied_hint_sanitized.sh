@@ -41,25 +41,25 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER OR REPLACE ${user_cols}"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW TABLES ON ${db}.t_cols TO ${user_cols}"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS(col_alpha) ON ${db}.t_cols TO ${user_cols}"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT(col_alpha) ON ${db}.t_cols TO ${user_cols}"
-${CLICKHOUSE_CLIENT} --user "${user_cols}" --enable_analyzer=1 -q "SELECT col_alpha, col_beta FROM ${db}.t_cols" 2>&1 | hint | names
+${CLICKHOUSE_CLIENT} --user "${user_cols}" -q "SELECT col_alpha, col_beta FROM ${db}.t_cols" 2>&1 | hint | names
 
 echo "--- granting SHOW COLUMNS on the whole table makes the columns showable ---"
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON ${db}.t_cols TO ${user_cols}"
-${CLICKHOUSE_CLIENT} --user "${user_cols}" --enable_analyzer=1 -q "SELECT col_alpha, col_beta FROM ${db}.t_cols" 2>&1 | hint | names
+${CLICKHOUSE_CLIENT} --user "${user_cols}" -q "SELECT col_alpha, col_beta FROM ${db}.t_cols" 2>&1 | hint | names
 
 echo "--- the database and table of the query are kept ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${hint_db}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${hint_db}.t_hidden (x UInt32) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER OR REPLACE ${user_table}"
-${CLICKHOUSE_CLIENT} --user "${user_table}" --enable_analyzer=1 -q "SELECT * FROM ${hint_db}.t_hidden" 2>&1 | hint | names
+${CLICKHOUSE_CLIENT} --user "${user_table}" -q "SELECT * FROM ${hint_db}.t_hidden" 2>&1 | hint | names
 
 echo "--- the database name of a CREATE DATABASE is kept ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER OR REPLACE ${user_db}"
-${CLICKHOUSE_CLIENT} --user "${user_db}" --enable_analyzer=1 -q "CREATE DATABASE ${no_show_db}" 2>&1 | hint | names
+${CLICKHOUSE_CLIENT} --user "${user_db}" -q "CREATE DATABASE ${no_show_db}" 2>&1 | hint | names
 
 echo "--- a system table names no column either ---"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER OR REPLACE ${user_system}"
-${CLICKHOUSE_CLIENT} --user "${user_system}" --enable_analyzer=1 -q "SELECT * FROM system.clusters" 2>&1 | hint | names
+${CLICKHOUSE_CLIENT} --user "${user_system}" -q "SELECT * FROM system.clusters" 2>&1 | hint | names
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${user_cols}, ${user_table}, ${user_db}, ${user_system}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${hint_db}"

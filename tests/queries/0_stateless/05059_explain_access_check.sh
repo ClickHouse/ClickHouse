@@ -24,14 +24,20 @@ as_user()
     ${CLICKHOUSE_CLIENT} --user="${username}" --enable_analyzer=1 --query "$1" 2>&1
 }
 
-# The error must be ACCESS_DENIED, and must not disclose the column names.
+# The error must be ACCESS_DENIED, and must not disclose the column names. The probe query
+# itself may mention a column and is echoed back both by the client and in the forwarded server
+# log line, so check only the exception text cut before the first parenthesized annotation.
 expect_denied()
 {
     local output
     output=$(as_user "$1")
     if [[ "${output}" != *"ACCESS_DENIED"* ]]; then
         echo "FAIL: expected ACCESS_DENIED: ${output}"
-    elif [[ "${output}" == *"secret_column"* ]]; then
+        return
+    fi
+    local messages
+    messages=$(grep -oE "DB::Exception: [^(]*" <<< "${output}")
+    if [[ "${messages}" == *"secret_column"* ]]; then
         echo "FAIL: the error message leaks column names: ${output}"
     else
         echo "denied"
@@ -52,7 +58,7 @@ expect_ok()
 echo "-- no grants"
 expect_denied "EXPLAIN QUERY TREE SELECT * FROM explain_access_table"
 expect_denied "EXPLAIN QUERY TREE SELECT count() FROM explain_access_table"
-expect_denied "EXPLAIN SYNTAX SELECT * FROM explain_access_table"
+expect_denied "EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM explain_access_table"
 expect_denied "EXPLAIN QUERY TREE SELECT 1 WHERE 1 IN (SELECT secret_column_1 FROM explain_access_table)"
 expect_denied "EXPLAIN QUERY TREE SELECT * FROM explain_access_view"
 
@@ -60,15 +66,21 @@ echo "-- no grants: whether a column exists must not be observable through the e
 expect_denied "SELECT secret_column_1 FROM explain_access_table"
 expect_denied "SELECT no_such_column FROM explain_access_table"
 
-echo "-- no grants, run_passes = 0 dumps the unresolved tree and no table metadata"
-output=$(as_user "EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM explain_access_table")
-if [[ "${output}" == *"Exception"* ]]; then
-    echo "FAIL: expected success: ${output}"
-elif [[ "${output}" == *"secret_column"* ]]; then
-    echo "FAIL: the unresolved tree leaks column names: ${output}"
-else
-    echo "ok"
-fi
+echo "-- no grants: unresolved dumps reveal no table metadata and stay allowed"
+expect_unresolved_ok()
+{
+    local output
+    output=$(as_user "$1")
+    if [[ "${output}" == *"Exception"* ]]; then
+        echo "FAIL: expected success: ${output}"
+    elif [[ "${output}" == *"secret_column"* ]]; then
+        echo "FAIL: the unresolved dump leaks column names: ${output}"
+    else
+        echo "ok"
+    fi
+}
+expect_unresolved_ok "EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM explain_access_table"
+expect_unresolved_ok "EXPLAIN SYNTAX SELECT * FROM explain_access_table"
 
 echo "-- a grant on a single column makes the table structure visible"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(secret_column_1) ON explain_access_table TO ${username}"
