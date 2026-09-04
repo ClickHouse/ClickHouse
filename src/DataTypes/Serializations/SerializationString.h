@@ -2,6 +2,7 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <base/unit.h>
 
 namespace DB
 {
@@ -23,6 +24,9 @@ private:
     explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
 public:
+    /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
+    static constexpr size_t MAX_STRING_SIZE = 16_GiB;
+
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 

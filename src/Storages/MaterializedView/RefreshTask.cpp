@@ -105,11 +105,12 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup)
     : view(view_)
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
+    , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
 
@@ -213,11 +214,12 @@ OwnedRefreshTask RefreshTask::create(
     bool attach,
     bool coordinated,
     bool empty,
+    bool start_paused,
     bool is_restore_from_backup)
 {
     std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
     task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
@@ -240,7 +242,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
@@ -1051,6 +1053,20 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+            /// Publish the query status before interpreting the query, not just around the pipeline executor
+            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                execution.executing_query_status = process_list_entry->getQueryStatus();
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(execution.executor_mutex);
+                execution.executing_query_status = nullptr;
+            });
+
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);
@@ -1469,14 +1485,26 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
 void RefreshTask::interruptExecution()
 {
     chassert(!mutex.try_lock());
-    std::unique_lock lock(execution.executor_mutex);
-    if (execution.interrupt_execution.exchange(true))
-        return;
-    if (execution.executor)
+    std::shared_ptr<QueryStatus> query_status;
     {
-        execution.executor->cancel();
-        LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        std::unique_lock lock(execution.executor_mutex);
+        if (execution.interrupt_execution.exchange(true))
+            return;
+        query_status = execution.executing_query_status;
+        if (execution.executor)
+        {
+            execution.executor->cancel();
+            LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        }
     }
+
+    /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
+    /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
+    /// running, so shutdown()'s deactivate() — and any DROP driving it, including SharedCatalog
+    /// state apply — would block until the I/O returned on its own. Done outside executor_mutex
+    /// because cancelQuery() cancels registered executors, which take their own locks.
+    if (query_status)
+        query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)

@@ -198,6 +198,10 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 
+    /// Refuse `operation` while the table root is deeper than the queried path, because anything
+    /// scoped to the queried path reaches beyond this table there.
+    void checkTableRootIsQueriedPath(std::string_view operation) const;
+
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;

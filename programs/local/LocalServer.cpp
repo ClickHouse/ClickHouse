@@ -46,6 +46,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -130,6 +131,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -358,6 +360,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
         server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
+
+    /// Create the dedicated MergeTree metadata arena pool before any parts are loaded, same as the
+    /// server. Without this `clickhouse-local` would ignore `jemalloc_merge_tree_arenas`.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],
@@ -1777,7 +1783,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 

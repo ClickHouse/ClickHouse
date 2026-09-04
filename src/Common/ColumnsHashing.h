@@ -95,6 +95,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+    static constexpr bool has_cheap_key_holder = Base::has_cheap_key_holder;
     static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
@@ -360,6 +361,13 @@ struct HashMethodSerialized
     }
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// `getKeyHolder` serializes every key column for the row. With `prealloc = false` that means a
+    /// fresh `serializeKeysToPoolContiguous` into the arena; with `prealloc = true` and batch
+    /// serialization disabled it means a per-row heap allocation plus the same serialization. This is
+    /// the dominant cost of the aggregation, so `Aggregator` must not pay it twice per row to
+    /// prefetch. When the keys *are* batch-serialized upfront this method prefetches on its own,
+    /// using `precomputed_hashes` below, which needs no second `getKeyHolder` call.
+    static constexpr bool has_cheap_key_holder = false;
     static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;

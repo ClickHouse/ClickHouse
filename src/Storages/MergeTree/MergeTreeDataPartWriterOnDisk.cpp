@@ -2,11 +2,14 @@
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -100,7 +103,7 @@ size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & bloc
 {
     return DB::computeIndexGranularity(
         block.rows(),
-        block.bytes(),
+        getBlockSizeForGranularity(block),
         (*storage_settings)[MergeTreeSetting::index_granularity_bytes],
         (*storage_settings)[MergeTreeSetting::index_granularity],
         settings.blocks_are_granules_size,
@@ -240,6 +243,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          *  (observed in long INSERT SELECTs)
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        /// The in-memory primary index lives on the part for its whole lifetime (freed only when the
+        /// part is merged away), so build it in the dedicated MergeTree arena — same rationale as the
+        /// memory-tracker blocker above.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         if (settings.save_primary_index_in_memory && index_columns.empty())
         {
@@ -326,6 +333,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }
 

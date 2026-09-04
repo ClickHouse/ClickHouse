@@ -1,6 +1,12 @@
--- Tags: no-fasttest
--- Tag justification: depends on libpq and libmysql (PostgreSQL and MySQL database engines),
--- which are not built in fast test.
+-- Tags: no-fasttest, no-parallel
+-- Tag justification:
+--   no-fasttest: depends on libpq and libmysql (PostgreSQL and MySQL database engines),
+--     which are not built in fast test.
+--   no-parallel: creates PostgreSQL and MySQL databases pointing at an unreachable host.
+--     Because `show_remote_databases_in_system_tables` defaults to `true`, these databases
+--     are visible in `system.tables`, `system.columns` and `system.completions`, so any
+--     concurrent query that scans those tables without a database filter would try to
+--     connect to the unreachable host and fail with `POSTGRESQL_CONNECTION_FAILURE`.
 
 SET send_logs_level = 'fatal';
 
@@ -18,31 +24,27 @@ SELECT '--- system.databases always shows remote databases, regardless of the se
 SELECT engine FROM system.databases WHERE name IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) ORDER BY engine SETTINGS show_remote_databases_in_system_tables = 0;
 SELECT engine FROM system.databases WHERE name IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) ORDER BY engine SETTINGS show_remote_databases_in_system_tables = 1;
 
-SELECT '--- system.tables hides PostgreSQL by default (count must be 0 without contacting the server) ---';
+SELECT '--- system.tables hides PostgreSQL when disabled (count must be 0 without contacting the server) ---';
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- system.tables hides MySQL by default ---';
+SELECT '--- system.tables hides MySQL when disabled ---';
 USE {CLICKHOUSE_DATABASE_2:Identifier};
 SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- system.columns hides PostgreSQL by default ---';
+SELECT '--- system.columns hides PostgreSQL when disabled ---';
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT count() FROM system.columns WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- system.columns hides MySQL by default ---';
+SELECT '--- system.columns hides MySQL when disabled ---';
 USE {CLICKHOUSE_DATABASE_2:Identifier};
 SELECT count() FROM system.columns WHERE database = currentDatabase() SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- system.completions does not list remote databases by default (count must be 0 without contacting the server) ---';
+SELECT '--- system.completions does not list remote databases when disabled (count must be 0 without contacting the server) ---';
 SELECT count() FROM system.completions WHERE word IN ({CLICKHOUSE_DATABASE_1:String}, {CLICKHOUSE_DATABASE_2:String}) AND context = 'database' SETTINGS show_remote_databases_in_system_tables = 0;
 
-SELECT '--- the old setting name still works as an alias ---';
-USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT count() FROM system.tables WHERE database = currentDatabase() SETTINGS show_data_lake_catalogs_in_system_tables = 0;
-
-SELECT '--- system.settings exposes both the new name and the alias ---';
-SELECT name, alias_for FROM system.settings WHERE name IN ('show_remote_databases_in_system_tables', 'show_data_lake_catalogs_in_system_tables') ORDER BY name;
+SELECT '--- system.settings exposes separate data-lake and remote-database settings ---';
+SELECT name, value, alias_for = '' FROM system.settings WHERE name IN ('show_remote_databases_in_system_tables', 'show_data_lake_catalogs_in_system_tables') ORDER BY name;
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

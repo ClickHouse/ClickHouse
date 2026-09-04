@@ -43,7 +43,7 @@ bool isVirtualRow(const Chunk & chunk)
     return false;
 }
 
-void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
+Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
     auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     chassert(read_info);
@@ -78,6 +78,8 @@ void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_c
     }
 
     chunk.setColumns(ordered_columns, 1);
+
+    return pk_block;
 }
 
 }

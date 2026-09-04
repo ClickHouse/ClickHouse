@@ -70,8 +70,16 @@ public:
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
+      * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
+      * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
+      * source row to the partition it landed in.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(
+        Block && block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        IColumn::Selector * out_selector = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.

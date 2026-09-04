@@ -63,6 +63,16 @@ SELECT a1, a2, b FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 
+-- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
+-- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
+-- name has to account for the differing `__tableN` table aliases.
+SELECT count() FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2);
+SELECT count() AS groups, sum(c) AS total FROM (SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2);
+SELECT a1 FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2) WHERE a1 = '7';
+SELECT count() FROM (SELECT a1, a2 FROM (SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2));
+-- A non-collapsed ALIAS column inside the subquery must keep flowing alongside the collapsed pair.
+SELECT a1, a2, b FROM (SELECT a1, a2, b FROM dist_same_expr GROUP BY a1, a2, b) ORDER BY a1;
+
 -- HAVING referencing a duplicate ALIAS column.
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 HAVING a1 != '' ORDER BY a1;
 
@@ -189,3 +199,90 @@ SELECT length(a1) AS l, length(a2) AS m, count() AS c FROM dist_longlit GROUP BY
 
 DROP TABLE dist_longlit;
 DROP TABLE loc_longlit;
+
+-- Adversarial: user text that looks like a planner table qualifier `__tableN.` must not perturb the collapse
+-- reconstruction. The reconstruction matches shard columns to expected columns after erasing the numbering of only
+-- the GENUINE `__tableN.` qualifiers, those whose tail is a real column name collected from the query tree. Any
+-- look-alike text (a column literally named `__table9`, the string constants `'__table9'` / `'__table1.'`, an
+-- over-long `__table999...` run, a backquoted column named `__table1.k`, or a lambda argument named `__table1.y`) is
+-- not a genuine qualifier, so it is left untouched and two distinct such values never collapse onto one another. Each case rides
+-- along a duplicate-ALIAS collapse nested in a subquery, the case that triggers the renumbering between the shard and
+-- initiator trees.
+DROP TABLE IF EXISTS loc_adv;
+DROP TABLE IF EXISTS dist_adv;
+
+CREATE TABLE loc_adv
+(
+    dt DateTime,
+    x UInt8,
+    `__table9` UInt8,
+    `__table1.k` UInt8,
+    a1 String ALIAS toString(x),
+    a2 String ALIAS toString(x),
+    -- ALIAS columns whose expression is a lambda. The lambda argument name `__table1.y` is user text emitted into the
+    -- action name unquoted, so it is indistinguishable in shape from a real table qualifier (`__tableN.<tail>`), yet its
+    -- tail `y` is not a real column name, so the qualifier blanking must leave it untouched.
+    lamy0 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0]),
+    lamy1 Array(String) ALIAS arrayMap(`__table1.y` -> toString(x), [0])
+)
+ENGINE = MergeTree ORDER BY dt;
+CREATE TABLE dist_adv AS loc_adv
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc_adv, rand());
+INSERT INTO loc_adv (dt, x, `__table9`, `__table1.k`) VALUES ('2024-01-01 00:00:00', 7, 5, 3);
+
+-- A string constant `'__table9'` and an arithmetic over a column named `__table9` next to the collapsed (a1, a2)
+-- pair. Neither `__table9` token is a real qualifier (no trailing dot), so neither side's name is altered by the
+-- qualifier blanking and the collapsed pair still reconciles.
+SELECT a1, a2, w, n FROM
+(
+    SELECT a1, a2, concat('__table9', a1) AS w, `__table9` + 1 AS n
+    FROM dist_adv GROUP BY a1, a2, `__table9`
+) ORDER BY a1;
+
+-- A string constant with an over-long digit run. The digits are never parsed into an integer, so an over-long run
+-- cannot overflow, and the collapsed pair still reconciles.
+SELECT a1, a2, c FROM
+(
+    SELECT a1, a2, concat('__table99999999999999999999999999999.col', a1) AS c
+    FROM dist_adv GROUP BY a1, a2
+) ORDER BY a1;
+
+-- A string constant `'__table1.'` that mimics a complete qualifier (digits + trailing dot). It is a quoted span, not a
+-- genuine qualifier, so its number is left intact and the collapsed pair reconciles instead of failing with
+-- NUMBER_OF_COLUMNS_DOESNT_MATCH.
+SELECT a1, a2, v FROM
+(
+    SELECT a1, a2, concat('__table1.', a1) AS v
+    FROM dist_adv GROUP BY a1, a2
+) ORDER BY a1;
+
+-- Two distinct string constants `'__table1.'` and `'__table2.'` that each mimic a complete qualifier, computed over a
+-- shard-side expression (`toString(x)`) so both land in the shard projection next to the collapsed (a1, a2) pair.
+-- Their digits must NOT be erased: they are user text, not genuine qualifiers (a genuine qualifier's tail is a real
+-- column name), so the two columns stay distinct and the collapse reconciles. Erasing them would make both canonicalize
+-- to the same name, drop one as a duplicate, and fail with NUMBER_OF_COLUMNS_DOESNT_MATCH.
+SELECT a1, a2, v1, v2 FROM
+(
+    SELECT a1, a2, concat('__table1.', toString(x)) AS v1, concat('__table2.', toString(x)) AS v2
+    FROM dist_adv GROUP BY a1, a2, v1, v2
+) ORDER BY a1;
+
+-- A backquoted column identifier `__table1.k` that looks like a qualifier with a trailing dot. It is the rendered
+-- name of a real column (`backQuoteIfNeed` quotes the dot), so it is matched as a whole tail and not mistaken for a
+-- `__table1.` qualifier followed by a column `k`.
+SELECT a1, a2, m FROM
+(
+    SELECT a1, a2, `__table1.k` AS m
+    FROM dist_adv GROUP BY a1, a2, `__table1.k`
+) ORDER BY a1;
+
+-- A lambda argument name leaks into the action name unquoted. `__table1.y` looks like a qualifier (digits + dot +
+-- tail), but its tail `y` is not a real column name, so it is not treated as a genuine qualifier and its numbering is
+-- left intact. The collapsed (lamy0, lamy1) pair reconciles instead of failing with NUMBER_OF_COLUMNS_DOESNT_MATCH.
+SELECT lamy0, lamy1 FROM
+(
+    SELECT lamy0, lamy1 FROM dist_adv GROUP BY lamy0, lamy1
+) ORDER BY lamy0;
+
+DROP TABLE dist_adv;
+DROP TABLE loc_adv;

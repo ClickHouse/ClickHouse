@@ -46,6 +46,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 
@@ -72,6 +73,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
@@ -98,6 +100,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 
 }
 
@@ -120,6 +123,28 @@ namespace FailPoints
 {
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
+    extern const char datalake_get_tables_throw[];
+}
+
+namespace
+{
+
+/// Translate the database-layer `TablesFilter` into the catalog-layer
+/// `TableNameFilter` so the catalog can restrict which namespaces it lists.
+DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
+{
+    switch (tables_filter.kind)
+    {
+        case TablesFilter::Kind::None:
+            return {DataLake::TableNameFilter::Kind::All, {}};
+        case TablesFilter::Kind::Equals:
+            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+        case TablesFilter::Kind::Like:
+            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+    }
+    return {DataLake::TableNameFilter::Kind::All, {}};
+}
+
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -132,16 +157,16 @@ DatabaseDataLake::DatabaseDataLake(
     bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
-    , settings(settings_)
+    , database_settings(std::make_unique<const DatabaseDataLakeSettings>(settings_))
     , database_engine_definition(database_engine_definition_)
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , db_uuid(uuid)
 {
     validateSettings();
-    /// On ATTACH (server startup) defer catalog construction to first use: building it can
-    /// perform network I/O or credential validation that must not block startup. On CREATE
-    /// build eagerly so misconfiguration is reported immediately.
+    /// On ATTACH (server startup / user `ATTACH DATABASE`) or internal creates (restore),
+    ///  defer catalog construction to first use: building it can perform network I/O or credential validation
+    ///  that must not block startup. On CREATE build eagerly so misconfiguration is reported immediately.
     if (!lazy_init)
     {
         std::lock_guard lock(catalog_mutex);
@@ -151,6 +176,9 @@ DatabaseDataLake::DatabaseDataLake(
 
 void DatabaseDataLake::validateSettings()
 {
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::GLUE)
     {
         if (settings[DatabaseDataLakeSetting::region].value.empty())
@@ -170,6 +198,9 @@ void DatabaseDataLake::initialize() const
 {
     /// Caller holds `catalog_mutex`: this runs either from the constructor (CREATE, eager)
     /// or from `getCatalog` on first access (ATTACH, lazy).
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -206,6 +237,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_secret].value,
+                settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
@@ -320,6 +352,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     if (!catalog_impl)
         initialize();
     return catalog_impl;
+}
+
+void DatabaseDataLake::resetCatalog() const
+{
+    catalog_impl = nullptr;
 }
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
@@ -498,6 +535,9 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
 
 std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const
 {
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
@@ -522,6 +562,9 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
@@ -650,10 +693,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
+        const auto auth = rest_catalog->getStateSnapshot();
         azure_configuration->setInitializationAsOneLake(
-            rest_catalog->getClientId(),
-            rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId(),
+            auth->client_id,
+            auth->client_secret,
+            auth->tenant_id,
+            auth->bearer_token,
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
@@ -771,6 +816,15 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
+    return getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded,
+    const TablesFilter & tables_filter) const
+{
     Tables tables;
     DB::Names iceberg_tables;
 
@@ -778,10 +832,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -861,9 +922,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool skip_not_loaded) const
+{
+    return getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool /*skip_not_loaded*/,
+    const TablesFilter & tables_filter) const
 {
     DB::Names iceberg_tables;
     std::vector<LightWeightTableDetails> result;
@@ -872,10 +942,17 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
+        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -928,11 +1005,93 @@ void DatabaseDataLake::checkDatabase() const
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
+void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
+{
+    const auto current_settings = database_settings.get();
+
+    /// This check in some sense duplicate check in ICatalog, because it's a valid case when
+    /// catalog can be unitilized here, and we actually use alter to "resurrect it". For example provide
+    /// proper credentials with settings.
+    DataLake::CatalogSettingsAlterValidatorFactory::instance().validate(*current_settings, settings_changes);
+
+    auto new_settings = std::make_unique<DatabaseDataLakeSettings>(*current_settings);
+    new_settings->applyChanges(settings_changes);
+
+    ASTPtr new_engine_definition;
+    {
+        std::lock_guard lock(mutex);
+        new_engine_definition = database_engine_definition->clone();
+    }
+    auto * storage = new_engine_definition->as<ASTStorage>();
+    if (!storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine definition of database {} is not a storage AST", getDatabaseName());
+
+    if (storage->settings)
+    {
+        auto & stored_changes = storage->settings->changes;
+        for (const auto & change : settings_changes)
+        {
+            /// cleanup duplicates
+            std::erase_if(stored_changes, [&](const auto & prev) { return prev.name == change.name; });
+            stored_changes.push_back(change);
+        }
+    }
+    else
+    {
+        auto storage_settings_ast = make_intrusive<ASTSetQuery>();
+        storage_settings_ast->is_standalone = false;
+        storage_settings_ast->changes = settings_changes;
+        storage->set(storage->settings, storage_settings_ast);
+    }
+
+    std::shared_ptr<DataLake::ICatalog> local_catalog_snapshot;
+    {
+        std::lock_guard lock(catalog_mutex);
+        local_catalog_snapshot = catalog_impl;
+    }
+
+    /// Prepare the new catalog state without publishing it: validation, the eager token
+    /// fetch and the config reload may throw, and then nothing has changed yet.
+    DataLake::ICatalog::PreparedSettingsChangesPtr prepared_catalog_changes;
+    if (local_catalog_snapshot)
+        prepared_catalog_changes = local_catalog_snapshot->prepareSettingsChanges(settings_changes);
+
+    /// Persist the new metadata before publishing anything: if the write fails, the live
+    /// state is untouched and matches the old metadata on disk. The create query is built
+    /// from the patched definition because the live one is not swapped yet.
+    auto new_create_query = make_intrusive<ASTCreateQuery>();
+    new_create_query->setDatabase(getDatabaseName());
+    new_create_query->set(new_create_query->storage, new_engine_definition);
+    new_create_query->uuid = db_uuid;
+    DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
+
+    /// Publish. Nothing below throws.
+    if (local_catalog_snapshot)
+        local_catalog_snapshot->commitSettingsChanges(std::move(prepared_catalog_changes));
+    database_settings.set(std::move(new_settings));
+    {
+        std::lock_guard lock(mutex);
+        database_engine_definition = new_engine_definition;
+    }
+    if (!local_catalog_snapshot)
+    {
+        /// The catalog was not built when the ALTER started. If a concurrent query
+        /// built it meanwhile, it used the old settings: drop it so the next access
+        /// rebuilds it with the new ones. Also clear a recorded construction failure
+        /// (e.g. credentials lost on RESTORE) for the same reason.
+        std::lock_guard lock(catalog_mutex);
+        resetCatalog();
+    }
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
     bool throw_on_error) const
 {
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
@@ -1083,6 +1242,23 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
+                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                {
+                    /// Require exactly one auth method: a bearer token, or a client id + secret pair.
+                    const bool has_bearer = !database_settings[DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+                    const bool has_client_id = !database_settings[DatabaseDataLakeSetting::onelake_client_id].value.empty();
+                    const bool has_client_secret = !database_settings[DatabaseDataLakeSetting::onelake_client_secret].value.empty();
+
+                    const bool has_client_pair = has_client_id && has_client_secret;
+                    bool has_exactly_one_method = has_bearer != has_client_pair;
+                    bool has_conflicting_fields = has_client_id != has_client_secret;
+
+                    if (!has_exactly_one_method || has_conflicting_fields)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "OneLake catalog requires exactly one authentication method: either `onelake_bearer_token` "
+                            "or both `onelake_client_id` and `onelake_client_secret`");
+                }
+
                 engine_func->name = "Iceberg";
                 break;
             }
@@ -1149,7 +1325,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_engine_define->clone(),
             std::move(engine_for_tables),
             args.uuid,
-            /*lazy_init=*/args.create_query.attach);
+            /// Internal creates (`RESTORE DATABASE`) shouldn't do network I/O.
+            /// We don't want an unreachable or unauthorized catalog to block replica startup.
+            /*lazy_init=*/args.create_query.attach || args.internal);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -1236,6 +1414,10 @@ SETTINGS
 SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```
+    To authenticate without sharing a client secret, set `onelake_bearer_token` to a pre-obtained
+    bearer token (scoped to https://storage.azure.com) instead of
+    `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
+    database must be recreated after it expires.
 )DOCS_MD",
         .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
         .related = {}});

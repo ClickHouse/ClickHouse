@@ -19,20 +19,6 @@ namespace ProfileEvents
 namespace
 {
 
-bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
-{
-    static constexpr std::array non_retriable_errors{
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
-
-    return std::all_of(
-        non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
-}
-
 Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
     chassert(DB::isRedirect(response.getStatus()));
@@ -343,7 +329,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableError(e.getHTTPStatus()))
+            if (!isRetriableHTTPError(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();

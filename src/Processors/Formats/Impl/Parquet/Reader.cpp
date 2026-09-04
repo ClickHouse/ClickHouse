@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
@@ -581,6 +582,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -666,6 +668,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -802,6 +805,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -1459,7 +1469,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
@@ -1472,7 +1482,21 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
+        /// the null map is the group null map: defaults fill the struct-null rows.
         subchunk.column->expand(null_map, /*inverted*/ true);
+    }
+
+    if (column_info.group_nullable && subchunk.null_map)
+    {
+        /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
+        /// is the group null map. Move it aside now, before the output_nullable block below can
+        /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
+        /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
+        /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
+        /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
+        subchunk.group_null_map = std::move(subchunk.null_map);
+        subchunk.null_map.reset();
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -2146,7 +2170,26 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
-    TypeIndex kind = output_info.input_type->getColumnType();
+    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
+    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
+    /// the group null map. Every leaf shares the same def-level null map (the subtree is
+    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
+    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
+    /// the unwrapped type.
+    MutableColumnPtr nullable_group_null_map;
+    if (output_info.nullable_group)
+    {
+        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
+        if (first_leaf.group_null_map)
+            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
+        else
+            /// No struct-level nulls (all rows defined): all-non-null map.
+            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
+    }
+
+    TypeIndex kind = output_info.nullable_group
+        ? removeNullable(output_info.input_type)->getColumnType()
+        : output_info.input_type->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -2204,6 +2247,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
+    }
+
+    if (output_info.nullable_group)
+    {
+        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
+        chassert(nullable_group_null_map->size() == res->size());
+        res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());

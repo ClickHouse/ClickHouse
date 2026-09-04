@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -121,6 +122,10 @@ public:
         return true;
     }
     bool supportsPrewhere() const override;
+    /// read() forwards the already-analyzed query straight to the destination table, so the
+    /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
+    /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
+    bool supportsOptimizationToSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

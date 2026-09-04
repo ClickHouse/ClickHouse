@@ -4,11 +4,13 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -126,6 +128,16 @@ public:
 
         Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
         non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+
+        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
+        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
+        /// dependent materialized view whose inner query changed the number of rows, those chunks
+        /// no longer match the rows the info's offsets describe, and computing a data hash after
+        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
+        /// info is still consistent.
+        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
+            deduplication_info->cacheDataHashes(data_hash_cache);
+
         executor->push(std::move(non_materialized_chunk));
     }
 
@@ -153,6 +165,9 @@ private:
     bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
+    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
+    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
+    DeduplicationInfo::DataHashCache data_hash_cache;
 };
 
 void StorageAlias::read(
@@ -287,7 +302,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)

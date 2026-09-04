@@ -80,6 +80,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -240,6 +241,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -577,6 +579,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -610,7 +617,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -865,7 +872,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -875,8 +883,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
-
-                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
                 RangesInDataParts parts_for_estimator;
@@ -1205,12 +1211,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
+    /// The old analyzer computes result_header from the ExpressionAnalyzer sample block,
+    /// independently of the actual query plan. A plan step may legitimately materialize a
+    /// column the sample considered constant (e.g. a remote(...) UnionStep whose shards fold
+    /// randConstant() to different values). Forcing such a full column back to a Const in the
+    /// convert target would fail in makeConvertingActions. Reconcile a local convert target:
+    /// where a column is full in the plan but Const of the same type in the result header,
+    /// take the plan's full column so the conversion keeps it full. result_header itself is
+    /// left untouched so getSampleBlock() (seen by an enclosing subquery) is unchanged.
+    ColumnsWithTypeAndName convert_target = result_header->getColumnsWithTypeAndName();
+    {
+        const auto & plan_header = *query_plan.getCurrentHeader();
+        for (auto & res_col : convert_target)
+        {
+            if (!res_col.column || !isColumnConst(*res_col.column))
+                continue;
+            const auto * plan_col = plan_header.findByName(res_col.name);
+            if (plan_col && plan_col->column && !isColumnConst(*plan_col->column)
+                && res_col.type->equals(*plan_col->type))
+                res_col.column = plan_col->column;
+        }
+    }
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), Block(convert_target)))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            result_header->getColumnsWithTypeAndName(),
+            convert_target,
             ActionsDAG::MatchColumnsMode::Name,
             context,
             true);
@@ -3244,10 +3272,26 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
-                window.partition_by,
+                scatter_partition_by,
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);

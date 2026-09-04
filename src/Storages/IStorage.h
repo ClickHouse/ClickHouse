@@ -114,6 +114,12 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true for storages that do not store data themselves but read it from other tables,
+    /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
+    /// of the rows read from such a storage carry the name of the table that actually produced
+    /// each row, which is not necessarily the name of this storage.
+    virtual bool readsFromOtherTables() const { return false; }
+
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
 
@@ -195,6 +201,10 @@ public:
     /// Used for query optimizations by the MergeTree family of storages and by Parquet reader.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
+
+    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// The default implementation falls back to the parameterless version.
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
@@ -649,6 +659,17 @@ public:
     virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
+
+    /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
+    /// `max_table_size_to_drop` before EXCHANGE. Narrower than
+    /// `checkTableCanBeDropped` (no dictionary/view-dependency throws), so it
+    /// can run on any storage engine. NOT a pure dry-run: the `MergeTreeData`
+    /// override reaches `Context::checkCanBeDropped`, which removes the
+    /// `force_drop_table` flag when it authorizes an over-limit drop. Callers
+    /// must invoke it exactly once; a second call after the flag was consumed
+    /// throws TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT.
+    /// Default: no-op (engine has no on-disk data the size guard would care about).
+    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
 
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()

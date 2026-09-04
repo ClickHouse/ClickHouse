@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -33,25 +32,11 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
-/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
-/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
-static void stripArtificialParens(IAST & ast)
-{
-    ast.setParenthesized(false);
-    if (auto * list = ast.as<ASTExpressionList>())
-        for (auto & child : list->children)
-            if (child)
-                child->setParenthesized(false);
-}
-
 static String formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    auto cloned = ast->clone();
-    stripArtificialParens(*cloned);
-    return cloned->formatWithSecretsOneLine();
+    return ast->formatIgnoringRedundantParentheses();
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
@@ -60,8 +45,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    stripArtificialParens(*ast_normalized);
-    return ast_normalized->formatWithSecretsOneLine();
+    return ast_normalized->formatIgnoringRedundantParentheses();
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
@@ -635,7 +619,10 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// Primary key is special, it exists even if not defined
     if (new_metadata.primary_key.definition_ast != nullptr)
     {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+        /// An explicitly defined primary key cannot express per-column directions (`DESC`), so it
+        /// inherits them from the sorting key, which is already recalculated above.
+        new_metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+            new_metadata.primary_key.definition_ast, new_metadata.sorting_key, new_metadata.columns, virtuals, context);
     }
     else
     {

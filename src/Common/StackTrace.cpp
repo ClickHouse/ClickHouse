@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -587,22 +588,74 @@ void StackTrace::tryCapture()
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
+/// The type-erasing wrappers of `std::function`, spelled as they appear after @c replacements dropped
+/// the `::__1` ABI namespace. These are the frames whose demangled names are pure noise: they spell out
+/// the whole captured type and say nothing that the surrounding frames do not already say. Everything
+/// else keeps its name, including a `std::` symbol that merely happens to live in a `__functional`
+/// header (`std::hash`, `std::less`, ...) - such a frame is where the code really is, so its name is
+/// the only useful part of it. In particular, the generic invocation helpers (`std::invoke`,
+/// `std::__invoke`, `std::mem_fn`) are deliberately not here: they are not `std::function`-specific,
+/// and a frame's name can name the callable they dispatch to - a single-frame prefix match cannot tell
+/// a `std::function` trampoline from a direct use, so they keep their names.
+constexpr std::string_view std_function_plumbing[] = {
+    "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
+};
+
+/// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
+/// constructors, the assignment operators and the destructor, which copy, move and destroy the captured
+/// callable. Every other member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its
+/// own and is a normal frame, so it keeps its name. The constructor is spelled both as
+/// `function(std::function<` (the copy and move constructors - spelled with the argument so that the
+/// default constructor `function()` and `function(std::nullptr_t)`, which merely create an empty object
+/// and have short, informative names, are not caught) and as `function<` (the constructor taking a
+/// callable, which is a function template, so its own template arguments follow the name:
+/// `function<MyCallable, void>(MyCallable&&)`); the assignment operator likewise as
+/// `operator=(std::function<` (the copy and move assignment; `operator=(std::nullptr_t)` just resets the
+/// object and stays visible) and as `operator=<` (the callable-taking overload:
+/// `operator=<MyCallable, void>(MyCallable&&)`).
+constexpr std::string_view std_function_noisy_members[]
+    = {"operator()", "function(std::function<", "function<", "~function(", "operator=(std::function<", "operator=<"};
+
+static bool isStdFunctionPlumbing(const String & symbol_name)
+{
+    if (std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); }))
+        return true;
+
+    constexpr std::string_view std_function = "std::function<";
+    if (!symbol_name.starts_with(std_function))
+        return false;
+
+    /// Skip the template argument list to reach the member name: the signature of the callable can nest
+    /// its own `<` and `>`, so the closing bracket is the one that brings the depth back to zero.
+    size_t depth = 1;
+    size_t pos = std_function.size();
+    for (; pos < symbol_name.size() && depth != 0; ++pos)
+    {
+        if (symbol_name[pos] == '<')
+            ++depth;
+        else if (symbol_name[pos] == '>')
+            --depth;
+    }
+    if (depth != 0)
+        return false;
+
+    std::string_view member{symbol_name};
+    member.remove_prefix(pos);
+    if (!member.starts_with("::"))
+        return false;
+    member.remove_prefix(2);
+
+    return std::ranges::any_of(std_function_noisy_members, [&](std::string_view noisy) { return member.starts_with(noisy); });
+}
+
+// Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
+// trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
+// the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
-
-    if (file.has_value())
-    {
-        std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
-            file_copy.remove_suffix(file_copy.size() - trim_pos);
-        if (file_copy.ends_with("functional"))
-            return "?";
-    }
 
     // TODO myrrc surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
@@ -613,6 +666,22 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
             symbol_name.replace(pos, needle.length(), to);
             pos += to.length();
         }
+    }
+
+    /// The file of a frame is the source line the *instruction* maps to, which is not necessarily
+    /// where the enclosing function is defined: a compiler-generated or inlined `std::function`
+    /// operation puts a line-table entry pointing into `__functional` in the middle of an ordinary
+    /// function. Requiring the symbol to name the plumbing as well keeps the frame of such a function
+    /// named - it is the only useful part of the frame, and dropping it left `trace_full` in
+    /// `system.crash_log` with a bare `?` for the frame that actually crashed. This is much more
+    /// likely in a ThinLTO build, where `std::function` calls are inlined across translation units.
+    if (file.has_value() && isStdFunctionPlumbing(symbol_name))
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
     }
 
     return symbol_name;
@@ -675,7 +744,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 

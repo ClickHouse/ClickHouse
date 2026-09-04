@@ -201,6 +201,9 @@ struct IdentifierResolveScope
     /// JOINs count
     size_t joins_count = 0;
 
+    /// JOIN USING count (joins whose keys can retype a matched column)
+    size_t using_joins_count = 0;
+
     /// Subquery depth
     size_t subquery_depth = 0;
 

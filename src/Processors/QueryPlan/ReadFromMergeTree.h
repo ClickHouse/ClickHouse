@@ -264,6 +264,11 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Direct reads from a text index (see `createReadTasksForTextIndex`). The tasks are self-contained,
+    /// so the get/set pair lets another step reading the same table (e.g. one built by lazy FINAL) reproduce them.
+    const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
+    void setIndexReadTasks(IndexReadTasks index_read_tasks_) { index_read_tasks = std::move(index_read_tasks_); }
+
     /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
     /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
@@ -325,6 +330,7 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }

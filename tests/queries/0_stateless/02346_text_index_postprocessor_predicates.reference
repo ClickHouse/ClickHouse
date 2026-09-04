@@ -1,0 +1,62 @@
+1. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.
+1
+1
+0
+0
+2. hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.
+1
+0
+0
+1
+0
+0
+3. Predicates hasPhrase / startsWith / endsWith work correctly with a postprocessor.
+1
+1
+1
+4. startsWith / endsWith use hint with postprocessor when normalized tokens survive.
+1
+1
+5. startsWith stays correct when the postprocessor maps all hint tokens to empty.
+1
+6. val IN (...) routes set elements through the postprocessor.
+1
+1
+1
+0
+0
+2
+2
+-- IN element that the postprocessor maps to empty: index falls back to row-scan.
+1
+1
+2
+7. String column + array tokenizer + postprocessor: equals / hasAllTokens use postprocessor via hint mode.
+1
+1
+1
+0
+1
+1
+1
+1
+2
+0
+8. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.
+1
+0
+1
+9. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.
+1
+0
+1
+10. Map column + array tokenizer + postprocessor: mapContains* use postprocessor via hint mode.
+1
+1
+0
+1
+1
+0
+11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).
+0
+2

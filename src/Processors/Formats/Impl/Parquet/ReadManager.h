@@ -44,6 +44,11 @@ public:
 
     ~ReadManager();
 
+    /// Same handshake as the destructor, but keeps `reader` and its metadata intact. After this
+    /// returns, no decode task runs anymore, so nothing can re-enter the prefetcher. Idempotent.
+    /// Drain this before the prefetcher: decode tasks read ranges through it.
+    void shutdownTasks();
+
     struct ReadResult
     {
         Chunk chunk;

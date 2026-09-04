@@ -66,6 +66,8 @@ enum class FormatSyntax : uint8_t
     Joda
 };
 
+constexpr size_t MAX_JODA_TIMEZONE_NAME_LENGTH = 32;
+
 template <typename DataType> struct InstructionValueTypeMap {};
 template <> struct InstructionValueTypeMap<DataTypeInt8>       { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt8>      { using InstructionValueType = UInt32; };
@@ -851,6 +853,8 @@ private:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
 
             auto str = timezone.getTimeZone();
+            if (str.size() > MAX_JODA_TIMEZONE_NAME_LENGTH)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time zone name is longer than the maximum supported length of {} bytes", MAX_JODA_TIMEZONE_NAME_LENGTH);
             memcpy(dest, str.data(), str.size());
             return str.size();
         }
@@ -912,6 +916,39 @@ private:
 
         return true;
     }
+
+    class TimeZoneCache
+    {
+    public:
+        const DateLUTImpl & getOrSet(std::string_view time_zone_name)
+        {
+            for (const Entry & cached_time_zone : cached_time_zones)
+            {
+                if (cached_time_zone.time_zone == nullptr)
+                    break;
+                if (cached_time_zone.name == time_zone_name)
+                    return *cached_time_zone.time_zone;
+            }
+
+            /// insert new entry or replace existing entry
+            const DateLUTImpl & time_zone = DateLUT::instance(time_zone_name);
+            cached_time_zones[next] = {String(time_zone_name), &time_zone};
+            next = (next + 1) % CACHE_SIZE;
+            return time_zone;
+        }
+
+    private:
+        constexpr static size_t CACHE_SIZE = 4;
+
+        struct Entry
+        {
+            String name;
+            const DateLUTImpl * time_zone = nullptr;
+        };
+        using CacheTable = std::array<Entry, CACHE_SIZE>;
+        CacheTable cached_time_zones;
+        size_t next = 0; /// position to insert the next entry at
+    };
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
@@ -1142,14 +1179,19 @@ public:
 
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
+
+        /// Non-const time zone arguments are resolved per row. This is done under an expensive mutex in DateLUT.
+        /// Lots of queries use only a handful of different time zones. As an optimization, cache the resolved time zones.
+        TimeZoneCache time_zone_cache;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
-                else
+                std::string_view time_zone_name = arguments[2].column->getDataAt(i);
+                if (time_zone_name.empty())
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
+                time_zone = &time_zone_cache.getOrSet(time_zone_name);
             }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
@@ -1964,8 +2006,7 @@ public:
                         Instruction<T> instruction;
                         instruction.setJodaFunc(std::bind_front(&Instruction<T>::jodaTimezone, repetitions));
                         instructions.push_back(std::move(instruction));
-                        /// Longest length of full name of time zone is 32.
-                        reserve_size += 32;
+                        reserve_size += MAX_JODA_TIMEZONE_NAME_LENGTH; /// we'll throw at runtime if the time zone is longer than that
                         break;
                     }
                     case 'Z':

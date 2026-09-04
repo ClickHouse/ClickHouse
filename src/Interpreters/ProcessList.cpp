@@ -529,8 +529,18 @@ QueryStatus::QueryStatus(
 
 void QueryStatus::releaseWorkloadResources()
 {
-    memory_reservation.reset();
+    releaseMemoryReservation();
+    releaseQuerySlot();
+}
+
+void QueryStatus::releaseQuerySlot()
+{
     query_slot.reset();
+}
+
+void QueryStatus::releaseMemoryReservation()
+{
+    memory_reservation.reset();
 }
 
 QueryStatus::~QueryStatus()

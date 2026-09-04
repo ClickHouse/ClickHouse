@@ -369,6 +369,8 @@ String getNameForSubstreamPath(
             stream_name += "." + std::to_string(it->bucket);
         else if (it->type == SubstreamType::MapBucketsInfo)
             stream_name += ".buckets_info";
+        else if (it->type == SubstreamType::MapBucketIndexes)
+            stream_name += ".bucket_indexes";
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
             stream_name += ".structure";
         else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
@@ -832,9 +834,9 @@ bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)
 
 bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const ISerialization::SubstreamPath & substream_path, ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
-    if (isVariantSubcolumn(substream_path) && stream_file_name_settings.escape_variant_substreams)
+    if (isVariantSubcolumn(substream_path))
     {
-        stream_file_name_settings.escape_variant_substreams = false;
+        stream_file_name_settings.escape_variant_substreams = !stream_file_name_settings.escape_variant_substreams;
         return true;
     }
 

@@ -79,6 +79,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_pause_before_commit_local_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
 }
 
@@ -305,23 +306,42 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
 
-    BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    IColumn::Selector partition_selector;
+    BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
     decltype(delayed_parts) current_parts;
 
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
+    if (deduplication_info && deduplicate && !deduplication_info->isDisabled())
+    {
+        /// A killed or timed-out insert should be noticed before the O(N) prewarm hash pass,
+        /// not only at the much later Keeper interaction; same interrupt point as in `MergeTreeSink`.
+        if (auto process_list_element = context->getProcessListElement())
+            process_list_element->checkTimeLimit();
+
+        /// Warm the data hashes once here so the per-partition infos from filterToPartition below
+        /// reuse the cached token hash instead of rehashing a token that spans several partitions.
+        /// Time it under DuplicationElapsedMicroseconds like the per-partition dedup below.
+        ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
+        deduplication_info->prewarmDataHashes();
+    }
+
     std::vector<UInt128> all_partitions_block_ids;
 
-    for (auto & current_block : part_blocks)
+    for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
     {
+        auto & current_block = part_blocks[part_index];
+
         Stopwatch watch;
 
         ProfileEvents::Counters part_counters;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
-        auto current_deduplication_info = deduplication_info->cloneSelf();
+        /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
+        /// insert does not register a token in partitions it never wrote to.
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
@@ -557,6 +577,11 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
                 /// partition.temp_part is already finalized, no need to call cancel
                 partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+                /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+                /// could become empty after merge and then no part is created.
+                if (!partition.temp_part->part)
+                    break;
             }
 
             // Do it before logging part to have correct elapsed time and profile events in PartLog
@@ -566,6 +591,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     resolveQuorum(zookeeper, part);
             }
         }
+
+        /// The part is null if the retry loop above exited on a block that became empty after merge.
+        if (!partition.temp_part->part)
+            continue;
 
         // profile_events_scope has to be destroyed in the scope above
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
@@ -875,6 +904,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
     auto sleep_before_commit_for_tests = [&] ()
     {
+        /// The parts have been renamed but not committed yet, and the caller still holds the
+        /// table lock it took for the whole pipeline.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_before_commit_local_part);
+
         auto sleep_before_commit_local_part_in_replicated_table_ms = (*storage.getSettings())[MergeTreeSetting::sleep_before_commit_local_part_in_replicated_table_ms];
         if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
         {

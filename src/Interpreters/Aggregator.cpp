@@ -974,9 +974,11 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-        /// handles variable hash computation cost by measuring actual iteration latency.
-        const bool prefetch = params.enable_prefetch
+        /// It also doesn't make sense when building the key holder is expensive: the look-ahead
+        /// below calls `getKeyHolder` a second time for every row, so a method that materializes
+        /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
+        /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+        const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
@@ -1443,7 +1445,7 @@ void Aggregator::addBatchSinglePlace(
     if (inst->offsets)
         inst->batch_that->addBatchSinglePlace(
             inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-            inst->offsets[row_end - 1],
+            inst->offsets[static_cast<ssize_t>(row_end) - 1],
             place,
             inst->batch_arguments,
             arena);
@@ -1481,7 +1483,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-                inst->offsets[row_end - 1],
+                inst->offsets[static_cast<ssize_t>(row_end) - 1],
                 res + inst->state_offset,
                 inst->batch_arguments,
                 data_variants.aggregates_pool);
@@ -1535,7 +1537,12 @@ void Aggregator::prepareAggregateInstructions(
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
-            auto full_column = allow_sparse_arguments
+            /// Keep the column sparse only when it is a top-level ColumnSparse: the sparse add()
+            /// path (addBatchSparse) works on a literal ColumnSparse. A column that is dense at the
+            /// top level but contains sparse subcolumns (e.g. a Tuple with a sparse element) takes
+            /// the regular add() path, where a function may assume dense leaves, so it must be fully
+            /// materialized. recursiveRemoveSparse() is a no-op when there is nothing sparse to strip.
+            auto full_column = (allow_sparse_arguments && aggregate_columns[i][j]->isSparse())
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
@@ -1916,19 +1923,19 @@ void Aggregator::writeToTemporaryFileImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
         header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
 
-    auto to_block = [&](const AggregatedChunk & agg_chunk)
+    auto to_block = [&](AggregatedChunk && agg_chunk)
     {
         Block block = header.cloneEmpty();
-        block.setColumns(agg_chunk.chunk.getColumns());
         block.info.bucket_num = agg_chunk.bucket_num;
         block.info.is_overflows = agg_chunk.is_overflows;
+        block.setColumns(agg_chunk.chunk.detachColumns());
         return block;
     };
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }
@@ -1936,7 +1943,7 @@ void Aggregator::writeToTemporaryFileImpl(
     if (params.overflow_row)
     {
         auto agg_chunk = prepareChunkAndFillWithoutKey(data_variants, false, true);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }
@@ -3049,8 +3056,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-    /// handles variable hash computation cost by measuring actual iteration latency.
+    /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
+    /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
+    /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
@@ -3136,8 +3144,9 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
-    /// handles variable hash computation cost by measuring actual iteration latency.
+    /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
+    /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
+    /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 

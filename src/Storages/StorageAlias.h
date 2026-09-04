@@ -27,6 +27,8 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
+    bool readsFromOtherTables() const override { return true; }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
@@ -261,6 +263,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();

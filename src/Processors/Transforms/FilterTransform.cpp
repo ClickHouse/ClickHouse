@@ -1,6 +1,8 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,6 +12,8 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -57,13 +61,50 @@ Block FilterTransform::transformHeader(
     auto filter_type = result.getByName(filter_column_name).type;
     if (!canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+            "Illegal type {} of column {} for filter. Must be native integer or float type",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
         result.erase(filter_column_name);
 
     return result;
+}
+
+/// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
+static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+
+    if (function_name == "and")
+        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+
+    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+
+    const IColumn * set_column = node->children[1]->column.get();
+    if (!set_column)
+        return false;
+
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(set_column))
+        set_column = &const_column->getDataColumn();
+
+    const auto * column_set = typeid_cast<const ColumnSet *>(set_column);
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    if (!future_set)
+        return false;
+
+    auto set = future_set->get();
+    return set && set->getTotalRowCount() == 0;
 }
 
 FilterTransform::FilterTransform(
@@ -125,12 +166,15 @@ IProcessor::Status FilterTransform::prepare()
 
         if (!always_false && expression && !on_totals)
         {
-            auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
-            auto & column = header.getByPosition(filter_column_position).column;
-            if (column)
+            const auto & actions_dag = expression->getActionsDAG();
+            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+
+            if (!always_false)
             {
-                ConstantFilterDescription constant_filter(*column);
-                always_false = constant_filter.always_false;
+                auto header = actions_dag.updateHeader(getInputPort().getHeader());
+                auto & column = header.getByPosition(filter_column_position).column;
+                if (column)
+                    always_false = ConstantFilterDescription(*column).always_false;
             }
         }
     }
