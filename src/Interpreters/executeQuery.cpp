@@ -1309,14 +1309,6 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
-    /// Every expression alias declared anywhere in the query (`WITH expr AS name`, `SELECT expr AS name`,
-    /// ...). Used to keep the bare-identifier right-hand side of `IN` from being mistaken for a table:
-    /// unlike a `FROM` reference, an `IN` right-hand side resolves an expression alias in preference to a
-    /// same-named table (`WITH (1, 2) AS rhs SELECT 1 IN rhs` never reads the table `rhs`). The set is
-    /// query-wide rather than per-scope on purpose — a name collision only makes the collector skip a
-    /// table, which is the safe direction for this hook.
-    std::unordered_set<String> alias_names;
-
     /// The database an unqualified table name is completed with while walking the children of a mutation
     /// carrier (`UPDATE`, `ALTER`, and the rewritten forms of `DELETE`): their interpreters run
     /// `AddDefaultDatabaseVisitor` with the *target table's* database over the predicates and expressions,
@@ -2293,8 +2285,19 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     return Context::ResolveAll;
 }
 
-/// Collect the names of all expression aliases declared in the query (see `CollectTablesData::alias_names`).
-void collectAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_names)
+/// Collect the expression aliases declared in one alias scope: the aliases an expression of the query level
+/// `ast` belongs to can resolve (`WITH expr AS name`, `SELECT expr AS name`, ...). Used to keep the
+/// bare-identifier right-hand side of `IN` from being mistaken for a table: unlike a `FROM` reference, an
+/// `IN` right-hand side resolves an expression alias in preference to a same-named table
+/// (`WITH (1, 2) AS rhs SELECT 1 IN rhs` never reads the table `rhs`).
+///
+/// The walk stops at a nested `ASTSelectQuery`, because that select starts an alias scope of its own and its
+/// aliases are not visible to its parent: in
+/// `SELECT * FROM lhs WHERE a IN rhs AND 1 = (SELECT 1 AS rhs)` the outer `IN rhs` cannot see the child
+/// scope's `rhs` alias, so it still reads the real table `rhs`. The nested scope is collected on its own when
+/// `collectTablesInQuery` reaches it, and it inherits its ancestors' aliases (which only ever makes the
+/// collector skip a table — the safe direction for a name a nested scope cannot actually resolve).
+void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_names)
 {
     if (!ast)
         return;
@@ -2303,7 +2306,11 @@ void collectAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_na
         alias_names.insert(alias);
 
     for (const auto & child : ast->children)
-        collectAliasNames(child, alias_names);
+    {
+        if (child->as<ASTSelectQuery>())
+            continue;
+        collectScopeAliasNames(child, alias_names);
+    }
 }
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
@@ -2336,14 +2343,19 @@ void collectAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_na
 /// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
 /// only the CTE currently being resolved (`WITH t AS (SELECT * FROM t) ...` reads the real table `t` inside).
 /// The bare-identifier right-hand side of `IN` follows the opposite rule — any expression alias wins there —
-/// and is handled separately through `CollectTablesData::alias_names`.
-void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes)
+/// and is handled separately through `active_aliases`, which — like `active_ctes` — is passed by value so
+/// that a select's aliases reach only its own scope and the scopes nested inside it.
+void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes, std::unordered_set<String> active_aliases)
 {
     if (!ast)
         return;
 
     if (const auto * select = ast->as<ASTSelectQuery>())
     {
+        /// This select starts a new alias scope: its own aliases are added to those inherited from the
+        /// enclosing scopes, and neither siblings nor ancestors ever see them (see `collectScopeAliasNames`).
+        collectScopeAliasNames(ast, active_aliases);
+
         const ASTPtr with = select->with();
 
         /// Collect only the real CTE names declared in this select's WITH clause. Only the
@@ -2384,7 +2396,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                     /// CTE currently being resolved.
                     if (with_element)
                         body_ctes.erase(with_element->name);
-                    collectTablesInQuery(with_child, data, body_ctes);
+                    collectTablesInQuery(with_child, data, body_ctes, active_aliases);
                     continue;
                 }
 
@@ -2406,7 +2418,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 {
                     /// Unrecognized recursive body shape: conservatively keep the name shadowed across the
                     /// whole body (it is better to miss a real table than to detach one the query does not read).
-                    collectTablesInQuery(with_child, data, body_ctes);
+                    collectTablesInQuery(with_child, data, body_ctes, active_aliases);
                     continue;
                 }
 
@@ -2414,11 +2426,11 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 /// same-named real table read here is a real table the query reads — do not shadow it.
                 auto seed_ctes = body_ctes;
                 seed_ctes.erase(with_element->name);
-                collectTablesInQuery(members->children.front(), data, seed_ctes);
+                collectTablesInQuery(members->children.front(), data, seed_ctes, active_aliases);
 
                 /// Recursive members: the name resolves to the recursive temporary table — keep it shadowed.
                 for (size_t i = 1; i < members->children.size(); ++i)
-                    collectTablesInQuery(members->children[i], data, body_ctes);
+                    collectTablesInQuery(members->children[i], data, body_ctes, active_aliases);
             }
         }
 
@@ -2442,7 +2454,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         {
             if (child == with)
                 continue;
-            collectTablesInQuery(child, data, active_ctes);
+            collectTablesInQuery(child, data, active_ctes, active_aliases);
         }
         return;
     }
@@ -2550,7 +2562,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             const auto saved_default_database = data.default_database;
             data.default_database = expressions_database;
             for (const auto & child : ast->children)
-                collectTablesInQuery(child, data, active_ctes);
+                collectTablesInQuery(child, data, active_ctes, active_aliases);
             data.default_database = saved_default_database;
             return;
         }
@@ -2569,18 +2581,20 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// table either: the analyzer resolves `rhs` in `WITH (1, 2) AS rhs SELECT 1 IN rhs` (and in
         /// `SELECT (1, 2) AS rhs, 5 IN rhs`) to the alias, so the same-named table is never read. Unlike a
         /// `FROM` reference — where a scalar alias does not shadow the table, hence the `ASTWithElement`-only
-        /// rule for `active_ctes` above — the alias wins here, so consult `data.alias_names` as well.
+        /// rule for `active_ctes` above — the alias wins here, so consult `active_aliases` as well. Only the
+        /// aliases of this scope and of the scopes enclosing it count: an alias declared in a nested select
+        /// is invisible here, so it must not hide a real table (see `collectScopeAliasNames`).
         if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
         {
             if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
                 if (auto table_id = id->createTable())
-                    if (!table_id->getDatabaseName().empty() || !data.alias_names.contains(table_id->shortName()))
+                    if (!table_id->getDatabaseName().empty() || !active_aliases.contains(table_id->shortName()))
                         data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
         }
     }
 
     for (const auto & child : ast->children)
-        collectTablesInQuery(child, data, active_ctes);
+        collectTablesInQuery(child, data, active_ctes, active_aliases);
 }
 
 }
@@ -2588,8 +2602,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
 {
     CollectTablesData data(context);
-    collectAliasNames(query, data.alias_names);
-    collectTablesInQuery(query, data, /* active_ctes */ {});
+    /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
+    /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because
+    /// the walk stops at the query's own `ASTSelectQuery`, which opens its scope in `collectTablesInQuery`.
+    std::unordered_set<String> root_aliases;
+    collectScopeAliasNames(query, root_aliases);
+
+    collectTablesInQuery(query, data, /* active_ctes */ {}, /* active_aliases */ root_aliases);
 
     /// Deduplicate: the same table can appear multiple times (e.g. self-joins), possibly in contexts
     /// requiring different access (e.g. `INSERT INTO t SELECT ... FROM t`) — merge the required access.

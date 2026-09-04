@@ -180,6 +180,13 @@ check_if_not_detached "WITH RECURSIVE t_reattach_cte AS (SELECT toUInt64(1) AS a
 check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT 1 IN t_reattach_cte" "t_reattach_cte"
 check_if_not_detached "SELECT (1, 2) AS t_reattach_cte, 1 IN t_reattach_cte" "t_reattach_cte"
 
+# ... but only an alias the `IN` can actually see. Alias visibility is scoped: an alias declared in a CHILD
+# scope is invisible to the enclosing query, so it must NOT hide the real table there. Both a sibling
+# subquery in the same clause and a subquery nested under the `IN` argument itself declare the name out of
+# reach of the outer reference, which therefore still reads the table and must detach it.
+check_if_detached "SELECT 1 WHERE 1 IN t_reattach_cte AND 1 = (SELECT 1 AS t_reattach_cte)" "t_reattach_cte"
+check_if_detached "SELECT 1 WHERE (SELECT 1 AS t_reattach_cte) IN t_reattach_cte" "t_reattach_cte"
+
 # A recursive CTE's NON-RECURSIVE seed term (the first UNION member) is resolved before the recursive temporary
 # table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
 # Only the recursive members (after the first) resolve the name through the recursive temporary table.
@@ -537,6 +544,10 @@ function check_fails_without_detach()
 
 check_fails_without_detach "SELECT * FROM t_reattach_unres JOIN t_reattach_unres_missing USING a" "t_reattach_unres"
 check_fails_without_detach "SELECT * FROM t_reattach_unres WHERE a IN t_reattach_unres_missing" "t_reattach_unres"
+# The same, with a child-scope alias taking the missing table's name. The outer `IN` cannot resolve that
+# alias, so the query still fails on the missing table — and the hook must see the reference, otherwise it
+# detaches and re-attaches the FROM table for a query that never runs.
+check_fails_without_detach "SELECT * FROM t_reattach_unres WHERE a IN t_reattach_unres_missing AND 1 = (SELECT 1 AS t_reattach_unres_missing)" "t_reattach_unres"
 check_fails_without_detach "CREATE OR REPLACE TABLE t_reattach_unres AS t_reattach_unres_missing" "t_reattach_unres"
 
 # An OPTIONAL miss must not disable the hook: the target of a plain `CREATE ... AS src` does not exist yet
