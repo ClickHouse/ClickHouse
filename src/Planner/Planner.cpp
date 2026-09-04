@@ -1299,8 +1299,7 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     /// Mirrors the single-node read-in-order case in optimizeReadInOrder.
     /// If a limit is later pushed down into this step, `updateLimit` will turn buffering back off.
     if (query_analysis_result.partial_sorting_limit == 0
-        && sort_settings.read_in_order_use_buffering
-        && !sort_settings.read_in_order_use_virtual_row_per_block)
+        && sort_settings.read_in_order_use_buffering)
         merging_sorted->enableBuffering();
 
     query_plan.addStep(std::move(merging_sorted));

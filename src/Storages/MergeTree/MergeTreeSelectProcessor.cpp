@@ -383,8 +383,7 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());
     for (size_t i = 0; i < result_header.columns(); ++i)
-        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
-
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn());
     Chunk chunk(std::move(empty_columns), 0);
     auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));

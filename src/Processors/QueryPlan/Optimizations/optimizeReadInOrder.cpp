@@ -1260,14 +1260,16 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            apply_virtual_row = apply_virtual_row && order_info.virtual_row_conversion != std::nullopt;
-
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
             {
                 uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
                 virtual_row_reader = reading;
             }
+
+            /// The reading step may refuse the virtual rows (e.g. the setting is disabled or
+            /// the query uses FINAL); the sorting step must not expect them then.
+            apply_virtual_row = apply_virtual_row && uses_virtual_row;
 
             if (!uses_virtual_row)
             {

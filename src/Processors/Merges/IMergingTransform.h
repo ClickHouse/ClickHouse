@@ -53,12 +53,10 @@ protected:
         bool has_input = false;
         bool is_finished = false;
         bool need_data = false;
+        /// Serve `need_data` only once the output port is needed again.
+        bool need_data_on_demand = false;
         bool no_data = false;
         size_t next_input_to_read = 0;
-
-        /// Inputs to ask for data without waiting for it (read-ahead for sources
-        /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
-        std::vector<size_t> inputs_to_prefetch;
 
         IMergingAlgorithm::Inputs init_chunks;
     };
@@ -131,19 +129,10 @@ public:
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
         }
-        else if (state.no_data)
+        else if (state.no_data && empty_chunk_on_finish)
         {
-            if (empty_chunk_on_finish)
-            {
-                IMergingAlgorithm::Input current_input;
-                algorithm.consume(current_input, state.next_input_to_read);
-            }
-            else
-            {
-                /// The required source finished without data. Let the algorithm release any
-                /// per-source bookkeeping (e.g. a read-ahead slot held for a deferred source).
-                algorithm.onSourceExhausted(state.next_input_to_read);
-            }
+            IMergingAlgorithm::Input current_input;
+            algorithm.consume(current_input, state.next_input_to_read);
             state.no_data = false;
         }
 
@@ -160,11 +149,8 @@ public:
             // std::cerr << "Required data for input " << status.required_source << std::endl;
             state.next_input_to_read = status.required_source;
             state.need_data = true;
+            state.need_data_on_demand = status.required_source_on_demand;
         }
-
-        if (!status.sources_to_prefetch.empty())
-            state.inputs_to_prefetch.insert(
-                state.inputs_to_prefetch.end(), status.sources_to_prefetch.begin(), status.sources_to_prefetch.end());
 
         if (status.is_finished)
         {

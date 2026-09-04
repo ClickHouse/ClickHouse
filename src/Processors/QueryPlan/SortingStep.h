@@ -54,6 +54,8 @@ public:
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
         bool read_in_order_use_virtual_row_per_block = false;
+        /// -1 means as many as the pipeline has threads; 0 disables the read-ahead.
+        Int64 virtual_row_prefetch_window = -1;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
 
