@@ -214,7 +214,7 @@ ClickHouse Cloud engineers reach your deployment for troubleshooting over Tailsc
 | Destination | Ports | Initiated by | Purpose | What crosses the boundary |
 | --- | --- | --- | --- | --- |
 | Your cloud provider's regional APIs | TCP 443 | In-cluster controllers: load balancer controller, CSI driver, autoscaler, DNS controller, cert-manager | Normal operation of the cluster in your own account | Cloud API calls only |
-| Your own object storage | TCP 443 | ClickHouse servers, backup jobs | Data parts and backups | Your data — it stays in your account. Same-region traffic uses the private path in [Provider equivalents](#provider-equivalents) |
+| Your own object storage | TCP 443 | ClickHouse servers, backup jobs, and the monitoring stack where long-term retention is enabled | Data parts, backups, and long-term metric retention | Your data — it stays in your account. Same-region traffic uses the private path in [Provider equivalents](#provider-equivalents). The monitoring stack writes with its own identity, documented in [privilege](/products/bring-your-own-cloud/reference/privilege) |
 | ClickHouse-owned telemetry bucket | TCP 443 | Metrics scraper sidecar | Usage metering, health monitoring, autoscaling | System metrics and operational metadata — see [Billing scraper](#billing-scraper) |
 | ClickHouse-owned message queue | TCP 443 | State exporter | Service status shown in the ClickHouse Cloud console | State metadata — see [Service state](#service-state) |
 | ClickHouse-owned container registry | TCP 443 | Kubelet image pulls, chart delivery | Signed data-plane images and charts | Pull-only |

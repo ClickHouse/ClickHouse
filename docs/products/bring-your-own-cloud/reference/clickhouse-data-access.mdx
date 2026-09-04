@@ -7,14 +7,14 @@ description: 'What access ClickHouse employees have to customer data in BYOC dep
 doc_type: 'reference'
 ---
 
-ClickHouse employees have no access to your data by default. Your ClickHouse data, including all user tables and query results, stays inside your VPC. The only paths by which ClickHouse interacts with your deployment are described below — none of them grant access to customer table data.
+ClickHouse employees have no access to your data by default. Your ClickHouse data, including all user tables and query results, stays in your own cloud account. The only paths by which ClickHouse interacts with your deployment are described below — none of them grant access to customer table data.
 
 ## Routine operations {#routine-operations}
 
-ClickHouse Cloud's control plane runs your BYOC deployment without reading customer data. The components that send data out of your VPC carry only operational metadata:
+ClickHouse Cloud's control plane runs your BYOC deployment without reading customer data. The components that send data to ClickHouse-owned infrastructure carry only operational metadata:
 
-| Component | What leaves your VPC |
-|-----------|----------------------|
+| Component | What reaches ClickHouse-owned infrastructure |
+|-----------|----------------------------------------------|
 | State exporter | Service and backup state (health, status — operational events, not backup contents) to a queue owned by ClickHouse Cloud: `SQS` on AWS, Pub/Sub on GCP, Service Bus on Azure. |
 | Billing scraper | CPU and memory metrics to an object storage bucket owned by ClickHouse Cloud. |
 | AlertManager | Cluster health alerts to ClickHouse Cloud. |
