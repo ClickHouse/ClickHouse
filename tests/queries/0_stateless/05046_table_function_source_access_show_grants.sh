@@ -93,6 +93,9 @@ GRANT SHOW COLUMNS ON $CLICKHOUSE_DATABASE.t_source_access TO $user_alias_both;
 echo "=== SHOW COLUMNS on alias and target ==="
 $CLICKHOUSE_CLIENT --user "$user_alias_both" -q "DESCRIBE mergeTreeProjection(currentDatabase(), t_alias_src, p_src) FORMAT TSV" | cut -f 1
 $CLICKHOUSE_CLIENT --user "$user_alias_both" -q "DESCRIBE loop(currentDatabase(), t_alias_src) FORMAT TSV" | cut -f 1
+# Naming the target's columns is all `mergeTreeTextIndex` may ask of an alias target, so these
+# grants have to reach the index lookup rather than a denial.
+$CLICKHOUSE_CLIENT --user "$user_alias_both" -q "SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_alias_src, 'idx_none')" 2>&1 | grep -o "ACCESS_DENIED\|There is no index with name 'idx_none'" | uniq
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS t_ok_as_tf_p;
