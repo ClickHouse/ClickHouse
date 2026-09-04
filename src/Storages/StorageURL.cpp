@@ -1103,8 +1103,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. checkAndNormalizeHeaders returns the normalized headers, so
     /// send that normalized copy — the normalized names are what reach the wire. Ban "Range" on the
-    /// normalized names (a padded spelling normalizes to "Range") so inference never reads a partial
-    /// response; this is the table-function path, which does not go through StorageURL::getConfiguration.
+    /// normalized names (a padded spelling normalizes to "Range") so schema inference never reads a
+    /// partial-content response.
     const auto headers_to_check = context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
     rejectRangeHeaders(headers_to_check);
 

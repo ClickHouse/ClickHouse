@@ -49,9 +49,9 @@ HTTPHeaderEntries HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries e
                 [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
             normalized_name.end());
 
-        /// A name that is only whitespace/control normalizes to "" here, as it did before this
-        /// change. It is not rejected: an empty name cannot forge a forbidden header or split the
-        /// request, and rejecting it would fail ATTACH of a table stored with such a name.
+        /// A name that is only whitespace/control normalizes to "" here and is not rejected: an
+        /// empty name cannot forge a forbidden header or split the request, and rejecting it would
+        /// fail ATTACH of a table stored with such a name.
         /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
         /// entries are stored lower-cased, so lower-case the name for that lookup.
         const std::string lower_name = Poco::toLower(normalized_name);
