@@ -63,6 +63,16 @@ struct ArraySourceSelector
     template <typename ... Args>
     static void select(IArraySource & source, Args && ... args)
     {
+        /// ReplicatedSource follows the non-virtual iteration methods of its base source, so it must be dispatched to the algorithm
+        /// with its concrete type. Only selectors that declare `supports_replicated_source = true` do that
+        constexpr bool supports_replicated_source = requires { requires Base::supports_replicated_source; };
+        if constexpr (!supports_replicated_source)
+        {
+            if (source.isReplicated())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "{} does not support lazily replicated array sources", demangle(typeid(Base).name()));
+        }
+
         ArraySourceSelectorVisitor<Base, Args ...> visitor(source, args ...);
         source.accept(visitor);
     }

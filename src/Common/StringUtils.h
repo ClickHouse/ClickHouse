@@ -415,9 +415,25 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
 
-/// Returns {fixed_prefix, is_perfect_prefix, is_exact}.
-/// `is_exact` is true when the pattern has no wildcard at all and is therefore equivalent to an exact match
-/// of `fixed_prefix` (e.g. 'a\%b' is exact and matches only 'a%b'); in that case the prefix is always returned.
-std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+/// A fixed literal prefix extracted from a LIKE pattern: every matching string starts with `prefix`.
+struct LikePatternFixedPrefix
+{
+    String prefix;
+
+    /// The pattern matches every string starting with `prefix`, so it is equivalent to
+    /// `startsWith(haystack, prefix)`, e.g. 'test%'.
+    bool is_perfect = false;
+
+    /// The pattern has no wildcard at all, so it is equivalent to an exact match of `prefix`,
+    /// e.g. 'a\%b' matches only 'a%b'. Such a prefix is not perfect (a perfect prefix requires
+    /// a trailing '%'), but it describes the matching strings even more precisely, so it is
+    /// always returned regardless of `requires_perfect_prefix`.
+    bool is_exact = false;
+};
+
+/// Extracts the prefix of a LIKE pattern before the first wildcard, e.g. 'Hello\_World%' -> 'Hello_World'.
+/// Escapes are folded exactly as `likePatternToRegexp` does, so the prefix equals the string LIKE matches:
+/// '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it ('\w' matches the literal "\w").
+LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);

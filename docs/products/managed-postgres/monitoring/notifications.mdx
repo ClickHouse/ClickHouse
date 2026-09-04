@@ -1,0 +1,33 @@
+---
+slug: /cloud/managed-postgres/monitoring/notifications
+sidebarTitle: 'Notifications'
+title: 'ClickHouse Managed Postgres notifications'
+description: 'Cloud console notifications for ClickHouse Managed Postgres services'
+keywords: ['managed postgres', 'notifications', 'alerts', 'storage', 'disk usage']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-notifications-beta" />
+
+ClickHouse Cloud sends notifications when a Managed Postgres service
+needs attention. Notifications are delivered through the
+[cloud console notification system](/products/cloud/features/monitoring/notifications):
+the console inbox, email, and Slack, and can be customized per
+notification from the **Postgres** section of the notification settings
+page. The section appears for organizations with Managed Postgres
+services.
+
+## Supported notifications {#supported-notifications}
+
+| Notify when | Specific alert condition | Default notification channels | Resolution steps |
+|---|---|---|---|
+| Postgres storage passed 85% threshold | When storage usage on a Managed Postgres service reaches 85% of capacity. Notification will only trigger once per calendar day. | UI, email | Storage scales automatically when usage reaches 90% (brief cutover downtime). No action is needed unless auto-scaling is already at its limit. |
+
+## Related pages {#related}
+
+- [Cloud notifications](/products/cloud/features/monitoring/notifications) — channels, severities, and
+  how to customize delivery
+- [Monitoring dashboard](/products/managed-postgres/monitoring/dashboard) —
+  live disk, CPU, and memory charts for each instance

@@ -1,11 +1,31 @@
+/* No motion anywhere in the documentation. Every state change is instantaneous:
+   opening a panel, expanding a sidebar group, hovering a card, revealing the
+   navbar. Transitions and animations delay the content the reader asked for and
+   make the site feel sluggish, and a transition on a property that is updated
+   while dragging (a panel height, for example) makes the element lag behind the
+   pointer and re-render continuously.
+
+   This is a global override rather than a set of local fixes because most of
+   the motion comes from Mintlify's own bundle and its Tailwind utility classes
+   (`transition-colors`, `animate-*`), which are not ours to edit. Zeroing the
+   durations and delays - instead of `transition: none` / `animation: none` -
+   keeps every final state intact: an animation still runs and still applies its
+   `animation-fill-mode`, it just completes at once, so nothing that fades in
+   can get stuck invisible. */
+*,
+*::before,
+*::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+}
+
 /* Reserve the scrollbar gutter at all times so nothing shifts when a modal
    locks body scroll and the scrollbar disappears. react-remove-scroll
    compensates with margin-right on body, but that double-compensates when
    the gutter is already reserved — zero it out. */
 /* Hero cards on the home page */
-.ch-hero-card {
-    transition: border-color 0.12s ease !important;
-}
 .dark .ch-hero-card {
     background-color: #191919 !important;
     border-color: #2B2B2B !important;
@@ -33,6 +53,24 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+
+/* Restore the layout and appearance of the legacy Docusaurus VersionBadge. */
+.versionBadge {
+    background-color: #F6F7FA;
+    border-radius: 16px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+}
+
+.dark .versionBadge {
+    background-color: #282828;
+    color: white;
+}
+
 /* Highlight the `View` selector above the table of contents with theme accents. */
 html:not(.dark) .multi-view-dropdown-trigger {
     border-color: #135BE6 !important;
@@ -48,7 +86,6 @@ html:not(.dark) .multi-view-dropdown-trigger {
 }
 .ch-page-visible {
     opacity: 1;
-    transition: opacity 0.1s ease-out;
 }
 /* Overlay image drop shadow (hero cards with overlayImg) */
 .ch-overlay-shadow {
@@ -240,7 +277,6 @@ body[data-scroll-locked] {
     cursor: pointer;
     font-size: 0.8125rem;
     font-weight: 600;
-    transition: background-color 120ms ease, transform 80ms ease;
 }
 
 .ch-agent-prompt-copy-button:hover {
@@ -306,7 +342,6 @@ body[data-scroll-locked] {
 
 .ch-agent-prompt-outline-chevron {
     flex-shrink: 0;
-    transition: transform 150ms ease;
 }
 
 .ch-agent-prompt-outline[open] > .ch-agent-prompt-outline-summary > .ch-agent-prompt-outline-chevron {
@@ -406,7 +441,6 @@ html.dark .prose a.ch-agent-prompt-repository-link,
     margin-left: auto;
     padding: 2px 3px;
     border-radius: 6px;
-    transition: background-color 0.12s ease;
 }
 #sidebar button[aria-expanded] > div:last-child:hover {
     background-color: rgba(15, 23, 42, 0.08);
@@ -428,7 +462,6 @@ html.dark .prose a.ch-agent-prompt-repository-link,
     padding: 1px 6px;
     margin: -1px -6px;
     border-radius: 6px;
-    transition: background-color 0.12s ease;
 }
 #sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0):hover {
     background-color: rgba(15, 23, 42, 0.08);
@@ -464,7 +497,6 @@ html:not(.ch-navbar-revealed) #navbar-transition-maple:not(.ch-navbar-ready) {
 }
 #navbar-transition-maple.ch-navbar-ready {
     opacity: 1;
-    transition: opacity 0.15s ease-out;
 }
 
 /* ============================================
@@ -546,164 +578,10 @@ details.accordion > summary,
     background-color: #2a2a2a !important;
 }
 
-/* ============================================
-   Pagination Links - Light Mode
-   ============================================ */
-
-html:not(.dark) .pagination-next,
-html:not(.dark) .pagination-prev {
-    background-color: #f7f7f7 !important;
-}
-
-html:not(.dark) .pagination-next:hover,
-html:not(.dark) .pagination-prev:hover {
-    background-color: #efefef !important;
-}
-
-/* ============================================
-   Pagination Links - Dark Mode
-   ============================================ */
-
-.dark .pagination-next,
-.dark .pagination-prev,
-:is(.dark) .pagination-next,
-:is(.dark) .pagination-prev {
-    border-color: rgba(255, 255, 255, 0.15) !important;
-    background-color: rgba(255, 255, 255, 0.05) !important;
-}
-
-.dark .pagination-next:hover,
-.dark .pagination-prev:hover,
-:is(.dark) .pagination-next:hover,
-:is(.dark) .pagination-prev:hover {
-    border-color: rgba(255, 255, 255, 0.3) !important;
-    background-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-.dark .pagination-title,
-:is(.dark) .pagination-title {
-    color: #E6E7E9 !important;
-}
-
-/* Previous/Next pagination (#pagination): restyle the maple pill bar into
-   two bordered cards matching the home-page hero cards (.ch-hero-card above;
-   colors duplicated because the hero card's base colors live in Tailwind
-   utilities in index.mdx). CSS-only on top of Mintlify's own markup, so the
-   Previous card shows just the chevron + label — maple's markup doesn't
-   include the previous page's title. */
-#pagination {
-    display: grid !important;
-    grid-template-columns: 1fr;
-    gap: 1rem;
-    background: none !important;
-    padding: 0 !important;
-}
-
-@media (min-width: 1024px) {
-    #pagination {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    /* Next-only pages keep their card in the right column */
-    #pagination > a:first-child:has(svg.lucide-chevron-right) {
-        grid-column: 2;
-    }
-}
-
-/* Card chrome */
-#pagination > a {
-    background-color: #f9f9f9;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
-    padding: 1rem !important;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
-}
-
-.dark #pagination > a,
-:is(.dark) #pagination > a {
-    background-color: #191919;
-    border-color: #2B2B2B;
-}
-
-#pagination > a:hover {
-    background-color: #f0f0f0;
-    border-color: #d1d5db;
-}
-
-.dark #pagination > a:hover,
-:is(.dark) #pagination > a:hover {
-    background-color: #272727;
-    border-color: #535353;
-}
-
-/* Mintlify gives the pagination card's inner flex wrapper its own page-level
-   background. Keep it transparent so the complete button uses the parent
-   card color in both its resting and hover states. */
-#pagination > a > div {
-    background: transparent !important;
-}
-
-/* Previous card: keep chevron + label together on the left (maple's
-   justify-between would otherwise spread them across the card) */
-#pagination > a:has(svg.lucide-chevron-left) {
-    justify-content: flex-start !important;
-}
-
-/* Next card: drop the pill-era inner background, fixed height, divider and
-   description, and stack the title over the label row, right-aligned. */
-#pagination > a:has(svg.lucide-chevron-right) > div {
-    height: auto !important;
-    background: none !important;
-    box-shadow: none !important;
-    flex-direction: column !important;
-    align-items: flex-end !important;
-}
-
-#pagination > a:has(svg.lucide-chevron-right) > div > div {
-    padding: 0 !important;
-}
-
-#pagination > a:has(svg.lucide-chevron-right) > div > div:last-child {
-    margin-top: 0.25rem;
-}
-
-#pagination .font-semibold {
-    font-size: 1rem;
-    color: #111827 !important;
-}
-
-.dark #pagination .font-semibold,
-:is(.dark) #pagination .font-semibold {
-    color: #fff !important;
-}
-
-/* Description and vertical divider have no place in the card layout */
-#pagination .truncate,
-#pagination .w-px {
+/* Keep Mintlify's default pagination and hide only the next page's
+   description. */
+#pagination > a[rel="next"] [data-component-part="pagination-description"] {
     display: none !important;
-}
-
-/* "Previous" / "Next" labels and their chevrons */
-#pagination .font-medium.tracking-tight {
-    color: #6b7280 !important;
-}
-
-.dark #pagination .font-medium.tracking-tight,
-:is(.dark) #pagination .font-medium.tracking-tight {
-    color: #a1a1aa !important;
-}
-
-#pagination svg.lucide-chevron-left,
-#pagination svg.lucide-chevron-right {
-    width: 0.875rem;
-    height: 0.875rem;
-    color: #6b7280 !important;
-}
-
-.dark #pagination svg.lucide-chevron-left,
-.dark #pagination svg.lucide-chevron-right,
-:is(.dark) #pagination svg.lucide-chevron-left,
-:is(.dark) #pagination svg.lucide-chevron-right {
-    color: #a1a1aa !important;
 }
 
 /* "Copy page" split-button group: make the resting state clearly visible
@@ -742,7 +620,6 @@ html:not(.dark) .pagination-prev:hover {
     border-color: #e5e7eb !important;
     border-radius: 0.5rem !important;
     color: #6b7280 !important;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 .feedback-toolbar button:hover,
 .feedback-toolbar a:hover {
@@ -1019,7 +896,6 @@ html:not(.dark) .pagination-prev:hover {
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
     font-size: 1rem;
     font-weight: 500;
     color: inherit;
@@ -1421,6 +1297,207 @@ html.dark .dark\:bg-primary-light,
     background-color: #f7f7f7 !important;
 }
 
+/* Featured Cloud card on the installation page. */
+.ch-install-cloud-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.25rem 1rem 1rem;
+    border: 1px solid #e6e7e9;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    background-color: #f7f7f7;
+    text-align: center;
+}
+
+.ch-install-cloud-badge {
+    display: inline-flex;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    align-items: center;
+    padding: 0.125rem 0.625rem;
+    transform: translate(-50%, -50%);
+    border: 1px solid #e6e7e9;
+    border-radius: 9999px;
+    background-color: #f5f5f5;
+    color: #151515;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1rem;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.ch-install-cloud-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    background-color: #1c1c1c;
+    -webkit-mask: url('/images/icons/icon-clickhouse-cloud.svg') center / contain no-repeat;
+    mask: url('/images/icons/icon-clickhouse-cloud.svg') center / contain no-repeat;
+}
+
+.ch-install-cloud-title {
+    margin: 0.75rem 0 0.625rem;
+    color: #1c1c1c;
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.5rem;
+}
+
+.ch-install-cloud-description {
+    max-width: 44rem;
+    margin: 0;
+    color: #42454a;
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+}
+
+.ch-install-cloud-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.ch-install-cloud-cta {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid #151515;
+    border-radius: 0.25rem;
+    background-color: #151515;
+    color: #ffffff !important;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.125rem;
+    text-decoration: none !important;
+}
+
+.ch-install-cloud-cta:hover {
+    background-color: #151515;
+}
+
+.ch-install-cloud-cta-secondary {
+    border-color: #151515;
+    background-color: #f7f7f7;
+    color: #151515 !important;
+}
+
+.ch-install-cloud-cta-secondary:hover {
+    border-color: #151515;
+    background-color: #ececec;
+}
+
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta,
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
+    border: 1px solid #151515 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary,
+html:not(.dark) .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #151515 !important;
+}
+
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta,
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta-secondary,
+html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #151515 !important;
+    border-bottom: 1px solid #151515 !important;
+    color: #151515 !important;
+}
+
+.ch-install-cloud-cta:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.dark .ch-install-cloud-card {
+    border-color: #7f813d;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .ch-install-cloud-badge {
+    border-color: #7f813d;
+    background-color: #1b1b1b;
+    color: #fdff75;
+}
+
+.dark .ch-install-cloud-icon {
+    background-color: #ffffff;
+}
+
+.dark .ch-install-cloud-title {
+    color: #ffffff;
+}
+
+.dark .ch-install-cloud-description {
+    color: #b7bac0;
+}
+
+.dark .ch-install-cloud-cta {
+    border-color: #fdff75;
+    background-color: #fdff75;
+    color: #1c1c1c !important;
+}
+
+.dark .ch-install-cloud-cta:hover {
+    background-color: #eaec6a;
+}
+
+.dark .ch-install-cloud-cta-secondary {
+    border-color: #555800;
+    background-color: #151515;
+    color: #ffffff !important;
+}
+
+.dark .ch-install-cloud-cta-secondary:hover {
+    border-color: #7f8300;
+    background-color: #1c1c1c;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta,
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
+    border: 1px solid #fdff75 !important;
+    color: #1c1c1c !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary,
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border: 1px solid #555800 !important;
+    color: #ffffff !important;
+}
+
+html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta-secondary:hover {
+    border-color: #7f8300 !important;
+}
+
+@media (max-width: 640px) {
+    .ch-install-cloud-actions {
+        grid-template-columns: 1fr;
+    }
+}
+
 .dark .card,
 :is(.dark) .card {
     border-color: rgba(255, 255, 255, 0.15) !important;
@@ -1431,7 +1508,6 @@ html.dark .dark\:bg-primary-light,
 html:not(.dark) .card:hover {
     background-color: #f7f7f7 !important;
     border-color: #9ca3af !important;
-    transition: border-color 0.12s ease !important;
 }
 
 /* Override card hover border color in dark mode */
@@ -1904,6 +1980,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
     margin-right: 8px;
 }
 
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -1911,6 +1993,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
@@ -2229,6 +2317,123 @@ html.dark .prose a.experimentalBadge:not(.card):not(.card *),
 /* Reset negative margin on Table of Contents to prevent overlap with description */
 #table-of-contents {
     margin-top: 0 !important;
+}
+
+/* Keep contextual controls visible below long tables of contents */
+#table-of-contents-content {
+    max-height: calc(100vh - 22rem);
+    overflow-y: auto;
+}
+
+.ch-cloud-sidebar-ad-slot {
+    display: block;
+    flex-basis: 100%;
+    width: 100%;
+    margin-top: 1rem;
+    list-style: none;
+}
+
+.ch-cloud-sidebar-ad {
+    position: relative;
+    padding: 1rem;
+    border: 1px solid #dedede;
+    border-radius: 0.5rem;
+    background-color: #f7f7f7;
+}
+
+.ch-cloud-sidebar-ad-title {
+    padding-right: 1.5rem;
+    margin: 0 0 0.5rem;
+    color: #1c1c1c;
+    font-size: 0.875rem;
+    font-weight: 650;
+    line-height: 1.25rem;
+}
+
+.ch-cloud-sidebar-ad-description {
+    margin: 0 0 0.875rem;
+    color: #5f6368;
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+}
+
+.ch-cloud-sidebar-ad-dismiss {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.625rem;
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 1.125rem;
+    line-height: 1;
+}
+
+.ch-cloud-sidebar-ad-dismiss:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #1c1c1c;
+}
+
+.ch-cloud-sidebar-ad-dismiss:focus-visible,
+.ch-cloud-sidebar-ad-link:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.ch-cloud-sidebar-ad-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    background-color: #1c1c1c;
+    color: #ffffff !important;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1rem;
+    text-decoration: none !important;
+}
+
+.ch-cloud-sidebar-ad-link:hover {
+    background-color: #333333;
+}
+
+.dark .ch-cloud-sidebar-ad {
+    border-color: rgba(255, 255, 255, 0.15);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .ch-cloud-sidebar-ad-title {
+    color: #ffffff;
+}
+
+.dark .ch-cloud-sidebar-ad-description {
+    color: #b7bac0;
+}
+
+.dark .ch-cloud-sidebar-ad-dismiss {
+    color: #b7bac0;
+}
+
+.dark .ch-cloud-sidebar-ad-dismiss:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.dark .ch-cloud-sidebar-ad-link {
+    background-color: #fdff75;
+    color: #1c1c1c !important;
+}
+
+.dark .ch-cloud-sidebar-ad-link:hover {
+    background-color: #eaec6a;
 }
 
 /* Fix layout overlap in flex-row-reverse pages (like secure-rds) */
@@ -3071,10 +3276,6 @@ html:not(.dark) .card a {
 
 /* External goal-card links: the arrow rotates to point up-right on hover,
    hinting that the link leaves the docs site */
-.goal-card-link .ch-external-arrow {
-    transition: transform 0.15s ease;
-}
-
 .goal-card-link:hover .ch-external-arrow {
     transform: rotate(-45deg);
 }
@@ -3101,7 +3302,6 @@ a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
     fill: none !important;
     color: #9ca3af !important;
     opacity: 0.6 !important;
-    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
 }
 
 a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,

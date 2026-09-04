@@ -32,7 +32,7 @@ hdfs(URI, format, structure)
 | `format`    | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                      |
 | `structure` | 테이블 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                            |
 
-<div id="returned_value">
+<div id="returned-value">
   ## 반환 값
 </div>
 
@@ -55,7 +55,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="globs_in_path">
+<div id="globs-in-path">
   ## 경로의 글롭 패턴
 </div>
 
@@ -80,7 +80,7 @@ LIMIT 2
 * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
 * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
 
-2. 이 파일들의 행 수를 조회합니다.
+2. 이 파일들의 행 수를 쿼리합니다.
 
 {/* */}
 
@@ -89,9 +89,9 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
-3. 이 두 디렉터리 내 모든 파일의 행 수를 쿼리합니다:
+3. 이 두 디렉터리에 있는 모든 파일의 행 수를 쿼리합니다:
 
-{/* */}
+{{/* */}}
 
 ```sql
 SELECT count(*)
@@ -138,9 +138,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
   ## 스토리지 설정
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings#hdfs_truncate_on_insert) - 파일에 데이터를 삽입하기 전에 해당 파일을 비울 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ko/reference/settings/session-settings#hdfs_create_new_file_on_insert) - 포맷에 접미사가 있는 경우, 삽입할 때마다 새 파일을 생성할 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
-* [hdfs&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings#hdfs_skip_empty_files) - 읽는 중에 빈 파일을 건너뛸 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - 파일에 데이터를 삽입하기 전에 해당 파일을 비울 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ko/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - 포맷에 접미사가 있는 경우, 삽입할 때마다 새 파일을 생성할 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
+* [hdfs&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - 읽는 중에 빈 파일을 건너뛸 수 있도록 합니다. 기본적으로 비활성화되어 있습니다.
 
 <div id="related">
   ## 관련

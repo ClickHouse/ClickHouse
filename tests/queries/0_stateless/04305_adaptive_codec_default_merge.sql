@@ -11,32 +11,33 @@ CREATE TABLE t_adaptive_on
 (
     a UInt64,              -- no codec, narrow range -> T64
     b UInt64 CODEC(LZ4),   -- explicit codec -> stays LZ4
-    c String,              -- non-candidate type -> default
-    d Int128,              -- non-candidate integer -> default
+    c String,              -- no specialized candidate -> NONE or default per block
+    d Int128,              -- no specialized candidate -> NONE or default per block
     e Nullable(Int64),     -- candidate leaf -> T64
     f Array(Int32)         -- candidate leaf -> T64
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_off AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 CREATE TABLE t_adaptive_insert AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_mutation AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_compact AS t_adaptive_on
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 1000000000, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 1000000000, enable_adaptive_codec_selection = 1;
 
 
--- Merge with the setting ON: candidate default-coded columns (a, e, f) get T64; explicit b and non-candidate c, d keep the default.
+-- Merge with the setting ON: default-coded columns with a specialized candidate (a, e, f) get T64,
+-- c and d select between NONE and the default, explicit b stays LZ4.
 SELECT 'Adaptive ON';
 INSERT INTO t_adaptive_on SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(50000);
 INSERT INTO t_adaptive_on SELECT number, number, toString(number), number, number, [toInt32(number)] FROM numbers(50000, 50000);

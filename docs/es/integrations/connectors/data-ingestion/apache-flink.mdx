@@ -16,7 +16,7 @@ import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupp
 
 Este es el [conector sink oficial de Apache Flink](https://github.com/ClickHouse/flink-connector-clickhouse) compatible con ClickHouse. Está desarrollado con [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) de Flink y el [cliente Java](https://github.com/ClickHouse/clickhouse-java) oficial de ClickHouse.
 
-El conector es compatible con la API DataStream de Apache Flink. La compatibilidad con la API Table está [prevista para una versión futura](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
+El conector es compatible con la API de DataStream de Apache Flink. La compatibilidad con la Table API está [prevista para una versión futura](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
 
 <div id="requirements">
   ## Requisitos
@@ -147,7 +147,7 @@ Supongamos que quieres insertar datos CSV sin procesar en ClickHouse:
     ```java
     public static void main(String[] args) {
         // Configurar ClickHouseClient
-        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // Crear un ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ Supongamos que quieres insertar datos CSV sin procesar en ClickHouse:
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clickHouseClientConfig
+                clientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ Por ejemplo:
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clickHouseClientConfig
+        clientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -453,9 +453,9 @@ Es posible que el rendimiento del conector no escale con el paralelismo del job 
 
 [//]: # "  1. asegúrese de que la setting de sesión del server `insert_deduplicate=1` (consulte el [ejemplo](#client-options) anterior para ver cómo configurarla, si es necesario). Tenga en cuenta que `insert_deduplicate` está habilitada de forma predeterminada para las tablas replicadas."
 
-[//]: # "  2. si es necesario, aumente una o ambas table settings de `MergeTree`: [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) o [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)."
+[//]: # "  2. si es necesario, aumente una o ambas table settings de `MergeTree`: [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) o [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)."
 
-[//]: # "- Si su tabla usa un table engine `*MergeTree` no replicado, aumente la table setting de `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)."
+[//]: # "- Si su tabla usa un table engine `*MergeTree` no replicado, aumente la table setting de `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)."
 
 [//]: #
 

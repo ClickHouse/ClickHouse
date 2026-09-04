@@ -5,11 +5,13 @@
 #endif
 
 /// Whether plain `long` is a type of its own, distinct from every fixed-width integer type.
-/// On Darwin `Int64` is `long long`, and on 32-bit platforms (WebAssembly) `Int32` is `int`
-/// while `long` is a separate 32-bit type. In both cases functions overloaded on the
-/// fixed-width types need an overload for `long` as well, or calls with a `long` argument
-/// become ambiguous.
-#if defined(OS_DARWIN) || !defined(__LP64__)
+/// On Darwin and on WebAssembly `Int64` is `long long`, so a 64-bit `long` matches neither it
+/// nor `Int32`; on 32-bit platforms `Int32` is `int` while `long` is a separate 32-bit type.
+/// In all of these cases functions overloaded on the fixed-width types need an overload for
+/// `long` as well, or calls with a `long` argument become ambiguous.
+/// Note that `wasm64` defines `__LP64__` and still has `Int64` as `long long`, so the pointer
+/// width alone does not answer the question.
+#if defined(OS_DARWIN) || defined(__wasm__) || !defined(__LP64__)
 #    define LONG_IS_A_DISTINCT_TYPE 1
 #endif
 
@@ -19,6 +21,21 @@
 /// `unsigned int`, which is exactly `UInt32`, so it must not get an overload of its own there.
 #if defined(OS_DARWIN) || defined(__wasm__)
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
+#endif
+
+/// `size_t` is `unsigned long` or `unsigned int`, so a platform where it is distinct from every
+/// fixed-width type is one where `long` is too. Getting this wrong makes `itoa(size_t)` ambiguous
+/// rather than failing anywhere obvious, so state the implication where both are defined.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE) && !defined(LONG_IS_A_DISTINCT_TYPE)
+#    error "SIZE_T_IS_A_DISTINCT_TYPE implies LONG_IS_A_DISTINCT_TYPE"
+#endif
+
+/// Whether the platform delivers POSIX signals to the process: handlers installed with
+/// `sigaction`, masked with `pthread_sigmask`, raised with `raise`. A WebAssembly sandbox has no
+/// signals at all - nothing can fault into one and nothing can send one - so arming a handler
+/// there is a no-op rather than an error.
+#if !defined(OS_WASM)
+#    define OS_HAS_SIGNAL_HANDLERS 1
 #endif
 
 /// Whether every `std::exception` carries the stack trace of the throw that created it.

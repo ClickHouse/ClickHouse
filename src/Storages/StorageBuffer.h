@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -131,6 +132,7 @@ public:
     /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
     bool supportsOptimizationToSubcolumns() const override;
+    bool supportsOptimizationToTupleElementSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -208,7 +210,7 @@ private:
 
     StoragePtr getDestinationTable() const;
 
-    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolPtr bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
 
     static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;

@@ -1,7 +1,0 @@
-position: 1
-label: 'Statements'
-collapsible: true
-collapsed: true
-link:
-  type: doc
-  id: en/sql-reference/statements/index

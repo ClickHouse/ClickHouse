@@ -203,7 +203,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
+      *    is not immediately followed by a column modifier keyword
       */
     ASTPtr type;
     ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
@@ -235,6 +235,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     };
 
     /// Keep this list of keywords in sync with ParserDataType::parseImpl().
+    ///
+    /// Only the modifiers that a type-less declaration can actually carry through the rest of the
+    /// pipeline are exempted from the requirement to have a type: `AlterCommand::parse` applies
+    /// `COMMENT`, `CODEC`, `SETTINGS` and `STATISTICS`. `COLLATE` is deliberately not in the list:
+    /// it is unsupported in ALTER and rejected downstream regardless of where it is read, so it
+    /// keeps being read as the type name, as before.
     if (!null_check_without_moving()
         && !s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
@@ -245,7 +251,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
-                && !s_codec.checkWithoutMoving(pos, expected))))
+                && !s_codec.checkWithoutMoving(pos, expected)
+                && !s_stat.checkWithoutMoving(pos, expected)
+                && !s_settings.checkWithoutMoving(pos, expected))))
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;
@@ -361,48 +369,70 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         }
     }
 
-    if (is_comment || s_comment.ignore(pos, expected))
+    if (is_comment)
     {
-        /// should be followed by a string literal
+        /// The `COMMENT` keyword has already been consumed above, immediately after `EPHEMERAL`,
+        /// so only the string literal is left.
         if (!string_literal_parser.parse(pos, comment_expression, expected))
             return false;
     }
 
-    if (s_codec.ignore(pos, expected))
+    /** The remaining modifiers can be written in any order, and each of them at most once.
+      * `ASTColumnDeclaration::formatImpl` prints them in a fixed canonical order, but there is no
+      * reason to demand that order from the user: `CODEC(ZSTD) COMMENT 'text'` is as unambiguous as
+      * `COMMENT 'text' CODEC(ZSTD)`.
+      */
+    while (true)
     {
-        if (!codec_parser.parse(pos, codec_expression, expected))
-            return false;
-    }
-
-    if (s_stat.ignore(pos, expected))
-    {
-        if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
-            return false;
-    }
-
-    if (s_ttl.ignore(pos, expected))
-    {
-        if (!expression_parser.parse(pos, ttl_expression, expected))
-            return false;
-    }
-
-    if (s_primary_key.ignore(pos, expected))
-    {
-        primary_key_specifier = true;
-    }
-
-    auto old_pos = pos;
-    if (s_settings.ignore(pos, expected))
-    {
-        /// When the keyword `SETTINGS` appear here, it can be a column settings declaration or query settings
-        /// For example:
-        /// - Column settings: `ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS (name = value)`
-        /// - Query settings: ` ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS mutation_sync = 2`
-        /// So after parsing keyword `SETTINGS`, we check if it's followed by an `(` then it's the column
-        /// settings, otherwise it's the query settings and we need to move `pos` back to origin position.
-        ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
-        if (parser_opening_bracket.ignore(pos, expected))
+        if (!comment_expression && s_comment.ignore(pos, expected))
         {
+            /// should be followed by a string literal
+            if (!string_literal_parser.parse(pos, comment_expression, expected))
+                return false;
+        }
+        else if (!codec_expression && s_codec.ignore(pos, expected))
+        {
+            if (!codec_parser.parse(pos, codec_expression, expected))
+                return false;
+        }
+        else if (!statistics_desc_expression && s_stat.ignore(pos, expected))
+        {
+            if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
+                return false;
+        }
+        else if (!ttl_expression && s_ttl.ignore(pos, expected))
+        {
+            if (!expression_parser.parse(pos, ttl_expression, expected))
+                return false;
+        }
+        else if (!collation_expression && s_collate.ignore(pos, expected))
+        {
+            if (!collation_parser.parse(pos, collation_expression, expected))
+                return false;
+        }
+        else if (!primary_key_specifier && s_primary_key.ignore(pos, expected))
+        {
+            primary_key_specifier = true;
+        }
+        else if (!settings && s_settings.checkWithoutMoving(pos, expected))
+        {
+            /// When the keyword `SETTINGS` appear here, it can be a column settings declaration or query settings
+            /// For example:
+            /// - Column settings: `ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS (name = value)`
+            /// - Query settings: ` ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS mutation_sync = 2`
+            /// So after parsing keyword `SETTINGS`, we check if it's followed by an `(` then it's the column
+            /// settings, otherwise it's the query settings, they do not belong to the column declaration,
+            /// and we need to move `pos` back to the origin position and stop.
+            auto old_pos = pos;
+            s_settings.ignore(pos, expected);
+
+            ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+            if (!parser_opening_bracket.ignore(pos, expected))
+            {
+                pos = old_pos;
+                break;
+            }
+
             if (!settings_parser.parse(pos, settings, expected))
                 return false;
             ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
@@ -410,7 +440,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
                 return false;
         }
         else
-            pos = old_pos;
+            break;
     }
 
     node = column_declaration;
@@ -606,14 +636,6 @@ class ParserCreateTableQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ...
-class ParserCreateWindowViewQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE WINDOW VIEW query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -1,7 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -15,7 +15,7 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
+void GroupConcatData::checkAndUpdateSize(UInt64 add, Arena * arena)
 {
     if (data_size + add >= allocated_size)
     {
@@ -25,19 +25,11 @@ void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
     }
 }
 
-void GroupConcatDataBase::insertChar(const char * str, UInt64 str_size, Arena * arena)
+void GroupConcatData::insertChar(const char * str, UInt64 str_size, Arena * arena)
 {
     checkAndUpdateSize(str_size, arena);
     memcpy(data + data_size, str, str_size);
     data_size += str_size;
-}
-
-void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
-{
-    WriteBufferFromOwnString buff;
-    serialization->serializeText(*column, row_num, buff, FormatSettings{});
-    auto string = buff.stringView();
-    insertChar(string.data(), string.size(), arena);
 }
 
 UInt64 GroupConcatData::getSize(size_t i) const
@@ -50,18 +42,21 @@ UInt64 GroupConcatData::getString(size_t i) const
     return offsets[i * 2];
 }
 
+void GroupConcatData::insertString(std::string_view str, Arena * arena)
+{
+    checkAndUpdateSize(str.size(), arena);
+    memcpy(data + data_size, str.data(), str.size());
+    offsets.push_back(data_size, arena);
+    data_size += str.size();
+    offsets.push_back(data_size, arena);
+    num_rows++;
+}
+
 void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
 {
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, {});
-    auto string = buff.stringView();
-
-    checkAndUpdateSize(string.size(), arena);
-    memcpy(data + data_size, string.data(), string.size());
-    offsets.push_back(data_size, arena);
-    data_size += string.size();
-    offsets.push_back(data_size, arena);
-    num_rows++;
+    insertString(buff.stringView(), arena);
 }
 
 template <bool has_limit>
@@ -73,7 +68,7 @@ GroupConcatImpl<has_limit>::GroupConcatImpl(
     , delimiter(delimiter_)
     , type(data_type_)
 {
-    serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
+    serialization = this->argument_types[0]->getDefaultSerialization();
 }
 
 template <bool has_limit>
@@ -101,9 +96,11 @@ void GroupConcatImpl<has_limit>::add(
 
     if (isFixedString(type))
     {
-        ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
-        const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
-        cur_data.insert(col_str.get(), serialization, row_num, arena);
+        /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
+        std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
+        while (!ref.empty() && ref.back() == 0)
+            ref.remove_suffix(1);
+        cur_data.insertString(ref, arena);
     }
     else
         cur_data.insert(columns[0], serialization, row_num, arena);
@@ -304,6 +301,9 @@ groupConcat[(delimiter [, limit])](expression)
     {
         "Basic usage without a delimiter",
         R"(
+CREATE TABLE Employees (Name String) ENGINE = Memory;
+INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
+
 SELECT groupConcat(Name) FROM Employees;
         )",
         R"(

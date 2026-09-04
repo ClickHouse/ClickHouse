@@ -5,10 +5,12 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/DistinctTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -55,6 +57,35 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// With a single input stream the set fill deduplicates just as well on its own; the pre-distinct
+    /// only pays off by deduplicating disjoint streams in parallel. The partition count can drop to one
+    /// after the flag was set (e.g. a later filter pushdown re-runs part selection), so check the final
+    /// stream count here. The external table is re-checked too: `GLOBAL IN` under the analyzer attaches
+    /// it only at pipeline build time (see `ReadFromRemote`), after the optimization passes checked it,
+    /// and pre-deduplication would change the table contents and what the
+    /// `max_{rows,bytes}_to_transfer` limits count.
+    if (preliminary_distinct && !usesExternalTable() && pipeline.getNumStreams() > 1)
+    {
+        /// With `transform_null_in = 0` the set fill skips rows with a NULL in any key component, so
+        /// the preliminary deduplication drops them too instead of hashing and counting them.
+        const auto & input_header = *getInputHeaders().front();
+        const bool skip_null_keys = !set_and_key->set->transformNullIn()
+            && std::any_of(
+                input_header.begin(), input_header.end(), [](const auto & col) { return isNullableOrLowCardinalityNullable(col.type); });
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                /// Deduplicate independently per stream. The set fill deduplicates anyway, so on
+                /// mostly-unique input the transform may abandon and pass rows through.
+                return std::make_shared<DistinctTransform>(
+                    header, SizeLimits{}, 0, Names{}, /*allow_abandoning_=*/true, skip_null_keys);
+            });
+    }
+
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         set_and_key,
@@ -77,12 +108,17 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     settings.out << "Set: ";
     settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
+
+    if (preliminary_distinct)
+        settings.out << prefix << "Pre-distinct: 1\n";
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (set_and_key->set)
         map.add("Set", set_and_key->key);
+    if (preliminary_distinct)
+        map.add("Pre-distinct", true);
 }
 
 

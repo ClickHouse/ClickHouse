@@ -13,25 +13,25 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   ## Conceitos-chave
 </div>
 
-O diagrama abaixo mostra como as organizations do ClickHouse Cloud, as contas de nuvem e a infraestrutura BYOC se relacionam.
+O diagrama abaixo mostra como as organizações do ClickHouse Cloud, as contas de nuvem e a infraestrutura BYOC se relacionam.
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="Hierarquia de organizations BYOC" />
+<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="Hierarquia de organizações BYOC" />
 
-* **Organization do ClickHouse Cloud:** A entidade de nível superior no ClickHouse Cloud que gerencia usuários, billing e serviços ClickHouse que não são BYOC. Os usuários de uma organization podem acessar tanto os serviços Cloud padrão quanto os serviços BYOC.
-* **Organization BYOC do ClickHouse:** Uma organization separada, dedicada ao gerenciamento de implantações BYOC. Ela compartilha usuários com a organization Cloud, mas está vinculada a uma ou mais contas de nuvem em que a infraestrutura BYOC é implantada.
-* **Conta de nuvem / projeto:** A conta da AWS ou o projeto do GCP pertencente ao cliente, em que a infraestrutura BYOC é provisionada. Cada conta ou projeto pode hospedar implantações BYOC em uma ou mais regiões. Para isolamento, recomenda-se uma conta ou projeto dedicado para cada implantação BYOC.
-* **Infraestrutura BYOC:** O conjunto de recursos de nuvem implantados em uma região específica de uma conta de nuvem, incluindo uma VPC, um cluster Kubernetes (EKS/GKE), buckets de armazenamento, funções do IAM e serviços de suporte. Uma única conta de nuvem pode conter várias infraestruturas BYOC em diferentes regiões.
+* **Organização do ClickHouse Cloud:** A entidade de nível superior no ClickHouse Cloud que gerencia usuários, billing e serviços ClickHouse que não são BYOC. Os usuários de uma organização podem acessar tanto os serviços Cloud padrão quanto os serviços BYOC.
+* **Organização BYOC do ClickHouse:** Uma organização separada, dedicada ao gerenciamento de implantações BYOC. Ela compartilha usuários com a organização Cloud, mas está vinculada a uma ou mais contas de nuvem em que a infraestrutura BYOC é implantada.
+* **Conta de nuvem/projeto/assinatura:** A conta da AWS, o projeto do GCP ou a assinatura do Azure pertencente ao cliente, em que a infraestrutura BYOC é provisionada. Cada conta/projeto/assinatura pode hospedar implantações BYOC em uma ou mais regiões. Para isolamento, recomenda-se uma conta/projeto/assinatura dedicada para cada implantação BYOC.
+* **Infraestrutura BYOC:** O conjunto de recursos de nuvem implantados em uma região específica de uma conta de nuvem, incluindo uma VPC/VNet, um cluster do Kubernetes (EKS/GKE/AKS), buckets de armazenamento de objetos, funções do IAM/contas de serviço/principais de serviço e serviços de suporte. Uma única conta de nuvem pode conter várias infraestruturas BYOC em diferentes regiões.
 * **Serviço ClickHouse:** Um cluster ClickHouse individual em execução em uma infraestrutura BYOC. Vários serviços podem ser executados na mesma infraestrutura BYOC.
 
 <Note>
-  Misturar contas da AWS e projetos do GCP na mesma organization só é possível para clientes que não foram configurados por meio de um [marketplace de provedor de serviços de nuvem](/pt-BR/products/cloud/reference/billing/marketplace/overview).
+  Misturar contas da AWS, projetos do GCP e assinaturas do Azure na mesma organização só é possível para clientes que não foram configurados por meio de um [marketplace de provedor de serviços de nuvem](/pt-BR/products/cloud/reference/billing/marketplace/overview).
 </Note>
 
 <div id="glossary">
   ## Glossário
 </div>
 
-* **ClickHouse VPC:**  A VPC pertencente ao ClickHouse Cloud.
+* **ClickHouse VPC:** A VPC pertencente ao ClickHouse Cloud.
 * **VPC BYOC do cliente:** A VPC, pertencente à conta de nuvem do cliente, é provisionada e gerenciada pelo ClickHouse Cloud e dedicada a uma implantação BYOC do ClickHouse Cloud.
 * **Customer VPC:** Outras VPCs pertencentes à conta de nuvem do cliente, usadas por aplicações que precisam se conectar à VPC BYOC do cliente.
 
@@ -54,7 +54,7 @@ Os principais recursos de Cloud que o ClickHouse Cloud implantará na sua conta 
 * **VPC:** Uma Virtual Private Cloud dedicada à sua implantação do ClickHouse. Ela pode ser gerenciada pelo ClickHouse ou por você, o cliente, e normalmente é conectada por peering às VPCs das suas aplicações.
 * **Funções e políticas do IAM:** Funções e permissões necessárias para o Kubernetes, os serviços do ClickHouse e a stack de monitoramento. Elas podem ser provisionadas pelo ClickHouse ou fornecidas pelo cliente.
 * **Buckets de armazenamento:** Usados para armazenar partes de dados, backups e, opcionalmente, arquivos de métricas e logs de longo prazo.
-* **Cluster do Kubernetes:** Pode ser Amazon EKS, Google GKE ou Azure AKS, dependendo do seu provedor de Cloud, e hospeda os servidores ClickHouse e os serviços de suporte mostrados no diagrama de arquitetura.
+* **Cluster do Kubernetes:** Pode ser Amazon EKS, Google GKE ou Azure AKS, dependendo do seu provedor de Cloud. Ele hospeda os servidores ClickHouse e os serviços de suporte mostrados no diagrama de arquitetura.
 
 Por padrão, o ClickHouse Cloud provisiona uma VPC nova e dedicada e configura as funções do IAM necessárias para garantir a operação segura dos serviços do Kubernetes. Para organizações com necessidades avançadas de rede ou segurança, também existe a opção de gerenciar a VPC e as funções do IAM por conta própria. Essa abordagem permite maior personalização das configurações de rede e um controle mais preciso sobre as permissões. No entanto, optar por gerenciar esses recursos por conta própria aumentará suas responsabilidades operacionais.
 
@@ -83,12 +83,12 @@ O modelo de implantação BYOC exige dois componentes essenciais para garantir o
 O ClickHouse Cloud precisa de permissões de IAM entre contas para provisionar e gerenciar recursos na sua conta de nuvem. Isso permite que o ClickHouse:
 
 * **Gerencie funções do IAM**: crie e configure funções do IAM para contas de serviço do Kubernetes e serviços de suporte
-* **Gerencie clusters do Kubernetes**: implante e mantenha clusters EKS/GKE, grupos de nós e componentes do cluster
+* **Gerencie clusters do Kubernetes**: implante e mantenha clusters EKS/GKE/AKS, grupos de nós e componentes do cluster
 * **Crie recursos de armazenamento**: provisione buckets do S3 ou armazenamento de objetos equivalente para dados e backups
 * **Gerencie funções do IAM**: crie e configure funções do IAM para contas de serviço do Kubernetes e serviços de suporte
 * **Opere serviços de suporte**: implante e gerencie stacks de monitoramento, controladores de Entrada e outros componentes de infraestrutura
 
-Essas permissões são concedidas por meio de uma função do IAM entre contas (AWS) ou de uma conta de serviço (GCP) criada por você durante o processo inicial de onboarding. A função segue o princípio do menor privilégio, com permissões limitadas apenas ao necessário para as operações de BYOC.
+Essas permissões são concedidas por meio de uma função do IAM entre contas (AWS), de uma conta de serviço (GCP) ou de um principal de serviço multilocatário (Azure) criada por você durante o processo inicial de onboarding. A função segue o princípio do menor privilégio, com permissões limitadas apenas ao necessário para as operações de BYOC.
 
 Para informações detalhadas sobre as permissões específicas exigidas, consulte a [Referência de Privilégios do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege).
 
