@@ -113,6 +113,19 @@
    "Could not resolve"
    "Temporary failure resolving"])
 
+(def stale-index-errors
+  "What apt prints when the file it asked for is not the file the archive has.
+  The download failed, but an unavailable mirror is not why: the package lists
+  name a version the archive has already superseded, and apt says as much in
+  `maybe run apt-get update`. Retrying the install cannot fix it, because
+  jepsen.os.debian/maybe-update! inside the Ubuntu setup finds the lists young
+  enough to keep - they are ours, fetched minutes ago, and stale all the same.
+  Matched with patterns because apt's spacing between a status and its reason
+  varies."
+  [#"404\s+Not Found"
+   #"Hash Sum mismatch"
+   #"File has unexpected size"])
+
 (defn stop-apt-timers!
   "Stops the timers that start automatic apt runs. Best effort: a node without
   systemd, or with these units absent, is fine. Stops the timers and never the
@@ -235,6 +248,13 @@
       (boolean (when-let [err (apt-error failure)]
                  (some #(str/includes? err %) archive-fetch-errors)))))
 
+(defn stale-index?
+  "Did this download fail because the package lists name a file the archive
+  does not have, rather than because the archive could not be reached?"
+  [failure]
+  (boolean (when-let [err (apt-error failure)]
+             (some #(re-find % err) stale-index-errors))))
+
 (defn readable-package-index-count
   "How many package indexes apt can currently read. `apt-get indextargets` lists
   any or none with the same exit status, so the count is the answer and the status
@@ -339,12 +359,17 @@
   so the packages covered stay whatever the Ubuntu setup installs; each attempt
   asks apt only for what is still missing, so a retry resumes rather than
   restarts. Only a failure to download is retried - a package apt refuses to
-  install is reported at once, as before. Leaves apt's own message in the
-  exception it throws when the run is out of retries, so a mirror that is broken
-  rather than busy is diagnosed from it."
+  install is reported at once, as before. A download that failed because the
+  package lists name a file the archive no longer has is not a mirror to wait
+  for: the lists are fetched again, once, and a second such failure is reported
+  rather than retried, since the update inside the Ubuntu setup keeps lists this
+  young and no number of attempts would ask for anything else. Leaves apt's own
+  message in the exception it throws when the run is out of retries, so a mirror
+  that is broken rather than busy is diagnosed from it."
   [test node]
   (let [start (System/currentTimeMillis)]
-    (loop [attempt 1]
+    (loop [attempt 1
+           refetched-lists? false]
       (when-let [failure (try+
                           (os/setup! ubuntu/os test node)
                           nil
@@ -353,12 +378,26 @@
                               failure
                               (throw+))))]
         (cond
+          (stale-index? failure)
+          (if refetched-lists?
+            (throw+ {:type ::apt-package-lists-stale
+                     :node c/*host*
+                     :attempts attempt
+                     :err (apt-error failure)}
+                    nil
+                    "apt could not download a package on %s that the package lists it just fetched name:\n%s"
+                    c/*host* (failure-message failure))
+            (do (warn "apt could not download a package the package lists on" c/*host*
+                      "name, so they are fetched again:\n" (failure-message failure))
+                (update-package-lists!)
+                (recur (inc attempt) true)))
+
           (may-retry-archive?)
           (do (warn "apt could not download a package on" c/*host*
                     (str "(attempt " attempt "), retrying:\n")
                     (failure-message failure))
               (Thread/sleep (long apt-archive-retry-interval-ms))
-              (recur (inc attempt)))
+              (recur (inc attempt) refetched-lists?))
 
           :else
           (let [waited (- (System/currentTimeMillis) start)]
