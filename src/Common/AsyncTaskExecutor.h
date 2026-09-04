@@ -4,8 +4,8 @@
 #include <mutex>
 #include <base/types.h>
 #include <Common/Epoll.h>
-#include <Common/Fiber.h>
-#include <Common/FiberStack.h>
+#include <Common/StackfulCoroutine.h>
+#include <Common/CoroutineStack.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Poco/Timespan.h>
 
@@ -28,17 +28,17 @@ enum class AsyncEventTimeoutType : uint8_t
 using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
 using SuspendCallback = std::function<void()>;
 
-struct FiberInfo
+struct CoroutineInfo
 {
-    const Fiber * fiber = nullptr;
-    const FiberInfo * parent_fiber_info = nullptr;
+    const StackfulCoroutine * coroutine = nullptr;
+    const CoroutineInfo * parent_coroutine_info = nullptr;
 };
 
-/// Base class for a task that will be executed in a fiber.
+/// Base class for a task that will be executed in a coroutine.
 /// It has only one method - run, that takes 2 callbacks:
 /// 1) async_callback - callback that should be called when this task tries to perform
 ///    some operation on a file descriptor (e.g. reading from socket) that can block this task execution.
-/// 2) suspend_callback - callback that can be called to suspend current fiber execution explicitly.
+/// 2) suspend_callback - callback that can be called to suspend current coroutine execution explicitly.
 struct AsyncTask
 {
 public:
@@ -46,7 +46,7 @@ public:
     virtual ~AsyncTask() = default;
 };
 
-/// Base class for executing tasks inside a fiber.
+/// Base class for executing tasks inside a coroutine.
 class AsyncTaskExecutor
 {
 public:
@@ -56,10 +56,10 @@ public:
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
 
-    /// Cancel task execution. Fiber will be destroyed even if task wasn't finished.
+    /// Cancel task execution. Coroutine will be destroyed even if task wasn't finished.
     void cancel();
 
-    /// Restart task execution. Current fiber will be destroyed
+    /// Restart task execution. Current coroutine will be destroyed
     /// and the new one will be created with the same task.
     /// The next resume() call will start the new task from the beginning
     void restart();
@@ -89,40 +89,40 @@ public:
 #endif
 
 protected:
-    /// Method that is called in resume() before actual fiber resuming.
-    /// If it returns false, resume() will return immediately without actual fiber resuming.
+    /// Method that is called in resume() before actual coroutine resuming.
+    /// If it returns false, resume() will return immediately without actual coroutine resuming.
     virtual bool checkBeforeTaskResume() = 0;
 
-    /// Method that is called in resume() after fiber resuming (when it was finished or suspended).
+    /// Method that is called in resume() after coroutine resuming (when it was finished or suspended).
     virtual void afterTaskResume() = 0;
 
-    /// Method that is called on async event (when async callback is called) before fiber is suspended.
+    /// Method that is called on async event (when async callback is called) before coroutine is suspended.
     virtual void processAsyncEvent(int fd, Poco::Timespan timeout, AsyncEventTimeoutType timeout_type, const std::string & fd_description, uint32_t async_events) = 0;
 
     /// Method that is called when task is resumed after it was suspended on async event.
     virtual void clearAsyncEvent() = 0;
 
-    /// Process exception caught while task execution. It's called after fiber resume if exception happened.
+    /// Process exception caught while task execution. It's called after coroutine resume if exception happened.
     virtual void processException(std::exception_ptr e) { std::rethrow_exception(e); }
 
-    /// Method that is called in cancel() before fiber destruction.
+    /// Method that is called in cancel() before coroutine destruction.
     virtual void cancelBefore() { }
-    /// Method that is called in cancel() after fiber destruction.
+    /// Method that is called in cancel() after coroutine destruction.
     virtual void cancelAfter() { }
 
-    /// Resume fiber explicitly without mutex locking.
+    /// Resume coroutine explicitly without mutex locking.
     /// Can be called in cancelBefore().
     void resumeUnlocked();
 
 private:
     struct Routine;
 
-    void createFiber();
-    void destroyFiber();
+    void createCoroutine();
+    void destroyCoroutine();
 
-    FiberStack fiber_stack;
-    Fiber fiber;
-    std::mutex fiber_lock;
+    CoroutineStack coroutine_stack;
+    StackfulCoroutine coroutine;
+    std::mutex coroutine_lock;
     std::exception_ptr exception;
 
     std::atomic_bool routine_is_finished = false;

@@ -87,18 +87,16 @@ SETTINGS auto_statistics_types = 'basic', index_granularity = 1;
 INSERT INTO t_stats_prune_in_throwing VALUES ('a', 1), ('a', 100), ('a', 200);
 
 -- Routing the outer query through parallel replicas reshapes it so the subquery is no longer the
--- consumed set source, so those settings are pinned off rather than randomized.
+-- consumed set source, so `enable_parallel_replicas` is pinned off rather than randomized.
 SELECT count() FROM t_stats_prune_in_throwing
 WHERE c IN (SELECT c FROM t_stats_prune_in_throwing WHERE throwIf(a = 'a') AND c IN (SELECT 1))
 SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1,
-         enable_parallel_replicas = 0,
-         automatic_parallel_replicas_mode = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+         enable_parallel_replicas = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- Same query with pruning off, so the error above is attributable to statistics part pruning.
 SELECT count() FROM t_stats_prune_in_throwing
 WHERE c IN (SELECT c FROM t_stats_prune_in_throwing WHERE throwIf(a = 'a') AND c IN (SELECT 1))
 SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 0,
-         enable_parallel_replicas = 0,
-         automatic_parallel_replicas_mode = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+         enable_parallel_replicas = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 DROP TABLE t_stats_prune_in_throwing;

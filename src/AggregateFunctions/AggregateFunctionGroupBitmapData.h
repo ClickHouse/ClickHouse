@@ -8,6 +8,7 @@
 #include <Common/PODArray.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpersArena.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
@@ -132,10 +133,11 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
-            std::unique_ptr<char[]> buf(new char[size]);
-            in.readStrict(buf.get(), size);
+            /// A `String` is counted against the memory tracker but not refused by it, so a large legitimate bitmap still loads.
+            String buf;
+            readStringGrowing(buf, size, in);
 
-            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.data(), size));
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
@@ -301,10 +303,22 @@ public:
                     ++ret;
             }
         }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+            {
+                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
+                    ++ret;
+            }
+        }
+        else if constexpr (sizeof(T) < 8)
+        {
+            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
+        }
         else
         {
-            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
-            ret = (*roaring_bitmap & *new_rb).cardinality();
+            /// Roaring64Map exposes no and_cardinality, so the intersection must be materialized.
+            ret = (*roaring_bitmap & *r1.roaring_bitmap).cardinality();
         }
         return ret;
     }
@@ -384,8 +398,14 @@ public:
                     return 1;
             }
         }
+        else if constexpr (sizeof(T) < 8)
+        {
+            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
+                return 1;
+        }
         else
         {
+            /// Roaring64Map exposes no intersect, so the intersection must be materialized.
             if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
                 return 1;
         }

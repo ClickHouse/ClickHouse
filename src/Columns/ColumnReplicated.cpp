@@ -224,11 +224,6 @@ void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
-{
-    nested_column->skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnReplicated::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else

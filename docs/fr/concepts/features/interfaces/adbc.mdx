@@ -1,0 +1,51 @@
+---
+description: 'Documentation du pilote ADBC ClickHouse'
+sidebarTitle: 'Pilote ADBC'
+slug: /interfaces/adbc
+title: 'Pilote ADBC'
+doc_type: 'reference'
+---
+
+Le pilote ADBC ClickHouse fournit une interface [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+conforme aux normes, permettant de connecter des applications compatibles ADBC à ClickHouse.
+
+Le pilote communique avec le serveur ClickHouse via le [protocole HTTP](/fr/concepts/features/interfaces/http), qui est le principal
+protocole pris en charge par tous les déploiements ClickHouse. Cela permet au pilote de fonctionner de manière cohérente dans divers
+environnements, notamment les installations locales, les services managés dans le cloud et les environnements où seul un accès HTTP est
+disponible.
+
+Le code source du pilote est disponible dans le
+[dépôt GitHub adbc&#95;clickhouse](https://github.com/clickhouse/adbc_clickhouse).
+
+<Note>
+  Ce pilote est en cours de développement actif. Certaines fonctionnalités ADBC ne sont peut-être pas encore entièrement implémentées. La version actuelle
+  se concentre sur la fourniture d&#39;une connectivité essentielle et des fonctionnalités ADBC de base, tandis que d&#39;autres fonctionnalités sont prévues dans de futures
+  versions.
+
+  Vos retours sont très précieux et contribuent à orienter la priorisation des nouvelles fonctionnalités et des améliorations. Si vous rencontrez des
+  limitations, des fonctionnalités manquantes ou un comportement inattendu, veuillez partager vos observations ou demandes de fonctionnalités via
+  le gestionnaire d&#39;issues à l&#39;adresse
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+<div id="installation">
+  ## Installation
+</div>
+
+Vous pouvez installer la dernière version du pilote à l’aide de [dbc](https://docs.columnar.tech/dbc/) :
+
+```bash
+dbc install clickhouse
+```
+
+Vous pouvez également le télécharger manuellement depuis [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases).
+
+<div id="database-options">
+  ## Options de base de données
+</div>
+
+Les options de base de données ci-dessous permettent d&#39;établir une connexion avec le pilote ClickHouse ADBC.
+
+* `uri` : Spécifie le endpoint HTTP(S) complet du serveur ClickHouse, y compris le protocole, l&#39;hôte et le port.
+* `username` : Nom d&#39;utilisateur utilisé pour l&#39;authentification auprès du serveur ClickHouse.
+* `password` : Mot de passe associé au nom d&#39;utilisateur spécifié.

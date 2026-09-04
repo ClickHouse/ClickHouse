@@ -1,0 +1,67 @@
+---
+title: 'Visão geral do Connector'
+sidebarTitle: 'Visão geral'
+description: 'Observabilidade e suporte para clusters do ClickHouse nos ambientes que você opera, sem acesso permanente'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+<Note>
+  O ClickHouse Connector está em Private Preview. Para solicitar acesso, entre em contato com a equipe responsável pela sua conta ClickHouse.
+</Note>
+
+<div id="what-the-connector-does">
+  ## O que o conector faz
+</div>
+
+O ClickHouse Connector é um componente implantado no seu ambiente, junto aos clusters do ClickHouse que você opera. Ele oferece ao ClickHouse a visibilidade necessária para monitorar esses clusters e prestar suporte quando você solicitar ajuda, sem conceder ao ClickHouse acesso permanente ao seu ambiente. O conector é fornecido como um único binário chamado `clicklink`, que contém os daemons do conector e as ferramentas de linha de comando `clicklink clctl` usadas para instalá-los e operá-los.
+
+O conector tem dois componentes:
+
+* **O scraper** coleta métricas de uma allowlist de tabelas de sistema do ClickHouse, além de metadados da infraestrutura e do status de saúde, e os envia ao ClickHouse Cloud.
+* **O troubleshooter** permite que os engenheiros do suporte do ClickHouse executem diagnósticos somente leitura, mas apenas durante uma [sessão de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) que você habilita e pode encerrar a qualquer momento.
+
+Todas as conexões feitas pelo conector são de saída. O ClickHouse Cloud nunca inicia uma conexão com o seu ambiente; a página de [arquitetura](/pt-BR/products/bring-your-own-cloud/connector/architecture) lista todas as conexões, seus protocolos e como elas são autenticadas.
+
+<div id="when-to-use-it">
+  ## Quando usá-lo
+</div>
+
+Implante o conector quando o ClickHouse monitora ou oferece suporte a clusters do ClickHouse em execução no seu ambiente e sua postura de segurança exige que:
+
+* Todos os caminhos de acesso se originem dentro da sua fronteira, sem conectividade de entrada.
+* O acesso do suporte seja limitado no tempo, habilitado por você e revogável a qualquer momento.
+* Tudo o que o ClickHouse lê seja somente leitura: acesso permanente às tabelas do ClickHouse, além de metadados de cargas de trabalho e logs no escopo do espaço de nomes durante uma sessão habilitada por você. Todos os comandos da sessão de suporte são registrados em um log de auditoria sob seu controle.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+O ClickHouse fornece o endpoint do seu connector e um token de inscrição de uso único durante o onboarding. Execute `clicklink clctl init --enroll` uma única vez, em uma estação de trabalho com acesso ao kubeconfig para uma instalação no Kubernetes ou diretamente no host para uma instalação em uma VM Linux. Essa única execução resgata o token, cria usuários dedicados do ClickHouse com acesso somente leitura para cada componente, obtém um certificado de cliente mTLS, implanta e inicia os daemons e verifica a saúde deles.
+
+A partir daí, o scraper lê periodicamente as tabelas de sistema permitidas e envia métricas, metadados e informações de saúde ao endpoint do seu connector por TLS com autenticação mútua. O troubleshooter permanece inativo: ele mantém um canal de comandos de saída, mas esse canal não transmite nada até que você habilite uma sessão de suporte. O certificado mTLS é renovado automaticamente, sem nenhuma ação da sua parte.
+
+<div id="requirements-at-a-glance">
+  ## Requisitos em resumo
+</div>
+
+* **Um destino de implantação.** Qualquer cluster do Kubernetes compatível (com o chart do Helm instalado) ou qualquer host Linux amd64 ou arm64 com systemd.
+* **Acesso de rede de saída pela porta 443** ao endpoint do seu conector e ao respectivo endpoint de inscrição, além de `releases.clicklink.clickhouse.com` e do ECR Public durante a instalação. Esse é o caminho padrão; há alternativas isoladas da internet e espelhadas para cada etapa. Consulte o [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
+* **Um listener nativo do ClickHouse acessível.** O conector se comunica com cada cluster pelo protocolo nativo; no Kubernetes, ele detecta automaticamente conexões seguras (9440) ou em texto simples (9000).
+* **Um token de inscrição.** O ClickHouse fornece o endpoint do seu conector e um token de inscrição de uso único durante o onboarding.
+* **Acesso de administrador ao ClickHouse durante a configuração.** O provisionamento inicial cria os usuários somente leitura do conector. Uma senha de administrador, quando definida, é solicitada uma única vez e nunca é armazenada.
+* **Acesso de administrador a um servidor da API do Kubernetes durante o provisionamento**, em ambos os destinos de instalação: os pacotes de acesso são vinculados a ServiceAccounts do Kubernetes. Consulte o [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding).
+
+Consulte o [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding) para ver o passo a passo completo dos dois destinos de instalação.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+* [Onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding): instale e registre o conector no Kubernetes ou em uma VM Linux.
+* [arquitetura](/pt-BR/products/bring-your-own-cloud/connector/architecture): componentes, cada conexão, ciclo de vida dos certificados e quais dados saem do seu ambiente.
+* [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions): como habilitar, definir o escopo, auditar e revogar o acesso ao suporte.
+* [Configuration](/pt-BR/products/bring-your-own-cloud/connector/configuration) e [operations](/pt-BR/products/bring-your-own-cloud/connector/operations): ajustes, upgrades e tarefas operacionais contínuas.
+* [FAQ](/pt-BR/products/bring-your-own-cloud/connector/reference/faq): perguntas frequentes, incluindo saída de dados e revogação.
+
+O conector atende a ambientes que você opera. Se preferir que o ClickHouse opere os clusters em sua conta na nuvem, esse é o modelo de implantação [BYOC](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview); consulte a página de [arquitetura do BYOC](/pt-BR/products/bring-your-own-cloud/overview/architecture) para entender as diferenças entre os dois.

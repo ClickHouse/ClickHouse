@@ -135,7 +135,17 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+    : ThreadStatus(getThreadId())
+{
+}
+
+ThreadStatus::ThreadStatus(NoOSThreadTag)
+    : ThreadStatus(NO_OS_THREAD)
+{
+}
+
+ThreadStatus::ThreadStatus(UInt64 thread_id_)
+    : thread_id(thread_id_)
 {
     chassert(!current_thread);
 
@@ -262,6 +272,12 @@ void ThreadStatus::flushUntrackedMemory()
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
+}
+
+void ThreadStatus::publishUntrackedMemory()
+{
+    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
+        flushUntrackedMemory();
 }
 
 bool ThreadStatus::isQueryCanceled() const

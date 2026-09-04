@@ -2,7 +2,7 @@
 -- from the column type has to be part of that hash. The defect needs a Compact part, so the part
 -- type is pinned on every table below instead of using a no-random-merge-tree-settings tag.
 
-SET allow_experimental_codecs = 1; -- required by ALP, harmless for FPC and GCD
+SET enable_alp_codec = 1; -- required by ALP (beta), not needed for FPC and GCD
 
 -- 1. A Float64 and a Float32 column under the same codec name used to share one stream, so the
 -- second column was compressed with the first one's float width and a misaligned granule was
@@ -55,7 +55,7 @@ SELECT (SELECT sum(data_compressed_bytes) FROM system.parts
      = (SELECT sum(data_compressed_bytes) FROM system.parts
             WHERE database = currentDatabase() AND table = 'alp_mix' AND active);
 
--- 3. FPC has the same defect and is not gated behind allow_experimental_codecs.
+-- 3. FPC has the same defect and is not gated.
 
 DROP TABLE IF EXISTS fpc_mix;
 DROP TABLE IF EXISTS fpc_32;
