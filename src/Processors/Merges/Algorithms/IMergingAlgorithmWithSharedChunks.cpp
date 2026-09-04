@@ -42,8 +42,10 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
     }
 
     /// A single-column key without a collation compares cheaply even through the generic
-    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
-    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, sortDescriptionCompareIsExpensive(description));
+    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`),
+    /// and the batches are detected only when the algorithm can make use of them.
+    bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, compare_is_expensive, compare_is_expensive || uses_batches);
 }
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)

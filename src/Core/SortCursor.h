@@ -436,9 +436,19 @@ public:
     /// comparator is known to be cheap even though the cursor type is marked expensive (e.g.
     /// a single-column sorting key merged through the generic `SortCursor` by the special
     /// merge algorithms). It only matters for the Array container.
+    ///
+    /// `enable_batch_detection` (only for the Batch strategy) allows to skip the detection of
+    /// batches longer than one row: `current` then reports a batch of one row (or the whole
+    /// remainder of the last cursor), and the queue is restructured after every row exactly
+    /// like with the Default strategy. This is for clients that can not make use of batches
+    /// and merge through a cheap comparator: for them the detection is pure overhead when the
+    /// keys are interleaved between the cursors.
     template <typename Cursors>
-    explicit SortingQueueImpl(Cursors & cursors, bool enable_array_container = true)
+    explicit SortingQueueImpl(Cursors & cursors, bool enable_array_container = true, bool enable_batch_detection = true)
     {
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+            batch_detection_enabled = enable_batch_detection;
+
         size_t size = cursors.size();
         queue.reserve(size);
 
@@ -517,7 +527,10 @@ public:
         if (!queue.front()->isLast(batch_size_value))
         {
             queue.front()->next(batch_size_value);
-            updateTop(false /*check_in_order*/);
+            /// The batch detection has already established that the next row of the front
+            /// cursor is not less than the second cursor's row, so no need to check it again.
+            /// Without the detection the order is unknown and must be checked.
+            updateTop(/*check_in_order=*/ !batch_detection_enabled);
         }
         else
         {
@@ -585,6 +598,9 @@ private:
     /// Cache comparison between first and second child if the order in queue has not been changed.
     size_t next_child_idx = 0;
     size_t batch_size = 0;
+
+    /// Whether batches longer than one row are detected (only with the Batch strategy, see the constructor).
+    bool batch_detection_enabled = true;
 
     /// Whether the queue currently operates as a sorted array (only with the Array container,
     /// see `SortingQueueContainer`). Above `max_array_container_size` cursors the shifts of the
@@ -743,6 +759,9 @@ private:
         }
 
         batch_size = 1;
+        if (!batch_detection_enabled)
+            return;
+
         auto & next_child_cursor = *(queue.begin() + nextChildIndex());
 
         if (batch_size < rows_left && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))

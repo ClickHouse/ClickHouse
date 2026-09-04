@@ -48,6 +48,12 @@ protected:
     /// one with `next(1)` restructures the queue once per batch instead of once per row.
     SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
 
+    /// Set by a derived algorithm before `initialize` when it makes use of batches longer than
+    /// one row (e.g. `ReplacingSortedAlgorithm` skips runs of equal keys within a batch).
+    /// Otherwise the batch detection is enabled only for expensive comparators, where the
+    /// batches save comparisons; for cheap ones it is pure overhead on interleaved keys.
+    bool uses_batches = false;
+
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
