@@ -783,17 +783,22 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
             /// the same value twice within one query and must not change the number of rows. This pass already
             /// requires both properties of the filters it pushes.
+            static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
+            { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
             const auto source_dag = JoinExpressionActions::getSubDAG(source);
             for (const auto & node : source_dag.getNodes())
             {
                 if (node.type == ActionsDAG::ActionType::FUNCTION)
                 {
-                    if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+                    if (changes_between_evaluations(*node.function_base))
                         return;
                 }
                 else if (node.type != ActionsDAG::ActionType::INPUT
                     && node.type != ActionsDAG::ActionType::COLUMN
                     && node.type != ActionsDAG::ActionType::ALIAS)
+                    return;
+
+                if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
                     return;
             }
 

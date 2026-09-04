@@ -305,6 +305,10 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
+    /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
+    /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
+    static bool hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &));
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 

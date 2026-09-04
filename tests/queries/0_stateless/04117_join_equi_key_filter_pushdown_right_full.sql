@@ -241,6 +241,41 @@ SELECT count() > 0 FROM (
     WHERE isConstant(l.a) = 0 AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 ) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
 
+-- A lambda keeps its body in an inner expression that a walk over the outer nodes never reaches, so both
+-- properties above are asserted twice: once where the body satisfies them and once where it hides a
+-- violation. `% 1` keeps `rand` from changing the key's value, leaving the body as the only difference,
+-- and the two spellings render identically in the plan, so only the pushed filter tells them apart.
+
+SELECT 'INNER JOIN ON, cross-type equi-key with a deterministic lambda body: the key reaches the right input';
+SELECT countIf(explain ILIKE '%Filter column%arrayMax%') = 1 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = arrayMax(arrayMap(z -> z, [r.b]))
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, cross-type equi-key whose lambda body is not stable within the query: the key does not';
+SELECT countIf(explain ILIKE '%Filter column%arrayMax%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = arrayMax(arrayMap(z -> z + (rand(z) % 1), [r.b]))
+    WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, conjunct with a deterministic lambda body over the equi-key: the conjunct is pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 1 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> l.a + y > toDate32('1900-01-01'), [1])
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, conjunct whose lambda body reads the equi-key representation: the conjunct is not pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> isConstant(l.a + y) = 0, [1])
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
 SELECT 'INNER JOIN ON, cross-type equi-key: result';
 SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
 WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;

@@ -2205,6 +2205,58 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+namespace
+{
+
+bool dagHasUnsafeFunction(const ActionsDAG & dag, bool (*is_unsafe)(const IFunctionBase &))
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && is_unsafe(*node.function_base))
+            return true;
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_unsafe))
+            return true;
+    }
+
+    return false;
+}
+
+/// A lambda that captures only constants is itself folded to a constant, which holds the lambda object
+/// rather than a computed value: the body still runs, and its captures can hold further lambdas.
+bool foldedLambdaHasUnsafeFunction(const IColumn & column, bool (*is_unsafe)(const IFunctionBase &))
+{
+    const auto * column_function = typeid_cast<const ColumnFunction *>(&column);
+    if (!column_function)
+        return false;
+
+    const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+    if (expression && dagHasUnsafeFunction(expression->getAcionsDAG(), is_unsafe))
+        return true;
+
+    for (const auto & captured : column_function->getCapturedColumns())
+        if (const auto * captured_constant = typeid_cast<const ColumnConst *>(captured.column.get()))
+            if (foldedLambdaHasUnsafeFunction(captured_constant->getDataColumn(), is_unsafe))
+                return true;
+
+    return false;
+}
+
+}
+
+bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &))
+{
+    if (node.type == ActionType::FUNCTION)
+    {
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        return function_capture && dagHasUnsafeFunction(function_capture->getAcionsDAG(), is_unsafe);
+    }
+
+    if (node.type == ActionType::COLUMN && node.column)
+        return foldedLambdaHasUnsafeFunction(node.column->getDataColumn(), is_unsafe);
+
+    return false;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;
@@ -3543,6 +3595,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so
     /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
     /// for the same value depending on constness, and a replacement can be constant where the input is not.
+    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
     auto reads_replaced_input_representation = [&](const Node * conjunct)
     {
         std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
@@ -3553,7 +3606,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             auto [node, reads_representation] = to_visit.back();
             to_visit.pop_back();
 
-            reads_representation |= !node->isDeterministic();
+            reads_representation |= !node->isDeterministic() || hasUnsafeHiddenLambdaBody(*node, is_representation_read);
             auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
             if (!visited.insert(node).second)
                 continue;

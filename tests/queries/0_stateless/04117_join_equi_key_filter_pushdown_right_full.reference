@@ -56,6 +56,14 @@ INNER JOIN ON, matched types: right MergeTree prunes granules
 1
 INNER JOIN ON, cross-type equi-key beside a predicate reading constness: right MergeTree prunes granules
 1
+INNER JOIN ON, cross-type equi-key with a deterministic lambda body: the key reaches the right input
+1
+INNER JOIN ON, cross-type equi-key whose lambda body is not stable within the query: the key does not
+1
+INNER JOIN ON, conjunct with a deterministic lambda body over the equi-key: the conjunct is pushed
+1
+INNER JOIN ON, conjunct whose lambda body reads the equi-key representation: the conjunct is not pushed
+1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02
