@@ -48,22 +48,26 @@ SETTINGS s3_truncate_on_insert = 1
 "
 
 run() {
-    local query_id=$1 file=$2
+    local query_id=$1 file=$2 extra_settings=$3
     # The schema is passed explicitly on purpose: an inferred schema opens the object once more
     # through the schema-inference path (a separate read buffer), which would add its own prefetch
     # and mask the one under test. v is at most 199999, so the predicate prunes every row group by
     # footer statistics - the query answers from the footer alone, reading no data pages.
     ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
     SELECT count() FROM s3('${url}/${file}', 'test', 'testtest', 'Parquet', 'v UInt64, s String') WHERE v > 100000000
-    SETTINGS ${read_settings}
+    SETTINGS ${read_settings}${extra_settings:+, ${extra_settings}}
     "
 }
 
 qid_big="${CLICKHOUSE_DATABASE}_big"
 qid_small="${CLICKHOUSE_DATABASE}_small"
+qid_big_no_seeks="${CLICKHOUSE_DATABASE}_big_no_seeks"
 
 run "$qid_big"   big.parquet
 run "$qid_small" small.parquet
+# The same big object with seeks disabled: the reader can no longer read the footer at the tail, it
+# reads the object sequentially from the start, so the from-start prefetch must not be gated off.
+run "$qid_big_no_seeks" big.parquet "input_format_allow_seeks=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
@@ -79,4 +83,12 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT ProfileEvents['RemoteFSPrefetches'] >= 1
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_id = '${qid_small}' AND type = 'QueryFinish'
+"
+
+# big object with input_format_allow_seeks=0 -> the read is sequential from the start, so the
+# from-start prefetch is useful and must still fire.
+${CLICKHOUSE_CLIENT} --query "
+SELECT ProfileEvents['RemoteFSPrefetches'] >= 1
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query_id = '${qid_big_no_seeks}' AND type = 'QueryFinish'
 "

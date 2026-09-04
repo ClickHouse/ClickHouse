@@ -203,6 +203,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool input_format_allow_seeks;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1053,7 +1054,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             ReadSettings read_settings = context_->getReadSettings();
-            read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
+            /// A random-access format only reads at arbitrary offsets while it is allowed to seek.
+            /// With `input_format_allow_seeks = 0` it reads the object sequentially from the start
+            /// instead, so the from-start read-ahead is exactly what it consumes and must not be
+            /// gated off: the hint follows the setting, not just the format's capability.
+            const bool seekable_read = format_settings
+                ? format_settings->seekable_read
+                : context_->getSettingsRef()[Setting::input_format_allow_seeks];
+            read_settings.remote_fs_settings.random_access
+                = seekable_read && FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested);

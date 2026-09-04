@@ -32,6 +32,12 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     Parquet::ReadOptions options;
     options.format = format_settings;
 
+    /// `input_format_allow_seeks = 0` means the reader must not seek: `Prefetcher` then reads the
+    /// whole file sequentially from the start instead of fetching the footer and the needed column
+    /// ranges. Without this the flag never reaches `Prefetcher` and the v3 reader seeks regardless
+    /// of the setting.
+    options.seekable_read = format_settings.seekable_read;
+
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
