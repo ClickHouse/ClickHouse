@@ -80,24 +80,28 @@ struct WorkloadResources
             // startConsumption, which must be called from that thread).
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
-            // Publish this thread's lease as the current CPU lease so the park guards deep in
-            // work() can find it. If parking is disabled but an enclosing pipeline executor on
-            // this thread already published a lease (nested executors), shadow it with nullptr
-            // for our region and restore it on destruction -- otherwise the guards here would
-            // park the outer executor's lease, breaking the "cpu_slot_parking=false makes every
-            // guard site a no-op" contract. If parking is disabled and nothing is published,
-            // leave the thread-local untouched so a server with the feature off pays no overhead.
-            prev_cpu_lease = getCurrentCPULease();
-            if (lease->isParkingEnabled())
-            {
-                setCurrentCPULease(lease);
-                publishes_lease = true;
-            }
-            else if (prev_cpu_lease)
-            {
-                setCurrentCPULease(nullptr);
-                publishes_lease = true;
-            }
+        }
+
+        // Manage the CurrentCPULease publication for this executor's region. A region drives
+        // parking only for its OWN lease: publish our lease when we have one and parking is
+        // enabled, so the park guards deep in work()/idle-wait find it. Otherwise -- no lease of
+        // our own, or parking disabled -- mask any lease published by an enclosing pipeline
+        // executor on this thread (a nested Pulling/PushingPipelineExecutor) with nullptr, so its
+        // guards do not park the outer lease; restore it on destruction. The masking cannot be
+        // gated on having a lease: a nested executor may have none (allocateCPU() can fall back to
+        // a non-lease allocation, e.g. after a cpu_slot_preemption reload) while an outer lease is
+        // still published. With nothing published and no lease to publish, the thread-local is
+        // left untouched so a server with the feature off pays nothing.
+        prev_cpu_lease = getCurrentCPULease();
+        if (lease && lease->isParkingEnabled())
+        {
+            setCurrentCPULease(lease);
+            publishes_lease = true;
+        }
+        else if (prev_cpu_lease)
+        {
+            setCurrentCPULease(nullptr);
+            publishes_lease = true;
         }
     }
 
