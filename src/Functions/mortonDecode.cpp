@@ -193,7 +193,8 @@ constexpr UInt64 fieldMask(size_t dimensions)
 }
 
 /// Per-step "bits to move" masks of a parallel-suffix bit compress over fieldMask().
-/// A zero mask marks a step that moves nothing, so a narrow field costs fewer steps.
+/// A zero mask marks a step that moves nothing: the bit at position i*ND travels i*(ND-1)
+/// places, so which steps drop out follows ND-1 and the longest travel, not the field width.
 constexpr std::array<UInt64, 6> moveMasks(size_t dimensions)
 {
     std::array<UInt64, 6> mv{};
