@@ -189,13 +189,16 @@ Chunk NATSSource::generateImpl()
         /// before it is parsed, and `nats_skip_broken_messages` turns a message that yields no rows
         /// into an ordinary outcome. Such a message is not waiting to be inserted, so the recovery
         /// does not have to wait for it: `markLastConsumedSkipped` moves it aside as soon as it
-        /// turns out to have produced nothing. Where the skip is already final - a background
-        /// streaming cycle, which never inserts such a message, or a direct `SELECT` that commits
-        /// what it reads - it is acknowledged rather than handed back, which keeps the skip instead
-        /// of showing the same malformed input again. An uncommitted direct `SELECT` must consume
-        /// nothing at all, so there it goes back to the broker like the rest, and the next query
-        /// skips it again. What the guard below
-        /// waits for is a message that still owes rows to this query.
+        /// turns out to have produced nothing. Only a background streaming cycle, which never
+        /// inserts such a message and whose skip is therefore already final when it happens,
+        /// acknowledges it here rather than handing it back, which keeps the skip instead of
+        /// showing the same malformed input to the next cycle. A direct `SELECT` consumes only what
+        /// it has committed, and this recovery runs long before the commit point in `generate` - a
+        /// query cancelled in between must leave the message for the next reader, whatever
+        /// `nats_commit_on_select` says - so there a skipped message goes back to the broker like
+        /// the rest of what the consumer holds. The redelivery is skipped again right away and is
+        /// acknowledged with everything else once the query does commit.
+        /// What the guard below waits for is a message that still owes rows to this query.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
         /// consuming where this one left off. Only a consumer this source subscribed from an
@@ -204,8 +207,8 @@ Chunk NATSSource::generateImpl()
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
             consumer->finishAndReturnUnprocessed(
-                background_streaming || commit_on_select ? INATSConsumer::SkippedMessages::Acknowledge
-                                                         : INATSConsumer::SkippedMessages::ReturnToBroker);
+                background_streaming ? INATSConsumer::SkippedMessages::Acknowledge
+                                     : INATSConsumer::SkippedMessages::ReturnToBroker);
             consumer->unsubscribe();
             consumer->subscribe();
         }

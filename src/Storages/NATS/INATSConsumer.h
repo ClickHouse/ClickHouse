@@ -66,9 +66,9 @@ public:
     /// What happens to the messages `nats_skip_broken_messages` passed over is the caller's to
     /// decide, because only the caller knows whether that skip is already final. `Acknowledge`
     /// keeps it: a background streaming cycle never inserts such a message, so nothing is left to
-    /// commit for it, and a direct `SELECT` with `nats_commit_on_select` consumes what it read
-    /// anyway. `ReturnToBroker` is what an uncommitted direct `SELECT` needs, which must not
-    /// consume anything at all - the redelivered message is skipped again by the next query.
+    /// commit for it. `ReturnToBroker` is what a direct `SELECT` needs, which consumes only what it
+    /// has committed - the redelivered message is skipped again by the query that gets it next, and
+    /// acknowledged with the rest of what that query reads once it commits.
     enum class SkippedMessages
     {
         Acknowledge,
@@ -82,9 +82,9 @@ public:
 
     /// Move the message `consume` returned last out of the set of messages that still owe rows:
     /// it was parsed into none, which `nats_skip_broken_messages` makes an ordinary outcome rather
-    /// than an error. Such a message is never going to produce a row, so it is acknowledged rather
-    /// than handed back when the subscription it arrived on has to be replaced - returning it would
-    /// undo the skip and show the same malformed input again.
+    /// than an error. Such a message is never going to produce a row, so it does not hold back a
+    /// resubscribe of the subscription it arrived on - see `finishAndReturnUnprocessed` for what
+    /// happens to it there.
     void markLastConsumedSkipped();
 
     /// True while this consumer holds messages it has handed out and which may still turn into rows
@@ -162,8 +162,8 @@ private:
     MessageData current;
     std::vector<NatsMsgPtr> consumed_messages;
     /// Messages that were consumed and parsed into no rows. They are acknowledged together with
-    /// `consumed_messages`, but they are never handed back to the broker: nothing is waiting for
-    /// them to be inserted.
+    /// `consumed_messages` when the query that read them commits; a resubscribe in the middle of a
+    /// query resolves them the way `finishAndReturnUnprocessed` was told to.
     std::vector<NatsMsgPtr> skipped_messages;
 };
 

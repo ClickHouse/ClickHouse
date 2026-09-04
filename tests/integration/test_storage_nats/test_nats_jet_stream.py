@@ -1472,12 +1472,14 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     # A direct `SELECT` owns its consumer for the whole query, so the query itself has to notice a
     # reconnect and replace the stale pull subscription. A message it passed over because of
     # `nats_skip_broken_messages` must not stand in the way of that: nothing is waiting for it to
-    # become a row, so the recovery acknowledges it instead of handing it back. That keeps the skip
-    # and still lets the rows published after the reconnect reach this query, rather than leaving it
-    # to sit on a stale subscription until `rabbitmq_max_wait_ms` runs out.
+    # become a row, so the recovery hands it back to the broker instead of holding the resubscribe
+    # up, and the rows published after the reconnect reach this query rather than leaving it to sit
+    # on a stale subscription until `rabbitmq_max_wait_ms` runs out. With `nats_commit_on_select`
+    # the redelivery is skipped again and acknowledged where the query commits what it read, so the
+    # skip costs one extra delivery and nothing is left outstanding.
     #
-    # The ACK deadline is far beyond every wait below, so a redelivery cannot come from the server
-    # on its own, which makes the broker's delivery counter the oracle for the skip.
+    # The ACK deadline is far beyond every wait below, so a redelivery can only come from the
+    # recovery handing the message back, which makes the broker's delivery counter the oracle.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     instance.query(
@@ -1515,10 +1517,90 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
     assert TSV(select.get_answer()) == TSV("42")
 
-    consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
-    assert consumer_seq == 2, (
-        "the skipped message was handed back to the broker and delivered again: "
+    # Three deliveries for two messages: the recovery handed the skipped message back instead of
+    # committing it on behalf of a query that had returned nothing yet, and the redelivery was
+    # skipped again straight away. Two would mean it was consumed before the query committed
+    # anything, which is what a cancelled query must not leave behind.
+    deadline = time.monotonic() + 60
+    consumer_seq = 0
+    while time.monotonic() < deadline:
+        consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
+        if consumer_seq >= 3:
+            break
+        time.sleep(0.2)
+
+    assert consumer_seq >= 3, (
+        "the recovery acknowledged the skipped message before the query committed anything: "
         "{} deliveries for two messages".format(consumer_seq))
+
+    # The query did commit, so what it read - the row and the message it skipped along the way - is
+    # consumed by the time it returns, and the broker has nothing left outstanding.
+    _wait_for_ack_pending(0)
+
+
+def test_nats_jet_stream_direct_select_does_not_commit_a_skipped_message_when_cancelled(nats_cluster):
+    # `nats_commit_on_select` commits only what the read returns, and reconnect recovery runs long
+    # before that commit point. A query that skipped a malformed message, replaced its subscription
+    # after a reconnect and was then cancelled without returning a single row must leave that
+    # message to the next reader, exactly like the messages it had read but not returned.
+    #
+    # The ACK deadline is far beyond every wait below, so a redelivery can only come from the
+    # recovery handing the message back, and nothing but this query can acknowledge one.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_skip_broken_messages = 1000,
+                     nats_commit_on_select = 1;
+        """
+    )
+
+    asyncio.run(publish_messages(
+        cluster, "test_stream", "test_subject", [json.dumps({"key": "not a number", "value": "neither"})]))
+
+    # Nothing is published for this query to return, so it waits out the limit unless it is
+    # cancelled first, which is what happens below.
+    select = instance.get_query_request(
+        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 120000",
+        timeout = 180,
+    )
+    _wait_for_ack_pending(1)
+
+    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+    # A pull request parked after the restart can only come from this query: it holds the consumer
+    # for as long as it runs, so the recovery has happened by the time the broker counts one, and
+    # whatever the recovery did with the skipped message it has done by then.
+    _wait_for_parked_pull_request()
+
+    instance.query("SYSTEM CANCEL test.consume")
+    assert TSV(select.get_answer()) == TSV("")
+
+    # The cancelled read returned nothing, so it committed nothing: the malformed message went back
+    # to the broker at the resubscribe, was delivered a second time and is waiting to be read again.
+    # Acknowledging it in the recovery would leave one delivery and nothing pending, putting a
+    # message out of reach of every later query without a single row having been returned for it.
+    deadline = time.monotonic() + 60
+    consumer_seq = 0
+    while time.monotonic() < deadline:
+        consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
+        if consumer_seq >= 2:
+            break
+        time.sleep(0.2)
+
+    assert consumer_seq >= 2, (
+        "the cancelled query consumed the message it skipped: "
+        "{} deliveries for one message".format(consumer_seq))
+
+    _wait_for_ack_pending(1)
 
 
 def test_nats_jet_stream_direct_select_does_not_consume_skipped_broken_message(nats_cluster):

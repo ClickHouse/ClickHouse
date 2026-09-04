@@ -41,8 +41,8 @@ public:
 
     /// A source that feeds the materialized views rather than a query result. It matters for the
     /// messages `nats_skip_broken_messages` passed over: a streaming cycle never inserts them, so
-    /// their skip is final as soon as it happened, while a direct `SELECT` only consumes what it
-    /// read when `nats_commit_on_select` is set.
+    /// their skip is final as soon as it happened, while a direct `SELECT` consumes nothing before
+    /// it commits, so a resubscribe inside the query hands them back to the broker instead.
     void setBackgroundStreaming(bool value) { background_streaming = value; }
 
     bool wasConsumptionAborted() const { return consumption_aborted; }
