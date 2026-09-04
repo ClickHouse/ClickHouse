@@ -253,6 +253,7 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         const UInt32 required = cdc ? ses : tes;
         ConflictOperator desc;
         desc.relations = b_rel;
+        desc.left_relations = b_left;
         desc.required_left = required & b_left;
         desc.required_right = required & b_right;
         desc.nel = nel;

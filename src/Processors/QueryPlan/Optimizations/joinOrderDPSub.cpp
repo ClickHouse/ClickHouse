@@ -303,8 +303,8 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// operators via `reverseJoinKind` (Left<->Right, Full/Inner unchanged; for semi/anti it
         /// flips the preserved side). The two required sides are disjoint and, for a non-degenerate
         /// predicate, both non-empty, so at most one orientation can hold.
-        const bool forward = subset_of(op.required_left, left_mask) && subset_of(op.required_right, right_mask);
-        const bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
+        bool forward = subset_of(op.required_left, left_mask) && subset_of(op.required_right, right_mask);
+        bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
         if (!forward && !mirrored)
             return std::nullopt;
 
@@ -316,6 +316,25 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         if (have_non_inner)
             return std::nullopt;
         have_non_inner = true;
+
+        /// For a non-degenerate predicate the two required sides are non-empty and disjoint, so
+        /// exactly one orientation holds. A degenerate (predicate-less, e.g. ON TRUE) operator has
+        /// empty required sets, so both orientations pass and the required-set test cannot tell which
+        /// side is preserved. Break the tie by the operator's original subtree placement: its
+        /// (left-canonical) preserved subtree `left_relations` must land on the preserving side.
+        /// Fail closed if it is split across both sides: do not guess and risk flipping the
+        /// preserved side (see `reverseJoinKind`, which flips Left<->Right / the semi/anti preserved
+        /// side while `buildPhysicalPlan` keeps the child order).
+        if (forward && mirrored)
+        {
+            if (subset_of(op.left_relations, left_mask))
+                mirrored = false;
+            else if (subset_of(op.left_relations, right_mask))
+                forward = false;
+            else
+                return std::nullopt;
+        }
+
         kind = forward ? op.kind : reverseJoinKind(op.kind);
         strictness = op.strictness;
     }

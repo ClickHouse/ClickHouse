@@ -63,6 +63,8 @@ struct ConflictRule
 struct ConflictOperator
 {
     UInt32 relations = 0;      /// T(left) | T(right): every relation under this operator, T: the set of relations in a subtree
+    UInt32 left_relations = 0; /// T(left): the (left-canonical) preserved-side subtree. Used to orient a degenerate
+                               /// (predicate-less) operator, whose empty required_* sets cannot decide the side.
     UInt32 required_left = 0;  /// relations required on the operator's left input  (TES ∩ T(left) for CD-A, SES ∩ T(left) for CD-C)
     UInt32 required_right = 0; /// relations required on the operator's right input
     UInt32 nel = 0;            /// ON-clause relations, used to locate the operator at a split boundary
