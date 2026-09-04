@@ -1,44 +1,75 @@
-# Vendored dependencies
+# Pinned UI dependencies
 
-## `pierre-diffs-1.2.12.mjs.gz`
+`manifest.json` is the source of truth: one entry per asset the review UI
+imports, each with the sha256 of the module and the URL it can be fetched from.
+`../assets.mjs` resolves them — `vendor/`, then `~/.cache/diff-review`, then the
+network — and checks every asset's hash against the manifest before the server
+serves it, cache hits included. A mismatch, or a fetch that fails, stops the
+server; unverified bytes are never handed to the browser. So a compromised CDN
+cannot exfiltrate the diff under review (which includes uncommitted local
+changes) — the worst it can do is take the review offline.
+
+Only the two small kinds of file below are committed. The `@pierre/diffs` bundle
+is 10.8 MB (1.9 MB gzipped) of build output and is deliberately **not** in git:
+keeping it there meant a permanent copy in history for every upgrade. It is
+downloaded once, verified, and cached, so it costs a network fetch on a machine
+that has never run a review.
+
+## `@pierre/diffs`
 
 Self-contained ESM bundle of [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs)
-`1.2.12` (with all its dependencies inlined, including the base64-embedded
-oniguruma wasm used by shiki). Vendored so the review UI never loads code from a
-CDN at runtime — a compromised CDN could otherwise exfiltrate the diff under
-review, which includes uncommitted local changes.
+with all its dependencies inlined, including the base64-embedded oniguruma wasm
+used by shiki. Served at `/vendor/pierre-diffs.mjs`; cached gzipped, and served
+gzipped to browsers that accept it.
 
-- Source: `https://esm.sh/@pierre/diffs@1.2.12/es2022/diffs.bundle.mjs`
-  (the `?bundle` build of `https://esm.sh/@pierre/diffs@1.2.12`)
-- sha256 of the uncompressed `.mjs`:
-  `73d1514f14b64925ee47f8afbe885fabd104868c4e3f18e59c3d9a8acf24122a`
-- Served by `server.mjs` at `/vendor/pierre-diffs.mjs`.
+- Source: `https://esm.sh/@pierre/diffs@<version>/es2022/diffs.bundle.mjs`
+  (the `?bundle` build of `https://esm.sh/@pierre/diffs@<version>`), served
+  `cache-control: immutable`.
+- Version and sha256: `manifest.json`.
+- `1.3.5` was taken for `renderHeaderFilenameSuffix`, the header slot that puts a
+  control immediately after the displayed filename. Audited on the way in from
+  `1.2.12`: its external imports are the same two polyfills `1.2.12` used, so the
+  set of files below is unchanged.
 
 ## `node_*.mjs`
 
-esm.sh's browser polyfills for node built-ins. The bundle above imports them by
-absolute path (`/node/process.mjs`, `/node/buffer.mjs`; `process` transitively
-pulls `events`, `tty`, and `events` pulls `async_hooks`), so `server.mjs` serves
-them at exactly those specifiers. Audited: none of them import, fetch, or open
-connections to anything.
+esm.sh's browser polyfills for node built-ins, committed here because they are a
+few KB each and never change. The bundle imports them by absolute path
+(`/node/process.mjs`, `/node/buffer.mjs`; `process` transitively pulls `events`
+and `tty`, and `events` pulls `async_hooks`), so the server serves them at
+exactly those specifiers. Audited: none of them import, fetch, or open
+connections to anything. Sources are `https://esm.sh/node/<name>.mjs`; hashes are
+in `manifest.json`.
 
-| file | source | sha256 |
-| --- | --- | --- |
-| `node_process.mjs` | `https://esm.sh/node/process.mjs` | `79e7646e87709989f575ea4ce02e0877bc9303081567b1c0d412527917ae9e91` |
-| `node_buffer.mjs` | `https://esm.sh/node/buffer.mjs` | `64fb61aa5f48644d685f9ceabedba60ea6b5d6ce03dac1943e863d00d9e574f3` |
-| `node_events.mjs` | `https://esm.sh/node/events.mjs` | `4c6150b88c1444aa1fe9331013e3f37eda9836206f629f7f3ae8f3743dd90fa8` |
-| `node_tty.mjs` | `https://esm.sh/node/tty.mjs` | `c66ff4b406bad449bfb2ced355f15badf16f4d9e035d2d300e33b5aeee64e3be` |
-| `node_async_hooks.mjs` | `https://esm.sh/node/async_hooks.mjs` | `b7862dbfba8bbbca956f19e4e08280b529e4b27468779775a9093aef8c92dc1d` |
+## Working offline
 
-## Regenerating or upgrading
+The cache makes the download a one-off, but a machine that will never have a
+network needs the bytes put there another way. Either fill the cache ahead of
+time, on the machine or by copying `~/.cache/diff-review` over:
 
 ```bash
-curl -sL 'https://esm.sh/@pierre/diffs@<version>/es2022/diffs.bundle.mjs' -o pierre-diffs-<version>.mjs
-sha256sum pierre-diffs-<version>.mjs   # record here
+node ../server.mjs --prefetch          # DIFF_REVIEW_CACHE=<dir> to point it elsewhere
+```
+
+…or drop the file into this directory under the manifest's `name`, where it is
+found first and the network is never touched (it is gitignored, so it stays out
+of history):
+
+```bash
+gzip -9 -c pierre-diffs-1.3.5.mjs > vendor/pierre-diffs-1.3.5.mjs.gz
+```
+
+## Upgrading
+
+```bash
+curl -sL 'https://esm.sh/@pierre/diffs@<version>/es2022/diffs.bundle.mjs' -o bundle.mjs
+sha256sum bundle.mjs && wc -c bundle.mjs   # -> manifest.json: sha256, bytes, name, urls
 # audit: apart from the /node/*.mjs polyfill imports, the bundle must not
 # import, fetch, or open connections to anything external:
-grep -o '\(from\|import\) *"[^"]*"' pierre-diffs-<version>.mjs | sort -u
-gzip -9 pierre-diffs-<version>.mjs
-# refetch each polyfill the bundle (transitively) imports, re-audit, update the
-# table and the VENDOR_FILES map in server.mjs
+grep -o '\(from\|import\) *"[^"]*"' bundle.mjs | sort -u
 ```
+
+Update `manifest.json` and nothing else: the cache is keyed by hash, so the new
+pin fetches into a new file instead of colliding with the old one, and a revert
+finds the old file still cached. If the audit turns up a new polyfill import, add
+it to `manifest.json` and commit it here.
