@@ -18,8 +18,8 @@ SET allow_suspicious_low_cardinality_types = 1;
 -- type that `recursiveRemoveLowCardinality` has already stripped, so a wrong unwrap of the
 -- `LowCardinality` half is unobservable there. Both pins read the same values on
 -- unmodified code, so they remove an escape hatch rather than weakening an assertion.
-DROP TABLE IF EXISTS t_neg_null_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_null_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_neg_null_04747;
+DROP TABLE IF EXISTS t_mem_null_04747;
 CREATE TABLE t_neg_null_04747 (a Nullable(Int64)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, allow_nullable_key = 1;
 CREATE TABLE t_mem_null_04747 (a Nullable(Int64)) ENGINE = Log;
 INSERT INTO t_neg_null_04747 SELECT if(number % 10 = 0, NULL, number * 100) FROM numbers(100);
@@ -28,8 +28,8 @@ SELECT 'negate Nullable ORDER BY', (SELECT arrayStringConcat(groupArray(toString
 
 -- The same shape under `LowCardinality(Nullable(...))`: the nullability sits inside the dictionary,
 -- so recovering it requires looking through the LowCardinality wrapper too.
-DROP TABLE IF EXISTS t_neg_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_neg_lcn_04747;
+DROP TABLE IF EXISTS t_mem_lcn_04747;
 CREATE TABLE t_neg_lcn_04747 (a LowCardinality(Nullable(Int64))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, allow_nullable_key = 1;
 CREATE TABLE t_mem_lcn_04747 (a LowCardinality(Nullable(Int64))) ENGINE = Log;
 INSERT INTO t_neg_lcn_04747 SELECT if(number % 10 = 0, NULL, number * 100) FROM numbers(100);
@@ -38,8 +38,8 @@ SELECT 'negate LC(Nullable) ORDER BY', (SELECT arrayStringConcat(groupArray(toSt
 
 -- Control: `LowCardinality` delegates `isValueRepresentedByNumber` to its dictionary, so this row
 -- holds whether or not the unwrap happens. It guards against over-declining, not against a wrong unwrap.
-DROP TABLE IF EXISTS t_neg_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_neg_lc_04747;
+DROP TABLE IF EXISTS t_mem_lc_04747;
 CREATE TABLE t_neg_lc_04747 (a LowCardinality(Int64)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_mem_lc_04747 (a LowCardinality(Int64)) ENGINE = Log;
 INSERT INTO t_neg_lc_04747 SELECT number * 100 FROM numbers(100);
@@ -49,8 +49,8 @@ SELECT 'negate LC answers', (SELECT count() FROM t_neg_lc_04747 WHERE negate(a) 
 
 -- Week transforms. `toDayOfWeek` has a non-trivial factor transform, so its verdict depends on the
 -- unwrapped key type being recognised as `Date`; a wrong unwrap loses the pruning below.
-DROP TABLE IF EXISTS t_week_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_mem_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_week_lc_04747;
+DROP TABLE IF EXISTS t_week_mem_04747;
 CREATE TABLE t_week_lc_04747 (a LowCardinality(Date)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_week_mem_04747 (a LowCardinality(Date)) ENGINE = Log;
 INSERT INTO t_week_lc_04747 SELECT toDate('2020-01-01') + number FROM numbers(100);
@@ -58,8 +58,8 @@ INSERT INTO t_week_mem_04747 SELECT toDate('2020-01-01') + number FROM numbers(1
 SELECT 'toDayOfWeek LC(Date) prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_week_lc_04747 WHERE toDayOfWeek(a) >= 3) WHERE explain ILIKE '%Granules: 86/100%' SETTINGS use_lightweight_primary_key_index_analysis = 1;
 SELECT 'toDayOfWeek LC(Date) answers', (SELECT count() FROM t_week_lc_04747 WHERE toDayOfWeek(a) >= 3) AS keyed, (SELECT count() FROM t_week_mem_04747 WHERE toDayOfWeek(a) >= 3) AS oracle;
 
-DROP TABLE IF EXISTS t_week_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_memn_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_week_lcn_04747;
+DROP TABLE IF EXISTS t_week_memn_04747;
 CREATE TABLE t_week_lcn_04747 (a LowCardinality(Nullable(Date))) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, allow_nullable_key = 1;
 CREATE TABLE t_week_memn_04747 (a LowCardinality(Nullable(Date))) ENGINE = Log;
 INSERT INTO t_week_lcn_04747 SELECT toDate('2020-01-01') + number FROM numbers(100);
@@ -80,13 +80,13 @@ SELECT 'toStartOfMonth LC(Date) answers', (SELECT count() FROM t_week_lc_04747 W
 -- The compound site the helper was extracted from keeps its own coverage in
 -- `04652_compound_key_monotonicity.sql`, which already pins `Nullable(Tuple(Int64, Int64))`.
 
-DROP TABLE IF EXISTS t_neg_null_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_null_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_neg_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_neg_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_mem_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_lc_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_mem_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_lcn_04747 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_week_memn_04747 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_neg_null_04747;
+DROP TABLE IF EXISTS t_mem_null_04747;
+DROP TABLE IF EXISTS t_neg_lcn_04747;
+DROP TABLE IF EXISTS t_mem_lcn_04747;
+DROP TABLE IF EXISTS t_neg_lc_04747;
+DROP TABLE IF EXISTS t_mem_lc_04747;
+DROP TABLE IF EXISTS t_week_lc_04747;
+DROP TABLE IF EXISTS t_week_mem_04747;
+DROP TABLE IF EXISTS t_week_lcn_04747;
+DROP TABLE IF EXISTS t_week_memn_04747;
