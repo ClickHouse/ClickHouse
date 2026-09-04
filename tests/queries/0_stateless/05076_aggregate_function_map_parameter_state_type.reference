@@ -1,0 +1,3 @@
+AggregateFunction(argMin, UInt64, UInt64)
+AggregateFunction(intervalLengthSum, Float64, Float64)
+0
