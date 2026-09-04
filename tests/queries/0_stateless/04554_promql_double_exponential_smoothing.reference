@@ -1,0 +1,13 @@
+-- double_exponential_smoothing(m[3m], 0.5, 0.5): drops the metric name; host4 has one sample and is dropped.
+-- host1 (10,20,30) -> 30, host2 (25,15,5) -> 5, host3 (10,20,15) -> 22.5.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	22.5
+-- double_exponential_smoothing(m[3m], 0.8, 0.3): different factors.
+-- host1 -> 30, host2 -> 5, host3 (10,20,15) -> 18.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	18
+-- Invalid factors are rejected (must be in the open interval (0, 1)).
+expects smoothing factor in the open interval (0, 1)
+expects trend factor in the open interval (0, 1)

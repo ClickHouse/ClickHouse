@@ -105,6 +105,42 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"mad_over_time",
+             {
+                 "timeSeriesMadToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTsOfFirstToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTsOfLastToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_min_over_time",
+             {
+                 "timeSeriesTsOfMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_max_over_time",
+             {
+                 "timeSeriesTsOfMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"deriv",
              {
                  "timeSeriesDerivToGrid",
@@ -135,12 +171,6 @@ namespace
             /// stdvar_over_time
             /// present_over_time
             /// absent_over_time
-            /// mad_over_time
-            /// ts_of_min_over_time
-            /// ts_of_max_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
         };
 
         auto it = impl_map.find(function_name);
@@ -176,6 +206,19 @@ SQLQueryPiece applyFunctionOverRange(
 
     checkArgumentTypes(function_name, arguments, context);
 
+    return applyAggregateFunctionOverRange(
+        node, impl_info->ch_function_name, impl_info->drop_metric_name, std::move(arguments[0]), {}, context);
+}
+
+
+SQLQueryPiece applyAggregateFunctionOverRange(
+    const Node * node,
+    std::string_view ch_function_name,
+    bool drop_metric_name,
+    SQLQueryPiece && argument_,
+    std::vector<ASTPtr> extra_aggregate_params,
+    ConverterContext & context)
+{
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
@@ -185,7 +228,7 @@ SQLQueryPiece applyFunctionOverRange(
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    auto argument = std::move(argument_);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
     auto aggregation_start_time = start_time;
@@ -321,11 +364,15 @@ SQLQueryPiece applyFunctionOverRange(
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     auto aggregate_values = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+        makeASTFunction(ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
         timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    /// Append any extra scalar parameters after the (start, end, step, window) parameters.
+    for (auto & extra_param : extra_aggregate_params)
+        aggregate_values->parameters->children.push_back(std::move(extra_param));
 
     if (fixed_at_node)
     {
@@ -358,7 +405,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;
