@@ -13,6 +13,7 @@ from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
+    execute_range_query_via_http_api,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
 )
@@ -37,6 +38,18 @@ START_TIME = 1724112000
 # this caller's is `metrics`, and that is where its writes and reads land.
 CALLER = "?user=prom_metrics&password="
 CALLER_PARAMS = {"user": "prom_metrics", "password": ""}
+
+# Callers whose current database is `default`, where `ts_local` is the MergeTree table, each
+# missing one grant that the in-process read of the local shard enforces.
+NO_TEMP_TABLE_USER = "prom_no_temp_table"
+NO_SHARD_SELECT_USER = "prom_no_shard_select"
+RESTRICTED_CALLERS = [
+    (NO_TEMP_TABLE_USER, "CREATE TEMPORARY TABLE"),
+    (NO_SHARD_SELECT_USER, "SELECT ON default.ts_local"),
+]
+
+# What the shard probe says about that table, in the words no denied caller may see.
+SHARD_LOCAL_LEAK = ["shard-local", "not TimeSeries", "UNEXPECTED_TABLE_ENGINE"]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -65,6 +78,14 @@ def start_cluster():
             "CREATE TABLE default.prom_swap AS default.ts_swap "
             "ENGINE = Distributed(local_shard_dist, '', ts_swap)"
         )
+
+        # Both may read the wrapper and call cluster(); each lacks one grant of the local shard's read.
+        for user, _ in RESTRICTED_CALLERS:
+            node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+            node.query(f"GRANT READ ON REMOTE TO {user}")
+        node.query(f"GRANT SELECT ON *.* TO {NO_TEMP_TABLE_USER}")
+        node.query(f"GRANT SELECT ON metrics.prom_local TO {NO_SHARD_SELECT_USER}")
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {NO_SHARD_SELECT_USER}")
         yield cluster
     finally:
         cluster.shutdown()
@@ -116,3 +137,72 @@ def test_remote_write_is_refused_when_only_the_probes_database_is_healthy():
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
     assert int(node.query("SELECT count() FROM metrics.ts_swap")) == 0
     assert int(node.query("SELECT count() FROM timeSeriesTags(default.ts_swap)")) == 0
+
+
+def query_as(endpoint, user):
+    """The error of the instant or range PromQL endpoint for a caller of this name."""
+    params = {"user": user, "password": ""}
+    if endpoint == "query":
+        return execute_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/local_api/query",
+            "local_metric",
+            START_TIME,
+            params=params,
+            expect_error=True,
+        )
+    return execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/local_api/query_range",
+        "local_metric",
+        START_TIME,
+        START_TIME + 10,
+        "10",
+        params=params,
+        expect_error=True,
+    )
+
+
+def assert_denied_without_leaking(error, grant):
+    assert "Not enough privileges" in error, error
+    assert grant in error, error
+    for fragment in SHARD_LOCAL_LEAK:
+        assert fragment not in error, error
+
+
+@pytest.mark.parametrize("user, grant", RESTRICTED_CALLERS)
+@pytest.mark.parametrize("endpoint", ["query", "query_range"])
+def test_query_endpoints_deny_the_local_shard_grants_before_probing(
+    endpoint, user, grant
+):
+    """The local shard is read in-process, so its selector enforces the caller's grants on the table
+    it resolves: those are checked before the probe, which would otherwise describe that table.
+    """
+    # A caller holding every grant is told what the probe found under its own database...
+    allowed = query_as(endpoint, "default")
+    assert "are not TimeSeries tables" in allowed, allowed
+
+    # ...while one missing a grant the local shard needs later learns only that it has no grant.
+    assert_denied_without_leaking(query_as(endpoint, user), grant)
+
+
+@pytest.mark.parametrize("user, grant", RESTRICTED_CALLERS)
+@pytest.mark.parametrize(
+    "table_function",
+    [
+        f"prometheusQuery(metrics.prom_local, 'local_metric', {START_TIME})",
+        f"prometheusQueryRange(metrics.prom_local, 'local_metric', {START_TIME}, {START_TIME + 10}, 10)",
+    ],
+)
+def test_table_functions_deny_the_local_shard_grants_before_probing(
+    table_function, user, grant
+):
+    sql = f"SELECT count() FROM {table_function}"
+    allowed = node.query_and_get_error(sql)
+    assert "are not TimeSeries tables" in allowed, allowed
+
+    # The client prints the server's stack trace after the message; its frames name source files.
+    denied = node.query_and_get_error(sql, user=user).split("Stack trace:")[0]
+    assert_denied_without_leaking(denied, grant)
