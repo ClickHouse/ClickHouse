@@ -109,7 +109,7 @@ spec:
   ## 클러스터 도메인
 </div>
 
-`spec.clusterDomain`은 operator가 ClickHouse 서버
+`spec.clusterDomain`은 연산자가 ClickHouse 서버
 구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는
 Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
 `ClickHouseCluster`와 `KeeperCluster` 둘 다에 있습니다.
@@ -119,90 +119,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-연산자는 헤드리스 Service를 통해 모든 파드에
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` 형식으로 접근합니다. 이 접미사는
-생성된 구성의 두 부분에 반영됩니다:
+ClickHouse 레플리카의 경우 연산자는 클라이언트 트래픽을 처리하는 제어용 헤드리스 Service `<cluster-name>-clickhouse-headless`를 생성합니다.
+또한 내부 트래픽과 연산자의 관리 요청을 위해 준비되지 않은 파드를 노출하는 레플리카별 Service `<cluster-name>-clickhouse-internal-<shard>-<index>`를 생성합니다.
+레플리카가 자체적으로 준비 상태가 될 수 없는 경우 레플리카 복구에 사용할 수 있습니다.
 
-* `ClickHouseCluster`에서는 이 값이 `remote_servers`의 레플리카 호스트 이름에 사용됩니다
-  (`Distributed` 쿼리와 레플리카 간 쿼리용).
-* `KeeperCluster`에서는 이 값으로 ClickHouse가 조정에 사용하는 Keeper 노드 호스트 이름을
-  구성합니다.
-
-<Note>
-  클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만
-  이 값을 재정의하십시오. 값이 실제 클러스터 도메인과 일치하지 않으면
-  ClickHouse가 Keeper 및 레플리카 호스트 이름을 해석할 수 없어 조정과
-  `Distributed` 쿼리가 DNS 해석 오류로 실패합니다. 참조 대상인
-  `ClickHouseCluster`와 `KeeperCluster`에 **동일한** 값을 설정하십시오.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### 멀티 디스크(JBOD) 스토리지
-</div>
-
-`additionalVolumeClaimTemplates`는 사용에 필요한 프라이머리 `dataVolumeClaimSpec`에 더해 각 ClickHouse 레플리카에 추가 디스크를 연결합니다.
-각 항목은 PVC Template, 즉 `metadata.name`과 PVC `spec`으로 이루어집니다.
-디스크는 프라이머리 데이터 디스크와 동일한 방식으로 StatefulSet `volumeClaimTemplates`로 reconcile되므로, StatefulSet 컨트롤러가 레플리카마다 `<name>-<statefulset>-0` 형식의 이름을 가진 PVC를 하나씩 생성하고 유지합니다.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-연산자는 각 추가 볼륨을 `/var/lib/clickhouse/disks/<name>`에 마운트하고, 생성된 ClickHouse 스토리지 구성에 추가합니다.
-이름에 포함된 하이픈은 ClickHouse 디스크 식별자에서 밑줄로 바뀌지만, 마운트 경로에는 원래 이름이 그대로 유지됩니다.
-
-프라이머리 데이터 디스크와 모든 추가 디스크는 `default` 스토리지 정책의 단일 볼륨에 함께 배치되므로, ClickHouse는 새 데이터 파트를 이들 전체에 라운드 로빈 방식으로 분산합니다.
-사용 가능한 용량은 모든 디스크 용량의 합이며, 자체 `storage_policy`를 설정하지 않은 모든 테이블(`system.*` 테이블 포함)은 이 통합된 디스크 집합을 사용합니다.
-
-<Note>
-  PVC 이름은 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 패턴과 일치해야 하며, 프라이머리 데이터 볼륨 이름과 충돌해서는 안 됩니다.
-  프라이머리 데이터 디스크와 마찬가지로 추가 디스크 집합도 생성 시점에 고정되며, 생성 후에는 항목의 추가, 제거, 이름 변경이 허용되지 않습니다.
-  추가 PVC는 프라이머리 데이터 디스크와 마찬가지로 클러스터를 삭제해도 유지됩니다.
-  기존 항목의 스토리지 크기는 StorageClass가 확장을 지원하는 경우 늘릴 수 있습니다.
-</Note>
-
-<div id="cluster-domain">
-  ## 클러스터 도메인
-</div>
-
-`spec.clusterDomain`은 operator가 ClickHouse 서버
-구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는
-Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
-`ClickHouseCluster`와 `KeeperCluster` 둘 다에 있습니다.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-연산자는 헤드리스 Service를 통해 모든 파드에
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` 형식으로 접근합니다. 이 접미사는
-생성된 구성의 두 부분에 반영됩니다:
-
-* `ClickHouseCluster`에서는 이 값이 `remote_servers`의 레플리카 호스트 이름에 사용됩니다
-  (`Distributed` 쿼리와 레플리카 간 쿼리용).
-* `KeeperCluster`에서는 이 값으로 ClickHouse가 조정에 사용하는 Keeper 노드 호스트 이름을
-  구성합니다.
+Keeper 노드는 헤드리스 Service를 통해 파드 이름을 사용합니다: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만

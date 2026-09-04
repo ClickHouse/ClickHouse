@@ -17,6 +17,8 @@ doc_type: '참고'
 
 별칭: `timeSeriesLastToGrid`.
 
+여러 샘플의 타임스탬프가 동일한 경우 그중 하나만 사용되며, 가장 큰 값을 가진 샘플이 선택됩니다. NaN 값은 다른 모든 값보다 우선순위가 낮으므로, 해당 타임스탬프의 모든 샘플이 NaN인 경우에만 NaN 값이 사용됩니다.
+
 <Warning>
   이 함수는 실험적 기능이므로, `allow_experimental_time_series_aggregate_functions=true`를 설정하여 활성화하십시오.
 </Warning>

@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置，用于启用自适应 `GROUP BY` 聚合：每个线程的本地哈希表达到 `adaptive_aggregator_freeze_threshold` 个键后即冻结。高频键继续在较小的本地表中聚合，低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次；因此低频键只需存储和处理一次，而非每个线程各处理一次。"}]}]} />
 
-启用自适应 `GROUP BY` 算法：每个线程先在本地哈希表中聚合，直至达到 `adaptive_aggregator_freeze_threshold` 个键，随后该表冻结。已出现过的高频键对应的行会继续原地更新该表；新的低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次。高频键保留在可驻留于缓存的小型表中，低频键则只需存储和处理一次，而非每个线程各处理一次。
+启用自适应 `GROUP BY` 算法：每个线程先在本地哈希表中聚合，直至达到 `adaptive_aggregator_freeze_threshold` 个键 (或占用 `adaptive_aggregator_freeze_threshold_bytes` 内存) ，随后该表冻结。已出现过的高频键对应的行会继续原地更新该表；新的低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次。高频键保留在可驻留于缓存的小型表中，低频键则只需存储和处理一次，而非每个线程各处理一次。
 
 遵循外部聚合设置 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) ：超过阈值后，会将积压队列提前排空至共享表；如果仍无法降至阈值以下，则通过常规外部聚合将共享表落盘。
 
@@ -48,6 +48,18 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 在 `IN` 子查询中启用 `DISTINCT`。这是一个需要权衡的设置：启用后可确保仅发送唯一值，从而大幅减小分布式 `IN` 子查询传输的临时表大小，并显著加快分片之间的数据传输。
 不过，启用此设置会增加每个节点上的额外合并开销，因为必须执行去重 (`DISTINCT`) 。当网络传输成为性能瓶颈，且可以接受额外的合并成本时，请使用此设置。
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可单独启用 Experimental `ALP` 压缩编解码器，无需启用 `allow_experimental_codecs`。"}]}]} />
+
+允许使用 Experimental `ALP` 压缩编解码器。
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -127,6 +139,17 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果设置为 true，则允许使用文本索引。
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting"}]}]} />
+
+在查询分析阶段，为 `and` 和 `or` 启用提前短路常量折叠。
+启用后，会分析符合条件的不可达标量子查询分支，以保留其类型并验证查询语义，但不会执行这些分支。当需要确定标量基数或运行时值时，该优化会回退到常规分析。
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,37 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "默认将 WITH 语句应用于 UNION 查询和所有子查询"}]}]} />
 
 将 WITH 语句应用于 UNION 查询和所有子查询
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "用于控制 `GROUP BY key ORDER BY key LIMIT N` 查询中聚合阶段 TopK 筛选优化的新设置。"}]}]} />
+
+在 `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` 查询中，以及不含 `ORDER BY` 的 `GROUP BY keys LIMIT K` 查询中启用聚合阶段的 TopK 筛选优化 (后者中任意 `K` 个组都是有效结果，因此会合成为所有键排序) 。
+
+启用后，聚合器会维护一个有界堆，其中保存截至当前排名前 `K` 的键；当新行的分组键无法进入最终结果时，便跳过将其插入哈希表。这样可避免聚合后续会被 `ORDER BY ... LIMIT` 丢弃的行；当堆按完整的 `GROUP BY` 键进行排名时，还会从中间哈希表中移除被逐出的组，使哈希表大小受 `LIMIT` 限制，而非受不同键的数量限制。当 `ORDER BY` 仅覆盖 `GROUP BY` 键的真前缀时，排名无法识别完整的组，因此只能跳过行：哈希表会保留所有已接纳的组，其大小仍可能随其余键列的基数增长。
+
+当请求的 `LIMIT` 大于 [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) 或硬性上限 `100000` 时，此优化会被禁用，因为堆的内存和 CPU 开销会随请求的 `LIMIT` 增长。
+
+对于修剪组可能改变结果的查询形态，此优化会被跳过，包括 `WITH TOTALS`、`HAVING`、`QUALIFY`、窗口函数、`ROLLUP`/`CUBE`/`GROUPING SETS`、`LIMIT WITH TIES`、任一匹配的 `GROUP BY` 键上的 `COLLATE` (完整键前缀之后的 `ORDER BY` 列上的 `COLLATE` 不会影响哪些组可入选，因此不会禁用此优化) 、按聚合结果或任何并非 `GROUP BY` 键前导前缀的内容执行的 `ORDER BY`，以及设置了 `max_rows_to_group_by` 或 `exact_rows_before_limit` 的情况。
+
+可能的值：
+
+* 0 — 已禁用。
+* 1 — 已启用。
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置，用于将哈希连接的载荷转换为行主序布局。"}]}]} />
+
+启用将哈希连接的载荷转换为行主序布局。
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +385,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 当聚合桶的大小分布不均时，这可能会提升性能：副本在仍处理某些 id 较低的大桶时，可以先向发起节点发送 id 较高的桶。
 缺点是内存使用量可能会增加。
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可在不启用 `allow_experimental_codecs` 的情况下单独启用 Experimental `Quantized` 压缩编解码器。"}]}]} />
+
+允许使用 Experimental `Quantized` 压缩编解码器。
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ WHERE (_part, _part_offset) IN (
 被拒绝。这是流式查询功能的总开关；
 其他能力也可能受其各自设置的控制。
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可在不启用 `allow_experimental_codecs` 的情况下单独启用 Experimental `SZ3` 压缩编解码器。"}]}]} />
+
+允许使用 Experimental `SZ3` 压缩编解码器。
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - 禁用
 * 1 - 启用
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，可单独启用Experimental `ZXC` 压缩编解码器，无需启用 `allow_experimental_codecs`。"}]}]} />
+
+允许使用Experimental `ZXC` 压缩编解码器。
 
 {/*AUTOGENERATED_END*/}

@@ -1,5 +1,5 @@
 from ci.praktika.info import Info
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 
 # Build types whose master-HEAD binaries the bugfix-validation runners download
 # from S3. The set must match the runner architecture: an x86 binary cannot be
@@ -30,9 +30,12 @@ def find_master_builds(build_types=None):
     """
     build_types = build_types if build_types is not None else BUGFIX_BUILD_TYPES
     commits = Info().get_kv_data("master_commits") or []
+    # Artifacts live under the normalized workflow name:
+    #   REFs/master/<sha>/<workflow>/build_<bt>/clickhouse
+    workflow = Utils.normalize_string("MasterCI")
     for sha in commits:
         urls = {
-            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
+            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{workflow}/build_{bt}/clickhouse"
             for bt in build_types
         }
         if all(
