@@ -242,6 +242,23 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
+void MergeTreeDeduplicationLog::rotateAndDropIfNeededAfterWrite()
+{
+    /// The records are already written and applied to the in-memory map, so failing here would
+    /// report an operation that has actually succeeded as failed. For an insert this means that the
+    /// block IDs stay published for a part that never became active, and a retry of the insert
+    /// would be wrongly deduplicated. Rotation is only housekeeping, and it is retried on the next
+    /// operation, because `rotate` leaves the state untouched when it fails.
+    try
+    {
+        rotateAndDropIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while rotating MergeTree deduplication log in " + logs_dir + ", will retry on the next operation");
+    }
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -289,8 +306,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// Add to deduplication map
         deduplication_map.insert(record.block_id, part_info);
     }
-    /// Rotate and drop old logs if needed
-    rotateAndDropIfNeeded();
+
+    rotateAndDropIfNeededAfterWrite();
 
     return {};
 }
@@ -335,8 +352,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
 
-            /// Rotate and drop old logs if needed
-            rotateAndDropIfNeeded();
+            rotateAndDropIfNeededAfterWrite();
         }
         else
         {

@@ -42,9 +42,10 @@ private:
 
 }
 
-/// A failure while opening the next log file during rotation must leave the log usable.
-/// Before the fix, `rotate` had already finalized the current writer at that point, so the next
-/// write to the deduplication log failed with the logical error "Cannot write to finalized buffer".
+/// A failure while opening the next log file during rotation must neither fail the operation that
+/// triggered the rotation, nor leave the log unusable. Before the fix, the operation failed although
+/// its records were already written, and `rotate` had already finalized the current writer, so the
+/// next write to the deduplication log failed with the logical error "Cannot write to finalized buffer".
 TEST(MergeTreeDeduplicationLog, RotationFailureKeepsLogUsable)
 {
     const auto disk_path = std::filesystem::temp_directory_path() / ("clickhouse_gtest_dedup_log_" + std::to_string(getpid()));
@@ -66,14 +67,16 @@ TEST(MergeTreeDeduplicationLog, RotationFailureKeepsLogUsable)
         log.addPart({"block2"}, part("all_2_2_0"));
         log.addPart({"block3"}, part("all_3_3_0"));
 
-        /// The fourth record triggers the rotation, whose `writeFile` fails.
-        EXPECT_THROW(log.addPart({"block4"}, part("all_4_4_0")), Exception);
+        /// The fourth record triggers the rotation, whose `writeFile` fails. The insert must succeed anyway.
+        EXPECT_TRUE(log.addPart({"block4"}, part("all_4_4_0")).empty());
+        EXPECT_FALSE(log.addPart({"block4"}, part("all_5_5_0")).empty());
 
         /// The log must still accept records, both drops and adds, and the next rotation must succeed.
         EXPECT_NO_THROW(log.dropPart(part("all_4_4_0")));
-        EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
-        EXPECT_FALSE(log.addPart({"block3"}, part("all_6_6_0")).empty());
-        EXPECT_FALSE(log.addPart({"block5"}, part("all_6_6_0")).empty());
+        EXPECT_TRUE(log.addPart({"block4"}, part("all_5_5_0")).empty());
+        EXPECT_TRUE(log.addPart({"block5"}, part("all_6_6_0")).empty());
+        EXPECT_FALSE(log.addPart({"block4"}, part("all_7_7_0")).empty());
+        EXPECT_FALSE(log.addPart({"block5"}, part("all_7_7_0")).empty());
     }
 
     /// The records written after the failed rotation must have reached the disk.
@@ -81,9 +84,9 @@ TEST(MergeTreeDeduplicationLog, RotationFailureKeepsLogUsable)
         MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
         log.load();
 
-        EXPECT_FALSE(log.addPart({"block3"}, part("all_6_6_0")).empty());
-        EXPECT_FALSE(log.addPart({"block5"}, part("all_6_6_0")).empty());
-        EXPECT_TRUE(log.addPart({"block4"}, part("all_6_6_0")).empty());
+        EXPECT_FALSE(log.addPart({"block4"}, part("all_7_7_0")).empty());
+        EXPECT_FALSE(log.addPart({"block5"}, part("all_7_7_0")).empty());
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_7_7_0")).empty());
     }
 
     std::filesystem::remove_all(disk_path);
