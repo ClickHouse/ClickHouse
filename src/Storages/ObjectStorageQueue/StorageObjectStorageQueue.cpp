@@ -1391,7 +1391,7 @@ void StorageObjectStorageQueue::commit(
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
 
-    if (!post_processing_failed_paths.empty())
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
         throw Exception(
             ErrorCodes::S3_OBJECTS_WERE_NOT_POST_PROCESSED,
             "The after_processing action did not complete for {} object(s): {}",

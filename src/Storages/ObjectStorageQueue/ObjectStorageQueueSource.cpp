@@ -1538,8 +1538,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         processed_files.size(),
         insert_succeeded ? "Processed" : "Failed");
 
-    const auto table_mode = files_metadata->getTableMetadata().getMode();
-    const bool is_ordered_mode = table_mode == ObjectStorageQueueMode::ORDERED;
+    const bool is_ordered_mode = mode == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
@@ -1719,6 +1718,8 @@ void ObjectStorageQueueSource::finalizeCommit(
     if (processed_files.empty())
         return;
 
+    bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
+
     std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
     {
@@ -1732,7 +1733,7 @@ void ObjectStorageQueueSource::finalizeCommit(
                 {
                     if (insert_succeeded)
                     {
-                        if (post_processing_failed_paths.contains(file_metadata->getPath()))
+                        if (respect_post_processing_failed_paths && post_processing_failed_paths.contains(file_metadata->getPath()))
                         {
                             /// The rows were inserted, but the after_processing action failed for
                             /// this object, so do not record it as processed.
@@ -1851,10 +1852,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    const auto table_mode = files_metadata->getTableMetadata().getMode();
     const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
 
-    if (table_mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
+    if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
 
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
@@ -1872,7 +1872,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 after_processing_settings);
             postProcessor.process(successful_objects, post_processing_failed_paths);
 
-            if (table_mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
+            if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
             {
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, post_processing_failed_paths.size());
 
@@ -1890,7 +1890,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         }
     }
 
-    if (table_mode != ObjectStorageQueueMode::EXCLUSIVE)
+    if (mode != ObjectStorageQueueMode::EXCLUSIVE)
     {
         auto zk_client = files_metadata->getZooKeeper();
         Coordination::Responses responses;
