@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -69,12 +69,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_block_size` - 为从 NATS flush 数据而通过 poll 收集的行数。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `nats_flush_interval_ms` - flush 从 NATS 读取的数据的 timeout。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `nats_wait_for_flush_interval` - 如果为 `true`，后台流式周期将在整个 flush 时间间隔内保持开启 (`nats_flush_interval_ms`，否则为 `stream_flush_interval_ms`) ，而不是在消费者 queue 耗尽后立即结束；这样可使更多消息累积到单个块中，但会额外增加最多一个 flush 时间间隔的摄取延迟。默认值：`false` (低延迟的耗尽即继续行为) 。
-* `nats_username` - NATS 用户名。
-* `nats_password` - NATS 密码。
-* `nats_token` - NATS 认证标记。
-* `nats_credential_file` - NATS 凭据文件的 path。
+* `nats_username` - NATS 用户名。当其存储在服务器配置文件中定义的命名集合内时，查询无法覆盖该集合的 `nats_url` 或 `nats_server_list`。
+* `nats_password` - NATS 密码。当其存储在服务器配置文件中定义的命名集合内时，查询无法覆盖该集合的 `nats_url` 或 `nats_server_list`。
+* `nats_token` - NATS 认证标记。当其存储在服务器配置文件中定义的命名集合内时，查询无法覆盖该集合的 `nats_url` 或 `nats_server_list`。
+* `nats_credential_file` - NATS 凭据文件的 path。仅接受来自服务器配置文件中定义的命名集合的值，且该集合的 `nats_url` 和 `nats_server_list` 未被查询覆盖，因为服务器会使用自身权限打开该 path。在查询中，请改为通过 `nats_credentials` 传入文件内容。
+* `nats_credentials` - NATS 凭据内容 (与包含用户 JWT 和 seed 的 `.creds` 文件中的负载相同) 。由于这是查询唯一可用的写法，它会替换从命名集合继承的 `nats_credential_file`，而不会与之冲突；除非操作员通过 `<nats_credential_file overridable="false">` 锁定了该 path。不能将其赋值为空字符串来移除命名集合携带的凭据。
 * `nats_startup_connect_tries` - 启动时的连接尝试次数。默认值：`5`。
-* `nats_max_rows_per_message` — 对于基于行的格式，一条 NATS 消息中写入的最大行数。默认值：`1`。
+* `nats_max_rows_per_message` — 对于按行组织的格式，一条 NATS 消息中写入的最大行数。默认值：`1`。
 * `nats_commit_on_select` - 发出查询时提交消息。仅适用于 JetStream；NATS core 不提供确认机制。默认值：`0`。
 * `nats_handle_error_mode` — NATS 引擎的错误处理方式。可选值：default (如果消息解析失败，则抛出异常) ；stream (异常消息和原始消息将保存在虚拟列 `_error` 和 `_raw_message` 中) 。
 

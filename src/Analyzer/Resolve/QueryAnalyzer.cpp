@@ -51,6 +51,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -60,6 +61,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -67,6 +69,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 
 #include <base/scope_guard.h>
@@ -5724,6 +5728,30 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             auto expression_types = DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()};
             DataTypePtr common_type = tryGetLeastSupertype(expression_types);
 
+            /** There can be no type that is able to hold all the values of both keys, for example, for `UInt64` and `Int64`.
+              * The result of an INNER JOIN contains only the values that both of the keys have in common,
+              * and the type of these values is enough. See `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
+              * For the other kinds of JOIN the result also contains the unmatched values, which may be out of this range.
+              * SEMI JOIN is fine as well: only the matched rows of the preserved side survive, and the result of USING
+              * takes the key of the preserved side. ANTI JOIN, on the contrary, keeps exactly the unmatched rows.
+              * For ASOF JOIN the last column in the USING list is compared by the order of the values, not by equality,
+              * so the fallback does not apply to it; the preceding columns are ordinary equality keys.
+              */
+            bool is_asof_inequality_key = join_node_typed.getStrictness() == JoinStrictness::Asof
+                && join_using_node == join_using_list.getNodes().back();
+            bool is_inner_or_semi = join_node_typed.getKind() == JoinKind::Inner
+                || join_node_typed.getStrictness() == JoinStrictness::Semi;
+            if (!common_type
+                && is_inner_or_semi
+                && !is_asof_inequality_key)
+            {
+                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
+                {
+                    bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
+                    common_type = is_nullable ? makeNullable(subtype) : subtype;
+                }
+            }
+
             if (!common_type)
                 throw Exception(ErrorCodes::NO_COMMON_TYPE,
                     "JOIN {} cannot infer common type for {} and {} in USING for identifier '{}'. In scope {}",
@@ -5768,10 +5796,27 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
+    auto storage_id = storage->getStorageID();
+
+    /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
+    /// performs for a TableNode never runs for the view, and for a SQL SECURITY DEFINER view the
+    /// body is subsequently resolved and planned under the definer's identity - meaning the caller
+    /// is never checked against the view or against the tables behind it. Only inline when the
+    /// caller may already read the whole view, so that inlining cannot change the access decision;
+    /// otherwise leave the TableNode in place and let the planner apply its normal column-aware check.
+    /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
+    /// which the planner's per-column SELECT check treats as separate privileges, so they must be
+    /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
+    if (!scope.context->getAccess()->isGranted(
+            AccessType::SELECT,
+            storage_id.getDatabaseName(),
+            storage_id.getTableName(),
+            storage_snapshot->metadata->getColumns().getAll().getNames()))
+        return;
+
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto storage_id = storage->getStorageID();
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();

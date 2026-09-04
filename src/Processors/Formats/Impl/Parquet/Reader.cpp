@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
+#include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
@@ -2893,7 +2894,27 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     UInt8 max_def = column_info.levels.back().def;
     UInt8 max_rep = column_info.levels.back().rep;
 
-    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep);
+    /// Invariant, from `PageLocation.first_row_index` in `parquet.thrift`: when an OffsetIndex is
+    /// present, every page begins on a row boundary (repetition level 0). So a page's row count is
+    /// its number of zero repetition levels, and it must equal the span the offset index declares
+    /// for that page.
+    ///
+    /// A repeated column's V1 data page header has no row count, so the check above had nothing to
+    /// compare and the declared span seeded the row cursor unchecked. Count the zero repetition
+    /// levels as part of the decode - the same quantity the writer counts in `flush_page` in
+    /// `Write.cpp` - and require equality.
+    const bool check_row_count = max_rep > 0 && !num_rows_in_page.has_value() && end_row_idx.has_value();
+    size_t rows_in_page = 0;
+
+    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep, check_row_count ? &rows_in_page : nullptr);
+
+    if (check_row_count && rows_in_page != *end_row_idx - next_row_idx)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Number of rows in page of column {} doesn't match offset index: page has {} rows, "
+            "offset index declares rows [{}, {}). For a query without filters, use "
+            "input_format_parquet_use_offset_index=0 to read the file without the offset index",
+            fmt::join(column.meta->meta_data.path_in_schema, "."), rows_in_page, next_row_idx, *end_row_idx);
 
     /// Don't decode def levels in the common case of non-array column that's declared nullable but
     /// contains no nulls.
@@ -3100,6 +3121,9 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// readRowsInPage in page 0 will reach end of page, with next_row_idx == end_row_idx. Then
     /// readRowsInPage in page 1 will continue until it sees the end of the array, i.e. the start of
     /// the next row (rep == 0), still with next_row_idx == end_row_idx.
+    /// Note that a row can only straddle a page boundary like this on the sequential path. When an
+    /// offset index is present, pages must begin on row boundaries, and `initializeDataPage` rejects
+    /// a page whose repetition levels say otherwise.
     chassert(end_row_idx >= page.next_row_idx);
 
     size_t first_row_idx = page.next_row_idx;

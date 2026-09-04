@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider"/>
 
 <Tip>
-This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — its required claims, the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/operations/external-authenticators/jwt) reference.
+This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — its required claims, the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/concepts/features/security/external-authenticators/jwt) reference.
 </Tip>
 
 ClickHouse Cloud lets you authenticate connections to a service with JSON Web Tokens (JWTs) validated against your own JSON Web Key Set (JWKS) endpoints. Instead of managing database credentials, your identity provider issues short-lived tokens that ClickHouse verifies against the public keys published at a JWKS URL you configure.
@@ -42,11 +42,11 @@ JWKS-based providers accept **RSA** keys and, from version 26.8, **EC** keys on 
 
 ## How it works {#how-it-works}
 
-The client (your identity provider or application) generates a JWT and signs it with its **private key**. The token must follow the expected [token format](/operations/external-authenticators/jwt#token-claims). ClickHouse then verifies it against the **public** keys published at your JWKS URL:
+The client (your identity provider or application) generates a JWT and signs it with its **private key**. The token must follow the expected [token format](/concepts/features/security/external-authenticators/jwt#token-claims). ClickHouse then verifies it against the **public** keys published at your JWKS URL:
 
 1. ClickHouse reads the token's `kid` (key ID) header and selects the matching key from your JWKS document.
 2. It verifies the token signature against that public key and checks the `iss` (issuer) and `aud` (audience) claims against your provider configuration.
-3. On success, the connection runs as an ephemeral user whose access rights come from the token's `clickhouse:grants` and `clickhouse:roles` claims, capped by the permission limit (the `default` user). See [Access rights](/operations/external-authenticators/jwt#access-rights) for details.
+3. On success, the connection runs as an ephemeral user whose access rights come from the token's `clickhouse:grants` and `clickhouse:roles` claims, capped by the permission limit (the `default` user). See [Access rights](/concepts/features/security/external-authenticators/jwt#access-rights) for details.
 
 ClickHouse validates and fetches the JWKS URL when you add or update a provider, so a misconfigured or unreachable URL is rejected up front.
 
@@ -94,4 +94,4 @@ Deleting a JWT provider immediately stops accepting tokens issued for it, and an
 
 ## Related {#related}
 
-- [JWT Authentication](/operations/external-authenticators/jwt) — token claims, ephemeral users, and client usage.
+- [JWT Authentication](/concepts/features/security/external-authenticators/jwt) — token claims, ephemeral users, and client usage.

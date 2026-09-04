@@ -162,6 +162,24 @@ Aquí, las 4096 dimensiones se dividen en 4 grupos de 1024. Las subcolumnas sigu
 
 Para ejecutar una búsqueda de dimensión reducida, pase el número de dimensiones que se van a leer como cuarto argumento de las funciones de distancia transpuestas (consulte más abajo). El vector de referencia debe tener al menos ese número de elementos (se ignoran los elementos adicionales al final), y el valor debe ser un múltiplo de `stride`.
 
+<div id="qbit-element-access">
+  ## Acceso a elementos y segmentación
+</div>
+
+[`arrayElement`](/es/reference/functions/regular-functions/array-functions#arrayElement) (y el operador `vec[n]`) devuelve el `n`-ésimo elemento del vector, reconstruido con la precisión completa del tipo de elemento. Solo se leen los planos de bits del grupo de stride que contiene el elemento. [`arraySlice`](/es/reference/functions/regular-functions/array-functions#arraySlice) devuelve un `QBit` con las dimensiones seleccionadas (una proyección sobre un subconjunto de dimensiones); el desplazamiento y la longitud deben ser constantes, ya que la dimensión de un `QBit` forma parte de su tipo. Una segmentación alineada con los límites de los grupos de stride conserva el stride y reutiliza los streams de planos de bits almacenados sin copiar:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## Funciones de búsqueda vectorial
 </div>

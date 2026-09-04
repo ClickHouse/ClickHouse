@@ -637,6 +637,102 @@ SELECT fromUnixTimestamp64Second(1640995200)
 └───────────────────────────────────────┘
 ```
 
+## kqlParameterCast {#kqlParameterCast}
+
+Introduced in: v26.9.0
+
+Checks a value against a declared Kusto Query Language type and converts it to that type's
+ClickHouse carrier: an argument whose type does not belong to the declared KQL type is
+rejected during analysis, and a value that does not fit (an `int` overflow, say) is a per-row
+error. The second argument is the declared KQL type name and the third describes the
+parameter for the error message; both must be constant strings.
+
+This function backs typed function parameters when `dialect = 'kusto'`. It is not meant to be
+called directly from SQL.
+
+**Syntax**
+
+```sql
+kqlParameterCast(value, type, parameter)
+```
+
+**Arguments**
+
+- `value` — The argument a KQL function call supplies. - `type` — The declared KQL type name, a constant string. - `parameter` — A description of the parameter, a constant string used in the error message. 
+
+**Returned value**
+
+`value` as the declared type's ClickHouse carrier.
+
+**Examples**
+
+**long**
+
+```sql title=Query
+SELECT kqlParameterCast(5, 'long', 'the parameter') AS x, toTypeName(x)
+```
+
+```response title=Response
+5	Int64
+```
+
+**real**
+
+```sql title=Query
+SELECT kqlParameterCast(5, 'real', 'the parameter') AS x, toTypeName(x)
+```
+
+```response title=Response
+5	Float64
+```
+
+## kqlToTimespan {#kqlToTimespan}
+
+Introduced in: v26.8.0
+
+Converts a value to a timespan (an `Interval` in nanoseconds) as the Kusto Query Language's
+`totimespan()` does: a timespan passes through, a number counts days, and a string is read as
+`[-][d.]hh:mm:ss[.fffffff]` - converting to `NULL` when it does not parse.
+
+This function backs `totimespan()` when `dialect = 'kusto'`. It is not meant to be called
+directly from SQL.
+
+**Syntax**
+
+```sql
+kqlToTimespan(x)
+```
+
+**Arguments**
+
+- `x` — A timespan, a number of days, or a string spelling a timespan. 
+
+**Returned value**
+
+The value as an interval of nanoseconds; `NULL` for a string that does not spell a timespan.
+
+**Examples**
+
+**string**
+
+```sql title=Query
+SELECT kqlToTimespan('0.00:01:00')
+```
+
+```response title=Response
+60000000000
+```
+
+**days**
+
+```sql title=Query
+SELECT kqlToTimespan(2)
+```
+
+```response title=Response
+172800000000000
+```
+
 ## parseDateTime {#parseDateTime}
 
 Introduced in: v23.3.0
@@ -7002,12 +7098,13 @@ See also:
 **Syntax**
 
 ```sql
-toTime64OrNull(x)
+toTime64OrNull(x[, precision])
 ```
 
 **Arguments**
 
 - `x` — A string representation of a time with subsecond precision. [`String`](/reference/data-types/string)
+- `precision` — Optional. The subsecond precision of the returned value. [`UInt8`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -7031,22 +7128,27 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
 
 Introduced in: v25.6.0
 
-Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like [`toTime64`](#toTime64) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `Time64` but returns the zero `Time64` value (`00:00:00`) if an invalid argument is received.
+The same as [`toTime64`](#toTime64) but returns the zero `Time64` value if an invalid argument is received.
+
+See also:
+- [`toTime64`](#toTime64).
+- [`toTime64OrNull`](#toTime64OrNull).
 
 **Syntax**
 
 ```sql
-toTime64OrZero(x)
+toTime64OrZero(x[, precision])
 ```
 
 **Arguments**
 
 - `x` — A string representation of a time with subsecond precision. [`String`](/reference/data-types/string)
+- `precision` — Optional. The subsecond precision of the returned value. [`UInt8`](/reference/data-types/int-uint)
 
 **Returned value**
 
-Returns a Time64 value if successful, otherwise `00:00:00.000`. [`Time64`](/reference/data-types/time64)
+Returns a Time64 value if successful, otherwise the zero Time64 value (`00:00:00`) at the requested precision. [`Time64`](/reference/data-types/time64)
 
 **Examples**
 

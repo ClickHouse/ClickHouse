@@ -125,17 +125,17 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
   ## firstNonDefault
 </div>
 
-استُحدث في: v25.9.0
+أُضيف: v25.9.0
 
 يعيد أول قيمة غير افتراضية من مجموعة من المعاملات
 
-**البنية**
+**صيغة**
 
 ```sql
 firstNonDefault(arg1[, arg2[ ...]])
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `arg1` — الوسيط الأول المطلوب التحقق منه - `arg2` — الوسيط الثاني المطلوب التحقق منه - `...` — وسائط إضافية مطلوب التحقق منها
 
@@ -162,7 +162,7 @@ SELECT firstNonDefault('', 'hello', 'world')
 ```
 
 ```response title=Response
-'hello'
+hello
 ```
 
 **قيم NULL**
@@ -322,17 +322,17 @@ SELECT x FROM t_null WHERE isNull(y);
   ## isNullable
 </div>
 
-قُدِّم في: v22.7.0
+أُضيف: v22.7.0
 
 يتحقق مما إذا كان نوع بيانات المعامل هو `Nullable` (أي إنه يسمح بقيم `NULL`).
 
-**البنية**
+**صيغة**
 
 ```sql
 isNullable(x)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `x` — قيمة من أي نوع بيانات. [`Any`](/ar/reference/data-types/index)
 
@@ -356,11 +356,11 @@ SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
 ```
 
 ```response title=Response
-┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
-│                           0 │                           1 │
-│                           0 │                           1 │
-│                           0 │                           1 │
-└─────────────────────────────┴─────────────────────────────┘
+┌─isNullable(ordinary_col)─┬─isNullable(nullable_col)─┐
+│                        0 │                        1 │
+│                        0 │                        1 │
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
 ```
 
 <div id="isZeroOrNull">
