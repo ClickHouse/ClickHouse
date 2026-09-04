@@ -26,3 +26,11 @@ LowCardinality matching pairs still match
 LowCardinality strings keep their padding semantics
 1
 1
+LowCardinality NULL needle
+0	0
+0	0
+0	0
+0	0
+2	2
+2	2
+3	3

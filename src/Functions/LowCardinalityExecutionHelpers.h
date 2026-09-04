@@ -239,9 +239,8 @@ inline bool targetTypeRepresentsValue(
     }
 }
 
-/// Returns false if the constant value is not present in the dictionary. If the constant is NULL,
-/// returns true and sets [dictionary_index] to the default LC null index, matching the existing
-/// Array(LowCardinality) index-function behavior.
+/// Returns false if the constant value is not present in the dictionary. A NULL constant is present
+/// only in a dictionary that can hold one, and then it sits in slot 0, the LC null index.
 /// Keep this inlined: the Array(LowCardinality) index functions are sensitive to this setup codegen.
 inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     const ColumnLowCardinality & low_cardinality_data,
@@ -254,7 +253,12 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     auto value = recursiveRemoveLowCardinality(value_column);
     if (value->isNullAt(0))
-        return true;
+    {
+        /// Slot 0 is the NULL value only in a nullable dictionary. In a non-nullable one it holds the
+        /// nested type's default value, which a NULL needle does not equal, so answering from it would
+        /// report every default element as a NULL.
+        return low_cardinality_data.nestedIsNullable();
+    }
 
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
     auto original_value = value;

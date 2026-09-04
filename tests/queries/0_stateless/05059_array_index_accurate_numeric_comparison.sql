@@ -71,6 +71,18 @@ SELECT 'LowCardinality strings keep their padding semantics';
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(FixedString(3)))')), 'ab');
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(String))')), 'ab');
 
+SELECT 'LowCardinality NULL needle';
+-- Slot 0 is the NULL value only in a nullable dictionary; in a non-nullable one it holds the nested
+-- default value, which no NULL needle equals.
+SELECT has(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), NULL) AS lc, has(materialize(CAST(['', 'a'], 'Array(String)')), NULL) AS oracle;
+SELECT indexOf(materialize(CAST(['', 'a'], 'Array(LowCardinality(String))')), NULL) AS lc, indexOf(materialize(CAST(['', 'a'], 'Array(String)')), NULL) AS oracle;
+SELECT countEqual(materialize(CAST(['', 'a', ''], 'Array(LowCardinality(String))')), NULL) AS lc, countEqual(materialize(CAST(['', 'a', ''], 'Array(String)')), NULL) AS oracle;
+SELECT has(materialize(CAST([0, 5], 'Array(LowCardinality(UInt8))')), NULL) AS lc, has(materialize(CAST([0, 5], 'Array(UInt8)')), NULL) AS oracle;
+-- A nullable dictionary still finds its NULL element, and a non-NULL needle still finds its own.
+SELECT indexOf(materialize(CAST(['a', NULL, ''], 'Array(LowCardinality(Nullable(String)))')), NULL) AS lc, indexOf(materialize(CAST(['a', NULL, ''], 'Array(Nullable(String))')), NULL) AS oracle;
+SELECT countEqual(materialize(CAST([NULL, 'a', NULL], 'Array(LowCardinality(Nullable(String)))')), NULL) AS lc, countEqual(materialize(CAST([NULL, 'a', NULL], 'Array(Nullable(String))')), NULL) AS oracle;
+SELECT indexOf(materialize(CAST(['a', NULL, ''], 'Array(LowCardinality(Nullable(String)))')), '') AS lc, indexOf(materialize(CAST(['a', NULL, ''], 'Array(Nullable(String))')), '') AS oracle;
+
 DROP TABLE t_array_index_accurate;
 DROP TABLE t_array_index_accurate_float;
 DROP TABLE t_array_index_accurate_lc;
