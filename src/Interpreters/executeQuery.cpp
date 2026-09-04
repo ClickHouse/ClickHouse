@@ -20,7 +20,10 @@
 #include <Common/scope_guard_safe.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Cache/QueryPlanCache.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/InterpreterSelectQueryFromPlan.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -151,6 +154,9 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event QueryPlanCacheHits;
+    extern const Event QueryPlanCacheValidationMisses;
+    extern const Event QueryPlanCacheStaleMisses;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
@@ -167,6 +173,11 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_query_plan_cache;
+    extern const SettingsBool enable_query_plan_cache;
+    extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
+    extern const SettingsUInt64 query_plan_cache_size_in_bytes_quota;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -268,6 +279,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -283,6 +295,8 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -295,6 +309,9 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char query_plan_cache_pause_after_logical_plan[];
+    extern const char query_plan_cache_pause_before_resolve_storages[];
+    extern const char query_plan_cache_pause_after_validation[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -1220,6 +1237,283 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+
+/// Query plan cache integration. Returns an interpreter when the query went through the
+/// plan cache machinery (either a hit, or a miss that built and possibly stored a logical
+/// plan), or nullptr when the query is ineligible and must use the regular interpreter.
+///
+/// Unlike the query result cache, a cache hit still executes the query: the cached object
+/// is the *logical plan* whose leaf reads are storage-agnostic `ReadFromTable` placeholders.
+/// `resolveStorages` rebinds them to current data snapshots on every run, so hits always see
+/// fresh data; only parsing, analysis and logical planning are skipped.
+static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
+    const ASTPtr & ast,
+    ContextMutablePtr context,
+    const SelectQueryOptions & select_query_options,
+    QueryPlanCachePtr query_plan_cache)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Non-deterministic function results may be captured into the plan as constants during
+    /// analysis; refuse early and cheaply. Expanded view bodies are checked later, during
+    /// dependency collection.
+    if (astContainsFunctionsUnsafeForQueryPlanCache(ast, context))
+        return nullptr;
+
+    auto key = tryBuildQueryPlanCacheKey(ast, context, SemanticSettings::computeHash(settings));
+    if (!key)
+        return nullptr;
+
+    if (auto cached_entry = query_plan_cache->get(*key))
+    {
+        try
+        {
+            QueryPlan::ExpectedStorageIdentities validated_identities;
+            if (validateQueryPlanCacheEntry(*cached_entry, context, validated_identities))
+            {
+                /// Revalidate access rights: permissions may have been revoked after the plan
+                /// was cached. Throws ACCESS_DENIED, which propagates to the user without
+                /// falling through to normal planning.
+                checkAccessForQueryPlanCacheHit(*cached_entry, context);
+
+                /// Lets a test alter a table between the validation of the entry and the binding of
+                /// the plan's reads to storage snapshots, which is otherwise a narrow race; see
+                /// `04869_query_plan_cache_table_altered_while_materializing`.
+                FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_after_validation);
+
+                auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context, validated_identities);
+
+                /// `resolveStorages` pins all runtime leaves to the storages validated above,
+                /// but expanded views and folded scalar subqueries have no such leaf. Revalidate
+                /// the complete dependency set at this boundary as their semantics are baked into
+                /// the serialized plan and may have changed while materializing its leaves.
+                QueryPlan::ExpectedStorageIdentities materialized_identities;
+                if (!validateQueryPlanCacheEntry(*cached_entry, context, materialized_identities))
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Query plan cache entry became stale while materializing");
+                }
+
+                /// The planner normally records query access info; on a hit it is skipped,
+                /// so restore the info to keep system.query_log populated.
+                addQueryAccessInfoForQueryPlanCacheHit(*cached_entry, context);
+
+                ProfileEvents::increment(ProfileEvents::QueryPlanCacheHits);
+                return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+            }
+
+            ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
+        }
+        catch (const Exception & e)
+        {
+            /// Only stale cache state is silently recovered by re-planning. Anything else
+            /// (access denial, logical error, cancellation, OOM, ...) must propagate so that
+            /// incidents stay observable.
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+            {
+                /// A direct privilege revoke does not affect the cache key or dependency
+                /// fingerprint, so this entry cannot become usable again without a new grant.
+                /// Remove it before propagating the denial to release its per-user quota charge
+                /// and avoid retaining a permanently denied entry in the LRU.
+                query_plan_cache->remove(*key, cached_entry);
+                throw;
+            }
+            if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                throw;
+            ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
+            /// Losing a race with concurrent DDL is a normal thing (same as on the miss path), and
+            /// the query still succeeds through re-planning, so this is not logged as an error:
+            /// with `send_logs_level` an error would surface a scary stack trace on every such
+            /// benign fallback. The stale miss stays observable through the profile event.
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Stale or corrupt cached plan, falling back to normal planning: {}", e.message());
+        }
+
+        /// Reached only when the entry failed validation or materialized stale/corrupt (a
+        /// successful hit returns above, non-stale exceptions propagate). Evict the known-dead
+        /// entry: re-planning below stores a fresh one when the query is still cacheable, but when
+        /// it became uncacheable (e.g. a view switched away from `INVOKER` security) nothing would
+        /// ever replace it, and it would stay resident forever - consuming cache size and per-user
+        /// quota and re-paying validation on every execution.
+        query_plan_cache->remove(*key, cached_entry);
+    }
+
+    /// Miss: build the logical plan (leaf reads are `ReadFromTable` placeholders).
+    SelectQueryOptions logical_plan_options = select_query_options;
+    logical_plan_options.build_logical_plan = true;
+    logical_plan_options.cacheable_logical_plan = true;
+
+    /// Lambda capture expressions are JIT-compiled at planning time; compiled (fused)
+    /// function nodes cannot be serialized. Build the cacheable plan without expression
+    /// compilation - the JIT still applies when the (materialized) plan builds its
+    /// pipelines, so execution performance is unaffected.
+    auto planning_context = Context::createCopy(context);
+    planning_context->setSetting("compile_expressions", Field(false));
+
+    /// Collect the identities of the storages this plan is built from. The plan bakes in their row
+    /// policies, expanded view bodies and schema assumptions, while both the dependency collection
+    /// below and `resolveStorages` resolve the table names again through the catalog - in an `Atomic`
+    /// database a concurrent `DROP`/`CREATE` can make the same name point at a different table in
+    /// between. Binding both to the analyzed identities keeps the "analyzed storage == executed
+    /// storage" invariant that a cache hit enforces through `validated_identities`.
+    auto planning_identities = std::make_shared<Context::PlanCacheStorageIdentities>();
+    planning_context->setPlanCacheStorageIdentities(planning_identities);
+
+    auto analyzer_interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(ast, planning_context, logical_plan_options);
+    auto & logical_plan = analyzer_interpreter->getQueryPlan();
+
+    /// The cacheable logical-plan execution path is only equivalent to normal execution for
+    /// queries that are actually eligible for the cache: it expands view bodies at plan time and
+    /// resolves their leaf reads under the invoker context, which is wrong for `SQL SECURITY
+    /// DEFINER`/`NONE` views, and it skips storage-specific planning shortcuts. If the query is
+    /// not eligible for caching, fall back to the normal interpreter (return nullptr) instead of
+    /// executing the cacheable plan, so cache-enabled execution can never change a query's result
+    /// or security context.
+    if (!queryTreeIsEligibleForPlanCache(
+            analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: query uses non-deterministic functions or scalar subqueries (see query_plan_cache_allow_scalar_subqueries)");
+        return nullptr;
+    }
+
+    /// Lets a test replace a table between analysis and execution of the plan, which is otherwise a
+    /// narrow race; see `04655_query_plan_cache_table_replaced_while_planning`.
+    FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_after_logical_plan);
+
+    auto dependencies = collectQueryPlanCacheDependencies(
+        logical_plan, ast, context, settings[Setting::query_plan_cache_allow_scalar_subqueries]);
+    if (!dependencies)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: query references an unsupported dependency (table function, "
+            "temporary/system/remote/Merge table, or a non-INVOKER view)");
+        return nullptr;
+    }
+
+    /// The dependencies were resolved by name after the plan was built. If any of them is not the
+    /// storage that was analyzed, the entry would fingerprint one table while the plan carries the
+    /// semantics of another, and executing the plan here would run the swapped table with the old
+    /// table's row policies or schema - or, for a table read only inside a scalar subquery, keep
+    /// serving a constant folded from the old table while validating against the new one. The
+    /// same applies to an in-place `ALTER` of the analyzed storage itself (`MODIFY COLUMN`,
+    /// `ALTER VIEW ... MODIFY QUERY`, `CREATE`/`ALTER ROW POLICY`): the UUID stays, but the
+    /// dependency records the post-alter schema or row-policy fingerprint while the plan bakes in
+    /// the pre-alter semantics, so a stored entry would validate successfully on every hit yet
+    /// keep executing stale semantics. The semantics fingerprint recorded at analysis time
+    /// detects both. Neither store nor execute such a plan: fall back to the normal interpreter,
+    /// which analyzes the current tables from scratch.
+    /// Scalar subqueries execute during analysis and record the storages they read into the same
+    /// collector (see `PlannerJoinTree.cpp`), so their sources are covered by this check too. A
+    /// dependency that is not among the analyzed identities is a name the raw AST walk
+    /// over-collected without analysis ever reading it (e.g. a CTE name that shadows a real
+    /// table); the plan does not depend on it, so it only widens invalidation.
+    const auto analyzed_identities = planning_identities->get();
+    if (planning_identities->hasConflictingIdentities())
+    {
+        /// A repeated read of one table can race with an in-place metadata or row-policy
+        /// change. A single cached plan must not combine semantics fingerprints from two
+        /// different snapshots, so refuse to cache or execute that plan.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: table semantics changed while repeated reads were being analyzed");
+        return nullptr;
+    }
+    /// The AST collector additionally walks CTE bodies to cover sources that are folded during
+    /// analysis. It must not turn a CTE reference itself into a dependency when a real table with
+    /// the same name exists: only the analyzer can distinguish lexical CTE scope from a catalog
+    /// lookup. Keep exactly the storages that analysis resolved while building this plan.
+    std::erase_if(*dependencies, [&analyzed_identities](const auto & dep)
+    {
+        return !analyzed_identities.contains({dep.database, dep.table});
+    });
+
+    for (const auto & dep : *dependencies)
+    {
+        auto it = analyzed_identities.find({dep.database, dep.table});
+        if (it != analyzed_identities.end()
+            && (it->second.uuid != dep.uuid
+                || it->second.semantics_fingerprint != computeQueryPlanCacheSemanticsFingerprint(dep)))
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: table {}.{} was replaced or altered while the plan was being built", dep.database, dep.table);
+            return nullptr;
+        }
+    }
+
+    QueryPlanCacheEntry entry;
+    try
+    {
+        entry.serialized_plan = serializeQueryPlanForCache(logical_plan);
+        entry.dependencies = std::move(*dependencies);
+        entry.used_row_policies = analyzer_interpreter->getPlanner().getUsedRowPolicies();
+    }
+    catch (const Exception & e)
+    {
+        /// Only "this plan cannot be stored" failures are recoverable (a step type that does not
+        /// implement serialization yet); anything else must propagate.
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
+            throw;
+
+        /// The cacheable logical plan must not be executed either. It is built with ordinary
+        /// planner behaviors switched off - trivial count (`PlannerJoinTree.cpp`,
+        /// `is_trivial_count_applied`), moving filters to `PREWHERE`, direct-join logical lookups -
+        /// because those bake storage-specific decisions into a plan that is meant to be replayed
+        /// against other snapshots. Executing it for a query that produces no cache entry at all
+        /// would make that query permanently slower whenever `enable_query_plan_cache` is on, with
+        /// nothing gained. Fall back to the normal interpreter, which is the documented contract:
+        /// a query with an unsupported step executes normally and is simply not cached.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: it contains a step that cannot be serialized, falling back to normal planning: {}",
+            e.message());
+        return nullptr;
+    }
+
+    /// Lets a test replace a table between building the cache entry and resolving the plan's reads,
+    /// which is otherwise a narrow race; see 04811_query_plan_cache_table_replaced_before_resolve.
+    FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_before_resolve_storages);
+
+    /// Execute the logical plan by resolving storage reads against current snapshots -
+    /// the same path a cache hit takes, so hit and miss behave identically. The reads are bound to
+    /// the analyzed identities, so a table replaced since analysis cannot be executed with this
+    /// plan's baked semantics; that is reported as `INCORRECT_DATA` and handled by falling back to
+    /// the normal interpreter, exactly like a stale cache entry is.
+    auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
+    QueryPlan::ExpectedStorageIdentities expected_identities;
+    for (const auto & [name, identity] : analyzed_identities)
+        expected_identities.emplace(name, QueryPlan::ExpectedStorageIdentity{identity.uuid, identity.semantics_fingerprint});
+    try
+    {
+        plan.resolveStorages(context, &expected_identities);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
+            throw;
+        /// Concurrent DDL is a normal thing to lose a race with, so this is not logged as an error:
+        /// the query is executed by the normal interpreter, which analyzes the current tables.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "A table was replaced while the plan was being built, falling back to normal planning: {}", e.message());
+        return nullptr;
+    }
+
+    /// Store only now, after `resolveStorages` proved the plan still binds to the analyzed
+    /// storages. Storing before it would leave a known-dead entry resident when the resolution
+    /// loses a race with concurrent DDL: the entry is guaranteed to validation-miss on the next
+    /// identical query, yet until then it consumes cache size and the user's quota.
+    if (!query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]))
+    {
+        /// The entry was not admitted: the user's `query_plan_cache_size_in_bytes_quota` has no
+        /// room for it, or it is larger than the whole cache. These states persist across
+        /// identical executions, so executing the cacheable logical plan here would make the query
+        /// permanently slower (ordinary planner behaviors - trivial count, direct-join lookups -
+        /// are switched off in it) with no compensating hit ever. Fall back to the normal
+        /// interpreter, exactly like a plan with an unserializable step does.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: the entry was not admitted into the cache (per-user quota or cache size limit), "
+            "falling back to normal planning");
+        return nullptr;
+    }
+    return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
+}
 
 /// The introspection port is open while the shared state is either not fully constructed or is being
 /// torn down, so anything that creates, changes or removes state is rejected there.
@@ -2981,6 +3275,34 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// Query plan cache: skip for internal queries, non-SELECT, queries using parallel
+        /// replicas, and when the analyzer is off.
+        QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
+        const bool can_use_query_plan_cache = query_plan_cache != nullptr
+            /// `Context::setQueryPlanCache` always creates the cache object, so a non-null pointer
+            /// does not mean the cache is usable: the server config disables it with
+            /// `query_plan_cache.max_size_in_bytes = 0` or `query_plan_cache.max_entries = 0`, and
+            /// `QueryPlanCache::set` then turns every store into a no-op. Without this check a
+            /// config-disabled cache would still route eligible queries through the cache path,
+            /// paying AST normalization, dependency collection and plan serialization on every run,
+            /// and executing them through the cacheable logical-plan path (which deliberately skips
+            /// storage-specific planning shortcuts) even though nothing can ever be stored.
+            && query_plan_cache->isEnabled()
+            && settings[Setting::allow_experimental_query_plan_cache]
+            && settings[Setting::enable_query_plan_cache]
+            && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+            && settings[Setting::allow_experimental_analyzer]
+            /// The requested processing stage is not part of the cache key, and a non-`Complete`
+            /// stage (e.g. `with_mergeable_state`) changes the plan contract and output header
+            /// (aggregate states vs. finalized values). Only cache fully-completed plans so an
+            /// entry stored for one stage can never be reused for another.
+            && stage == QueryProcessingStage::Complete
+            /// The parallel replicas coordinator operates on storage-bound read steps which are
+            /// absent from logical (cached) plans.
+            && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
@@ -3058,7 +3380,10 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                if (out_ast)
+                if (out_ast && can_use_query_plan_cache)
+                    interpreter = tryInterpretWithQueryPlanCache(out_ast, context, SelectQueryOptions(stage).setInternal(internal), query_plan_cache);
+
+                if (!interpreter && out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();

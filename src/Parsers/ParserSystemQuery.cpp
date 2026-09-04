@@ -320,6 +320,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
             {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
+            {"DROP QUERY PLAN CACHE", Type::CLEAR_QUERY_PLAN_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
@@ -1404,6 +1405,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP QUERY PLAN CACHE {#drop-query-plan-cache}
+
+Clears the [query plan cache](/concepts/features/performance/caches/query-plan-cache).
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 

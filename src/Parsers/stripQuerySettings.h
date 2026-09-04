@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <functional>
 #include <span>
 #include <string_view>
 
@@ -30,5 +31,9 @@ namespace DB
 /// ASTBackupQuery formatters all print `SETTINGS ` whenever their slot is non-null, so a clause that
 /// held only stripped settings would serialize to a trailing bare `SETTINGS` that throws on re-parse.
 void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_view> setting_names);
+
+/// Removes settings selected by `should_remove` from every query-level SETTINGS clause. Empty
+/// clauses are detached from their owners so they do not affect the query AST hash or formatting.
+void removeSettingsFromQuery(const ASTPtr & ast, const std::function<bool(std::string_view)> & should_remove);
 
 }

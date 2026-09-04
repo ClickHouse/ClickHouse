@@ -1,0 +1,6 @@
+-- 1. row policy with a scalar subquery: query is NOT cacheable
+-- boundary = 2 (rows x <= 2): 3
+-- hits after a repeat (must be 0, not cached): 0
+-- boundary now 4 (rows x <= 4), reflected immediately: 10
+-- 2. plain row policy without a subquery: query IS cacheable
+-- hits after a repeat (must be 1, cached): 1

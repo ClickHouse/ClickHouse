@@ -58,6 +58,7 @@
                 "concepts/features/performance/caches/caches",
                 "concepts/features/performance/caches/query-cache",
                 "concepts/features/performance/caches/query-condition-cache",
+                "concepts/features/performance/caches/query-plan-cache",
                 "concepts/features/performance/caches/userspace-page-cache"
               ]
             },

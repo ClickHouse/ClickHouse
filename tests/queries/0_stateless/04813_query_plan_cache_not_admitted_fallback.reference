@@ -1,0 +1,10 @@
+-- 1. a 1-byte quota rejects the entry: the query runs through the ordinary interpreter every time
+1	1
+2	2
+3	3
+-- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): 0 3
+-- hits and read_rows of the second run (must still be 0 3): 0 3
+-- entries in the cache (must be 0): 0
+-- 2. the same query with no quota is stored and hits
+-- hits of the second run (must be 1, cached): 1
+-- entries in the cache (must be 1): 1

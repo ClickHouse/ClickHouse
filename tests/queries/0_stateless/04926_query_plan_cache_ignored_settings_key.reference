@@ -1,0 +1,8 @@
+-- ignored setting value shares the entry with no SETTINGS clause
+6
+6
+-- hits: 1
+-- ignored setting DEFAULT shares the entry with no SETTINGS clause
+6
+6
+-- hits: 1

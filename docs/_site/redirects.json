@@ -27388,6 +27388,10 @@
     "source": "/operations/query-condition-cache"
   },
   {
+    "destination": "/concepts/features/performance/caches/query-plan-cache",
+    "source": "/operations/query-plan-cache"
+  },
+  {
     "destination": "/concepts/features/configuration/server-config/quotas",
     "source": "/operations/quotas"
   },

@@ -342,6 +342,9 @@ static struct InitFiu
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(query_plan_cache_pause_after_logical_plan) \
+    PAUSEABLE(query_plan_cache_pause_before_resolve_storages) \
+    PAUSEABLE(query_plan_cache_pause_after_validation) \
     PAUSEABLE(mt_pause_before_register_mutation) \
     ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \

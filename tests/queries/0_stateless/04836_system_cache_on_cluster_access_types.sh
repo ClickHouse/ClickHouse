@@ -6,6 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Holds only the granular privilege of the command it runs.
 query_cache_user="query_cache_user_04836_$CLICKHOUSE_DATABASE"
+plan_cache_user="plan_cache_user_04836_$CLICKHOUSE_DATABASE"
 sync_user="sync_user_04836_$CLICKHOUSE_DATABASE"
 # Holds the cache privilege group, which the ON CLUSTER path wrongly required for every cache
 # command, including SYSTEM SYNC FILESYSTEM CACHE, which is not one of its children.
@@ -13,10 +14,13 @@ group_user="group_user_04836_$CLICKHOUSE_DATABASE"
 # Negative control: CLUSTER only.
 no_cache_user="no_cache_user_04836_$CLICKHOUSE_DATABASE"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $query_cache_user, $sync_user, $group_user, $no_cache_user"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $query_cache_user, $plan_cache_user, $sync_user, $group_user, $no_cache_user"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE USER $query_cache_user IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER, SYSTEM CLEAR QUERY CACHE ON *.* TO $query_cache_user"
+
+${CLICKHOUSE_CLIENT} --query "CREATE USER $plan_cache_user IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER, SYSTEM CLEAR QUERY PLAN CACHE ON *.* TO $plan_cache_user"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE USER $sync_user IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER, SYSTEM SYNC FILESYSTEM CACHE ON *.* TO $sync_user"
@@ -57,6 +61,10 @@ sync_allowed() {
 
 # A holder of only the query cache privilege is allowed (before: denied, missing 27 others).
 run --user "$query_cache_user" --query "SYSTEM CLEAR QUERY CACHE TAG '$tag' ON CLUSTER $cluster" >/dev/null || exit 1
+echo "ok"
+
+# The same for the query plan cache: its granular privilege alone is enough.
+run --user "$plan_cache_user" --query "SYSTEM CLEAR QUERY PLAN CACHE ON CLUSTER $cluster" >/dev/null || exit 1
 echo "ok"
 
 # A holder of only SYSTEM SYNC FILESYSTEM CACHE is allowed.
@@ -101,6 +109,7 @@ SYSTEM CLEAR MMAP CACHE
 SYSTEM CLEAR QUERY CONDITION CACHE
 SYSTEM CLEAR ENCRYPTION HEADERS CACHE
 SYSTEM CLEAR QUERY CACHE TAG '$tag'
+SYSTEM CLEAR QUERY PLAN CACHE
 SYSTEM CLEAR COMPILED EXPRESSION CACHE
 SYSTEM CLEAR UNCOMPRESSED CACHE
 SYSTEM CLEAR INDEX MARK CACHE
@@ -141,4 +150,4 @@ disk_metadata_cache_ok() {
 disk_metadata_cache_ok "$(${CLICKHOUSE_CLIENT} --query \
     "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")"
 
-${CLICKHOUSE_CLIENT} --query "DROP USER $query_cache_user, $sync_user, $group_user, $no_cache_user"
+${CLICKHOUSE_CLIENT} --query "DROP USER $query_cache_user, $plan_cache_user, $sync_user, $group_user, $no_cache_user"
