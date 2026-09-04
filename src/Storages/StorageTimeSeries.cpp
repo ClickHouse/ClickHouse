@@ -168,11 +168,6 @@ StorageTimeSeries::StorageTimeSeries(
         *normalized_create_query->columns_list->columns, local_context, mode);
     storage_metadata.setColumns(normalized_columns);
 
-    /// The metadata must carry the whole `SETTINGS` clause because a settings alter changes that clause
-    /// and the result replaces the one in the create query.
-    if (normalized_create_query->storage && normalized_create_query->storage->settings)
-        storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
-
     if (!comment.empty())
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -529,7 +524,7 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     {
         chassert(new_metadata.settings_changes);
         /// Round-trip through `TimeSeriesSettings` to validate the names/values and
-        /// to write them back in a canonical form.
+        /// to drop entries that equal to the defaults.
         new_settings = std::make_unique<TimeSeriesSettings>();
         new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
         checkTimeSeriesSettings(*new_settings);
@@ -1181,7 +1176,6 @@ Two settings can be changed after `CREATE`:
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
-ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
