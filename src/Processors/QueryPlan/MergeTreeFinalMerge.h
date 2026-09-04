@@ -16,7 +16,9 @@ namespace DB
 /// Adds the FINAL merge transform for the table's merging engine on top of `pipe`, collapsing rows
 /// that share the sort key into the single FINAL result. The pipe's input streams must already be
 /// sorted by `sort_description`. For `Replacing` with `enable_vertical_final`, appends the
-/// `SelectByIndicesTransform` that materializes the vertical-final result.
+/// `SelectByIndicesTransform` that materializes the vertical-final result. `read_in_reverse` means
+/// the input streams are read in the reverse order relative to the storage order (supported only
+/// for `Replacing`, see `ReplacingSortedAlgorithm`).
 /// When `limit` is non-zero, it is forwarded to the merge algorithms that support early
 /// termination (`Ordinary`, `Aggregating`, `Summing`, `Coalescing`) so the merge can stop
 /// once enough output rows have been produced (see `optimize_final_limit_pushdown`).
@@ -27,6 +29,7 @@ void addMergingFinal(
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final,
+    bool read_in_reverse = false,
     UInt64 limit = 0);
 
 /// One lane of a distributed task's read: the marks it reads. When `needs_merge` it is a FINAL intersecting
