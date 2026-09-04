@@ -4463,6 +4463,31 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 }
 
 
+namespace
+{
+
+/// Reservation for the destination after the first (largest) source was merged: the overlap
+/// with that source estimates the shared key universe (the Lincoln-Petersen capture-recapture
+/// estimator), and the keys the remaining sources add decay exponentially with their total
+/// size. Only half the estimate is reserved: the estimate is unreliable when the per-thread
+/// key sets are not exchangeable (e.g. keys correlated with the scan ranges), and the grower
+/// rounds up to a power of two, so a whole overestimate can double the final buffer.
+size_t reservationForMerge(size_t dst_size_before, size_t dst_size_after, size_t first_src_size, size_t remaining_src_sizes)
+{
+    const size_t new_keys = dst_size_after - dst_size_before;
+    const size_t overlap = first_src_size - new_keys;
+    if (overlap == 0)
+        return (dst_size_after + remaining_src_sizes) / 2;
+    const double dst_after = static_cast<double>(dst_size_after);
+    const double universe = static_cast<double>(dst_size_before) * static_cast<double>(first_src_size) / static_cast<double>(overlap);
+    if (universe <= dst_after)
+        return dst_size_after / 2;
+    const auto estimate = static_cast<size_t>(universe - (universe - dst_after) * std::exp(-static_cast<double>(remaining_src_sizes) / universe));
+    return estimate / 2;
+}
+
+}
+
 template <typename Method>
 void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const
@@ -4476,6 +4501,29 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
+
+    auto & dst = getDataVariant<Method>(*res).data;
+    /// A string table (`StringHashTable`, detected by its `emptyStringSlot`) is excluded even
+    /// though it has a `reserve`: the hint is split evenly over its four size-class sub-maps,
+    /// while a real key set concentrates in one of them, so reserving would force-grow the
+    /// cold sub-maps and still leave the hot one undersized.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    size_t first_src_size = 0;
+    size_t remaining_src_sizes = 0;
+    size_t max_remaining_src_size = 0;
+    size_t dst_size_before = 0;
+    if constexpr (can_reserve)
+    {
+        if (non_empty_data.size() > 1)
+            first_src_size = getDataVariant<Method>(*non_empty_data[1]).data.size();
+        for (size_t result_num = 2, size = non_empty_data.size(); result_num < size; ++result_num)
+        {
+            const size_t src_size = getDataVariant<Method>(*non_empty_data[result_num]).data.size();
+            remaining_src_sizes += src_size;
+            max_remaining_src_size = std::max(max_remaining_src_size, src_size);
+        }
+        dst_size_before = dst.size();
+    }
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4498,6 +4546,23 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
             {
                 mergeDataImpl<Method>(
                     getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled);
+            }
+
+            if constexpr (can_reserve)
+            {
+                /// If this merge already crossed `max_rows_to_group_by`, the `checkLimits` on the
+                /// next iteration stops the merge (`throw`/`break`) or stops admitting new keys
+                /// (`any`), so the remaining sources cannot grow the table anymore. Below the
+                /// limit, `checkLimits` runs only between sources and a source is merged whole,
+                /// so the table cannot grow past the limit plus the largest remaining source.
+                const bool limit_reached = params.max_rows_to_group_by && res->sizeWithoutOverflowRow() > params.max_rows_to_group_by;
+                if (result_num == 1 && remaining_src_sizes && !limit_reached)
+                {
+                    size_t reservation = reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes);
+                    if (params.max_rows_to_group_by)
+                        reservation = std::min(reservation, params.max_rows_to_group_by + max_remaining_src_size);
+                    dst.reserve(reservation);
+                }
             }
         }
         else if (res->without_key)
@@ -4566,6 +4631,59 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+    /// String tables are excluded for the reason given in `mergeSingleLevelDataImpl`.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); } && !requires { dst.emptyStringSlot(); };
+    size_t first_src_size = 0;
+    size_t remaining_src_sizes = 0;
+    size_t dst_size_before = 0;
+    size_t input_keys = 0;
+    size_t max_reservation = std::numeric_limits<size_t>::max();
+    UInt64 seen_input_keys = 0;
+    if constexpr (can_reserve)
+    {
+        /// Under `throw` the group limit is enforced on the merged totals in
+        /// `ConvertingAggregatedToChunksWithMergingSource::generate`, so a bucket whose merged
+        /// result survives that check holds at most `max_rows_to_group_by` groups; reserving
+        /// beyond that only ever serves a bucket the query is about to abort on. Unlike the
+        /// single-level merge, this loop has no `checkLimits` of its own: the shared check runs
+        /// only after a whole bucket was merged and converted, and the resulting cancellation
+        /// reaches the sibling workers later still, so without the cap a worker can preallocate
+        /// close to its full bucket input while the limit has already been crossed elsewhere,
+        /// adding a large dead buffer and possibly turning the expected `TOO_MANY_ROWS` into
+        /// `MEMORY_LIMIT_EXCEEDED`. The dropping modes are deliberately not enforced during this
+        /// merge, so their buckets are merged whole and keep the full reservation.
+        if (params.max_rows_to_group_by && params.group_by_overflow_mode == OverflowMode::THROW)
+            max_reservation = params.max_rows_to_group_by;
+
+        first_src_size = data.size() > 1 ? getDataVariant<Method>(*data[1]).data.impls[bucket].size() : 0;
+        for (size_t result_num = 2, size = data.size(); result_num < size; ++result_num)
+            remaining_src_sizes += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
+        dst_size_before = dst.size();
+        input_keys = dst_size_before + first_src_size + remaining_src_sizes;
+
+        /// The reservations run ahead of the source loop's own cancellation check; a bucket
+        /// that is about to be abandoned must not add its reservation to the peak memory of
+        /// the unwinding query.
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+
+        /// Reserve up front from the completed buckets' ratio (see `merged_buckets_input_keys`);
+        /// the first buckets, merged while nothing has completed yet, use the in-loop estimate.
+        /// The counters are published input-first with the result released, and read here
+        /// result-first with an acquire, so every result contribution this thread observes
+        /// comes with its input contribution; extra input contributions only lower the ratio.
+        /// A merge never produces more keys than it consumes, so the reservation is also
+        /// capped by this bucket's input.
+        const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
+        seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
+        if (seen_input_keys)
+            dst.reserve(std::min(
+                {input_keys,
+                 max_reservation,
+                 static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))}));
+    }
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
@@ -4589,6 +4707,23 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 prefetch,
                 is_cancelled);
         }
+
+        if constexpr (can_reserve)
+        {
+            if (!seen_input_keys && result_num == 1 && remaining_src_sizes)
+            {
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    return;
+                dst.reserve(
+                    std::min(max_reservation, reservationForMerge(dst_size_before, dst.size(), first_src_size, remaining_src_sizes)));
+            }
+        }
+    }
+
+    if constexpr (can_reserve)
+    {
+        res->merged_buckets_input_keys.fetch_add(input_keys, std::memory_order_relaxed);
+        res->merged_buckets_result_keys.fetch_add(dst.size(), std::memory_order_release);
     }
 }
 
