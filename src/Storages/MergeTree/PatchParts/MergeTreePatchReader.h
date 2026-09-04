@@ -9,6 +9,7 @@
 namespace DB
 {
 
+class PatchRangesCache;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
 class MergeTreePatchReader : private boost::noncopyable
@@ -83,7 +84,7 @@ private:
 class MergeTreePatchReaderMergeOnKey : public MergeTreePatchReader
 {
 public:
-    MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
+    MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchRangesCache * patch_ranges_cache_);
 
     std::vector<PatchReadResultPtr> readPatches(
         MarkRanges & ranges,
@@ -97,12 +98,24 @@ public:
 
 private:
     PatchReadResultPtr readPatch(const MarkRange & range);
+    /// Reads the ranges and materializes and normalizes the sorting key columns in the block.
+    Block readAndPostprocess(MarkRanges ranges);
+    UInt128 getColumnsFingerprint() const;
     bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const;
+
+    PatchRangesCache * patch_ranges_cache;
+    /// Identifies the names and types of the read columns in the cache, because
+    /// the sets of columns read from one patch part may differ across original parts.
+    UInt128 columns_fingerprint{};
 };
 
 using MergeTreePatchReaderPtr = std::shared_ptr<MergeTreePatchReader>;
 using MergeTreePatchReaders = std::vector<MergeTreePatchReaderPtr>;
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache);
+MergeTreePatchReaderPtr getPatchReader(
+    PatchPartInfoForReader patch_part,
+    MergeTreeReaderPtr reader,
+    PatchJoinCache * patch_join_cache,
+    PatchRangesCache * patch_ranges_cache);
 
 }

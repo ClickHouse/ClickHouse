@@ -250,7 +250,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         new_readers.patches.push_back(getPatchReader(
             read_info->patch_parts[i],
             create_patch_reader(i),
-            extras.patch_join_cache));
+            extras.patch_join_cache,
+            extras.patch_ranges_cache));
     }
 
     return new_readers;

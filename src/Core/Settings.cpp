@@ -5949,6 +5949,12 @@ If true, patch parts (that represent lightweight updates) are applied on SELECTs
     DECLARE(NonZeroUInt64, apply_patch_parts_join_cache_buckets, 8, R"(
 The number of buckets in the temporary cache for applying patch parts in Join mode.
 )", 0) \
+    DECLARE(UInt64, apply_patch_parts_ranges_cache_max_bytes, 1073741824, R"(
+The maximum size of the cache of ranges read from patch parts applied in MergeOnKey mode (lightweight updates).
+The cache is created for each reading pipeline of a query and is additionally limited by a quarter
+of the memory limit of the query, because blocks in the cache are accounted in the query's memory usage.
+0 disables the cache.
+)", 0) \
     DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
 A mode for `ALTER` queries that have the `UPDATE` commands.
 
