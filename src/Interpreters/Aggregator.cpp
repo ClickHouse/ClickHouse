@@ -2243,7 +2243,8 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     Columns materialized_columns;
     bool all_keys_are_const = false;
-    if (params.optimize_group_by_constant_keys)
+    /// A single key row stands for the whole block, so an empty block would get a group out of nothing.
+    if (params.optimize_group_by_constant_keys && row_begin != row_end)
     {
         all_keys_are_const = true;
         for (size_t i = 0; i < params.keys_size; ++i)
@@ -2475,15 +2476,27 @@ bool Aggregator::executeOnBlock(Columns columns,
     if (!checkLimits(result_size, no_more_keys))
         return false;
 
+    /// The spill below is decided from query-wide memory but can only free this thread's own
+    /// table. The session's shared drain table is memory no sweep writes once it is below the
+    /// part floor, so left resident it keeps every later block over the threshold.
+    Int64 spill_decision_memory = current_memory_usage;
+    if (adaptive && adaptive->isBaseline() && params.max_bytes_before_external_group_by
+        && result.isTwoLevel() && worth_convert_to_two_level
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+    {
+        if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
+            spill_decision_memory = *sampled;
+    }
+
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
       */
     if (params.max_bytes_before_external_group_by
         && result.isTwoLevel()
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && spill_decision_memory > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        size_t size = current_memory_usage + params.min_free_disk_space;
+        size_t size = spill_decision_memory + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
     }
 
