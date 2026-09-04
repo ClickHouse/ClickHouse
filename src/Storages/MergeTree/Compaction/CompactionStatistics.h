@@ -11,7 +11,9 @@ namespace CompactionStatistics
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
   */
-UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
+/// `has_patch_parts` keeps fully expired source parts in the estimate: a patch can move their rows
+/// back into the future, and a patched merge writes them out instead of dropping them.
+UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false, bool has_patch_parts = false);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */

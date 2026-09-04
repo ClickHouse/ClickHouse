@@ -839,6 +839,11 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             max_volume_index = std::max(max_volume_index, volume_index);
         }
 
+        /// Pre-patch move infos must not pick the destination (a patch can move the TTL either
+        /// way); the infos recalculated by the merge let the background mover relocate the part.
+        if (!future_part->patch_parts.empty())
+            ttl_infos.moves_ttl.clear();
+
         reserved_space = storage.balancedReservation(
             metadata_snapshot,
             total_size,
@@ -1794,7 +1799,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         try
         {
-            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true, !future_part->patch_parts.empty());
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());

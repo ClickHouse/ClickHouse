@@ -44,6 +44,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -506,6 +507,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & where_ttl : global_ctx->metadata_snapshot->getRowsWhereTTLs())
             add_ttl_expression_columns(where_ttl);
+
+        /// The TTL step also rebuilds MOVE / RECOMPRESS infos on this same stream, so their
+        /// expression inputs must survive into the horizontal phase too.
+        for (const auto & move_ttl : global_ctx->metadata_snapshot->getMoveTTLs())
+            add_ttl_expression_columns(move_ttl);
+
+        for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
+            add_ttl_expression_columns(recompression_ttl);
     }
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
@@ -665,6 +674,71 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
+    }
+
+    /// A pending patch can change rows/column TTL inputs in both directions, so the pre-patch
+    /// aggregated infos can neither feed TTLTransform's drop-all/drop-column fast paths nor stay
+    /// on the merged part. The maxima are reset; the rows-WHERE entries are dropped wholesale,
+    /// because their ttl_finished bit survives recalculation (TTLDeleteAlgorithm marks finished
+    /// off the old max and update() never clears it, hiding the part from later TTL passes).
+    /// GROUP BY entries are deliberately left alone: TTLAggregationAlgorithm falls back to the old
+    /// info when no row reaches the rule, so clearing them can yield a part with no GROUP BY bound
+    /// at all - the infinite-rollup shape 04501 pins. The TTL step is forced even
+    /// for a part that did not look due before the patch; when the TTL blocker is active the rows
+    /// must survive, so the pipeline recalculates the infos instead. Recompression/move infos are
+    /// likewise ignored where they drive the output codec and the reserved destination.
+    ctx->recalculate_ttl_for_patches
+        = global_ctx->metadata_snapshot->hasAnyTTL() && !global_ctx->future_part->patch_parts.empty();
+    if (ctx->recalculate_ttl_for_patches)
+    {
+        global_ctx->new_data_part->ttl_infos.table_ttl.max = 0;
+        for (auto & [column_name, column_info] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+            column_info.max = 0;
+        if (ctx->need_remove_expired_values || !global_ctx->ttl_merges_blocker->isCancelled())
+        {
+            ctx->need_remove_expired_values = true;
+            ctx->force_ttl = true;
+        }
+
+        /// The rows-WHERE entries are dropped only because something will rebuild them: the TTL step
+        /// on the ordinary path, or the recalculation step on the blocked one. Both run for every
+        /// patched merge on a table with TTL, GROUP BY tables included - only that family's rebuilt
+        /// values are thrown away below. Clearing without a rebuild would leave the merged part with
+        /// no rows-WHERE bound at all.
+        global_ctx->new_data_part->ttl_infos.rows_where_ttl.clear();
+
+        /// The MOVE and RECOMPRESS maps are the only record the background mover and the
+        /// recompression selector ever read, so a pre-patch entry there is acted on rather than
+        /// merely reported - and dropping them without a rebuild would delete the schedule
+        /// entirely. Both are therefore invalidated here and rebuilt by the step below, which now
+        /// runs on every patched merge.
+        global_ctx->new_data_part->ttl_infos.moves_ttl.clear();
+        global_ctx->new_data_part->ttl_infos.recompression_ttl.clear();
+
+        /// GROUP BY is the one family the rebuild cannot produce correctly: TTLUpdateInfoAlgorithm
+        /// recomputes bounds without `ttl_finished`, which would put an already-expired part back
+        /// into the TTL selectors forever (the shape 04501 pins). Only the flag is carried, and it
+        /// is read from the source parts: merging them has already forced every accumulated
+        /// group-by entry to `ttl_finished = false` (MergeTreeDataPartTTLInfo::update), so the
+        /// part's own infos no longer hold it. A rule counts as finished only when every source
+        /// part had finished it.
+        if (global_ctx->metadata_snapshot->hasAnyGroupByTTL())
+        {
+            TTLInfoMap preserved;
+            for (const auto & [name, info] : global_ctx->new_data_part->ttl_infos.group_by_ttl)
+            {
+                auto entry = info;
+                entry.ttl_finished = std::all_of(
+                    global_ctx->future_part->parts.begin(), global_ctx->future_part->parts.end(),
+                    [&](const auto & source)
+                    {
+                        auto it = source->ttl_infos.group_by_ttl.find(name);
+                        return it != source->ttl_infos.group_by_ttl.end() && it->second.finished();
+                    });
+                preserved.emplace(name, entry);
+            }
+            global_ctx->preserved_group_by_ttl = std::move(preserved);
+        }
     }
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
@@ -1040,10 +1114,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
+    /// Pre-patch recompression infos must not pick the output codec (a patch can move the TTL
+    /// either way); the recalculated infos let a later recompression merge apply it instead.
+    IMergeTreeDataPart::TTLInfos codec_ttl_infos;
+    if (!ctx->recalculate_ttl_for_patches)
+        codec_ttl_infos = global_ctx->new_data_part->ttl_infos;
     auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->metadata_snapshot,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        global_ctx->new_data_part->ttl_infos,
+        codec_ttl_infos,
         global_ctx->time_of_merge);
     global_ctx->compression_codec = std::move(part_compression_codec.codec);
     global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
@@ -1125,9 +1204,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// When other TTL families are present, TTLTransform::finalize rebuilds
     /// their maps from scratch, and replicating that logic here would be
     /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
+    ///
+    /// A regular merge never takes this shortcut, even when each source part's own ttl_infos claim
+    /// full expiry: after `ALTER TABLE ... MODIFY TTL ... SETTINGS materialize_ttl_after_modify = 0`
+    /// those infos can still be computed under the previous TTL expression, and re-evaluating the
+    /// current one is exactly what the skipped pipeline does (a regular merge over a part whose old
+    /// short TTL already expired, relaxed to a longer TTL, must keep the rows). A per-part persisted
+    /// rows-TTL version that MODIFY TTL would invalidate does not exist, so the claim is unprovable
+    /// until one is added.
+    ///
+    /// The remaining conjuncts each name work the pipeline would otherwise do: TTL removal may be
+    /// cancelled for this merge, patches still have to be applied, and only createMergedStream()
+    /// re-checks the cleanup opt-in.
     const bool can_short_circuit_ttl_drop =
-        global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
+        ctx->need_remove_expired_values
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
+        && global_ctx->future_part->patch_parts.empty()
+        && !global_ctx->cleanup
+        && global_ctx->future_part->merge_type == MergeType::TTLDrop;
 
     if (can_short_circuit_ttl_drop)
     {
@@ -2411,6 +2505,29 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
+    /// The recalculation step rebuilds GROUP BY bounds like every other family, but it can never
+    /// set `ttl_finished`, so only that flag is carried over from before the patch. Restoring the
+    /// whole entry instead would keep a pre-patch `max` that no row satisfies any more: a patch
+    /// moving every row into the future would still look due, and every merge until the rollup
+    /// actually runs would carry that stale bound forward.
+    if (global_ctx->preserved_group_by_ttl)
+    {
+        auto & group_by_ttl = global_ctx->new_data_part->ttl_infos.group_by_ttl;
+        for (const auto & [name, preserved] : *global_ctx->preserved_group_by_ttl)
+        {
+            auto it = group_by_ttl.find(name);
+            if (it == group_by_ttl.end())
+                group_by_ttl.emplace(name, preserved);
+            else
+                it->second.ttl_finished = preserved.ttl_finished;
+        }
+        /// The recalculation step already folded its throwaway GROUP BY values into the part's
+        /// min/max, and `updatePartMinMaxTTL` only accumulates - and skips finished entries
+        /// outright - so the bounds must be rebuilt rather than added to, or the part stays
+        /// selectable on a value no map holds any more.
+        global_ctx->new_data_part->ttl_infos.recalculatePartMinMaxTTL();
+    }
+
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
@@ -3060,6 +3177,62 @@ private:
     std::shared_ptr<TTLTransform> transform;
 };
 
+class TTLCalcStep : public ITransformingStep
+{
+public:
+    TTLCalcStep(
+        const SharedHeader & input_header_,
+        const ContextPtr & context_,
+        const MergeTreeData & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const MergeTreeData::MutableDataPartPtr & data_part_,
+        time_t current_time,
+        bool force_,
+        const NamesAndTypesList & expired_columns_)
+        /// Same declared output as TTLStep: the transform re-adds the columns this merge expired,
+        /// so everything built after it must be planned for them.
+        : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
+    {
+        transform = std::make_shared<TTLCalcTransform>(
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, current_time, force_, expired_columns_);
+
+        /// Same reasoning as TTLStep: build sets eagerly so subquery progress does not distort
+        /// the merge's own rows_read accounting.
+        for (auto & subquery : transform->getSubqueries())
+            subquery->buildSetInplace(context_);
+    }
+
+    String getName() const override { return "TTL_CALC"; }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        pipeline.addTransform(transform);
+    }
+
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+private:
+    static Traits getTraits()
+    {
+        return ITransformingStep::Traits
+        {
+            {
+                .returns_single_stream = true,
+                .preserves_number_of_streams = true,
+                .preserves_sorting = true,
+            },
+            {
+                .preserves_number_of_rows = true,
+            }
+        };
+    }
+
+    std::shared_ptr<TTLCalcTransform> transform;
+};
+
 class BuildTextIndexStep : public ITransformingStep, private WithContext
 {
 public:
@@ -3514,8 +3687,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// TTL step: still runs after the merge even in vertical TTL mode.
     /// In vertical TTL mode, rows are already filtered by the merging algorithm,
     /// so the TTL step only updates TTL info without removing any rows.
-    if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
+    /// A blocked patch merge must reach the recalculation step below even when expired columns
+    /// alone would pick the info-only TTL step, which carries the cleared pre-patch infos forward.
+    if (ctx->need_remove_expired_values
+        || (!global_ctx->merging_columns_expired_by_ttl.empty() && !ctx->recalculate_ttl_for_patches))
     {
+        /// TTLAggregationAlgorithm decides `ttl_finished` itself on this path, from the rows the
+        /// merge writes rather than from pre-patch infos, so the carried flag must not be put back.
+        global_ctx->preserved_group_by_ttl.reset();
+
         auto ttl_step = std::make_unique<TTLStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
@@ -3528,6 +3708,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
+    }
+    else if (ctx->recalculate_ttl_for_patches)
+    {
+        /// TTL removal is blocked but the merge carries patches: the merged part still must not
+        /// keep pre-patch infos, or a later TTLDrop can drop rows a patch un-expired.
+        /// This runs for GROUP BY tables too, but its GROUP BY output is discarded: the step
+        /// rebuilds every family through `TTLUpdateInfoAlgorithm`, which never sets `ttl_finished`,
+        /// so an already-expired GROUP BY entry would come back unfinished and the part would be
+        /// reselected for TTL forever - the shape 04501 pins. `preserved_group_by_ttl` is snapshotted
+        /// before the merge and put back in `finalizeProjectionsAndWholeMerge`.
+        auto ttl_calc_step = std::make_unique<TTLCalcStep>(
+            merge_parts_query_plan.getCurrentHeader(),
+            global_ctx->context,
+            *global_ctx->data,
+            global_ctx->metadata_snapshot,
+            global_ctx->new_data_part,
+            global_ctx->time_of_merge,
+            /*force_=*/ true,
+            global_ctx->merging_columns_expired_by_ttl);
+
+        ttl_calc_step->setStepDescription("TTL info recalculation step");
+        merge_parts_query_plan.addStep(std::move(ttl_calc_step));
     }
 
     /// Secondary indices expressions
@@ -3584,6 +3786,10 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         if (!canVerticalTTLDelete(*global_ctx))
             return MergeAlgorithm::Horizontal;
     }
+    /// The metadata-only TTL recalculation of a blocked patch merge reads the TTL input columns
+    /// from the merged stream, which only the horizontal algorithm carries in full.
+    if (ctx->recalculate_ttl_for_patches && !ctx->need_remove_expired_values)
+        return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
