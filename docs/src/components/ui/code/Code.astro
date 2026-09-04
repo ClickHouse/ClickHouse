@@ -1,0 +1,36 @@
+---
+/**
+ * Code — syntax-highlighted code block from a string prop.
+ *
+ *   <Code code={generated} lang="ts" />
+ *   <Code code={...} lang="ts" meta='title="src/foo.ts" {1,3-5}' />
+ */
+import { Code as AstroCode } from "astro:components";
+import { defaultCodeTransformers } from "@cloudflare/nimbus-docs";
+
+type Props = Parameters<typeof AstroCode>[0];
+const rawProps = Astro.props as Props;
+const usesNimbusDefaultThemes = !("theme" in rawProps) && !("themes" in rawProps);
+const themed = usesNimbusDefaultThemes
+  ? {
+      ...rawProps,
+      themes: { light: "github-light", dark: "github-dark" },
+      defaultColor: false,
+    }
+  : rawProps;
+const userTransformers = themed.transformers ?? [];
+const props = {
+  ...themed,
+  transformers: defaultCodeTransformers({
+    beforeTitleTransformers: userTransformers,
+  }),
+};
+// One boundary cast back to Astro's own `<Code>` props. Everything above is
+// runtime-valid; the only type friction is nominal — nimbus-docs and Astro
+// can resolve different `@shikijs/types` copies (e.g. 4.2.x vs 4.1.x), so the
+// `ShikiTransformer`/`ThemePresets` shapes differ on paper while matching at
+// runtime. `Astro.props` was already `as Props`; re-asserting here keeps the
+// component compiling regardless of which shiki types version dedupes in.
+---
+
+<AstroCode {...(props as Props)} />

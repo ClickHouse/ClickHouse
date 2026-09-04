@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "./Header.astro";
+import type { ChangelogEntry } from "../lib/changelog";
+
+interface Props {
+  entry: ChangelogEntry;
+  Content: any;
+}
+
+const { entry, Content } = Astro.props;
+---
+
+<BaseLayout title={entry.data.title} description={entry.data.description} collection="changelog" entryId={entry.id}>
+  <Header showSidebar={false} />
+  <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-4xl px-4 py-10 lg:px-6">
+    <a href="../" class="text-sm text-muted-foreground hover:text-foreground">← All changelog entries</a>
+    <p class="mt-8 text-sm font-medium text-primary">{entry.data.products.join(" · ")}</p>
+    <h1 class="mt-2 text-4xl font-semibold tracking-tight text-foreground">{entry.data.title}</h1>
+    <time datetime={entry.data.date} class="mt-3 block text-muted-foreground">{entry.data.date}</time>
+    <article class="prose prose-neutral dark:prose-invert mt-10 max-w-none">
+      <Content />
+    </article>
+  </main>
+</BaseLayout>

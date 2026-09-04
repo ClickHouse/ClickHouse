@@ -1,0 +1,170 @@
+---
+/**
+ * Steps — ordered list with numbered circles and connecting lines.
+ * Wrap a markdown ordered list. Set `start` to offset the counter.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  start?: number;
+}
+
+const { start, class: className, ...attrs } = Astro.props;
+---
+
+<div
+  data-steps
+  role="list"
+  class={cn("steps", className)}
+  style={start !== undefined ? `--steps-start: ${start};` : undefined}
+  {...attrs}
+>
+  <slot />
+</div>
+
+<script>
+  import "./steps.client";
+</script>
+
+<style>
+  .steps {
+    --_start: var(--steps-start, 1);
+    --_step-indicator-bg: #f9fafb;
+    --_step-indicator-fg: #171717;
+    --_step-line: #e5e7eb;
+    margin: 2.5rem 0 1.5rem 0.875rem;
+    counter-reset: step calc(var(--_start) - 1);
+  }
+
+  :global([data-mode="dark"]) .steps {
+    --_step-indicator-bg: rgb(255 255 255 / 10%);
+    --_step-indicator-fg: #f3f3f3;
+    --_step-line: rgb(255 255 255 / 10%);
+  }
+
+  /* Only the direct ordered list is structural. Nested ordered lists are
+     ordinary article content and retain their markers and prose spacing. */
+  .steps > :global(ol) {
+    counter-reset: step calc(var(--_start) - 1);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Markdown-authored steps retain the compact grid layout. Keep every
+     selector direct-child scoped so lists inside a step are never promoted
+     into additional steps. */
+  .steps > :global(ol) > :global(li) {
+    display: grid;
+    grid-template-columns: 1.75rem 1fr;
+    column-gap: 0.75rem;
+    row-gap: 0.5rem;
+    align-items: center;
+    counter-increment: step;
+    position: relative;
+    min-height: 1.75rem;
+    /* Cancel the prose li margin — step rhythm comes from padding/row-gap. */
+    margin: 0;
+    padding-bottom: 1.5rem;
+  }
+
+  .steps > :global(ol) > :global(li:last-child) {
+    padding-bottom: 0;
+  }
+
+  /* All non-marker content lives in column 2 — prevents the second+ child
+     from falling into column 1 (which is reserved for the circle). The
+     child selector lives inside :global() so Astro's scope hash doesn't
+     skip elements coming from Step.astro. */
+  .steps > :global(ol) > :global(li) > :global(*) {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  /* Number marker — auto-placed in row 1 col 1, centered with col 2's first row. */
+  .steps > :global(ol) > :global(li)::before {
+    content: counter(step);
+    grid-row: 1;
+    grid-column: 1;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    background: var(--nb-accent);
+    color: var(--nb-foreground);
+    border: 1px solid var(--nb-border-strong);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+    z-index: 1;
+  }
+
+  /* Connecting line — runs from below the circle to the bottom of the step. */
+  .steps > :global(ol) > :global(li:not(:last-child))::after {
+    content: "";
+    position: absolute;
+    left: calc(1.75rem / 2 - 0.75px);
+    top: 1.75rem;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--nb-border);
+  }
+
+  .steps > :global(ol) > :global(li) > :global(p:first-child > strong:only-child) {
+    color: var(--nb-foreground);
+  }
+
+  /* Vertical rhythm comes from the grid row-gap, not p margins. */
+  .steps > :global(ol) > :global(li) > :global(p) {
+    margin: 0;
+  }
+
+  /* Component-authored steps mirror Mintlify's layout: the number sits just
+     outside the step rail while title and prose share a 32px content inset. */
+  .steps > :global([data-step]) {
+    display: flex;
+    align-items: flex-start;
+    position: relative;
+    min-height: 2.75rem;
+    margin: 0;
+    padding-bottom: 1.25rem;
+    counter-increment: step;
+  }
+
+  .steps > :global([data-step]) > :global(.ch-step-body) {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    padding-left: 2rem;
+    padding-right: 1px;
+  }
+
+  .steps > :global([data-step])::before {
+    content: counter(step);
+    position: absolute;
+    top: 0.5rem;
+    left: -0.8125rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 9999px;
+    background: var(--_step-indicator-bg);
+    color: var(--_step-indicator-fg);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1rem;
+    display: grid;
+    place-items: center;
+    z-index: 1;
+  }
+
+  .steps > :global([data-step]:not(:last-child))::after {
+    content: "";
+    position: absolute;
+    top: 2.75rem;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: var(--_step-line);
+  }
+</style>

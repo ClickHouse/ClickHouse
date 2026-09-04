@@ -1,0 +1,19 @@
+---
+import { getCollection } from "astro:content";
+import { getCollectionPageProps } from "@cloudflare/nimbus-docs";
+import ChangelogPage from "../../../components/ChangelogPage.astro";
+
+export const prerender = true;
+export async function getStaticPaths() {
+  const entries = await getCollection("changelog");
+  return entries.map((entry) => {
+    const [product, ...slug] = entry.id.split("/");
+    if (!product || !slug.length) throw new Error(`Invalid changelog id: ${entry.id}`);
+    return { params: { product, slug: slug.join("/") }, props: { entry } };
+  });
+}
+
+const { entry, Content } = await getCollectionPageProps<"changelog">(Astro);
+---
+
+<ChangelogPage entry={entry} Content={Content} />

@@ -1,0 +1,14 @@
+{
+  "$comment": "Docs owned by other repositories, fetched at build time into the content tree (see bin/fetch-remotes.ts). `mount` is a directory under docs/ that becomes the URL prefix; its fetched contents are gitignored.",
+  "remotes": [
+    {
+      "name": "clickhouse-private",
+      "repo": "ClickHouse/airgapped-docs",
+      "ref": "main",
+      "path": ".",
+      "mount": "products/clickhouse-private",
+      "private": true,
+      "localPathEnv": "DOCS_REMOTE_CLICKHOUSE_PRIVATE_PATH"
+    }
+  ]
+}

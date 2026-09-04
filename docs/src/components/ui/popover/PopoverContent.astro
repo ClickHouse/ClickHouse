@@ -1,0 +1,44 @@
+---
+/**
+ * PopoverContent — floating panel. Set `placement` to one of
+ * `bottom-start` (default) | `bottom-end` | `top-start` | `top-end`.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+type Placement = "bottom-start" | "bottom-end" | "top-start" | "top-end";
+
+interface Props extends HTMLAttributes<"div"> {
+  placement?: Placement;
+}
+
+const { placement = "bottom-start", class: className, ...attrs } = Astro.props;
+---
+
+<div
+  data-popover-content
+  data-placement={placement}
+  popover="auto"
+  class={cn(
+    "z-50 rounded-lg border border-border bg-card p-2 shadow-lg",
+    className,
+  )}
+  {...attrs}
+>
+  <slot />
+</div>
+
+<style>
+  /* Native popover defaults center the element via inset:0 + margin:auto.
+     Reset so the JS-anchored top/left take effect. */
+  [data-popover-content] {
+    position: fixed;
+    margin: 0;
+    inset: auto;
+    /* Never exceed the viewport (16px = 2× the anchor's 8px pad, absorbing
+       the scrollbar width); overflow scrolls inside the panel. */
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow: auto;
+  }
+</style>

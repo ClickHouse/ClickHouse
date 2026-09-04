@@ -1,0 +1,38 @@
+---
+/**
+ * ApiSidebar — the reference-collection nav rail over the API view-model's
+ * `ApiNavItem[]`. It is the docs sidebar rendered from API data: each node is an
+ * `ApiSidebarItem`, which composes the shared `SidebarGroupHeader`/`SidebarLink`
+ * atoms plus a method chip. The tree math (active/expanded, ordering) lives in
+ * `getApiNav`; this owns only the top-level list shell.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import ApiSidebarItem from "./ApiSidebarItem.astro";
+import type { ApiNavItem } from "@cloudflare/nimbus-docs/api";
+
+interface Props extends HTMLAttributes<"nav"> {
+  items: ApiNavItem[];
+  label?: string;
+}
+
+const { items, label, class: className, ...attrs } = Astro.props;
+const labelId = label ? "api-nav-label" : undefined;
+---
+
+<nav
+  data-nb-api-nav
+  aria-label={label ? undefined : "API reference"}
+  aria-labelledby={labelId}
+  class={cn(className)}
+  {...attrs}
+>
+  {label && <p id={labelId} class="mb-2 px-3 text-xs font-medium text-muted-foreground">{label}</p>}
+  <ul class="flex list-none flex-col gap-0.5 p-0">
+    {items.map((item) => (
+      <li>
+        <ApiSidebarItem item={item} />
+      </li>
+    ))}
+  </ul>
+</nav>

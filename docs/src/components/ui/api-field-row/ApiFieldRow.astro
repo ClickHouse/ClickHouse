@@ -1,0 +1,114 @@
+---
+import ApiUnionExplorer from "./ApiUnionExplorer.astro";
+import { typeTokens, constraintPairs, isExpandable, hasChildPreview } from "./type-display";
+import type { ApiFieldView } from "@cloudflare/nimbus-docs/api";
+import "./field-list.css";
+
+interface Props {
+  field: ApiFieldView;
+  depth?: number;
+  anchored?: boolean;
+}
+
+const { field, depth = 0, anchored = true } = Astro.props;
+
+const AUTO_OPEN_DEPTH = 1;
+const expandable = isExpandable(field);
+const startOpen = AUTO_OPEN_DEPTH >= depth;
+const toks = typeTokens(field);
+const preview = hasChildPreview(field);
+const constraints = constraintPairs(field.constraints);
+const omitted = field.childCount - field.children.length;
+const detail = (v: unknown): string => JSON.stringify(v);
+const location = (field as ApiFieldView & { location?: string }).location;
+
+const linkSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+---
+
+<li
+  id={anchored ? field.anchor : undefined}
+  class:list={["fl-item", depth > 0 && "fl-item--child"]}
+>
+  <div class="fl-row">
+    {anchored && (
+      <a
+        href={`#${field.anchor}`}
+        class="fl-anchor"
+        aria-label={`Link to ${field.name}`}
+        set:html={linkSvg}
+      />
+    )}
+    <div class="fl-body">
+      <div class="fl-sig">
+        <span class:list={["fl-name", field.deprecated && "fl-name--deprecated"]}>
+          {field.name}
+        </span>
+        {field.deprecated && <span class="fl-deprecated-badge">deprecated</span>}
+        {!field.required && !field.deprecated && <span class="fl-optional">optional</span>}
+        <span class="fl-type-group">
+          {toks.map((t) =>
+            t.href ? (
+              <a href={t.href} class="fl-type-link" title={t.title}>{t.text}</a>
+            ) : (
+              <span class="fl-type" title={t.title}>{t.text}</span>
+            )
+          )}
+        </span>
+        {location && <span class="fl-location">{location}</span>}
+        {preview && <span class="fl-preview" aria-hidden="true">{"{ … }"}</span>}
+        {field.nullable && <span class="fl-nullable">or null</span>}
+        {field.required && <span class="fl-required">required</span>}
+      </div>
+
+      {field.descriptionHtml && (
+        <div class="fl-desc" set:html={field.descriptionHtml} />
+      )}
+
+      {constraints.length > 0 && (
+        <div class="fl-constraints">
+          {constraints.map((c, i) => (
+            <span>
+              {i > 0 && ", "}
+              {c.name}: <span class="fl-constraint-value">{c.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {(field.default !== undefined || field.example !== undefined) && (
+        <div class="fl-constraints">
+          {field.default !== undefined && (
+            <span>Default: <span class="fl-constraint-value">{detail(field.default)}</span></span>
+          )}
+          {field.default !== undefined && field.example !== undefined && " · "}
+          {field.example !== undefined && (
+            <span>Example: <span class="fl-constraint-value">{detail(field.example)}</span></span>
+          )}
+        </div>
+      )}
+
+      {expandable && (
+        <details class="fl-expandable" open={startOpen}>
+          <summary class="fl-expand-trigger">
+            <svg class="fl-expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            {field.union
+              ? `${field.union.variants.length} variants`
+              : `${field.childCount} properties`}
+          </summary>
+          {field.union ? (
+            <ApiUnionExplorer union={field.union} depth={depth} nested />
+          ) : (
+            <ul class="fl-list fl-children">
+              {field.children.map((child) => (
+                <Astro.self field={child} depth={depth + 1} anchored={anchored} />
+              ))}
+              {field.truncated && (
+                <li class="fl-truncated">… {omitted} more field(s) omitted</li>
+              )}
+            </ul>
+          )}
+        </details>
+      )}
+    </div>
+  </div>
+</li>

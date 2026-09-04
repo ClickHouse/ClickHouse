@@ -1,0 +1,11 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Homepage from "../generated/homepage/en.jsx";
+import { config } from "virtual:nimbus/config";
+---
+
+<BaseLayout title={config.title} description={config.description}>
+  <Header showSidebar={false} homepage />
+  <div class="ch-homepage"><Homepage client:load /></div>
+</BaseLayout>

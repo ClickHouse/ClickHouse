@@ -1,0 +1,14 @@
+---
+/** Mintlify `<Frame caption>`: framed media (used here almost only for YouTube iframes). */
+interface Props { caption?: string }
+const { caption } = Astro.props;
+---
+
+<figure class="ch-frame">
+  <div class="ch-frame-shell">
+    <div class="ch-frame-content">
+      <slot />
+    </div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

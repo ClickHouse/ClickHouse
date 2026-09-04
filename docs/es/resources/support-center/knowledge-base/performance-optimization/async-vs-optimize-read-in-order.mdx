@@ -10,7 +10,7 @@ El nuevo ajuste allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for
 
 Normalmente, el ajuste [max&#95;threads](/es/reference/settings/session-settings/max-threads#max_threads) [controla](https://clickhouse.com/company/events/query-performance-introspection) el número de hilos de lectura en paralelo y de hilos de procesamiento de consultas en paralelo:
 
-<Image img={sync_read} size="md" alt="Diagrama de lectura síncrona de datos" />
+<Image img="/images/knowledgebase/sync_read.webp" size="md" alt="Diagrama de lectura síncrona de datos" />
 
 Los datos se leen «en orden», columna a columna, desde el disco.
 
@@ -21,7 +21,7 @@ Los datos se leen «en orden», columna a columna, desde el disco.
 La nueva configuración [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260) permite que el número de hilos de lectura (streams) sea mayor que el número de hilos del resto del pipeline de ejecución de la consulta para **acelerar las consultas en frío en servicios de ClickHouse Cloud con pocos recursos de CPU** y **aumentar el rendimiento de las consultas limitadas por la E/S**.
 Cuando esta configuración está habilitada, el número de hilos de lectura se controla mediante la configuración [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260):
 
-<Image img={async_read} size="md" alt="Diagrama de lectura asíncrona de datos" />
+<Image img="/images/knowledgebase/async_read.webp" size="md" alt="Diagrama de lectura asíncrona de datos" />
 
 Los datos se leen de forma asíncrona, en paralelo, desde distintas columnas.
 

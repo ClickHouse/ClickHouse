@@ -1,0 +1,244 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { withBase } from "@/lib/base";
+import EnglishNavigation from "../generated/sidebar.items.json";
+import ArabicNavigation from "../generated/sidebar.items.ar.json";
+import SpanishNavigation from "../generated/sidebar.items.es.json";
+import FrenchNavigation from "../generated/sidebar.items.fr.json";
+import JapaneseNavigation from "../generated/sidebar.items.ja.json";
+import KoreanNavigation from "../generated/sidebar.items.ko.json";
+import PortugueseNavigation from "../generated/sidebar.items.pt-BR.json";
+import RussianNavigation from "../generated/sidebar.items.ru.json";
+import ChineseNavigation from "../generated/sidebar.items.zh.json";
+
+interface NavItem {
+  label: string;
+  link?: string;
+  landing?: string;
+  items?: NavItem[];
+}
+
+interface Props {
+  currentLocale?: string;
+  /** Whether this navigation is rendered on the locale's home page. */
+  homeActive?: boolean;
+}
+
+const { currentLocale = "en", homeActive = false } = Astro.props;
+const navigationByLocale: Record<string, NavItem[]> = {
+  en: EnglishNavigation,
+  ar: ArabicNavigation,
+  es: SpanishNavigation,
+  fr: FrenchNavigation,
+  ja: JapaneseNavigation,
+  ko: KoreanNavigation,
+  "pt-br": PortugueseNavigation,
+  ru: RussianNavigation,
+  zh: ChineseNavigation,
+};
+const navigation = navigationByLocale[currentLocale.toLowerCase()] ?? EnglishNavigation;
+const tabs = navigation.filter((tab) => tab.label !== "Home");
+const localePrefix = currentLocale === "en" ? "" : `/${currentLocale.toLowerCase()}`;
+const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+
+function localHref(href: string): string {
+  if (/^(https?:)?\/\//.test(href)) return href;
+  return withBase(`${localePrefix}${href}`.replace(/\/+/g, "/"));
+}
+
+function hasCurrentPage(item: NavItem): boolean {
+  if (item.link && localHref(item.link).replace(/\/+$/, "") === currentPath) return true;
+  if (item.landing && localHref(item.landing).replace(/\/+$/, "") === currentPath) return true;
+  return item.items?.some(hasCurrentPage) ?? false;
+}
+
+function firstDestination(item: NavItem): string | undefined {
+  if (item.link) return item.link;
+  if (item.landing) return item.landing;
+  return item.items?.map(firstDestination).find(Boolean);
+}
+
+type MenuEntry = { label: string; href?: string; icon?: string; section?: boolean };
+
+const iconPaths: Record<string, Array<string | undefined>> = {
+  Database: ["/images/icons/icon-get-started.svg", "/images/icons/icon-concepts.svg", "/images/icons/icon-guides.svg", "/images/icons/icon-reference.svg"],
+  Solutions: [undefined, "/images/icons/icon-clickhouse-cloud.svg", "/images/icons/icon-postgres.svg", "/images/icons/logo-langfuse.svg", undefined, "/images/icons/icon-clickstack.svg", "/images/icons/icon-agentic-data-stack.svg", "/images/icons/icon-chdb.svg", "/images/icons/icon-kubernetes-operator.svg"],
+  Integrations: [undefined, "/images/icons/icon-clickpipes.svg", "/images/icons/icon-language-clients.svg", "/images/icons/icon-connectors.svg"],
+  Resources: ["/images/icons/icon-support-center.svg", "/images/icons/icon-contribute.svg", "/images/icons/icon-changelogs.svg", "/images/icons/icon-about.svg"],
+};
+
+function menuEntries(tab: NavItem): MenuEntry[] {
+  if (tab.label === "Solutions") {
+    return (tab.items ?? []).flatMap((section) => [
+      { label: section.label, section: true },
+      ...(section.items ?? []).map((item) => ({ label: item.label, href: firstDestination(item) })),
+    ]);
+  }
+  return (tab.items ?? []).map((item) => ({ label: item.label, href: firstDestination(item) }));
+}
+---
+
+<nav aria-label="Primary navigation" class="ch-header-nav">
+  <a
+    href={localHref("/")}
+    aria-current={homeActive ? "page" : undefined}
+    class:list={["ch-nav-tab", homeActive && "active"]}
+  >
+    Home
+  </a>
+  {tabs.map((tab) => {
+    const entries = menuEntries(tab).map((entry, index) => ({ ...entry, icon: iconPaths[tab.label]?.[index] }));
+    const active = hasCurrentPage(tab);
+    return (
+      <div class="ch-nav-dropdown" data-home-menu data-state="closed">
+        <button
+          type="button"
+          class:list={["ch-nav-dropdown-trigger", active && "active"]}
+          aria-haspopup="menu"
+          aria-expanded="false"
+          data-home-menu-trigger
+        >
+          {tab.label}
+          <Icon name="ph:caret-right" class="ch-nav-dropdown-chevron" aria-hidden="true" />
+        </button>
+        <div
+          class:list={["ch-nav-dropdown-content", `ch-nav-dropdown-content-${tab.label.toLowerCase()}`]}
+          data-home-menu-panel
+          role="menu"
+          aria-label={tab.label}
+        >
+          {tab.label === "Solutions" ? (
+            <div class="ch-solutions-grid">
+              {(tab.items ?? []).map((section, sectionIndex) => (
+                <section class="ch-solutions-column">
+                  <div class="ch-nav-dropdown-heading">{section.label}</div>
+                  {(section.items ?? []).map((item, itemIndex) => {
+                    const iconIndex = sectionIndex === 0 ? itemIndex + 1 : itemIndex + 5;
+                    const icon = iconPaths.Solutions?.[iconIndex];
+                    return (
+                      <a
+                        href={localHref(firstDestination(item) ?? "/")}
+                        role="menuitem"
+                        class="ch-nav-dropdown-item"
+                      >
+                        {icon && <img src={withBase(icon)} alt="" />}
+                        <span>{item.label}</span>
+                      </a>
+                    );
+                  })}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div>
+              {entries.map((entry) => entry.section ? (
+                <div class="ch-nav-dropdown-heading">
+                  {entry.label}
+                </div>
+              ) : (
+                <a
+                  href={localHref(entry.href ?? "/")}
+                  role="menuitem"
+                  class="ch-nav-dropdown-item"
+                >
+                  {entry.icon && <img src={withBase(entry.icon)} alt="" />}
+                  <span>{entry.label}</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  })}
+</nav>
+
+<script>
+  let homepageMenuController: AbortController | undefined;
+
+  function bindHomepageMenus() {
+    homepageMenuController?.abort();
+    homepageMenuController = new AbortController();
+    const signal = homepageMenuController.signal;
+    const menus = [...document.querySelectorAll<HTMLElement>("[data-home-menu]")];
+
+    const closeMenus = (except?: HTMLElement) => {
+      menus.forEach((menu) => {
+        if (menu !== except) setMenuOpen(menu, false);
+      });
+    };
+
+    const setMenuOpen = (menu: HTMLElement, open: boolean, focusFirst = false) => {
+      const trigger = menu.querySelector<HTMLButtonElement>("[data-home-menu-trigger]");
+      if (!trigger) return;
+      menu.dataset.state = open ? "open" : "closed";
+      trigger.setAttribute("aria-expanded", String(open));
+      if (open && focusFirst) menu.querySelector<HTMLAnchorElement>('[role="menuitem"]')?.focus();
+    };
+
+    menus.forEach((menu) => {
+      const trigger = menu.querySelector<HTMLButtonElement>("[data-home-menu-trigger]");
+      if (!trigger) return;
+      const panel = menu.querySelector<HTMLElement>("[data-home-menu-panel]");
+      const items = [...(panel?.querySelectorAll<HTMLAnchorElement>('[role="menuitem"]') ?? [])];
+      let closeTimer: number | undefined;
+
+      trigger.addEventListener("pointerenter", (event) => {
+        if (event.pointerType === "touch") return;
+        window.clearTimeout(closeTimer);
+        closeMenus(menu);
+        setMenuOpen(menu, true);
+      }, { signal });
+
+      menu.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "touch") return;
+        closeTimer = window.setTimeout(() => setMenuOpen(menu, false), 140);
+      }, { signal });
+
+      trigger.addEventListener("click", () => {
+        window.clearTimeout(closeTimer);
+        const open = menu.dataset.state !== "open";
+        closeMenus(menu);
+        setMenuOpen(menu, open);
+      }, { signal });
+
+      trigger.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          closeMenus(menu);
+          setMenuOpen(menu, true, true);
+        }
+      }, { signal });
+
+      panel?.addEventListener("keydown", (event) => {
+        const index = items.indexOf(document.activeElement as HTMLAnchorElement);
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const delta = event.key === "ArrowDown" ? 1 : -1;
+          items[(index + delta + items.length) % items.length]?.focus();
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          items[0]?.focus();
+        } else if (event.key === "End") {
+          event.preventDefault();
+          items.at(-1)?.focus();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          setMenuOpen(menu, false);
+          trigger.focus();
+        }
+      }, { signal });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!(event.target as HTMLElement).closest("[data-home-menu]")) closeMenus();
+    }, { signal });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMenus();
+    }, { signal });
+  }
+
+  bindHomepageMenus();
+  document.addEventListener("astro:page-load", bindHomepageMenus);
+</script>

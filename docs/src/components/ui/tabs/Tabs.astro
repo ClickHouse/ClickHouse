@@ -1,0 +1,36 @@
+---
+/**
+ *   <Tabs syncKey="pkg">
+ *     <TabItem label="npm">npm install</TabItem>
+ *     <TabItem label="pnpm">pnpm install</TabItem>
+ *   </Tabs>
+ *
+ * For manual control: TabsList, TabsTrigger, TabsContent.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import TabsList from "./TabsList.astro";
+
+interface Props extends HTMLAttributes<"div"> {
+  /** Sync tab selection across instances with the same key via localStorage */
+  syncKey?: string;
+}
+
+const { syncKey, class: className, ...attrs } = Astro.props;
+---
+
+<div
+  data-nb-tabs
+  data-nb-sync-key={syncKey}
+  class={cn(className)}
+  {...attrs}
+>
+  <TabsList />
+  <div class="mt-3">
+    <slot />
+  </div>
+</div>
+
+<script>
+  import "./tabs.client";
+</script>

@@ -10,7 +10,7 @@ keywords: ['同期', '非同期', 'データ読み取り']
 
 通常、[max&#95;threads](/ja/reference/settings/session-settings/max-threads#max_threads) 設定は、並列読み取りスレッド数と並列クエリ処理スレッド数を[制御](https://clickhouse.com/company/events/query-performance-introspection)します。
 
-<Image img={sync_read} size="md" alt="同期データ読み取りの図" />
+<Image img="/images/knowledgebase/sync_read.webp" size="md" alt="同期データ読み取りの図" />
 
 データはディスクから、カラムごとに「順番に」読み取られます。
 
@@ -21,7 +21,7 @@ keywords: ['同期', '非同期', 'データ読み取り']
 新しい設定 [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260) を使用すると、読み取りスレッド (ストリーム) の数を、クエリ実行パイプラインの他の部分のスレッド数より多くできます。これにより、**CPU リソースが限られた ClickHouse Cloud サービスでコールドクエリを高速化**し、**I/O バウンドなクエリのパフォーマンスを向上**できます。
 この設定を有効にすると、読み取りスレッド数は [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260) 設定で制御されます。
 
-<Image img={async_read} size="md" alt="非同期データ読み取りの図" />
+<Image img="/images/knowledgebase/async_read.webp" size="md" alt="非同期データ読み取りの図" />
 
 データは非同期に、異なるカラムから並列に読み取られます。
 

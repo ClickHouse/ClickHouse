@@ -1,0 +1,28 @@
+---
+/** SidebarFilter — text input that filters the adjacent Sidebar. Press "/" to focus. */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  placeholder?: string;
+}
+
+const { class: className, placeholder = "Filter…", ...attrs } = Astro.props;
+---
+
+<div class={cn("relative mb-3", className)} {...attrs}>
+  <input
+    data-nb-sidebar-filter-input
+    type="search"
+    placeholder={placeholder}
+    class="peer w-full rounded-md border border-border bg-card py-1.5 pl-3 pr-9 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus-visible:border-brand focus-visible:outline-2 focus-visible:outline-ring [&:not(:placeholder-shown)]:pr-2"
+    aria-label="Filter navigation"
+    autocomplete="off"
+  />
+  {/* Shortcut hint — press "/" to focus. Hidden once the input is focused or has a value. */}
+  <kbd
+    aria-hidden="true"
+    class="pointer-events-none absolute right-2 top-1/2 flex h-5 min-w-5 -translate-y-1/2 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-[0.6875rem] font-semibold leading-none text-muted-foreground transition-opacity duration-150 peer-focus:opacity-0 peer-[:not(:placeholder-shown)]:opacity-0 motion-reduce:transition-none"
+    >/</kbd
+  >
+</div>

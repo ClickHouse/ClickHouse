@@ -1,0 +1,10 @@
+---
+/** Mintlify `<CardGroup cols>` -> Nimbus CardGrid; `cols` becomes a CSS variable. */
+import { CardGrid } from "@/components/ui/card-grid";
+import { cn } from "@/lib/cn";
+interface Props { cols?: number | string; class?: string }
+const { cols, class: className, ...rest } = Astro.props;
+const style = cols ? `--ch-cols:${cols}` : undefined;
+---
+
+<CardGrid class={cn("ch-card-group", className)} style={style} {...rest}><slot /></CardGrid>

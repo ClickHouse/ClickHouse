@@ -1,0 +1,8 @@
+---
+/** Mintlify `<Icon icon size color>` (Font Awesome names). Placeholder until icons are mapped. */
+interface Props { icon?: string; size?: number | string; color?: string; iconType?: string }
+const { icon, size, color } = Astro.props;
+const style = [size ? `width:${typeof size === "number" ? size + "px" : size};height:${typeof size === "number" ? size + "px" : size}` : "", color ? `color:${color}` : ""].filter(Boolean).join(";");
+---
+
+<span class="ch-icon" data-icon={icon} style={style || undefined} aria-hidden="true"></span>

@@ -1,0 +1,106 @@
+---
+/**
+ * Render — include a reusable partial in any docs page.
+ *
+ *   <Render file="quickstart" />
+ *   <Render file="workers/setup" params={{ runtime: "node" }} />
+ *
+ * Partials live in `src/content/partials/` as MDX. Declare params in
+ * partial frontmatter (`params: [runtime, version?]`); required params
+ * fail at build time, optional use a `?` suffix.
+ */
+import { getCollection, getEntry, render } from "astro:content";
+import { components } from "../components";
+
+interface Props {
+  /** Partial ID — path relative to src/content/partials/ without extension. */
+  file: string;
+  /** Parameters passed to the partial as props. */
+  params?: Record<string, unknown>;
+}
+
+const { file, params } = Astro.props;
+const page = Astro.url.pathname;
+const partial = await getEntry("partials", file);
+
+if (!partial) {
+  const allPartials = await getCollection("partials");
+  const partialIds = allPartials.map((p) => p.id);
+  const hint = closest(file, partialIds);
+  const shortList = partialIds.sort().slice(0, 10).join(", ");
+  const tail =
+    partialIds.length > 10
+      ? ` (and ${partialIds.length - 10} more)`
+      : partialIds.length === 0
+        ? "none"
+        : "";
+  throw new Error(
+    `[Render] Partial "${file}" not found, included on "${page}".` +
+      (hint ? ` Did you mean "${hint}"?` : "") +
+      ` Available: ${shortList}${tail}`,
+  );
+}
+
+const declaredParams = partial.data.params;
+if (declaredParams) {
+  const required = declaredParams.filter((param: string) => !param.endsWith("?"));
+  const optional = declaredParams.filter((param: string) => param.endsWith("?"));
+  const allNames = [...required, ...optional.map((param: string) => param.slice(0, -1))];
+  const received = Object.keys(params ?? {});
+
+  const missing = required.filter((param: string) => !received.includes(param));
+  if (missing.length > 0) {
+    throw new Error(
+      `[Render] Missing required params ${JSON.stringify(missing)} for "${file}" on "${page}". ` +
+        `Expected: ${JSON.stringify(declaredParams)}, received: ${JSON.stringify(received)}`,
+    );
+  }
+
+  const unexpected = received.filter((param) => !allNames.includes(param));
+  if (unexpected.length > 0) {
+    const unexpectedHints = unexpected
+      .map((u) => {
+        const h = closest(u, allNames);
+        return h ? `"${u}" (did you mean "${h}"?)` : `"${u}"`;
+      })
+      .join(", ");
+    throw new Error(
+      `[Render] Unexpected params ${unexpectedHints} for "${file}" on "${page}". ` +
+        `Declared: ${JSON.stringify(declaredParams)}`,
+    );
+  }
+}
+
+const { Content } = await render(partial);
+
+/** Levenshtein distance — inlined to keep this component dep-free. */
+function distance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const v0 = new Array<number>(b.length + 1);
+  const v1 = new Array<number>(b.length + 1);
+  for (let i = 0; i <= b.length; i++) v0[i] = i;
+  for (let i = 0; i < a.length; i++) {
+    v1[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+  }
+  return v1[b.length];
+}
+
+function closest(target: string, candidates: string[], maxDist = 3): string | null {
+  const t = target.toLowerCase();
+  let best: { name: string; dist: number } | null = null;
+  for (const c of candidates) {
+    const d = distance(t, c.toLowerCase());
+    if (d <= maxDist && (!best || d < best.dist)) best = { name: c, dist: d };
+  }
+  return best?.name ?? null;
+}
+---
+
+<Content components={components} {...(params ?? {})} />

@@ -18,7 +18,7 @@
   var TRAY_ID = 'ch-webterminal-tray';
   var TOGGLE_ID = 'ch-webterminal-toggle';
   var ACTION_ID = 'ch-webterminal-action';
-  var SPACER_ID = 'ch-webterminal-spacer';
+  var DOCK_ID = 'ch-webterminal-dock';
   var OVERLAY_ID = 'ch-webterminal-overlay';
   var STYLE_ID = 'ch-webterminal-styles';
   var OPEN_CLASS = 'ch-webterminal-open';
@@ -34,6 +34,7 @@
   var DESKTOP_MIN_WIDTH = 1024;
 
   var panel = null;
+  var dock = null;
   var viewport = null;
   var iframe = null;
   var resizer = null;
@@ -60,18 +61,16 @@
     var style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = ''
-      + '#' + PANEL_ID + ' { position: fixed; left: 0; right: 0; bottom: 0; height: ' + BAR_HEIGHT + 'px;'
+      // Keep the collapsed tray fixed across the viewport. The document and sidebar deliberately
+      // keep their full height and scroll behind it; opening the panel extends the overlay upward.
+      + '#' + DOCK_ID + ' { position: fixed; z-index: 2147483645; left: 0; right: 0; bottom: 0;'
+      + ' width: 100%; height: ' + BAR_HEIGHT + 'px; }'
+      + '#' + PANEL_ID + ' { position: relative; width: 100%; height: ' + BAR_HEIGHT + 'px;'
       + ' display: flex; flex-direction: column; background: #0d0d0d; color: #f3f4f6;'
-      + ' z-index: 2147483646; box-shadow: 0 -1px 0 #2a2a2a; }'
+      + ' box-shadow: 0 -1px 0 #2a2a2a; }'
       + 'html.' + PAGE_LOCK_CLASS + ', html.' + PAGE_LOCK_CLASS + ' body { overflow: hidden !important; }'
-      // The spacer puts the fixed tray into the page's layout. At the end of the document the
-      // footer can scroll completely above the tray instead of ending underneath it.
-      + '#' + SPACER_ID + ' { display: block; width: 100%; height: ' + BAR_HEIGHT + 'px;'
-      + ' flex: 0 0 ' + BAR_HEIGHT + 'px; pointer-events: none; }'
-      // Mintlify pins the desktop navigation sidebar to the viewport bottom. Its language picker
-      // lives on that edge, so shorten the sidebar by the tray height instead of covering it.
-      + '#sidebar { bottom: ' + BAR_HEIGHT + 'px !important; }'
-      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' { box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.35); }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' { position: fixed; left: 0; right: 0; bottom: 0; width: auto;'
+      + ' z-index: 2147483646; box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.35); }'
       + '#' + VIEWPORT_ID + ' { flex: 1 1 auto; min-height: 0; overflow: hidden; background: #000;'
       + ' box-sizing: border-box; overscroll-behavior: contain; }'
       + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + VIEWPORT_ID + ' { padding: 8px 0 0 10px; }'
@@ -81,7 +80,8 @@
       + '#' + IFRAME_ID + ' { display: block; width: calc(100% + 8px); max-width: none; height: 100%; border: none; background: #000;'
       + ' overscroll-behavior: contain; }'
       + '#' + RESIZER_ID + ' { position: absolute; top: -4px; left: 0; right: 0; height: 8px;'
-      + ' cursor: row-resize; user-select: none; opacity: 0; }'
+      + ' cursor: row-resize; user-select: none; opacity: 0; pointer-events: none; }'
+      + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + RESIZER_ID + ' { pointer-events: auto; }'
       + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + RESIZER_ID + ':hover,'
       + ' #' + PANEL_ID + '.' + OPEN_CLASS + ' #' + RESIZER_ID + '.ch-webterminal-dragging { opacity: 1;'
       + ' background: linear-gradient(to bottom, transparent 3px, #faff69 3px, #faff69 5px, transparent 5px); }'
@@ -103,8 +103,7 @@
       + '#' + ACTION_ID + ':hover { color: #fff; background: #202020; }'
       + '#' + ACTION_ID + ' svg { width: 16px; height: 16px; }'
       + '#' + PANEL_ID + '.' + OPEN_CLASS + ' #' + ACTION_ID + ' svg { transform: rotate(180deg); }'
-      + '@media (max-width: ' + (DESKTOP_MIN_WIDTH - 1) + 'px) { #' + PANEL_ID + ', #' + SPACER_ID + ' { display: none; }'
-      + ' #sidebar { bottom: 0 !important; } }';
+      + '@media (max-width: ' + (DESKTOP_MIN_WIDTH - 1) + 'px) { #' + DOCK_ID + ' { display: none; } }';
     document.head.appendChild(style);
   }
 
@@ -160,10 +159,8 @@
     if (panel) return;
     injectStyles();
 
-    var spacer = document.createElement('div');
-    spacer.id = SPACER_ID;
-    spacer.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(spacer);
+    dock = document.createElement('div');
+    dock.id = DOCK_ID;
 
     panel = document.createElement('section');
     panel.id = PANEL_ID;
@@ -212,8 +209,19 @@
     tray.appendChild(action);
 
     panel.appendChild(tray);
-    document.body.appendChild(panel);
+    dock.appendChild(panel);
+    document.body.appendChild(dock);
     updateControls();
+  }
+
+  // Astro's client router replaces the document body during navigation. Reattach the existing
+  // dock rather than constructing a second terminal so the iframe session, height and listeners
+  // survive the route change. The injected style element lives in the swapped head and therefore
+  // needs to be restored as well.
+  function restoreAfterRouteSwap() {
+    injectStyles();
+    if (dock && !dock.isConnected) document.body.appendChild(dock);
+    applyPanelGeometry();
   }
 
   function updateControls() {
@@ -343,6 +351,7 @@
 
   function init() {
     createPanel();
+    document.addEventListener('astro:after-swap', restoreAfterRouteSwap);
     document.addEventListener('keydown', onKeyDown);
     window.addEventListener('message', onMessage);
     window.addEventListener('resize', function () {

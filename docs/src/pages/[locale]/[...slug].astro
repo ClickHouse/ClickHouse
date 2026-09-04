@@ -1,0 +1,147 @@
+---
+/**
+ * Locale pages: one Nimbus collection per locale, mounted at /<locale>/...
+ * (matching the current /docs/<locale>/... URLs, lowercase). Pages missing from a
+ * locale render the English entry with a "not translated yet" notice.
+ */
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import {
+  getCollectionStaticPaths,
+  getCollectionPageProps,
+  getRouteFlags,
+  getPrevNext,
+  getBreadcrumbs,
+  getEditUrl,
+  getLastUpdated,
+  getTOC,
+} from "@cloudflare/nimbus-docs";
+import { components } from "../../components";
+import { getCollection } from "astro:content";
+import { Aside } from "@/components/ui/aside";
+import { withBase, stripBase } from "../../lib/base";
+import { buildRailFromConfig, sectionsFromConfig, type ConfigItem } from "../../lib/sidebar-lazy";
+import fs from "node:fs";
+import path from "node:path";
+import { ACTIVE_LOCALES, localeCollectionName } from "../../content.config";
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const paths: Array<{ params: { locale: string; slug: string | undefined }; props: unknown; cacheKey?: string }> = [];
+  const english = await getCollection("docs");
+  for (const locale of ACTIVE_LOCALES.map(localeCollectionName)) {
+    const localePaths = (await getCollectionStaticPaths(locale)({} as never)) as Array<{
+      params: { slug?: string };
+      props: { entry: { id: string } };
+      cacheKey?: string;
+    }>;
+    const translated = new Set<string>();
+    for (const p of localePaths) {
+      translated.add(p.props.entry.id);
+      paths.push({ params: { locale, slug: p.params.slug }, props: p.props, cacheKey: p.cacheKey });
+    }
+    // English fallback: every English page exists under every locale prefix.
+    for (const e of english) {
+      if (translated.has(e.id) || e.id === "index") continue;
+      paths.push({
+        params: { locale, slug: e.id },
+        props: { entry: e, fallback: true },
+        cacheKey: `fallback:${String((e as { digest?: string }).digest ?? e.id)}`,
+      });
+    }
+  }
+  return paths;
+}
+
+const { entry, Content, headings } = await getCollectionPageProps<string>(Astro);
+const fallback = Boolean((Astro.props as { fallback?: boolean }).fallback);
+const localeParam = Astro.params.locale as string;
+
+const browserPath = Astro.url.pathname.replace(/\/$/, "") || "/";
+const currentSlug = stripBase(browserPath);
+
+const { sidebar: sidebarOn, tableOfContents: tocOn } = await getRouteFlags(entry);
+
+// Locale rail: from the locale's generated navigation (labels and /<locale>/
+// links), falling back to the English tree when a locale file is absent.
+const localeItemsFile = path.join(process.cwd(), "src/generated", `sidebar.items.${ACTIVE_LOCALES.find((l) => localeCollectionName(l) === localeParam) ?? localeParam}.json`);
+const englishItemsFile = path.join(process.cwd(), "src/generated", "sidebar.items.json");
+const navItems = JSON.parse(fs.readFileSync(fs.existsSync(localeItemsFile) ? localeItemsFile : englishItemsFile, "utf8")) as ConfigItem[];
+const sidebar = sidebarOn ? buildRailFromConfig(navItems, browserPath, [localeParam]) : false;
+const sections = sectionsFromConfig(navItems, browserPath);
+const prevNext = await getPrevNext(browserPath, {
+  sidebarTree: sidebar === false ? [] : sidebar,
+  overrides: { prev: entry.data.prev, next: entry.data.next },
+});
+const breadcrumbs = (await getBreadcrumbs(currentSlug, { collection: entry.collection })).map((c) =>
+  c.href ? { ...c, href: withBase(c.href) } : c,
+);
+const editUrl = await getEditUrl(entry);
+const lastUpdated = entry.data.lastUpdated ?? (await getLastUpdated(entry));
+const tocConfig = entry.data.tableOfContents;
+const tocMax = (entry.data as { toc_max_heading_level?: number }).toc_max_heading_level;
+const effectiveTocConfig =
+  tocConfig === false ? false : tocMax ? { minHeadingLevel: 2, maxHeadingLevel: Math.max(2, Math.min(6, tocMax)) } : tocConfig;
+const toc = tocOn && effectiveTocConfig !== false ? getTOC(headings, effectiveTocConfig) : false;
+const layoutMode = entry.data.mode === "custom" ? "custom" : "doc";
+const data = entry.data as { title?: string; sidebarTitle?: string };
+const pageTitle = data.title ?? data.sidebarTitle ?? entry.id.split("/").pop() ?? entry.id;
+const markdownUrl = Astro.site
+  ? new URL(withBase(`/${fallback ? localeParam : entry.collection}/${entry.id}/index.md`), Astro.site).href
+  : undefined;
+// Untranslated pages point search engines at the English original.
+const canonicalUrl = fallback && Astro.site ? new URL(withBase(`/${entry.id}/`), Astro.site).href : undefined;
+// hreflang alternates: English plus every active locale (fallback pages exist everywhere).
+const localeCodes = ACTIVE_LOCALES.map(localeCollectionName);
+const HREFLANG: Record<string, string> = { "pt-br": "pt-BR", ar: "ar", es: "es", fr: "fr", ja: "ja", ko: "ko", ru: "ru", zh: "zh" };
+const alternates = Astro.site
+  ? [
+      { hreflang: "en", href: new URL(withBase(`/${entry.id}/`), Astro.site).href },
+      { hreflang: "x-default", href: new URL(withBase(`/${entry.id}/`), Astro.site).href },
+      ...localeCodes.map((l) => ({ hreflang: HREFLANG[l] ?? l, href: new URL(withBase(`/${l}/${entry.id}/`), Astro.site!).href })),
+    ]
+  : [];
+const htmlLang = HREFLANG[localeParam] ?? localeParam;
+const dir = localeParam === "ar" ? ("rtl" as const) : undefined;
+const NOT_TRANSLATED: Record<string, string> = {
+  ar: "هذه الصفحة لم تُترجم بعد؛ يتم عرض النسخة الإنجليزية.",
+  es: "Esta página aún no está traducida; se muestra la versión en inglés.",
+  fr: "Cette page n'est pas encore traduite ; la version anglaise est affichée.",
+  ja: "このページはまだ翻訳されていません。英語版を表示しています。",
+  ko: "이 페이지는 아직 번역되지 않았습니다. 영어 버전이 표시됩니다.",
+  "pt-br": "Esta página ainda não foi traduzida; a versão em inglês é exibida.",
+  ru: "Эта страница ещё не переведена; показана английская версия.",
+  zh: "此页面尚未翻译，显示的是英文版本。",
+};
+---
+
+<DocsLayout
+  title={pageTitle}
+  description={entry.data.description}
+  sidebar={sidebar}
+  headings={toc}
+  breadcrumbs={breadcrumbs}
+  prevNext={prevNext}
+  mode={layoutMode}
+  banner={entry.data.banner}
+  head={entry.data.head}
+  lang={htmlLang}
+  dir={dir}
+  alternates={alternates}
+  canonicalUrl={canonicalUrl}
+  sections={sections}
+  currentLocale={localeParam}
+  activeLocales={ACTIVE_LOCALES}
+  searchable={entry.data.searchable}
+  noindex={entry.data.noindex}
+  markdownUrl={markdownUrl}
+  socialImage={entry.data.socialImage}
+  lastUpdated={lastUpdated}
+  editUrl={editUrl}
+  draft={entry.data.draft}
+  collection={entry.collection}
+  entryId={entry.id}
+>
+  {fallback && <Aside type="note" title="Not translated yet">{NOT_TRANSLATED[localeParam] ?? "This page is not translated yet; the English version is shown."}</Aside>}
+  <Content components={components} />
+</DocsLayout>

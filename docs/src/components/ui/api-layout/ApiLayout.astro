@@ -1,0 +1,239 @@
+---
+/**
+ * ApiLayout — the three-column reference shell (nav · content · code rail),
+ * composing ApiSidebar + ApiFieldList + ApiCodeRail. It renders any
+ * `ApiPageProps` by kind, reading the frozen view-model only. Drop it inside a
+ * page that provides the document shell; widths inherit the site's layout
+ * tokens (`--nb-sidebar-width`, `--nb-content-max`, `--nb-code-rail-width`).
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { ApiSidebar } from "@/components/ui/api-sidebar";
+import { ApiCodeRail } from "@/components/ui/api-code-rail";
+import { Banner } from "@/components/ui/banner";
+import ApiBody from "./ApiBody.astro";
+import { getApiVersionAlternates, getVersionStatus } from "@cloudflare/nimbus-docs/runtime";
+import type { ApiNav, ApiPageProps } from "@cloudflare/nimbus-docs/api";
+
+interface Props {
+  page: ApiPageProps;
+  nav: ApiNav;
+  /** API family + this page's version/coordinate — enables the version
+   *  picker and the deprecated-version banner. Omit for an unversioned API. */
+  collection?: string;
+  version?: string | null;
+  coordinate?: string;
+}
+
+const { page, nav, collection, version, coordinate } = Astro.props;
+
+const versionStatus =
+  collection && version
+    ? await getVersionStatus(`${collection}@${version}`)
+    : null;
+const currentSiblingUrl =
+  collection && version && coordinate
+    ? ((await getApiVersionAlternates(collection, version, coordinate))?.canonical
+        ?.url ?? null)
+    : null;
+
+// The rail column is reserved ONLY when it has content — a request sample or a
+// response example (mirrors ApiCodeRail's own gate). A bodyless GET with no
+// samples otherwise pins an empty sticky column at the page's right edge.
+const hasRail =
+  page.kind === "operation" &&
+  (page.samples.length > 0 || page.responses.some((r) => r.example !== undefined));
+
+const pagefindAttrs: Record<string, string> = {};
+const pagefindDeprecated = !versionStatus?.isHidden && Boolean(versionStatus?.isDeprecated);
+if (versionStatus?.isHidden) {
+  pagefindAttrs["data-pagefind-ignore"] = "";
+} else {
+  pagefindAttrs["data-pagefind-body"] = "";
+  if (versionStatus) {
+    pagefindAttrs["data-pagefind-filter"] = `version:${versionStatus.version}`;
+  }
+}
+---
+
+<div class="flex w-full">
+  <aside
+    class="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-border bg-background [scrollbar-color:gray_transparent] [scrollbar-width:thin] md:flex lg:w-(--nb-sidebar-width)"
+  >
+    <div class="flex-1 pt-8 pb-12 pl-6 pr-4">
+      <ApiSidebar items={nav.items} />
+    </div>
+    <div class="pointer-events-none sticky bottom-0 h-8 bg-gradient-to-t from-background to-transparent"></div>
+  </aside>
+
+  <div class="flex min-w-0 flex-1 flex-col 2xl:flex-row">
+    <main id="main-content" tabindex="-1" class="min-w-0 flex-1" {...pagefindAttrs}>
+      <div class="mx-auto max-w-(--nb-content-max) px-4 md:px-8 2xl:px-16 pt-8 pb-12">
+        {pagefindDeprecated && <span hidden data-pagefind-filter="status:deprecated"></span>}
+        {versionStatus?.isDeprecated && (
+          <div data-pagefind-ignore>
+            <Banner
+              variant="caution"
+              class="mt-0 mb-6"
+              content={`<strong>${versionStatus.version}</strong> is deprecated. <a href="${currentSiblingUrl ?? "/"}">See the latest version</a>.`}
+            />
+          </div>
+        )}
+        <ApiBody page={page} />
+      </div>
+    </main>
+
+    {/* Below 2xl the rail reflows inline beneath the body (samples are unique
+        content, so unlike the TOC they stay in the no-JS HTML for crawlability);
+        at 2xl+ it becomes the sticky right column. 2xl:pl-1 keeps overflow-y-auto
+        from clipping the LayerCard's outset ring at the scroll edge. */}
+    {hasRail && (
+      <div class="mx-auto w-full max-w-(--nb-content-max) px-4 pb-12 md:px-8 2xl:mx-0 2xl:max-w-none 2xl:sticky 2xl:top-14 2xl:h-[calc(100vh-3.5rem)] 2xl:w-(--nb-code-rail-width) 2xl:shrink-0 2xl:overflow-y-auto 2xl:pt-8 2xl:pr-6 2xl:pb-8 2xl:pl-1 2xl:[scrollbar-color:gray_transparent] 2xl:[scrollbar-width:thin]">
+        <ApiCodeRail
+          responses={page.responses}
+          samples={page.samples}
+          title={page.title}
+          method={page.method}
+          coordinate={page.coordinate}
+        />
+      </div>
+    )}
+  </div>
+</div>
+
+{/* Mobile navigation — native <dialog> for free focus trap, escape, backdrop. */}
+<dialog
+  data-mobile-sidebar
+  data-state="closed"
+  class="group fixed inset-0 m-0 h-full w-full max-h-full max-w-full border-0 bg-transparent p-0 [&::backdrop]:bg-transparent"
+  aria-label="API navigation"
+>
+  <div
+    data-mobile-sidebar-panel
+    class="h-full w-(--nb-sidebar-width) max-w-[85vw] -translate-x-full overflow-y-auto overscroll-contain border-r border-border bg-card transition-transform duration-250 ease-out group-data-[state=open]:translate-x-0 motion-reduce:transition-none"
+  >
+    <div class="sticky top-0 z-[1] flex items-center justify-between border-b border-border bg-card px-4 py-3">
+      <span class="text-sm font-semibold text-foreground">Navigation</span>
+      <button
+        data-close-sidebar
+        class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        aria-label="Close navigation"
+      >
+        <Icon name="ph:x" class="h-5 w-5" />
+      </button>
+    </div>
+    <nav class="px-4 pb-8 pt-5">
+      <ApiSidebar items={nav.items} />
+    </nav>
+  </div>
+</dialog>
+
+<script>
+  import { mount, lockScroll, unlockScroll, generateId } from "@cloudflare/nimbus-docs/client";
+
+  const CLOSE_DURATION_MS = 250;
+  const DESKTOP_QUERY = "(min-width: 48rem)";
+
+  // mount() re-binds on every astro:page-load and tears down on
+  // astro:before-swap, so the drawer survives client-side navigation.
+  mount("[data-mobile-sidebar]", (root) => {
+    const trigger = document.querySelector<HTMLElement>("[data-menu-btn]");
+    if (!(root instanceof HTMLDialogElement) || !trigger) return () => {};
+    const dialog = root;
+
+    const controller = new AbortController();
+    const { signal } = controller;
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const prefersReducedMotion = () =>
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (!dialog.id) dialog.id = generateId("nb-api-mobile-sidebar");
+    trigger.setAttribute("aria-controls", dialog.id);
+    trigger.setAttribute("aria-expanded", "false");
+    if (!trigger.hasAttribute("aria-haspopup")) trigger.setAttribute("aria-haspopup", "dialog");
+
+    const clearTimer = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = undefined;
+      }
+    };
+
+    const openSidebar = () => {
+      clearTimer();
+      if (dialog.open) {
+        // Reclaim a drawer caught mid-slide-out rather than stranding it open.
+        if (dialog.dataset.state === "closing") dialog.dataset.state = "open";
+        return;
+      }
+
+      dialog.showModal();
+      dialog.dataset.state = "closed";
+      lockScroll();
+      trigger.setAttribute("aria-expanded", "true");
+
+      // Flush the closed transform, then open in the same tick so the slide
+      // starts on the next frame (a double rAF delays it by two frames).
+      void dialog.offsetWidth;
+      dialog.dataset.state = "open";
+
+      dialog.querySelector<HTMLElement>("[data-close-sidebar]")?.focus({ preventScroll: true });
+    };
+
+    // Immediate close (no slide-out): reduced motion, or the viewport reaching desktop.
+    const closeNow = () => {
+      if (!dialog.open) return;
+      clearTimer();
+      dialog.close();
+    };
+
+    const closeSidebar = () => {
+      if (!dialog.open || dialog.dataset.state === "closing") return;
+      if (prefersReducedMotion()) {
+        closeNow();
+        return;
+      }
+      dialog.dataset.state = "closing";
+      closeTimer = setTimeout(() => dialog.close(), CLOSE_DURATION_MS);
+    };
+
+    trigger.addEventListener("click", openSidebar, { signal });
+
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeSidebar();
+    }, { signal });
+
+    // Fires for Escape, close button, backdrop, and closeNow() — cleanup in one place.
+    dialog.addEventListener("close", () => {
+      clearTimer();
+      dialog.dataset.state = "closed";
+      unlockScroll();
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.focus();
+    }, { signal });
+
+    dialog.querySelectorAll<HTMLElement>("[data-close-sidebar]")
+      .forEach((el) => el.addEventListener("click", closeSidebar, { signal }));
+
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) closeSidebar();
+    }, { signal });
+
+    // The hamburger is hidden past the desktop breakpoint; dismiss an open
+    // drawer so it can't strand focus once its trigger disappears.
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    mql.addEventListener("change", (event) => {
+      if (event.matches) closeNow();
+    }, { signal });
+    if (mql.matches) closeNow();
+
+    return () => {
+      controller.abort();
+      clearTimer();
+      trigger.setAttribute("aria-expanded", "false");
+      // A swap while open never fires `close`; balance the scroll lock.
+      if (dialog.open) unlockScroll();
+    };
+  });
+</script>

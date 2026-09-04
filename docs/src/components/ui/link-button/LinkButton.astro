@@ -1,0 +1,76 @@
+---
+/**
+ * LinkButton — an anchor styled as a button.
+ *
+ *   <LinkButton href="/start" variant="primary">Get started</LinkButton>
+ *   <LinkButton href="/docs" variant="secondary">Read the docs</LinkButton>
+ *   <LinkButton href="#" variant="minimal" icon>Learn more</LinkButton>
+ *   <LinkButton href="/x" shape="square" aria-label="Open"> … </LinkButton>
+ *
+ * The `icon` prop appends a right-caret that nudges on hover.
+ *
+ * Styling is delegated to the shared `ui/button/variants`, so LinkButton and
+ * Button stay visually identical. The original props are preserved (used by
+ * MDX): the LinkButton-only aliases map onto the shared vocabulary —
+ * `minimal → ghost`, `md → base`.
+ */
+import { cn } from "@/lib/cn";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import type { HTMLAttributes } from "astro/types";
+import {
+  buttonVariants,
+  buttonIconSize,
+  type ButtonVariant,
+  type ButtonSize,
+  type ButtonShape,
+} from "../button/variants";
+
+interface Props extends HTMLAttributes<"a"> {
+  href: string;
+  /** Original `primary | secondary | minimal`, plus Button's variants. */
+  variant?: ButtonVariant | "minimal";
+  /** Original `sm | md | lg`, plus Button's `xs | base`. */
+  size?: ButtonSize | "md";
+  /** `base` (default) · `square` · `circle` (icon-only — pass `aria-label`). */
+  shape?: ButtonShape;
+  /** Append a caret-right that nudges on hover. */
+  icon?: boolean;
+}
+
+const {
+  href,
+  variant = "primary",
+  size = "md",
+  shape = "base",
+  icon = false,
+  class: className,
+  ...attrs
+} = Astro.props;
+
+// Map the LinkButton-only aliases onto the shared Button vocabulary.
+const resolvedVariant: ButtonVariant = variant === "minimal" ? "ghost" : variant;
+const resolvedSize: ButtonSize = size === "md" ? "base" : size;
+---
+
+<a
+  href={href}
+  class={cn(
+    buttonVariants({ variant: resolvedVariant, size: resolvedSize, shape }),
+    className,
+  )}
+  {...attrs}
+>
+  <slot />
+  {
+    icon && (
+      <Icon
+        name="ph:caret-right"
+        class={cn(
+          "transition-transform group-hover:translate-x-0.5",
+          buttonIconSize[resolvedSize],
+        )}
+
+      />
+    )
+  }
+</a>

@@ -1,0 +1,34 @@
+---
+/**
+ * TabItem — single tab panel in the `<Tabs>` component.
+ *
+ * The `label` prop is read by `tabs.client.ts` to synthesize the matching
+ * trigger button. Each TabItem becomes one `[data-nb-tabs-content]` panel.
+ */
+import { cn } from "@/lib/cn";
+import { withBase } from "@/lib/base";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  label: string;
+  /** Optional image shown before the synthesized tab label. */
+  icon?: string;
+}
+
+const { label, icon, class: className, ...attrs } = Astro.props;
+
+if (!label) {
+  throw new Error("Missing required `label` prop on `<TabItem>` component.");
+}
+---
+
+<div
+  role="tabpanel"
+  data-nb-tabs-content
+  data-nb-tab-label={label}
+  data-nb-tab-icon={icon ? withBase(icon) : undefined}
+  class={cn(className)}
+  {...attrs}
+>
+  <slot />
+</div>

@@ -1,0 +1,71 @@
+---
+import ApiFieldRow from "./ApiFieldRow.astro";
+import type { ApiUnionView } from "@cloudflare/nimbus-docs/api";
+import "./field-list.css";
+
+interface Props {
+  union: ApiUnionView;
+  nested?: boolean;
+  depth?: number;
+}
+
+const { union, nested = false, depth = 0 } = Astro.props;
+
+const AUTO_OPEN_DEPTH = 1;
+
+const entries =
+  union.mapping && union.mapping.length > 0
+    ? union.mapping.map((m) => ({ value: m.value, variant: m.variant }))
+    : union.variants.map((v) => ({ variant: v, value: undefined as string | undefined }));
+---
+
+<div class={nested ? "fl-children fl-children--union" : ""}>
+  <p class="fl-union-label">One of the following:</p>
+  <ul class="fl-list">
+    {entries.map(({ variant, value }, i) => {
+      const hasFields = variant.fields && variant.fields.length > 0;
+      return hasFields ? (
+        <li class="fl-item fl-item--child">
+          <div class="fl-body">
+            <div class="fl-sig">
+              {variant.href ? (
+                <a href={variant.href} class="fl-type-link fl-variant-link">{variant.label}</a>
+              ) : (
+                <span class="fl-name">{variant.label}</span>
+              )}
+              {value && <span class="fl-type">{value}</span>}
+              <span class="fl-preview" aria-hidden="true">{"{ … }"}</span>
+            </div>
+            {variant.href && (
+              <div class="fl-desc">
+                <a href={variant.href}>View {variant.label} schema →</a>
+              </div>
+            )}
+            <details class="fl-expandable" open={i === 0 && AUTO_OPEN_DEPTH >= depth + 1}>
+              <summary class="fl-expand-trigger">
+                <svg class="fl-expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                {variant.fields!.length} properties
+              </summary>
+              <ul class="fl-list fl-children">
+                {variant.fields!.map((f) => (
+                  <ApiFieldRow field={f} depth={depth + 1} anchored={false} />
+                ))}
+              </ul>
+            </details>
+          </div>
+        </li>
+      ) : (
+        <li class="fl-item fl-item--child">
+          <div class="fl-sig">
+            {variant.href ? (
+              <a href={variant.href} class="fl-type-link fl-variant-link">{variant.label}</a>
+            ) : (
+              <span class="fl-name">{variant.label}</span>
+            )}
+            {value && <span class="fl-type">{value}</span>}
+          </div>
+        </li>
+      );
+    })}
+  </ul>
+</div>

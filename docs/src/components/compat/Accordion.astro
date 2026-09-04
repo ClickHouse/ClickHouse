@@ -1,0 +1,13 @@
+---
+/** Mintlify `<Accordion title defaultOpen icon>`. */
+interface Props { title?: string; description?: string; defaultOpen?: boolean; icon?: string }
+const { title, description, defaultOpen } = Astro.props;
+---
+
+<details class="ch-accordion" open={defaultOpen}>
+  <summary>
+    <span class="ch-accordion-title">{title}</span>
+    {description && <span class="ch-accordion-description">{description}</span>}
+  </summary>
+  <div class="ch-accordion-body"><slot /></div>
+</details>

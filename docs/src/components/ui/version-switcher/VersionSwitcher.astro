@@ -1,0 +1,245 @@
+---
+/** Picker for switching between docs versions or API-family versions. */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import {
+  getApiVersionAlternates,
+  getApiVersions,
+  getCurrentVersion,
+  getVersionAlternates,
+  getVersionLandingUrl,
+  getVersions,
+} from "@cloudflare/nimbus-docs/runtime";
+import { Popover, PopoverContent, PopoverTrigger } from "../popover";
+import { cn } from "@/lib/cn";
+
+interface Props {
+  collection?: string;
+  entryId?: string;
+  /** API mode: the family, the current page's version + coordinate (from
+   *  `getApiStaticPaths`). Set to switch API versions instead of docs versions. */
+  apiCollection?: string;
+  apiVersion?: string | null;
+  coordinate?: string;
+  variant?: "header" | "sidebar";
+  class?: string;
+}
+
+const {
+  collection,
+  entryId,
+  apiCollection,
+  apiVersion,
+  coordinate,
+  variant = "header",
+  class: className,
+} = Astro.props;
+
+interface Entry {
+  version: string;
+  label: string;
+  href: string;
+  isCurrent: boolean;
+  isActive: boolean;
+}
+
+let entries: Entry[] = [];
+let activeLabel = "";
+
+if (apiCollection) {
+  const apiVersions = (await getApiVersions(apiCollection)) ?? [];
+  const visible = apiVersions.filter((v) => !v.hidden);
+  if (visible.length >= 2) {
+    const defaultVersion = apiVersions.find((v) => v.isDefault)?.version ?? null;
+    const activeVersion = apiVersion ?? defaultVersion;
+    const record =
+      coordinate && activeVersion
+        ? await getApiVersionAlternates(apiCollection, activeVersion, coordinate)
+        : null;
+
+    const altByVersion = new Map<string, string>();
+    if (record) {
+      altByVersion.set(record.self.version, record.self.url);
+      for (const alt of record.alternates) altByVersion.set(alt.version, alt.url);
+    }
+
+    entries = visible.map((v) => {
+      const isActive = v.version === activeVersion;
+      // The sibling if the op exists in that version, else the version landing.
+      const href = isActive
+        ? Astro.url.pathname
+        : (altByVersion.get(v.version) ?? v.url);
+      return {
+        version: v.version,
+        label: v.label,
+        href,
+        isCurrent: v.isDefault,
+        isActive,
+      };
+    });
+    activeLabel =
+      entries.find((e) => e.isActive)?.label ??
+      visible.find((v) => v.isDefault)?.label ??
+      "";
+  }
+} else {
+  await buildDocsEntries();
+}
+
+async function buildDocsEntries() {
+const versions = await getVersions();
+
+if (versions && versions.all.length >= 2) {
+  const currentPageVersion =
+    collection ? await getCurrentVersion(collection) : null;
+  const record =
+    collection && entryId
+      ? await getVersionAlternates(collection, entryId)
+      : null;
+
+  const alternateByVersion = new Map<string, string>();
+  if (record) {
+    alternateByVersion.set(record.self.version, record.self.url);
+    for (const alt of record.alternates) alternateByVersion.set(alt.version, alt.url);
+  }
+
+  const visible = versions.all.filter((v) => !versions.hidden.includes(v));
+
+  // Fallback landing URL per version, used when the current page has no same-logical-page sibling.
+  const landingByVersion = new Map<string, string | null>(
+    await Promise.all(
+      visible.map(async (v) => [v, await getVersionLandingUrl(v)] as const),
+    ),
+  );
+
+  entries = visible
+    // Drop entries with no resolvable destination — that version has
+    // no indexed pages, so there's nowhere to send the reader. Two
+    // exceptions are always kept:
+    //   - The currently-active version (reader is already on a page
+    //     in it; the picker entry is a no-op nav).
+    //   - The current version overall (the home page `/` is the
+    //     canonical landing and is shipped by the starter).
+    .filter((v) =>
+      v === currentPageVersion ||
+      v === versions.current ||
+      landingByVersion.get(v) != null,
+    )
+    .map((v) => {
+      const isCurrent = v === versions.current;
+      const isActive = v === currentPageVersion;
+
+      let href: string;
+      const altHref = alternateByVersion.get(v);
+      if (isActive) {
+        // No-op nav: stay on this page.
+        href = Astro.url.pathname;
+      } else if (altHref) {
+        href = altHref;
+      } else if (isCurrent) {
+        // Current version always lands at the site root. `/` is the
+        // canonical "go to current" target — readers expect the home
+        // page, not a deep link into the first-by-URL indexed entry.
+        href = "/";
+      } else {
+        // Older version — use the resolved landing URL (real entry,
+        // not the bare URL prefix that would 404).
+        const landing = landingByVersion.get(v);
+        href = landing ?? `/${v}/`;
+      }
+
+      return { version: v, label: v, href, isCurrent, isActive };
+    });
+
+  const activeEntry = entries.find((e) => e.isActive);
+  activeLabel = activeEntry
+    ? activeEntry.version
+    : (versions.current ?? "");
+}
+}
+
+const labelId = `nb-version-picker-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+{entries.length >= 2 && variant === "header" && (
+  <Popover class={cn("hidden md:inline-block", className)}>
+    <PopoverTrigger
+      class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[0.8125rem] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors aria-[expanded=true]:bg-accent aria-[expanded=true]:text-foreground"
+      aria-label={`Switch version (current: ${activeLabel})`}
+    >
+      <Icon name="ph:git-branch" class="w-3.5 h-3.5" />
+      <span>{activeLabel}</span>
+      <Icon name="ph:caret-down" class="w-3 h-3 opacity-60" />
+    </PopoverTrigger>
+    <PopoverContent placement="bottom-end" class="min-w-[12rem] p-1">
+      <ul class="flex flex-col list-none m-0 p-0" role="listbox" aria-label="Versions">
+        {entries.map((entry) => (
+          <li>
+            <a
+              href={entry.href}
+              role="option"
+              aria-current={entry.isActive ? "page" : undefined}
+              aria-selected={entry.isActive}
+              class:list={[
+                "flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm no-underline transition-colors",
+                entry.isActive
+                  ? "bg-accent text-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              ]}
+            >
+              <span class="flex items-center gap-2">
+                <span>{entry.label}</span>
+                {entry.isCurrent && (
+                  <span class="text-[0.6875rem] uppercase tracking-wide text-muted-foreground/70">
+                    latest
+                  </span>
+                )}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </PopoverContent>
+  </Popover>
+)}
+
+{entries.length >= 2 && variant === "sidebar" && (
+  <section
+    class={cn("mb-4 pb-4 border-b border-border", className)}
+    aria-labelledby={labelId}
+  >
+    <h3
+      id={labelId}
+      class="flex items-center gap-1.5 text-[0.6875rem] uppercase tracking-wide font-semibold text-muted-foreground/80 mb-2 px-2"
+    >
+      <Icon name="ph:git-branch" class="w-3 h-3" />
+      Version
+    </h3>
+    <ul class="flex flex-col list-none m-0 p-0" role="listbox" aria-label="Versions">
+      {entries.map((entry) => (
+        <li>
+          <a
+            href={entry.href}
+            role="option"
+            aria-current={entry.isActive ? "page" : undefined}
+            aria-selected={entry.isActive}
+            class:list={[
+              "flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm no-underline transition-colors",
+              entry.isActive
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+            ]}
+          >
+            <span class="flex items-center gap-2">
+              <span>{entry.label}</span>
+              {entry.isCurrent && (
+                <span class="text-[0.6875rem] uppercase tracking-wide text-muted-foreground/70">
+                  latest
+                </span>
+              )}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}

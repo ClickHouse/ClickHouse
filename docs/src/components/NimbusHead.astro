@@ -1,0 +1,279 @@
+---
+// Vendored from @cloudflare/nimbus-docs/src/components/NimbusHead.astro (0.11.0)
+// with the sub-path fixes from cloudflare/nimbus#105 (favicon, shiki.css hrefs).
+// Remove once an upstream release includes them.
+/**
+ * NimbusHead — the framework's SEO/head plumbing as a single component.
+ *
+ * Absorbs the ~50 lines of `<meta>`, `<link>`, OG/Twitter tags, JSON-LD,
+ * favicon, canonical, sitemap, and alternate-markdown wiring that every
+ * docs site needs but no content author edits. Reads from the validated
+ * nimbus config (via `virtual:nimbus/config`) and Astro page context.
+ *
+ * Render once inside a `<head>` in your layout, after the
+ * `<meta charset>` / `<meta viewport>` basics and any theme-FOUC
+ * inline script:
+ *
+ *     ---
+ *     import NimbusHead from "@cloudflare/nimbus-docs/components/NimbusHead.astro";
+ *     const { title, description, ...rest } = Astro.props;
+ *     ---
+ *     <head>
+ *       <meta charset="utf-8" />
+ *       <meta name="viewport" content="width=device-width, initial-scale=1" />
+ *       <script is:inline>// theme FOUC inline script</script>
+ *       <NimbusHead {title} {description} {...rest} />
+ *     </head>
+ *
+ * SEO/OG fixes ship via framework version bump, not by every user
+ * re-doing their head tags.
+ */
+
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "virtual:nimbus/config";
+import {
+  getCollectionLlmsUrl,
+  getVersionAlternates,
+  getVersionStatus,
+} from "@cloudflare/nimbus-docs";
+import type { HeadElement } from "@cloudflare/nimbus-docs/types";
+
+export interface Props {
+  /** Page title — used for `<title>` and OG/Twitter title. */
+  title: string;
+  /** Falls back to `config.description` when absent. */
+  description?: string;
+  /** Emit `<meta name="robots" content="noindex">`. */
+  noindex?: boolean;
+  /** Absolute or site-relative URL for the markdown variant of this page. */
+  markdownUrl?: string;
+  /**
+   * Per-page OG/Twitter image override. Site-relative (`/og/foo.png`) or
+   * absolute. Falls back to `config.socialImage`, then to `/opengraph.png`
+   * if it exists in `public/`, otherwise `/og.png`.
+   */
+  socialImage?: string;
+  /** Drives `<meta property="article:modified_time">` on non-home pages. */
+  lastUpdated?: Date;
+  /** Per-page head extras, appended after `config.head`. */
+  head?: HeadElement[];
+  /**
+   * Astro collection ID for this page — used to look up cross-version
+   * alternates when versioning is configured. Pass `entry.collection`
+   * from your route. Optional: when omitted (e.g. on hand-built pages
+   * outside the docs collections), no alternate/canonical tags are
+   * emitted from the versioning layer.
+   */
+  collection?: string;
+  /** Astro entry id (slug) for this page. Pass `entry.id` from your route. */
+  entryId?: string;
+}
+
+const {
+  title,
+  description,
+  noindex,
+  markdownUrl,
+  socialImage,
+  lastUpdated,
+  head: pageHead = [],
+  collection,
+  entryId,
+} = Astro.props;
+
+// ---- Derived values -------------------------------------------------------
+
+const hasSite = !!Astro.site;
+
+// Prefix a site-root-relative path with the configured `base` so generated
+// asset links resolve under sub-path deployments (e.g. `/docs`). `new URL(p,
+// Astro.site)` resolves against the origin only and drops `base`, so any
+// internal path handed to it must be based first. External/absolute URLs and
+// already-based paths pass through unchanged.
+const baseUrl = import.meta.env.BASE_URL;
+const withBase = (path: string): string => {
+  if (/^([a-z][a-z0-9+.\-]*:|\/\/)/i.test(path)) return path;
+  const b = baseUrl.replace(/\/$/, "");
+  if (!b) return path;
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return p === b || p.startsWith(`${b}/`) ? p : `${b}${p}`;
+};
+
+// Cross-version alternates and canonical override. When the page is part
+// of a versioned-docs class with a current-version sibling that isn't
+// `self`, `record.canonical` points to it — we emit that URL as the
+// canonical instead of the page's own URL, so search engines treat the
+// current version as authoritative.
+const versionRecord =
+  collection && entryId ? await getVersionAlternates(collection, entryId) : null;
+const versionCanonicalPath = versionRecord?.canonical?.url ?? null;
+
+// Hidden-version suppression. Hidden versions are URL-reachable but
+// excluded from every agent-discovery and SEO surface. When the page
+// belongs to a hidden version we strip:
+//   - the markdown alternate link (no `.md` route is guaranteed to exist
+//     for hidden pages, and even if one did, agents shouldn't be guided
+//     to it)
+//   - the LLM-index hint (the per-version `/<v>/llms.txt` is not emitted
+//     for hidden versions, so the link would 404)
+//   - cross-version `<link rel="alternate">` tags (other pages shouldn't
+//     advertise this hidden page either)
+// Canonical and `<meta robots>` are left alone — hidden pages still get
+// the normal `noindex` behavior the user opts into via frontmatter.
+const versionStatus =
+  collection ? await getVersionStatus(collection) : null;
+const isHiddenVersion = versionStatus?.isHidden === true;
+
+// Agent index hint — point readers' AI tooling at the right per-collection
+// llms.txt. Version pages point at `/v<n>/llms.txt`, non-primary
+// collection pages point at `/<collection>/llms.txt`, primary docs
+// pages point at the root `/llms.txt`. When `collection` is omitted
+// (hand-built routes outside the docs system), we fall back to the
+// root index. Hidden-version pages emit no LLM hint (see above).
+const llmsIndexPath =
+  isHiddenVersion
+    ? null
+    : collection
+      ? await getCollectionLlmsUrl(collection)
+      : "/llms.txt";
+const llmsIndexUrl =
+  llmsIndexPath && Astro.site
+    ? new URL(withBase(llmsIndexPath), Astro.site).href
+    : llmsIndexPath;
+
+// `canonicalUrl` (prop) wins: untranslated locale pages point at the English original.
+const canonicalOverride = (Astro.props as { canonicalUrl?: string }).canonicalUrl;
+const canonical = canonicalOverride ?? (Astro.site
+  ? versionCanonicalPath
+    ? new URL(withBase(versionCanonicalPath), Astro.site).href
+    : new URL(Astro.url.pathname, Astro.site).href
+  : null);
+
+const fullTitle = title !== config.title ? `${title} | ${config.title}` : title;
+const resolvedDescription = description ?? config.description;
+const lang = config.locale ?? "en";
+
+const isHomePage = Astro.url.pathname === "/";
+const ogType = isHomePage ? "website" : "article";
+
+// `process.cwd()` resolves to the consumer's project root at build time.
+// The checks below let users drop files into `public/` and have them
+// picked up automatically — no config touch needed.
+const publicDir = join(process.cwd(), "public");
+
+// Favicon precedence: svg > ico > png. The first file that exists wins;
+// when none exists we still emit the svg link so users who drop one in
+// later don't need to touch the layout.
+const faviconCandidates: ReadonlyArray<{ file: string; type: string }> = [
+  { file: "favicon.svg", type: "image/svg+xml" },
+  { file: "favicon.ico", type: "image/x-icon" },
+  { file: "favicon.png", type: "image/png" },
+];
+const matchedFavicon =
+  faviconCandidates.find((c) => existsSync(join(publicDir, c.file))) ??
+  faviconCandidates[0];
+const faviconHref = withBase(`/${matchedFavicon.file}`);
+const faviconType = matchedFavicon.type;
+
+// Social image precedence: page prop > config > `public/opengraph.png` >
+// `public/logo.png` > generated `/og.png` fallback.
+const userOpenGraphImage = join(publicDir, "opengraph.png");
+const userLogoImage = join(publicDir, "logo.png");
+const defaultSocialImage = existsSync(userOpenGraphImage)
+  ? "/opengraph.png"
+  : existsSync(userLogoImage)
+    ? "/logo.png"
+    : "/og.png";
+const socialImagePath = socialImage ?? config.socialImage ?? defaultSocialImage;
+const ogImage = socialImagePath
+  ? Astro.site
+    ? new URL(withBase(socialImagePath), Astro.site).href
+    : socialImagePath
+  : null;
+const ogImageAlt = config.socialImageAlt;
+
+const structuredData = canonical
+  ? JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": isHomePage ? "WebSite" : "WebPage",
+      name: fullTitle,
+      ...(resolvedDescription ? { description: resolvedDescription } : {}),
+      url: canonical,
+      inLanguage: lang,
+      ...(ogImage ? { image: ogImage } : {}),
+      ...(isHomePage
+        ? {}
+        : {
+            isPartOf: {
+              "@type": "WebSite",
+              name: config.title,
+              url: Astro.site ? new URL(withBase("/"), Astro.site).href : config.site,
+            },
+            ...(lastUpdated ? { dateModified: lastUpdated.toISOString() } : {}),
+          }),
+    })
+  : null;
+
+// Per-HTML last-element-wins semantics: page extras come after config
+// extras so per-page overrides win for any duplicated single-value tag.
+const mergedHead = [...(config.head ?? []), ...pageHead];
+const shikiCssHref = withBase(`/_nimbus/shiki.css${import.meta.env.DEV ? `?v=${Date.now()}` : ""}`);
+---
+
+<title>{fullTitle}</title>
+
+<meta name="generator" content={Astro.generator} />
+{resolvedDescription && <meta name="description" content={resolvedDescription} />}
+{noindex && <meta name="robots" content="noindex" />}
+
+<link rel="icon" type={faviconType} href={faviconHref} />
+<link rel="stylesheet" href={shikiCssHref} />
+{hasSite && canonical && <link rel="canonical" href={canonical} />}
+{hasSite && <link rel="sitemap" href={withBase("/sitemap-index.xml")} />}
+{markdownUrl && !isHiddenVersion && (
+  <link rel="alternate" type="text/markdown" href={markdownUrl} />
+)}
+{hasSite && llmsIndexUrl && (
+  <link
+    rel="alternate"
+    type="text/plain"
+    href={llmsIndexUrl}
+    title="LLM index"
+  />
+)}
+{!isHiddenVersion && versionRecord?.alternates.map((alt) => (
+  <link
+    rel="alternate"
+    data-version={alt.version}
+    href={Astro.site ? new URL(withBase(alt.url), Astro.site).href : alt.url}
+  />
+))}
+
+<meta property="og:title" content={fullTitle} />
+<meta property="og:type" content={ogType} />
+<meta property="og:site_name" content={config.title} />
+<meta property="og:locale" content={lang} />
+{resolvedDescription && <meta property="og:description" content={resolvedDescription} />}
+{hasSite && canonical && <meta property="og:url" content={canonical} />}
+{ogImage && <meta property="og:image" content={ogImage} />}
+{ogImage && ogImageAlt && <meta property="og:image:alt" content={ogImageAlt} />}
+{ogImage && <meta property="og:image:width" content="1200" />}
+{ogImage && <meta property="og:image:height" content="630" />}
+{!isHomePage && lastUpdated && (
+  <meta property="article:modified_time" content={lastUpdated.toISOString()} />
+)}
+
+<meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+<meta name="twitter:title" content={fullTitle} />
+{resolvedDescription && <meta name="twitter:description" content={resolvedDescription} />}
+{ogImage && <meta name="twitter:image" content={ogImage} />}
+{ogImage && ogImageAlt && <meta name="twitter:image:alt" content={ogImageAlt} />}
+
+{structuredData && <script type="application/ld+json" set:html={structuredData} />}
+
+{mergedHead.map(({ tag: Tag, attrs = {}, content }) =>
+  content
+    ? <Tag {...attrs} set:html={content} />
+    : <Tag {...attrs} />
+)}

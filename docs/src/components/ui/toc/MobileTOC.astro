@@ -1,0 +1,60 @@
+---
+/**
+ * MobileTOC — compact "jump to section" menu for narrow viewports.
+ *
+ * The desktop `TOC` rail only renders at `xl+` (right column). Below that
+ * there's no on-this-page nav, so this native `<select>` fills the gap: it
+ * sits under the page title, tracks the active heading via scroll-spy, and
+ * jumps to a section on change.
+ *
+ * A native `<select>` whose options are the page headings, indented by depth.
+ * The caret is an overlaid icon since native selects can't be styled, and the
+ * client mirrors the active heading back into the select value.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import type { TOCItem } from "@cloudflare/nimbus-docs/types";
+
+interface Props extends HTMLAttributes<"nav"> {
+  headings: TOCItem[];
+}
+
+const { headings, class: className, ...attrs } = Astro.props;
+
+const hasHeadings = headings.length > 0;
+---
+
+{
+  hasHeadings && (
+    <nav
+      data-nb-mobile-toc
+      aria-label="On this page"
+      class={cn("relative", className)}
+      {...attrs}
+    >
+      <select
+        data-nb-mobile-toc-select
+        aria-label="Jump to section"
+        class="w-full appearance-none rounded-md border border-border bg-background py-2.5 pl-3 pr-9 text-sm font-medium text-foreground transition-colors hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <option value="_top">Overview</option>
+        {headings.map((heading) => (
+          <option value={heading.slug}>
+            {`${" ".repeat(Math.max(0, heading.depth - 2))}${heading.text}`}
+          </option>
+        ))}
+      </select>
+      <Icon
+        name="ph:caret-down"
+        aria-hidden="true"
+        class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+
+      />
+    </nav>
+  )
+}
+
+<script>
+  import "./mobile-toc.client";
+</script>

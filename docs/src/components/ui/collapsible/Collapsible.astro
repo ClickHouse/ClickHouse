@@ -1,0 +1,25 @@
+---
+/** Collapsible — disclosure. Compose with CollapsibleTrigger + CollapsibleContent. */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  /** Start open. Default false. */
+  open?: boolean;
+}
+
+const { open = false, class: className, ...attrs } = Astro.props;
+---
+
+<div
+  data-nb-collapsible
+  data-nb-default-open={open ? "true" : undefined}
+  class={cn(className)}
+  {...attrs}
+>
+  <slot />
+</div>
+
+<script>
+  import "./collapsible.client";
+</script>

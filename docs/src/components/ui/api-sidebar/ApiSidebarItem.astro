@@ -1,0 +1,59 @@
+---
+/**
+ * ApiSidebarItem — the API rail's per-node walker. It renders `ApiNavItem`s
+ * through the SAME atoms as the docs sidebar (`SidebarGroupHeader`,
+ * `SidebarLink`) so the two rails are one visual language; the only
+ * API-specific decoration is the leading `ApiMethodChip` on operation leaves.
+ * Open/active state is pre-resolved by `getApiNav` (`expanded` marks the active
+ * trail, `active` marks the current node), so this maps those flags straight
+ * onto the shared header/link props — no descendant scan.
+ */
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import SidebarGroupHeader from "@/components/ui/sidebar/SidebarGroupHeader.astro";
+import SidebarLink from "@/components/ui/sidebar/SidebarLink.astro";
+import ApiMethodChip from "./ApiMethodChip.astro";
+import type { ApiNavItem } from "@cloudflare/nimbus-docs/api";
+
+interface Props {
+  item: ApiNavItem;
+}
+
+const { item } = Astro.props;
+const hasChildren = item.children.length > 0;
+// `expanded` ⟺ ancestor of the active node; `active` ⟺ the current node. Both
+// mean "on the active trail" for header emphasis, and either opens the group.
+const onActiveTrail = Boolean(item.expanded || item.active);
+---
+
+{
+  hasChildren ? (
+    <Collapsible open={onActiveTrail} data-nb-sidebar-group>
+      <SidebarGroupHeader
+        label={item.label}
+        isOpen={onActiveTrail}
+        hasActive={onActiveTrail}
+        indexHref={item.href}
+        indexIsCurrent={item.active}
+        deprecated={item.deprecated}
+      />
+      <CollapsibleContent data-nb-state={onActiveTrail ? "open" : "closed"}>
+        <ul class="mt-0.5 ml-3 list-none border-l border-border p-0 pl-2 flex flex-col gap-px">
+          {item.children.map((child) => (
+            <li class="break-words">
+              <Astro.self item={child} />
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
+  ) : (
+    <SidebarLink
+      label={item.label}
+      href={item.href ?? "#"}
+      isCurrent={item.active}
+      class={item.deprecated ? "px-1 line-through" : "px-1"}
+    >
+      <ApiMethodChip slot="leading" method={item.method} display="label" />
+    </SidebarLink>
+  )
+}

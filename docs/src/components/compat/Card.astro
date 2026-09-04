@@ -1,0 +1,39 @@
+---
+/**
+ * Mintlify `<Card title icon href horizontal img cta arrow>`. Renders Nimbus's
+ * Card, wrapped in a link when `href` is set. Mintlify's named icons are
+ * rendered with the same Font Awesome masks as the source site.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { withBase } from "@/lib/base";
+interface Props { title?: string; icon?: string; href?: string; horizontal?: boolean; img?: string; cta?: string; arrow?: boolean; color?: string }
+const { title = "", href, img, cta, icon, horizontal: _h, arrow: _a, color: _c, ...rest } = Astro.props;
+const isNamedMintlifyIcon = Boolean(icon && !icon.startsWith("/") && !icon.startsWith("http") && !icon.includes(":"));
+const iconName = isNamedMintlifyIcon ? undefined : icon;
+const iconIsImage = Boolean(iconName?.startsWith("/") || iconName?.startsWith("http"));
+const resolvedIconName = iconIsImage && iconName?.startsWith("/") ? withBase(iconName) : iconName;
+const mintlifyIconStyle = isNamedMintlifyIcon
+  ? `--ch-card-icon-mask:url("https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/regular/${icon}.svg")`
+  : undefined;
+---
+
+{href ? (
+  <a href={href} class="ch-card-link">
+    <article class="ch-doc-card" {...rest}>
+      {img && <img src={img} alt="" class="ch-card-img" />}
+      {isNamedMintlifyIcon && <span aria-hidden="true" class="ch-card-icon ch-card-icon-mask" style={mintlifyIconStyle}></span>}
+      {resolvedIconName && (iconIsImage ? <img src={resolvedIconName} alt="" class="ch-card-icon" /> : <Icon name={resolvedIconName} class="ch-card-icon" />)}
+      <h2>{title}</h2>
+      <slot />
+      {cta && <span class="ch-card-cta">{cta}</span>}
+    </article>
+  </a>
+) : (
+  <article class="ch-doc-card" {...rest}>
+    {img && <img src={img} alt="" class="ch-card-img" />}
+    {isNamedMintlifyIcon && <span aria-hidden="true" class="ch-card-icon ch-card-icon-mask" style={mintlifyIconStyle}></span>}
+    {resolvedIconName && (iconIsImage ? <img src={resolvedIconName} alt="" class="ch-card-icon" /> : <Icon name={resolvedIconName} class="ch-card-icon" />)}
+    <h2>{title}</h2>
+    <slot />
+  </article>
+)}

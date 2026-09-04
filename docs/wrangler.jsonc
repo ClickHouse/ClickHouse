@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "clickhouse-docs",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Preview versions (`wrangler versions upload --preview-alias pr-<n>`) get
+  // *.workers.dev URLs; production is reached through the website Worker's
+  // Service Binding, not a route of its own.
+  "workers_dev": false,
+  "preview_urls": true,
+  "rules": [{ "type": "Text", "globs": ["**/__redirects"], "fallthrough": true }],
+  "assets": {
+    // The build is nested under dist/docs by bin/postbuild.ts so asset paths
+    // equal request paths (/docs/...). The Worker runs first only for pages,
+    // markdown twins and unknown paths; hashed assets and images bypass it.
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/docs/*", "!/docs/_astro/*", "!/docs/images/*", "!/docs/img/*", "!/docs/nav/*", "!/docs/_nimbus/*"]
+  },
+  "observability": { "enabled": true }
+}

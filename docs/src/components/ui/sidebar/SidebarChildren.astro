@@ -1,0 +1,40 @@
+---
+/**
+ * SidebarChildren — the `<ul>` list of a group's children. Shared by
+ * SidebarGroup (inline rendering) and the /nav fragment route (lazy loading).
+ */
+import SidebarGroup from "./SidebarGroup.astro";
+import SidebarLink from "./SidebarLink.astro";
+import type { SidebarItem } from "@cloudflare/nimbus-docs/types";
+
+interface Props {
+  items: SidebarItem[];
+}
+
+const { items } = Astro.props;
+type LazyGroup = Extract<SidebarItem, { type: "group" }> & { _lazyKey?: string };
+---
+
+<ul class="mt-0.5 ml-3 list-none border-l border-border p-0 pl-2 flex flex-col gap-px" data-nb-sidebar-children>
+  {items.map((item) => (
+    <li class="break-words">
+      {item.type === "group" ? (
+        <SidebarGroup
+          label={item.label}
+          items={item.children}
+          collapsed={item.collapsed}
+          badge={item.badge}
+          icon={item.icon}
+          indexHref={item.indexHref}
+          indexIsCurrent={item.indexIsCurrent}
+          indexIsExternal={item.indexIsExternal}
+          lazyKey={(item as LazyGroup)._lazyKey}
+        />
+      ) : item.type === "external" ? (
+        <SidebarLink label={item.label} href={item.href} badge={item.badge} target="_blank" rel="noopener" />
+      ) : (
+        <SidebarLink label={item.label} href={item.href} isCurrent={item.isCurrent} badge={item.badge} />
+      )}
+    </li>
+  ))}
+</ul>

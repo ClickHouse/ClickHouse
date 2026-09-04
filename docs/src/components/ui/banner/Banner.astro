@@ -1,0 +1,83 @@
+---
+/**
+ * Banner — announcement strip. Pass `dismissible: { id, days? }` to
+ * show a close button that persists to localStorage.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  content: string;
+  variant?: "note" | "tip" | "caution" | "danger";
+  dismissible?: { id: string; days?: number };
+}
+
+const { content, variant = "note", dismissible, class: className, ...attrs } = Astro.props;
+
+function sanitizeBannerHtml(value: string): string {
+  return value
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s+(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, "");
+}
+
+const config: Record<string, { color: string; tint: string }> = {
+  note: { color: "var(--nb-info)", tint: "var(--nb-info-muted)" },
+  tip: { color: "var(--nb-success)", tint: "var(--nb-success-muted)" },
+  caution: { color: "var(--nb-warning)", tint: "var(--nb-warning-muted)" },
+  danger: { color: "var(--nb-danger)", tint: "var(--nb-danger-muted)" },
+};
+
+const c = config[variant] ?? config.note;
+const safeContent = sanitizeBannerHtml(content);
+---
+
+<div
+  role={variant === "danger" || variant === "caution" ? "alert" : "status"}
+  class={cn("banner-card my-4 flex w-full items-start gap-3 rounded-lg px-4 py-3 text-sm leading-normal text-foreground", className)}
+  style={`--_c: ${c.color}; --_t: ${c.tint};`}
+  {...(dismissible
+    ? { "data-nb-banner-dismiss": dismissible.id, "data-nb-banner-days": dismissible.days }
+    : {})}
+  {...attrs}
+>
+  <div class="banner-card-body min-w-0 flex-1">
+    <Fragment set:html={safeContent} />
+  </div>
+  {dismissible && (
+    <button
+      type="button"
+      data-nb-banner-close
+      class="-my-1 -mr-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-current opacity-60 transition-[background-color,opacity] hover:bg-card/60 hover:opacity-100"
+      aria-label="Dismiss banner"
+    >
+      <Icon name="ph:x" class="w-3.5 h-3.5" />
+    </button>
+  )}
+</div>
+
+<script>
+  import "./banner.client";
+</script>
+
+<style>
+  .banner-card {
+    border: 1px solid color-mix(in oklch, var(--_c) 25%, transparent);
+    background: var(--_t);
+  }
+
+  .banner-card-body { min-width: 0; overflow-wrap: break-word; }
+  .banner-card-body :global(p) { margin: 0; }
+  .banner-card-body :global(p + p) { margin-top: 0.375rem; }
+  .banner-card-body :global(a) { text-decoration: underline; text-underline-offset: 2px; }
+
+  .banner-card-body :global(code:not(:where(pre *))) {
+    font-family: var(--nb-font-mono);
+    font-size: 0.8125em;
+    background: color-mix(in oklch, var(--_c) 10%, transparent);
+    border: 1px solid color-mix(in oklch, var(--_c) 15%, transparent);
+    border-radius: 0.25rem;
+    padding: 0.0625rem 0.3125rem;
+  }
+</style>

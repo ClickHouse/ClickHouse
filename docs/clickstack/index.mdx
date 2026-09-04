@@ -5,20 +5,8 @@ description: 'Open source observability stack powered by ClickHouse — unifying
 mode: "wide"
 ---
 
-export function useDark() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const check = () => setDark(document.documentElement.classList.contains('dark'));
-    check();
-    const obs = new MutationObserver(check);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
-  }, []);
-  return dark;
-}
-
-export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
-  const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+export const CsCard = ({ title, img, darkImg, abbr, href }) => {
+  const assetBase = '/docs';
   const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
   return <a href={href} className="cs-card-link" onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }} style={{ textDecoration: 'none', textDecorationLine: 'none', color: 'inherit' }}>
     <div
@@ -32,27 +20,30 @@ export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
         gap: '10px',
         padding: '16px',
         borderRadius: '12px',
-        border: dark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e0e0e0',
-        backgroundColor: dark ? 'rgba(65,65,65,0.5)' : '#ffffff',
-        boxShadow: dark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
+        border: '1px solid #e0e0e0',
+        backgroundColor: '#ffffff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
         cursor: 'pointer',
       }}
     >
       {img ? (
-        <div style={{ width: 56, height: 56, flexShrink: 0, backgroundImage: `url(${withBase(dark && darkImg ? darkImg : img)})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />
+        <>
+          <div className="cs-card-logo-light" style={{ width: '56px', height: '56px', flexShrink: 0, backgroundImage: `url(${withBase(img)})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />
+          {darkImg && <div className="cs-card-logo-dark" style={{ width: '56px', height: '56px', flexShrink: 0, backgroundImage: `url(${withBase(darkImg)})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />}
+        </>
       ) : (
-        <div style={{
-          width: 56, height: 56,
+        <div className="cs-card-abbr" style={{
+          width: '56px', height: '56px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           borderRadius: '8px',
-          backgroundColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+          backgroundColor: 'rgba(0,0,0,0.06)',
           fontSize: '16px', fontWeight: '700', letterSpacing: '-0.5px',
-          color: dark ? '#d4d4d4' : '#555555',
+          color: '#555555',
           flexShrink: 0,
         }}>{abbr}</div>
       )}
-      <span className="text-sm font-semibold text-center" style={{
-        lineHeight: '1.3', color: dark ? '#ffffff' : '#111111',
+      <span className="cs-card-title text-sm font-semibold text-center" style={{
+        lineHeight: '1.3', color: '#111111',
         textDecoration: 'none', textDecorationLine: 'none',
       }}>{title}</span>
     </div>
@@ -60,7 +51,6 @@ export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
 };
 
 export const CsGrid = ({ items }) => {
-  const dark = useDark();
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
@@ -83,7 +73,7 @@ export const CsGrid = ({ items }) => {
         }
       `}} />
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6" style={{ gap: '16px', margin: '20px 0 36px' }}>
-        {items.map(item => <CsCard key={item.title} {...item} dark={dark} />)}
+        {items.map(item => <CsCard key={item.title} {...item} />)}
       </div>
     </>
   );

@@ -1,0 +1,13 @@
+---
+/** Mintlify `<View title>`: one choice in the page-level view switcher. */
+interface Props {
+  title: string;
+  icon?: string;
+  iconType?: string;
+}
+const { title, icon, iconType } = Astro.props;
+---
+
+<section class="ch-view" data-view={title} data-view-icon={icon} data-view-icon-type={iconType}>
+  <slot />
+</section>

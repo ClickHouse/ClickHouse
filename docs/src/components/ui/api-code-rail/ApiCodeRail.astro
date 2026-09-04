@@ -1,0 +1,177 @@
+---
+/**
+ * ApiCodeRail — the operation's request/response sample rail:
+ * a faint outer LayerCard wrapping a RAISED request
+ * surface (a header carrying the method chip + title on the left and a language
+ * <select> on the right) over the engine-derived request sample for the selected
+ * language, then a RECESSED response section (a "Response example" label + a
+ * per-status toggle over the example body, sunken on the card's muted layer).
+ * Both the request samples and the response example are the frozen view-model's
+ * engine-derived values (`samples` — curl/TypeScript/Python, `x-codeSamples`
+ * honored upstream; `response.example` — authored example wins, else sampler
+ * synthesis with write-only fields hidden). The method chip is the same
+ * self-scoped `ApiMethodChip` atom the sidebar row uses. Highlighting, line
+ * numbers, and the copy button come from the shared `<Code>` primitive.
+ *
+ * The language picker is a progressive-enhanced native <select>: every sample
+ * ships in the HTML (crawlable — the first is visible, the rest reachable once
+ * `code-rail.client` wires the select's change handler).
+ */
+import { cn } from "@/lib/cn";
+import Code from "@/components/ui/code/Code.astro";
+import { LayerCard, LayerCardHeader } from "@/components/ui/layer-card";
+import "./code-rail.css";
+import type {
+  ApiExampleView,
+  ApiOperationPage,
+  ApiResponseView,
+} from "@cloudflare/nimbus-docs/api";
+
+// The highlighter language type, sourced from the shared <Code> wrapper (whose
+// props derive from Astro's bundled Code) rather than a bare `shiki` import —
+// shiki isn't a declared dep of this app, so importing it directly is a phantom
+// dependency that only resolves when it happens to hoist. See Code.astro's note
+// on shiki type-version friction.
+type CodeLang = NonNullable<Parameters<typeof Code>[0]["lang"]>;
+
+interface Props
+  extends Pick<ApiOperationPage, "responses" | "samples" | "method" | "coordinate"> {
+  /** Operation title, shown in the request card header. */
+  title: string;
+  class?: string;
+}
+
+const { responses, samples, title, method, coordinate, class: className } = Astro.props;
+
+// Highlighter language for a sample's advertised language. cURL is shell; the
+// node/fetch snippet is TypeScript-labelled but valid TS. A spec-authored
+// `x-codeSamples` lang passes through only when Shiki bundles it; anything else
+// falls back to plaintext so an obscure language can't throw the build.
+const HIGHLIGHTABLE = new Set(["bash", "typescript", "python", "json", "javascript", "go", "ruby", "php", "java", "shell", "yaml", "xml"]);
+function highlightLang(lang: string): CodeLang {
+  if (lang === "curl") return "bash";
+  if (lang === "typescript") return "typescript";
+  if (lang === "python") return "python";
+  return HIGHLIGHTABLE.has(lang) ? (lang as CodeLang) : "text";
+}
+
+// The engine derives the response example (an authored example wins, else
+// sampler synthesis with write-only fields hidden) — there is no client-side
+// reconstruction. Only responses it could resolve an example for get a body.
+function exampleCode(e: ApiExampleView): string {
+  return typeof e.value === "string" && !e.mediaType.includes("json")
+    ? e.value
+    : JSON.stringify(e.value, null, 2);
+}
+function exampleLang(e: ApiExampleView): CodeLang {
+  return e.mediaType.includes("json") ? "json" : "text";
+}
+// Colour the status by class: 2xx success, 3xx info, 4xx/5xx danger, else neutral.
+function statusTone(status: string): string {
+  switch (status.trim()[0]) {
+    case "2":
+      return "nb-cr-2xx";
+    case "3":
+      return "nb-cr-3xx";
+    case "4":
+    case "5":
+      return "nb-cr-err";
+    default:
+      return "";
+  }
+}
+const bodied = responses
+  .filter((r): r is ApiResponseView & { example: ApiExampleView } => r.example !== undefined)
+  .map((r) => ({ response: r, example: r.example }));
+
+// The region label reflects what the rail actually holds — a webhook (no
+// request sample) announces its response examples, not a "Request sample".
+const railLabel =
+  samples.length > 0 && bodied.length > 0
+    ? "Request sample and response examples"
+    : samples.length > 0
+      ? "Request sample"
+      : "Response examples";
+
+const respUid = `nb-cr-resp-${encodeURIComponent(coordinate)}`;
+const respTabId = (i: number) => `${respUid}-tab-${i}`;
+const respPanelId = (i: number) => `${respUid}-panel-${i}`;
+---
+
+<aside data-nb-api-coderail aria-label={railLabel} class={cn("flex flex-col gap-4", className)}>
+  {samples.length > 0 && (
+    <LayerCard class="relative nb-cr-layer" data-nb-lang-picker>
+      <LayerCardHeader class="nb-cr-head">
+        <span class="nb-cr-titlewrap">
+          <span class="nb-cr-title">{title}</span>
+        </span>
+        {samples.length > 0 && (
+          <select class="nb-cr-langselect" data-nb-lang-select aria-label="Sample language">
+            {samples.map((sample, i) => (
+              <option value={sample.lang} selected={i === 0}>{sample.label}</option>
+            ))}
+          </select>
+        )}
+      </LayerCardHeader>
+      <div class="nb-cr-content overflow-hidden rounded-lg bg-card ring ring-border">
+        {samples.map((sample, i) => (
+          <div data-nb-lang-panel data-nb-lang-value={sample.lang} hidden={i !== 0}>
+            <div class="nb-cr-body">
+              <Code code={sample.source} lang={highlightLang(sample.lang)} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </LayerCard>
+  )}
+
+  {bodied.length > 0 && (
+    <LayerCard class="nb-cr-layer nb-cr-response-layer">
+      <div class="nb-cr-respsection" data-nb-resp-toggle>
+        <div class="nb-cr-resphead">
+          <span class="nb-cr-resptext">Response example</span>
+          <div class="nb-cr-respswitch" role="tablist" aria-label="Response status">
+            {bodied.map(({ response }, i) => (
+              <button
+                type="button"
+                role="tab"
+                id={respTabId(i)}
+                class={cn("nb-cr-respbtn", statusTone(response.status))}
+                data-nb-resp-trigger
+                aria-controls={respPanelId(i)}
+                aria-selected={i === 0 ? "true" : "false"}
+                tabindex={i === 0 ? 0 : -1}
+              >
+                {response.status}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div class="nb-cr-respcontent">
+          {bodied.map(({ response, example }, i) => (
+            <div
+              id={respPanelId(i)}
+              role="tabpanel"
+              aria-labelledby={respTabId(i)}
+              data-nb-resp-panel
+              hidden={i !== 0}
+            >
+              <div
+                class="nb-cr-body nb-cr-respbody"
+                tabindex="0"
+                role="group"
+                aria-label={`${response.status} response example`}
+              >
+                <Code code={exampleCode(example)} lang={exampleLang(example)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </LayerCard>
+  )}
+</aside>
+
+<script>
+  import "./code-rail.client";
+</script>

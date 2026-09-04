@@ -1,0 +1,33 @@
+---
+/**
+ * Popover — anchored floating content. Compose with PopoverTrigger +
+ * PopoverContent. Built on the native Popover API; positioned via JS
+ * at open time and on scroll/resize.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+type Props = HTMLAttributes<"div">;
+
+const { class: className, ...attrs } = Astro.props;
+// Deterministic ID — per-page counter on Astro.locals. Order is stable
+// within a page render, so two builds of the same page produce the same
+// IDs. Required for incremental builds: `crypto.randomUUID()` would make
+// warm output differ from cold.
+const locals = Astro.locals as typeof Astro.locals & {
+  __nbCounters?: Map<string, number>;
+};
+const counters =
+  locals.__nbCounters ?? (locals.__nbCounters = new Map<string, number>());
+const n = (counters.get("popover") ?? 0) + 1;
+counters.set("popover", n);
+const popoverId = `popover-${n.toString(16).padStart(8, "0")}`;
+---
+
+<div class={cn("relative inline-block", className)} data-popover-root data-popover-id={popoverId} {...attrs}>
+  <slot />
+</div>
+
+<script>
+  import "./popover.client";
+</script>

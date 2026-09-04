@@ -1,0 +1,24 @@
+---
+/**
+ * TabsContent — individual tab panel matched to a TabsTrigger by value.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  /** Value matching a TabsTrigger. */
+  value: string;
+}
+
+const { value, class: className, ...attrs } = Astro.props;
+---
+
+<div
+  role="tabpanel"
+  data-nb-tabs-content
+  data-nb-value={value}
+  class={cn(className)}
+  {...attrs}
+>
+  <slot />
+</div>

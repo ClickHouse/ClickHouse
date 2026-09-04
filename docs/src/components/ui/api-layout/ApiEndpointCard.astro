@@ -1,0 +1,102 @@
+---
+/**
+ * ApiEndpointCard — the operation's request line as a left-recessed layered card.
+ *
+ * Built on the shared `LayerCard` primitive, rotated 90° from its default: the
+ * recessed (bg-muted) layer sits on the LEFT and frames the method as a tinted
+ * arrow glyph pill (`ApiMethodChip display="glyph"`, decorative) beside the verb
+ * word in its palette colour; the raised (bg-card, ringed) layer on the RIGHT
+ * carries the full request URL (server + path) and a copy-URL button. Both the
+ * glyph and the verb draw from the same shared `--nb-m-*` palette (`globals.css`)
+ * as the sidebar chip, so the header and the sidebar can never disagree on a
+ * method's colour.
+ */
+import { LayerCard, LayerCardHeader, LayerCardContent } from "@/components/ui/layer-card";
+import ApiMethodChip from "@/components/ui/api-sidebar/ApiMethodChip.astro";
+import { methodVariant } from "@/components/ui/api-sidebar/method";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/cn";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+
+interface Props {
+  method: string;
+  path: string;
+  /** Effective server base URL; when absent, the card shows the path alone. */
+  server?: string;
+  isWebhook?: boolean;
+  class?: string;
+}
+
+const { method, path, server, isWebhook, class: className } = Astro.props;
+
+const url = `${server ?? ""}${path}`;
+const copyLabel = server ? "Copy request URL" : "Copy path";
+const variant = methodVariant(method);
+---
+
+<LayerCard class={cn("flex-row items-stretch", className)}>
+  <LayerCardHeader class="shrink-0 p-2">
+    <ApiMethodChip method={method} display="glyph" size="md" decorative />
+    <span class="font-mono text-[0.8125rem] font-semibold" style={`color:var(--nb-m-${variant})`}>
+      {method.toUpperCase()}
+    </span>
+  </LayerCardHeader>
+  <LayerCardContent class="min-w-0 flex-1 flex-row items-stretch gap-0 p-0">
+    <div class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
+      <code class="min-w-0 flex-1 truncate font-mono text-[0.8125rem] text-foreground">
+        {server && <span class="text-muted-foreground">{server}</span>}{path}
+      </code>
+      {isWebhook && <Badge text="webhook" variant="info" />}
+    </div>
+    <button
+      type="button"
+      data-nb-copy-url
+      data-url={url}
+      class="m-0 flex shrink-0 cursor-pointer items-center justify-center border-0 border-l border-solid border-border bg-transparent px-3 text-muted-foreground transition-colors hover:text-foreground"
+      aria-label={copyLabel}
+      title={copyLabel}
+    >
+      <Icon name="ph:copy" class="h-[18px] w-[18px]" data-copy-icon />
+      <Icon name="ph:check" class="hidden h-[18px] w-[18px] text-success" data-check-icon />
+    </button>
+  </LayerCardContent>
+</LayerCard>
+
+<script>
+  // Copy the request URL. mount() re-binds per navigation.
+  import { mount } from "@cloudflare/nimbus-docs/client";
+
+  mount("[data-nb-copy-url]", (btn) => {
+    if (!(btn instanceof HTMLButtonElement)) return () => {};
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    btn.addEventListener(
+      "click",
+      async () => {
+        const value = btn.dataset.url;
+        if (!value) return;
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          return;
+        }
+        const copy = btn.querySelector("[data-copy-icon]");
+        const check = btn.querySelector("[data-check-icon]");
+        copy?.classList.add("hidden");
+        check?.classList.remove("hidden");
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          copy?.classList.remove("hidden");
+          check?.classList.add("hidden");
+        }, 1200);
+      },
+      { signal: controller.signal },
+    );
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  });
+</script>

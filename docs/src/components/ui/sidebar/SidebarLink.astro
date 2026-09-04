@@ -1,0 +1,33 @@
+---
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import { Badge } from "@/components/ui/badge";
+import type { SidebarBadge } from "@cloudflare/nimbus-docs/types";
+
+interface Props extends HTMLAttributes<"a"> {
+  label: string;
+  href: string;
+  isCurrent?: boolean;
+  badge?: SidebarBadge;
+}
+
+const { label, href, isCurrent, badge, class: className, ...attrs } = Astro.props;
+const isMethodBadge = typeof badge === "object" && /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(badge.text);
+---
+
+<a
+  href={href}
+  aria-current={isCurrent ? "page" : undefined}
+  data-nb-sidebar-link
+  class={cn("nb-sidebar-link", className)}
+  {...attrs}
+>
+  {isMethodBadge && typeof badge === "object" && <Badge text={badge.text} variant={badge.variant} class="ch-sidebar-method" />}
+  <span class="break-words">{label}</span>
+  {badge && !isMethodBadge &&
+    (typeof badge === "string" ? (
+      <Badge text={badge} />
+    ) : (
+      <Badge text={badge.text} variant={badge.variant} />
+    ))}
+</a>

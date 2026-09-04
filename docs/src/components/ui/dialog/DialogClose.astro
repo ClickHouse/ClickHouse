@@ -1,0 +1,25 @@
+---
+/**
+ * DialogClose — button that closes the nearest ancestor <dialog>.
+ * Consumer provides the visual (icon, text, kbd hint) via default slot.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"button"> {}
+
+const { class: className, ...attrs } = Astro.props;
+---
+
+<button
+  data-dialog-close
+  type="button"
+  class={cn(className)}
+  {...attrs}
+>
+  <slot />
+</button>
+
+<script>
+  import "./dialog-close.client";
+</script>

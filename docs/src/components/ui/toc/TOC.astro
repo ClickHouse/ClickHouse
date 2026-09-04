@@ -1,0 +1,68 @@
+---
+/**
+ * TOC — on-this-page nav with scroll-spy. Static rail rendered inline
+ * (border-l + S-curve SVGs at indent changes); animated active indicator
+ * lives in toc.client.ts.
+ */
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+import type { TOCItem } from "@cloudflare/nimbus-docs/types";
+
+interface Props extends HTMLAttributes<"div"> {
+  headings: TOCItem[];
+}
+
+const { headings, class: className, ...attrs } = Astro.props;
+---
+
+{headings.length > 0 && (
+  <div data-nb-toc class={cn("toc-container", className)} {...attrs}>
+    <h2 class="ch-toc-heading">
+      <svg aria-hidden="true" viewBox="0 0 18 18" fill="none">
+        <path d="M2.75 14.25H15.25" />
+        <path d="M2.75 3.75H15.25" />
+        <path d="M2.75 9H8.25" />
+      </svg>
+      <span>On this page</span>
+    </h2>
+    <nav aria-label="Table of contents" class="relative">
+      <svg
+        data-nb-toc-rail
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+        fill="none"
+      >
+        <path
+          data-nb-toc-rail-active
+          class="stroke-primary opacity-0 transition-[stroke-dasharray,stroke-dashoffset,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-[ready=true]:opacity-100 data-[initial=true]:transition-opacity motion-reduce:transition-opacity"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </svg>
+
+      <ul class="flex list-none flex-col m-0 p-0">
+        {headings.map((h) => {
+          const indent = Math.max(0, h.depth - 2);
+
+          return (
+            <li data-nb-toc-depth={indent}>
+              <a
+                href={`#${h.slug}`}
+                data-nb-toc-link
+                data-nb-slug={h.slug}
+                class="no-underline"
+                style={`--ch-toc-depth: ${indent};`}
+              >
+                {h.text}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  </div>
+)}
+
+<script>
+  import "./toc.client";
+</script>

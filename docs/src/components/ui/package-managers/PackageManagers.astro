@@ -1,0 +1,129 @@
+---
+/**
+ * PackageManagers — code block with a tab per package manager (npm,
+ * pnpm, yarn, bun). Selection syncs across instances via sessionStorage;
+ * an inline custom element restores the saved tab before paint.
+ */
+import { createHash } from "node:crypto";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { getTabs } from "@cloudflare/nimbus-docs/lib/pkgm";
+import type { CommandType, CommandOptions } from "@cloudflare/nimbus-docs/lib/pkgm";
+import { LayerCard, LayerCardHeader } from "@/components/ui/layer-card";
+
+interface Props extends CommandOptions {
+  pkg?: string;
+  type?: CommandType;
+}
+
+const { pkg, type = "add", args, dev, comment } = Astro.props;
+const tabs = getTabs(type, pkg, { args, dev, comment });
+// Prop hash + a per-page counter (on Astro.locals) so two blocks with
+// identical props still get distinct ids. Counter order is stable within a
+// render, so incremental/warm builds match cold — unlike crypto.randomUUID().
+const localsAny = Astro.locals as Record<string, unknown>;
+const counters =
+  (localsAny.__nbCounters as Map<string, number>) ??
+  (localsAny.__nbCounters = new Map<string, number>());
+const n = (counters.get("package-managers") ?? 0) + 1;
+counters.set("package-managers", n);
+const uid =
+  "pm-" +
+  createHash("sha256")
+    .update(JSON.stringify({ pkg, type, args, dev, comment }))
+    .digest("hex")
+    .slice(0, 12) +
+  "-" +
+  n.toString(16).padStart(4, "0");
+---
+
+<script>
+  if (!customElements.get("nb-pm-restore")) {
+    customElements.define(
+      "nb-pm-restore",
+      class extends HTMLElement {
+        connectedCallback() {
+          const card = this.closest("[data-nb-pm]");
+          if (!card) return;
+          let saved;
+          try {
+            saved = sessionStorage.getItem("ui-pm-tab");
+          } catch {
+            return;
+          }
+          if (!saved) return;
+          const tabs = card.querySelectorAll("[data-nb-pm-tab]");
+          let idx = -1;
+          tabs.forEach(function (t, i) {
+            if (t.textContent.trim() === saved) idx = i;
+          });
+          if (idx < 1) return;
+          tabs.forEach(function (t, i) {
+            t.setAttribute("aria-selected", String(i === idx));
+          });
+          (card.querySelectorAll("[data-nb-pm-panel]") as NodeListOf<HTMLElement>).forEach(function (p, i) {
+            p.hidden = i !== idx;
+          });
+        }
+      },
+    );
+  }
+</script>
+
+<div data-nb-pm class="w-full">
+  <LayerCard>
+    <LayerCardHeader role="tablist" aria-label="Package manager">
+      {tabs.map((tab, i) => (
+        <button
+          role="tab"
+          type="button"
+          aria-selected={i === 0 ? "true" : "false"}
+          aria-controls={`pm-panel-${uid}-${tab.mgr}`}
+          id={`pm-tab-${uid}-${tab.mgr}`}
+          data-nb-pm-tab
+          class="m-0 cursor-pointer rounded-md border-0 bg-transparent px-2 py-0.5 text-xs leading-5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-selected:bg-selected aria-selected:text-foreground"
+        >
+          {tab.mgr}
+        </button>
+      ))}
+    </LayerCardHeader>
+
+    {tabs.map((tab, i) => {
+      const cmdLines = tab.cmd.split("\n");
+      const commentPrefix = cmdLines.length > 1 ? cmdLines.slice(0, -1).join("\n") + "\n" : "";
+      const codeLine = cmdLines[cmdLines.length - 1];
+      const spaceIdx = codeLine.indexOf(" ");
+      const codeFirst = spaceIdx === -1 ? codeLine : codeLine.slice(0, spaceIdx);
+      const codeRest = spaceIdx === -1 ? "" : codeLine.slice(spaceIdx);
+      return (
+        <div
+          role="tabpanel"
+          id={`pm-panel-${uid}-${tab.mgr}`}
+          aria-labelledby={`pm-tab-${uid}-${tab.mgr}`}
+          hidden={i !== 0}
+          data-nb-pm-panel
+          class="relative overflow-hidden rounded-lg bg-card text-inherit ring ring-border"
+        >
+          <div class="flex items-stretch">
+            <pre class="my-0 min-w-0 grow overflow-x-auto border-0 bg-transparent px-4 py-3 text-sm leading-relaxed whitespace-pre font-mono text-foreground"><code data-nb-pm-code>{commentPrefix && <span class="text-muted-foreground">{commentPrefix}</span>}<span class="text-success">{codeFirst}</span><span class="text-warning">{codeRest}</span></code></pre>
+            <button
+              type="button"
+              data-nb-pm-copy
+              data-nb-command={tab.cmd}
+              aria-label="Copy to clipboard"
+              class="m-0 flex shrink-0 cursor-pointer items-center justify-center border-0 border-l border-solid border-border bg-transparent px-3 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Icon name="ph:copy" class="w-[18px] h-[18px]" />
+            </button>
+          </div>
+        </div>
+      );
+    })}
+    <nb-pm-restore style="display:contents"></nb-pm-restore>
+  </LayerCard>
+  <template data-nb-pm-icon-copy><Icon name="ph:copy" class="w-[18px] h-[18px]" /></template>
+  <template data-nb-pm-icon-check><Icon name="ph:check" class="w-[18px] h-[18px]" /></template>
+</div>
+
+<script>
+  import "./package-managers.client";
+</script>

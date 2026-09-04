@@ -1,0 +1,26 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+
+interface Props {
+  /** Sidebar controls are also shown inside the mobile navigation drawer. */
+  sidebar?: boolean;
+}
+
+const { sidebar = false } = Astro.props;
+---
+
+<button
+  data-kapa-trigger
+  data-sidebar-tool={sidebar ? "" : undefined}
+  type="button"
+  class:list={[
+    "items-center gap-1.5 border border-border bg-card text-sm text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground",
+    sidebar
+      ? "inline-flex h-9 shrink-0 justify-center rounded px-3 pr-3.5"
+      : "hidden rounded-md px-2.5 py-1.5 lg:inline-flex",
+  ]}
+  aria-label="Ask AI about ClickHouse"
+>
+  <Icon name="ph:sparkle" class="h-4 w-4 text-primary" />
+  <span class="whitespace-nowrap">{sidebar ? "Ask" : "Ask AI"}</span>
+</button>

@@ -1,0 +1,69 @@
+---
+/**
+ * Button — primary action trigger.
+ *
+ *   <Button variant="primary">Save</Button>
+ *   <Button variant="secondary" icon="ph:plus">Create</Button>
+ *   <Button variant="ghost" loading>Saving…</Button>
+ *   <Button variant="outline" shape="square" icon="ph:gear" aria-label="Settings" />
+ *
+ * Variants: primary · secondary (default) · ghost · destructive ·
+ * secondary-destructive · outline.
+ * Sizes: xs · sm · base (default) · lg.
+ * Shapes: base (default) · square · circle (icon-only — pass `aria-label`).
+ *
+ * `icon` takes an iconify name (astro-icon) rendered before the label;
+ * `loading` swaps it for a spinner and disables the button.
+ *
+ * Styling lives in `./variants` (shared with LinkButton). For an anchor
+ * styled as a button, use `~/components/ui/link-button`.
+ */
+import { cn } from "@/lib/cn";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import type { HTMLAttributes } from "astro/types";
+import {
+  buttonVariants,
+  buttonIconSize,
+  type ButtonVariant,
+  type ButtonSize,
+  type ButtonShape,
+} from "./variants";
+
+interface Props extends Omit<HTMLAttributes<"button">, "size"> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  shape?: ButtonShape;
+  /** Iconify name rendered before the label, e.g. "ph:plus". */
+  icon?: string;
+  /** Show a spinner and disable interaction. */
+  loading?: boolean;
+}
+
+const {
+  variant = "secondary",
+  size = "base",
+  shape = "base",
+  icon,
+  loading = false,
+  type = "button",
+  disabled,
+  class: className,
+  ...attrs
+} = Astro.props;
+---
+
+<button
+  type={type}
+  disabled={disabled || loading}
+  class={cn(buttonVariants({ variant, size, shape }), className)}
+  {...attrs}
+>
+  {
+    loading ? (
+      <Icon name="ph:circle-notch" class={cn("animate-spin", buttonIconSize[size])} />
+    ) : (
+      icon && <Icon name={icon} class={buttonIconSize[size]} />
+    )
+  }
+  <slot />
+</button>

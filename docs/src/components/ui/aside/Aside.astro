@@ -1,0 +1,163 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"aside"> {
+  // Keeps `type` (not `variant`) for Starlight compatibility — Starlight's <Aside> uses `type`.
+  type?: "note" | "info" | "tip" | "caution" | "danger";
+  title?: string;
+}
+
+const { type = "note", title, class: className, ...attrs } = Astro.props;
+
+interface Palette {
+  label: string;
+  light: { fill: string; text: string; icon: string };
+  dark: { fill: string; text: string; icon: string };
+}
+
+const config: Record<string, Palette> = {
+  note: {
+    label: "Note",
+    light: { fill: "var(--nb-info-muted)", text: "var(--nb-foreground)", icon: "var(--nb-info)" },
+    dark: { fill: "var(--nb-info-muted)", text: "var(--nb-foreground)", icon: "var(--nb-info)" },
+  },
+  info: {
+    label: "Info",
+    light: { fill: "rgb(26.275% 49.412% 93.725% / 0.1)", text: "#53575f", icon: "lch(53.426 64.605 278.98 / 0.75)" },
+    dark: { fill: "rgb(26.275% 49.412% 93.725% / 0.2)", text: "#d0dffb", icon: "lch(88.343 15.514 266.4 / 0.75)" },
+  },
+  tip: {
+    label: "Tip",
+    light: { fill: "rgb(20% 100% 26.667% / 0.1)", text: "#008a0b", icon: "lch(49.786 70.246 135.31 / 0.75)" },
+    dark: { fill: "rgb(20% 100% 26.667% / 0.2)", text: "#ccffd0", icon: "lch(95.558 28.893 143.93 / 0.75)" },
+  },
+  caution: {
+    label: "Caution",
+    light: { fill: "rgb(100% 46.667% 16.078% / 0.1)", text: "#a33c00", icon: "lch(40.227 66.602 51.059 / 0.75)" },
+    dark: { fill: "rgb(100% 46.667% 16.078% / 0.2)", text: "#ffb88f", icon: "lch(80.892 39.042 53.918 / 0.75)" },
+  },
+  danger: {
+    label: "Danger",
+    light: { fill: "rgb(100% 13.725% 13.725% / 0.1)", text: "#c10000", icon: "lch(41.001 86.638 40.858 / 0.75)" },
+    dark: { fill: "rgb(100% 13.725% 13.725% / 0.2)", text: "#ffbaba", icon: "lch(82.069 27.695 22.026 / 0.75)" },
+  },
+};
+
+const c = config[type] ?? config.note;
+const renderedBody = await Astro.slots.render("default");
+// Mintlify treats a leading bold-only paragraph as the admonition title.
+// Preserve that convention so migrated pages do not need to be rewritten.
+const leadingTitle = title
+  ? undefined
+  : renderedBody.match(/^\s*<p>\s*<strong>([\s\S]*?)<\/strong>\s*<\/p>\s*/i);
+const inferredTitleHtml = leadingTitle?.[1];
+const bodyHtml = leadingTitle ? renderedBody.slice(leadingTitle[0].length) : renderedBody;
+const titleText = title ?? inferredTitleHtml?.replace(/<[^>]*>/g, "").trim();
+const hasTitleSuffix = Boolean(
+  titleText && titleText.trim().toLocaleLowerCase() !== c.label.toLocaleLowerCase(),
+);
+const displayTitle = hasTitleSuffix ? `${c.label} - ${titleText}` : c.label;
+const palette = [
+  `--_fill-light:${c.light.fill}`,
+  `--_text-light:${c.light.text}`,
+  `--_icon-light:${c.light.icon}`,
+  `--_fill-dark:${c.dark.fill}`,
+  `--_text-dark:${c.dark.text}`,
+  `--_icon-dark:${c.dark.icon}`,
+].join(";");
+---
+
+<aside
+  role="note"
+  aria-label={displayTitle}
+  class={cn("aside-card flex items-start gap-3 rounded-lg px-4 py-3 my-4", type === "note" && "aside-card-default", className)}
+  style={palette}
+  {...attrs}
+>
+  <span class="shrink-0 flex items-center h-[1.375em]" aria-hidden="true">
+    {(type === "note" || type === "info") && <Icon name="ph:info" class="w-[1em] h-[1em]" />}
+    {type === "tip" && <Icon name="ph:lightbulb" class="w-[1em] h-[1em]" />}
+    {type === "caution" && <Icon name="ph:warning" class="w-[1em] h-[1em]" />}
+    {type === "danger" && <Icon name="ph:warning-circle" class="w-[1em] h-[1em]" />}
+  </span>
+  <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+    <p class="m-0 text-base font-semibold leading-snug">
+      {c.label}{hasTitleSuffix && " - "}{hasTitleSuffix && (title ?? (inferredTitleHtml && <Fragment set:html={inferredTitleHtml} />))}
+    </p>
+    <div class="aside-card-body text-sm leading-normal">
+      <Fragment set:html={bodyHtml} />
+    </div>
+  </div>
+</aside>
+
+<style>
+  .aside-card {
+    --_fill: var(--_fill-light);
+    --_text: var(--_text-light);
+    --_icon: var(--_icon-light);
+    border: 1px solid color-mix(in srgb, var(--_icon) 22%, transparent);
+    background: var(--_fill);
+  }
+
+  :global([data-mode="dark"]) .aside-card {
+    --_fill: var(--_fill-dark);
+    --_text: var(--_text-dark);
+    --_icon: var(--_icon-dark);
+  }
+
+  .aside-card > :global(:first-child) { color: var(--_icon); }
+  .aside-card > :global(:last-child) > :global(:first-child) { color: var(--_text); }
+  .aside-card-body { color: var(--_text); }
+
+  .aside-card-body :global(p) { margin: 0; }
+  .aside-card-body :global(p + p) { margin-top: 0.375rem; }
+  .aside-card-body :global(a) {
+    color: inherit !important;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
+  /* Keep Nimbus's original Note treatment; the other variants use the
+     customized Mintlify palette. */
+  .aside-card-default {
+    border-color: color-mix(in oklch, var(--nb-info) 25%, transparent);
+  }
+  .aside-card-default > :global(:first-child),
+  .aside-card-default > :global(:last-child) > :global(:first-child) {
+    color: var(--nb-info);
+  }
+  .aside-card-default .aside-card-body {
+    color: var(--nb-foreground);
+  }
+  .aside-card-default .aside-card-body :global(a) {
+    color: var(--nb-link) !important;
+  }
+  .aside-card-default .aside-card-body :global(code:not(:where(pre *))) {
+    background: color-mix(in oklch, var(--nb-info) 10%, transparent);
+    border-color: color-mix(in oklch, var(--nb-info) 15%, transparent);
+  }
+
+  /* Inline code only — exclude code inside Expressive Code pre blocks */
+  .aside-card-body :global(code:not(:where(pre *))) {
+    font-family: var(--nb-font-mono);
+    font-size: 0.8125em;
+    color: inherit;
+    background: color-mix(in srgb, white 34%, transparent);
+    border: 1px solid color-mix(in srgb, var(--_icon) 18%, transparent);
+    border-radius: 0.25rem;
+    padding: 0.0625rem 0.3125rem;
+  }
+  .aside-card-body :global(strong) { font-weight: 600; color: inherit; }
+
+  :global([data-mode="dark"]) .aside-card-body :global(code:not(:where(pre *))) {
+    background: color-mix(in srgb, white 8%, transparent);
+  }
+
+  /* Shiki code blocks inside Asides */
+  .aside-card-body :global(.astro-code) {
+    margin: 0.75rem 0;
+  }
+</style>
