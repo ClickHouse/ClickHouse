@@ -184,6 +184,28 @@ TEST(RequestQueue, LasAppliesCostCorrection)
     EXPECT_EQ(att2 - att1, 100);                          // attained advanced by the corrected cost
 }
 
+/// The weight-lowering threshold reads the query's real service (attained + pending correction) with
+/// no one-request lag: a correction that pushes real service over the threshold lowers the weight on
+/// the very next request, not the one after.
+TEST(RequestQueue, FairThresholdSeesPendingCorrectionImmediately)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    // weight 1.0, halve it once attained IO >= 50 bytes.
+    auto * a = f.makeQuery(/*weight=*/1.0, /*factor=*/0.5, /*age_s=*/0, /*cpu_s=*/0, /*io_b=*/50);
+    f.enqueue(1, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
+    double vr1 = f.vruntimeOf(a);                         // 10: full weight, not yet over threshold
+    // Request 1 really moved 100 bytes: its real service (10 + 90) now exceeds 50, so request 2's
+    // effective weight must already be lowered (0.5) — the pending correction is peeked, not lagged.
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);
+    f.enqueue(2, a, 10);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
+    double vr2 = f.vruntimeOf(a);
+    // charge = 10 + 90 = 100; at the lowered weight 0.5 the advance is 100 / 0.5 = 200 (it would be
+    // 100 if the threshold had not yet seen the correction).
+    EXPECT_DOUBLE_EQ(vr2 - vr1, 200.0);
+}
+
 /// fair, unequal weights: the heavier query gets a larger share.
 TEST(RequestQueue, FairWeighted)
 {

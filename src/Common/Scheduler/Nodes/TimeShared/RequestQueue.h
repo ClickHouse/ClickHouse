@@ -10,6 +10,7 @@
 #include <boost/intrusive/set.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -226,6 +227,14 @@ private:
     {
         bool lowered = false;
 
+        // Real cumulative service for this query = attained_cost (charged at pop) plus the pending
+        // real-vs-estimate correction not yet folded into it (see ResourceState::consumeCorrectedCost).
+        // Peeking the pending correction here — instead of waiting for it to land in attained_cost at
+        // the next pop — lets the attained-service thresholds react on the FIRST request after a
+        // finish (no one-request lag), without mutating attained_cost (so a cancelled request that
+        // never pops leaks nothing).
+        const Int64 attained_service = state.attained_cost + state.cost_correction.load(std::memory_order_relaxed);
+
         if (ctx.weight_lowering_age_seconds > 0)
         {
             UInt64 now = clock_gettime_ns();
@@ -242,12 +251,12 @@ private:
             // lease's overrun term). This fair path runs for CPU only under slot preemption; without
             // preemption a CPU leaf falls back to fifo (see WorkloadNodeTraits::schedulerFor), so
             // this branch is not reached for CPU then.
-            if (static_cast<double>(state.attained_cost) / 1e9 >= ctx.weight_lowering_cpu_seconds)
+            if (static_cast<double>(attained_service) / 1e9 >= ctx.weight_lowering_cpu_seconds)
                 lowered = true;
         }
         if (!lowered && unit == CostUnit::IOByte && ctx.weight_lowering_io_bytes > 0)
         {
-            if (static_cast<double>(state.attained_cost) >= ctx.weight_lowering_io_bytes)
+            if (static_cast<double>(attained_service) >= ctx.weight_lowering_io_bytes)
                 lowered = true;
         }
 
