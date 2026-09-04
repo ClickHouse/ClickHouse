@@ -64,6 +64,10 @@ INNER JOIN ON, conjunct with a deterministic lambda body over the equi-key: the 
 1
 INNER JOIN ON, conjunct whose lambda body reads the equi-key representation: the conjunct is not pushed
 1
+INNER JOIN ON, deterministic lambda body over the equi-key passed as the formal parameter: pushed
+1
+INNER JOIN ON, lambda body reading the formal parameter representation: the conjunct is not pushed
+1
 INNER JOIN ON, cross-type equi-key: result
 2020-06-01
 2020-06-02

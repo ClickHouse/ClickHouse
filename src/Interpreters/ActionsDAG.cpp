@@ -2245,14 +2245,18 @@ bool foldedLambdaHasUnsafeFunction(const IColumn & column, bool (*is_unsafe)(con
 
 bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &))
 {
-    if (node.type == ActionType::FUNCTION)
+    const Node * lambda = &node;
+    while (lambda->type == ActionType::ALIAS)
+        lambda = lambda->children.front();
+
+    if (lambda->type == ActionType::FUNCTION)
     {
-        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(lambda->function_base.get());
         return function_capture && dagHasUnsafeFunction(function_capture->getAcionsDAG(), is_unsafe);
     }
 
-    if (node.type == ActionType::COLUMN && node.column)
-        return foldedLambdaHasUnsafeFunction(node.column->getDataColumn(), is_unsafe);
+    if (lambda->type == ActionType::COLUMN && lambda->column)
+        return foldedLambdaHasUnsafeFunction(lambda->column->getDataColumn(), is_unsafe);
 
     return false;
 }
@@ -3596,6 +3600,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// it must read no more than that column's value: `isConstant` and `toColumnTypeName` answer differently
     /// for the same value depending on constness, and a replacement can be constant where the input is not.
     static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+    /// A higher-order function hands its remaining arguments to the lambda as its formal parameters, so a
+    /// body reading a representation describes every argument of the call, not only the captures below it.
+    auto call_reads_representation = [](const Node * node)
+    {
+        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
+            return true;
+        for (const auto * argument : node->children)
+            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                return true;
+        return false;
+    };
     auto reads_replaced_input_representation = [&](const Node * conjunct)
     {
         std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
@@ -3606,7 +3621,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             auto [node, reads_representation] = to_visit.back();
             to_visit.pop_back();
 
-            reads_representation |= !node->isDeterministic() || hasUnsafeHiddenLambdaBody(*node, is_representation_read);
+            reads_representation |= !node->isDeterministic() || call_reads_representation(node);
             auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
             if (!visited.insert(node).second)
                 continue;

@@ -276,6 +276,25 @@ SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
       AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
 );
 
+-- The key can also reach the body as the lambda's formal parameter rather than as a capture, which the two
+-- arms above do not cover: the call passes it in from a sibling argument.
+
+SELECT 'INNER JOIN ON, deterministic lambda body over the equi-key passed as the formal parameter: pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 1 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> y > toDate32('1900-01-01'), [l.a])
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
+SELECT 'INNER JOIN ON, lambda body reading the formal parameter representation: the conjunct is not pushed';
+SELECT countIf(explain ILIKE '%arrayExists%CAST(b AS Date32)%') = 0 FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
+    WHERE arrayExists(y -> isConstant(y) = 0, [l.a])
+      AND l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03')
+);
+
 SELECT 'INNER JOIN ON, cross-type equi-key: result';
 SELECT r.b FROM inner_d32 AS l INNER JOIN inner_d AS r ON l.a = r.b
 WHERE l.a BETWEEN toDate32('2020-06-01') AND toDate32('2020-06-03') ORDER BY 1;
