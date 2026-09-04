@@ -335,9 +335,11 @@ FillingTransform::FillingTransform(
     for (const ColumnWithTypeAndName & column : header_->getColumnsWithTypeAndName())
     {
         if (interpolate_description)
-            if (const auto & p = interpolate_description->required_columns_map.find(column.name);
-                p != interpolate_description->required_columns_map.end())
-                input_positions.emplace_back(idx, p->second);
+        {
+            const auto [begin, end] = interpolate_description->required_columns_map.equal_range(column.name);
+            for (auto it = begin; it != end; ++it)
+                input_positions.emplace_back(idx, it->second);
+        }
 
         if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name))
             && sort_prefix_positions.end() == std::find(sort_prefix_positions.begin(), sort_prefix_positions.end(), idx))

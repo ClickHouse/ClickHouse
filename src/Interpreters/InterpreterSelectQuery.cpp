@@ -1563,6 +1563,92 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
     return order_descr;
 }
 
+/// Name of the column the result column `result_name` is backed by in the block the filling transform
+/// works on. With `enable_analyzer = 0` that block is the one before the final projection, where a
+/// column is known by the name of its expression and not by its alias. Must match
+/// `InterpolateDescription`.
+static String getBackingColumnName(const String & result_name, const Aliases & aliases)
+{
+    if (const auto it = aliases.find(result_name); it != aliases.end())
+        return it->second->getColumnName();
+    return result_name;
+}
+
+/// Replace identifiers referring to SELECT aliases by the names of the columns they are backed by, so
+/// that INTERPOLATE expressions written in terms of different aliases of one column become identical.
+static void rewriteAliasesToBackingColumnNames(ASTPtr & ast, const Aliases & aliases)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        ast = make_intrusive<ASTIdentifier>(getBackingColumnName(identifier->name(), aliases));
+        return;
+    }
+
+    for (auto & child : ast->children)
+        rewriteAliasesToBackingColumnNames(child, aliases);
+}
+
+/// Several result columns can be backed by one column, for example `SELECT x AS a, x AS b`. INTERPOLATE
+/// targets are named after the result columns, so such targets collapse into a single target once mapped
+/// to the backing column. Interpolating that column once is correct only if every result column backed by
+/// it is interpolated in the same way; otherwise the query is not executable with `enable_analyzer = 0`,
+/// while the analyzer keeps the result columns separate. Drop the collapsed duplicates, reject the
+/// conflicts.
+static void deduplicateInterpolateTargets(
+    ColumnsWithTypeAndName & result_columns, ASTPtr & exprs, const Block & result_block, const NameSet & order_by_names, const Aliases & aliases)
+{
+    std::unordered_map<String, NameSet> result_names_by_backing_column;
+    for (const auto & column : result_block)
+        result_names_by_backing_column[getBackingColumnName(column.name, aliases)].insert(column.name);
+
+    std::unordered_map<String, size_t> target_positions;
+    std::vector<IASTHash> expression_hashes;
+    for (size_t i = 0; i < result_columns.size(); ++i)
+    {
+        target_positions.emplace(result_columns[i].name, i);
+
+        ASTPtr expr = exprs->children[i]->clone();
+        rewriteAliasesToBackingColumnNames(expr, aliases);
+        expression_hashes.push_back(expr->getTreeHash(/*ignore_aliases=*/true));
+    }
+
+    ColumnsWithTypeAndName deduplicated_result_columns;
+    ASTPtr deduplicated_exprs = make_intrusive<ASTExpressionList>();
+    NameSet used_backing_columns;
+
+    for (size_t i = 0; i < result_columns.size(); ++i)
+    {
+        const String backing_column = getBackingColumnName(result_columns[i].name, aliases);
+
+        /// A target backed by an ORDER BY column is rejected later by the filling transform, with a
+        /// more specific message.
+        if (!order_by_names.contains(backing_column))
+        {
+            for (const auto & sibling : result_names_by_backing_column[backing_column])
+            {
+                if (sibling == result_columns[i].name)
+                    continue;
+
+                const auto it = target_positions.find(sibling);
+                if (it == target_positions.end() || expression_hashes[it->second] != expression_hashes[i])
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Result columns '{}' and '{}' are both backed by the column '{}', so they cannot be "
+                        "interpolated differently. Set enable_analyzer = 1 to run this query",
+                        result_columns[i].name, sibling, backing_column);
+            }
+        }
+
+        if (used_backing_columns.insert(backing_column).second)
+        {
+            deduplicated_result_columns.push_back(result_columns[i]);
+            deduplicated_exprs->children.push_back(exprs->children[i]);
+        }
+    }
+
+    result_columns = std::move(deduplicated_result_columns);
+    exprs = std::move(deduplicated_exprs);
+}
+
 static InterpolateDescriptionPtr getInterpolateDescription(
     const ASTSelectQuery & query, const Block & source_block, const Block & result_block, const Aliases & aliases, ContextPtr context)
 {
@@ -1573,29 +1659,24 @@ static InterpolateDescriptionPtr getInterpolateDescription(
         ColumnsWithTypeAndName result_columns;
         ASTPtr exprs = make_intrusive<ASTExpressionList>();
 
+        NameSet order_by_names;
+        for (const auto & elem : query.orderBy()->children)
+            order_by_names.insert(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+
         if (query.interpolate()->children.empty())
         {
-            std::unordered_map<String, DataTypePtr> column_names;
-            for (const auto & column : result_block.getColumnsWithTypeAndName())
-                column_names[column.name] = column.type;
-            NameSet order_by_names;
-            for (const auto & elem : query.orderBy()->children)
+            /// Iterate the result block in order, so that the choice of a representative among the
+            /// result columns backed by one column does not depend on hash table iteration order.
+            NameSet used_names;
+            for (const auto & column : result_block)
             {
-                auto name = elem->as<ASTOrderByElement>()->children.front()->getColumnName();
-                order_by_names.insert(name);
-                column_names.erase(name);
-            }
-            std::erase_if(column_names, [&](const auto & pair)
-            {
-                if (auto it = aliases.find(pair.first); it != aliases.end())
-                    return order_by_names.contains(it->second->getColumnName());
-                return false;
-            });
-            for (const auto & [name, type] : column_names)
-            {
-                source_columns.emplace_back(name, type);
-                result_columns.emplace_back(type, name);
-                exprs->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+                if (order_by_names.contains(column.name) || order_by_names.contains(getBackingColumnName(column.name, aliases))
+                    || !used_names.insert(column.name).second)
+                    continue;
+
+                source_columns.emplace_back(column.name, column.type);
+                result_columns.emplace_back(column.type, column.name);
+                exprs->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
             }
         }
         else
@@ -1630,6 +1711,8 @@ static InterpolateDescriptionPtr getInterpolateDescription(
                 if (!col_set.contains(column.name))
                     source_columns.emplace_back(column.name, column.type);
         }
+
+        deduplicateInterpolateTargets(result_columns, exprs, result_block, order_by_names, aliases);
 
         auto syntax_result = TreeRewriter(context).analyze(exprs, source_columns);
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
