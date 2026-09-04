@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -33,15 +34,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// `num_types` is the length of a list of Dynamic's nested types read from a (possibly untrusted,
-/// e.g. Native format) stream. It must not be handed to `reserve` directly: a count the container
-/// cannot hold escapes as an uncaught `std::length_error` instead of a `DB::Exception`, and a
-/// large-but-representable count (e.g. `100000000`, far below `max_size()`) would drive a huge
-/// up-front allocation and fail as `std::bad_alloc` / OOM before a single type is read. Reject the
-/// first as corruption, and cap the `reserve` hint for the second: `reserve` is only a sizing hint,
-/// so the caller's read loop still appends each type as it is decoded (growing the container on
-/// demand for a legitimately large count), while a corrupted over-count trips a normal read error
-/// at end of stream instead of a huge allocation.
+/// The count is untrusted, so use it only as a capped hint; the caller appends types as it reads them.
 template <typename Container>
 void reserveOrThrowTooManyTypes(Container & container, size_t num_types)
 {
@@ -77,7 +70,7 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
 
     /// For flattened serialization only.
     std::optional<FlattenedDynamicColumn> flattened_column;
-    std::vector<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
+    VectorWithMemoryTracking<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
     ISerialization::SerializeBinaryBulkStatePtr flattened_indexes_state;
 
     explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::SerializationVersion structure_version_)
@@ -93,7 +86,7 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
     /// For flattened serialization only.
-    std::vector<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
+    VectorWithMemoryTracking<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
     ISerialization::DeserializeBinaryBulkStatePtr flattened_indexes_state;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -411,9 +404,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             /// Read information about variants.
             DataTypes variants;
             readVarUInt(structure_state->num_dynamic_types, *structure_stream);
-            /// A `Dynamic` column can have at most `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` regular variants.
-            /// Check this before doing the `+ 1` below: for a corrupted count equal to `SIZE_MAX`,
-            /// `num_dynamic_types + 1` would wrap around to `0` and defeat the check entirely.
+            /// Check before the `+ 1` below, which would wrap a corrupted `SIZE_MAX` count to `0`.
             if (structure_state->num_dynamic_types > ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Dynamic column has too many types: {}", structure_state->num_dynamic_types);
             /// +1 for shared variant.

@@ -35,19 +35,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The number of paths in a `JSON` / `Object` column is read from a possibly-untrusted stream
-/// (e.g. `Native` input, or the statistics of a corrupted on-disk part) and used only as a sizing
-/// hint before the actual paths are read one by one. It must not be handed to a container's
-/// `resize` / `reserve` directly:
-///   * A count the container cannot hold (`> max_size()`, e.g. close to `SIZE_MAX`) escapes as an
-///     uncaught non-`DB::Exception` (`std::length_error`, `std::bad_array_new_length` or, for a
-///     hash table, `std::bad_alloc`), so reject it as corruption up front.
-///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
-///     `std::vector<String>`, yet handing it to `resize` / `reserve` would allocate gigabytes
-///     before a single path byte is read and fail as `std::bad_alloc` / OOM.
-/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
-/// path as it is decoded (growing the container on demand for a legitimately large count), while a
-/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
+/// The count is untrusted, so use it only as a capped hint; the caller appends paths as it reads them.
 template <typename Container>
 void reserveOrThrowTooManyPaths(Container & container, size_t num_paths)
 {
@@ -56,14 +44,6 @@ void reserveOrThrowTooManyPaths(Container & container, size_t num_paths)
     container.reserve(std::min(num_paths, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
 }
 
-/// `shared_data_buckets` in a V3 `Object` prefix is another raw count from a possibly-untrusted
-/// stream, later used to size per-bucket state vectors and `Columns`. Unlike the path / type counts,
-/// this one has a tight writer-side invariant: the number of buckets is chosen from the small
-/// MergeTree settings `object_shared_data_buckets_for_{compact,wide}_part`, which are non-zero and
-/// capped at `MAX_OBJECT_SHARED_DATA_BUCKETS`. So the only legitimate on-wire range is
-/// `1 .. MAX_OBJECT_SHARED_DATA_BUCKETS`; any value outside it (including a large-but-representable
-/// count such as `100000`, which the generic `Native` column-count cap would let through) can only
-/// be corruption and must be rejected up front, before it is used to size the per-bucket state.
 void throwIfInvalidNumberOfBuckets(size_t num_buckets)
 {
     if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
@@ -737,9 +717,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
         if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
         {
-            /// Read the list of flattened paths. Append one path at a time (with a capped `reserve`
-            /// hint) rather than pre-sizing to the untrusted `paths_size`, so a corrupted count
-            /// cannot drive a huge allocation before any path is read (see `reserveOrThrowTooManyPaths`).
+            /// Read the list of flattened paths.
             size_t paths_size = 0;
             readVarUInt(paths_size, *structure_stream);
             reserveOrThrowTooManyPaths(structure_state->flattened_paths, paths_size);
@@ -763,7 +741,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 readVarUInt(max_dynamic_paths, *structure_stream);
             }
 
-            /// Read the sorted list of dynamic paths (same append-on-demand handling as flattened paths).
+            /// Read the sorted list of dynamic paths.
             size_t dynamic_paths_size = 0;
             readVarUInt(dynamic_paths_size, *structure_stream);
             structure_state->sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();

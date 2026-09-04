@@ -25,7 +25,7 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObj
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+void unflattenAndInsertPaths(const VectorWithMemoryTracking<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -254,7 +254,7 @@ ColumnPtr createPathsIndexesImpl(const std::unordered_map<std::string_view, size
 }
 
 template <typename T = UInt8>
-void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit)
+void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t limit)
 {
     auto & data = paths_column.getChars();
     auto & offsets = paths_column.getOffsets();
@@ -309,7 +309,7 @@ std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<st
     }
 }
 
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit)
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, VectorWithMemoryTracking<String> && paths, size_t limit)
 {
     auto & paths_string_column = assert_cast<ColumnString &>(paths_column);
     auto indexes_type = getSmallestIndexesType(paths.size());
