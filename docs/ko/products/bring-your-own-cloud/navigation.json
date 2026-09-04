@@ -2,14 +2,14 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "개요",
+      "group": "Overview",
       "pages": [
         "ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ko/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "구성",
+      "group": "Configuration",
       "pages": [
         "ko/products/bring-your-own-cloud/configuration/configurations",
         "ko/products/bring-your-own-cloud/configuration/connect",
@@ -17,11 +17,11 @@
       ]
     },
     {
-      "group": "온보딩",
+      "group": "Onboarding",
       "pages": [
         "ko/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "사용자 지정",
+          "group": "Customization",
           "pages": [
             "ko/products/bring-your-own-cloud/onboarding/customization-aws",
             "ko/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -40,7 +40,27 @@
       ]
     },
     {
-      "group": "참고",
+      "group": "Connector",
+      "pages": [
+        "ko/products/bring-your-own-cloud/connector/overview",
+        "ko/products/bring-your-own-cloud/connector/onboarding",
+        "ko/products/bring-your-own-cloud/connector/architecture",
+        "ko/products/bring-your-own-cloud/connector/support-sessions",
+        "ko/products/bring-your-own-cloud/connector/configuration",
+        "ko/products/bring-your-own-cloud/connector/operations",
+        {
+          "group": "Reference",
+          "pages": [
+            "ko/products/bring-your-own-cloud/connector/reference/cli",
+            "ko/products/bring-your-own-cloud/connector/reference/configuration",
+            "ko/products/bring-your-own-cloud/connector/reference/faq",
+            "ko/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
       "pages": [
         "ko/products/bring-your-own-cloud/reference/network-security",
         "ko/products/bring-your-own-cloud/reference/privilege",
