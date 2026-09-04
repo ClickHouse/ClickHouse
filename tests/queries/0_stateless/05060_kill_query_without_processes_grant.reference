@@ -48,7 +48,7 @@
 18 own=1 foreign=6
 18 killed=1
 18 exception=0
-18 charge_in_band=1
+18 charge=1
 19 progress_in_band=1
 19 alive=0
 19 selected_rows_in_band=1

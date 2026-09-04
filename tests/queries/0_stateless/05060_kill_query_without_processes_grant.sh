@@ -265,27 +265,32 @@ echo "17 exception=$(printf '%s\n' "$out" | matched "attempts to kill query crea
 echo "17 alive=$(alive "foreign17$SUFFIX")"
 reset_arm
 
-# 18: the caller's quota is charged for one logical read once. The statement returns the caller's own
-# row plus their KILL statement, so two rows; the read behind it scans every user's row, so charging
-# that one too would cost at least nine more here and more on a busier server. The bound is set high
-# enough that nothing in the arm can trip it, and the charge is measured as a delta over the statement,
-# so neither a slow run nor the caller's own victim reading a row per second can fail the arm.
+# 18: the caller's quota is charged for the rows their own statement read, and not for the read behind
+# it, which scans every user's row. A quota counts per user rather than per query, so the charge is
+# measured around a statement the caller issues while owning nothing else: their only row is then that
+# statement itself, so the charge is exactly one, while the six foreign victims still running would make
+# a leaked scan cost at least eight. That the caller's own read is metered at all is asserted in arm 19,
+# whose counter is per query.
 $CLICKHOUSE_CLIENT -q "CREATE QUOTA $Q1 FOR INTERVAL 1 HOUR MAX READ ROWS = 1000000 TO $U1"
 for n in 1 2 3 4 5 6; do start_victim "$U2" "foreign18$n$SUFFIX"; done
 start_victim "$U1" "own18$SUFFIX"
 echo "18 own=$(alive "own18$SUFFIX") foreign=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE 'foreign18%\\$SUFFIX'")"
-before=$(quota_read_rows)
 out=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id LIKE '%\\$SUFFIX' SYNC" 2>&1)
-after=$(quota_read_rows)
 echo "18 killed=$(printf '%s\n' "$out" | killed "own18$SUFFIX")"
 echo "18 exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
-echo "18 charge_in_band=$(( after - before >= 2 && after - before <= 6 ? 1 : 0 ))"
+gone "own18$SUFFIX"
+before=$(quota_read_rows)
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'nomatch$SUFFIX' SYNC" > /dev/null
+after=$(quota_read_rows)
+echo "18 charge=$(( after - before ))"
 reset_arm
 
 # 19: the read behind the statement scans every user's row, so what it read is neither reported to the
 # caller nor charged to their profile events. Both channels are bounded by what the caller's own rows
 # cost: the progress their statement reports back, and the SelectedRows its own query_log row carries.
-start_victim "$U2" "foreign19$SUFFIX"
+# Six foreign victims run so that either channel would leave the band if it reported the wider read.
+# Over HTTP the response is finalized before the log row is written, so that row is polled for.
+for n in 1 2 3 4 5 6; do start_victim "$U2" "foreign19$n$SUFFIX"; done
 start_victim "$U1" "own19$SUFFIX"
 progress_rows=$(${CLICKHOUSE_CURL} -sS -D - -o /dev/null \
     "${CLICKHOUSE_URL}&user=$U1&query_id=kill19$SUFFIX&http_wait_end_of_query=1" \
@@ -294,6 +299,17 @@ progress_rows=$(${CLICKHOUSE_CURL} -sS -D - -o /dev/null \
 echo "19 progress_in_band=$(( ${progress_rows:-0} >= 1 && ${progress_rows:-0} <= 6 ? 1 : 0 ))"
 gone "own19$SUFFIX"; echo "19 alive=$(alive "own19$SUFFIX")"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+log_start=$EPOCHSECONDS
+while [[ $($CLICKHOUSE_CLIENT -q "
+    SELECT count() FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = 'kill19$SUFFIX'") == 0 ]]; do
+    if ((EPOCHSECONDS - log_start > 60)); then
+        echo "Timeout waiting for the query_log row of kill19$SUFFIX" >&2
+        break
+    fi
+    sleep 0.5
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+done
 echo "19 selected_rows_in_band=$($CLICKHOUSE_CLIENT -q "
     SELECT toUInt8(ifNull(max(ProfileEvents['SelectedRows']), 0) BETWEEN 1 AND 6)
     FROM system.query_log
