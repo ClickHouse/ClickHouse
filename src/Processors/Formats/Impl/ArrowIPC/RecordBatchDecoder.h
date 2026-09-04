@@ -62,7 +62,8 @@ public:
     };
 
     /// Replaces (or, for delta batches, appends to) the values of dictionary `id` decoded for the field at
-    /// `position`. A delta batch is decoded for the same positions as its base, so it carries the same types.
+    /// `position`. A delta batch is decoded for the same positions as its base and must decode to the same
+    /// column layout there, so that its values can be appended to the registered column.
     void set(Int64 id, const FieldPosition & position, ColumnPtr column, DataTypePtr type, bool is_delta);
     const Values & get(Int64 id, const FieldPosition & position) const;
     /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).

@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
@@ -207,6 +208,19 @@ void DictionaryRegistry::set(Int64 id, const FieldPosition & position, ColumnPtr
         if (it == dictionaries.end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC delta dictionary batch for unknown dictionary id {}", id);
         Values & base = it->second.at(positionKey(position));
+        /// A delta's values are appended to the registered column, so they must share its layout. The layout
+        /// a requested type gives dictionary values is fixed by the type, except for variable-width binary
+        /// under a raw-byte target (IPv6, big integers): the decoder reinterprets that leaf only when every
+        /// value has the target's width, and decides so per batch. A base of 16-byte values followed by a
+        /// delta adding a shorter one thus decodes to `Int128` and then to `String`. Such a dictionary has no
+        /// reading as the requested type as a whole — an inline column mixing the widths fails in the cast
+        /// the same way — so reject the delta rather than append values of another layout.
+        if (!base.column->structureEquals(*column))
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Arrow IPC delta dictionary batch for dictionary {} decodes to {} under the requested type, but the "
+                "dictionary's earlier values decoded to {}",
+                id, column->getName(), base.column->getName());
         auto merged = IColumn::mutate(std::move(base.column));
         merged->insertRangeFrom(*column, 0, column->size());
         base.column = std::move(merged);
