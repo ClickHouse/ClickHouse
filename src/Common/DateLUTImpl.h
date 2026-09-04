@@ -1930,10 +1930,19 @@ public:
         return { .year = values.year, .month = values.month, .day = values.day_of_month };
     }
 
+    /// `check_range == false` is the caller's promise that `t` is inside
+    /// [`lut_in_range_min`, `lut_in_range_max`). It is the same property that
+    /// `may_be_out_of_lut_range` decides for the accessors taking a `DateOrTime`.
+    template <bool check_range = true>
     DateTimeComponents toDateTimeComponents(Time t) const
     {
-        if (unlikely(isOutOfLUTRange(t)))
-            return toDateTimeComponentsOutOfRange(t);
+        if constexpr (check_range)
+        {
+            if (unlikely(isOutOfLUTRange(t)))
+                return toDateTimeComponentsOutOfRange(t);
+        }
+        else
+            chassert(!isOutOfLUTRange(t));
 
         const LUTIndex index = findIndexInRange(t);
         const Values & values = lut[index];
@@ -1999,9 +2008,10 @@ public:
         return toDateTimeComponents(getValues(v).date);
     }
 
+    template <bool check_range = true>
     UInt64 toNumYYYYMMDDhhmmss(Time t) const
     {
-        DateTimeComponents components = toDateTimeComponents(t);
+        DateTimeComponents components = toDateTimeComponents<check_range>(t);
 
         return
               components.time.second
