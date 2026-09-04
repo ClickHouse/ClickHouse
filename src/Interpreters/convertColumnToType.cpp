@@ -129,9 +129,9 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
 /// The type of the alternative that row 0 of a `Variant`/`Dynamic` column occupies, else `from`. A
 /// genuine value of such a constant has that type rather than the carrier's - the carrier only records
 /// which alternative it is - and `convertFieldToType` keys its conversions on the source type (an `Enum`
-/// renders as its name, a `Bool` as 'true'/'false'), while `IColumn::get` returns the nested value alone.
-/// One layer is enough: an alternative may not itself be a `Variant` or a `Dynamic`. A NULL row has no
-/// alternative, and the callers own the NULL contract.
+/// renders as its name, a `Bool` as `'true'`/`'false'`), while `IColumn::get` returns the nested value
+/// alone. One layer is enough: an alternative may not itself be a `Variant` or a `Dynamic`. A `NULL` row
+/// has no alternative, and the callers own the `NULL` contract.
 DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePtr & from)
 {
     if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))

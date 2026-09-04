@@ -37,9 +37,9 @@ namespace DB
   * (`convertFieldToType` on `(*column)[0]`) cannot do, the column being gone by then, so moving a caller
   * onto this helper corrects such conversions rather than preserving them.
   *
-  * Known limitation: a carrier nested inside `Array`/`Tuple`/`Map` (e.g. `Array(Dynamic)`) is NOT
-  * faithful, because `convertFieldToType` converts the elements of a composite with no element type at
-  * hand, so a per-element alternative is never reached.
+  * Known limitation: a conversion whose `from` is itself a composite over the carrier - e.g.
+  * `Array(Dynamic)` to `Array(String)` - is NOT faithful, because `convertFieldToType` converts the
+  * elements of a composite with no element type at hand, so a per-element alternative is never reached.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
