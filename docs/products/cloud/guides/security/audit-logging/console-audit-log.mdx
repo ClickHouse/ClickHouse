@@ -9,7 +9,13 @@ keywords: ['audit log']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-Console activities are recorded in the audit log. If you have the Admin or Developer organization role, you can review the log and integrate it with your logging systems.
+Console activities are recorded in the audit log. Users with access can review the log and integrate it with their logging systems. Access to the audit log is controlled by the **View audit logs** permission (`control-plane:organization:view-activities`):
+
+- Users with the Admin organization role have access by default.
+- Other console users need organization access plus a [custom role](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) that includes the **View audit logs** permission.
+- API keys need a role that includes the same permission.
+
+For a description of all permissions, see [Console roles and permissions](/products/cloud/reference/security/console-roles).
 
 ## Access the console log via the user interface {#console-audit-log-ui}
 

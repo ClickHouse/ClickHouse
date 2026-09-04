@@ -1,0 +1,35 @@
+--- UInt32: Small x Small ---
+1	1	1	1	1
+--- UInt32: Small x Large ---
+1	1	1	1	1
+--- UInt32: Large x Small ---
+1	1	1	1	1
+--- UInt32: Large x Small, no shared element ---
+1	1	1	1	1
+--- UInt32: Large x Large, overlapping ---
+1	1	1	1	1
+--- UInt32: Large x Large, disjoint ---
+1	1	1	1	1
+--- UInt32: multi-container, shared element ---
+1	1	1	1	1
+--- UInt32: multi-container, no shared element ---
+1	1	1	1	1
+--- UInt32: operand order, Large x Small vs Small x Large ---
+1	1	1	1
+--- UInt32: operand order, Large x Large ---
+1	1	1	1
+--- UInt32: exact cardinalities, Large x Large ---
+1	1	1	1	1
+--- UInt64: Large x Large, overlapping ---
+1	1	1	1	1
+--- UInt64: Large x Small ---
+1	1	1	1	1
+--- UInt64: above the 32-bit range ---
+1	1	1	1	1
+--- UInt64: operand order, Large x Small ---
+1	1	1	1
+--- Int32 / Int16: Large x Large ---
+1	1
+1	1
+--- empty operands ---
+1	1	1	1	1	1	1
