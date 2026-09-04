@@ -442,6 +442,8 @@ struct FormatSettings
 
         bool named_tuples_as_json = true;
 
+        bool display_tuples_as_subcolumns = false;
+
         bool use_nbsp_for_padding = false;
 
         enum class Charset : uint8_t

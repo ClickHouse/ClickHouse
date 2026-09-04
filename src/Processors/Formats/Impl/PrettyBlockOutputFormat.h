@@ -97,7 +97,13 @@ private:
     /// For mono_block == true only
     Chunk mono_chunk;
     Widths prev_chunk_max_widths;
-    bool had_footer = false;
+    std::vector<size_t> prev_column_to_group;
+    std::vector<UInt8> prev_group_is_tuple;
+    bool prev_chunk_has_subcolumns = false;
+    /// The number of terminal lines the previous chunk wrote after its last row (its bottom border,
+    /// or its footer, which is taller when tuple subcolumns are displayed). The chunk gluing rewinds
+    /// exactly that many lines before appending the rows of the next chunk.
+    size_t prev_chunk_tail_lines = 0;
 
     /// Implements squashing of chunks by time
     std::condition_variable mono_chunk_condvar;
