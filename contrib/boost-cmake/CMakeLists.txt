@@ -147,10 +147,6 @@ elseif (ARCH_LOONGARCH64)
     )
 elseif (ARCH_E2K)
     # using BOOST_USE_UCONTEXT=ON, don't use ASM
-elseif (ARCH_WASM)
-    # WebAssembly has no assembler and no way to switch stacks from user code, so the fiber
-    # backend has to go through the `ucontext` family, which Emscripten emulates.
-    set (BOOST_USE_UCONTEXT ON)
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"
@@ -178,10 +174,6 @@ target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
 if (SANITIZE OR BOOST_USE_UCONTEXT)
     target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
-    if (USE_MUSL)
-        # musl does not implement the ucontext functions.
-        target_link_libraries(_boost_context PUBLIC ch_contrib::ucontext)
-    endif()
 endif()
 
 if (SANITIZE MATCHES "address")

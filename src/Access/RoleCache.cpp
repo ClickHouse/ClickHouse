@@ -178,9 +178,9 @@ void RoleCache::collectEnabledRoles(scope_guard * notifications)
     ProfileEvents::increment(ProfileEvents::RoleCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * roles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
+        LOG_WARNING(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
     else
-        LOG_TRACE(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
+        LOG_DEBUG(getLogger("RoleCache"), "Recalculated enabled roles for {} enabled set(s) in {} ms", enabled_roles_by_params.size(), elapsed_ms);
 }
 
 

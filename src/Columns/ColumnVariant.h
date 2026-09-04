@@ -180,7 +180,6 @@ public:
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
-    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
@@ -219,6 +218,7 @@ public:
     void popBack(size_t n) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
@@ -265,6 +265,11 @@ public:
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
+    /// Variant columns pair variant sub-columns with DataTypeVariant's sorted type list.
+    /// The default convertToFullIfNeeded recurses into sub-columns and strips LowCardinality
+    /// from variant columns, but cannot update the corresponding DataTypeVariant, creating
+    /// column/type position mismatches. Override to skip recursion.
+    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;

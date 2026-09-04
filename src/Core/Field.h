@@ -8,8 +8,6 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -20,7 +18,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = VectorWithMemoryTracking<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -43,7 +41,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -911,14 +909,6 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
-
-/// Rewrite every `Bool`-tagged `Field` inside `field`, recursively through `Tuple`/`Array`/`Map`, as
-/// the `UInt64` form `IColumn::get` produces: a boolean has both representations, and `Field`
-/// comparison and hashing read the tag before the value, so the two forms neither compare equal nor
-/// hash alike. An `Object` is deliberately not entered, because its paths disagree: a dynamic path
-/// keeps the `Bool` form on both sides, since `ColumnDynamic::get` rebuilds it, while a typed path is
-/// read from its declared column as `UInt64`. Entering it needs path-aware handling, not this rewrite.
-void normalizeBoolFields(Field & field);
 
 /// Check if a Field contains a NaN value.
 /// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
