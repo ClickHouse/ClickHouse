@@ -181,7 +181,7 @@ Notes:
 - Paths must start with `/`.
 - `children_of` is resolved at startup by listing the parent; if it has no children (and no `create` generator adds to it), an exception is raised.
 - `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found (and no `create` generator outputs to it), an exception is raised.
-- With several sources, paths are drawn uniformly from their union: a set is picked with probability proportional to its estimated current size, then a path within it. For dynamic sets the sizes are read without locking, so the weighting may lag slightly behind concurrent updates. Referencing the same tag or parent twice in one `path` is an error.
+- With several sources, paths are drawn uniformly from their union: a set is picked with probability proportional the set's current size.
 
 ### Dynamic path sets
 
