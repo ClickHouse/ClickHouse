@@ -704,8 +704,7 @@ QueryPlanStepRegistry::StepSerializationInfo manifestRegistryInfo(const Manifest
     QueryPlanStepRegistry::StepSerializationInfo info;
     info.introduced_in_plan_version = manifest.name_introduced_in;
     info.has_wire_struct = !manifest.custom;
-    for (UInt64 ordinal = 2; ordinal <= Manifest::formatCount(); ++ordinal)
-        info.payload_formats[ordinal] = {QueryPlanStepRegistry::PayloadChange::Append, /*min_plan_version=*/0};
+    info.max_format_version = std::max<UInt64>(1, Manifest::formatCount());
     return info;
 }
 

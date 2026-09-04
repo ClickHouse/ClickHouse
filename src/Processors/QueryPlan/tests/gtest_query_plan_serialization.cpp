@@ -131,11 +131,9 @@ void registerStepsOnce()
             QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
 
-        /// A step whose payload format 2 can only be read by a server newer than the one that
-        /// introduced the outline.
+        /// A step whose name only a server newer than the one that introduced the outline knows.
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure,
-                                   /*min_plan_version=*/newer_than_outline_version};
+        info.introduced_in_plan_version = newer_than_outline_version;
         QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
 
         /// Known up to payload format 1, so a tail is only acceptable above that.
@@ -293,22 +291,14 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     const size_t current = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
     const size_t older = current - 1;
 
-    EXPECT_FALSE(plan.isSerialized(current));
-    EXPECT_FALSE(plan.isSerialized(older));
-
     plan.ensureSerialized(current);
-    EXPECT_TRUE(plan.isSerialized(current));
-    /// Bytes for one version must never be served for another: each advertised peer version gets
-    /// its own cache entry.
-    EXPECT_FALSE(plan.isSerialized(older));
-
     plan.ensureSerialized(older);
-    EXPECT_TRUE(plan.isSerialized(older));
 
     auto current_bytes = cachedPlanBytes(plan, current);
     auto older_bytes = cachedPlanBytes(plan, older);
 
-    /// The stream starts with the version varint, so the leading byte must differ.
+    /// Bytes for one version must never be served for another: each advertised peer version gets
+    /// its own cache entry. The stream starts with the version varint, so the leading byte must differ.
     ASSERT_FALSE(current_bytes.empty());
     ASSERT_FALSE(older_bytes.empty());
     EXPECT_EQ(static_cast<UInt8>(current_bytes[0]), current);
@@ -393,54 +383,6 @@ TEST(QueryPlanSerialization, PlanArrivingInPiecesIsRead)
     auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
     auto restored = QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
     EXPECT_EQ(serializePlan(restored), bytes);
-}
-
-TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
-{
-    registerStepsOnce();
-    auto & registry = QueryPlanStepRegistry::instance();
-
-    /// A format version that skips the one before it is refused: the skipped change was never
-    /// described, and that is what lets an older reader read a restructured payload as if the old
-    /// fields still came first.
-    {
-        QueryPlanStepRegistry::StepSerializationInfo info;
-        info.payload_formats[3] = {QueryPlanStepRegistry::PayloadChange::Append};
-        EXPECT_THROW(
-            registry.registerStep("TestUnclassifiedBump", TestSourceStep::deserialize, std::move(info)),
-            Exception);
-    }
-
-    /// A restructure needs nothing beyond the classification: the outline tells readers, per node,
-    /// how far back a reader can still make sense of the payload.
-    {
-        QueryPlanStepRegistry::StepSerializationInfo info;
-        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure};
-        EXPECT_NO_THROW(
-            registry.registerStep("TestClassifiedRestructure", TestSourceStep::deserialize, std::move(info)));
-    }
-
-    /// An append needs nothing more than saying so: older readers read the front and skip the rest.
-    {
-        QueryPlanStepRegistry::StepSerializationInfo info;
-        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Append};
-        EXPECT_NO_THROW(
-            registry.registerStep("TestClassifiedAppend", TestSourceStep::deserialize, std::move(info)));
-    }
-}
-
-TEST(QueryPlanSerialization, PrefixReadableBaseFollowsTheLastRestructure)
-{
-    QueryPlanStepRegistry::StepSerializationInfo info;
-    info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Append};
-    info.payload_formats[3] = {QueryPlanStepRegistry::PayloadChange::Restructure};
-    info.payload_formats[4] = {QueryPlanStepRegistry::PayloadChange::Append};
-
-    /// Appends stack onto whatever came before; a restructure resets the base to itself.
-    EXPECT_EQ(info.prefixReadableFrom(1), 1u);
-    EXPECT_EQ(info.prefixReadableFrom(2), 1u);
-    EXPECT_EQ(info.prefixReadableFrom(3), 3u);
-    EXPECT_EQ(info.prefixReadableFrom(4), 3u);
 }
 
 TEST(QueryPlanSerialization, QueryPicksTheWriterVersion)
@@ -638,10 +580,10 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
 {
     registerStepsOnce();
 
-    /// A payload from a future writer: its format is above everything this build knows, and the
-    /// writer says the part this build understands still comes first, so the bytes the step's
-    /// deserializer leaves behind are an ignorable append. That is what keeps a rolling upgrade
-    /// working. No writer of this build can produce such a stream, hence the hand-built one.
+    /// A payload from a future writer: its format is above everything this build knows, and every
+    /// format appends to the one before, so the bytes the step's deserializer leaves behind are an
+    /// ignorable append. That is what keeps a rolling upgrade working. No writer of this build can
+    /// produce such a stream, hence the hand-built one.
     WriteBufferFromOwnString payload;
     writeVarUInt(UInt64(12345), payload);
     payload.finalize();
@@ -651,7 +593,6 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
     node.child_count = 0;
     node.step_name = "TestTailStep";
     node.step_format_version = 5;
-    node.payload_prefix_readable_from = 1;
     node.min_reader_plan_version = outline_version;
     node.header = makeTestHeader();
     node.payload_size = payload.str().size();
@@ -721,17 +662,14 @@ TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
-    /// Format version 2 of this step requires a newer reader than this build's base, and the node
-    /// says so.
+    /// The step's name was introduced after this build's base version, and the node says so.
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
-    outline.nodes[1].step_format_version = 2;
-    outline.nodes[1].payload_prefix_readable_from = 2;
     outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
     EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 
-    /// A version above the newest one known is an addition this reader may ignore: the payload can
-    /// still be read from a format this server knows, and nothing the registry says forbids it.
+    /// A format above the newest one known is an addition this reader may ignore: it reads the
+    /// front of the payload, and nothing the registry says forbids it.
     outline.nodes[1].step_format_version = 3;
     EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 }
@@ -744,7 +682,6 @@ TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
     /// registry info requires the newer version while the node declares only the base one.
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
-    outline.nodes[1].step_format_version = 2;
     auto result = validateQueryPlanOutline(outline, newer_than_outline_version);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find(fmt::format("registry info requires {}", newer_than_outline_version)),
@@ -955,25 +892,6 @@ TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
     }
 }
 
-TEST(QueryPlanOutline, ValidationRefusesPayloadItCannotPrefixRead)
-{
-    registerStepsOnce();
-
-    /// `TestSource` is known up to payload format 1 here, so a payload from a much newer format is
-    /// only readable if the writer says the part this server understands still comes first.
-    auto appended = makeTestOutline();
-    appended.nodes[0].step_format_version = 5;
-    appended.nodes[0].payload_prefix_readable_from = 1;
-    EXPECT_TRUE(validateQueryPlanOutline(appended, outline_version).ok());
-
-    auto restructured = makeTestOutline();
-    restructured.nodes[0].step_format_version = 5;
-    restructured.nodes[0].payload_prefix_readable_from = 5;
-    auto result = validateQueryPlanOutline(restructured, outline_version);
-    EXPECT_FALSE(result.ok());
-    EXPECT_NE(result.describe().find("readable only by format 5"), std::string::npos) << result.describe();
-}
-
 TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
 {
     registerStepsOnce();
@@ -1025,9 +943,9 @@ TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
 
         /// Everything before the first node's flag byte is one byte except the step name: frame
         /// size, the two plan-level limits, node count, child count, name length, name, format
-        /// version, prefix base and reader version.
+        /// version and reader version.
         const std::string first_step_name = "TestSource";
-        const size_t flags_at = 8 + first_step_name.size() + 1;
+        const size_t flags_at = 7 + first_step_name.size() + 1;
         ASSERT_EQ(bytes[flags_at], char(1)) << "the node flag byte is not where this test expects it";
         bytes[flags_at] = char(1 | 2);
 

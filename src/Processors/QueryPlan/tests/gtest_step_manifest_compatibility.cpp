@@ -337,12 +337,8 @@ TEST(StepManifestCompatibility, TheRegistriesDescribeWhatEachBuildKnows)
     const auto * new_info = newBuild().registry.getStepSerializationInfo("Versioned");
     ASSERT_TRUE(old_info && new_info);
 
-    EXPECT_EQ(old_info->maxFormatVersion(), 1u);
-    EXPECT_EQ(new_info->maxFormatVersion(), 2u);
-    /// The appended format keeps the base readable in front, and needs nothing from a reader that
-    /// skips it: the requirement is raised per value, while writing.
-    EXPECT_EQ(new_info->prefixReadableFrom(2), 1u);
-    EXPECT_EQ(new_info->minPlanVersionForFormat(2), 1u);
+    EXPECT_EQ(old_info->max_format_version, 1u);
+    EXPECT_EQ(new_info->max_format_version, 2u);
     EXPECT_TRUE(new_info->has_wire_struct);
 
     EXPECT_EQ(newBuild().registry.getStepSerializationInfo("Future")->introduced_in_plan_version, new_build_version);

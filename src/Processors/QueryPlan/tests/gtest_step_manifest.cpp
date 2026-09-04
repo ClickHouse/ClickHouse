@@ -209,14 +209,11 @@ TEST(StepManifest, RegistryEntryIsDerived)
 {
     auto info = manifestRegistryInfo(TWO_FORMATS);
     EXPECT_EQ(info.introduced_in_plan_version, base_version);
-    ASSERT_EQ(info.payload_formats.size(), 1u);
-    EXPECT_EQ(info.payload_formats.at(2).change, QueryPlanStepRegistry::PayloadChange::Append);
-    EXPECT_EQ(info.payload_formats.at(2).min_plan_version, 0u);
-    EXPECT_EQ(info.maxFormatVersion(), 2u);
-    EXPECT_EQ(info.prefixReadableFrom(2), 1u);
+    EXPECT_EQ(info.max_format_version, 2u);
+    EXPECT_TRUE(info.has_wire_struct);
 
     auto base_only = manifestRegistryInfo(BASE_ONLY);
-    EXPECT_TRUE(base_only.payload_formats.empty());
+    EXPECT_EQ(base_only.max_format_version, 1u);
 }
 
 TEST(StepManifest, LogicalProjectionIgnoresPhysicalEntries)

@@ -310,7 +310,7 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
         ctx.version = flags.version;
-        ctx.step_format_version = info ? info->maxFormatVersion() : 1;
+        ctx.step_format_version = info ? info->max_format_version : 1;
         node->step->serialize(ctx);
         payload.finalize();
 
@@ -318,23 +318,20 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         /// outline has to name the format the bytes are really in. Lowering is the only move that
         /// makes sense: a format above the newest registered one was never described, so nothing
         /// would tell older readers what they may do with it.
-        const UInt64 registered_max = info ? info->maxFormatVersion() : 1;
+        const UInt64 registered_max = info ? info->max_format_version : 1;
         if (ctx.step_format_version == 0 || ctx.step_format_version > registered_max)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Step {} wrote payload format {} but is registered up to {}",
                 outline_node.step_name, ctx.step_format_version, registered_max);
 
         outline_node.step_format_version = ctx.step_format_version;
-        /// Said outright instead of left to the reader to guess: a reader that knows only formats
-        /// older than this cannot read these bytes at all, whatever their format version suggests.
-        outline_node.payload_prefix_readable_from = info ? info->prefixReadableFrom(ctx.step_format_version) : 1;
         outline_node.payload_size = payload.str().size();
 
-        /// "Needed to read" for this node: the step's registry requirements for the format
-        /// actually written, its value-dependent requirements, and the header's type encodings.
+        /// "Needed to read" for this node: the version that introduced the step's name, what the
+        /// step asked for while writing, the header's type encodings and the settings.
         UInt64 node_min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
         if (info)
-            node_min_reader = std::max(node_min_reader, info->minPlanVersionForFormat(ctx.step_format_version));
+            node_min_reader = std::max(node_min_reader, info->introduced_in_plan_version);
         node_min_reader = std::max(node_min_reader, ctx.min_reader_version);
         if (outline_node.header)
             for (const auto & column : *outline_node.header)
@@ -552,7 +549,7 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         if (!payload.eof())
         {
             const auto * info = step_registry.getStepSerializationInfo(outline_node.step_name);
-            UInt64 known_format_version = info ? info->maxFormatVersion() : 1;
+            UInt64 known_format_version = info ? info->max_format_version : 1;
             if (outline_node.step_format_version <= known_format_version)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Step {} left {} of its {} payload bytes unread at step format version {}, "
@@ -632,14 +629,6 @@ void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_versio
     /// hold up the other senders.
     for (const auto & chunk : *chunks)
         out.write(chunk.data(), chunk.size());
-}
-
-bool QueryPlan::isSerialized(size_t max_supported_version, UInt64 requested_version) const
-{
-    UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
-
-    std::lock_guard lock(serialized_plans.mutex);
-    return serialized_plans.plans.contains(version);
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)

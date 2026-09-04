@@ -47,7 +47,6 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
         writeVarUInt(node.child_count, out);
         writeStringBinary(node.step_name, out);
         writeVarUInt(node.step_format_version, out);
-        writeVarUInt(node.payload_prefix_readable_from, out);
         writeVarUInt(node.min_reader_plan_version, out);
 
         UInt8 node_flags = node.header ? 1 : 0;
@@ -119,7 +118,6 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         node.child_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "node children");
         readStringBinary(node.step_name, in, MAX_OUTLINE_FIELD_BYTES);
         readVarUInt(node.step_format_version, in);
-        readVarUInt(node.payload_prefix_readable_from, in);
         readVarUInt(node.min_reader_plan_version, in);
 
         UInt8 node_flags = 0;
@@ -293,40 +291,12 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
         if (node.step_format_version == 0)
             result.issues.push_back(fmt::format("step '{}' has format version 0", node.step_name));
 
-        /// A payload newer than this binary knows is only readable when the writer says the part we
-        /// understand still comes first. Restructured payloads say otherwise and are refused here,
-        /// before any payload byte is decoded.
-        if (node.payload_prefix_readable_from == 0 || node.payload_prefix_readable_from > node.step_format_version)
-            result.issues.push_back(fmt::format(
-                "step '{}' (node #{}) says its payload format {} is readable from format {}, which is "
-                "not a format it could have",
-                node.step_name, i, node.step_format_version, node.payload_prefix_readable_from));
-
         if (info)
         {
-            const UInt64 known_formats = info->maxFormatVersion();
-            if (node.step_format_version > known_formats)
-            {
-                if (node.payload_prefix_readable_from > known_formats)
-                    result.issues.push_back(fmt::format(
-                        "step '{}' (node #{}) has payload format {} readable only by format {} and up, "
-                        "this server knows up to {}",
-                        node.step_name, i, node.step_format_version, node.payload_prefix_readable_from, known_formats));
-            }
-            /// For a format this server knows, the claim can be checked against the step's own
-            /// history. A writer that understated it would have old readers accept bytes they
-            /// cannot read as if the old fields still came first.
-            else if (node.payload_prefix_readable_from != info->prefixReadableFrom(node.step_format_version))
-                result.issues.push_back(fmt::format(
-                    "step '{}' (node #{}) says payload format {} is readable from format {} but this "
-                    "server's history of that step says {}",
-                    node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
-                    info->prefixReadableFrom(node.step_format_version)));
-
-            /// The version a node claims to need must cover what this server knows the step needs.
-            /// A writer that asked for too little would otherwise have old readers run the plan
-            /// wrongly without noticing.
-            const UInt64 static_requirement = info->minPlanVersionForFormat(node.step_format_version);
+            /// The version a node claims to need must cover the version that introduced the step's
+            /// name. A writer that asked for too little would otherwise have old readers run the
+            /// plan wrongly without noticing.
+            const UInt64 static_requirement = info->introduced_in_plan_version;
             if (static_requirement > node.min_reader_plan_version)
                 result.issues.push_back(fmt::format(
                     "step '{}' (node #{}) declares reader version {} but its registry info requires {}",

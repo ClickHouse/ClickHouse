@@ -149,9 +149,6 @@ public:
     /// Writes the bytes kept for the version this peer will be sent.
     void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Whether the bytes for the version this peer will be sent are already there.
-    bool isSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
-
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);

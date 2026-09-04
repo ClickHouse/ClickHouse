@@ -1,6 +1,8 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
+#include <map>
+
 namespace DB
 {
 
@@ -8,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -65,19 +66,6 @@ void QueryPlanStepRegistry::registerStep(
 {
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
-
-    /// Payload formats run 2, 3, ... without gaps: a version that appears without the one before it
-    /// would mean a payload change nobody described, and these entries are what tells an older
-    /// reader whether it may read a payload it only half knows.
-    UInt64 expected_version = 2;
-    for (const auto & [format_version, format] : info.payload_formats)
-    {
-        if (format_version != expected_version)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Query plan step '{}' declares payload format version {} but says nothing about {}",
-                name, format_version, expected_version);
-        ++expected_version;
-    }
 
     steps[name] = Entry{std::move(create_function), std::move(info), std::move(manifest_description)};
 }

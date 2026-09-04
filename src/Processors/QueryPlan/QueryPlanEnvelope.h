@@ -41,11 +41,9 @@ struct PlanOutline
     {
         UInt64 child_count = 0;
         String step_name;                       /// QueryPlanStepRegistry key
+        /// Every format appends fields to the one before, so a reader that knows fewer formats
+        /// reads the front of the payload and the frame skips the rest.
         UInt64 step_format_version = 1;
-        /// The oldest payload format that can still be read from the front of this payload. A
-        /// reader that knows only older formats refuses the plan instead of reading fields that
-        /// have moved.
-        UInt64 payload_prefix_readable_from = 1;
         /// The oldest plan version that can read this node, worked out by the writer from what the
         /// node actually carries: the step's registered requirements, whatever the step asked for
         /// while writing, its header types and its settings. Lets a rejection name the step that
