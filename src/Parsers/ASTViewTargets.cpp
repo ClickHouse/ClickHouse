@@ -31,9 +31,9 @@ namespace
             case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
             case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
+            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
-            case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
         }
         UNREACHABLE();
     }
@@ -217,6 +217,22 @@ const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
     return nullptr;
 }
 
+void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
+{
+    for (auto it = targets.begin(); it != targets.end(); ++it)
+    {
+        if (it->kind == kind)
+        {
+            /// Detach the target's ASTs from `children` before erasing the target.
+            reset(it->inner_engine);
+            reset(it->inner_columns);
+            reset(it->table_ast);
+            targets.erase(it);
+            return;
+        }
+    }
+}
+
 ASTPtr ASTViewTargets::clone() const
 {
     auto res = make_intrusive<ASTViewTargets>(*this);
@@ -227,9 +243,6 @@ ASTPtr ASTViewTargets::clone() const
             res->set(target.inner_engine, target.inner_engine->clone());
         if (target.inner_columns)
             res->set(target.inner_columns, target.inner_columns->clone());
-        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
-        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
-        /// dangles into the original's children.
         if (target.table_ast)
             res->set(target.table_ast, target.table_ast->clone());
     }
@@ -308,18 +321,27 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::in
     }
 }
 
-void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
+void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast)
 {
     for (auto & target : targets)
     {
         if (target.kind == kind)
         {
-            target.table_ast = table_;
+            if (target.table_ast == new_table_ast)
+                return;
+            if (new_table_ast)
+                setOrReplace(target.table_ast, std::move(new_table_ast));
+            else
+                reset(target.table_ast);
             return;
         }
     }
-    if (table_)
-        targets.emplace_back(kind).table_ast = table_;
+
+    if (new_table_ast)
+    {
+        auto & new_target = targets.emplace_back(kind);
+        set(new_target.table_ast, std::move(new_table_ast));
+    }
 }
 
 bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
@@ -336,13 +358,6 @@ ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             return target.table_ast;
     return nullptr;
-}
-
-void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (auto & target : targets)
-        if (target.kind == kind)
-            target.table_ast.reset();
 }
 
 void ASTViewTargets::readJSON(const Poco::JSON::Object & json)

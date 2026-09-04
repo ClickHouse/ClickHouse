@@ -71,13 +71,13 @@ Review permissions assigned to your new role before finalizing. Click `Create ro
 
 <BetaBadge/>
 
-In addition to console permissions, custom roles can include data permissions that control access to the databases of selected services. This lets you manage console and database access in one place instead of maintaining separate roles in each database.
+In addition to console permissions, custom roles can include a `Data` policy that controls access to the databases of selected services. This lets you manage console and database access in one place instead of maintaining separate roles in each database.
 
 <Note>
 This feature is in beta and is available for services running ClickHouse version 26.4 and above.
 </Note>
 
-When you add data permissions to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
+When you add a `Data` policy to a custom role, ClickHouse Cloud creates a matching role in each selected service, prefixed with `cloud:`. For example, a custom role named `readonly` appears in the database as `cloud:readonly`. Members of the custom role receive these database permissions when they connect to the service through SQL console passwordless authentication.
 
 <Tip>
 Cloud-managed database roles replace manually assigned [`sql-console-role:<email>`](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) roles, which are not compatible with [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
@@ -85,22 +85,36 @@ Cloud-managed database roles replace manually assigned [`sql-console-role:<email
 
 ### Prerequisites {#manage-database-roles-prerequisites}
 
-Custom database roles on a service depend on [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) and are not applied while it is disabled. Before adding data permissions to a role, navigate to the service, open `Settings`, and find the `JWT authentication` card in the `Security` section. Make sure the `SQL Console` toggle is enabled.
+Custom database roles on a service depend on [JWT authentication](/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) and are not applied while it is disabled. Before adding a `Data` policy to a role, navigate to the service, open `Settings`, and find the `JWT authentication` card in the `Security` section. Make sure the `SQL Console` toggle is enabled.
 
 <Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="JWT authentication card with the SQL Console toggle enabled" size="lg" force/>
 
 <Steps>
-<Step title="Add data permissions to a role" id="add-data-permissions">
+<Step title="Open the role dialog" id="open-role-dialog">
 
-[Create a custom role](#create-custom-role) or edit an existing one. In the role dialog, click the `Allow permissions` button and select `Data`.
+[Create a custom role](#create-custom-role) or edit an existing one.
+</Step>
+<Step title="Add an organization policy" id="add-organization-policy">
+
+In the role dialog, click `Allow`, select `Organization`, and enable the `Access organization` permission.
+</Step>
+<Step title="Add a service policy" id="add-service-policy">
+
+Click `Allow permissions`, select `Service`, choose the services the data policy will apply to, and enable the `View selected services` permission.
+
+Members of the role need both permissions to sign in to the console and open the service in the SQL console, where the data policy applies.
+</Step>
+<Step title="Add a data policy" id="add-data-permissions">
+
+Click `Allow permissions` and select `Data`.
 </Step>
 <Step title="Select the service" id="select-data-permissions-service">
 
-Select the service the permissions apply to. Add more services to apply the same `Read-only` or `Admin` permissions across multiple services.
+Select the service the policy applies to. Add more services to apply the same `Read-only` or `Admin` permissions across multiple services.
 </Step>
 <Step title="Choose the access level" id="choose-data-access-level">
 
-Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the permissions target a single service; to define custom permissions for multiple services, add a separate `Data` permission for each service.
+Select `Read-only`, `Admin`, or `Custom` access. With `Custom` access, define specific data access permissions using ClickHouse [`GRANT` statements](/reference/statements/grant). `Custom` access can only be selected when the policy targets a single service; to define custom permissions for multiple services, add a separate `Data` policy for each service.
 
 <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Create new role dialog with data permissions defined by custom grant statements" size="md"/>
 </Step>
