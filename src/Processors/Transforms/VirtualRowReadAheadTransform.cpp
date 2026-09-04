@@ -199,7 +199,6 @@ bool VirtualRowReadAheadTransform::chooseReaders()
     next.erase(std::unique(next.begin(), next.end()), next.end());
 
     bool changed = next != readers || window_open != window_open_when_chosen;
-    previous_readers = std::move(readers);
     readers = std::move(next);
     frontier_lane = frontier;
     window_open_when_chosen = window_open;
@@ -319,8 +318,7 @@ void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool i
 
 /// With a limit the set may read only once the merge has moved on to a second lane parked
 /// behind a virtual row; until then everything it does not ask for stays unread. The lane asked
-/// for last keeps reading ahead on its own; the one before it loses that right and is served
-/// again by `prepare`, which sees it leave the readers.
+/// for last keeps reading ahead on its own; the one before it loses that right.
 void VirtualRowReadAheadTransform::noteDemand(size_t lane_num)
 {
     const Lane & lane = lanes[lane_num];
@@ -423,12 +421,8 @@ IProcessor::Status VirtualRowReadAheadTransform::prepareImpl(const UpdatedInputP
     /// buffer, the window opened. The executor does not call back for that, so the readers are
     /// served again here until they stand still.
     while (chooseReaders())
-    {
-        for (size_t lane_num : previous_readers)
-            serve(lane_num);
         for (size_t lane_num : readers)
             serve(lane_num);
-    }
 
     if (finished_lanes == lanes.size())
     {

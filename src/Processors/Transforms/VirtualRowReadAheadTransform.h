@@ -136,10 +136,11 @@ private:
 
     /// The read-ahead rule: of the lanes that can still read, the K with the smallest bounds read
     /// ahead of the merge, up to the frontier, which is the (K + 1)-th bound; so does the lane the
-    /// merge is draining. `readers` holds them in lane order. When they change, or the window
-    /// opens, the old and the new readers are served: newcomers start, leavers release their input.
+    /// merge is draining. `readers` holds them in lane order and they are served whenever the list,
+    /// or the window, changes. A lane that dropped out is not chased: its port stays needed until
+    /// its next block arrives, which is when it is served again and parks. That costs one block
+    /// per departure, the one block per set lane the waste bound allows.
     std::vector<size_t> readers;
-    std::vector<size_t> previous_readers;
     ssize_t frontier_lane = -1;
     bool window_open_when_chosen = false;
 
