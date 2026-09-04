@@ -215,6 +215,9 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
+    /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
+    bool replace = true;
+
     DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
@@ -232,8 +235,6 @@ public:
     /// REPLACE(ATTACH) PARTITION partition FROM db.table
     String from_database;
     String from_table;
-    /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
-    bool replace = true;
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
