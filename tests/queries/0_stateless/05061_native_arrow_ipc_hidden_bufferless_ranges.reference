@@ -17,6 +17,14 @@ MEMORY_LIMIT_EXCEEDED
 [(NULL)]
 []
 [(NULL)]
+--- list_null_tail ---
+[NULL,NULL]
+--- list_struct_null_tail ---
+[(NULL),(NULL)]
+--- list_struct_nulls_tail ---
+[(NULL),(NULL)]
+--- list_null_short ---
+INCORRECT_DATA
 --- list_struct_null_small as Nullable tuples, then as plain tuples ---
 [(NULL,NULL),(NULL,NULL),(NULL,NULL)]
 [(NULL,NULL),(NULL,NULL),(NULL,NULL),(NULL,NULL)]

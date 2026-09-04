@@ -26,6 +26,12 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 #   list_struct_null_hidden:    list<struct<a: null, b: null>>, one NULL slot spanning 2^31-1 rows
 #   list_struct_nulls:          list<struct<a: null>> whose struct declares a NULL row: the child carries a
 #                               validity bitmap and decodes on the ordinary path (visible and hidden slots)
+#   list_null_tail:             list<null> whose child declares one row more than the offsets reference —
+#                               the untruncated tail of a sliced list — read as the referenced rows
+#   list_struct_null_tail:      the same tail under list<struct<a: null>>
+#   list_struct_nulls_tail:     the same tail when the struct declares a NULL row, so the child carries a
+#                               validity bitmap and decodes on the ordinary path
+#   list_null_short:            list<null> whose child declares fewer rows than the offsets reference: rejected
 #   list_struct_null_small:     list<struct<a: null, b: null>> read as a Nullable tuple and as a plain one;
 #                               its int64 metadata equal to the element count is then forged one value at a
 #                               time to 2^40: every variant is rejected or read, none drives an allocation,
@@ -83,6 +89,26 @@ write("list_struct_null_hidden", list_of(struct_of_nulls(N, ["a", "b"]), [0, N],
 # Struct rows 0 and 2 are valid, row 1 is NULL; list slot 0 holds row 0, the NULL slot 1 holds row 1, slot 2 holds row 2.
 write("list_struct_nulls", list_of(struct_of_nulls(3, ["a"], validity=bytes([0b101])), [0, 1, 2, 3], 0b101))
 
+def with_child_length(name, arr, referenced, declared):
+    """Writes `arr` and then declares `declared` rows for its child (and that child's own subtree) instead
+    of the `referenced` rows pyarrow normalizes it to on write; a larger count is the untruncated tail a
+    writer keeps for a sliced list. The FieldNode lengths are the only int64 values equal to `referenced`.
+    When the result is a valid Arrow file, pyarrow reads it back to confirm that."""
+    data = bytearray(write(name, arr))
+    for i in range(0, len(data) - 7, 8):
+        if struct.unpack_from("<q", data, i)[0] == referenced:
+            struct.pack_into("<q", data, i, declared)
+    open(f"{out}/{name}.arrow", "wb").write(data)
+    if declared >= referenced:
+        chunk = ipc.open_file(f"{out}/{name}.arrow").read_all().column("a").chunk(0)
+        assert len(chunk.values) == declared, len(chunk.values)
+
+with_child_length("list_null_tail", list_of_nulls([0, 2], 0b1), 2, 3)
+with_child_length("list_struct_null_tail", list_of(struct_of_nulls(2, ["a"]), [0, 2], 0b1), 2, 3)
+# Struct row 0 is valid and row 1 is NULL, so the struct carries a validity bitmap.
+with_child_length("list_struct_nulls_tail", list_of(struct_of_nulls(2, ["a"], validity=bytes([0b01])), [0, 2], 0b1), 2, 3)
+with_child_length("list_null_short", list_of_nulls([0, 2], 0b1), 2, 1)
+
 data = bytearray(write("list_struct_null_small", list_of(struct_of_nulls(7, ["a", "b"]), [0, 3, 7], 0b11)))
 count = 0
 for i in range(0, len(data) - 8, 8):
@@ -112,6 +138,11 @@ echo "--- list_struct_null_hidden ---"
 read_column list_struct_null_hidden "a" "a Array(Tuple(a Nullable(Nothing), b Nullable(Nothing)))"
 echo "--- list_struct_nulls as plain tuples ---"
 read_column list_struct_nulls "a" "a Array(Tuple(a Nullable(Nothing)))"
+echo "--- list_null_tail ---";         read_column list_null_tail "a" "$NULLS"
+echo "--- list_struct_null_tail ---";  read_column list_struct_null_tail "a" "a Array(Tuple(a Nullable(Nothing)))"
+echo "--- list_struct_nulls_tail ---"; read_column list_struct_nulls_tail "a" "a Array(Tuple(a Nullable(Nothing)))"
+echo "--- list_null_short ---"
+${CLICKHOUSE_LOCAL} --query "SELECT a FROM file('${TMP_DIR}/list_null_short.arrow', 'Arrow', '${NULLS}')" 2>&1 | grep -o "INCORRECT_DATA" | head -n 1
 echo "--- list_struct_null_small as Nullable tuples, then as plain tuples ---"
 ${CLICKHOUSE_LOCAL} --allow_experimental_nullable_tuple_type=1 --query \
     "SELECT a FROM file('${TMP_DIR}/list_struct_null_small.arrow', 'Arrow', 'a Array(Nullable(Tuple(a Nullable(Nothing), b Nullable(Nothing))))')"
