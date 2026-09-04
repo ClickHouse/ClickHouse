@@ -1,5 +1,6 @@
 #include <Coordination/KeeperCommon.h>
 
+#include <array>
 #include <limits>
 #include <optional>
 #include <string>
@@ -145,10 +146,18 @@ KeeperMoveMarkerParseResult parseKeeperMoveMarker(std::string_view marker)
 
 KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std::string & path)
 {
-    std::string contents;
     auto input = disk->readFile(path, getReadSettings());
-    readStringUntilEOF(contents, *input);
-    return parseKeeperMoveMarker(contents);
+    std::array<char, keeper_move_marker_size + 1> contents{};
+    size_t size = 0;
+    while (size < contents.size())
+    {
+        const size_t bytes_read = input->readBig(contents.data() + size, contents.size() - size);
+        if (bytes_read == 0)
+            break;
+        size += bytes_read;
+    }
+
+    return parseKeeperMoveMarker(std::string_view(contents.data(), size));
 }
 
 KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input)

@@ -15,9 +15,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 
@@ -94,8 +96,8 @@ private:
         const size_t count = ++arrivals;
         if (count == 2)
             cv.notify_all();
-        else
-            cv.wait(lock, [&] { return arrivals.load() >= 2; });
+        else if (!cv.wait_for(lock, std::chrono::seconds(30), [&] { return arrivals.load() >= 2; }))
+            throw std::runtime_error("Timed out waiting for parallel changelog recovery");
     }
 
     mutable std::mutex validation_mutex;
@@ -112,8 +114,8 @@ struct InventoryLatch
         const size_t count = ++arrivals;
         if (count == 2)
             cv.notify_all();
-        else
-            cv.wait(lock, [&] { return arrivals.load() >= 2; });
+        else if (!cv.wait_for(lock, std::chrono::seconds(30), [&] { return arrivals.load() >= 2; }))
+            throw std::runtime_error("Timed out waiting for parallel changelog inventory");
     }
 
     std::atomic<size_t> arrivals{0};

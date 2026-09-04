@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <memory>
 #include <system_error>
+#include <utility>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -73,9 +74,9 @@ void syncLocalPath(const fs::path & path, int open_flags, bool is_directory)
 
     const auto close_fd = [&]
     {
-        if (::close(fd) == -1)
+        const int fd_to_close = std::exchange(fd, -1);
+        if (::close(fd_to_close) == -1)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close {} {}", is_directory ? "directory" : "file", path);
-        fd = -1;
     };
 
     try

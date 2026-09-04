@@ -2,6 +2,7 @@
 
 import io
 import os
+import time
 
 import pytest
 
@@ -131,18 +132,33 @@ def test_delayed_changelog_and_snapshot_marker_puts(started_cluster):
         zk.close()
 
     mock.wait_delayed_marker_put()
-    local_snapshots = node.exec_in_container(
-        ["bash", "-c", "find /var/lib/clickhouse/coordination/snapshots -maxdepth 1 -type f -printf '%f\\n'"]
-    ).splitlines()
+    deadline = time.monotonic() + 30
+    while True:
+        local_snapshots = node.exec_in_container(
+            ["bash", "-c", "find /var/lib/clickhouse/coordination/snapshots -maxdepth 1 -type f -printf '%f\\n'"]
+        ).splitlines()
+        snapshot_objects = list_objects("snapshots/")
+        if (
+            len([name for name in local_snapshots if name.startswith("snapshot_")]) == 1
+            and any(
+                os.path.basename(name).startswith("snapshot_")
+                for name in snapshot_objects
+            )
+        ):
+            break
+        if time.monotonic() >= deadline:
+            raise AssertionError("snapshot move did not complete within 30 seconds")
+        time.sleep(0.5)
+
     assert len([name for name in local_snapshots if name.startswith("snapshot_")]) == 1
     assert not [
         name
-        for name in list_objects("snapshots/")
+        for name in snapshot_objects
         if os.path.basename(name).startswith("tmp_snapshot_")
     ]
     assert [
         name
-        for name in list_objects("snapshots/")
+        for name in snapshot_objects
         if os.path.basename(name).startswith("snapshot_")
     ]
     mock.release_delayed_marker_put()

@@ -734,6 +734,8 @@ private:
     /// Queues removal of the registered changelog and all retained recovery copies for its range.
     std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
         uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
+    /// Removes retained recovery copies synchronously during startup cleanup.
+    void removeRetainedChangelogCopies(uint64_t from_log_index);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

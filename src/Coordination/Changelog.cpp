@@ -103,7 +103,7 @@ void moveChangelogBetweenDisks(
     const KeeperContextPtr & keeper_context)
 {
     auto path_from = description->path;
-    [[maybe_unused]] auto move_result = moveFileBetweenDisks(
+    const auto move_result = moveFileBetweenDisks(
         disk_from,
         path_from,
         disk_to,
@@ -122,6 +122,18 @@ void moveChangelogBetweenDisks(
         },
         getLogger("Changelog"),
         keeper_context);
+
+    if (!move_result)
+        LOG_WARNING(
+            getLogger("Changelog"),
+            "Failed to move changelog {} from disk {} to {} on disk {} at stage {}; keeping it at {} on disk {}",
+            path_from,
+            disk_from->getName(),
+            path_to,
+            disk_to->getName(),
+            static_cast<unsigned>(move_result.error()),
+            description->path,
+            description->disk->getName());
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
@@ -323,9 +335,9 @@ public:
                 cancelCurrentFile();
             }
 
-            auto latest_log_disk = getLatestLogDisk();
-            chassert(file_description->disk == latest_log_disk);
-            file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
+            auto file_disk = file_description->disk;
+            chassert(file_disk);
+            file_buf = file_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             chassert(file_buf);
             last_index_written.reset();
             current_file_description = std::move(file_description);
@@ -335,8 +347,8 @@ public:
                     std::move(file_buf),
                     /* compression level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()]
-                    { return latest_log_disk->readFile(path, read_settings); });
+                    [file_disk, path = current_file_description->path, read_settings = getReadSettings()]
+                    { return file_disk->readFile(path, read_settings); });
 
             prealloc_done = false;
         }
@@ -4069,6 +4081,7 @@ void Changelog::finalizeChangelogsAfterRead(
             LOG_INFO(log, "Removing changelog {} because it's empty", description->path);
             remove_invalid_logs();
             description->disk->removeFile(description->path);
+            removeRetainedChangelogCopies(last_log_read_outcome->log_start_index);
             existing_changelogs.erase(last_log_read_outcome->log_start_index);
             entry_storage.cleanAfter(last_log_read_outcome->log_start_index - 1);
         }
@@ -4272,6 +4285,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 
     for (auto itr = begin; itr != end;)
     {
+        const uint64_t from_log_index = itr->first;
         auto & changelog_description = itr->second;
 
         if (!disk->existsDirectory(timestamp_folder))
@@ -4300,6 +4314,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
         else
             moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
+        removeRetainedChangelogCopies(from_log_index);
         itr = existing_changelogs.erase(itr);
     }
 }
@@ -4953,7 +4968,15 @@ void Changelog::backgroundChangelogOperationsThread()
             }
             else
             {
-                moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                try
+                {
+                    moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Failed to move changelog {}", changelog->path));
+                    changelog_operation->setError(std::current_exception());
+                }
             }
         }
         else
@@ -5000,6 +5023,27 @@ std::vector<ChangelogFileOperationPtr> Changelog::removeChangelogAndRecoveryCopi
     }
 
     return operations;
+}
+
+void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index)
+{
+    auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
+    if (duplicate_it == retained_duplicate_changelogs.end())
+        return;
+
+    for (const auto & duplicate : duplicate_it->second)
+    {
+        LOG_INFO(
+            log,
+            "Removing retained recovery copy {} on disk {} for changelog range starting at {}",
+            duplicate->path,
+            duplicate->disk->getName(),
+            from_log_index);
+        duplicate->disk->removeFileIfExists(duplicate->path);
+        if (duplicate->recovery_marker_path)
+            duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
+    }
+    retained_duplicate_changelogs.erase(duplicate_it);
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
