@@ -20,28 +20,28 @@ ClickHouse를 처음 사용하는 경우든 기존 배포를 운영하는 경우
 
 이 가이드에서는 전체적으로 PyPI 데이터셋을 사용합니다. 이 데이터셋의 각 행은 `pip`와 같은 도구를 사용한 Python 패키지 다운로드 1건을 나타냅니다.
 
-예를 들어, 이 하위 집합은 `2024-12-17` 하루의 데이터를 포함하며, `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/`에서 공개적으로 제공됩니다. 다음과 같이 쿼리할 수 있습니다:
+예를 들어, 이 부분 집합은 `2024-12-17` 하루의 데이터를 포함하며, `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/`에서 공개적으로 제공됩니다. 다음과 같이 쿼리할 수 있습니다:
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 약 20억 4천만
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
 1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
 Peak memory usage: 239.50 MiB.
 ```
 
-이 버킷의 전체 데이터셋에는 320 GB가 넘는 Parquet 파일이 포함되어 있습니다. 아래 예시에서는 의도적으로 글롭 패턴을 사용해 일부 하위 집합만 대상으로 합니다.
+이 버킷의 전체 데이터셋에는 320 GB가 넘는 Parquet 파일이 포함되어 있습니다. 아래 예시에서는 의도적으로 글롭 패턴을 사용해 일부 부분 집합만 대상으로 합니다.
 
 이 날짜 이후의 데이터는 예를 들어 Kafka 또는 객체 스토리지에서 이 데이터 스트림을 수집한다고 가정합니다. 이 데이터의 스키마는 아래와 같습니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -90,7 +90,7 @@ SETTINGS describe_compact_output = 1
   ## 중복 테이블과 뷰 사용
 </div>
 
-모든 시나리오에서 &quot;duplicate tables and views&quot; 개념을 활용합니다. 이 테이블과 뷰는 실시간 스트리밍 데이터에 사용되는 것들의 복사본으로, 장애 발생 시 쉽게 복구할 수 있는 수단을 제공하면서 backfill을 독립적으로 수행할 수 있게 합니다. 예시로, 다음과 같은 메인 `pypi` 테이블과 materialized view가 있으며, Python 프로젝트별 다운로드 횟수를 계산합니다:
+모든 시나리오에서 &quot;duplicate tables and views&quot; 개념을 활용합니다. 이 테이블과 뷰는 실시간 스트리밍 데이터에 사용되는 것들의 복사본으로, 장애 발생 시 쉽게 복구할 수 있는 수단을 제공하면서 백필을 독립적으로 수행할 수 있게 합니다. 예시로, 다음과 같은 메인 `pypi` 테이블과 materialized view가 있으며, Python 프로젝트별 다운로드 횟수를 계산합니다:
 
 ```sql
 CREATE TABLE pypi
@@ -127,7 +127,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -154,16 +154,16 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 2,061만
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
 Peak memory usage: 682.38 KiB.
 ```
 
-`{101..200}` 범위의 또 다른 하위 집합을 로드하려 한다고 가정해 보겠습니다. `pypi`에 직접 삽입할 수도 있지만, 중복 테이블(duplicate table)을 생성하면 이 백필(backfill) 작업을 기존 테이블과 분리하여 독립적으로 수행할 수 있습니다.
+`{101..200}` 범위의 또 다른 부분 집합을 로드하려 한다고 가정해 보겠습니다. `pypi`에 직접 삽입할 수도 있지만, 복제 테이블(복제 테이블)을 생성하면 이 백필 작업을 기존 테이블과 분리하여 독립적으로 수행할 수 있습니다.
 
-백필(backfill)이 실패하더라도 기본 테이블에는 영향을 미치지 않으므로, 중복 테이블(duplicate table)을 [TRUNCATE](/ko/concepts/features/operations/delete/truncate)한 후 작업을 반복하면 됩니다.
+백필이 실패하더라도 기본 테이블에는 영향을 미치지 않으므로, 복제 테이블(복제 테이블)을 [TRUNCATE](/ko/concepts/features/operations/delete/truncate)한 후 작업을 반복하면 됩니다.
 
 이러한 뷰의 새 복사본을 생성하려면 `_v2` 접미사를 붙여 `CREATE TABLE AS` 절을 사용하면 됩니다:
 
@@ -180,11 +180,11 @@ FROM pypi_v2
 GROUP BY project
 ```
 
-이 테이블에 거의 동일한 크기의 두 번째 서브셋을 채우고 로드가 성공적으로 완료되었는지 확인합니다.
+거의 동일한 크기의 두 번째 부분 집합으로 이 테이블을 채우고 성공적으로 로드되었는지 확인합니다.
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -212,7 +212,7 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 2,040만
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
@@ -254,7 +254,7 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 4,101만
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
 1 row in set. Elapsed: 0.003 sec.
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 4101만
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,16 +288,16 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---모든 파일이 로드되거나 MOVE PARTITION 호출이 수행될 때까지 계속
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
-  ClickPipes는 객체 스토리지에서 데이터를 로드할 때 이 방식을 사용하며, 대상 테이블과 해당 materialized view의 복제본을 자동으로 생성해 사용자가 위 단계를 직접 수행할 필요가 없도록 합니다. 또한 여러 worker 스레드가 각기 다른 하위 집합을 처리하고(글롭 패턴 사용), 각각 자체 복제 테이블을 사용하므로 데이터를 빠르게 로드하면서도 정확히 한 번 처리 의미 체계를 보장할 수 있습니다. 자세한 내용은 [이 블로그](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)에서 확인할 수 있습니다.
+  ClickPipes는 객체 스토리지에서 데이터를 로드할 때 이 방식을 사용하며, 대상 테이블과 해당 materialized view의 복제본을 자동으로 생성해 사용자가 위 단계를 직접 수행할 필요가 없도록 합니다. 또한 여러 worker 스레드가 각기 다른 부분 집합을 처리하고(글롭 패턴 사용), 각각 자체 복제 테이블을 사용하므로 데이터를 빠르게 로드하면서도 정확히 한 번 처리 의미 체계를 보장할 수 있습니다. 자세한 내용은 [이 블로그](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)에서 확인할 수 있습니다.
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
@@ -309,9 +309,9 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 이 프로세스는 다음 단계로 진행됩니다:
 
 1. 체크포인트를 식별합니다. 과거 데이터를 복원해야 하는 기준 시점의 타임스탬프 또는 컬럼 값입니다.
-2. 주 테이블과 materialized view의 대상 테이블 복제본을 생성합니다.
+2. 메인 테이블과 materialized view의 대상 테이블 복제본을 생성합니다.
 3. (2)단계에서 생성한 대상 테이블을 가리키도록 materialized view의 복제본을 생성합니다.
-4. (2)단계에서 생성한 주 테이블 복제본에 삽입합니다.
+4. (2)단계에서 생성한 메인 테이블 복제본에 삽입합니다.
 5. 복제 테이블의 모든 파티션을 원래 테이블로 이동합니다. 그런 다음 복제 테이블을 삭제합니다.
 
 예를 들어 PyPI 데이터에 이미 데이터가 로드되어 있다고 가정해 보겠습니다. 이 경우 최소 타임스탬프를 식별하여 &quot;체크포인트&quot;를 확인할 수 있습니다.
@@ -330,7 +330,7 @@ FROM pypi
 Peak memory usage: 227.84 MiB.
 ```
 
-위 내용을 통해 `2024-12-17 09:00:00` 이전의 데이터를 적재해야 한다는 것을 알 수 있습니다. 앞서와 같은 방식으로 복제 테이블과 뷰를 생성하고, timestamp에 필터를 적용해 해당 부분집합을 적재합니다.
+위 내용을 통해 `2024-12-17 09:00:00` 이전의 데이터를 적재해야 한다는 것을 알 수 있습니다. 앞서와 같은 방식으로 복제 테이블과 뷰를 생성하고, 타임스탬프에 필터를 적용해 해당 부분집합을 적재합니다.
 
 ```sql
 CREATE TABLE pypi_v2 AS pypi
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -352,7 +352,7 @@ WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
 <Note>
-  Parquet에서 timestamp 컬럼으로 필터링하면 매우 효율적일 수 있습니다. ClickHouse는 로드할 전체 데이터 범위를 식별하기 위해 timestamp 컬럼만 읽으므로 네트워크 트래픽을 최소화합니다. min-max와 같은 Parquet 인덱스도 ClickHouse 쿼리 엔진에서 활용할 수 있습니다.
+  Parquet에서 타임스탬프 컬럼으로 필터링하면 매우 효율적일 수 있습니다. ClickHouse는 로드할 전체 데이터 범위를 식별하기 위해 타임스탬프 컬럼만 읽으므로 네트워크 트래픽을 최소화합니다. min-max와 같은 Parquet 인덱스도 ClickHouse 쿼리 엔진에서 활용할 수 있습니다.
 </Note>
 
 이 삽입 작업이 완료되면 해당 파티션을 이동할 수 있습니다.
@@ -368,7 +368,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 <Info>
   **ClickHouse Cloud에서는 ClickPipes를 사용하십시오**
 
-  ClickHouse Cloud를 사용 중이고 데이터를 별도 버킷으로 분리할 수 있어 필터가 필요하지 않다면, 과거 백업을 복원할 때 ClickPipes를 사용하는 것이 좋습니다. ClickPipes는 여러 워커를 통해 로드를 병렬화하여 적재 시간을 줄일 뿐만 아니라, 위 과정을 자동화하고 기본 테이블과 materialized view 모두에 대한 복제 테이블도 생성합니다.
+  ClickHouse Cloud를 사용 중이고 데이터를 별도 버킷으로 분리할 수 있어 필터가 필요하지 않다면, 과거 백업을 복원할 때 ClickPipes를 사용하는 것이 좋습니다. ClickPipes는 여러 워커를 통해 로드를 병렬화하여 적재 시간을 줄일 뿐만 아니라, 위 과정을 자동화하고 메인 테이블과 materialized view 모두에 대한 복제 테이블도 생성합니다.
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
@@ -529,7 +529,7 @@ Peak memory usage: 639.47 MiB.
 위 시나리오에서 성능과 리소스 사용량은 여러 요인에 의해 결정됩니다. 튜닝을 시도하기 전에, [S3 삽입 및 읽기 성능 최적화 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance)의 [읽기에 스레드 사용](/ko/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 섹션에 자세히 설명된 삽입 메커니즘을 먼저 이해하시기 바랍니다. 요약하면 다음과 같습니다:
 
 * **읽기 병렬성** - 읽기에 사용하는 스레드 수입니다. [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads)로 제어됩니다. ClickHouse Cloud에서는 인스턴스 크기에 따라 결정되며, 기본값은 vCPU 수입니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 읽기 성능이 향상될 수 있습니다.
-* **삽입 병렬성** - 삽입 작업에 사용되는 삽입 스레드 수입니다. [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads)로 제어됩니다. **참고**: 이 값은 `max_threads`를 초과할 수 없으므로, 실제 삽입 병렬성은 `min(max_insert_threads, max_threads)`입니다. ClickHouse Cloud에서는 인스턴스 크기(2~4)에 따라 결정되며, OSS에서는 1로 설정됩니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 성능이 향상될 수 있습니다.
+* **삽입 병렬성** - 삽입 작업에 사용되는 삽입 스레드 수입니다. [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads)로 제어됩니다. 양수 값의 실제 삽입 병렬성은 `min(max_insert_threads, max_threads)`입니다. 값이 `0`이면 CPU 코어 수로 자동 결정되며, 메모리 압박 상황에서는 [`max_insert_threads_min_free_memory_per_thread`](/ko/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread)에 의해 줄어들 수 있습니다. ClickHouse Cloud에서 기본값은 인스턴스 크기에 따라 결정됩니다. 메모리가 8 GiB인 노드에서는 `1`, 16 GiB인 노드에서는 `2`, 더 큰 노드에서는 `4`입니다. OSS에서는 26.8부터 기본값이 `0`입니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 성능이 향상될 수 있습니다.
 * **삽입 블록 크기** - 데이터는 [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)를 기준으로 가져와 파싱한 뒤, 메모리 내 삽입 블록으로 구성하는 루프에서 처리됩니다. 이렇게 구성된 블록은 정렬, 최적화, 압축을 거친 뒤 새로운 [데이터 파트](/ko/concepts/core-concepts/parts)로 저장소에 기록됩니다. 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)(비압축)로 제어되는 삽입 블록의 크기는 메모리 사용량과 디스크 I/O에 영향을 줍니다. 블록이 클수록 더 많은 메모리를 사용하지만 생성되는 파트 수는 줄어들어 I/O와 백그라운드 머지가 감소합니다. 이 설정은 최소 임계값을 의미하며(먼저 도달하는 값이 플러시를 트리거합니다).
 * **materialized view 블록 크기** - 기본 삽입에 적용되는 위 메커니즘과 마찬가지로, materialized view에 삽입하기 전에도 더 효율적으로 처리할 수 있도록 블록을 더 큰 단위로 병합합니다. 이러한 블록의 크기는 설정 [`min_insert_block_size_bytes_for_materialized_views`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) 및 [`min_insert_block_size_rows_for_materialized_views`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views)에 따라 결정됩니다. 블록이 클수록 처리 효율은 높아지지만, 그만큼 메모리 사용량도 증가합니다. 기본적으로 이러한 설정은 각각 소스 테이블 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)의 값을 따릅니다.
 
