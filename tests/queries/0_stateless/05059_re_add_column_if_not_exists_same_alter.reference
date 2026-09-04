@@ -1,0 +1,10 @@
+re-add count	2	1	2
+re-add x	[7,7]
+read after	1	7
+read after	2	7
+dup-noop count	1
+nested re-add columns	a
+nested re-add columns	n.x
+nested re-add data	1	[]
+nested re-add data	2	[]
+rename re-add	42	7	1

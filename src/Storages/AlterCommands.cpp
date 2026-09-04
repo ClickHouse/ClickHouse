@@ -1878,7 +1878,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
@@ -1914,14 +1914,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                     }
 
                     /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
+                    /// the column must be present in the working snapshot, which now advances per command
+                    /// (a preceding `ADD COLUMN` makes the column visible here). If it is still missing,
                     /// fail explicitly instead of silently dropping the modification.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table.",
                             backQuote(command.column_name));
 
                 }
@@ -2020,14 +2019,50 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (has_column && command.if_not_exists)
+            {
                 command.ignore = true;
+            }
+            else
+            {
+                /// Advance the working snapshot with the exact columns apply() would materialize
+                /// (flatten_nested expansion), so a later command in the same ALTER statement
+                /// sees the column as existing, matching validate() and apply().
+                for (auto & col : columnsAddedByAlter(columns, ColumnDescription(command.column_name, command.data_type),
+                                                      context, command.if_not_exists, share_nested_offsets))
+                    columns.add(std::move(col));
+            }
         }
-        else if (command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::COMMENT_COLUMN
-                || command.type == AlterCommand::RENAME_COLUMN)
+        else if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            if (!has_column && command.if_exists)
+            {
+                command.ignore = true;
+            }
+            else if (has_column && !command.clear && !command.partition)
+            {
+                /// A plain DROP un-exists the column by apply time (CLEAR and per-partition DROP keep
+                /// the column definition), and for a Nested group `ColumnsDescription::remove` walks the
+                /// `n.*` prefix range, so the whole group leaves the snapshot like in apply().
+                columns.remove(command.column_name);
+            }
+        }
+        else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
+        }
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (!has_column && command.if_exists)
+            {
+                command.ignore = true;
+            }
+            else if (columns.has(command.column_name))
+            {
+                /// The old name leaves the snapshot exactly like in apply(), so a later
+                /// `ADD COLUMN IF NOT EXISTS` on that name is a genuine re-add, not a no-op.
+                columns.rename(command.column_name, command.rename_to);
+            }
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
