@@ -30,7 +30,7 @@ TEST(PackedFilesWriter, Basics)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer;
+    PackedFilesWriter writer(WriteSettings{});
 
     {
         auto out1 = writer.writeFile("file1");
@@ -93,7 +93,7 @@ TEST(PackedFilesWriter, Removes)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer1;
+    PackedFilesWriter writer1(WriteSettings{});
 
     {
         auto out1 = writer1.writeFile("file1");
@@ -107,7 +107,7 @@ TEST(PackedFilesWriter, Removes)
 
     auto old_index = writeArchive(disk, data_filename, writer1);
 
-    PackedFilesWriter writer2;
+    PackedFilesWriter writer2(WriteSettings{});
 
     {
         writer2.removeFile("file1");
@@ -144,7 +144,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     DiskPtr disk = createDisk("packed_files");
     SCOPE_EXIT({ destroyDisk(disk); });
 
-    PackedFilesWriter writer1;
+    PackedFilesWriter writer1(WriteSettings{});
 
     {
         auto out1 = writer1.writeFile("file1");
@@ -155,7 +155,7 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     auto old_index = writeArchive(disk, data_filename, writer1);
     const auto old_archive_size = disk->getFileSize(data_filename);
 
-    PackedFilesWriter writer2;
+    PackedFilesWriter writer2(WriteSettings{});
 
     {
         auto out2 = writer2.writeFile("file2");

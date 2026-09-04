@@ -557,7 +557,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         /* max_level= */ {},
         params.copy_instead_of_hardlink,
         params.files_to_copy_instead_of_hardlinks,
-        params.external_transaction);
+        params.external_transaction,
+        params.cancellation_hook);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
@@ -634,7 +635,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         /* max_level= */ {},
         true,
         /* files_to_copy_intead_of_hardlinks= */ {},
-        params.external_transaction);
+        params.external_transaction,
+        params.cancellation_hook);
 
     /// The save_metadata_callback function acts on the target dist.
     if (save_metadata_callback)
@@ -1270,14 +1272,14 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
     const String & file_name,
     PackedFilesWriter & target,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings) const
+    const std::function<void()> & cancellation_hook) const
 {
     /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
     /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     const auto file_size = source_archive.getFileSize(file_name);
     auto src = readFile(file_name, read_settings, file_size);
-    auto dst = target.writeFile(file_name, write_settings);
-    copyData(*src, *dst);
+    auto dst = target.writeFile(file_name);
+    copyData(*src, *dst, cancellation_hook);
     dst->finalize();
     /// Carry over the uncompressed size so the rewritten archive keeps v1 accounting.
     if (auto uncompressed = source_archive.getFileUncompressedSize(file_name))
@@ -1288,7 +1290,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     const NameSet & file_names,
     PackedFilesWriter & target,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings) const
+    const std::function<void()> & cancellation_hook) const
 {
     if (file_names.empty())
         return;
@@ -1300,7 +1302,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     for (const auto & file_name : file_names)
     {
         if (source_archive->exists(file_name))
-            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, write_settings);
+            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, cancellation_hook);
     }
 }
 
@@ -1308,6 +1310,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     const NameSet & dropped_skip_index_archive_file_names,
     IDataPartStorage & new_storage,
     const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook,
     const ReadSettings & read_settings,
     MergeTreeDataPartChecksums & checksums,
     bool sync) const
@@ -1322,7 +1325,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     /// reflects "no skip-index archive at all".
     checksums.remove(packed_filename);
 
-    PackedFilesWriter writer;
+    PackedFilesWriter writer(write_settings, cancellation_hook);
     bool any_kept = false;
 
     for (const auto & file_name : source_archive->getFileNames())
@@ -1334,13 +1337,13 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
             continue;
 
         any_kept = true;
-        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
+        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, cancellation_hook);
     }
 
     if (!any_kept)
         return;
 
-    auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings, cancellation_hook);
     HashingWriteBuffer hashing(*out);
     auto [packed_index, _] = writer.finalize(hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
     hashing.finalize();

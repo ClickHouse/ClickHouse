@@ -130,7 +130,8 @@ makeOutputStreams(
             settings.max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
-            settings.query_write_settings);
+            settings.query_write_settings,
+            settings.cancellation_hook);
 
         streams[index_substream.type] = stream.get();
         streams_holders.push_back(std::move(stream));

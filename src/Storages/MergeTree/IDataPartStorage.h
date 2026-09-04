@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/TransactionID.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -276,6 +277,8 @@ public:
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
         NameSet invalidated_columns_to_write = {};
+        /// Operation-local cancellation check for physical part-data copies and rewrites.
+        std::function<void()> cancellation_hook = {};
         /// fsync the cloned/frozen directories (the clone subtree plus the ancestor chain up to
         /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
         /// by freeze() on a local disk, outside an external transaction.
@@ -333,14 +336,25 @@ public:
         const String & name,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) = 0;
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook) = 0;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
+        WriteMode mode,
         const WriteSettings & settings)
     {
-        return writeFile(name, buf_size, WriteMode::Rewrite, settings);
+        return writeFile(name, buf_size, mode, settings, {});
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook = {})
+    {
+        return writeFile(name, buf_size, WriteMode::Rewrite, settings, std::move(cancellation_hook));
     }
 
     /// A special const method to write transaction file.

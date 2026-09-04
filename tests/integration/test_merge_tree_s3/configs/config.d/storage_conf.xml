@@ -53,6 +53,13 @@
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
                 <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_always_multi_part>
+            <encrypted_broken_s3_always_multi_part>
+                <type>encrypted</type>
+                <disk>broken_s3_always_multi_part</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+                <skip_access_check>true</skip_access_check>
+            </encrypted_broken_s3_always_multi_part>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -160,6 +167,13 @@
                     </main>
                 </volumes>
             </broken_s3_always_multi_part>
+            <encrypted_broken_s3_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>encrypted_broken_s3_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </encrypted_broken_s3_always_multi_part>
         </policies>
     </storage_configuration>
 

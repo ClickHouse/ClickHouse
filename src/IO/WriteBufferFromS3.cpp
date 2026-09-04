@@ -111,12 +111,14 @@ WriteBufferFromS3::WriteBufferFromS3(
     BlobStorageLogWriterPtr blob_log_,
     std::optional<ObjectAttributes> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    std::function<void()> cancellation_hook_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , bucket(bucket_)
     , key(key_)
     , request_settings(request_settings_)
     , write_settings(write_settings_)
+    , cancellation_hook(std::move(cancellation_hook_))
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
     , write_token(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(32))
@@ -435,6 +437,8 @@ void WriteBufferFromS3::createMultipartUpload()
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    S3::setRequestCancellationHook(req, cancellation_hook);
+
     Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
     auto elapsed = watch.elapsedMicroseconds();
@@ -479,6 +483,8 @@ void WriteBufferFromS3::abortMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
+
+    S3::setRequestCancellationHook(req, cancellation_hook);
 
     ProfileEvents::increment(ProfileEvents::S3AbortMultipartUpload);
     if (client_ptr->isClientForDisk())
@@ -593,6 +599,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
+        S3::setRequestCancellationHook(request, cancellation_hook);
 
         Stopwatch watch;
         auto outcome = client_ptr->UploadPart(request);
@@ -672,6 +679,8 @@ bool WriteBufferFromS3::completeMultipartUpload()
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
         if (client_ptr->isClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
+
+        S3::setRequestCancellationHook(req, cancellation_hook);
 
         Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
@@ -809,6 +818,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
             CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
             CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
+            S3::setRequestCancellationHook(request, cancellation_hook);
 
             Stopwatch watch;
             auto outcome = client_ptr->PutObject(request);

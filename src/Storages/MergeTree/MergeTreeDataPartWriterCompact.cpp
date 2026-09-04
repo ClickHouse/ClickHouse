@@ -52,13 +52,15 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
-            settings_.query_write_settings))
+            settings_.query_write_settings,
+            settings_.cancellation_hook))
     , plain_hashing(*plain_file)
 {
     marks_file = getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
-            settings_.query_write_settings);
+            settings_.query_write_settings,
+            settings_.cancellation_hook);
 
     marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
 

@@ -14,6 +14,8 @@ namespace DB
 class DataPartStorageOnDiskPacked final : public DataPartStorageOnDiskBase
 {
 public:
+    using DataPartStorageOnDiskBase::writeFile;
+
     static constexpr auto DATA_FILE_EXTENSION = PackedFilesIO::ARCHIVE_EXTENSION;
     inline static const String DATA_FILE_NAME = String("data") + DATA_FILE_EXTENSION;
 
@@ -64,7 +66,8 @@ public:
         const String & name,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) override;
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook) override;
 
     void createFile(const String & name) override;
     void moveFile(const String & from_name, const String & to_name) override;

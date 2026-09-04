@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/defines.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <IO/PackedFilesIO.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteBufferFromFileBase.h>
+
+#include <functional>
+#include <optional>
 #include <IO/WriteSettings.h>
 
 namespace DB
@@ -37,12 +41,16 @@ class PackedFilesWriter
 public:
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
 
+    PackedFilesWriter() = default;
+    PackedFilesWriter(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
+
+    /// Sets settings for the archive destination.
+    void setArchiveWriteSettings(WriteSettings write_settings, std::function<void()> cancellation_hook = {});
+    bool hasWriteSettings() const { return write_settings.has_value(); }
+
     /// Creates memory buffer for the data of file
     /// and returns fake WriteBufferFromFileBase.
     OutBufferPtr writeFile(const String & file_name);
-
-    /// The same as above, but also updated settings to write file with archive.
-    OutBufferPtr writeFile(const String & file_name, const WriteSettings & settings);
 
     /// Common operations with files which modify only @files map.
     void moveFile(const String & from_name, const String & to_name);
@@ -87,10 +95,13 @@ public:
     /// Returns a pair of (packed files index, need to fsync the archive)
     std::pair<PackedFilesIO::Index, bool> finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version) const;
 
-    /// Settings of the files written into the archive. The archive is a single file on disk,
-    /// so the settings of its members apply to it. The caller needs them to create the
-    /// destination buffer before @finalize starts writing into it.
-    WriteSettings getWriteSettings() const { return write_settings.value_or(WriteSettings{}); }
+    /// Settings selected by the archive owner for its destination buffer.
+    const WriteSettings & getWriteSettings() const
+    {
+        chassert(write_settings.has_value());
+        return *write_settings;
+    }
+    const std::function<void()> & getCancellationHook() const { return cancellation_hook; }
 
     /// Applies changes of files metadata both to the @written_files and @index.
     void applyMetadataChanges(PackedFilesIO::Index & index);
@@ -197,8 +208,9 @@ private:
     /// Changes of metadata such as file renames or removes.
     VectorWithMemoryTracking<MetadataChange> metadata_changes;
 
-    /// Settings that are used while flushing archive with data.
+    /// Settings used while flushing the archive with data.
     std::optional<WriteSettings> write_settings;
+    std::function<void()> cancellation_hook;
 };
 
 }
