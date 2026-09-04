@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
