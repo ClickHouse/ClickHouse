@@ -840,13 +840,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         {
             if (sync_fragment_span)
             {
-                initial_span_attributes = std::move(sync_fragment_span->attributes);
+                /// Copy, not move: the detached span must stay intact until the read context owns the fragment,
+                /// otherwise a failure to construct it below would lose the span while its children already exist.
+                initial_span_attributes = sync_fragment_span->attributes;
                 initial_span_start_time_us = sync_fragment_span->start_time_us;
                 /// The CLIENT span sent during the synchronous send already references this id
                 /// as its parent; the fiber span must keep it, or the remote subtree is orphaned.
                 initial_span_id = sync_fragment_span->span_id;
-                sync_fragment_span.reset();
-                sync_fragment_span_log = {};
             }
             else
             {
@@ -863,13 +863,26 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             finishFragmentSpan(OpenTelemetry::SpanStatus::OK);
         }
 
-        read_context = std::make_unique<ReadContext>(
-            *this,
-            /*suspend_when_query_sent*/ false,
-            read_packet_type_separately,
-            std::move(initial_span_attributes),
-            initial_span_start_time_us,
-            initial_span_id);
+        try
+        {
+            read_context = std::make_unique<ReadContext>(
+                *this,
+                /*suspend_when_query_sent*/ false,
+                read_packet_type_separately,
+                std::move(initial_span_attributes),
+                initial_span_start_time_us,
+                initial_span_id);
+        }
+        catch (...)
+        {
+            /// Failing to build the read context is this fragment's failure, and the detached span is still ours to finish.
+            finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            throw;
+        }
+
+        /// The fiber span now continues the fragment: drop the detached one so it is not finished twice.
+        sync_fragment_span.reset();
+        sync_fragment_span_log = {};
     }
 
     try
