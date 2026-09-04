@@ -642,7 +642,7 @@ Two flags on the operator manager control the upgrade-check loop globally:
 
 | Flag                              | Default | Effect                                                                                                                                           |
 |-----------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| `--version-update-interval`       | `24h`   | How often the operator re-fetches the upstream version list                                                                                      |
+| `--version-update-interval`       | `24h`   | How often the operator re-fetches the upstream version list. Must be greater than zero when version update checks are enabled                      |
 | `--disable-version-update-checks` | `false` | Disables the upgrade checker entirely. The `VersionUpgraded` condition is not set, and no outbound HTTP traffic to `clickhouse.com` is generated |
 
 Set `--disable-version-update-checks=true` in air-gapped environments or when egress to `clickhouse.com` is not allowed.

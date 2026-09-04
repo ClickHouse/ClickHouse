@@ -28,10 +28,19 @@ KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
 INTEGRATION_DIND_ROOT_RESERVE = 1 * 1024**3
 # Everything not charged to `/docker`: pytest, its xdist workers, the post-teardown steps, and the
 # per-test subprocesses - `helpers/cluster.py` runs each node's `clickhouse-client` and
-# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container. That
-# scales with xdist concurrency, hence a share of the job limit; the floor keeps the smallest
-# supported host runnable and the cap keeps the container budget from losing a worker.
-INTEGRATION_DIND_INIT_RESERVE = min(max(LIMITED_MEM // 3, 8 * 1024**3), 16 * 1024**3)
+# `helpers/iceberg_utils.py` runs Spark's `local` driver on the host, not in a container.
+#
+# A flat floor rather than the third of the job limit this used to take, because the share was
+# claiming memory `/docker` cannot do without. Measured over 58 integration jobs on the 61.78 GiB
+# runner: `/docker` peaks at its cap in every single one, while `/init` peaks at 20.8 GiB
+# (median) against this reserve and `/dockerd` at 18.3 GiB against its 2 GiB one, and the job
+# cgroup never breaches - the two overruns are page cache (the log archiving here, the image
+# layers there) and reclaim gives them back. `/docker` is the opposite: read off a kernel OOM
+# report, its 40.35 GiB charge is anonymous memory against 753664 bytes of cache, so not one page
+# of it is reclaimable and its cap is the only one that binds. Sizing the unreclaimable leaf last
+# is what put `Container memory budget exceeded (/docker)` on nearly every run of the ASan+UBSan
+# shards.
+INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # Holds dockerd, containerd and one containerd-shim per nested container, so it scales with
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
@@ -46,9 +55,10 @@ INTEGRATION_NESTED_BUDGET = max(
     - INTEGRATION_DIND_DAEMON_RESERVE,
     0,
 )
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out, and its
-# charge is anon, so reclaim cannot meet a cap the way it can for `/docker`'s page cache. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not.
+# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+# which is what lets the reserve shrink without `/init` losing any room it actually uses.
 INTEGRATION_DIND_INIT_LIMIT = max(
     LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
     INTEGRATION_DIND_INIT_RESERVE,
@@ -1003,6 +1013,45 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    # MasterCI-only: run the plain (non-sanitizer) full stateless suite against the
+    # optimized release binary instead of the plain `binary` build that PRs use (the
+    # `arm_binary` jobs of `functional_tests_jobs`). On master we want to exercise the
+    # actual release binary (PGO/BOLT). These replace the `arm_binary` jobs in the
+    # master workflow (see `ci/workflows/master.py`); PR/backport/release keep using
+    # `functional_tests_jobs`. The `arm_binary` build itself stays - integration tests
+    # and Keeper stress need it. The arm runner labels mirror the `arm_binary` jobs;
+    # the amd side has no plain full-suite job before this, so it mirrors `amd_debug`
+    # and is split into 2 batches per parallel/sequential flavor.
+    functional_tests_master_release_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_release, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
+        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        *[
+            Job.ParamSet(
+                parameter=f"amd_release, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL,
+                requires=[ArtifactNames.CH_AMD_RELEASE],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+    )
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1233,7 +1282,11 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
     )
-    # why it's master only?
+    # Despite the name, only release_branches.py uses these.
+    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
+    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
+    # however well they are balanced. At four batches this job timed out on roughly half of
+    # all release-branch runs.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1241,7 +1294,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (4,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1860,7 +1913,25 @@ class JobConfigs:
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
+        ),
+    )
+    libfuzzer_corpus_minimization_job = Job.Config(
+        name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
+        runs_on=RunnerLabels.ARM_MEDIUM,
+        command=(
+            "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
+            "'libFuzzer corpus minimization'"
+        ),
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/runner.py",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
