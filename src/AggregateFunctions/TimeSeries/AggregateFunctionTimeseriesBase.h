@@ -302,7 +302,10 @@ public:
         if (buckets_size > bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
-        data(place)->buckets.reserve(buckets_size);
+        /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
+        /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
+        /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
+        data(place)->buckets.reserve(std::min(buckets_size, MAX_BUCKETS_TO_RESERVE));
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
@@ -513,6 +516,9 @@ private:
     /// The serialized state is the set of buckets, so the format version is defined by the traits
     /// (which define the bucket type).
     static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
+
+    /// How many buckets `deserialize` reserves before reading the data. Bigger states grow while they are read.
+    static constexpr size_t MAX_BUCKETS_TO_RESERVE = 4096;
 
     /// Validates and normalizes the grid step. For a single-point grid (`start == end`) the step is irrelevant, so it
     /// is normalized to 0 (making each window a single bucket); otherwise it must be positive.

@@ -16,8 +16,9 @@ struct CreateQueryUUIDs
     /// Collect UUIDs from ASTCreateQuery.
     /// Parameters:
     /// `generate_random` - if it's true then unspecified in the query UUIDs will be generated randomly;
-    /// `force_random` - if it's true then all UUIDs (even specified in the query) will be (re)generated randomly.
-    explicit CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random = false, bool force_random = false);
+    /// `for_restore` - set when restoring from a backup: all UUIDs (even specified in the query) will be
+    /// (re)generated randomly.
+    explicit CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random = false, bool for_restore = false);
 
     bool empty() const;
     explicit operator bool() const { return !empty(); }
