@@ -437,7 +437,6 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
-    /// Patch parts are excluded for the same reason as in `totalRows`.
     UInt64 res = 0;
     auto lock = readLockParts();
     for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
