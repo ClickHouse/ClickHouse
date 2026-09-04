@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires ICU for collation support.
+
 -- A generated `WITH FILL` row writes a default value into every `ORDER BY` key that is neither filled nor
 -- part of the filling sorting prefix, so the stream stops being ordered by that key and `DISTINCT` in order
 -- must not group by it. The keys ahead of it stay ordered and must keep driving the optimization.
