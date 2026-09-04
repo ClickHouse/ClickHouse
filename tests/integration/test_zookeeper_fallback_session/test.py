@@ -118,7 +118,7 @@ def wait_zk_node_caught_up(cluster: ClickHouseCluster, zk_node, target_zxid, tim
     raise AssertionError(
         f"{zk_node} did not reach zxid {target_zxid} within {timeout}s: it has "
         f"applied {'unreadable (not serving requests?)' if applied is None else applied}. "
-        f"{zk_node} would refuse the nodes' sessions and they would fall back to "
+        f"{zk_node} could refuse the nodes' sessions and they would fall back to "
         f"another Keeper."
     )
 
@@ -179,10 +179,9 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
         for node in [node1, node2, node3]:
             node.query("SYSTEM RECONNECT ZOOKEEPER")
 
-        # Every zxid the nodes can have seen came from zoo3, and zoo3 answers only
-        # from what it has applied, so its applied zxid bounds all of theirs. zoo1
-        # applies the tail of the log asynchronously and refuses a client that has
-        # seen more.
+        # zoo3 accepted these sessions and has answered every request since, so its
+        # applied zxid bounds what any of the nodes has seen. zoo1 applies the tail of
+        # the log asynchronously and refuses a client that has seen more.
         target_zxid = get_zk_applied_zxid(started_cluster, "zoo3")
         assert target_zxid is not None, "zoo3 is not serving requests"
         wait_zk_node_caught_up(started_cluster, "zoo1", target_zxid)
@@ -215,6 +214,15 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
                 "select host, client_id from system.zookeeper_connection",
                 check_callback=lambda session: session.strip() != "",
             ).strip()
+
+    # `PartitionManager` logs a failed `iptables -D` and carries on, so a rule left
+    # behind would keep zoo1 the only reachable Keeper and satisfy the assertion below.
+    for node in [node1, node2, node3]:
+        rules = node.exec_in_container(
+            ["iptables", "--wait", "-S", "OUTPUT"], user="root"
+        )
+        for zk in ["zoo2", "zoo3"]:
+            assert cluster.get_instance_ip(zk) not in rules, rules
 
     # A node's `last_zxid_seen` was at or below what zoo1 had applied when it connected
     # to it, and everything it has seen since came from zoo1, so zoo1 cannot refuse the
