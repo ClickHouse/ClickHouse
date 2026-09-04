@@ -78,6 +78,9 @@ public:
     ASTPtr validateCodecAndGetPreprocessedAST(
         const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const;
 
+    /// Validate syntax and settings without creating codecs. Some codec factories need a data type.
+    void validateCodecDeclaration(const ASTPtr & ast, const CodecValidationSettings & validation_settings) const;
+
     /// Validate codecs AST specified by user
     void validateCodec(const String & family_name, std::optional<int> level, const CodecValidationSettings & validation_settings) const;
 

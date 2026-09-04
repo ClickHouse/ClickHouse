@@ -7,7 +7,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
-
 namespace DB
 {
 
@@ -24,15 +23,7 @@ String ASTTupleDataType::getID(char delim) const
 ASTPtr ASTTupleDataType::clone() const
 {
     auto res = make_intrusive<ASTTupleDataType>(*this);
-    res->children.clear();
-
-    const auto & arguments = getArguments();
-    if (arguments)
-    {
-        res->children.emplace_back(arguments->clone());
-    }
-
-    /// element_names vector is copied by the copy constructor
+    cloneDataTypeChildrenTo(*res);
     return res;
 }
 
@@ -40,6 +31,7 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
 {
     hash_state.update(name.size());
     hash_state.update(name);
+    updateCodecHash(hash_state);
 
     /// Hash element names
     hash_state.update(element_names.size());
@@ -118,6 +110,8 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
         ostr << ')';
     }
+
+    formatCodecOperation(ostr, settings, state, frame);
 }
 
 void ASTTupleDataType::writeJSON(WriteBuffer & out) const
@@ -126,6 +120,7 @@ void ASTTupleDataType::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     if (auto args = getArguments())
         w.writeChild("arguments", args);
+    writeCodecJSON(w);
 
     /// Named-tuple field names live in `element_names`, not as AST children, so write them explicitly;
     /// the generic `ASTDataType::writeJSON` would drop them (turning `Tuple(a UInt8)` into `Tuple(UInt8)`).
@@ -152,21 +147,31 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTTupleDataType during AST JSON deserialization");
 
+    resetCodecOperation();
+    children.clear();
     auto args = r.readChildOfType<ASTExpressionList>("arguments");
     if (args)
+    {
+        for (const auto & argument : args->children)
+            if (!argument || !argument->as<ASTDataType>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "ASTTupleDataType element type must be an ASTDataType during AST JSON deserialization");
         children.push_back(args);
+    }
+    readCodecJSON(r);
 
     element_names = r.readStringArray("element_names");
+    const size_t argument_count = args ? args->children.size() : 0;
 
     /// A named tuple names every element (mirrors `DataTypeFactory::createTupleFromAST`); reject a
     /// partial/oversized or empty-named list that the parser could never produce.
     if (!element_names.empty())
     {
-        const size_t num_args = args ? args->children.size() : 0;
-        if (element_names.size() != num_args)
+        if (element_names.size() != argument_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTTupleDataType has {} element names but {} element types during AST JSON deserialization",
-                element_names.size(), num_args);
+                element_names.size(), argument_count);
         for (const auto & elem_name : element_names)
             if (elem_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

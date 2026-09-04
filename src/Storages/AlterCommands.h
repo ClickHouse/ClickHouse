@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <optional>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -152,8 +153,11 @@ struct AlterCommand
     /// Clear columns or index (don't drop from metadata)
     bool clear = false;
 
-    /// For ADD and MODIFY
-    ASTPtr codec = nullptr;
+    /// CODEC(...) operations from an ADD or MODIFY column declaration.
+    /// The empty path denotes the column-level clause; non-empty paths denote tuple elements.
+    std::map<CodecPath, ASTPtr> codec_sets;
+    /// REMOVE CODEC operations from MODIFY COLUMN, with the empty path denoting the column-level clause.
+    std::vector<CodecPath> codec_removals;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;

@@ -1,5 +1,6 @@
 #include <Parsers/ParserDataType.h>
 
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 #include <Parsers/ASTDataType.h>
@@ -160,6 +161,13 @@ private:
 /// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, ...)
 class ObjectArgumentParser : public IParserBase
 {
+public:
+    explicit ObjectArgumentParser(bool allow_tuple_element_codecs_, bool allow_tuple_element_codec_removals_)
+        : allow_tuple_element_codecs(allow_tuple_element_codecs_)
+        , allow_tuple_element_codec_removals(allow_tuple_element_codec_removals_)
+    {
+    }
+
 private:
     const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
@@ -215,7 +223,7 @@ private:
             return true;
         }
 
-        ParserDataType type_parser;
+        ParserDataType type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
         ASTPtr type;
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -229,6 +237,9 @@ private:
         node = argument;
         return true;
     }
+
+    bool allow_tuple_element_codecs;
+    bool allow_tuple_element_codec_removals;
 };
 
 }
@@ -256,14 +267,17 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         expected.add(pos, "type name");
         return false;
     }
-    /// Keywords that IParserColumnDeclaration recognizes before the type name.
-    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
-    /// column attribute rather than type name.
+    /// Reject keywords used after a type. This lets the parser retry an unnamed tuple element
+    /// instead of reading the previous type as an element name. For example, in
+    /// `Tuple(UInt64 REMOVE CODEC)`, `REMOVE` cannot be the type of an element named `UInt64`.
+    /// `REMOVE` is included only when ALTER can remove tuple-element codecs.
+    /// Also reject CREATE TABLE a (x `Null`) because Null is a column modifier here.
     {
         String n = type_name;
         toUpperASCII(n);
         if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC"
-            || n == "SETTINGS" || n == "STATISTICS")
+            || n == "SETTINGS" || n == "STATISTICS"
+            || (allow_tuple_element_codec_removals && n == "REMOVE"))
         {
             expected.add(pos, "type name");
             return false;
@@ -408,9 +422,11 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// Try to parse: identifier Type (named element)
             /// or just: Type (unnamed element)
             ParserIdentifier identifier_parser;
-            ParserDataType type_parser;
+            ParserDataType type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
             ASTPtr identifier_node;
             ASTPtr type_node;
+            ASTPtr codec_node;
+            bool remove_codec = false;
 
             auto element_pos = pos;
             if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
@@ -439,6 +455,26 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
             }
+
+            if (allow_tuple_element_codecs && ParserKeyword(Keyword::CODEC).ignore(pos, expected))
+            {
+                ParserCodec codec_parser;
+                if (!codec_parser.parse(pos, codec_node, expected))
+                    return false;
+            }
+            else if (allow_tuple_element_codec_removals && ParserKeyword(Keyword::REMOVE).ignore(pos, expected))
+            {
+                if (!ParserKeyword(Keyword::CODEC).ignore(pos, expected))
+                    return false;
+                remove_codec = true;
+            }
+            auto * element_type = type_node->as<ASTDataType>();
+            if (!element_type)
+                return false;
+            if (codec_node)
+                element_type->setCodec(std::move(codec_node));
+            else if (remove_codec)
+                element_type->setCodecRemoval();
         }
 
         if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
@@ -501,18 +537,18 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (equalsCaseInsensitive(type_name, "json"))
         {
-            ObjectArgumentParser parser;
+            ObjectArgumentParser parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
             parser.parse(pos, arg, expected);
         }
         else if (type_name == "Nested")
         {
-            ParserNameTypePair name_and_type_parser;
+            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
             name_and_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "Tuple")
         {
-            ParserNameTypePair name_and_type_parser;
-            ParserDataType only_type_parser;
+            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ParserDataType only_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
             name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
@@ -543,13 +579,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else
             {
-                ParserDataType data_type_parser;
+                ParserDataType data_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
                 data_type_parser.parse(pos, arg, expected);
             }
         }
         else
         {
-            ParserDataType data_type_parser;
+            ParserDataType data_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
             /// Only accept simple literals (numbers, strings, NULL, ...) as
             /// data-type arguments. We deliberately do NOT accept collection
             /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data

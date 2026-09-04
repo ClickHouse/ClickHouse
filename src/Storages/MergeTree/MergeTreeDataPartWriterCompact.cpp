@@ -76,34 +76,35 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
+    const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-        /// Shared offsets for Nested type.
+        /// Logical columns can share a physical stream. The first writer chooses its codec.
         if (compressed_streams.contains(stream_name))
             return;
+
+        const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
 
         const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
 
-        /// If we can use special codec than just get it
+        /// Value streams may use type-dependent codecs. Structural streams use generic codecs only.
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
         {
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
+            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(resolved.codec_is_part_default, subtype, compression_codec);
         }
-        else /// otherwise return only generic codecs and don't use info about data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        else
+            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
-        /// object, so they must not be shared between streams. Make the key unique per stream so that
-        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
+        /// A codec that needs the vector size keeps state for one stream.
+        /// Use a stream-specific key so each stream gets a separate codec object.
         if (compression_codec->needsVectorDimensionUpfront())
         {
             SipHash codec_hash;
@@ -122,11 +123,6 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
         }
 
-        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
-        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
-        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
-        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
-        /// pure-float `Tuple`.
         compressed_streams.emplace(stream_name, it->second);
     };
 

@@ -104,7 +104,7 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy) = 0;
 
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
     /// Before writing a block we need to prepare its columns, so they will always be serialized in the same

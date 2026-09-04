@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -146,7 +147,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
-    ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
+    ParserCompoundColumnDeclaration parser_modify_col_decl(
+        /* require_type = */ false,
+        /* allow_null_modifiers = */ true,
+        /* check_keywords_after_name = */ true,
+        /* allow_tuple_element_codec_removals = */ true);
     ParserPartition parser_partition;
     ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(

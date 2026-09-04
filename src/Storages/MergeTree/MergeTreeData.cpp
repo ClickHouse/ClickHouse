@@ -1047,22 +1047,31 @@ void MergeTreeData::checkProperties(
 
         for (const auto & name : key_columns)
         {
-            const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || !column->codec)
+            const auto key_column = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
+            if (!key_column)
                 continue;
 
-            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it.
+            const auto * owning_column = new_metadata.columns.tryGet(key_column->getNameInStorage());
+            if (!owning_column || owning_column->codec.empty())
+                continue;
+
+            /// Check each value stream because a codec may apply below the outer type.
+            /// For a key subcolumn, check only its streams and resolve codecs from the owning column.
+            /// A lossy codec on another tuple element does not affect this key.
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+                const auto codec_path = getCodecPathForStream(*key_column, owning_column->type, substream_path);
+                const auto resolved = owning_column->codec.resolve(codec_path, nullptr);
+                if (resolved.codec)
+                    is_lossy = CompressionCodecFactory::instance()
+                                   .get(resolved.codec, substream_path.back().data.type.get())->isLossyCompression();
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            const auto serialization = IDataType::getSerialization(*key_column);
+            serialization->enumerateStreams(callback, key_column->type);
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -5295,12 +5304,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
     /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
     {
-        auto quantize_signature = [](const ASTPtr & codec) -> String
+        auto quantize_signature = [](const ColumnCodecDescription & codec) -> String
         {
-            const auto params = tryExtractQuantizedCodecParams(codec);
-            if (!params)
-                return {};
-            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+            String result;
+            const auto append = [&](const CodecPath & path, const ASTPtr & ast)
+            {
+                const auto params = tryExtractQuantizedCodecParams(ast);
+                if (!params)
+                    return;
+                result += fmt::format("{}={}:{}:{}:{};", fmt::join(path, "."), params->method, params->dimensions, params->bits, params->m);
+            };
+            for (const auto & [path, ast] : codec.getCodecs())
+                append(path, ast);
+            return result;
         };
         for (const auto & command : commands)
         {
@@ -6290,7 +6306,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
         for (const auto & column : columns)
         {
-            const auto params = tryExtractQuantizedCodecParams(column.codec);
+            const auto params = tryExtractQuantizedCodecParams(column.codec.getRoot());
             if (params && params->method == "product")
             {
                 part_type = PartType::Wide;

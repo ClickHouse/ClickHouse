@@ -81,7 +81,7 @@ std::optional<QuantizedCodecParams> findQuantizeCodecParams(const ReadFromMergeT
 {
     for (const auto & column : read_step.getStorageMetadata()->getColumns())
         if (column.name == search_column)
-            return tryExtractQuantizedCodecParams(column.codec);
+            return tryExtractQuantizedCodecParams(column.codec.getRoot());
     return {};
 }
 

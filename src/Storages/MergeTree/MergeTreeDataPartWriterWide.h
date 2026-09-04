@@ -94,7 +94,7 @@ private:
 
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc) override;
+        const ColumnCodecDescription & codec_policy) override;
 
     /// The stream count is derived from the substreams inventory and read by addStreams(), so the
     /// three initializations must happen in this order.

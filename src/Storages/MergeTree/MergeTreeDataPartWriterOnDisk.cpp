@@ -693,8 +693,13 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, compression);
+        const auto * description = metadata_snapshot->columns.tryGet(column.getNameInStorage());
+        if (!description)
+            description = metadata_snapshot->virtuals.tryGetDescription(
+                column.getNameInStorage(), VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+        if (!description)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column.getNameInStorage());
+        addStreams(column, description->codec);
     }
 
     streams_initialized = true;
