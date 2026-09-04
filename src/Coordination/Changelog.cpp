@@ -4044,7 +4044,7 @@ void Changelog::finalizeChangelogsAfterRead(
     if (!last_log_read_outcome || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
     {
         /// Just to be sure they don't exist
-        removeAllLogs();
+        removeAllLogs(/*remove_recovery_copies=*/false);
         max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
     }
     else if (max_log_id.load(std::memory_order_relaxed) < last_commited_log_index) /// If we have more fresh snapshot than our logs
@@ -4055,7 +4055,7 @@ void Changelog::finalizeChangelogsAfterRead(
             max_log_id.load(std::memory_order_relaxed),
             last_commited_log_index);
 
-        removeAllLogs();
+        removeAllLogs(/*remove_recovery_copies=*/true);
         max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
@@ -4081,7 +4081,6 @@ void Changelog::finalizeChangelogsAfterRead(
             LOG_INFO(log, "Removing changelog {} because it's empty", description->path);
             remove_invalid_logs();
             description->disk->removeFile(description->path);
-            removeRetainedChangelogCopies(last_log_read_outcome->log_start_index);
             existing_changelogs.erase(last_log_read_outcome->log_start_index);
             entry_storage.cleanAfter(last_log_read_outcome->log_start_index - 1);
         }
@@ -4277,7 +4276,7 @@ DiskPtr Changelog::getLatestLogDisk() const
     return keeper_context->getLatestLogDisk();
 }
 
-void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
+void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies)
 {
     auto disk = getDisk();
 
@@ -4314,7 +4313,8 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
         else
             moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
-        removeRetainedChangelogCopies(from_log_index);
+        if (remove_recovery_copies)
+            removeRetainedChangelogCopies(from_log_index);
         itr = existing_changelogs.erase(itr);
     }
 }
@@ -4329,7 +4329,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 
     /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
     LOG_WARNING(log, "Removing changelogs that go after broken changelog entry");
-    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end());
+    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end(), /*remove_recovery_copies=*/true);
 
     entry_storage.cleanAfter(start_to_remove_from_log_id - 1);
 }
@@ -4342,13 +4342,13 @@ void Changelog::removeAllLogFilesBefore(uint64_t remove_before_log_start_index)
 
     /// Remove all changelogs that come before the specified index
     LOG_WARNING(log, "Removing changelogs that go before specified changelog entry");
-    removeExistingLogs(existing_changelogs.begin(), end_to_remove_to_itr);
+    removeExistingLogs(existing_changelogs.begin(), end_to_remove_to_itr, /*remove_recovery_copies=*/true);
 }
 
-void Changelog::removeAllLogs()
+void Changelog::removeAllLogs(bool remove_recovery_copies)
 {
     LOG_WARNING(log, "Removing all changelogs");
-    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end());
+    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end(), remove_recovery_copies);
     entry_storage.clear();
 }
 

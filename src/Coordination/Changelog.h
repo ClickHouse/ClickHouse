@@ -682,14 +682,14 @@ private:
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
 
-    void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
+    void removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies);
 
     /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
     void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
-    void removeAllLogs();
+    void removeAllLogs(bool remove_recovery_copies);
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 

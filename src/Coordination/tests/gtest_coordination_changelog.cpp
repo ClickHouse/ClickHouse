@@ -4696,5 +4696,47 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPrefersHigherPrecedenceMark
     EXPECT_FALSE(latest_disk->existsFile("changelog_1_10.bin"));
 }
 
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPreservesMarkerlessCopyWhenSelectedCopyIsEmpty)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    ChangelogDirTest regular("./logs_empty_markerless_regular");
+    ChangelogDirTest latest("./logs_empty_markerless_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view path = "changelog_1_10.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        writer.appendEntry(1, getLogEntry("one", 1));
+        writer.flush();
+    }
+    const auto recovery_copy_digest = DB::computeKeeperFileDigest(regular_disk, String(path));
+
+    {
+        auto empty = latest_disk->writeFile(String(path));
+        empty->finalize();
+    }
+
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(DB::computeKeeperFileDigest(regular_disk, String(path)), recovery_copy_digest);
+
+    recovered.compact(10);
+    recovered.shutdown();
+    EXPECT_FALSE(regular_disk->existsFile(String(path)));
+    EXPECT_FALSE(latest_disk->existsFile(String(path)));
+}
+
 
 #endif
