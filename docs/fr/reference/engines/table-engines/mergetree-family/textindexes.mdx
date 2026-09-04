@@ -60,9 +60,7 @@ two    : [3]
 
 À partir d’un token de recherche, cette structure d’index permet de retrouver rapidement toutes les lignes correspondantes.
 
-<div id="creating-a-text-index">
-  ## Création d’un index de texte
-</div>
+## Création d’un index de texte {#creating-a-text-index}
 
 Les index de texte sont disponibles de façon générale (GA) à partir de ClickHouse version 26.2.
 Dans ces versions, aucun paramètre particulier n’est nécessaire pour utiliser l’index de texte.
@@ -185,9 +183,7 @@ ALTER TABLE table DROP INDEX text_idx;
 
 Tous les tokenizers disponibles sont répertoriés dans [system.tokenizers](/fr/reference/system-tables/tokenizers).
 
-<div id="japanese-tokenizer-dictionary">
-  ### Dictionnaire du tokenizer japonais
-</div>
+### Dictionnaire du tokenizer japonais {#japanese-tokenizer-dictionary}
 
 <CloudNotSupportedBadge />
 
@@ -536,8 +532,8 @@ Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ig
 | [hasAnyTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                                              | oui                               |
 | [hasAllTokens(col, arr)](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | non (les éléments du tableau sont utilisés tels quels comme tokens) | tous                                                                              | oui                               |
 | [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | oui                                                                 | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | oui³                              |
-| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                        | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
-| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                            | oui                                                                 | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | oui                               |
+| [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith)                        | oui⁴                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | oui⁴                              |
+| [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith)                            | oui⁴                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | oui⁴                              |
 | [like](/fr/reference/functions/regular-functions/string-search-functions#like)                             | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | oui¹                              |
 | [match](/fr/reference/functions/regular-functions/string-search-functions#match)                           | oui¹                                                                | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | oui¹                              |
 | [ilike](/fr/reference/functions/regular-functions/string-search-functions#like)                            | oui² (`lower`/`upper` uniquement)                                   | `splitByNonAlpha`, `array`²                                                       | non²                              |
@@ -550,22 +546,27 @@ Les tokens de recherche que le postprocesseur transforme en chaîne vide sont ig
 | [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll)                                 | oui                                                                 | `array`                                                                           | oui                               |
 
 ¹ `LIKE` et `match` utilisent la lecture directe comme indication pour les tokenizers listés ; sinon, ils reviennent à un balayage exhaustif.
-`LIKE` prend en outre en charge une *lecture directe (sans indication)* (activée via `use_text_index_like_evaluation_by_dictionary_scan`) pour les tokenizers `splitByNonAlpha` et `array`, sans préprocesseur ni postprocesseur.
+`LIKE` prend en outre en charge l&#39;évaluation par dictionary scan (activée via `use_text_index_like_evaluation_by_dictionary_scan`) pour les tokenizers `splitByNonAlpha` et `array`, sans préprocesseur ni postprocesseur.
+Un pattern `%value%` correspond alors à une *lecture directe (sans indication)*, tandis que les patterns `value%` et `%value` restent une indication, voir [Requêtes LIKE/ILIKE](#like-ilike-queries-perf).
 
-² `ILIKE` est uniquement pris en charge via la lecture directe (sans indication) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`).
-Il n&#39;y a pas de solution de repli consistant à utiliser l&#39;index comme indication : si le paramètre est désactivé ou si le tokenizer ne fait pas partie de l&#39;ensemble pris en charge, l&#39;index n&#39;est pas utilisé pour `ILIKE`.
+² `ILIKE` est uniquement pris en charge via l&#39;évaluation par dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`).
+Il n&#39;y a pas de solution de repli consistant à utiliser l&#39;index comme indication pour les patterns que le dictionary scan ne prend pas en charge : si le paramètre est désactivé ou si le tokenizer ne fait pas partie de l&#39;ensemble pris en charge, l&#39;index n&#39;est pas utilisé pour `ILIKE`.
 Le préprocesseur, s&#39;il est présent, doit être `lower` ou `upper` ; les postprocesseurs ne sont pas pris en charge.
 
-³ `hasPhrase` sur un index de texte `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture au niveau des lignes du postprocesseur suppose des tokens de type `splitByNonAlpha` séparés par des espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
+³ `hasPhrase` sur un index de texte `splitByRegexp` ne prend **pas** en charge de postprocesseur : la combinaison est rejetée avec une exception, car la réécriture row-level du postprocesseur suppose des tokens de style `splitByNonAlpha` découpés sur les espaces. Sans postprocesseur, `splitByRegexp` est entièrement pris en charge par `hasPhrase`.
 
-**Expérimental : argument de prise en charge de la recherche d’expression (facultatif)**.
+⁴ `startsWith` et `endsWith` recherchent les tokens complets du needle, et le token situé à l&#39;extrémité ouverte du needle est incomplet car la valeur s&#39;y poursuit : `startsWith(col, 'ClickHouse is')` recherche le token `ClickHouse`, tandis que `startsWith(col, 'ClickHouse')` n&#39;a aucun token complet à rechercher.
+Ce dernier est alors évalué par un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizer `splitByNonAlpha` ou `array`, sans préprocesseur ni postprocesseur), qui est également le chemin emprunté par `col LIKE 'ClickHouse%'`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) la réécrit en `startsWith`.
+Voir [requêtes LIKE/ILIKE](#like-ilike-queries-perf).
 
-Le paramètre expérimental `support_phrase_search` (par défaut : `0`) contrôle si l’index stocke les positions des tokens.
+**Expérimental : argument de prise en charge de la phrase search (facultatif)**.
+
+Le paramètre expérimental `support_phrase_search` (par défaut : `0`) contrôle si l’index stocke les positions des tokens.
 Lorsqu’il est défini sur `1`, l’index stocke également des données de position (dans un fichier `.pos`), ce qui permet une correspondance exacte des expressions via des lectures directes pour la fonction [`hasPhrase`](#functions-example-hasphrase).
-Le stockage des positions augmente la taille de l’index sur disque et le coût d’écriture ; il est donc optionnel.
-Le format sur disque n’est pas encore stable ; ce paramètre est donc expérimental et pourrait changer dans une prochaine version.
+Le stockage des positions augmente la taille de l’index sur disque et le coût d’écriture ; il est donc optionnel.
+Le format sur disque n’est pas encore stable ; ce paramètre est donc expérimental et pourrait changer dans une prochaine version.
 La création d’un index avec `support_phrase_search = 1` nécessite donc que le paramètre MergeTree [`allow_experimental_text_index_phrase_search`](/fr/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) soit activé.
-Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index de texte créés sans cet argument restent sans positions.
+Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver un stockage reposant uniquement sur des posting lists ; les index de texte créés sans cet argument restent sans positions.
 
 <Warning>
   Cet argument est expérimental et ne doit être utilisé que pour des tests.
@@ -578,31 +579,31 @@ Définissez `support_phrase_search = 0` (la valeur par défaut) pour conserver u
   Les valeurs par défaut des paramètres avancés suivants conviennent dans la quasi-totalité des cas.
   Nous ne recommandons pas de les modifier.
 
-  Le paramètre facultatif `dictionary_block_size` (par défaut : 512) spécifie la taille des blocs du dictionnaire en lignes.
+  Le paramètre facultatif `dictionary_block_size` (par défaut : 512) spécifie la taille des blocs du dictionnaire en lignes.
 
-  Le paramètre facultatif `dictionary_block_frontcoding_compression` (par défaut : 1) indique si les blocs du dictionnaire utilisent le front coding comme méthode de compression.
+  Le paramètre facultatif `dictionary_block_frontcoding_compression` (par défaut : 1) indique si les blocs du dictionnaire utilisent le front coding comme méthode de compression.
 
-  Le paramètre facultatif `posting_list_block_size` (par défaut : 1048576) spécifie la taille des blocs de posting lists en lignes.
+  Le paramètre facultatif `posting_list_block_size` (par défaut : 1048576) spécifie la taille des blocs de posting lists en lignes.
 
-  Le paramètre facultatif `posting_list_codec` (par défaut : `none`) spécifie le codec de la posting list :
+  Le paramètre facultatif `posting_list_codec` (par défaut : `none`) spécifie le codec de la posting list :
 
   * `none` - les posting lists sont stockées sans compression supplémentaire.
   * `bitpacking` - applique le [codage différentiel (delta)](https://en.wikipedia.org/wiki/Delta_encoding), suivi du [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (chacun dans des blocs de taille fixe). Cela ralentit les requêtes SELECT et n&#39;est pas recommandé pour le moment.
 
-  Les paramètres avancés ci-dessus peuvent également être définis au niveau de la table via les paramètres MergeTree correspondants : [`text_index_dictionary_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) et [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
+  Les paramètres avancés ci-dessus peuvent également être définis au niveau de la table via les paramètres MergeTree correspondants : [`text_index_dictionary_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/fr/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) et [`text_index_posting_list_codec`](/fr/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Ils s&#39;appliquent à chaque index de texte de la table qui ne spécifie pas explicitement le paramètre.
 
   Le principal cas d&#39;usage des paramètres au niveau de la table est de modifier les paramètres d&#39;index d&#39;une table existante sans supprimer puis recréer l&#39;index de texte sur toutes les parts de la table.
-  La modification d&#39;un paramètre au niveau de la table applique les nouveaux paramètres uniquement aux index de texte construits pour les nouvelles parts ; les parts existantes conservent leur layout actuel.
+  La modification d&#39;un paramètre au niveau de la table applique les nouveaux paramètres uniquement aux index de texte construits pour les nouvelles parts ; les parts existantes conservent leur layout actuel.
 
-  Un argument donné dans la définition de l&#39;index prévaut sur le paramètre de table, par exemple :
+  Un argument donné dans la définition de l&#39;index prévaut sur le paramètre de table, par exemple :
 
   ```sql
   CREATE TABLE table(
       s String,
-      -- Cet index utilise 'bitpacking', en remplaçant la valeur par défaut définie au niveau de la table ci-dessous :
+      -- Cet index utilise 'bitpacking', en remplaçant la valeur par défaut définie au niveau de la table ci-dessous :
       INDEX idx_a s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'),
-      -- Cet index hérite de 'none' à partir du paramètre de table :
+      -- Cet index hérite de 'none' à partir du paramètre de table :
       INDEX idx_b lower(s) TYPE text(tokenizer = 'splitByNonAlpha'))
   ENGINE = MergeTree()
   ORDER BY tuple()
@@ -615,7 +616,7 @@ Les index de texte sont implémentés dans ClickHouse comme un type de [skip ind
 Cependant, contrairement aux autres skip indexes, les index de texte utilisent une granularité infinie (100 millions).
 Cela est visible dans la définition de table d&#39;un index de texte.
 
-Exemple :
+Exemple :
 
 ```sql title="Query"
 CREATE TABLE table(
@@ -642,12 +643,10 @@ SHOW CREATE TABLE table;
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-La granularité d’index très élevée garantit que l’index de texte intégral est créé pour l’intégralité de la partie de données.
-Toute granularité d’index explicitement spécifiée est ignorée.
+Cette granularité d&#39;index énorme garantit que l&#39;index de texte est créé pour la part entière.
+Une granularité d&#39;index spécifiée explicitement est ignorée.
 
-<div id="using-a-text-index">
-  ## Utiliser un index de texte
-</div>
+## Utiliser un index de texte {#using-a-text-index}
 
 L&#39;utilisation d&#39;un index de texte dans les requêtes SELECT est simple, car les fonctions courantes de recherche dans les chaînes exploitent automatiquement l&#39;index.
 Si aucun index n&#39;existe sur une colonne ou une part de la table, les fonctions de recherche dans les chaînes se rabattent sur de lents parcours exhaustifs.
@@ -658,9 +657,7 @@ Si aucun index n&#39;existe sur une colonne ou une part de la table, les fonctio
   Comme les autres fonctions prises en charge sont apparues avant l&#39;index de texte, elles ont dû conserver leur comportement historique dans de nombreux cas (par exemple, sans prise en charge du préprocesseur ou du postprocesseur).
 </Note>
 
-<div id="functions-support">
-  ### Fonctions prises en charge
-</div>
+### Fonctions prises en charge {#functions-support}
 
 L’index de texte intégral peut être utilisé lorsque des fonctions textuelles sont employées dans la clause `WHERE` ou les clauses `PREWHERE` :
 
@@ -670,9 +667,7 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-<div id="functions-example-equals">
-  #### `=`
-</div>
+#### `=` {#functions-example-equals}
 
 `=` ([equals](/fr/reference/functions/regular-functions/comparison-functions#equals)) correspond à l’intégralité du terme de recherche donné.
 
@@ -682,9 +677,7 @@ Exemple :
 SELECT * from table WHERE str = 'Hello';
 ```
 
-<div id="functions-example-in">
-  #### `IN`
-</div>
+#### `IN` {#functions-example-in}
 
 `IN` ([in](/fr/reference/functions/regular-functions/in-functions)) est similaire à `equals`, mais correspond à l’ensemble des termes de recherche.
 
@@ -698,9 +691,7 @@ SELECT * from table WHERE str IN ('Hello', 'World');
   `NOT IN` (`notIn`) n’est pas pris en charge par l’index de texte.
 </Note>
 
-<div id="functions-example-like-match">
-  #### `LIKE` et `match`
-</div>
+#### `LIKE` et `match` {#functions-example-like-match}
 
 <Note>
   Ces fonctions utilisent actuellement l’index de texte pour le filtrage uniquement si le tokenizer de l’index est `splitByNonAlpha`, `ngrams` ou `sparseGrams`.
@@ -734,9 +725,7 @@ Heureusement, il existe un cas particulier où ClickHouse peut exploiter l’ind
 
 Consultez la [section sur l’optimisation des performances des requêtes LIKE/ILIKE](#like-ilike-queries-perf) pour plus de détails.
 
-<div id="functions-example-multisearchany-multimatchany">
-  #### `multiSearchAny` and `multiMatchAny`
-</div>
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
 
 [multiSearchAny](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAny) et sa variante UTF-8 [multiSearchAnyUTF8](/fr/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8) vérifient si l’une de plusieurs sous-chaînes littérales est présente dans la chaîne à analyser, et [multiMatchAny](/fr/reference/functions/regular-functions/string-search-functions#multiMatchAny) vérifie si l’une de plusieurs expressions régulières correspond.
 Ces fonctions utilisent l’index de texte intégral dans les mêmes conditions que `LIKE` et `match` (voir ci-dessus) : ClickHouse doit pouvoir extraire des tokens complets de chaque motif recherché, et la liste des motifs doit être constante.
@@ -764,9 +753,7 @@ Exemple d’index de texte avec le tokenizer `splitByNonAlpha` :
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
 
-<div id="functions-example-startswith-endswith">
-  #### `startsWith` et `endsWith`
-</div>
+#### `startsWith` et `endsWith` {#functions-example-startswith-endswith}
 
 Comme `LIKE`, les fonctions [startsWith](/fr/reference/functions/regular-functions/string-functions#startsWith) et [endsWith](/fr/reference/functions/regular-functions/string-functions#endsWith) ne peuvent utiliser un index de texte que si des tokens complets peuvent être extraits du terme recherché.
 Pour un index avec le tokenizer `ngrams`, c’est le cas si la longueur des chaînes recherchées entre les wildcards est égale ou supérieure à celle du ngram.
@@ -793,9 +780,7 @@ De même, `endsWith` doit être utilisé avec un espace au début :
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken">
-  #### `hasToken`
-</div>
+#### `hasToken` {#functions-example-hastoken}
 
 <Note>
   `hasToken` comporte certains pièges lorsqu&#39;elle est utilisée pour des recherches dans des index de texte avec des tokenizers autres que `splitByNonAlpha` et/ou des expressions de prétraitement/post-traitement.
@@ -814,9 +799,7 @@ Exemple :
 SELECT count() FROM table WHERE hasToken(comment, 'clickhouse');
 ```
 
-<div id="functions-example-hasanytokens-hasalltokens">
-  #### `hasAnyTokens` and `hasAllTokens`
-</div>
+#### `hasAnyTokens` and `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
 Les fonctions [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) et [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens) établissent une correspondance avec un ou l’ensemble des tokens fournis.
 
@@ -835,9 +818,7 @@ SELECT count() FROM table WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
-<div id="functions-example-hasphrase">
-  #### `hasPhrase`
-</div>
+#### `hasPhrase` {#functions-example-hasphrase}
 
 La fonction [hasPhrase](/fr/reference/functions/regular-functions/string-search-functions#hasPhrase) vérifie la présence d’une expression : tous les tokens doivent apparaître de façon consécutive et dans le même ordre que dans la chaîne de recherche.
 
@@ -856,9 +837,7 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 -- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
-<div id="functions-example-has">
-  #### `has`
-</div>
+#### `has` {#functions-example-has}
 
 La fonction de tableau [has](/fr/reference/functions/regular-functions/array-functions#has) permet de rechercher un seul token dans un tableau de chaînes.
 
@@ -868,9 +847,7 @@ Exemple :
 SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```
 
-<div id="functions-example-hasany-hasall">
-  #### `hasAny` et `hasAll`
-</div>
+#### `hasAny` et `hasAll` {#functions-example-hasany-hasall}
 
 Les fonctions sur les tableaux [hasAny](/fr/reference/functions/regular-functions/array-functions#hasAny) et [hasAll](/fr/reference/functions/regular-functions/array-functions#hasAll) vérifient si la colonne de tableau indexée contient une partie ou la totalité d’un ensemble constant de chaînes recherchées.
 
@@ -881,9 +858,7 @@ SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 ```
 
-<div id="functions-example-mapcontains">
-  #### `mapContains`
-</div>
+#### `mapContains` {#functions-example-mapcontains}
 
 La fonction [mapContains](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKey) (alias de `mapContainsKey`) fait correspondre aux clés d’une map les tokens extraits de la chaîne recherchée.
 Le comportement est similaire à celui de la fonction `equals` avec une colonne `String`.
@@ -897,9 +872,7 @@ SELECT count() FROM table WHERE mapContainsKey(map, 'clickhouse');
 SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 ```
 
-<div id="functions-example-mapcontainsvalue">
-  #### `mapContainsValue`
-</div>
+#### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
 La fonction [mapContainsValue](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValue) établit une correspondance entre les tokens extraits de la chaîne recherchée et les valeurs d&#39;une map.
 Le comportement est similaire à celui de la fonction `equals` sur une colonne `String`.
@@ -911,9 +884,7 @@ Exemple :
 SELECT count() FROM table WHERE mapContainsValue(map, 'clickhouse');
 ```
 
-<div id="functions-example-mapcontainslike">
-  #### `mapContainsKeyLike` et `mapContainsValueLike`
-</div>
+#### `mapContainsKeyLike` et `mapContainsValueLike` {#functions-example-mapcontainslike}
 
 Les fonctions [mapContainsKeyLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) et [mapContainsValueLike](/fr/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) appliquent un motif à toutes les clés ou à toutes les valeurs (respectivement) d’une map.
 
@@ -924,9 +895,7 @@ SELECT count() FROM table WHERE mapContainsKeyLike(map, '% clickhouse %');
 SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 ```
 
-<div id="functions-example-access-operator">
-  #### `operator[]`
-</div>
+#### `operator[]` {#functions-example-access-operator}
 
 L’[operator[]](/fr/reference/operators/index#access-operators) d’accès peut être utilisé avec l’index de texte pour filtrer les clés et les valeurs. L’index de texte n’est utilisé que s’il est créé sur les expressions `mapKeys(map)` ou `mapValues(map)`, ou sur les deux.
 
@@ -938,9 +907,7 @@ SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
 
 Voir les exemples suivants pour savoir comment utiliser des colonnes de type `Array(T)` et `Map(K, V)` avec l’index de texte intégral.
 
-<div id="text-index-example-array">
-  ### Indexation des colonnes Array(String)
-</div>
+### Indexation des colonnes Array(String) {#text-index-example-array}
 
 Imaginez une plateforme de blog où les auteurs classent leurs articles à l’aide de mots-clés.
 Nous voulons que les utilisateurs puissent découvrir des contenus connexes en recherchant des thèmes ou en cliquant dessus.
@@ -973,9 +940,7 @@ ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitBy
 ALTER TABLE posts MATERIALIZE INDEX keywords_idx; -- Don't forget to rebuild the index for existing data
 ```
 
-<div id="text-index-example-map">
-  ### Indexation des colonnes de type Map
-</div>
+### Indexation des colonnes de type Map {#text-index-example-map}
 
 Dans de nombreux cas d’usage en observabilité, les messages de log sont découpés en &quot;composants&quot; et stockés dans les types de données appropriés, par exemple une date-heure pour le timestamp, un enum pour le niveau de log, etc.
 Les champs de métriques sont de préférence stockés sous forme de paires clé-valeur.
@@ -1035,9 +1000,7 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
-<div id="text-index-example-json">
-  ### Indexation des colonnes JSON
-</div>
+### Indexation des colonnes JSON {#text-index-example-json}
 
 Les index de texte peuvent être utilisés avec les colonnes `JSON` de trois façons :
 
@@ -1045,9 +1008,7 @@ Les index de texte peuvent être utilisés avec les colonnes `JSON` de trois fa�
 2. **Index basés sur les chemins avec [JSONAllPaths](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths)** — indexent *tous les chemins* présents dans chaque granule afin d’ignorer les granules qui ne peuvent pas contenir le chemin recherché. Comme pour les colonnes `Map`.
 3. **Index basés sur les valeurs avec [JSONAllValues](/fr/reference/functions/regular-functions/json-functions#JSONAllValues)** — indexent *toutes les valeurs* de tous les chemins JSON afin d’accélérer la recherche en texte intégral sur n’importe quelle sous-colonne JSON avec un seul index.
 
-<div id="json-indexes-on-subcolumns">
-  #### Index sur des sous-colonnes spécifiques
-</div>
+#### Index sur des sous-colonnes spécifiques {#json-indexes-on-subcolumns}
 
 Vous pouvez créer un skip index sur n’importe quelle sous-colonne JSON en utilisant la même syntaxe que pour les colonnes classiques.
 
@@ -1107,9 +1068,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
         Granules: 1/8
 ```
 
-<div id="json-indexes-jsonallpaths">
-  #### Index basés sur les chemins avec JSONAllPaths
-</div>
+#### Index basés sur les chemins avec JSONAllPaths {#json-indexes-jsonallpaths}
 
 Comme pour les colonnes `Map`, des index de texte peuvent être créés sur des colonnes [JSON](/fr/reference/data-types/newjson) à l’aide de [`JSONAllPaths`](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths).
 L’index stocke l’ensemble des chemins JSON présents dans chaque granule et les utilise pour sauter les granules où le chemin recherché est absent.
@@ -1187,9 +1146,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-<div id="json-indexes-jsonallvalues">
-  #### Index basés sur les valeurs avec JSONAllValues
-</div>
+#### Index basés sur les valeurs avec JSONAllValues {#json-indexes-jsonallvalues}
 
 Les index de texte peuvent être utilisés pour accélérer les recherches dans les colonnes [JSON](/fr/reference/data-types/newjson) via la fonction [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues).
 
@@ -1206,9 +1163,7 @@ Lorsqu&#39;une requête filtre sur une sous-colonne spécifique (par exemple, `d
   Le comportement est le même que dans les autres cas d&#39;usage des index de texte, où l&#39;index sert de préfiltre rapide.
 </Note>
 
-<div id="json-all-values-creating-the-index">
-  ##### Création de l’index
-</div>
+##### Création de l’index {#json-all-values-creating-the-index}
 
 Exemple de définition d’un index :
 
@@ -1223,9 +1178,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-<div id="json-all-values-supported-query-patterns">
-  ##### Types de requêtes pris en charge
-</div>
+##### Types de requêtes pris en charge {#json-all-values-supported-query-patterns}
 
 Une fois l’index créé, il peut accélérer les requêtes sur les sous-colonnes JSON en utilisant les mêmes fonctions que pour les colonnes `String`, ainsi que la fonction `equals` pour toutes les colonnes.
 
@@ -1252,9 +1205,7 @@ opérateur `IN` :
 SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
-<div id="text-index-phrase-search">
-  ### Recherche d&#39;expressions
-</div>
+### Recherche d&#39;expressions {#text-index-phrase-search}
 
 Une recherche classique dans un index de texte, par exemple
 
@@ -1287,9 +1238,7 @@ Pour accélérer les requêtes de recherche d’expressions, veuillez activer le
 La chaîne correspondant à l’expression fournie est tokenisée à l’aide du tokenizer de l’index.
 Les caractères séparateurs de l’expression sont ignorés : `hasPhrase(text, 'quick+brown')` équivaut à `hasPhrase(text, 'quick brown')`, à condition que `splitByNonAlpha` soit utilisé comme tokenizer.
 
-<div id="text-index-phrase-search-example">
-  #### Exemple
-</div>
+#### Exemple {#text-index-phrase-search-example}
 
 ```sql
 CREATE TABLE tab (
@@ -1319,13 +1268,9 @@ SELECT id, text FROM tab WHERE hasPhrase(text, 'weather in New York');
 La ligne 2 (`'New weather in York'`) ne correspond pas, car les tokens ne sont pas dans le bon ordre.
 La ligne 3 (`'weather in New Orleans'`) ne correspond pas, car elle ne contient pas le token `'York'`.
 
-<div id="performance-tuning">
-  ## Optimisation des performances
-</div>
+## Optimisation des performances {#performance-tuning}
 
-<div id="direct-read">
-  ### lecture directe
-</div>
+### lecture directe {#direct-read}
 
 Certaines requêtes textuelles peuvent être considérablement accélérées grâce à une optimisation appelée &quot;lecture directe&quot;.
 
@@ -1456,28 +1401,35 @@ Grâce à l’optimisation [PREWHERE](/fr/reference/statements/select/prewhere),
 Pour cette requête, l’ordre d’application est `__text_index_...`, puis `greaterOrEquals(...)`, et enfin `like(...)`.
 Cet ordre permet d’ignorer encore plus de granules de données que l’index de texte et le filtre d’origine, avant de lire les colonnes volumineuses utilisées dans la requête après la clause `WHERE`, ce qui réduit encore la quantité de données à lire.
 
-<div id="like-ilike-queries-perf">
-  ### Requêtes LIKE/ILIKE
-</div>
+### Requêtes LIKE/ILIKE {#like-ilike-queries-perf}
 
-Lorsque le motif d’une requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%` et que le tokenizer de l’index de texte est `splitByNonAlpha` ou `array`, ClickHouse exploite l’index inversé pour accélérer considérablement les requêtes LIKE/ILIKE. Pour cela, ClickHouse parcourt le dictionnaire de l’index inversé au lieu d’effectuer un scan complet de la table afin de trouver le motif correspondant.
+Lorsqu&#39;un pattern de requête LIKE/ILIKE est `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` ou `%<alpha-numeric-characters-without-spaces>` et que le tokenizer du text index est `splitByNonAlpha` ou `array`, ClickHouse s&#39;appuie sur l&#39;inverted index pour accélérer considérablement les requêtes LIKE/ILIKE. Pour ce faire, ClickHouse parcourt le dictionnaire de l&#39;inverted index au lieu d&#39;effectuer un parcours complet de la table afin de trouver le pattern correspondant.
 
-Lorsque l’optimisation est activée, les requêtes LIKE/ILIKE devraient être nettement plus rapides qu’un scan complet de la table. Cependant, si le motif correspond à la majorité des tokens du dictionnaire, les performances peuvent être moins bonnes qu’avec un scan complet de la table. Heureusement, un mécanisme de repli permet d’éviter cela.
+L&#39;utilisation du résultat du dictionary scan dépend de l&#39;endroit où le needle est ancré :
 
-L’optimisation est contrôlée par un paramètre :
+* `%value%` correspond à une row si et seulement si elle correspond à l&#39;un des tokens de la row ; l&#39;index tranche donc à lui seul la query : une [lecture directe (sans indice)](#direct-read) qui supprime le prédicat d&#39;origine.
+* `value%` et `%value` ancrent le needle sur la valeur entière, alors que le dictionary scan ne peut l&#39;ancrer que sur un token ; le scan renvoie donc un superset des rows correspondantes et sert de [lecture directe en tant qu&#39;indice](#direct-read).
+
+Ce même dictionary scan est utilisé pour `startsWith(col, 'value')` et `endsWith(col, 'value')` lorsque le needle ne contient aucun token complet à rechercher.
+C&#39;est le chemin qu&#39;empruntent en réalité la plupart des patterns `value%` et `%value`, car la passe de l&#39;analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/fr/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (activée par défaut) réécrit `col LIKE 'value%'` en `startsWith(col, 'value')` et `col LIKE '%value'` en `endsWith(col, 'value')`.
+Les needles qui s&#39;étendent sur plusieurs tokens continuent d&#39;utiliser les tokens complets du needle et n&#39;ont pas besoin d&#39;un dictionary scan.
+
+Lorsque l&#39;optimisation est activée, les requêtes LIKE/ILIKE devraient être nettement plus rapides qu&#39;un parcours complet de la table. En revanche, lorsque le pattern correspond à la majorité des tokens du dictionnaire, les performances peuvent être moins bonnes qu&#39;avec un parcours complet de la table. Heureusement, un mécanisme de fallback permet d&#39;éviter cela.
+
+Le gain de performance d&#39;un pattern `value%` ou `%value` provient du skipping de granules ; il dépend donc de la répartition des rows correspondantes. Les needles qui correspondent à des rows dans chaque granule n&#39;en éliminent aucun, et la query paie alors le coût du dictionary scan en plus du parcours complet qu&#39;elle aurait effectué de toute façon. Désactivez [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) pour de tels workloads.
+
+L&#39;optimisation est contrôlée par un paramètre :
 
 * [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/fr/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-Le mécanisme de repli est contrôlé par deux paramètres :
+Le mécanisme de fallback est contrôlé par deux paramètres :
 
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/fr/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/fr/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-Cette optimisation ne prend en charge que les fonctions `like` et `ilike`.
+Cette optimisation ne prend en charge que les fonctions `like`, `ilike`, `startsWith` et `endsWith`.
 
-<div id="count-queries-perf">
-  ### Requêtes de comptage simples
-</div>
+### Requêtes de comptage simples {#count-queries-perf}
 
 Requête qui compte uniquement les lignes correspondant à un prédicat de recherche textuelle
 
@@ -1509,9 +1461,7 @@ Aggregating
 
 L’optimisation est contrôlée par [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (activée par défaut). Elle repose sur la [lecture directe](#direct-read) ; [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/fr/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/fr/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) et [optimize&#95;trivial&#95;count&#95;query](/fr/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) doivent donc également être activés (ils le sont tous par défaut).
 
-<div id="caching">
-  ### Mise en cache
-</div>
+### Mise en cache {#caching}
 
 Il existe différents caches à l’échelle du serveur pour conserver en mémoire certaines parties de l’index de texte (voir la section [Détails d’implémentation](#implementation)) :
 À l’heure actuelle, il existe des caches pour les en-têtes désérialisés, les tokens et les listes de postings de l’index de texte afin de réduire les opérations d’E/S.
@@ -1522,9 +1472,7 @@ Pour vider les caches, utilisez l’instruction [SYSTEM CLEAR TEXT INDEX CACHES]
 
 Reportez-vous aux paramètres du serveur ci-dessous pour configurer les caches.
 
-<div id="caching-tokens">
-  #### Paramètres du cache des tokens
-</div>
+#### Paramètres du cache des tokens {#caching-tokens}
 
 | Paramètre                                                                                                                                              | Description                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
@@ -1533,9 +1481,7 @@ Reportez-vous aux paramètres du serveur ci-dessous pour configurer les caches.
 | [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | Nombre maximal de tokens désérialisés dans le cache.                                                              |
 | [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | Taille de la file protégée dans le cache des tokens de l’index de texte, par rapport à la taille totale du cache. |
 
-<div id="caching-header">
-  #### Paramètres du cache des en-têtes
-</div>
+#### Paramètres du cache des en-têtes {#caching-header}
 
 | Paramètre                                                                                                                                              | Description                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1544,9 +1490,7 @@ Reportez-vous aux paramètres du serveur ci-dessous pour configurer les caches.
 | [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | Nombre maximal d&#39;en-têtes désérialisés dans le cache.                                                                             |
 | [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | Taille de la file d&#39;attente protégée dans le cache des en-têtes de l&#39;index de texte, par rapport à la taille totale du cache. |
 
-<div id="caching-posting-lists">
-  #### Paramètres du cache des listes de postings
-</div>
+#### Paramètres du cache des listes de postings {#caching-posting-lists}
 
 | Setting                                                                                                                                                    | Description                                                                                                                       |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -1555,9 +1499,7 @@ Reportez-vous aux paramètres du serveur ci-dessous pour configurer les caches.
 | [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | Nombre maximal de listes de postings désérialisées dans le cache.                                                                 |
 | [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/fr/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | Taille de la file protégée dans le cache des listes de postings de l&#39;index de texte, par rapport à la taille totale du cache. |
 
-<div id="limitations">
-  ## Limites
-</div>
+## Limites {#limitations}
 
 L’index de texte présente actuellement les limitations suivantes :
 
@@ -1565,17 +1507,13 @@ L’index de texte présente actuellement les limitations suivantes :
   matérialisation d’un index de texte peut se produire directement (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ou indirectement lors des fusions de parts.
 * Il n’est pas possible de matérialiser des index de texte sur des parts de plus de 4.294.967.296 (= 2^32 = env. 4,2 milliards) lignes. Sans index de texte matérialisé, les requêtes reviennent à une recherche brute-force lente dans la part. Dans le pire des cas, supposons qu’une part contienne une seule colonne de type String et que le paramètre MergeTree `max_bytes_to_merge_at_max_space_in_pool` (par défaut : 150 GB) n’ait pas été modifié. Dans ce cas, cela se produit si la colonne contient en moyenne moins de 29,5 caractères par ligne. En pratique, les tables contiennent aussi d’autres colonnes et le seuil est alors plusieurs fois plus faible (selon le nombre, le type et la taille des autres colonnes).
 
-<div id="upgrade-notes">
-  ## Notes de mise à niveau
-</div>
+## Notes de mise à niveau {#upgrade-notes}
 
 La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
 Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
 Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
 
-<div id="text-index-vs-bloom-filter-indexes">
-  ## Index de texte vs index basés sur des filtres de Bloom
-</div>
+## Index de texte vs index basés sur des filtres de Bloom {#text-index-vs-bloom-filter-indexes}
 
 Les prédicats String peuvent être accélérés à l’aide d’index de texte et d’index basés sur des filtres de Bloom (types d’index `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`), mais ces deux types d’index diffèrent fondamentalement par leur conception et leurs cas d’usage visés :
 
@@ -1606,9 +1544,7 @@ Les index de texte, en revanche, sont conçus spécifiquement pour la recherche 
 * Ils prennent efficacement en charge `hasAllTokens`, `LIKE`, `match` et des fonctions de recherche textuelle similaires.
 * Ils offrent une bien meilleure capacité de passage à l’échelle pour les grands corpus textuels.
 
-<div id="implementation">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation}
 
 Chaque index de texte se compose de deux structures de données (abstraites) :
 
@@ -1654,9 +1590,7 @@ Si l’index n’est pas matérialisé dans la part source, il est construit, é
 
 La table function [mergeTreeTextIndex](/fr/reference/functions/table-functions/mergeTreeTextIndex) peut être utilisée pour inspecter les index de texte.
 
-<div id="hacker-news-dataset">
-  ## Exemple : jeu de données Hacker News
-</div>
+## Exemple : jeu de données Hacker News {#hacker-news-dataset}
 
 Examinons les gains de performances des index de texte sur un vaste jeu de données contenant beaucoup de texte.
 Nous utiliserons 28,7 M de lignes de commentaires du site populaire Hacker News.
@@ -1723,9 +1657,7 @@ ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2
 Maintenant, exécutons des requêtes à l’aide des fonctions `hasToken`, `hasAnyTokens` et `hasAllTokens`.
 Les exemples suivants illustrent l’écart de performances spectaculaire entre un balayage d’index standard et l’optimisation de lecture directe.
 
-<div id="using-hasToken">
-  ### 1. Utilisation de `hasToken`
-</div>
+### 1. Utilisation de `hasToken` {#using-hasToken}
 
 `hasToken` vérifie si le texte contient un token précis.
 Nous rechercherons le token sensible à la casse &#39;ClickHouse&#39;.
@@ -1765,9 +1697,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 
 La requête `lecture directe` est plus de 45 fois plus rapide (0.362s contre 0.008s) et traite nettement moins de données (9.51 GB contre 3.15 MB) en lisant uniquement l’index.
 
-<div id="using-hasAnyTokens">
-  ### 2. Utilisation de `hasAnyTokens`
-</div>
+### 2. Utilisation de `hasAnyTokens` {#using-hasAnyTokens}
 
 `hasAnyTokens` vérifie si le texte contient au moins un des tokens fournis.
 Nous allons rechercher des commentaires contenant soit &#39;love&#39;, soit &#39;ClickHouse&#39;.
@@ -1805,9 +1735,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 L’accélération est encore plus spectaculaire pour cette recherche courante avec l’opérateur &quot;OR&quot;.
 La requête est près de 89 fois plus rapide (1.329s vs 0.015s) en évitant le parcours complet de la colonne.
 
-<div id="using-hasAllTokens">
-  ### 3. Utilisation de `hasAllTokens`
-</div>
+### 3. Utilisation de `hasAllTokens` {#using-hasAllTokens}
 
 `hasAllTokens` vérifie si le texte contient tous les tokens fournis.
 Nous allons rechercher des commentaires contenant à la fois &#39;love&#39; et &#39;ClickHouse&#39;.
@@ -1847,9 +1775,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 
 Pour cette recherche &quot;AND&quot;, l’optimisation de lecture directe est plus de 26 fois plus rapide (0.184s contre 0.007s) que le scan standard du skip index.
 
-<div id="compound-search">
-  ### 4. Recherche composée : OR, AND, NOT, ...
-</div>
+### 4. Recherche composée : OR, AND, NOT, ... {#compound-search}
 
 L’optimisation de lecture directe s’applique également aux expressions booléennes composées.
 Ici, nous allons effectuer une recherche insensible à la casse de &#39;ClickHouse&#39; OR &#39;clickhouse&#39;.
@@ -1887,9 +1813,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 En combinant les résultats de l’index, la requête en lecture directe est 34 fois plus rapide (0,450 s contre 0,013 s) et évite de lire 9,58 Go de données de colonne.
 Pour ce cas précis, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` serait la syntaxe à privilégier, car plus efficace.
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Annonce de la disponibilité générale de la recherche en texte intégral dans ClickHouse](https://clickhouse.com/blog/full-text-search-ga-release)
 * Blog : [Concevoir une recherche en texte intégral haute performance pour le stockage objet](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)
