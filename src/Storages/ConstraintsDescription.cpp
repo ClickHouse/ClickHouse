@@ -126,9 +126,10 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
         CNFQueryAtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
         auto * func = atom.ast->as<ASTFunction>();
-        if (func && relations.contains(func->name))
+        /// A negated ordering comparison, e.g. a constraint NOT (x < c), stays negative after
+        /// pushNotIn, and the graph stores unnegated relations only, so it is skipped.
+        if (func && !atom.negative && relations.contains(func->name))
         {
-            chassert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
         }
     }
@@ -259,9 +260,11 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             atom = Analyzer::CNF::pushNotIntoFunction(atom, context);
 
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-            if (function_node && relations.contains(function_node->getFunctionName()))
+            /// A negated ordering comparison over a non-foldable type, e.g. a constraint
+            /// NOT (x < c) over a Float column, stays negative after pushNotIntoFunction,
+            /// and the graph stores unnegated relations only, so it is skipped.
+            if (function_node && !atom.negative && relations.contains(function_node->getFunctionName()))
             {
-                chassert(!atom.negative);
                 constraints_for_graph.push_back(atom.node_with_hash.node);
             }
         }

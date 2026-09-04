@@ -1,0 +1,45 @@
+negated ordering comparisons
+2
+2
+2
+2
+1
+1
+2
+function argument
+2
+int column
+1
+1
+string mixed
+1
+1
+nullable float
+2
+tautology
+2
+nullable tautology
+3
+1
+3
+0
+constraint
+2
+index hint
+1
+1
+constraint full match
+2
+3
+mixed types
+1
+1
+float primary key
+2
+folding shapes
+1
+0
+1
+0
+1
+0

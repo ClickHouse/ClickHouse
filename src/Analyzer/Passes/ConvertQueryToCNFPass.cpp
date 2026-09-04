@@ -12,6 +12,8 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -126,6 +128,17 @@ bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
         negated.negative = !atom.negative;
         if (group.contains(negated))
         {
+            /// "atom OR NOT atom" is not a tautology in three-valued logic: for a NULL
+            /// value both sides are NULL, so the filter must stay. Treat the pair as
+            /// mutually exclusive only when the atom cannot produce NULL.
+            auto node_type = atom.node_with_hash.node->getNodeType();
+            if (node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::CONSTANT
+                && node_type != QueryTreeNodeType::FUNCTION)
+                continue;
+
+            if (isNullableOrLowCardinalityNullable(atom.node_with_hash.node->getResultType()))
+                continue;
+
             return true;
         }
     }
@@ -304,6 +317,13 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
         const auto & arguments = function_node->getArguments().getNodes();
         if (arguments.size() != 2)
             continue;
+
+        /// A negated ordering atom, e.g. NOT (x < c) kept by the CNF converter, is not
+        /// representable in the sequence reasoning below: `expected` is derived from the
+        /// function name alone, so the emitted hint would inherit the negation and prune
+        /// the opposite primary key range. Give up on the whole group instead.
+        if (atom.negative)
+            return {};
 
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
         {
