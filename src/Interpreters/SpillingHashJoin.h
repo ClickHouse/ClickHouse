@@ -88,6 +88,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+    ISpillable * getSpillable() override;
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;

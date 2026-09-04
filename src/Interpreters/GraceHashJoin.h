@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
@@ -42,7 +43,7 @@ class HashJoin;
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
  * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
  */
-class GraceHashJoin final : public IJoin
+class GraceHashJoin final : public IJoin, public ISpillable
 {
     class FileBucket;
     class DelayedBlocks;
@@ -120,7 +121,9 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void spill();
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
 private:
     void initBuckets();

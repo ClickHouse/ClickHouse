@@ -838,9 +838,23 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
-void GraceHashJoin::spill()
+ProcessorMemoryStats GraceHashJoin::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = getTotalByteCount();
+    // in case the hash table will resize which requires more than 2x additional memory.
+    // we must reserve enough memory.
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
+    return res;
+}
+
+size_t GraceHashJoin::spill(size_t /*at_least_bytes*/)
 {
     std::lock_guard lock(hash_join_mutex);
+
+    size_t total_bytes = hash_join->getTotalByteCount();
+    if (!total_bytes)
+        return total_bytes;
 
     Buckets buckets_snapshot = getCurrentBuckets();
 
@@ -857,6 +871,8 @@ void GraceHashJoin::spill()
 
     size_t bucket_index = current_bucket->idx;
     hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+
+    return total_bytes;
 }
 
 void GraceHashJoin::addBlockToJoinImpl(Block block)

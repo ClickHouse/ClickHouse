@@ -160,6 +160,12 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
+ISpillable * SpillingHashJoin::getSpillable()
+{
+    std::shared_lock lock(switch_mutex);
+    return grace_join ? grace_join->getSpillable() : nullptr;
+}
+
 void SpillingHashJoin::switchToGraceHashJoin()
 {
     const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
