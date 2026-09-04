@@ -1,0 +1,19 @@
+=== SHOW TABLES but not SHOW COLUMNS ===
+1
+ACCESS_DENIED
+ACCESS_DENIED
+3
+=== SHOW COLUMNS only ===
+a
+b
+part_name
+mark_number
+rows_in_granule
+a
+b
+ACCESS_DENIED
+ACCESS_DENIED
+=== SHOW COLUMNS on alias and target ===
+b
+a
+b
