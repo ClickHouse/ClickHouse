@@ -28,6 +28,7 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <set>
 
 
@@ -283,6 +284,14 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     /// Grant before existence: the probe below runs on the server's own context, so the grant the generated
     /// cluster() call enforces only later is required here, before it can report on a shard-local target.
     context->checkAccess(AccessType::READ, AccessTypeObjects::toStringSource(AccessTypeObjects::Source::REMOTE));
+
+    /// A shard that is this server itself is read in-process, on the caller's context: its selector's grants too.
+    const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
+    if (std::ranges::any_of(cluster->getShardsInfo(), &Cluster::ShardInfo::isLocal))
+    {
+        context->checkAccess(AccessType::SELECT, context->resolveStorageID(target->remote_time_series_storage_id));
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+    }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
     checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
