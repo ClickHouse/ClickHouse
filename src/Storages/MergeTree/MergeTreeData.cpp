@@ -1340,12 +1340,12 @@ void MergeTreeData::checkProperties(
                                                != index.definition_ast->getTreeHash(/*ignore_aliases=*/true))
                                            return false;
 
-                                       if (old_index.data_types.size() != index.data_types.size())
+                                       if (!std::ranges::equal(
+                                               old_index.data_types,
+                                               index.data_types,
+                                               [](const auto & old_type, const auto & new_type)
+                                               { return old_type->equals(*new_type); }))
                                            return false;
-
-                                       for (size_t i = 0; i < index.data_types.size(); ++i)
-                                           if (!old_index.data_types[i]->equals(*index.data_types[i]))
-                                               return false;
 
                                        const auto old_mistyped = findMistypedAliasColumnsOfTextIndex(
                                            old_index, old_metadata.columns, type_context);
