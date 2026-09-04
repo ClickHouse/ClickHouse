@@ -640,9 +640,9 @@ ObjectIterator PaimonMetadata::iterate(
         if (last_consumed_snapshot_id)
         {
             /// Test-only pause before the watermark is advanced: the batch is collected but
-            /// nothing is committed yet. Tests use this window to take the processing lock
-            /// away and pin down that the commit below then fails instead of overwriting
-            /// another consumer's progress.
+            /// nothing is committed yet. Tests use this window to expire the owning session
+            /// or modify the guarded watermark, and pin down that the commit below fails
+            /// instead of overwriting another consumer's progress.
             FailPointInjection::pauseFailPoint(
                 FailPoints::paimon_incremental_read_pause_before_watermark_commit);
 

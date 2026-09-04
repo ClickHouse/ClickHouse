@@ -84,20 +84,12 @@ PaimonProcessingLock::~PaimonProcessingLock()
 
 void PaimonProcessingLock::addFenceOps(Coordination::Requests & ops) const
 {
-    /// Losing the lock is a session event, and the session is what rejects it: Keeper
-    /// removes the ephemeral only when the session that created it expires, and the
-    /// commit runs through that same pinned session, so `check_session_valid=true` in
-    /// `setCommittedSnapshot` fails the whole transaction before this check is reached.
-    ///
-    /// This check covers the leftover case - a `processing_lock` that disappeared while
-    /// the session behind it is still alive, which nothing here does and no operator
-    /// procedure asks for, so it takes a manual delete. It is not an epoch: an
-    /// acquisition leaves the node at version 1 (`create` lands on 0, the stamping `set`
-    /// bumps it to 1) and that is the same value every time, so it distinguishes our node
-    /// from one conjured up outside ClickHouse - a bare `create` sits at version 0 - but
-    /// not from a later acquisition through `acquireProcessingLock`. Telling those apart
-    /// would need a fencing token that outlives the node, and the session check already
-    /// covers every way the lock is lost without one.
+    /// Losing the lock in the supported lifecycle is a session event: Keeper removes the
+    /// ephemeral when its session expires, and the commit runs through that same pinned
+    /// session. `check_session_valid=true` in `setCommittedSnapshot` therefore rejects the
+    /// commit. The node-version check is additional fail-closed validation for a missing or
+    /// unexpectedly modified node; it is not an epoch. Externally deleting or recreating
+    /// `processing_lock` while its owning session is alive is unsupported.
     ops.emplace_back(zkutil::makeCheckRequest(path.string(), version));
 }
 
@@ -160,16 +152,10 @@ PaimonProcessingLockPtr PaimonStreamState::acquireProcessingLock()
     const Int64 session_id = lock_keeper->getClientID();
     const String token = fmt::format("{}/{}/{}", replica_name, active_node_identifier, session_id);
 
-    /// Create the node and stamp it in one transaction. The stamp exists because the node's
-    /// version is what fences later commits, and a node freshly created by another consumer
-    /// also sits at the default version 0 - ours has to leave it, or a check op cannot tell
-    /// the two apart.
-    ///
-    /// This has to be atomic. As two round trips, a hardware error on the second one would
-    /// leave an ephemeral lock nobody can clean up: the error finalizes this client, so there
-    /// is no live session left to remove the node through, and the node itself survives until
-    /// the server expires the session - blocking every incremental read on this table until
-    /// then. One transaction has no such intermediate state.
+    /// Create and stamp the node in one transaction so a successful acquisition always has
+    /// the version expected by `addFenceOps`. This also avoids exposing a half-stamped node
+    /// between two round trips. The version is additional validation for in-place mutation;
+    /// it is not an epoch that survives an unsupported external delete and recreate.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(processing_lock_path, token, zkutil::CreateMode::Ephemeral));
     ops.emplace_back(zkutil::makeSetRequest(processing_lock_path, token, /*version=*/0));

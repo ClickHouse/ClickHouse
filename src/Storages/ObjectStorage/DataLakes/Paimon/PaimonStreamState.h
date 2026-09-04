@@ -23,9 +23,9 @@ namespace DB
 /// mid-read would borrow the new session and successfully overwrite another
 /// consumer's watermark or delete another consumer's lock.
 ///
-/// Every mutation guarded by the lock must add addFenceOps to its transaction,
-/// so a holder that lost the lock fails loudly instead of committing over
-/// somebody else's progress.
+/// Every mutation guarded by the lock must add `addFenceOps` to its transaction.
+/// Together with the pinned session, this makes supported lock-loss paths fail
+/// closed. External deletion or recreation of `processing_lock` is unsupported.
 class PaimonProcessingLock
 {
 public:
@@ -41,7 +41,7 @@ public:
     PaimonProcessingLock(const PaimonProcessingLock &) = delete;
     PaimonProcessingLock & operator=(const PaimonProcessingLock &) = delete;
 
-    /// Assert that the lock node is still the one this handle created.
+    /// Check the expected lock-node version as additional fail-closed validation.
     /// Must be added to every transaction that mutates lock-protected state.
     void addFenceOps(Coordination::Requests & ops) const;
 
@@ -68,7 +68,7 @@ using PaimonProcessingLockPtr = std::unique_ptr<PaimonProcessingLock>;
 ///   {keeper_path}/
 ///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
 ///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads.
-///   │                           # Its value is a fencing token identifying the owner:
+///   │                           # Its value is an ownership token:
 ///   │                           # {replica_name}/{server_uuid}/{keeper_session_id}
 ///   └── replicas/
 ///       └── {replica_name}/

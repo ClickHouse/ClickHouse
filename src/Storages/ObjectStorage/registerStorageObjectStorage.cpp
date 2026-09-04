@@ -1893,6 +1893,8 @@ clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<lat
 
 Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
 
+Do not delete or replace `processing_lock` manually. It is an ephemeral node owned by the ClickHouse Keeper session that is running the incremental read; its lifecycle is not an operator recovery interface.
+
 ### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}
 
 Snapshots that Paimon expired are skipped automatically: expiration removes a prefix of the snapshot ids, so anything below the warehouse's earliest snapshot is known to be gone and the cursor moves past it.

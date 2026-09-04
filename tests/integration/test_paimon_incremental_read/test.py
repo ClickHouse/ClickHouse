@@ -18,7 +18,7 @@ USER_FILES_PATH = f"{CLICKHOUSE_WORKDIR}/user_files"
 CH_TABLE_NAME = "paimon_inc_read"
 CH_TABLE_NAME_WITH_LIMIT = "paimon_inc_read_with_limit"
 CH_TABLE_NAME_AT_MOST_ONCE = "paimon_inc_read_at_most_once"
-CH_TABLE_NAME_LOST_LOCK = "paimon_inc_read_lost_lock"
+CH_TABLE_NAME_SESSION_LOSS = "paimon_inc_read_session_loss"
 CH_TABLE_NAME_MONOTONIC = "paimon_inc_read_monotonic"
 CH_TABLE_NAME_CURSOR_AHEAD = "paimon_inc_read_cursor_ahead"
 CH_TABLE_NAME_TRANSIENT_ERROR = "paimon_inc_read_transient_error"
@@ -363,34 +363,29 @@ def test_paimon_incremental_read_at_most_once_on_crash(started_cluster):
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_AT_MOST_ONCE} SYNC;")
 
 
-def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
-    """A read that no longer holds the processing lock must not commit its watermark.
+def test_paimon_incremental_read_session_loss_fails_loudly(started_cluster):
+    """A read cannot borrow the replacement Keeper session after losing its own.
 
-    The `paimon_incremental_read_pause_before_watermark_commit` failpoint parks the read
-    after it collected the batch but before it advances the watermark, and the lock is
-    replaced by a node this read does not own in that window. It must then fail rather
-    than overwrite the new holder's progress, and must leave the new holder's lock alone.
-
-    The competitor here is created straight in Keeper rather than through
-    `acquireProcessingLock`, so what rejects the commit is the version check: a bare
-    `create` leaves the node at version 0, while an acquisition leaves it at 1. Losing
-    the lock for real is a session event - Keeper drops the ephemeral only when its
-    session expires, and the commit runs through that same session - and is rejected by
-    `check_session_valid` instead, which this test does not exercise."""
+    Reader A is parked after collecting snapshot 2 but before committing its watermark.
+    `SYSTEM RECONNECT ZOOKEEPER` then closes the session that owns A's processing lock.
+    Reader B establishes a new session, consumes snapshot 2 and advances the watermark.
+    When A resumes, it must fail without delivering the same snapshot again or changing
+    B's watermark. This directly reproduces the session-replacement race fixed by the
+    session-pinned `PaimonProcessingLock`."""
     writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
 
-    warehouse_name = "warehouse_lost_lock"
+    warehouse_name = "warehouse_session_loss"
     warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
     warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
     table_path = f"{warehouse_dir}/test.db/test_table"
-    keeper_path = f"/clickhouse/paimon_lost_lock_{uuid.uuid4().hex}"
+    keeper_path = f"/clickhouse/paimon_session_loss_{uuid.uuid4().hex}"
 
     _clean_warehouse(writer_container_id, warehouse_dir)
     _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
     _create_clickhouse_table_for_paimon_incremental_read(
-        CH_TABLE_NAME_LOST_LOCK, table_path, keeper_path=keeper_path
+        CH_TABLE_NAME_SESSION_LOSS, table_path, keeper_path=keeper_path
     )
-    count_query = f"SELECT count() FROM {CH_TABLE_NAME_LOST_LOCK}"
+    count_query = f"SELECT count() FROM {CH_TABLE_NAME_SESSION_LOSS}"
     _drain_baseline(count_query, "1\n")
 
     node.query(
@@ -406,20 +401,45 @@ def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
     )
     reader.start()
 
-    # The competitor's lock is ephemeral, so this session must outlive the reader.
     zk = cluster.get_kazoo_client("zoo1")
     try:
         lock_path = f"{keeper_path}/processing_lock"
-        _wait_for_znode(zk, lock_path, present=True)
+        node.query(
+            "SYSTEM WAIT FAILPOINT "
+            "paimon_incremental_read_pause_before_watermark_commit PAUSE",
+            timeout=60,
+        )
         assert reader.is_alive(), (
-            f"the reader returned before the lock was taken away: {reader_result!r}"
+            f"reader A returned before its Keeper session was replaced: {reader_result!r}"
+        )
+        _wait_for_znode(zk, lock_path, present=True)
+
+        old_session_id = int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
         )
 
-        # The lock node is gone and something else now sits at that path. Not a session
-        # expiry: this reader's session is still alive, which is what makes the version
-        # check rather than the session check the thing that has to catch it.
-        zk.delete(lock_path)
-        zk.create(lock_path, b"competitor", ephemeral=True)
+        # Close the real session that A acquired the lock with. Keeper removes its
+        # ephemeral lock; B must establish a new session through the normal read path.
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        _wait_for_znode(zk, lock_path, present=False)
+
+        competing_out, competing_error = node.query_and_get_answer_with_error(count_query)
+        assert not competing_error, f"reader B failed after reconnect: {competing_error!r}"
+        assert competing_out == "10\n", (
+            f"reader B did not consume snapshot 2: {competing_out!r}"
+        )
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2"
+
+        new_session_id = int(
+            node.query(
+                "SELECT client_id FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+        assert new_session_id != old_session_id, (
+            "`SYSTEM RECONNECT ZOOKEEPER` did not replace the Keeper session"
+        )
 
         node.query(
             "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
@@ -427,16 +447,15 @@ def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
         reader.join(timeout=120)
         assert not reader.is_alive(), "the reader thread never finished"
 
-        assert "INVALID_STATE" in reader_result.get("err", ""), (
-            f"the read committed without holding the lock: {reader_result!r}"
+        assert reader_result.get("err"), (
+            f"reader A succeeded through reader B's Keeper session: {reader_result!r}"
         )
-        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"1", (
-            "the watermark was advanced by a read that had lost the lock"
+        assert reader_result.get("out") != "10\n", (
+            f"reader A delivered snapshot 2 after losing its session: {reader_result!r}"
         )
-        assert zk.exists(lock_path) is not None, (
-            "the read released a processing lock owned by another consumer"
+        assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"2", (
+            "reader A changed the watermark committed by reader B"
         )
-        assert zk.get(lock_path)[0] == b"competitor"
     finally:
         node.query(
             "SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_watermark_commit"
@@ -444,7 +463,7 @@ def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
         zk.stop()
         reader.join(timeout=60)
 
-    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_LOST_LOCK} SYNC;")
+    node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_SESSION_LOSS} SYNC;")
 
 
 def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
