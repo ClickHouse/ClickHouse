@@ -208,6 +208,10 @@ private:
     /// allocation of that size before any post-decode size check could fire. `what` names the field in the
     /// error, e.g. "struct field 'x'".
     void expectNextNodeLength(size_t expected, const String & what) const;
+    /// Rejects the next FieldNode unless it declares at least `minimum` rows: the child of an offsets parent
+    /// (List/LargeList/Map) must cover the rows the offsets reference, while a longer one is legal — a
+    /// sliced Arrow list keeps the full child. `what` names the field in the error, e.g. "list child".
+    void expectNextNodeLengthAtLeast(size_t minimum, const String & what) const;
 
     /// The row count the next FieldNode declares, clamped at zero (a negative length is rejected when the
     /// node is consumed). The child of a List/FixedSizeList/Map/Union field is the next node in the
@@ -215,13 +219,10 @@ private:
     /// `decodeField` consumes the node.
     size_t peekNodeRows() const;
 
-    /// Whether a declared row count is physically impossible for this message: any row of a field that
-    /// undergoes value decoding occupies at least one bit in some buffer, so a count above the body's
-    /// total bits is forged and must not drive an allocation (e.g. of an invisible-rows mask).
-    bool rowCountExceedsBodyBits(size_t rows) const { return rows > total_buffer_bytes * 8; }
-    /// Rejects a declared row count the message body cannot physically hold (see `rowCountExceedsBodyBits`)
-    /// BEFORE the field is decoded: a buffer-less field declared ahead of its buffered siblings would
-    /// otherwise allocate for the forged count before any of their buffer-size checks fires. `what` names
+    /// Rejects a declared row count the message body cannot physically hold, BEFORE the field is decoded:
+    /// any row of a field that undergoes value decoding occupies at least one bit in some buffer, so a
+    /// count above the body's total bits is forged, and a buffer-less field declared ahead of its buffered
+    /// siblings would otherwise allocate for it before any of their buffer-size checks fires. `what` names
     /// the field in the error, e.g. "list child".
     void checkRowCountWithinBody(size_t rows, const String & what) const;
 
@@ -231,15 +232,6 @@ private:
     std::optional<InvisibleRowsMask> buildOffsetsChildInvisibleMask(
         size_t rows, Int64 base, Int64 prev, const PaddedPODArray<UInt64> & offsets,
         const InvisibleRowsMask * invisible_rows) const;
-
-    /// Bounds the declared FieldNode length of a List/LargeList/Map child before it is decoded, so
-    /// forged metadata cannot drive an oversized allocation in a buffer-less child subtree (which is
-    /// sized by that length alone; see `isBufferlessSubtree`). `prev` is the last referenced offset —
-    /// the child row count the parent's offsets actually reference — and `what` names the parent field
-    /// in the errors ("list", "map"). Throws `INCORRECT_DATA` when a buffer-less child declares a length
-    /// other than the referenced count, or when any child declares more rows than the body physically
-    /// bounds.
-    void checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const;
 
     /// Whether the subtree starting at the next node decodes to a column determined by its size alone: it
     /// is buffer-less (see `isBufferlessSubtree`) and none of its struct or fixed-size-list nodes declares
@@ -363,7 +355,7 @@ private:
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
     /// Total bytes across `buffer_slices`; bounds allocations sized by untrusted FieldNode lengths
-    /// (see `rowCountExceedsBodyBits`).
+    /// (see `checkRowCountWithinBody`).
     size_t total_buffer_bytes = 0;
     PODArray<char> decompressed_body;
     size_t node_index = 0;

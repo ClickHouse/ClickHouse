@@ -289,9 +289,18 @@ void RecordBatchDecoder::expectNextNodeLength(size_t expected, const String & wh
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC {} declares {} rows, expected {}", what, declared, expected);
 }
 
+void RecordBatchDecoder::expectNextNodeLengthAtLeast(size_t minimum, const String & what) const
+{
+    const Int64 declared = peekNextNodeLength();
+    if (declared < 0 || static_cast<size_t>(declared) < minimum)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC {} declares {} rows, fewer than the {} its parent references", what, declared, minimum);
+}
+
 void RecordBatchDecoder::checkRowCountWithinBody(size_t rows, const String & what) const
 {
-    if (rowCountExceedsBodyBits(rows))
+    if (rows > total_buffer_bytes * 8)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC {} declares {} rows, more than the {}-byte message body can hold", what, rows, total_buffer_bytes);
@@ -441,7 +450,7 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
 {
     const size_t child_rows = peekNodeRows();
     const bool has_unreferenced_rows = static_cast<size_t>(base) > 0 || static_cast<size_t>(prev) < child_rows;
-    if ((!invisible_rows && !has_unreferenced_rows) || rowCountExceedsBodyBits(child_rows))
+    if (!invisible_rows && !has_unreferenced_rows)
         return std::nullopt;
 
     /// Start all-invisible and clear each visible slot's range: rows of invisible slots and rows no
@@ -459,30 +468,6 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
             memset(mask.data() + range_begin, 0, range_end - range_begin);
     }
     return mask;
-}
-
-void RecordBatchDecoder::checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const
-{
-    if (isBufferlessSubtree(child))
-    {
-        /// Only child rows up to the last referenced offset can carry data, and a buffer-less child carries
-        /// none at all: its length is pure metadata, so it must be exactly the referenced count. A longer
-        /// one — a forgery, or a sliced file written without truncating the unreferenced tail — is rejected
-        /// the same way a non-empty child under an all-empty parent is; a shorter one cannot cover the
-        /// referenced range.
-        const Int64 child_len = peekNextNodeLength();
-        if (child_len != prev)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC {} references {} child rows but its buffer-less child declares {}", what, prev, child_len);
-    }
-    else
-    {
-        /// A buffered child may legitimately be longer than the referenced range (a sliced Arrow file
-        /// keeps the full child), but its length is still physically bounded: every decodable layout
-        /// costs at least one bit per row in some buffer.
-        checkRowCountWithinBody(peekNodeRows(), fmt::format("{} child", what));
-    }
 }
 
 RecordBatchDecoder::Slice RecordBatchDecoder::nextBuffer()
@@ -1083,11 +1068,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             Int64 prev = 0;
             auto offsets_col = decodeListOffsets(rows, /*large=*/false, "map", "map offsets", base, prev);
             auto & offs = offsets_col->getData();
+            const ArrowField & entries_field = type.children.at(0);
 
-            /// Bound the entries struct's declared length BEFORE decodeField: a buffer-less entries type
-            /// (e.g. Map(Null, Null)) derives its size from the length alone, so a forged-huge length
-            /// would otherwise drive an unbounded allocation that the later cut() could not prevent.
-            checkOffsetsChildDeclaredLength(type.children.at(0), prev, "map");
+            /// The entries struct must cover the entries the offsets reference and may declare more (a sliced
+            /// Arrow map keeps the full entries). It is decoded in full and costs at least one bit per entry,
+            /// so its declared length is physically bounded by the body; enforcing that before decodeField
+            /// keeps a forged length from sizing the invisible-rows mask, or a buffer-less value field,
+            /// before the key's buffers are checked.
+            expectNextNodeLengthAtLeast(static_cast<size_t>(prev), "map entries");
+            checkRowCountWithinBody(peekNodeRows(), "map entries");
 
             /// Entry rows that only invisible map slots reference — or that no slot references — hold
             /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
@@ -1097,16 +1086,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// The entries struct's (key, value) get their hints from a synthetic Tuple(keyType, valueType)
             /// built from the Map hint; the struct recursion then matches them by position.
             ColumnPtr entries = decodeField(
-                type.children.at(0), /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path,
-                list_depth + 1, maskPtr(entries_invisible));
+                entries_field, /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path, list_depth + 1,
+                maskPtr(entries_invisible));
             const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
             if (entries_tuple.tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
-            /// referenced. Reject offsets past the entries, then slice the key/value columns to that range
-            /// so their size matches the base-relative offsets (matching the Apache Arrow library reader).
-            if (prev > static_cast<Int64>(entries_tuple.size()))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map offset {} points past the {} entries", prev, entries_tuple.size());
+            /// referenced. Slice the key/value columns to that range so their size matches the base-relative
+            /// offsets (matching the Apache Arrow library reader).
             const size_t referenced = static_cast<size_t>(prev - base);
             ColumnPtr keys = entries_tuple.getColumnPtr(0);
             ColumnPtr values = entries_tuple.getColumnPtr(1);
@@ -1186,10 +1173,9 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     auto & offs = offsets_col->getData();
     const ArrowField & child_field = field.type.children.at(0);
 
-    /// Bound the child's declared length BEFORE decodeField: a buffer-less child type (e.g. List(Null))
-    /// derives its size from the length alone, so a forged-huge length would otherwise drive an
-    /// unbounded null-map allocation that the later child->cut() could not prevent.
-    checkOffsetsChildDeclaredLength(child_field, prev, "list");
+    /// The child must cover the rows the offsets reference; it may declare more, as a sliced Arrow list
+    /// keeps the full child.
+    expectNextNodeLengthAtLeast(static_cast<size_t>(prev), "list child");
 
     /// A child determined by its size alone is built for the rows the visible slots reference only: the
     /// ranges under invisible slots and the unreferenced head and tail of a sliced list are never
@@ -1204,6 +1190,12 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
         return ColumnArray::create(child, std::move(offsets_col));
     }
 
+    /// Any other child costs at least one bit per row, in its value buffers or its validity bitmap, so its
+    /// declared length is physically bounded by the body; enforcing that before decodeField keeps a forged
+    /// length from sizing the invisible-rows mask, or a buffer-less field declared ahead of the child's
+    /// buffered ones, before those buffers are checked.
+    checkRowCountWithinBody(peekNodeRows(), "list child");
+
     /// Rows of the child that only invisible slots reference — or that no slot references — hold
     /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
     const std::optional<InvisibleRowsMask> child_invisible = buildOffsetsChildInvisibleMask(rows, base, prev, offs, invisible_rows);
@@ -1211,12 +1203,8 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     ColumnPtr child = decodeField(
         child_field, /*allow_low_cardinality=*/false, target_hint, path, list_depth + 1, maskPtr(child_invisible));
     /// A sliced Arrow list can begin at a non-zero first offset; only child[base, prev) is referenced.
-    /// Reject offsets that point past the child, then slice it to the referenced range so its size matches
-    /// the base-relative offsets — mirroring the Apache Arrow library reader's Flatten/slice of a slice.
-    if (prev > static_cast<Int64>(child->size()))
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow IPC list offset {} points past the {}-element child", prev, child->size());
+    /// Slice the child to that range so its size matches the base-relative offsets — mirroring the Apache
+    /// Arrow library reader's Flatten/slice of a slice.
     const size_t referenced = static_cast<size_t>(prev - base);
     ColumnPtr child_slice
         = (base == 0 && referenced == child->size()) ? child : child->cut(static_cast<size_t>(base), referenced);
@@ -1436,8 +1424,6 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         const std::optional<InvisibleRowsMask> child_invisible = [&]() -> std::optional<InvisibleRowsMask>
         {
             const size_t child_rows = peekNodeRows();
-            if (rowCountExceedsBodyBits(child_rows))
-                return std::nullopt;
             InvisibleRowsMask mask;
             mask.resize_fill(child_rows, 1);
             for (size_t row = 0; row < rows; ++row)
