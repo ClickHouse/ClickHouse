@@ -105,6 +105,7 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
+#include <Storages/System/StorageSystemPartAggregationCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemHandlers.h>
@@ -324,6 +325,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     DistributedCache::attachSystemTablesDistributedCache(context, system_database);
 #endif
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
+    attachNoDescription<StorageSystemPartAggregationCache>(context, system_database, "part_aggregation_cache", "Contains information about all entries inside part aggregation cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
 #if USE_LIBSTEMMER

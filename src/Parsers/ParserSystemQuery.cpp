@@ -320,6 +320,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
             {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
+            {"DROP PART AGGREGATION CACHE", Type::CLEAR_PART_AGGREGATION_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
@@ -729,6 +730,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
                 res->query_result_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
+        case Type::CLEAR_PART_AGGREGATION_CACHE:
+        {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;

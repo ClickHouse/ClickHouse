@@ -484,6 +484,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 query_cache_max_entries;
     extern const ServerSettingsUInt64 query_cache_max_entry_size_in_bytes;
     extern const ServerSettingsUInt64 query_cache_max_entry_size_in_rows;
+    extern const ServerSettingsUInt64 part_aggregation_cache_max_size_in_bytes;
     extern const ServerSettingsString logger_log;
     extern const ServerSettingsString logger_level;
     extern const ServerSettingsString logger_startup_level;
@@ -2634,6 +2635,13 @@ try
     }
     global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
 
+    /// Part aggregation cache: caches per-part intermediate aggregation states for partial GROUP BY reuse.
+    {
+        size_t part_aggregation_cache_max_size = std::min<size_t>(
+            server_settings[ServerSetting::part_aggregation_cache_max_size_in_bytes], max_cache_size);
+        global_context->setPartAggregationCache(part_aggregation_cache_max_size);
+    }
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
     size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
@@ -3107,6 +3115,7 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePartAggregationCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));

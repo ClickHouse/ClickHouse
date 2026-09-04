@@ -82,6 +82,7 @@
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -640,6 +641,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable PartAggregationCachePtr part_aggregation_cache TSA_GUARDED_BY(mutex);    /// Cache of per-part aggregation states.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -5479,6 +5481,41 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
+void Context::setPartAggregationCache(size_t max_size_in_bytes)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->part_aggregation_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part aggregation cache has been already created.");
+
+    shared->part_aggregation_cache = std::make_shared<PartAggregationCache>(max_size_in_bytes);
+}
+
+void Context::updatePartAggregationCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->part_aggregation_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part aggregation cache was not created yet.");
+
+    size_t max_size_in_bytes = std::min(
+        config.getUInt64("part_aggregation_cache.max_size_in_bytes", 256 * 1024 * 1024), max_cache_size);
+    shared->part_aggregation_cache->updateConfiguration(max_size_in_bytes);
+}
+
+PartAggregationCachePtr Context::getPartAggregationCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->part_aggregation_cache;
+}
+
+void Context::clearPartAggregationCache() const
+{
+    PartAggregationCachePtr cache = getPartAggregationCache();
+    if (cache)
+        cache->clear();
+}
+
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -5520,9 +5557,13 @@ void Context::clearCaches() const
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
 
+    if (shared->part_aggregation_cache)
+        shared->part_aggregation_cache->clear();
+
     /// Path-keyed like the delete-bitmap cache below; clear it here too (see the note there).
     if (shared->encryption_header_cache)
         shared->encryption_header_cache->clear();
+
 
     /// UNIQUE KEY delete-bitmap cache is optional (zero size disables it),
     /// so the null check stays non-fatal. Without clearing, a renamed /
@@ -5530,6 +5571,7 @@ void Context::clearCaches() const
     /// reused could see stale bitmaps from the prior table.
     if (shared->delete_bitmap_cache)
         shared->delete_bitmap_cache->clear();
+
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
