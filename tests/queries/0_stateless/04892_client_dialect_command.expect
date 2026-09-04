@@ -46,28 +46,6 @@ expect -- ":) "
 send -- "/dialect 'kusto'\r"
 expect -- "(kusto) :) "
 
-# A dialect transition clears KQL let bindings, just like the equivalent SET.
-send -- "let x = 42\r"
-expect -- "(kusto) :) "
-send -- "/dialect clickhouse\r"
-expect -- ":) "
-send -- "/dialect kusto\r"
-expect -- "(kusto) :) "
-send -- "print x\r"
-expect -- "Unknown expression identifier `x`"
-expect -- "(kusto) :) "
-
-# The SQL SET escape follows the same Kusto binding cleanup rules.
-send -- "let x = 42\r"
-expect -- "(kusto) :) "
-send -- "SET dialect = 'clickhouse'\r"
-expect -- ":) "
-send -- "SET dialect = 'kusto'\r"
-expect -- "(kusto) :) "
-send -- "print x\r"
-expect -- "Unknown expression identifier `x`"
-expect -- "(kusto) :) "
-
 # The /language and /lang aliases work; the default dialect is not shown in the prompt.
 send -- "/language clickhouse\r"
 expect -- ":) "

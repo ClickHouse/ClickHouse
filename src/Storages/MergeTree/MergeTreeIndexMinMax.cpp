@@ -128,6 +128,9 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
+        normalizeBoolFields(min_ref);
+        normalizeBoolFields(max_ref);
+
         if (update_in_place)
         {
             hyperrectangle[i].left_included = true;
@@ -313,6 +316,9 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
+
+    normalizeBoolFields(value);
+
     /// If index granularity is not 1, we insert the same value as the min
     /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.

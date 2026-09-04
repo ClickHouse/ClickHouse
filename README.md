@@ -34,6 +34,7 @@ curl https://clickhouse.com/ | sh
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Monthly Release & Community Call
+The [ClickHouse **26.8** Release Call](https://www.youtube.com/watch?v=5A9gRYE0v2M) took place on August 27, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.8/).
 
 The [ClickHouse **26.7** Release Call](https://www.youtube.com/watch?v=mKBNLaFOVDA) took place on July 23, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.7/).
 
@@ -48,8 +49,6 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Boston Trivia](https://luma.com/clickh-thmi)- August 31st, 2026
-* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 * [The Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
 * [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d) - September 14th, 2026
 * [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
@@ -65,6 +64,8 @@ Recent meetups
 * [NYC Apache Iceberg™ Community Meetup](https://luma.com/t3z5q5s8) - August 20th, 2026
 * [Bangalore Iceberg Community Meetup](https://luma.com/clickh-t3iz) - August 22nd, 2026
 * [Vancouver Meetup](https://luma.com/jr8tc94e) - August 25th, 2026
+* [Boston Trivia](https://luma.com/clickh-thmi)- August 31st, 2026
+* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 
 ## Recent Recordings
 
