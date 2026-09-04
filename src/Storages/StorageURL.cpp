@@ -633,6 +633,20 @@ Chunk StorageURLSource::generate()
             /// `ISource::prepare` pushes the result before it notices cancellation.
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_after_pull);
             CurrentThread::checkIfNotCancelled();
+
+            /// `checkIfNotCancelled` observes a hard `max_execution_time` only once CancellationChecker
+            /// has turned it into a kill, and the executor polls the time limit only before a step,
+            /// so a deadline which passed while `pull` was running is not seen by either yet. Ask the
+            /// query status directly, the same way as initialize does: `checkTimeLimit` throws for
+            /// the `throw` overflow mode and returns false for `break`, after which the query returns
+            /// what it has already read and no one needs this chunk either.
+            if (auto query_status = getContext()->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+            {
+                cancellation->cancel(true);
+                reader->cancel();
+                break;
+            }
+
             if (isCancelled())
             {
                 reader->cancel();
