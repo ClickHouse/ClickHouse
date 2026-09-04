@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <absl/container/inlined_vector.h>
+
 #include <base/sort.h>
 
 #include <libdivide-config.h>
@@ -24,9 +26,9 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/TargetSpecific.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -426,7 +428,12 @@ protected:
         }
         else
         {
-            VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
+            /// Most sparse states contain only a handful of populated buckets. Keep those entries inline and
+            /// retain memory tracking when the sparse state grows beyond the inline capacity.
+            absl::InlinedVector<
+                std::pair<size_t, const Bucket *>,
+                /* N = */ 8,
+                AllocatorWithMemoryTracking<std::pair<size_t, const Bucket *>>> ordered_buckets;
             ordered_buckets.reserve(buckets.size());
             for (const auto & entry : buckets)
                 ordered_buckets.emplace_back(entry.getKey(), &entry.getMapped());
