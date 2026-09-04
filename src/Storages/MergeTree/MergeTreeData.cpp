@@ -405,6 +405,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int NETWORK_ERROR;
+    extern const int CANNOT_OPEN_FILE;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
@@ -447,6 +449,16 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Throws once while reading a part's txn_version.txt during PartLoadingTree build, to emulate
+    /// a transient I/O error and test that the read is retried (rather than mis-reported as corruption).
+    extern const char part_loading_tree_read_txn_status_fault[];
+    /// Like the above but throws on every read (REGULAR), to test that retries are bounded and an
+    /// exhausted transient error is rethrown as-is (fail-close) rather than reported as corruption.
+    extern const char part_loading_tree_read_txn_status_persistent_fault[];
+    /// Throws a non-retryable I/O error once (ONCE), to test that a permanent access failure is
+    /// rethrown as-is without retrying (a wrongful retry would consume this one-shot fault and let
+    /// the read succeed) and is not reported as corruption.
+    extern const char part_loading_tree_read_txn_status_permanent_fault[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2202,6 +2214,10 @@ Int64 MergeTreeData::getMaxBlockNumber() const
     return max_block_num;
 }
 
+static constexpr size_t loading_parts_initial_backoff_ms = 100;
+static constexpr size_t loading_parts_max_backoff_ms = 5000;
+static constexpr size_t loading_parts_max_tries = 3;
+
 void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk)
 {
     auto & current_ptr = root_by_partition[info.getPartitionId()];
@@ -2223,65 +2239,126 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     /// favors keeping the unambiguously committed peer.
     enum class RollbackStatus
     {
-        RolledBack,  /// definitively rolled back
-        Committed,   /// definitively committed
-        NoMetadata,  /// txn_version.txt does not exist → non-transactional part
-        UnknownCSN,  /// transaction is still running and creation_csn is not yet known
-        Unreadable,  /// file exists but could not be parsed → corruption or partial write in progress
+        RolledBack,        /// definitively rolled back
+        Committed,         /// definitively committed
+        NoMetadata,        /// txn_version.txt does not exist → non-transactional part
+        UnknownCSN,        /// transaction is still running and creation_csn is not yet known
+        UnreadableContent, /// file was read in full but its content could not be parsed → corruption
     };
 
+    /// Classifies a part's transaction status from its txn_version.txt.
+    ///
+    /// Failures are handled by where they occur, not lumped together: a transient I/O error (S3/Keeper/
+    /// memory blip) is retried and, if it outlives the retries, rethrown; a permanent access error is
+    /// rethrown too. Both propagate the real error and fail startup close, instead of being mis-reported
+    /// as data corruption. Only a fully-read-but-unparsable file is `UnreadableContent`. `build` runs
+    /// outside `loadDataPartWithRetries`, so the retry lives here.
     auto read_txn_status = [&](const String & part_name, const DiskPtr & part_disk) -> RollbackStatus
     {
         if (relative_data_path.empty())
             return RollbackStatus::NoMetadata;
 
-        auto version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
-        if (!part_disk->existsFile(version_path))
+        const auto version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
+        const auto tmp_version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
+
+        size_t backoff_ms = loading_parts_initial_backoff_ms;
+        for (size_t try_no = 0; try_no < loading_parts_max_tries; ++try_no)
         {
-            /// Mirror VersionMetadataOnDisk::loadMetadata: a lone txn_version.txt.tmp (no final
-            /// txn_version.txt) means the creating transaction never renamed its metadata into place,
-            /// i.e. it was interrupted before commit. Such a part is rolled back, so classify it as
-            /// such here too — otherwise it would be treated as a non-transactional part and an
-            /// intersecting committed peer would fall through to the LOGICAL_ERROR path below.
-            auto tmp_version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
-            if (part_disk->existsFile(tmp_version_path))
-                return RollbackStatus::RolledBack;
-            return RollbackStatus::NoMetadata;
-        }
-
-        try
-        {
-            VersionInfo version_info;
-            auto buf = part_disk->readFile(version_path, ReadSettings{});
-            version_info.readFromBuffer(*buf, /*one_line=*/false);
-
-            CSN csn = version_info.creation_csn;
-            if (csn == Tx::RolledBackCSN)
-                return RollbackStatus::RolledBack;
-            if (csn != Tx::UnknownCSN)
-                return RollbackStatus::Committed;
-
-            /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
-            csn = TransactionLog::getCSN(version_info.creation_tid);
-            if (!csn
-                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+            String content;
+            try
             {
-                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
-                if (!csn)
-                    return RollbackStatus::RolledBack;
+                /// I/O stage: a failure here is an access/transport error, never corrupt content.
+                fiu_do_on(FailPoints::part_loading_tree_read_txn_status_fault,
+                {
+                    throw Exception(ErrorCodes::NETWORK_ERROR, "Injected transient fault while reading txn metadata of part {}", part_name);
+                });
+                fiu_do_on(FailPoints::part_loading_tree_read_txn_status_persistent_fault,
+                {
+                    throw Exception(ErrorCodes::NETWORK_ERROR, "Injected persistent fault while reading txn metadata of part {}", part_name);
+                });
+                fiu_do_on(FailPoints::part_loading_tree_read_txn_status_permanent_fault,
+                {
+                    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Injected permanent I/O fault while reading txn metadata of part {}", part_name);
+                });
+                if (!part_disk->existsFile(version_path))
+                {
+                    /// A lone txn_version.txt.tmp (no final file) means the creating transaction was
+                    /// interrupted before the commit rename → rolled back. No file at all → a
+                    /// non-transactional part. (Classifying tmp-only as RolledBack keeps an intersecting
+                    /// committed peer from falling through to the LOGICAL_ERROR path below.)
+                    if (part_disk->existsFile(tmp_version_path))
+                        return RollbackStatus::RolledBack;
+                    return RollbackStatus::NoMetadata;
+                }
+                auto buf = part_disk->readFile(version_path, ReadSettings{});
+                content = VersionInfo::readMetadataString(*buf);
             }
-            if (csn == Tx::RolledBackCSN)
-                return RollbackStatus::RolledBack;
-            if (csn)
-                return RollbackStatus::Committed;
+            catch (...)
+            {
+                if (isRetryableException(std::current_exception()) && try_no + 1 < loading_parts_max_tries)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                    backoff_ms = std::min(backoff_ms * 2, loading_parts_max_backoff_ms);
+                    continue;
+                }
+                throw;
+            }
 
-            return RollbackStatus::UnknownCSN;
+            /// A file over the cap cannot be valid metadata; proven from bytes read, not the on-disk size.
+            if (content.size() > VersionInfo::MAX_METADATA_SIZE)
+            {
+                LOG_WARNING(getLogger("MergeTreeData"), "Version metadata of part {} exceeds {} bytes", part_name, VersionInfo::MAX_METADATA_SIZE);
+                return RollbackStatus::UnreadableContent;
+            }
+
+            VersionInfo version_info;
+            try
+            {
+                version_info.fromString(content, /*one_line=*/false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("MergeTreeData"), fmt::format("Failed to parse version metadata of part {}", part_name));
+                return RollbackStatus::UnreadableContent;
+            }
+
+            try
+            {
+                /// Resolve stage: consulting TransactionLog can hit transient errors too.
+                CSN csn = version_info.creation_csn;
+                if (csn == Tx::RolledBackCSN)
+                    return RollbackStatus::RolledBack;
+                if (csn != Tx::UnknownCSN)
+                    return RollbackStatus::Committed;
+
+                /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
+                csn = TransactionLog::getCSN(version_info.creation_tid);
+                if (!csn
+                    && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+                {
+                    csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                    if (!csn)
+                        return RollbackStatus::RolledBack;
+                }
+                if (csn == Tx::RolledBackCSN)
+                    return RollbackStatus::RolledBack;
+                if (csn)
+                    return RollbackStatus::Committed;
+
+                return RollbackStatus::UnknownCSN;
+            }
+            catch (...)
+            {
+                if (isRetryableException(std::current_exception()) && try_no + 1 < loading_parts_max_tries)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+                    backoff_ms = std::min(backoff_ms * 2, loading_parts_max_backoff_ms);
+                    continue;
+                }
+                throw;
+            }
         }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("MergeTreeData"), fmt::format("Failed to read version metadata for part {}", part_name));
-            return RollbackStatus::Unreadable;
-        }
+        UNREACHABLE();
     };
 
     auto * current = current_ptr.get();
@@ -2337,7 +2414,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 const auto incoming_status = read_txn_status(name, disk);
                 const auto existing_status = read_txn_status(prev->second->name, prev->second->disk);
 
-                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                if (incoming_status == RollbackStatus::UnreadableContent || existing_status == RollbackStatus::UnreadableContent)
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
                         "Part {} intersects previous part {} and the transaction metadata of at least one"
                         " of them could not be read. This indicates disk corruption or a partial write.",
@@ -2401,7 +2478,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 const auto incoming_status = read_txn_status(name, disk);
                 const auto existing_status = read_txn_status(it->second->name, it->second->disk);
 
-                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                if (incoming_status == RollbackStatus::UnreadableContent || existing_status == RollbackStatus::UnreadableContent)
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
                         "Part {} intersects next part {} and the transaction metadata of at least one"
                         " of them could not be read. This indicates disk corruption or a partial write.",
@@ -2522,10 +2599,6 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
         part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
     }
 }
-
-static constexpr size_t loading_parts_initial_backoff_ms = 100;
-static constexpr size_t loading_parts_max_backoff_ms = 5000;
-static constexpr size_t loading_parts_max_tries = 3;
 
 void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
 {
