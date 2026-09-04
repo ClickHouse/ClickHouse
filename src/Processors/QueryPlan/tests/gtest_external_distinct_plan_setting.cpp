@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/SettingsQuirks.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -17,6 +18,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 }
 
@@ -141,6 +143,16 @@ TEST(ExternalDistinctPlanSetting, DefaultsToPreFeatureBehaviorWhenAbsent)
     QueryPlanSerializationSettings settings;
     EXPECT_EQ(settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct], 0);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct], 0.);
+}
+
+TEST(ExternalDistinctPlanSetting, TemporaryFilesBufferSizeIsClampedOnDeserialization)
+{
+    /// The plan settings bypass the sanity clamp of the query settings, so the step clamps the buffer size
+    /// itself, like the other consumers of temporary files: a serialized plan cannot make the receiver
+    /// allocate an out-of-range temporary-file buffer.
+    QueryPlanSerializationSettings plan_settings;
+    plan_settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = MAX_TEMPORARY_FILES_BUFFER_SIZE + 1;
+    EXPECT_EQ(DistinctStep::Settings(plan_settings).temporary_files_buffer_size, MAX_TEMPORARY_FILES_BUFFER_SIZE);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)

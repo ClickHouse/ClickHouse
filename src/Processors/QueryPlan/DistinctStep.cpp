@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -139,7 +140,7 @@ DistinctStep::Settings::Settings(const QueryPlanSerializationSettings & settings
 
     min_free_disk_space = settings_[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     temporary_files_codec = settings_[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = settings_[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings_[QueryPlanSerializationSetting::temporary_files_buffer_size]);
 }
 
 void DistinctStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
