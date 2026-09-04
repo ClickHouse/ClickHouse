@@ -231,8 +231,8 @@ SELECT count() > 0 FROM (
 ) WHERE toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) < toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'));
 
 -- Only a conjunct that reads the representation of a substituted key is unsafe, so a safe conjunct on
--- that same key still reaches the opposite input when the two sit side by side. `isConstant` is true for
--- every row of this read, so it constrains nothing and the granule counts describe the range alone.
+-- that same key still reaches the opposite input when the two sit side by side. `isConstant(l.a) = 0`
+-- holds for every row of this read, so it constrains nothing and the granule counts describe the range.
 
 SELECT 'INNER JOIN ON, cross-type equi-key beside a predicate reading constness: right MergeTree prunes granules';
 SELECT count() > 0 FROM (
