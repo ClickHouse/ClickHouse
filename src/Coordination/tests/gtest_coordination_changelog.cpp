@@ -39,6 +39,8 @@ namespace ErrorCodes
 
 namespace CoordinationSetting
 {
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
     extern const CoordinationSettingsUInt64 log_readahead_commit_window_bytes;
 }
 }
@@ -140,6 +142,28 @@ public:
 
 private:
     std::shared_ptr<InventoryLatch> latch;
+};
+
+class MarkerWriteFailingDisk final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        DB::WriteMode mode,
+        const DB::WriteSettings & settings) override
+    {
+        if (path.starts_with("tmp_changelog_"))
+        {
+            ++failed_marker_writes;
+            throw std::runtime_error("injected changelog marker write failure");
+        }
+        return DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    std::atomic<size_t> failed_marker_writes{0};
 };
 
 }
@@ -4736,6 +4760,49 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPreservesMarkerlessCopyWhen
     recovered.shutdown();
     EXPECT_FALSE(regular_disk->existsFile(String(path)));
     EXPECT_FALSE(latest_disk->existsFile(String(path)));
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupContinuesWritingOnSourceDiskWhenActiveLogMoveFails)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    ChangelogDirTest regular("./logs_failed_active_move_regular");
+    ChangelogDirTest latest("./logs_failed_active_move_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    auto latest_disk = std::make_shared<MarkerWriteFailingDisk>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+
+    auto coordination_settings = std::make_shared<DB::CoordinationSettings>();
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    this->keeper_context = std::make_shared<DB::KeeperContext>(true, coordination_settings);
+    this->keeper_context->setLocalLogsPreprocessed();
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(
+            this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        writer.appendEntry(1, getLogEntry("one", 1));
+        writer.flush();
+    }
+
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(
+        this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(latest_disk->failed_marker_writes.load(), 1);
+
+    recovered.appendEntry(2, getLogEntry("two", 1));
+    recovered.flush();
+    EXPECT_EQ(recovered.getNextEntryIndex(), 3);
+    EXPECT_TRUE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_FALSE(latest_disk->existsFile("changelog_1_10.bin"));
 }
 
 

@@ -4114,10 +4114,11 @@ void Changelog::finalizeChangelogsAfterRead(
     std::vector<ChangelogFileDescriptionPtr> placement_moves;
     for (const auto & [start_index, description] : existing_changelogs)
     {
-        /// latest log should already be on latest_log_disk
+        /// The active log stays on the disk where the writer opened it.
+        /// A move to latest_log_disk can fail during initialization.
         if (start_index == latest_start_index)
         {
-            chassert(description->disk == latest_log_disk);
+            chassert(description == current_writer->getCurrentFileDescription());
             continue;
         }
 
