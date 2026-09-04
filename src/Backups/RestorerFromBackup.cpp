@@ -25,6 +25,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Disks/IStoragePolicy.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
@@ -1013,6 +1014,33 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         ThreadName::RESTORE_TABLE_DATA);
 }
 
+bool RestorerFromBackup::shouldRestoreTableData(
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions) const
+{
+    chassert(storage);
+
+    auto policy = storage->getStoragePolicy();
+    if (!policy || !policy->isReadOnly())
+        return true;
+
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of table {} onto read-only storage policy {}: its data is served "
+            "directly by the read-only storage, so the requested partition filter cannot be applied",
+            table_name.getFullName(),
+            policy->getName());
+
+    LOG_INFO(
+        log,
+        "Skipping restore of data for table {}: storage policy {} has no writable disk, the data is expected "
+        "to be already present on the read-only storage",
+        table_name.getFullName(),
+        policy->getName());
+
+    return false;
+}
+
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     try
@@ -1024,6 +1052,10 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 "Table engine {} doesn't support partitions",
                 storage->getName());
         }
+
+        if (!shouldRestoreTableData(table_name, storage, partitions))
+            return;
+
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
     }
     catch (Exception & e)

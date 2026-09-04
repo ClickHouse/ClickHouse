@@ -50,6 +50,8 @@ public:
     /// Get free space from most free disk
     UInt64 getMaxUnreservedFreeSpace() const override;
 
+    bool isReadOnly() const override;
+
     const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
