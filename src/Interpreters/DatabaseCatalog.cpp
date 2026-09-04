@@ -2459,29 +2459,7 @@ VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
         return {};
     if (database->isRemoteDatabase() && context && !context->getSettingsRef()[Setting::show_remote_databases_in_system_tables])
         return {};
-
-    /// Hints are collected while the *real* exception (`UNKNOWN_TABLE`, `UNKNOWN_DATABASE`, ...) is
-    /// being built, and `getExtendedHintForTable` walks every database on the server. Listing the
-    /// tables of a database can fail for reasons that have nothing to do with the query at hand -
-    /// e.g. a `SQLite` database whose file is momentarily locked by another connection throws
-    /// `SQLITE_ENGINE_ERROR`. Letting that escape would replace the error the user must see with an
-    /// unrelated one from a database they never mentioned, so a database that cannot be enumerated
-    /// simply contributes no candidates. Nothing is substituted for the primary error - it still
-    /// propagates unchanged, only the "maybe you meant" suggestion is missing.
-    VectorWithMemoryTracking<String> names;
-    try
-    {
-        names = database->getAllTableNames(context);
-    }
-    catch (...)
-    {
-        LOG_DEBUG(
-            getLogger("TableNameHints"),
-            "Cannot list tables of database {} for a name hint: {}",
-            backQuoteIfNeed(database->getDatabaseName()),
-            getCurrentExceptionMessage(/*with_stacktrace=*/false));
-        return {};
-    }
+    auto names = database->getAllTableNames(context);
 
     /// Filter out names the user cannot `SHOW`, otherwise the hint can leak the existence of
     /// tables (e.g. for the cross-database hint search in `getExtendedHintForTable`).

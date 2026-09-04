@@ -1,4 +1,6 @@
--- Tags: no-flaky-check
+-- Tags: no-parallel, no-flaky-check
+-- Tag no-parallel: scans `system.tables` while other tests can create archive-backed
+--   `File` tables without data paths.
 SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS test_01109;

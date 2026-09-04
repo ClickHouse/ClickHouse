@@ -115,11 +115,6 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
-    /// A table reading from an archive (or from a file descriptor) has no path of its own, so
-    /// `getDataPaths` throws for it. `system.tables` must not abort its whole scan because one
-    /// such table happens to exist on the server, so report "no paths" instead of throwing.
-    std::optional<Strings> tryGetDataPaths() const override;
-
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask

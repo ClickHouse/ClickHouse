@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-parallel: dealing with an SQLite database makes concurrent SHOW TABLES queries fail sporadically with the "database is locked" error.
+# Tags: no-fasttest, no-parallel
+# Tag no-parallel: an `SQLite` database can make concurrent `SHOW TABLES` fail with
+#   `database is locked`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
