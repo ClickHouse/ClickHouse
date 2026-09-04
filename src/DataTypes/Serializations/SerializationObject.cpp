@@ -784,15 +784,22 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             size_t paths_size = 0;
             readVarUInt(paths_size, *structure_stream);
             reserveOrThrowTooManyPaths(structure_state->flattened_paths, paths_size);
-            std::unordered_set<std::string_view> flattened_paths_set;
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
                 readStringBinary(path, *structure_stream);
                 structure_state->flattened_paths.push_back(std::move(path));
-                /// The same path twice would be added to the column twice, as a dynamic path and into shared data.
-                if (!flattened_paths_set.insert(structure_state->flattened_paths.back()).second)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate path {} in the list of paths of a flattened Object column", structure_state->flattened_paths.back());
+            }
+
+            /// The same path twice would be added to the column twice, as a dynamic path and into shared
+            /// data. The views are taken after the list is complete: the capped `reserve` above means the
+            /// vector can still grow while it is read, which would invalidate views of short (SSO) paths.
+            std::unordered_set<std::string_view> unique_paths;
+            unique_paths.reserve(structure_state->flattened_paths.size());
+            for (const auto & path : structure_state->flattened_paths)
+            {
+                if (!unique_paths.insert(path).second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate path {} in the list of paths of a flattened Object column", path);
             }
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
