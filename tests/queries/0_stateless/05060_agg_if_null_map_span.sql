@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS t_agg_if_span;
 CREATE TABLE t_agg_if_span (id UInt32, k UInt32, x Nullable(Float64), y Float64, cond UInt8, cn Nullable(UInt8))
 ENGINE = MergeTree ORDER BY (k, id);
 
+-- Values are integer-valued Float64 and groups are small, so every sum compared below is exact
+-- and independent of accumulation order.
 INSERT INTO t_agg_if_span SELECT
     number,
     intDiv(number, 8),
@@ -13,8 +15,10 @@ INSERT INTO t_agg_if_span SELECT
 FROM numbers(10000);
 
 SET optimize_aggregation_in_order = 1;
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT k, sumIfOrDefault(x, cond) AS a, avgIfOrDefault(x, cond) AS b, sumIf(y, cn) AS c FROM t_agg_if_span GROUP BY k) WHERE explain ILIKE '%AggregatingInOrderTransform%';
 CREATE TEMPORARY TABLE in_order AS SELECT k, sumIfOrDefault(x, cond) AS a, avgIfOrDefault(x, cond) AS b, sumIf(y, cn) AS c FROM t_agg_if_span GROUP BY k;
 SET optimize_aggregation_in_order = 0;
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT k, sumIfOrDefault(x, cond) AS a, avgIfOrDefault(x, cond) AS b, sumIf(y, cn) AS c FROM t_agg_if_span GROUP BY k) WHERE explain ILIKE '%AggregatingInOrderTransform%';
 CREATE TEMPORARY TABLE by_hash AS SELECT k, sumIfOrDefault(x, cond) AS a, avgIfOrDefault(x, cond) AS b, sumIf(y, cn) AS c FROM t_agg_if_span GROUP BY k;
 SELECT count() FROM (SELECT * FROM in_order EXCEPT SELECT * FROM by_hash);
 
