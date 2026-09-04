@@ -1,0 +1,19 @@
+-- dictionary: DETACH PERMANENTLY with a pre-existing dependent is still rejected
+HAVE_DEPENDENT_OBJECTS
+-- and the dictionary is untouched
+a
+-- dictionary: DROP with a pre-existing dependent is still rejected
+HAVE_DEPENDENT_OBJECTS
+a
+-- dictionary: RENAME with a dependent is still rejected
+HAVE_DEPENDENT_OBJECTS
+a
+-- MergeTree: rejected, and the table stays readable and writable
+HAVE_DEPENDENT_OBJECTS
+2
+-- MaterializedView: rejected, and insert-through still works
+HAVE_DEPENDENT_OBJECTS
+1
+-- with both dependency checks disabled nothing is checked, as before
+0
+0

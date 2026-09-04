@@ -1871,10 +1871,29 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
 }
 
 std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
-    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
+    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv,
+    DependentsPolicy dependents_policy)
 {
     std::lock_guard lock{databases_mutex};
-    checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+
+    /// Observing the dependents and removing the edges happen under the same lock, so nothing can be
+    /// registered in between.
+    auto dependents = getBlockingDependentsUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    if (!dependents.empty())
+    {
+        if (dependents_policy == DependentsPolicy::Throw)
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
+                            table_id, fmt::join(dependents, ", "));
+
+        /// The caller checked this before shutting the table down and the check passed, so these dependents
+        /// appeared concurrently. Aborting now would leave the table shut down but still attached, which is
+        /// worse than letting the removal finish: they are left referencing a removed object.
+        LOG_WARNING(log, "Removing {} while some tables still depend on it: {}. "
+                    "The dependency check passed before the table was shut down, so these dependents were "
+                    "registered concurrently and are left referencing a removed object.",
+                    table_id, fmt::join(dependents, ", "));
+    }
+
     std::vector<StorageID> old_view_dependencies;
 
     if (is_mv)
@@ -1925,7 +1944,7 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
     checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
 }
 
-void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
+std::vector<StorageID> DatabaseCatalog::getBlockingDependentsUnlocked(
     const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const
 {
     chassert(!check_referential_dependencies || !check_loading_dependencies); /// These flags must not be both set.
@@ -1935,15 +1954,10 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     else if (check_loading_dependencies)
         dependents = loading_dependencies.getDependents(removing_table);
     else
-        return;
+        return {};
 
     if (!is_drop_database)
-    {
-        if (!dependents.empty())
-            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            removing_table, fmt::join(dependents, ", "));
-        return;
-    }
+        return dependents;
 
     /// For DROP DATABASE we should ignore dependent tables from the same database.
     /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
@@ -1953,9 +1967,16 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
         if (dependent.database_name != removing_table.database_name)
             from_other_databases.push_back(dependent);
 
-    if (!from_other_databases.empty())
+    return from_other_databases;
+}
+
+void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
+    const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const
+{
+    auto dependents = getBlockingDependentsUnlocked(removing_table, check_referential_dependencies, check_loading_dependencies, is_drop_database);
+    if (!dependents.empty())
         throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                        removing_table, fmt::join(from_other_databases, ", "));
+                        removing_table, fmt::join(dependents, ", "));
 }
 
 void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
