@@ -277,8 +277,7 @@ void DataFileEntriesStream::run()
             const size_t index = next_index++;
             if (manifest_list_entries[index].content_type != ManifestFileContentType::DATA)
                 continue;
-            auto manifest = std::make_unique<InFlightManifest>();
-            manifest->key = manifest_list_entries[index];
+            auto manifest = std::make_unique<InFlightManifest>(manifest_list_entries[index]);
             auto * scheduled = manifest.get();
             manifest->future = stream_runner([this, scheduled] { decodeChunk(*scheduled); }, Priority{});
             in_flight.push_back(std::move(manifest));

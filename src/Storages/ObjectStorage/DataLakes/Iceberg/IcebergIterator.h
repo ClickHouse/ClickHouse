@@ -57,6 +57,11 @@ public:
 private:
     struct InFlightManifest
     {
+        explicit InFlightManifest(ManifestFileCacheKey key_)
+            : key(std::move(key_))
+        {
+        }
+
         ManifestFileCacheKey key;
         ManifestIteratorPtr iterator;
         std::vector<ProcessedManifestFileEntryPtr> chunk;
