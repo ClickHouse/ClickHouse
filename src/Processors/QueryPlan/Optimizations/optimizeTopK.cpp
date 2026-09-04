@@ -20,11 +20,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// The threshold filter changes a block's rows: inside the PREWHERE each read step filters the block the
-/// next one sees, and a `WHERE` or a sort expression left above the read is handed blocks the read already
-/// shrank. `isDeterministicInScopeOfQuery` is the property that distinguishes a value derived from the
-/// block, such as `blockSize` or `rand`, from one that is merely non-deterministic across queries, such as
-/// `today`; filter pushdown separates the two the same way.
+/// A value derived from the block it is evaluated on, whose rows the threshold filter changes: stateful, or
+/// not deterministic within one query. Non-determinism across queries alone is not that - `today` returns
+/// one value for the whole query, while `blockSize` and `rand` are read off the block.
 static bool dependsOnItsBlock(const ActionsDAG & actions)
 {
     for (const auto & node : actions.getNodes())
