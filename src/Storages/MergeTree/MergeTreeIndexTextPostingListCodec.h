@@ -107,8 +107,10 @@ class SegmentedPostingListCodec
     /// Per-block metadata collected during encoding for V2 Index Section.
     struct PackedBlockMeta
     {
-        uint32_t last_row_id;       /// Last row_id in this packed block
-        uint64_t relative_offset;   /// Offset within segment payload (from segment data start)
+        /// Last row_id in this packed block
+        uint32_t last_row_id;
+        /// Offset within segment payload (from segment data start)
+        uint64_t relative_offset;
     };
 
     /// Per-segment list of packed block metadata.
@@ -119,34 +121,37 @@ class SegmentedPostingListCodec
 
 public:
     SegmentedPostingListCodec() = default;
-    explicit SegmentedPostingListCodec(size_t postings_list_block_size, IPostingListCodec::Type block_codec_type_);
+    explicit SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_);
 
-    /// Add a single increasing row id.
-    ///
-    /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
-    /// then compress the full block into `compressed_data`.
-    /// When the segment reaches `max_rowids_in_segment`, flush it.
-    void insert(uint32_t row_id);
-
-    /// Add a block of BLOCK_SIZE-many row ids.
-    ///
-    /// Assumes:
-    /// - row_ids.size() == BLOCK_SIZE
-    /// - total is aligned by BLOCK_SIZE
-    ///
-    /// It computes deltas in-place using adjacent_difference for better throughput.
-    void insert(std::span<uint32_t> row_ids);
+    /// Encode a batch of sorted unique row ids (increasing across calls), appending
+    /// to the open segment and starting a new one every `segment_size` row ids.
+    /// Values are converted to deltas (gaps) and compressed in blocks of BLOCK_SIZE
+    /// values into `compressed_data`. Every call, except the final one, must contain
+    /// a multiple of BLOCK_SIZE row ids, so that only the very last block is partial.
+    void append(std::span<const UInt32> row_ids, size_t segment_size);
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
-    ///
-    /// Flushes any pending partial block and writes per-segment headers
-    /// followed by the segment payload bytes.
-    void encode(WriteBuffer & out, TokenPostingsInfo & info)
+    /// Writes per-segment headers followed by the segment payload bytes.
+    void encode(WriteBuffer & out, TokenPostingsInfo & info) const
     {
-        if (!current_segment.empty())
-            encodeBlock(current_segment);
-
         serializeTo(out, info);
+    }
+
+    /// Total number of row ids added so far.
+    size_t cardinality() const { return total_row_ids; }
+
+    /// Heap memory held by the in-memory encoded representation.
+    size_t memoryUsageBytes() const
+    {
+        size_t block_metas_bytes = 0;
+        for (const auto & segment : segment_block_metas)
+            block_metas_bytes += segment.metas.capacity() * sizeof(PackedBlockMeta);
+
+        return compressed_data.capacity()
+            + block_values.capacity() * sizeof(UInt32)
+            + segment_descriptors.capacity() * sizeof(SegmentDescriptor)
+            + segment_block_metas.capacity() * sizeof(SegmentBlockMetas)
+            + block_metas_bytes;
     }
 
     /// Deserialize a postings list from input `in` into `out`.
@@ -163,57 +168,26 @@ public:
     void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
 
 private:
-    void reset()
-    {
-        total_row_ids = 0;
-        compressed_data.clear();
-        segment_descriptors.clear();
-        segment_block_metas.clear();
-
-        resetCurrentSegment();
-    }
-
-    void resetCurrentSegment()
-    {
-        current_segment.clear();
-        row_ids_in_current_segment = 0;
-        prev_row_id = 0;
-    }
-
-    /// Flush current segment:
-    /// - compress pending partial block
-    /// - reset block state so a new segment can start
-    void flushCurrentSegment()
-    {
-       chassert(row_ids_in_current_segment <= max_rowids_in_segment);
-
-       if (!current_segment.empty())
-           encodeBlock(current_segment);
-
-        resetCurrentSegment();
-    }
-
     /// Write all segments to output and fill TokenPostingsInfo:
     /// - offsets: byte offsets in output where each segment begins
     /// - ranges: [row_begin, row_end] row range for each segment
     void serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const;
 
-    /// Encode one block of delta values and append it to `compressed_data`.
+    /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
     ///
     /// Block layout:
-    ///   [1 byte bits][payload]
+    ///   [1 byte bits][row ids payload]
     ///
     /// - bits: max bit-width among deltas in this block
-    /// - payload: Codec::encode(...) bitpacked bytes
+    /// - row ids payload: Codec::encode(...) bitpacked bytes
     ///
-    /// Also updates current segment metadata (count, max, payload size).
-    void encodeBlock(std::span<uint32_t> segment);
+    /// Also updates current segment metadata (cardinality, payload size).
+    void encodeBlock(std::span<const UInt32> block_row_ids);
 
-    /// Decode one compressed block of `out.size()` row ids into `out` and reconstruct absolute row ids.
+    /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
-    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills
-    ///   `out` with delta values
-    /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
+    /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills `out` with delta values
+    /// - inclusive_scan converts deltas to row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
@@ -224,21 +198,37 @@ private:
     std::string compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
-    /// Row ids in the current segment
-    std::vector<uint32_t> current_segment;
+    /// Number of row ids in the open segment.
+    size_t row_ids_in_current_segment = 0;
+    /// Scratch buffer for one block: the deltas being encoded, or the row ids being decoded
+    std::vector<UInt32> block_values;
     /// Each segment has an in-memory descriptor
     std::vector<SegmentDescriptor> segment_descriptors;
     /// Per-segment packed block metadata for V2 Index Section
     std::vector<SegmentBlockMetas> segment_block_metas;
     /// Total number of postings added across all segments.
     size_t total_row_ids = 0;
-    /// Number of values added in the current segment.
-    size_t row_ids_in_current_segment = 0;
-    /// Segment size
-    const size_t max_rowids_in_segment = 1024 * 1024;
     /// Per-block payload codec (bitpacking). On encode it is fixed by the constructor; on decode it
     /// is created from the segment header. One instance is reused across all blocks of a single encode/decode call.
     std::unique_ptr<IPostingListBlockCodec> block_codec;
+};
+
+/// Accumulator for block-compressed codecs (see SegmentedPostingListCodec).
+/// Wraps SegmentedPostingListCodec, which encodes each added segment into
+/// blocks held in memory; the compressed bytes are flushed on `finalize`.
+class SegmentedPostingListEncoder final : public IPostingListEncoder
+{
+public:
+    explicit SegmentedPostingListEncoder(IPostingListCodec::Type block_codec_type_) : impl(block_codec_type_) {}
+
+    void append(std::span<const UInt32> row_ids, size_t segment_size) override { impl.append(row_ids, segment_size); }
+    void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
+
+    size_t cardinality() const override { return impl.cardinality(); }
+    size_t memoryUsageBytes() const override { return impl.memoryUsageBytes(); }
+
+private:
+    SegmentedPostingListCodec impl;
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
@@ -251,23 +241,45 @@ private:
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
 /// Assumes that input row ids are strictly increasing.
-class PostingListCodecBitpacking : public  IPostingListCodec
+class PostingListCodecBitpacking : public IPostingListCodec
 {
 public:
     static const char * getName() { return "bitpacking"; }
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    /// Normalizes the requested segment size to a multiple of BLOCK_SIZE, because the SIMD
+    /// bit-packing implementation expects block-aligned sizes for efficient processing.
+    size_t getSegmentSize(size_t posting_list_block_size) const override;
+    std::unique_ptr<IPostingListEncoder> createEncoder() const override;
+
     void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
 
-/// A codec that applies no compression: a posting list block is stored as
+/// Accumulator for the None codec.
+/// Each added segment is stored as a Roaring bitmap and serialized on `finalize`
+/// as a portable Roaring bitmap prefixed by its size in bytes.
+class PostingListEncoderNone final : public IPostingListEncoder
+{
+public:
+    void append(std::span<const UInt32> row_ids, size_t segment_size) override;
+    void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
+
+    size_t cardinality() const override { return total_row_ids; }
+    size_t memoryUsageBytes() const override;
+
+private:
+    void finishSegment();
+
+    PostingList current_segment;
+    std::vector<PostingList> segments;
+    size_t rows_in_current_segment = 0;
+    size_t total_row_ids = 0;
+};
+
+/// A codec that applies no compression: a posting list segment is stored as
 /// [VarUInt: number of bytes][portable serialization of a roaring bitmap].
-///
-/// Encoding is done by `PostingsSerialization`, which splits the posting list into blocks
-/// without copying the underlying roaring containers, so `encode` is not implemented here.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -275,7 +287,7 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    std::unique_ptr<IPostingListEncoder> createEncoder() const override;
     void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
