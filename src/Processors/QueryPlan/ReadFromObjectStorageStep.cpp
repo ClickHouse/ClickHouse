@@ -1,24 +1,26 @@
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Storages/prepareReadingFromFormat.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include "config.h"
@@ -103,10 +105,38 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto context = getContext();
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        filter_actions_dag,
+        context,
+        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+        query_info.row_level_filter,
+        query_info.prewhere_info);
+
+    if (auto dataset_pipe = configuration->readDataset(
+            storage_snapshot,
+            info,
+            format_settings,
+            context,
+            max_block_size,
+            num_streams,
+            format_filter_info,
+            need_only_count,
+            limit,
+            distributed_processing))
+    {
+        auto pipe = std::move(*dataset_pipe);
+        if (pipe.empty())
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(pipe));
+        return;
+    }
+
     createIterator();
 
     Pipes pipes;
-    auto context = getContext();
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
     if (estimated_keys_count > 1)
@@ -117,16 +147,11 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// We will keep one stream for this particular case.
         num_streams = 1;
     }
+    if (auto custom_read_cap = configuration->getMaxCustomReadThreads(distributed_processing))
+        num_streams = std::min(num_streams, std::max<size_t>(1, *custom_read_cap));
 
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
-
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag,
-        context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-        query_info.row_level_filter,
-        query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -144,7 +169,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             parser_shared_resources,
             format_filter_info,
             need_only_count,
-            lazy_row_index_registry);
+            lazy_row_index_registry,
+            limit);
 
         pipes.emplace_back(std::move(source));
     }

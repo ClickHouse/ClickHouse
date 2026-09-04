@@ -324,7 +324,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_,
-    LazyObjectStorageFileRegistryPtr lazy_row_index_registry_)
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry_,
+    std::optional<size_t> limit_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -335,6 +336,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , limit(limit_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
@@ -360,6 +362,12 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
+    if (!include_connection_info)
+    {
+        if (auto virtual_path = object_info.getPathForVirtualColumns())
+            return *virtual_path;
+    }
+
     std::string result = joinPathUnderPrefix(
         include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
         object_info.getPath());
@@ -761,7 +769,7 @@ Chunk StorageObjectStorageSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
-            const auto & filename = object_info->getFileName();
+            const auto filename = object_info->getFileNameForVirtualColumns().value_or(object_info->getFileName());
             std::string full_path = object_info->getPath();
 
             const auto reading_path = configuration->getPathForRead().path;
@@ -1102,7 +1110,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        need_only_count);
+        need_only_count,
+        limit);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1119,7 +1128,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    std::optional<size_t> limit)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1251,7 +1261,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
-    if (num_rows_from_cache)
+    if (auto custom_pipe = configuration->read(
+            object_info,
+            read_from_format_info,
+            format_settings,
+            context_,
+            max_block_size,
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count,
+            limit))
+    {
+        builder.init(std::move(*custom_pipe));
+    }
+    else if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later

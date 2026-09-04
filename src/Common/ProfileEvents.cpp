@@ -466,6 +466,51 @@
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
     M(DeltaLakeScannedFiles, "Number of files scanned during DeltaLake scan callbacks", ValueType::Number) \
     \
+    M(LanceDatasetOpen, "Number of times a Lance dataset was opened through FFI (manifest / storage client init).", ValueType::Number) \
+    M(LanceDatasetOpenMicroseconds, "Total time spent opening Lance datasets through FFI.", ValueType::Microseconds) \
+    M(LanceDatasetCacheHit, "Number of times a Lance dataset handle was reused from the query-scoped session cache.", ValueType::Number) \
+    M(LancePlanScan, "Number of Lance scan plans created.", ValueType::Number) \
+    M(LancePlanScanMicroseconds, "Total time spent planning Lance scans.", ValueType::Microseconds) \
+    M(LanceNextBatch, "Number of Lance next-batch calls.", ValueType::Number) \
+    M(LanceNextBatchMicroseconds, "Total time spent waiting for Lance next-batch results.", ValueType::Microseconds) \
+    M(LanceRuntimeInit, "Number of times the process-wide Lance Tokio runtime was initialized (expected 0 or 1).", ValueType::Number) \
+    M(LanceBatchesRead, "Number of non-empty RecordBatches returned by Lance scans.", ValueType::Number) \
+    M(LanceRowsRead, "Number of rows returned by Lance scans (after scan limit slice, before residual ClickHouse filters).", ValueType::Number) \
+    M(LanceReadBytes, "Approximate uncompressed Arrow buffer bytes observed in Lance RecordBatches (not wire S3 bytes).", ValueType::Bytes) \
+    M(LanceLocalReadBytes, "Subset of LanceReadBytes for local filesystem datasets.", ValueType::Bytes) \
+    M(LanceS3ReadBytes, "Subset of LanceReadBytes for S3 datasets (Arrow buffer size, not S3 GET bytes).", ValueType::Bytes) \
+    M(LanceArrowConvertMicroseconds, "Total time spent converting Lance Arrow batches to ClickHouse chunks.", ValueType::Microseconds) \
+    M(LanceCountRows, "Number of Lance totalRows/countRows fast-path calls from the read source.", ValueType::Number) \
+    M(LanceCountRowsMicroseconds, "Total time spent in Lance totalRows/countRows fast-path calls.", ValueType::Microseconds) \
+    M(LancePredicatePushdownComplete, "Number of Lance scans where every conjunct of the filter was pushed to Lance (or there was no residual filter).", ValueType::Number) \
+    M(LancePredicatePushdownPartial, "Number of Lance scans that pushed only a subset of AND conjuncts; residual FilterStep still runs in ClickHouse.", ValueType::Number) \
+    M(LancePredicatePushdownDisabled, "Number of Lance scans with a filter where predicate pushdown was explicitly disabled.", ValueType::Number) \
+    M(LanceSnapshotIdentityMismatch, "Number of Lance operations rejected because the immutable manifest identity did not match the pinned snapshot.", ValueType::Number) \
+    M(LanceLimitPushdown, "Number of Lance scans that received a row limit on the Lance scanner.", ValueType::Number) \
+    M(LanceProjectedColumns, "Total number of physical columns requested across Lance scan projections.", ValueType::Number) \
+    M(LanceScanUnordered, "Number of Lance scans planned with lance_scan_in_order=0 (unordered batches, higher internal fragment concurrency).", ValueType::Number) \
+    M(LanceListFragmentsCalls, "Number of calls to list fragments for Lance datasets.", ValueType::Number) \
+    M(LanceFragmentsListed, "Number of Lance fragments returned by list_fragments for a query (summed if listed more than once).", ValueType::Number) \
+    M(LanceFragmentPacks, "Number of Lance fragment packs produced for multi-stream reads.", ValueType::Number) \
+    M(LanceFragmentParallelismDisabled, "Number of times Lance fragment packing was forced to a single pack (settings or semantic guards).", ValueType::Number) \
+    M(LanceProducerTasks, "Number of Rust producer tasks created for Lance scans.", ValueType::Number) \
+    M(LanceScanSchemaExports, "Number of projected Arrow schema exports for Lance scans.", ValueType::Number) \
+    M(LanceBatchSources, "Number of ClickHouse conversion Sources created for Lance scans.", ValueType::Number) \
+    M(LanceBatchSourcesActive, "Number of Lance conversion Sources that consumed at least one batch.", ValueType::Number) \
+    M(LanceCountSources, "Number of ClickHouse row-count Sources created for Lance reads.", ValueType::Number) \
+    M(LanceArrowFieldMappingsBuilt, "Number of cached Arrow RecordBatch field mappings built by Lance conversion Sources.", ValueType::Number) \
+    M(LanceQueuePushBatches, "Number of Arrow batches pushed into Lance bounded queues.", ValueType::Number) \
+    M(LanceQueuePopBatches, "Number of Arrow batches popped from Lance bounded queues.", ValueType::Number) \
+    M(LanceQueuePushWaitMicroseconds, "Time Lance producers waited for queue batch or byte capacity.", ValueType::Microseconds) \
+    M(LanceQueuePopWaitMicroseconds, "Time Lance consumers waited for a queued batch.", ValueType::Microseconds) \
+    M(LanceQueuePeakBatches, "Sum of per-scan peak queued Lance batch counts.", ValueType::Number) \
+    M(LanceQueuePeakBytes, "Sum of per-scan peak queued Lance Arrow bytes.", ValueType::Bytes) \
+    M(LanceProducerEOF, "Number of Lance producers that reached EOF.", ValueType::Number) \
+    M(LanceProducerErrors, "Number of Lance producers that ended with an error.", ValueType::Number) \
+    M(LanceProducerCancels, "Number of Lance producers stopped by cancellation.", ValueType::Number) \
+    M(LanceGlobalLimitTruncatedRows, "Number of Lance batch rows discarded by a local global LIMIT quota.", ValueType::Number) \
+    M(LanceScansCancelledByLimit, "Number of Lance scans cancelled after satisfying a local global LIMIT quota.", ValueType::Number) \
+    \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
     \

@@ -5977,6 +5977,68 @@ Enables logging delta lake metadata files into system table.
 If enabled, schema is reloaded from the DeltaLake metadata before each query execution to ensure
 consistency between the schema used during query analysis and the schema used during execution.
 )", 0) \
+    DECLARE(Bool, lance_query_dataset_reuse, true, R"(
+If enabled, Lance reuses a single dataset handle (and the process-wide Tokio runtime) within one query
+for snapshot pin, schema load, and scan. Disable only for debugging.
+)", 0) \
+    DECLARE(Bool, lance_enable_predicate_pushdown, true, R"(
+Controls only the verified Lance predicate pushdown whitelist. If disabled, no predicate is sent to
+Lance and ClickHouse evaluates the complete residual filter.
+)", 0) \
+    DECLARE(UInt64, lance_runtime_threads, 0, R"(
+Number of worker threads for the process-wide Lance Tokio runtime. 0 means an automatic bounded default
+(at most 8). Only the first initialization is effective.
+)", 0) \
+    DECLARE(Bool, lance_scan_in_order, false, R"(
+If true, Lance scans return batches in deterministic fragment order and use one conversion Source.
+The default false mode allows multiple conversion Sources and higher internal fragment concurrency.
+)", 0) \
+    DECLARE(UInt64, lance_fragment_readahead, 0, R"(
+Number of fragments to read ahead inside one Lance scanner. 0 means the Lance library default.
+Only effective when `lance_scan_in_order` is false.
+)", 0) \
+    DECLARE(UInt64, lance_batch_readahead, 0, R"(
+Number of batches to prefetch inside one Lance scanner. 0 means the Lance library default.
+)", 0) \
+    DECLARE(UInt64, lance_io_buffer_size, 0, R"(
+Maximum bytes queued in the Lance I/O buffer. 0 means the Lance library default.
+Do not set very small values: Lance may deadlock if a single batch exceeds the buffer.
+)", 0) \
+    DECLARE(UInt64, lance_batch_queue_capacity, 0, R"(
+Maximum number of Arrow batches in the bounded Lance producer queue. 0 automatically selects
+twice the effective conversion Source count, with a minimum of 2.
+)", 0) \
+    DECLARE(UInt64, lance_batch_queue_bytes, 0, R"(
+Hard limit for estimated Arrow bytes reserved by the Lance producer queue. 0 selects 64 MiB.
+A single batch larger than this limit raises an exception instead of waiting indefinitely.
+)", 0) \
+    DECLARE(UInt64, lance_max_batch_sources, 0, R"(
+Maximum number of ClickHouse conversion Sources consuming one Lance scan. 0 uses the requested
+pipeline stream count. Ordered scans and count-only reads always use one Source.
+)", 0) \
+    DECLARE(Bool, lance_enable_fragment_parallelism, true, R"(
+Controls coarse fragment-group tasks for distributed Lance reads. Local reads ignore this setting
+and always use one dataset scan with a bounded queue and multiple conversion Sources.
+)", 0) \
+    DECLARE(String, lance_fragment_pack_mode, "auto", R"(
+How distributed Lance reads group fragments into coarse scan tasks when `lance_enable_fragment_parallelism` is on.
+
+Possible values:
+- `one` — one fragment per pack (then capped by `lance_max_fragment_packs` / `max_threads` via packing).
+- `pack` — always pack fragments into approximately `target` packs (LPT).
+- `auto` — use `one` when fragment count ≤ target packs, otherwise `pack`.
+)", 0) \
+    DECLARE(UInt64, lance_max_fragment_packs, 0, R"(
+Upper bound on distributed Lance fragment-group tasks. 0 means align with `max_threads`.
+Workers run one coarse task scanner at a time and share its batches across conversion Sources.
+Local dataset reads ignore this setting.
+)", 0) \
+    DECLARE(UInt64, lance_min_rows_per_pack, 0, R"(
+Soft minimum rows per distributed Lance fragment-group task when row counts are known. 0 disables the threshold.
+)", 0) \
+    DECLARE(UInt64, lance_min_bytes_per_pack, 0, R"(
+Soft minimum bytes per distributed Lance fragment-group task when size estimates are known. 0 disables the threshold.
+)", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.

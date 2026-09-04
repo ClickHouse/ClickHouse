@@ -259,6 +259,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                    running_query->second->requestCancellationCallbacks();
 
                     const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
                     if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(replace_running_query_max_wait_ms),
@@ -268,6 +269,7 @@ ProcessList::EntryPtr ProcessList::insert(
                             if (running_query == user_process_list->second.queries.end())
                                 return true;
                             running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                            running_query->second->requestCancellationCallbacks();
                             return false;
                         }))
                     {
@@ -576,6 +578,20 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
+void QueryStatus::requestCancellationCallbacks() noexcept
+{
+    try
+    {
+        cancellation_source.request_stop();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("ProcessList"),
+            "Query cancellation callback failed");
+    }
+}
+
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
     {
@@ -590,6 +606,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         cancel_reason = reason;
         cancellation_exception = exception;
     }
+
+    requestCancellationCallbacks();
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 

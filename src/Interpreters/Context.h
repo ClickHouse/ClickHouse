@@ -686,17 +686,23 @@ public:
     {
         std::atomic<size_t> analyze_counter = 0;
 
+        /// Type-erased query-scoped Lance::QuerySession (shared dataset handles).
+        std::shared_ptr<void> lance_query_session;
+
         KitchenSink() = default;
 
         KitchenSink(const KitchenSink & rhs)
             : analyze_counter(rhs.analyze_counter.load())
-        {}
+            , lance_query_session(rhs.lance_query_session)
+        {
+        }
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
             if (&rhs == this)
                 return *this;
             analyze_counter = rhs.analyze_counter.load();
+            lance_query_session = rhs.lance_query_session;
             return *this;
         }
     };

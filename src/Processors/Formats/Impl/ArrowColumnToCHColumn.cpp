@@ -44,6 +44,7 @@
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
+#include <unordered_set>
 #include <arrow/builder.h>
 #include <arrow/array.h>
 #include <arrow/util/key_value_metadata.h>
@@ -2819,6 +2820,123 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
         name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
     }
     return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
+}
+
+std::vector<ArrowColumnToCHColumn::RecordBatchFieldMapping> ArrowColumnToCHColumn::buildRecordBatchFieldMapping(
+    const arrow::Schema & schema) const
+{
+    std::vector<RecordBatchFieldMapping> result;
+    result.reserve(schema.num_fields());
+    std::unordered_set<std::string> field_names;
+    std::unordered_set<std::string> mapped_names;
+    field_names.reserve(schema.num_fields());
+    mapped_names.reserve(schema.num_fields());
+
+    for (int field_index = 0; field_index < schema.num_fields(); ++field_index)
+    {
+        const auto & field = schema.field(field_index);
+        auto column_name = field->name();
+        if (!field_names.emplace(column_name).second)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
+
+        if (parquet_columns_to_clickhouse)
+        {
+            const auto column_name_it = parquet_columns_to_clickhouse->find(column_name);
+            if (column_name_it == parquet_columns_to_clickhouse->end())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Column '{}' is not present in input data. Column name mapping has {} columns",
+                    column_name,
+                    parquet_columns_to_clickhouse->size());
+            }
+            column_name = column_name_it->second;
+        }
+
+        if (case_insensitive_matching)
+            boost::to_lower(column_name);
+        if (!mapped_names.emplace(column_name).second)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated after name mapping", column_name);
+
+        result.push_back({
+            .field_index = static_cast<size_t>(field_index),
+            .column_name = std::move(column_name),
+        });
+    }
+    return result;
+}
+
+ArrowColumnToCHColumn::NameToArrowColumn ArrowColumnToCHColumn::mapRecordBatchColumns(
+    const arrow::RecordBatch & batch,
+    const std::vector<RecordBatchFieldMapping> & field_mapping) const
+{
+    NameToArrowColumn result;
+    result.reserve(field_mapping.size());
+    for (const auto & mapping : field_mapping)
+    {
+        result.emplace(
+            mapping.column_name,
+            ArrowColumn{
+                .column = std::make_shared<arrow::ChunkedArray>(batch.column(static_cast<int>(mapping.field_index))),
+                .field = batch.schema()->field(static_cast<int>(mapping.field_index)),
+            });
+    }
+    return result;
+}
+
+Chunk ArrowColumnToCHColumn::arrowRecordBatchToCHChunk(
+    const arrow::RecordBatch & batch,
+    std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+    BlockMissingValues * block_missing_values)
+{
+    checkRecordBatchValidityBitmaps(batch);
+
+    if (record_batch_schema)
+    {
+        const auto current_header = header.getNamesAndTypesList();
+        bool header_matches = current_header.size() == record_batch_header.size();
+        if (header_matches)
+        {
+            auto current_it = current_header.begin();
+            auto expected_it = record_batch_header.begin();
+            for (; current_it != current_header.end(); ++current_it, ++expected_it)
+            {
+                if (current_it->name != expected_it->name || !current_it->type->equals(*expected_it->type))
+                {
+                    header_matches = false;
+                    break;
+                }
+            }
+        }
+        if (!header_matches)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ClickHouse header changed while reading Arrow RecordBatches from {} data",
+                format_name);
+        }
+
+        if (!record_batch_schema->Equals(*batch.schema(), /* check_metadata */ true))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow RecordBatch schema changed while reading {} data: expected '{}', got '{}'",
+                format_name,
+                record_batch_schema->ToString(),
+                batch.schema()->ToString());
+        }
+
+        auto name_to_arrow_column = mapRecordBatchColumns(batch, record_batch_field_mapping);
+        return arrowColumnsToCHChunk(name_to_arrow_column, batch.num_rows(), metadata, block_missing_values);
+    }
+
+    auto field_mapping = buildRecordBatchFieldMapping(*batch.schema());
+    auto name_to_arrow_column = mapRecordBatchColumns(batch, field_mapping);
+    auto result = arrowColumnsToCHChunk(name_to_arrow_column, batch.num_rows(), metadata, block_missing_values);
+    record_batch_schema = batch.schema();
+    record_batch_field_mapping = std::move(field_mapping);
+    record_batch_header = header.getNamesAndTypesList();
+    return result;
 }
 
 Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(

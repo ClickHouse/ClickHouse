@@ -1,4 +1,5 @@
 #include <string_view>
+#include <type_traits>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -43,6 +44,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -72,7 +74,46 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
             if (!disk_name.empty())
             {
                 auto disk = context->getDisk(disk_name);
-                switch (disk->getObjectStorage()->getType())
+                const auto object_storage_type = [&]()
+                {
+                    try
+                    {
+                        return disk->getObjectStorage()->getType();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Unsupported disk type for {}: {}",
+                                Definition::name,
+                                disk->getDataSourceDescription().toString());
+
+                        throw;
+                    }
+                }();
+#if USE_AWS_S3 && USE_LANCE
+                if constexpr (std::is_same_v<Configuration, StorageS3LanceConfiguration>)
+                {
+                    if (Definition::object_storage_type != "s3" || object_storage_type != ObjectStorageType::S3)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+
+                    configuration = std::make_shared<StorageS3LanceConfiguration>(settings);
+                }
+                else
+#endif
+#if USE_LANCE
+                if constexpr (std::is_same_v<Configuration, StorageLocalLanceConfiguration>)
+                {
+                    if (Definition::object_storage_type != "local" || object_storage_type != ObjectStorageType::Local)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+
+                    configuration = std::make_shared<StorageLocalLanceConfiguration>(settings);
+                }
+                else
+#endif
+                {
+                switch (object_storage_type)
                 {
 #if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
@@ -121,7 +162,8 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     break;
 #endif
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", Definition::name, object_storage_type);
+                }
                 }
             }
             else
@@ -1465,6 +1507,15 @@ template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS
 template class TableFunctionObjectStorage<DeltaLakeAzureClusterDefinition, StorageAzureDeltaLakeConfiguration, true>;
 #endif
 
+#if USE_LANCE && USE_AWS_S3
+template class TableFunctionObjectStorage<LanceS3Definition, StorageS3LanceConfiguration, true>;
+template class TableFunctionObjectStorage<LanceS3ClusterDefinition, StorageS3LanceConfiguration, true>;
+#endif
+
+#if USE_LANCE
+template class TableFunctionObjectStorage<LanceLocalDefinition, StorageLocalLanceConfiguration, true>;
+#endif
+
 #if USE_AWS_S3
 template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiConfiguration, true>;
 #endif
@@ -2500,6 +2551,25 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 }
 #endif
 
+#if USE_LANCE
+void registerTableFunctionLance(TableFunctionFactory & factory);
+void registerTableFunctionLance(TableFunctionFactory & factory)
+{
+#if USE_AWS_S3
+    factory.registerFunction<TableFunctionLanceS3>(
+         {.description = R"(The table function can be used to read the Lance table stored on S3 object store.)",
+            .examples{{LanceS3Definition::name, "SELECT * FROM lanceS3(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         {.allow_readonly = false});
+#endif
+    factory.registerFunction<TableFunctionLanceLocal>(
+         {.description = R"(The table function can be used to read the Lance table stored locally.)",
+            .examples{{LanceLocalDefinition::name, "SELECT * FROM lanceLocal(path)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         {.allow_readonly = false});
+}
+#endif
+
 #if USE_AWS_S3
 void registerTableFunctionHudi(TableFunctionFactory & factory);
 void registerTableFunctionHudi(TableFunctionFactory & factory)
@@ -2559,6 +2629,9 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerTableFunctionDeltaLake(factory);
+#endif
+#if USE_LANCE
+    registerTableFunctionLance(factory);
 #endif
 #if USE_AWS_S3
     registerTableFunctionHudi(factory);

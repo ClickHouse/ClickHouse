@@ -18,9 +18,10 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
+option (ENABLE_LANCE "Enable Lance DataLake adapter" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT)
-    message(STATUS "prql, skim, and polyglot are disabled")
+if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
+    message(STATUS "prql, skim, polyglot, and lance are disabled")
     return()
 endif()
 
@@ -94,6 +95,33 @@ if (ENABLE_SKIM)
     clickhouse_config_crate_flags(_ch_rust_skim_rust)
     target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
+endif()
+
+if (ENABLE_LANCE)
+    if (NOT TARGET protoc)
+        message (FATAL_ERROR "Lance requires Protobuf: enable ENABLE_PROTOBUF or build with -DENABLE_LANCE=OFF")
+    endif()
+
+    clickhouse_config_crate_flags(_ch_rust_lance)
+    target_include_directories(_ch_rust_lance INTERFACE lance/include)
+    add_library(ch_rust::lance ALIAS _ch_rust_lance)
+
+    # The Lance crates generate Rust code from `.proto` files with `prost-build`, which needs a
+    # `protoc` binary at build time. Point it at the one ClickHouse builds from
+    # `contrib/google-protobuf` so the build does not silently depend on a host installation.
+    # When cross-compiling, `protoc` comes from the nested native build, the same way
+    # `protobuf_generate` uses it.
+    if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+        set (_lance_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    else ()
+        set (_lance_protoc "$<TARGET_FILE:protoc>")
+        # `contrib` is added with `EXCLUDE_FROM_ALL`, so `protoc` is only built when something asks for it.
+        add_dependencies (cargo-build__ch_rust_lance protoc)
+    endif()
+    corrosion_set_env_vars(_ch_rust_lance "PROTOC=${_lance_protoc}")
+    # `prost-build` only ships the well-known types (`google/protobuf/empty.proto` and friends)
+    # alongside its own vendored `protoc`, so an external one has to be told where to find them.
+    corrosion_set_env_vars(_ch_rust_lance "PROTOC_INCLUDE=${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
 endif()
 
 add_subdirectory (wasmtime)
