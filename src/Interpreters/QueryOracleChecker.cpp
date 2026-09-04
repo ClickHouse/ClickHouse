@@ -66,29 +66,14 @@ extern const int TOO_MANY_BYTES;
 namespace
 {
 
-/// Backstop list of function names that invalidate oracle checks. Most regular
-/// functions are picked up dynamically via `FunctionFactory::tryGet`'s
-/// `isDeterministic` (no list maintenance needed there). This set covers what
-/// `FunctionFactory` does not reach: table functions (registered in
-/// `TableFunctionFactory`), and aggregate functions whose metamorphic
-/// `State`/`Merge` rewrite legitimately produces a different value than direct
-/// evaluation (so they aren't "non-deterministic functions" in the
-/// `system.functions` sense, but they are unsafe for oracle equality).
-const std::unordered_set<String> non_deterministic_functions = {
-    "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
-    "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
-    "randFisherF", "randLogNormal", "randPoisson",
-    "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID",
-    "now", "now64", "today", "yesterday",
-    "rowNumberInBlock", "blockNumber", "blockSize",
-    "runningDifference", "runningDifferenceStartingWithFirstValue",
-    /// `neighbor` and `runningAccumulate` read across rows in physical block
-    /// order (offset neighbours / a running state), so any rewrite that reorders,
-    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
-    /// toggles, multi-thread reads) changes their per-row output legitimately.
-    "neighbor", "runningAccumulate",
-    "currentDatabase", "queryID", "serverUUID",
-    "getSetting", "fuzzBits", "throwIf",
+/// Exceptions to non-deterministic functions, that the oracles must not check:
+/// - table functions
+/// - deterministic aggregate functions whose result depends on a settings that the oracle may rewrite
+/// - and few others (see below)
+const std::unordered_set<String> ignored_functions = {
+    /// `throwIf`: a rewrite may evaluate the condition on rows the original
+    /// never reached (or the other way round), turning an error into a result.
+    "throwIf",
     /// `indexHint` filters at granule granularity: the rows that survive it
     /// depend on index layout, not on the predicate value, so any rewrite
     /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
@@ -99,13 +84,14 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// DQP toggles an optimizer setting, so comparing such results is comparing
     /// plans, not data.
     "viewExplain",
+    /// Table functions
     "file", "url", "s3", "hdfs", "input",
     "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
     "generate_series", "generateSeries",
-    "randomPrintableASCII", "randomString", "randomFixedString",
     "fuzzQuery",
-    "materialize",
+    ///
     /// Non-deterministic or approximate aggregate functions.
+    ///
     "any", "anyLast", "anyHeavy",
     "anyRespectNulls", "anyLastRespectNulls",
     "first_value", "last_value",
@@ -198,8 +184,8 @@ constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 const std::unordered_set<String> non_deterministic_functions_lower = []
 {
     std::unordered_set<String> result;
-    result.reserve(non_deterministic_functions.size());
-    for (const auto & name : non_deterministic_functions)
+    result.reserve(ignored_functions.size());
+    for (const auto & name : ignored_functions)
         result.insert(Poco::toLower(name));
     return result;
 }();
@@ -260,22 +246,11 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
-/// Walk an AST tree and check whether any `ASTFunction` references something
-/// non-deterministic. The primary source of truth is `FunctionFactory` —
-/// every regular function exposes `isDeterministic`, so newly-added
-/// non-deterministic functions are caught automatically without needing to
-/// touch the local list. The static `non_deterministic_functions` set above
-/// is the backstop for two cases `FunctionFactory` cannot reach:
-///   1. Table functions (`file`, `url`, `s3`, `numbers`, ...) — registered in
-///      `TableFunctionFactory`; would slip through as scalar calls otherwise.
-///   2. Aggregate functions whose `State`/`Merge` rewrite legitimately
-///      diverges from direct evaluation (`any`, `topK`, `quantile*`, `sum` on
-///      floats, ...) — semantically deterministic but unsafe for our exact
-///      equality oracle.
-/// We strip aggregate combinator suffixes before lookup so e.g.
-/// `first_valueOrNull` resolves to `first_value` — the fuzzer routinely
-/// appends `*OrNull`/`*Distinct`/`*State` chains and neither
-/// `FunctionFactory::tryGet` nor the backstop set knows the chained name.
+/// Walk an AST tree and check whether any `ASTFunction` is unsafe for the
+/// oracles: `isDeterministic() == false` in `FunctionFactory`, or a member of
+/// `non_deterministic_functions` (see above). Combinator suffixes are stripped
+/// before lookup: the fuzzer routinely appends `*OrNull`/`*Distinct`/`*State`
+/// chains that neither the factory nor the set knows.
 bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & context)
 {
     if (!ast)
