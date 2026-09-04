@@ -2930,8 +2930,8 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
             || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
-        /// Any `ALTER` the storage can apply rewrites the `CREATE` statement this database keeps in
-        /// Keeper, so it must take the replicated path to obtain a metadata transaction.
+        /// A `KeeperMap` `ALTER` the storage applies rewrites the `CREATE` statement kept in Keeper and
+        /// needs a metadata transaction, so this predicate is deliberately wider than the storage's set.
         if (is_keeper_map_table(query_ptr) && !alter->isSettingsOrCommentAlter())
             return false;
 
