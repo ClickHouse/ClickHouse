@@ -14,16 +14,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// A generated row carries a default value in every `ORDER BY` key that is neither filled nor part of the
-/// filling sorting prefix, so the output is no longer ordered by that key.
+/// A generated row defaults every `ORDER BY` key that is neither filled nor part of the filling
+/// sorting prefix. That breaks the order only for a key which some filled key follows: past the last
+/// filled key a comparison never reaches it, because a generated row already differs from its
+/// neighbours on a filled key.
 static bool sortingIsPreserved(const SortDescription & sort_description, bool use_with_fill_by_sorting_prefix)
 {
-    size_t i = 0;
+    size_t begin = 0;
     if (use_with_fill_by_sorting_prefix)
-        while (i < sort_description.size() && !sort_description[i].with_fill)
-            ++i;
+        while (begin < sort_description.size() && !sort_description[begin].with_fill)
+            ++begin;
 
-    for (; i < sort_description.size(); ++i)
+    size_t last_with_fill = begin;
+    for (size_t i = begin; i < sort_description.size(); ++i)
+        if (sort_description[i].with_fill)
+            last_with_fill = i;
+
+    for (size_t i = begin; i < last_with_fill; ++i)
         if (!sort_description[i].with_fill)
             return false;
 

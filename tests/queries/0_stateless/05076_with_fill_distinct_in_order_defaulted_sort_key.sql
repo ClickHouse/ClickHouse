@@ -77,3 +77,17 @@ FROM (EXPLAIN PIPELINE
         ORDER BY s ASC, i ASC WITH FILL
     )
 ) SETTINGS optimize_distinct_in_order = 1;
+
+-- E: a non-filled key after the last fill key. A generated row differs from its neighbours on the fill
+-- key, so a comparison never reaches `s` and the order survives.
+SELECT DISTINCT * FROM (
+    SELECT * FROM values('i Int64, s String', (1, 'a'), (1, 'b'), (3, 'c'))
+    ORDER BY i ASC WITH FILL, s ASC
+) SETTINGS optimize_distinct_in_order = 1;
+SELECT 'E', countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0, countIf(explain ILIKE '%DistinctTransform%') > 0
+FROM (EXPLAIN PIPELINE
+    SELECT DISTINCT * FROM (
+        SELECT * FROM values('i Int64, s String', (1, 'a'), (1, 'b'), (3, 'c'))
+        ORDER BY i ASC WITH FILL, s ASC
+    )
+) SETTINGS optimize_distinct_in_order = 1;
