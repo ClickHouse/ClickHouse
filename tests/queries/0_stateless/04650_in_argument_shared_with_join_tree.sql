@@ -28,9 +28,10 @@ SELECT l.x FROM t_04650_l AS l INNER JOIN (SELECT x FROM t_04650_r) AS r ON l.x 
 WHERE l.x IN (SELECT x FROM t_04650_r) ORDER BY l.x;
 
 -- Aborted before the fix with
---   Logical error: 'Column identifier __table1.x is already registered'
--- in every one of the clause positions below (all measured; WHERE / HAVING / ORDER BY / QUALIFY /
--- ON / comma join / inside a lambda were verified, a representative subset is kept here).
+--   `Logical error: 'Column identifier __table1.x is already registered'`
+-- in every one of the clause positions below (all measured; `WHERE` / `HAVING` / `ORDER BY` /
+-- `QUALIFY` / `ON` / comma join / inside a lambda were verified, a representative subset is kept
+-- here).
 SELECT 'WHERE';
 SELECT l.x FROM t_04650_l AS l INNER JOIN (SELECT x FROM t_04650_r) AS r ON l.x = r.x
 WHERE l.x IN r ORDER BY l.x;
@@ -56,13 +57,13 @@ SELECT 'table function source';
 SELECT t1.number FROM numbers(3) AS t1 INNER JOIN numbers(3) AS t2 ON t1.number = t2.number
 WHERE t1.number IN t2 ORDER BY t1.number;
 
--- GLOBAL IN rewrites the argument into an external table. Before the fix, sharing the node with the
--- join tree made the rewrite collide on the generated FROM alias:
---   Code: 179 Duplicate aliases __table2 for table expressions in FROM section are not allowed
--- An identifier naming a join-tree table expression resolves through two distinct paths -- the alias
--- map (tryResolveIdentifierFromAliases) and the table-expression lookup
--- (tryResolveIdentifierFromTableExpression) -- so all three spellings are exercised. Each of the
--- three aborted with Code 179 before the fix.
+-- `GLOBAL IN` rewrites the argument into an external table. Before the fix, sharing the node with
+-- the join tree made the rewrite collide on the generated `FROM` alias:
+--   `Code: 179 Duplicate aliases __table2 for table expressions in FROM section are not allowed`
+-- An identifier naming a join-tree table expression resolves through two distinct paths, the alias
+-- map (`tryResolveIdentifierFromAliases`) and the table-expression lookup
+-- (`tryResolveIdentifierFromTableExpression`), so all three spellings are exercised. Each of the
+-- three aborted with `Code: 179` before the fix.
 SELECT 'GLOBAL IN, subquery alias';
 SELECT t1.dummy FROM remote('127.0.0.1', system.one) AS t1
 INNER JOIN system.one AS t2 ON t1.dummy = t2.dummy
@@ -78,8 +79,8 @@ SELECT t1.dummy FROM remote('127.0.0.1', system.one) AS t1
 INNER JOIN system.one AS t2 ON t1.dummy = t2.dummy
 WHERE t1.dummy GLOBAL IN system.one;
 
--- The rewrite_in_to_join rewrite resolves the argument on its own path. Before the fix that path
--- produced Code: 10 Columns [__table2.dummy] are not found in blocks [__table1.dummy], [].
+-- The `rewrite_in_to_join` rewrite resolves the argument on its own path. Before the fix that path
+-- produced `Code: 10 Columns [__table2.dummy] are not found in blocks [__table1.dummy], []`.
 SELECT 'rewrite_in_to_join';
 SELECT t1.dummy FROM system.one AS t1
 INNER JOIN (SELECT * FROM system.one) AS t2 ON t1.dummy = t2.dummy
@@ -131,8 +132,8 @@ SELECT x FROM t_04650_l WHERE x IN t_04650_set ORDER BY x;
 SELECT l.x FROM t_04650_l AS l INNER JOIN t_04650_l AS l2 ON l.x = l2.x
 WHERE l.x IN t_04650_set ORDER BY l.x;
 
--- The shapes below come from the same sharing reached through QUALIFY on a MergeTree source; before
--- the fix they aborted with Logical error: 'No set is registered for key ...'.
+-- The shapes below come from the same sharing reached through `QUALIFY` on a `MergeTree` source;
+-- before the fix they aborted with `Logical error: 'No set is registered for key ...'`.
 CREATE TABLE t_04650_mt (y Int32) ENGINE = MergeTree ORDER BY y;
 INSERT INTO t_04650_mt SELECT number FROM numbers(5);
 
@@ -146,11 +147,12 @@ SELECT 'QUALIFY source, globalNotIn in QUALIFY';
 SELECT count() FROM (SELECT y FROM t_04650_mt QUALIFY 1) AS t_04650_mt
 QUALIFY globalNotIn((SELECT 1), t_04650_mt);
 
--- SortNode::cloneImpl must carry column_name: it is derived from the original AST identifier rather
--- than from a child node, so the base clone machinery drops it. The planner puts it into
--- SortColumnDescription::alias, which is the name FillingTransform matches against the INTERPOLATE
--- outputs -- so without it a clone silently loses the ORDER BY / INTERPOLATE conflict check. The
--- uncloned spellings of the query below already raise the error, so the clone must too.
+-- `SortNode::cloneImpl` must carry `column_name`: it is derived from the original AST identifier
+-- rather than from a child node, so the base clone machinery drops it. The planner puts it into
+-- `SortColumnDescription::alias`, which is the name `FillingTransform` matches against the
+-- `INTERPOLATE` outputs, so without it a clone silently loses the `ORDER BY` / `INTERPOLATE`
+-- conflict check. The uncloned spellings of the query below already raise the error, so the clone
+-- must too.
 SELECT 'clone fidelity of SortNode::column_name, uncloned spelling';
 SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (a AS a); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT 'clone fidelity of SortNode::column_name, CTE clone';
@@ -164,8 +166,8 @@ WHERE l.x IN r ORDER BY l.x; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT 'control: INTERPOLATE a column other than the fill key';
 WITH c AS (SELECT x AS a, x * 10 AS y FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (y AS y))
 SELECT * FROM c ORDER BY a;
--- column_name also reaches EXPLAIN through SortNode::dumpTreeImpl, so the clone is pinned a second,
--- error-independent way: without the clone fix the CTE copy prints a bare EXPRESSION.
+-- `column_name` also reaches `EXPLAIN` through `SortNode::dumpTreeImpl`, so the clone is pinned a
+-- second, error-independent way: without the clone fix the CTE copy prints a bare `EXPRESSION`.
 SELECT 'clone fidelity of SortNode::column_name, visible in EXPLAIN';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1
   WITH c AS (SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 9 STEP 1) SELECT * FROM c
