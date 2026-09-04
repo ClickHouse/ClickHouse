@@ -13,6 +13,5 @@ SELECT toYYYYMMDDhhmmss(toDate('1970-01-01'), 'UTC');
 SELECT toYYYYMMDDhhmmss(toDate(65535), 'UTC');
 
 -- A `DateTime64` can denote an instant below the calendar lookup table, so it keeps the range
--- check. `1900-01-01` is below the checked window's lower bound; `1900-01-02` is not, because the
--- window is two days narrower than the table and that day still resolves inside it.
+-- check. `1900-01-01 00:00:00` is below the lower bound of the checked window.
 SELECT toYYYYMMDDhhmmss(toDateTime64('1900-01-01 00:00:00', 0, 'UTC'), 'UTC');
