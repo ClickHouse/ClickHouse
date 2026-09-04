@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -64,14 +64,22 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
     interactive_timeout_ms = interactive_timeout_ms_;
 }
 
+void CompletedPipelineExecutor::initialize()
+{
+    if (data)
+        return;
+
+    data = std::make_unique<Data>();
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
+    data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+}
+
 void CompletedPipelineExecutor::execute()
 {
+    initialize();
+
     if (interactive_timeout_ms)
     {
-        data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
-        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
         auto func = [
@@ -91,9 +99,7 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
-            {
                 data->executor->cancel();
-            }
         }
 
         if (data->has_exception)
@@ -101,20 +107,23 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
-        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->executor->execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->is_finished = true;
     }
+}
+
+void CompletedPipelineExecutor::cancel()
+{
+    /// Cancel execution if it wasn't finished.
+    if (data && !data->is_finished && data->executor)
+        data->executor->cancel();
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()
 {
     try
     {
-        if (data && data->executor)
-        {
-            data->executor->cancel();
-        }
+        cancel();
     }
     catch (...)
     {

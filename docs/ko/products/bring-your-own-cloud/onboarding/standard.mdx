@@ -102,7 +102,39 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     * **가용 영역**: VPC 피어링을 사용할 계획이라면 소스 계정과 BYOC 계정의 가용 영역을 일치시키면 AZ 간 트래픽 비용을 줄이는 데 도움이 될 수 있습니다. 예를 들어 AWS에서는 가용 영역 접미사(`a`, `b`, `c`)가 계정마다 서로 다른 물리적 영역 ID를 나타낼 수 있습니다. 자세한 내용은 [AWS 가이드](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)를 참조하십시오.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 설정" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 구성" background="black" />
+
+    #### 사전 유효성 검사
+
+    **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 리소스를 생성하기 전에 계정을 대상으로 일련의 **읽기 전용** 사전 점검을 실행합니다. 모든 점검을 통과하면 프로비저닝이 계속 진행됩니다. 점검에 실패하면 설정이 일시 중지되고 콘솔에 문제가 무엇인지 정확히 표시되므로, 리소스가 생성되기 전에 문제를 해결할 수 있습니다.
+
+    이 check는 다음을 확인합니다:
+
+    * **권한** — 관리 아이덴티티(IAM role / service account / service principal)에 ClickHouse Cloud가 배포를 프로비저닝하고 운영하는 데 필요한 권한이 부여되어 있습니다.
+    * **활성화된 서비스** *(GCP)* — 필요한 Google Cloud API(Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM)가 프로젝트에서 활성화되어 있습니다.
+    * **네트워크** *(AWS 자체 VPC 사용)* — VPC와 서브넷이 서브넷 크기, 필수 태그, 가용 영역 분산, 아웃바운드 연결, 사용 가능한 IP 주소에 관한 [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)을 충족합니다.
+    * **쿼터 및 보호 장치** *(AWS)* — 계정에 충분한 서비스 쿼터(VPC, NAT gateway, Elastic IP, EKS 클러스터, vCPUs)가 있으며, organization policy(SCP)로 인해 필수 작업이 차단되지 않습니다.
+
+    검사에 실패하면 각 항목이 매핑된 작업 및 실패 사유와 함께 나열됩니다(예: `iam:CreateRole · explicitDeny`). 성공한 항목을 모두 확인하려면 **Show passed checks**를 펼치십시오.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="BYOC 사전 유효성 검사에서 실패한 cloud-setup 검사 보고" background="black" />
+
+    이러한 실패를 해결하려면 최신 ClickHouse CloudFormation 또는 Terraform 스택을 다시 실행하거나, 보고된 actions를 관리용 아이덴티티(IAM role / service account / service principal)에 부여한 후 다음 중 하나를 선택하십시오:
+
+    * **다시 확인** — 사전 점검을 다시 실행합니다. 보고된 문제를 수정한 후 프로비저닝을 시작하기 전에 설정이 준비되었는지 확인할 때 사용하십시오.
+    * **그래도 진행** — 실패한 점검에도 불구하고 프로비저닝을 계속합니다. 보고된 실패가 거짓 양성이라고 확신하는 경우에만 사용하십시오. 그렇지 않으면 프로비저닝 도중 실패할 가능성이 높습니다.
+
+    자주 발생하는 오류는 아래 표를 참고하여 해결하십시오.
+
+    | 유효성 검사 오류                                                                                                                 | 예상 원인                                                                                      | 해결 방법                                                                                                                      |
+    | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+    | **관리 역할을 assume할 수 없음** *(AWS)*                                                                                           | 온보딩 스택이 완료되지 않았거나 역할 또는 외부 ID가 일치하지 않습니다                                                   | 최신 온보딩 스택을 다시 실행하고 콘솔에 표시된 [외부 ID](#aws-external-id)가 trust policy의 외부 ID와 일치하는지 확인하십시오                                    |
+    | **관리 service account를 가장할 수 없음** *(GCP)*                                                                                  | 온보딩 Terraform이 완료되지 않았거나 `clickhouse-management` 서비스 계정이 없거나 ClickHouse에 가장 권한을 부여하지 않았습니다 | 최신 온보딩 Terraform을 다시 실행하고 `clickhouse-management` service account가 존재하며 ClickHouse가 이를 impersonate할 수 있는 권한이 부여되었는지 확인하십시오 |
+    | **누락된 권한**(예: VPC 생성, IAM role 생성, Kubernetes 클러스터 생성)                                                                    | 관리 아이덴티티에 필요한 권한이 없습니다. 사용자 지정되었거나 오래된 스택에서 흔히 발생합니다                                       | 전체 권한 세트를 부여하는 최신 온보딩 스택을 다시 실행하십시오. 의도적으로 권한을 제한한 경우 오류에 보고된 권한을 추가하십시오.                                                  |
+    | **필수 API가 활성화되지 않음** *(GCP)*                                                                                              | 프로젝트에서 필수 Google Cloud 서비스 API가 비활성화되어 있습니다                                                | 예를 들어 `gcloud services enable compute.googleapis.com --project <your-project>`를 실행하여 활성화하십시오                               |
+    | **서브넷 또는 VPC 구성 문제** *(AWS bring-your-own-VPC)* — CIDR 범위가 너무 작음, 태그 누락, 가용 영역 수 부족, 아웃바운드 egress 없음 또는 사용 가능한 IP 주소 수 부족 | 제공된 VPC가 BYOC 네트워크 요구 사항을 충족하지 않습니다                                                        | [네트워크 요구 사항](/ko/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)을 충족하도록 VPC를 조정하십시오        |
+    | **서비스 QUOTA 부족** *(AWS)*                                                                                                  | 필수 리소스에 대한 계정 할당량이 너무 낮습니다                                                                 | 클라우드 제공업체에 quota 증액을 요청하십시오. [AWS 서비스 한도](/ko/products/bring-your-own-cloud/reference/aws-service-limits)를 참조하십시오.            |
+    | **조직 정책/SCP에 의해 차단됨** *(AWS)*                                                                                             | 조직 가드레일로 인해 계정에 필요한 작업이 거부됩니다                                                              | 클라우드 관리자와 협력하여 BYOC 계정에서 해당 작업을 허용하십시오                                                                                     |
   </Step>
 </Steps>
 

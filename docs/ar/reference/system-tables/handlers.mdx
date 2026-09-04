@@ -11,7 +11,13 @@ doc_type: 'مرجع'
   ## الوصف
 </div>
 
-يحتوي على قائمة بجميع معالجات HTTP المعرّفة بلغة SQL والتي أُنشئت باستخدام CREATE HANDLER.
+يحتوي على قائمة بجميع معالجات HTTP المعرّفة بلغة SQL والمُنشأة عبر [`CREATE HANDLER`](/ar/reference/statements/create/handler).
+
+تتطلب قراءة هذا الجدول امتياز `SHOW HANDLERS`؛ وبدونه يبدو الجدول فارغًا. لا تُعرض الأسرار التي
+قد تكون مضمنة في استعلام المعالج (مثل بيانات الاعتماد المُمرَّرة إلى دالة جدول) في
+العمودين `query` و`create_query` إلا إذا كان يُسمح للمستخدم برؤية الأسرار (أي عند تمكين إعداد الخادم `display_secrets_in_show_and_select` وإعداد
+التنسيق `format_display_secrets_in_show_and_select`، وامتلاك المستخدم امتياز `displaySecretsInShowAndSelect`)؛ وإلا
+فتُحجب، تمامًا كما في `SHOW CREATE TABLE`.
 
 <div id="columns">
   ## الأعمدة

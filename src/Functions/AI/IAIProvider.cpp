@@ -16,11 +16,6 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-namespace
-{
-
-/// Replace control characters (including `\t \n \r`) with spaces so a provider's response cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception.
 String sanitizeForLog(std::string_view input)
 {
     String output;
@@ -28,8 +23,6 @@ String sanitizeForLog(std::string_view input)
     for (unsigned char ch : input)
         output.push_back((ch < 0x20 || ch == 0x7F) ? ' ' : static_cast<char>(ch));
     return output;
-}
-
 }
 
 /// Prefers the structured `error.message`/`error.type` fields, falling back to the first 256
@@ -69,7 +62,8 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
-AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
+void IAIProvider::embed(
+    const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }

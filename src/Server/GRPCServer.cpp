@@ -13,6 +13,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
@@ -35,12 +36,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -91,8 +92,14 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
+
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_GRPC_QUERY_INFO;
     extern const int INVALID_SESSION_TIMEOUT;
@@ -885,14 +892,26 @@ namespace
         std::string quota_key = query_info.quota();
         Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
+        /// Authentication. The session is created before the empty-user-name check below, so that
+        /// a prohibited anonymous attempt is recorded in `system.session_log` as a login failure.
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
+
         if (user.empty())
         {
-            user = "default";
-            password = "";
+            /// An empty user name means the default session user (the `default_session_user` server setting).
+            user = iserver.context()->getServerSettings()[ServerSetting::default_session_user];
+
+            /// The default session user can be explicitly configured to be empty to prohibit
+            /// connections without a user name, matching the native and Arrow Flight protocols.
+            if (user.empty())
+            {
+                auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Anonymous connections are prohibited (the `default_session_user` server setting is empty), specify a user name.");
+                session->onAuthenticationFailure(user, user_address, exception);
+                throw exception; /// NOLINT
+            }
         }
 
-        /// Authentication.
-        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
         session->authenticate(user, password, user_address);
         session->setQuotaClientKey(quota_key);
 
@@ -1289,8 +1308,12 @@ namespace
                         return std::make_shared<EmptySink>(header);
                     });
 
-                    auto executor = cur_pipeline.execute();
-                    executor->execute(1, false);
+                    auto external_table_pipeline = QueryPipelineBuilder::getPipeline(std::move(cur_pipeline));
+                    external_table_pipeline.setNumThreads(1);
+                    external_table_pipeline.setConcurrencyControl(false);
+                    external_table_pipeline.disableReadProgress();
+                    CompletedPipelineExecutor executor(external_table_pipeline);
+                    executor.execute();
                 }
             }
 
