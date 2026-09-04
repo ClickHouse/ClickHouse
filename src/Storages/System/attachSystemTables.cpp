@@ -54,6 +54,7 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include <Storages/System/StorageSystemSessions.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -297,6 +298,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attachNoDescription<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
     attachNoDescription<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
     attachNoDescription<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
+    attach<StorageSystemSessions>(context, system_database, "sessions", "Contains a list of currently logged-in sessions, one row per active connection.");
     attach<StorageSystemProcesses>(context, system_database, "processes", "Contains a list of currently executing processes (queries) with their progress.");
     attach<StorageSystemMetrics>(context, system_database, "metrics", "Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.");
     attach<StorageSystemHistogramMetrics>(context, system_database, "histogram_metrics", "Contains histogram metrics which can be calculated instantly and exported in the Prometheus format. For example, the keeper response time. This table is always up to date.");

@@ -1,4 +1,5 @@
 #include <Interpreters/SessionLog.h>
+#include <Interpreters/SessionColumnsCommon.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
@@ -13,16 +14,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Common/IPv6ToBinary.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/Context.h>
 
@@ -37,36 +34,6 @@ auto eventTime()
     const auto finish_time = std::chrono::system_clock::now();
 
     return std::make_pair(timeInSeconds(finish_time), timeInMicroseconds(finish_time));
-}
-
-using AuthType = AuthenticationType;
-using Interface = ClientInfo::Interface;
-
-void fillColumnArray(const Strings & data, IColumn & column)
-{
-    auto & array = typeid_cast<ColumnArray &>(column);
-    size_t size = 0;
-    auto & data_col = array.getData();
-    for (const auto & name : data)
-    {
-        data_col.insertData(name.data(), name.size());
-        ++size;
-    }
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + size);
-}
-
-void fillCertificateInfo(SessionLogElement & log_entry, const std::optional<ClientCertificateInfo> & certificate_info)
-{
-    if (!certificate_info)
-        return;
-
-    log_entry.has_certificate = true;
-    log_entry.certificate_subjects = certificate_info->subjects;
-    log_entry.certificate_serial = certificate_info->serial;
-    log_entry.certificate_issuer = certificate_info->issuer;
-    log_entry.certificate_not_before = certificate_info->not_before;
-    log_entry.certificate_not_after = certificate_info->not_after;
 }
 
 }
@@ -84,53 +51,13 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(toString(v), static_cast<Int8>(v))
-    auto identified_with_column = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::PLAINTEXT_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_AUTHENTICATION),
-        });
-#undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
-
-    auto interface_type_column = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"TCP",                    static_cast<Int8>(Interface::TCP)},
-            {"HTTP",                   static_cast<Int8>(Interface::HTTP)},
-            {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
-            {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
-            {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
-            {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
-            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
-            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
-            {"ArrowFlight",            static_cast<Int8>(Interface::ARROW_FLIGHT)},
-        });
-    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
+    auto identified_with_column = std::make_shared<DataTypeEnum8>(getSessionAuthTypeEnumValues());
+    auto interface_type_column = std::make_shared<DataTypeEnum8>(getSessionInterfaceEnumValues());
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    auto settings_type_column = std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(
-            DataTypes({
-                // setting name
-                lc_string_datatype,
-                // value
-                std::make_shared<DataTypeString>()
-            })));
+    auto settings_type_column = getNameValueArrayType(lc_string_datatype, std::make_shared<DataTypeString>());
+    auto quotas_type_column = getNameValueArrayType(lc_string_datatype, lc_string_datatype);
 
     return ColumnsDescription
     {
@@ -148,13 +75,15 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
         {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
         {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column)), "The authentication type."},
 
-        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of roles to which the profile is applied."},
+        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
         {"settings", std::move(settings_type_column), "Settings that were changed when the client logged in/out."},
+        {"quotas", std::move(quotas_type_column), "Quotas that were bound to this session."},
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
         {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
+        {"http_user_agent", std::make_shared<DataTypeString>(), "The HTTP User-Agent header, if the session was established over HTTP."},
 
         {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
@@ -199,29 +128,16 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(user ? Field(*user) : Field());
     columns[i++]->insert(user_identified_with ? Field(*user_identified_with) : Field());
 
-    fillColumnArray(profiles, *columns[i++]);
-    fillColumnArray(roles, *columns[i++]);
-
-    {
-        auto & settings_array_col = assert_cast<ColumnArray &>(*columns[i++]);
-        auto & settings_tuple_col = assert_cast<ColumnTuple &>(settings_array_col.getData());
-        auto & names_col = *settings_tuple_col.getColumnPtr(0)->assumeMutable();
-        auto & values_col = assert_cast<ColumnString &>(*settings_tuple_col.getColumnPtr(1)->assumeMutable());
-
-        for (const auto & kv : settings)
-        {
-            names_col.insert(kv.first);
-            values_col.insert(kv.second);
-        }
-
-        auto & offsets = settings_array_col.getOffsets();
-        offsets.push_back(settings_tuple_col.size());
-    }
+    fillStringArrayColumn(roles, *columns[i++]);
+    fillStringArrayColumn(profiles, *columns[i++]);
+    fillNameValueArrayColumn(settings, *columns[i++]);
+    fillNameValueArrayColumn(quotas, *columns[i++]);
 
     columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
     columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.interface);
+    columns[i++]->insertData(client_info.http_user_agent.data(), client_info.http_user_agent.length());
 
     columns[i++]->insertData(client_info.getClientHostName().data(), client_info.getClientHostName().length());
     columns[i++]->insertData(client_info.client_name.data(), client_info.client_name.length());
@@ -232,21 +148,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 
-    fillColumnArray(certificate_subjects, *columns[i++]);
-    columns[i++]->insertData(certificate_serial.data(), certificate_serial.length());
-    columns[i++]->insertData(certificate_issuer.data(), certificate_issuer.length());
-    if (has_certificate)
-    {
-        /// The DateTime64(0) columns store seconds since epoch as Int64, so the full X.509 validity
-        /// range is preserved without the silent UInt32 narrowing that a DateTime column would do.
-        columns[i++]->insert(DecimalField<DateTime64>(certificate_not_before, 0));
-        columns[i++]->insert(DecimalField<DateTime64>(certificate_not_after, 0));
-    }
-    else
-    {
-        columns[i++]->insertDefault();
-        columns[i++]->insertDefault();
-    }
+    fillCertificateColumns(certificate_info, columns, i);
 }
 
 void SessionLog::addLoginSuccess(const UUID & auth_id,
@@ -265,7 +167,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
         std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
 
         log_entry.client_info = client_info;
-        fillCertificateInfo(log_entry, certificate_info);
+        log_entry.certificate_info = certificate_info;
 
         if (login_user)
         {
@@ -286,6 +188,9 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
         SettingsChanges changes = settings.changes();
         for (const auto & change : changes)
             log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+
+        for (const auto & quota : access->getQuotaUsages())
+            log_entry.quotas.emplace_back(quota.quota_name, quota.quota_key);
     });
 }
 
@@ -306,7 +211,7 @@ void SessionLog::addLoginFailure(
         log_entry.auth_failure_reason = reason.message();
         log_entry.client_info = info;
         log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
-        fillCertificateInfo(log_entry, certificate_info);
+        log_entry.certificate_info = certificate_info;
     });
 }
 
@@ -330,7 +235,7 @@ void SessionLog::addLogOut(
         }
         log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
         log_entry.client_info = client_info;
-        fillCertificateInfo(log_entry, certificate_info);
+        log_entry.certificate_info = certificate_info;
     });
 }
 

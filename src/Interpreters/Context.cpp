@@ -84,6 +84,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
+#include <Interpreters/SessionRegistry.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Core/ProtocolDefines.h>
@@ -652,6 +653,7 @@ struct ContextSharedPart : boost::noncopyable
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
+    SessionRegistry session_registry;
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
@@ -1555,6 +1557,7 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 
+SessionRegistry & Context::getSessionRegistry() const { return shared->session_registry; }
 SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
 
 MergeList & Context::getMergeList() { return shared->merge_list; }

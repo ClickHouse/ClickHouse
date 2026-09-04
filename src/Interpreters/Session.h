@@ -5,6 +5,7 @@
 #include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionRegistry.h>
 #include <Interpreters/SessionTracker.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -151,6 +152,7 @@ private:
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
 
+    mutable SessionRegistry::HandlePtr session_registry_handle;
     SessionTracker::SessionTrackerHandle session_tracker_handle;
 
     /// Settings received from authentication server during authentication process
