@@ -82,6 +82,11 @@ std::unique_ptr<JoinStepLogical> deserializeStep(const String & bytes, UInt64 ve
         in, registry, {}, context, input_headers, output_header, settings, 0, version, false};
 
     auto step = JoinStepLogical::deserialize(ctx);
+
+    /// The buffer holds one step, so a byte left unread here is a byte that would be taken for the
+    /// next node of a real plan.
+    EXPECT_TRUE(in.eof());
+
     return std::unique_ptr<JoinStepLogical>(static_cast<JoinStepLogical *>(step.release()));
 }
 
