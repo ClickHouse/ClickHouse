@@ -14,6 +14,7 @@ node = cluster.add_instance(
     # the harness randomizes any flag a test does not pin.
     keeper_required_feature_flags=[
         "list_with_stat_and_data",
+        "check_stat",
         "filtered_list",
         "multi_read",
     ],

@@ -25,6 +25,7 @@ KEEPER_FEATURE_FLAGS = [
     "multi_read",
     "create_if_not_exists",
     "list_with_stat_and_data",
+    "check_stat",
     "filtered_list",
 ]
 

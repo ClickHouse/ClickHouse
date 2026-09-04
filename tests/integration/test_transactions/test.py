@@ -14,6 +14,7 @@ node = cluster.add_instance(
         "filtered_list",
         "multi_read",
         "list_with_stat_and_data",
+        "check_stat",
     ],
 )
 

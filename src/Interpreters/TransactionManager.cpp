@@ -92,16 +92,19 @@ TransactionManager::TransactionManager()
 {
     auto component_guard = Coordination::setCurrentComponent("TransactionManager::TransactionManager");
 
-    /// Fail-close before any list-with-data or multi-read call runs.
+    /// Fail-close before any list-with-data, multi-read or check-stat call runs. Without
+    /// `CHECK_STAT` Keeper answers `Unsupported operation: CheckStat` and drops the session, which
+    /// surfaces as a lost commit rather than a clear error.
     auto zk = global_context->getZooKeeper();
     if (!zk->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA)
         || !zk->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST)
-        || !zk->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+        || !zk->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ)
+        || !zk->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Transactions require Keeper to advertise `LIST_WITH_STAT_AND_DATA`, "
-            "`FILTERED_LIST`, and `MULTI_READ` feature flags. Upgrade the Keeper cluster.");
+            "`FILTERED_LIST`, `MULTI_READ` and `CHECK_STAT` feature flags. Upgrade the Keeper cluster.");
     }
 
     loadLogFromZooKeeper();
