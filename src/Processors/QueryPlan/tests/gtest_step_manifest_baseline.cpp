@@ -274,7 +274,23 @@ format 1 introduced_in 12
   setting max_bytes_in_distinct Logical UInt64
   setting distinct_overflow_mode Logical enum8
   initializers 00000000
-name ReadFromMergeTree introduced_in 1 custom full_digest always logical_digest always
+name ReadFromMergeTree introduced_in 1 full_digest always logical_digest always
+format 1 introduced_in 12
+  field database Logical String
+  field table Logical String
+  field columns Logical vector<String>
+  field max_block_size Physical UInt64
+  field num_streams Physical UInt64
+  field final Logical bool
+  field sample_size_ratio Logical optional<Rational>
+  field sample_offset_ratio Logical optional<Rational>
+  field row_level_filter Logical optional<FilterDAGInfo>
+  field prewhere_info Logical optional<PrewhereInfo>
+  field parallel_reading_from_replicas Physical bool
+  field distributed_read_bucket_count Physical UInt64
+  field distributed_read_param_name Physical String
+  field read_in_order Logical optional<ReadInOrder>
+  initializers 0000000000000000000000000000
 name ReadNothing introduced_in 1 full_digest always logical_digest always
 format 1 introduced_in 12
   initializers 
