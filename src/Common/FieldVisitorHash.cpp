@@ -1,7 +1,9 @@
 #include <Common/FieldVisitorHash.h>
 #include <Common/checkStackSize.h>
 
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB
@@ -68,7 +70,22 @@ void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;
     hash.update(type);
-    hash.update(x);
+
+    /// Normalize to be consistent with Field::operator== (FloatCompareHelper).
+    if (isNaN(x))
+    {
+        static constexpr Float64 canonical_nan = std::numeric_limits<Float64>::quiet_NaN();
+        hash.update(canonical_nan);
+    }
+    else if (x == static_cast<Float64>(0))
+    {
+        static constexpr Float64 positive_zero = static_cast<Float64>(0);
+        hash.update(positive_zero);
+    }
+    else
+    {
+        hash.update(x);
+    }
 }
 
 void FieldVisitorHash::operator() (const String & x) const
@@ -126,32 +143,35 @@ void FieldVisitorHash::operator() (const Object & x) const
     }
 }
 
+template <typename T>
+static void hashDecimalNormalized(SipHash & hash, UInt8 type, const DecimalField<T> & x)
+{
+    hash.update(type);
+    auto v = x.getValue().value;
+    UInt32 s = x.getScale();
+    DecimalUtils::normalizeDecimalTrailingZeros(v, s);
+    hash.update(v);
+    hash.update(s);
+}
+
 void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
 {
-    UInt8 type = Field::Types::Decimal32;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal32, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
 {
-    UInt8 type = Field::Types::Decimal64;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal64, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
 {
-    UInt8 type = Field::Types::Decimal128;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal128, x);
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal256> & x) const
 {
-    UInt8 type = Field::Types::Decimal256;
-    hash.update(type);
-    hash.update(x.getValue().value);
+    hashDecimalNormalized(hash, Field::Types::Decimal256, x);
 }
 
 void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const

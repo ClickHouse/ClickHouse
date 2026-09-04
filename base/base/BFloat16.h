@@ -343,5 +343,6 @@ public:
     static constexpr BFloat16 min() noexcept { return BFloat16::fromBits(0b0000000100000000); }
     static constexpr BFloat16 max() noexcept { return BFloat16::fromBits(0b0111111101111111); }
     static constexpr BFloat16 infinity() noexcept { return BFloat16::fromBits(0b0111111110000000); }
+    static constexpr BFloat16 quiet_NaN() noexcept { return BFloat16::fromBits(0b0111111111000000); }
 };
 }
