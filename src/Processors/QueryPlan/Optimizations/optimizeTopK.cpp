@@ -20,6 +20,15 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// The read steps run in the order of the root's conjuncts and each filters the block the next one sees,
+/// so a condition whose value depends on its block would observe a different one than it does alone.
+/// `blockSize` and `rand` have that dependence without being stateful, hence both properties.
+static bool prewhereDependsOnItsBlock(const PrewhereInfo & prewhere_info)
+{
+    return prewhere_info.prewhere_actions.hasStatefulFunctions()
+        || prewhere_info.prewhere_actions.hasNonDeterministic();
+}
+
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// The dynamic-filtering path injects an internal `__topKFilter` function that
@@ -196,6 +205,16 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
+    /// A stamped read is kept local by `applyParallelReplicas`, which runs before the threshold filter
+    /// is installed, so a PREWHERE the filter cannot share has to be excluded here as well: stamping
+    /// such a read would cost plan-based parallel replicas and add no filter.
+    if (use_dynamic_filtering)
+    {
+        const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo();
+        if (prewhere_info && prewhereDependsOnItsBlock(*prewhere_info))
+            use_dynamic_filtering = false;
+    }
+
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.
     /// TopK dynamic filtering is counterproductive in this case: once the threshold
@@ -293,12 +312,8 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & existing_prewhere_info = read_from_mergetree_step->getPrewhereInfo();
     if (existing_prewhere_info)
     {
-        /// Each read step filters the block the next one sees, and the split preserves the order of the
-        /// root's conjuncts, so a condition whose value depends on the block it is evaluated on would
-        /// observe a different block than it does alone. That covers stateful conditions and also
-        /// non-deterministic ones such as `blockSize` and `rand`, which are not stateful.
-        if (existing_prewhere_info->prewhere_actions.hasStatefulFunctions()
-            || existing_prewhere_info->prewhere_actions.hasNonDeterministic())
+        /// A PREWHERE promoted after the read was stamped reaches this point unchecked.
+        if (prewhereDependsOnItsBlock(*existing_prewhere_info))
             return;
 
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
