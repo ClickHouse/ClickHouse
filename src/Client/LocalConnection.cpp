@@ -363,14 +363,6 @@ void LocalConnection::sendQuery(
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
-                    *parser,
-                    begin,
-                    end,
-                    "",
-                    /*allow_multi_statements*/ false,
-                    state->max_query_size,
-                    state->max_parser_depth,
-                    state->max_parser_backtracks);
             if (dialect == Dialect::logsql)
                 parsed_query = parseLogsQLQueryAndMovePosition(
                     *parser,
