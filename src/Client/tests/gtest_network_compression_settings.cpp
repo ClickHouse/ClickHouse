@@ -8,8 +8,10 @@
 using namespace DB;
 
 /// The client sends its own helper queries (autocomplete, the `help` command, the AI metadata query)
-/// with only the settings selecting the network codec, so that the rest of the session — the `dialect`
-/// above all — does not leak into them.
+/// with only the settings selecting the network codec, so that the rest of the session does not leak
+/// into them, plus an explicit `dialect = 'clickhouse'` override: the queries are written in ClickHouse
+/// SQL, and dropping the session `dialect` is not enough, because the server would then take the parser
+/// from the effective `dialect` of the authenticated user.
 
 TEST(NetworkCompressionSettings, KeepsOnlyTheChangedCompressionSettings)
 {
@@ -28,15 +30,26 @@ TEST(NetworkCompressionSettings, KeepsOnlyTheChangedCompressionSettings)
     EXPECT_EQ(result.get("network_zstd_compression_level").safeGet<UInt64>(), 7u);
     EXPECT_TRUE(result.isChanged("allow_suspicious_codecs"));
 
-    EXPECT_FALSE(result.isChanged("dialect"));
+    /// The session `dialect` does not leak in; it is overridden with ClickHouse SQL instead.
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.get("dialect").safeGet<String>(), "clickhouse");
+
     EXPECT_FALSE(result.isChanged("max_threads"));
     EXPECT_FALSE(result.isChanged("allow_experimental_codecs"));
 }
 
-TEST(NetworkCompressionSettings, EmptyForAnUntouchedSession)
+TEST(NetworkCompressionSettings, OnlyTheDialectOverrideForAnUntouchedSession)
 {
+    /// Nothing to carry over from the session, but the `dialect` override is unconditional: the server
+    /// picks the parser from the authenticated user's effective `dialect`, which a profile may default
+    /// to Kusto or PRQL even though the session never touched it.
     const Settings settings;
-    EXPECT_TRUE(networkCompressionSettings(settings).changes().empty());
+
+    const Settings result = networkCompressionSettings(settings);
+
+    EXPECT_EQ(result.changes().size(), 1u);
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.get("dialect").safeGet<String>(), "clickhouse");
 }
 
 TEST(NetworkCompressionSettings, CompatibilityDerivedValuesActButAreNotSerialized)
@@ -65,8 +78,10 @@ TEST(NetworkCompressionSettings, CompatibilityDerivedValuesActButAreNotSerialize
     EXPECT_EQ(result.get("network_zstd_compression_level").safeGet<UInt64>(),
               settings.get("network_zstd_compression_level").safeGet<UInt64>());
 
-    /// Only `compatibility` goes over the wire.
-    EXPECT_EQ(result.changes().size(), 1u);
+    /// Only `compatibility` and the unconditional `dialect` override go over the wire.
+    EXPECT_TRUE(result.isChanged("dialect"));
+    EXPECT_EQ(result.get("dialect").safeGet<String>(), "clickhouse");
+    EXPECT_EQ(result.changes().size(), 2u);
 }
 
 TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedValue)
@@ -82,6 +97,7 @@ TEST(NetworkCompressionSettings, KeepsAnExplicitOverrideOfACompatibilityDerivedV
     EXPECT_EQ(result.get("network_compression_method").safeGet<String>(), "NONE");
     EXPECT_FALSE(result.isChanged("network_zstd_compression_level"));
     EXPECT_TRUE(result.isChanged("compatibility"));
+    EXPECT_TRUE(result.isChanged("dialect"));
 }
 
 /// The other half of the contract: `Connection::sendQuery` picks the codec for the compressed packets
