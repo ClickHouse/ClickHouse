@@ -1,10 +1,16 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Core/Settings.h>
+#include <Functions/castTypeToEither.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
@@ -78,6 +84,9 @@ private:
         else if (!legacy_null_behavior && converted_columns.size() == 1)
             return converted_columns[0];
 
+        if (ColumnPtr res = executeNumeric(converted_columns, result_type, input_rows_count))
+            return res;
+
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
 
@@ -104,6 +113,120 @@ private:
         }
 
         return result_column;
+    }
+
+    /// Replicates `compareAt` with nan_direction_hint = 1 for least / -1 for greatest:
+    /// NaN loses against any number, and on ties the earlier argument is kept.
+    template <typename T>
+    static bool takesPrecedence(T current, T incoming)
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (isNaN(incoming))
+                return false;
+            if (isNaN(current))
+                return true;
+        }
+        return kind == LeastGreatest::Least ? incoming < current : incoming > current;
+    }
+
+    /// Vectorized min/max fold for numeric (possibly Nullable) arguments of any arity.
+    /// NULL loses against any value, so the result is NULL only where all arguments are NULL -
+    /// same as the per-row loop above with null_direction_hint = 1 for least / -1 for greatest.
+    /// Returns nullptr if the result type is not a (possibly Nullable) number.
+    static ColumnPtr executeNumeric(const Columns & columns, const DataTypePtr & result_type, size_t input_rows_count)
+    {
+        ColumnPtr res;
+        castTypeToEither<
+            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+            DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64>(
+            removeNullable(result_type).get(),
+            [&](const auto & type)
+            {
+                using T = typename std::decay_t<decltype(type)>::FieldType;
+                res = result_type->isNullable()
+                    ? executeNumericImpl<T, true>(columns, input_rows_count)
+                    : executeNumericImpl<T, false>(columns, input_rows_count);
+                return res != nullptr;
+            });
+        return res;
+    }
+
+    template <typename T, bool is_nullable>
+    static ColumnPtr executeNumericImpl(const Columns & columns, size_t input_rows_count)
+    {
+        chassert(columns.size() >= 2);
+
+        auto res_nested = ColumnVector<T>::create();
+        ColumnUInt8::MutablePtr res_null_map;
+        if constexpr (is_nullable)
+            res_null_map = ColumnUInt8::create();
+
+        /// The first column is not copied into the accumulator: the first fold reads it
+        /// directly and writes the accumulator, saving a full pass over the data.
+        const T * first_data = nullptr;
+        const UInt8 * first_null = nullptr;
+
+        for (size_t arg = 0; arg < columns.size(); ++arg)
+        {
+            const IColumn * column = columns[arg].get();
+            const UInt8 * b_null = nullptr;
+            if constexpr (is_nullable)
+            {
+                const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column);
+                if (!column_nullable)
+                    return nullptr;
+                b_null = column_nullable->getNullMapData().data();
+                column = &column_nullable->getNestedColumn();
+            }
+            const auto * column_vector = checkAndGetColumn<ColumnVector<T>>(column);
+            if (!column_vector)
+                return nullptr;
+            const T * b = column_vector->getData().data();
+
+            if (arg == 0)
+            {
+                first_data = b;
+                first_null = b_null;
+                continue;
+            }
+            if (arg == 1)
+            {
+                res_nested->getData().resize(input_rows_count);
+                if constexpr (is_nullable)
+                    res_null_map->getData().resize(input_rows_count);
+            }
+
+            T * a = res_nested->getData().data();
+            const T * x = arg == 1 ? first_data : a;
+            if constexpr (is_nullable)
+            {
+                UInt8 * a_null = res_null_map->getData().data();
+                const UInt8 * x_null = arg == 1 ? first_null : a_null;
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    /// NULL loses against any value, so only two non-NULL sides are actually compared.
+                    if (x_null[i])
+                        a[i] = b[i];
+                    else if (b_null[i])
+                        a[i] = x[i];
+                    else
+                        a[i] = takesPrecedence(x[i], b[i]) ? b[i] : x[i];
+                    a_null[i] = x_null[i] && b_null[i];
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    a[i] = takesPrecedence(x[i], b[i]) ? b[i] : x[i];
+            }
+        }
+
+        if constexpr (is_nullable)
+            return ColumnNullable::create(std::move(res_nested), std::move(res_null_map));
+        else
+            return res_nested;
     }
 
     bool legacy_null_behavior;
