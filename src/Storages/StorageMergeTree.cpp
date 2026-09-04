@@ -417,11 +417,6 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
-    /// The cached data volume counts every Active part, including the patch parts a lightweight
-    /// `UPDATE` produces. Those hold the updated values of rows that already live in the base parts,
-    /// so counting them would report more rows than the table has - and the trivial-count path would
-    /// serve that number as `count()`. `StorageReplicatedMergeTree::totalRows` walks the regular parts
-    /// for the same reason.
     UInt64 res = 0;
     auto lock = readLockParts();
     for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
