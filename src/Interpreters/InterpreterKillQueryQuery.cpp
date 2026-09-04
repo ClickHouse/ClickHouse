@@ -219,7 +219,7 @@ public:
 
 /// Executes a `SELECT` written by this interpreter and returns its whole result as a single block. One
 /// logical read can arrive as several blocks (per-row subquery, small `max_block_size`, parallel reads),
-/// so they are concatenated; asserting a single block here was issue #104857.
+/// so they are concatenated.
 static Block runInternalSelect(const String & select_query, ContextMutablePtr query_context)
 {
     auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
@@ -244,9 +244,8 @@ static Block runInternalSelect(const String & select_query, ContextMutablePtr qu
     return res;
 }
 
-/// A `ColumnLowCardinality` produced by filtering keeps the dictionary of the column it was filtered
-/// from, so the index of a surviving row depends on which other rows the wider column held. Every
-/// column is rebuilt, not only the ones that are low cardinality at the top level, because a dictionary
+/// Filtering a `ColumnLowCardinality` keeps the dictionary of the column it came from, so a surviving
+/// row's index depends on rows the caller cannot see. Every column is rebuilt, because a dictionary
 /// nested in a `Map` or an `Array` carries the same dependency.
 static void rebuildLowCardinalityDictionaries(Block & block)
 {
@@ -343,8 +342,8 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
     /// that only a full planner run registers.
     auto block_names = block.getNameSet();
 
-    /// The analysis passes mutate the node they are given, and the policy AST is shared through the
-    /// access cache.
+    /// The policy expression is owned by the access cache and shared by every query the policy governs,
+    /// so this call is given a copy of its own.
     auto filter_info
         = buildFilterInfo(row_policy_filter->expression->clone(), table_expression, planner_context, std::move(block_names));
 
