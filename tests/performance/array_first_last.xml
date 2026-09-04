@@ -1,16 +1,30 @@
 <test>
+    <!--
+        arrayFirst and arrayLast build one result value per input array with a generic insertFrom loop.
+        The result used to reserve the number of nested source elements instead of the number of arrays.
+    -->
     <settings>
         <max_threads>1</max_threads>
     </settings>
 
-    <!-- The source arrays are deliberately wider than the one-element-per-row result. -->
-    <query>SELECT sum(arrayFirst(x -> 1, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
-    <query>SELECT sum(arrayLast(x -> 1, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
-    <query>SELECT sum(arrayFirst(x -> x % 2 = 0, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
-    <query>SELECT sum(arrayLast(x -> x % 2 = 0, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Decimal64(3)</value>
+                <value>Int128</value>
+                <value>Decimal256(3)</value>
+            </values>
+        </substitution>
+    </substitutions>
 
-    <query>SELECT sum(arrayFirst(x -> 1, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
-    <query>SELECT sum(arrayLast(x -> 1, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
-    <query>SELECT sum(arrayFirst(x -> x % 2 = 0, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
-    <query>SELECT sum(arrayLast(x -> x % 2 = 0, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; 1, materialize(range(8)::Array({type}))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, materialize(range(8)::Array({type}))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; x &gt; 3, materialize(range(32)::Array({type}))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; x &gt; 3, materialize(range(32)::Array({type}))) FROM numbers(2000000) FORMAT Null</query>
+
+    <query>SELECT arrayFirst(x -&gt; 1, materialize(arrayMap(x -&gt; (x, x), range(32)))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, materialize(arrayMap(x -&gt; (x, x), range(32)))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayFirst(x -&gt; 1, materialize(arrayMap(x -&gt; [x, x], range(32)))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT arrayLast(x -&gt; 1, materialize(arrayMap(x -&gt; [x, x], range(32)))) FROM numbers(2000000) FORMAT Null</query>
 </test>
