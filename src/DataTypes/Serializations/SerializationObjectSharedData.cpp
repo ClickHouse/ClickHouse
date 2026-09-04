@@ -377,6 +377,10 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
+            /// Close the last path's block so it isn't merged with the following metadata streams (in
+            /// Compact parts they reuse the same compressed stream).
+            data_stream->next();
+
             /// End ObjectSharedDataData stream.
             settings.path.pop_back();
 
