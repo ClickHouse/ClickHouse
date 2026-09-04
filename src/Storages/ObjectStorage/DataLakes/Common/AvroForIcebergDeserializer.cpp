@@ -351,8 +351,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     {
                         LOG_WARNING(
                             getLogger("AvroForIcebergDeserializer"),
-                            "Position delete file '{}' declares a reference data file lower bound above its upper bound "
-                            "('{}' > '{}'); ignoring both bounds",
+                            "Manifest file '{}' declares a reference data file lower bound above its upper bound for "
+                            "position delete file '{}' ('{}' > '{}'); ignoring both bounds",
+                            manifest_file_path.serialize(),
                             file_path_key.serialize(),
                             lower_reference_data_file_path->serialize(),
                             upper_reference_data_file_path->serialize());

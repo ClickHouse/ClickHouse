@@ -21,12 +21,12 @@ NOCACHE = {
 }
 
 
-def _swap_data_file_path_bounds(instance, table_path):
-    """Exchange `lower_bounds` with `upper_bounds` under the reserved `file_path` field id in every
-    manifest entry of the table that carries one, and rewrite the manifests changed. Only a
-    position-delete entry has a bound under that id, a data file entry keying its bounds by the
-    table's own column ids, so this needs no filter on the entry's content type to leave the data
-    manifests alone.
+def _patch_data_file_path_bounds(instance, table_path, mutate):
+    """Apply `mutate` to the `lower_bounds` and `upper_bounds` entries under the reserved `file_path`
+    field id in every manifest entry of the table that carries one, and rewrite the manifests
+    changed. Only a position-delete entry has a bound under that id, a data file entry keying its
+    bounds by the table's own column ids, so this needs no filter on the entry's content type to
+    leave the data manifests alone.
 
     Returns the number of rewritten entries, which the caller asserts is non-zero."""
     patched = 0
@@ -64,12 +64,7 @@ def _swap_data_file_path_bounds(instance, table_path):
                 )
                 if lower is None or upper is None:
                     continue
-                # The bounds are the extremes of the delete file's own `file_path` column, so a
-                # delete file referencing a single data file has lower == upper and exchanging them
-                # leaves the manifest well formed. The fixture below covers two data files with one
-                # delete file to keep the pair distinct.
-                assert lower["value"] != upper["value"]
-                lower["value"], upper["value"] = upper["value"], lower["value"]
+                mutate(lower, upper)
                 patched_here += 1
 
             if patched_here == 0:
@@ -89,6 +84,24 @@ def _swap_data_file_path_bounds(instance, table_path):
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
     return patched
+
+
+def _swap(lower, upper):
+    # The bounds are the extremes of the delete file's own `file_path` column, so a delete file
+    # referencing a single data file has lower == upper and exchanging them leaves the manifest
+    # well formed. The fixture covers two data files with one delete file to keep the pair
+    # distinct.
+    assert lower["value"] != upper["value"]
+    lower["value"], upper["value"] = upper["value"], lower["value"]
+
+
+def _set_above_every_path(lower, upper):
+    # An inverted pair whose two values sort above every data file path. Reordering it, rather
+    # than ignoring it, yields a range that contains no data file at all, so the delete file
+    # would go on being skipped everywhere.
+    above = max(lower["value"], upper["value"]) + b"~"
+    assert above > lower["value"] and above > upper["value"]
+    lower["value"], upper["value"] = above + b"~", above
 
 
 def test_iceberg_inverted_delete_bounds(started_cluster_iceberg_no_spark):
@@ -137,10 +150,16 @@ def test_iceberg_inverted_delete_bounds(started_cluster_iceberg_no_spark):
         )
 
     # Control: with well-formed bounds the delete file is kept for both data files and no pair is
-    # skipped. Without it, ignoring these bounds outright would satisfy the fault arm below too.
+    # skipped. That pins the fixture the arms below need: no `referenced_data_file` (with one, both
+    # bounds would come from that single path and one of the two pairs would be skipped), bounds
+    # spanning both data file paths, and the same tuple the arms assert, which makes each of them a
+    # comparison against this run rather than against a remembered number.
     assert read() == (survivors, 0, 2)
 
     # Inverted, the bounds describe an empty range of paths, so skipping on them would drop the
     # delete file for every data file and return the rows it deletes.
-    assert _swap_data_file_path_bounds(instance, table_path) > 0
+    assert _patch_data_file_path_bounds(instance, table_path, _swap) > 0
+    assert read() == (survivors, 0, 2)
+
+    assert _patch_data_file_path_bounds(instance, table_path, _set_above_every_path) > 0
     assert read() == (survivors, 0, 2)
