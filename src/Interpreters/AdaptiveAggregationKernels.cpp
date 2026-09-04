@@ -36,6 +36,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationResidueReleases;
 }
 
 namespace DB
@@ -1584,8 +1585,9 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
         if (shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys
             || shared.early_drain_variants->allocatedBytes() >= part_bytes)
         {
+            auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
             auto full = std::move(shared.early_drain_variants);
-            shared.early_drain_variants = createAdaptiveDrainTable(full->type);
+            shared.early_drain_variants = std::move(replacement);
             spillDetachedAdaptiveTable(shared, *full);
         }
 
@@ -1690,8 +1692,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             if ((shared.early_drain_variants->size() >= adaptive_pressure_spill_min_keys || residue_bytes >= part_bytes)
                 && reservation.reserveOrWait(shared, residue_bytes, adaptivePressureDetachedBytesBudget()))
             {
+                auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
                 detached_shared = std::move(shared.early_drain_variants);
-                shared.early_drain_variants = createAdaptiveDrainTable(detached_shared->type);
+                shared.early_drain_variants = std::move(replacement);
             }
 
             sweep_lock.unlock();
@@ -1737,6 +1740,54 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     if (drained_records)
         spillDetachedAdaptiveTable(shared, *local);
+}
+
+std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const
+{
+    /// The shared table is created by the first freeze, so in a session where no producer ever
+    /// froze there is none: a learning thread can stand down under memory pressure alone.
+    if (!shared.initialized.load(std::memory_order_acquire))
+        return {};
+
+    std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
+
+    /// Read under the coordinator lock: the sweeps replace this pointer while holding it. They
+    /// detach only at the part bound, so a residue below it is never written by them and stays
+    /// resident until the merge.
+    while (shared.early_drain_variants->hasData())
+    {
+        /// Declared before the table so that reverse-order destruction frees the table first:
+        /// the budget is handed on only once the bytes it stands for are really gone.
+        AdaptiveAggregationSession::SpillReservation reservation;
+        AggregatedDataVariantsPtr detached;
+
+        if (!reservation.reserveOrWait(
+                shared, shared.early_drain_variants->allocatedBytes(), adaptivePressureDetachedBytesBudget()))
+            return {};
+
+        auto replacement = createAdaptiveDrainTable(shared.early_drain_variants->type);
+        detached = std::move(shared.early_drain_variants);
+        shared.early_drain_variants = std::move(replacement);
+
+        /// Writing under the coordinator lock would stall every frozen producer's sweep for the
+        /// length of a disk write; only reservations may wait under it.
+        sweep_lock.unlock();
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationResidueReleases);
+        spillDetachedAdaptiveTable(shared, *detached);
+        detached.reset();
+        reservation.release();
+        sweep_lock.lock();
+    }
+
+    /// The whole budget is granted only when no detached table or reserved writer is in flight, and
+    /// holding it keeps a new detach from starting, while the coordinator lock keeps a sweep from
+    /// refilling the table, so memory already committed to a write cannot enter the reading.
+    AdaptiveAggregationSession::SpillReservation quiesce;
+    const size_t detached_budget = adaptivePressureDetachedBytesBudget();
+    if (!quiesce.reserveOrWait(shared, detached_budget, detached_budget))
+        return {};
+
+    return getCurrentQueryMemoryUsage();
 }
 
 }
