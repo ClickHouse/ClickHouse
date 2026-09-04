@@ -97,6 +97,30 @@ Número de segmentos de archivo desalojados de una caché del sistema de archivo
 
 Bytes totales de segmentos de archivo desalojados de la caché del sistema de archivos, etiquetados con el nombre de la caché y el ID de usuario. Desactivado de forma predeterminada; actívelo con `expose_prometheus_eviction_metrics` y `expose_prometheus_eviction_metrics_per_user`.
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+Número de fallos de `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), etiquetado por base de datos, tabla, etapa de procesamiento (`read`, `set_processing`, `insert`, `commit`) y código de error.
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+Número de archivos de `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) descartados permanentemente tras agotar los reintentos (o cuando estos están deshabilitados), etiquetado por base de datos y tabla. Cada uno representa un archivo cuyos datos nunca se procesarán.
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+Marca de tiempo Unix de la fecha y hora de última modificación del objeto más reciente detectado hasta el momento por una tabla `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), etiquetada por base de datos y tabla.
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+Marca de tiempo Unix de la fecha y hora de última modificación del objeto más reciente procesado por completo hasta el momento por una tabla `ObjectStorageQueue` (`S3Queue`/`AzureQueue`), etiquetada por base de datos y tabla.
+
 <div id="see-also">
   ## Véase también
 </div>
