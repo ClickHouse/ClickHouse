@@ -241,29 +241,29 @@ inline Float64 getHistogramBoundExponential(Int64 idx, Int32 schema)
         0.9892280131939752, 0.9919100824251095, 0.9945994234836328, 0.9972960560854698,
     };
 
-        /// Ported from `getBoundExponential` in Prometheus: the last bucket before the overflow bucket (+-Inf observations) has bound MaxFloat64,
-        /// since the plain formula would produce the non-representable 2^1024 there, while the overflow bucket's own bound comes out as +Inf.
-        if (schema < 0)
-        {
-            /// Go computes the exponent in 64-bit; mirror that — a 32-bit shift would be UB for absurd bucket indexes from corrupt spans.
-            /// `std::ldexp` takes an int exponent, so saturate out-of-int-range exponents like Go's `math.Ldexp`.
-            const Int64 exp = idx << (-schema);
-            if (exp == 1024)
-                return std::numeric_limits<Float64>::max();
-            if (exp > 1100)
-                return std::numeric_limits<Float64>::infinity();
-            if (exp < -1100)
-                return 0.0;
-            return std::ldexp(1.0, static_cast<int>(exp));
-        }
-
-        const Int64 frac_idx = idx & ((Int64{1} << schema) - 1);
-        const Float64 frac = EXPONENTIAL_BOUNDS[(Int64{1} << schema) - 1 + frac_idx];
-        const Int64 exp = (idx >> schema) + 1;
-        if (frac == 0.5 && exp == 1025)
+    /// Ported from `getBoundExponential` in Prometheus: the last bucket before the overflow bucket (+-Inf observations) has bound MaxFloat64,
+    /// since the plain formula would produce the non-representable 2^1024 there, while the overflow bucket's own bound comes out as +Inf.
+    if (schema < 0)
+    {
+        /// Go computes the exponent in 64-bit; mirror that — a 32-bit shift would be UB for absurd bucket indexes from corrupt spans.
+        /// `std::ldexp` takes an int exponent, so saturate out-of-int-range exponents like Go's `math.Ldexp`.
+        const Int64 exp = idx << (-schema);
+        if (exp == 1024)
             return std::numeric_limits<Float64>::max();
-        return std::ldexp(frac, static_cast<int>(exp));
- }
+        if (exp > 1100)
+            return std::numeric_limits<Float64>::infinity();
+        if (exp < -1100)
+            return 0.0;
+        return std::ldexp(1.0, static_cast<int>(exp));
+    }
+
+    const Int64 frac_idx = idx & ((Int64{1} << schema) - 1);
+    const Float64 frac = EXPONENTIAL_BOUNDS[(Int64{1} << schema) - 1 + frac_idx];
+    const Int64 exp = (idx >> schema) + 1;
+    if (frac == 0.5 && exp == 1025)
+        return std::numeric_limits<Float64>::max();
+    return std::ldexp(frac, static_cast<int>(exp));
+}
 
 /// One span of a native histogram, matching the `positive_spans`/`negative_spans` payload columns (Array(Tuple(offset Int32, length UInt32)), see `getTimeSeriesHistogramSpansType`):
 /// the first span's offset is its first bucket's index; a later span's offset is the gap to the previous span (its first bucket follows after `offset` + 1 indices).
