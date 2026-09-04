@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import os
 import random
 import re
-import sys
 import traceback
 from pathlib import Path
 
@@ -19,6 +19,9 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 # Maximum number of reproduce commands to display inline before writing to file
 MAX_INLINE_REPRODUCE_COMMANDS = 20
+
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 cwd = Utils.cwd()
 WORKSPACE_PATH = Path(cwd) / "ci/tmp/workspace"
@@ -221,6 +224,7 @@ def get_run_command(
     buzzhouse: bool,
     targeted_queries_file: Path | None = None,
     compatibility_setting: str | None = None,
+    enable_oracle: bool = False,
 ) -> str:
     from ci.jobs.ci_utils import is_extended_run
 
@@ -234,6 +238,8 @@ def get_run_command(
         envs.append(f"-e TARGETED_QUERIES_FILE='{container_queries_file}'")
     if compatibility_setting:
         envs.append(f"-e FUZZER_COMPATIBILITY='{compatibility_setting}'")
+    if enable_oracle:
+        envs.append("-e FUZZER_ORACLE_ENABLED=1")
 
     env_str = " ".join(envs)
 
@@ -242,6 +248,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
+        f"--memory={Utils.physical_memory() - RUNNER_MEMORY_RESERVE} "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={WORKSPACE_PATH}:/workspace "
         f"--volume={cwd}:/repo "
@@ -331,6 +338,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
     is_targeted = "targeted" in check_name.lower()
+    is_oracle = "oracle" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     clickhouse_binary = Path(cwd) / "ci/tmp/clickhouse"
@@ -382,6 +390,7 @@ def run_fuzz_job(check_name: str):
         buzzhouse,
         targeted_queries_file=targeted_queries_file,
         compatibility_setting=compatibility_setting,
+        enable_oracle=is_oracle,
     )
     logging.info("Going to run %s", run_command)
 
@@ -477,6 +486,21 @@ def run_fuzz_job(check_name: str):
             or "BuzzHouse fuzzer exception not found, fuzzer issue?"
         )
         info.append(f"ERROR: {error_info}")
+    elif fuzzer_exit_code == 49 and not buzzhouse:
+        # AST fuzzer client called _exit(49) after the server-side oracle
+        # reported a wrong-result mismatch. The fuzzer log contains a clearly
+        # delimited "AST FUZZER ORACLE MISMATCH (fatal)" block with the
+        # reproducer query and the server-side oracle output.
+        status = Result.Status.ERROR
+        error_info = Shell.get_output(
+            f"rg --text -A 30 'AST FUZZER ORACLE MISMATCH' {fuzzer_log}"
+        )
+        if not error_info:
+            error_info = (
+                "AST fuzzer oracle mismatch detected, but the marker block was "
+                "not found in the fuzzer log (see attached fuzzer.log)."
+            )
+        info.append(f"ERROR: AST fuzzer oracle mismatch\n{error_info}")
     else:
         status = Result.Status.ERROR
         # The server was alive, but the fuzzer returned some error. This might
@@ -559,6 +583,13 @@ def run_fuzz_job(check_name: str):
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
         result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
+
+    # Attach logs whenever the fuzzer did not finish cleanly. A clean finish is
+    # exit code 0; any non-zero exit (real failure, oracle mismatch, SIGTERM /
+    # SIGKILL from the FUZZ_TIME_LIMIT timeout wrapper) is informative enough
+    # that we want the artifacts uploaded — otherwise timeouts look like silent
+    # passes with no logs to diagnose them from.
+    if is_failed or fuzzer_exit_code != 0:
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
@@ -567,9 +598,8 @@ def run_fuzz_job(check_name: str):
 
 
 if __name__ == "__main__":
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    args = parser.parse_args()
 
-    run_fuzz_job(check_name)
+    run_fuzz_job(args.check_name)

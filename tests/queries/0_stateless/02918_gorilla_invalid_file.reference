@@ -1,1 +1,7 @@
 Exc
+has 63 leading zero bits and 127 data bits
+CANNOT_DECOMPRESS
+has 0 leading zero bits and 0 data bits
+CANNOT_DECOMPRESS
+9 data bits, which is not a valid split of 8 bits
+CANNOT_DECOMPRESS

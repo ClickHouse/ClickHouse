@@ -7,7 +7,6 @@
 -- per pressure drain, and with a one-byte external threshold the sweeps run per block, so the
 -- query's memory grows by powers of two into gigabytes. The memory limit is far above the
 -- query's honest footprint and only the runaway growth can reach it.
-SET max_rows_to_group_by = 0;
 SET max_memory_usage = 2000000000;
 SET max_threads = 4;
 

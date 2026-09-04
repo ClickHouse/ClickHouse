@@ -102,7 +102,7 @@ SELECT HEX(MD4('abc'));
 ```
 
 ```response title=Response
-┌─hex(MD4('abc'))──────────────────┐
+┌─HEX(MD4('abc'))──────────────────┐
 │ A448017AAF21D8525FC10AE87AA6729D │
 └──────────────────────────────────┘
 ```
@@ -138,7 +138,7 @@ SELECT HEX(MD5('abc'));
 ```
 
 ```response title=Response
-┌─hex(MD5('abc'))──────────────────┐
+┌─HEX(MD5('abc'))──────────────────┐
 │ 900150983CD24FB0D6963F7D28E17F72 │
 └──────────────────────────────────┘
 ```
@@ -210,7 +210,7 @@ SELECT HEX(SHA1('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA1('abc'))─────────────────────────┐
+┌─HEX(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
 ```
@@ -246,7 +246,7 @@ SELECT HEX(SHA224('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA224('abc'))───────────────────────────────────────┐
+┌─HEX(SHA224('abc'))───────────────────────────────────────┐
 │ 23097D223405D8228642A477BDA255B32AADBCE4BDA0B3F7E36C9DA7 │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -282,7 +282,7 @@ SELECT HEX(SHA256('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA256('abc'))───────────────────────────────────────────────┐
+┌─HEX(SHA256('abc'))───────────────────────────────────────────────┐
 │ BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -291,7 +291,7 @@ SELECT HEX(SHA256('abc'));
   ## SHA384
 </div>
 
-도입된 버전: v1.1.0
+도입 버전: v1.1.0
 
 주어진 문자열의 SHA384 해시를 계산합니다.
 
@@ -318,7 +318,7 @@ SELECT HEX(SHA384('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
+┌─HEX(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
 │ CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -327,7 +327,7 @@ SELECT HEX(SHA384('abc'));
   ## SHA512
 </div>
 
-도입된 버전: v1.1.0
+도입 버전: v1.1.0
 
 주어진 문자열의 SHA512 해시를 계산합니다.
 
@@ -354,7 +354,7 @@ SELECT HEX(SHA512('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─HEX(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -363,7 +363,7 @@ SELECT HEX(SHA512('abc'));
   ## SHA512_256
 </div>
 
-도입됨: v1.1.0
+도입 버전: v1.1.0
 
 주어진 문자열의 SHA512&#95;256 해시를 계산합니다.
 
@@ -390,7 +390,7 @@ SELECT HEX(SHA512_256('abc'));
 ```
 
 ```response title=Response
-┌─hex(SHA512_256('abc'))───────────────────────────────────────────┐
+┌─HEX(SHA512_256('abc'))───────────────────────────────────────────┐
 │ 53048E2681941EF99B2E29B76B4C7DABE4C2D0C634FC6D46E0E2F13107E7AF23 │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -434,9 +434,9 @@ SELECT URLHash('https://www.clickhouse.com')
 ```
 
 ```response title=Response
-┌─URLHash('htt⋯house.com')─┐
-│     13614512636072854701 │
-└──────────────────────────┘
+┌─URLHash('https://www.clickhouse.com')─┐
+│                  13614512636072854701 │
+└───────────────────────────────────────┘
 ```
 
 **지정한 수준의 URL 해시**
@@ -447,14 +447,8 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 ```
 
 ```response title=Response
--- https://www.clickhouse.com 의 해시
-┌─URLHash('htt⋯m/docs', 0)─┐
-│     13614512636072854701 │
-└──────────────────────────┘
--- https://www.clickhouse.com/docs 의 해시
-┌─URLHash('htt⋯m/docs', 1)─┐
-│     13167253331440520598 │
-└──────────────────────────┘
+13614512636072854701
+13167253331440520598
 ```
 
 <div id="cityHash64">
@@ -504,7 +498,7 @@ SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ```response title=Response
 ┌─────────────CityHash─┬─type───┐
-│ 12072650598913549138 │ UInt64 │
+│ 17177535963988450974 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
@@ -529,9 +523,9 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 ```
 
 ```response title=Response
-┌─groupBitXor(⋯age, city))─┐
-│     11639977218258521182 │
-└──────────────────────────┘
+┌─groupBitXor(cityHash64(id, name, age, city))─┐
+│                         11639977218258521182 │
+└──────────────────────────────────────────────┘
 ```
 
 <div id="farmFingerprint64">
@@ -574,9 +568,9 @@ SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 
 ```
 
 ```response title=Response
-┌─────FarmFingerprint─┬─type───┐
-│ 5752020380710916328 │ UInt64 │
-└─────────────────────┴────────┘
+┌──────FarmFingerprint─┬─type───┐
+│ 16673609057812504858 │ UInt64 │
+└──────────────────────┴────────┘
 ```
 
 <div id="farmHash64">
@@ -619,9 +613,9 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 ```
 
 ```response title=Response
-┌─────────────FarmHash─┬─type───┐
-│ 18125596431186471178 │ UInt64 │
-└──────────────────────┴────────┘
+┌────────────FarmHash─┬─type───┐
+│ 2663412879246289891 │ UInt64 │
+└─────────────────────┴────────┘
 ```
 
 <div id="gccMurmurHash">
@@ -704,7 +698,7 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 ```
 
 ```response title=Response
-┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
+┌─HEX(halfMD5('abc', 'cde', 'fgh'))─┐
 │ 2C9506B7374CFAF4                  │
 └───────────────────────────────────┘
 ```
@@ -910,7 +904,7 @@ SELECT javaHash(toInt32(123));
 
 ```response title=Response
 ┌─javaHash(toInt32(123))─┐
-│               123      │
+│                    123 │
 └────────────────────────┘
 ```
 
@@ -1151,7 +1145,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 ```response title=Response
 ┌────────────MetroHash─┬─type───┐
-│ 14235658766382344533 │ UInt64 │
+│ 16292826582821303855 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
@@ -1192,7 +1186,7 @@ SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ```response title=Response
 ┌─MurmurHash2─┬─type───┐
-│  3681770635 │ UInt32 │
+│  2947095100 │ UInt32 │
 └─────────────┴────────┘
 ```
 
@@ -1233,7 +1227,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ```response title=Response
 ┌──────────MurmurHash2─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 16479669305841206229 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
@@ -1310,7 +1304,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ```response title=Response
 ┌─MurmurHash3─┬─type───┐
-│     2152717 │ UInt32 │
+│   317985299 │ UInt32 │
 └─────────────┴────────┘
 ```
 
@@ -1351,7 +1345,7 @@ SELECT murmurHash3_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ```response title=Response
 ┌──────────MurmurHash3─┬─type───┐
-│ 11832096901709403633 │ UInt64 │
+│ 11285022984631508790 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
@@ -1878,11 +1872,11 @@ sipHash128(arg1[, arg2, ...])
 **사용 예시**
 
 ```sql title=Query
-SELECT hex(sipHash128('foo', '\x01', 3));
+SELECT hex(sipHash128('foo', '\x01', 3)) AS res;
 ```
 
 ```response title=Response
-┌─hex(sipHash128('foo', '', 3))────┐
+┌─res──────────────────────────────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
 ```
@@ -1923,13 +1917,13 @@ sipHash128Keyed((k0, k1), [arg1, arg2, ...])
 **사용 예시**
 
 ```sql title=Query
-SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
+SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '\x01', 3)) AS res;
 ```
 
 ```response title=Response
-┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ B8467F65C8B4CFD9A5F8BD733917D9BF │
+└──────────────────────────────────┘
 ```
 
 <div id="sipHash128Reference">
@@ -1959,13 +1953,13 @@ sipHash128Reference(arg1[, arg2, ...])
 **사용 예시**
 
 ```sql title=Query
-SELECT hex(sipHash128Reference('foo', '', 3));
+SELECT hex(sipHash128Reference('foo', '\x01', 3)) AS res;
 ```
 
 ```response title=Response
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ C3AA2F3C06A14DBE3742E9107AA9765D │
+└──────────────────────────────────┘
 ```
 
 <div id="sipHash128ReferenceKeyed">
@@ -1996,13 +1990,13 @@ sipHash128ReferenceKeyed((k0, k1), arg1[, arg2, ...])
 **사용 예시**
 
 ```sql title=Query
-SELECT hex(sipHash128Reference('foo', '', 3));
+SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '\x01', 3)) AS res;
 ```
 
 ```response title=Response
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ 1D010CC83FB5460C25B556CE40992E61 │
+└──────────────────────────────────┘
 ```
 
 <div id="sipHash64">
@@ -2051,7 +2045,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ```response title=Response
 ┌──────────────SipHash─┬─type───┐
-│ 11400366955626497465 │ UInt64 │
+│ 11348918044846389429 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
@@ -2088,7 +2082,7 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 ```response title=Response
 ┌─────────────SipHash─┬─type───┐
-│ 8017656310194184311 │ UInt64 │
+│ 8194087499447867747 │ UInt64 │
 └─────────────────────┴────────┘
 ```
 
@@ -2799,7 +2793,7 @@ SELECT hex(xxh3_128('ClickHouse'))
 ```
 
 ```response title=Response
-3A038784C52804B4DBA43A038784C528
+14C27B7BEF95D36FECF5520CA2DAF030
 ```
 
 {/*AUTOGENERATED_END*/}

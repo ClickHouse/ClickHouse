@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from . import Artifact, Job
 from .docker import Docker
@@ -8,12 +8,43 @@ from .utils import Utils
 
 
 class Workflow:
+    # A workflow filter hook normally returns (True, reason) to skip a job or
+    # (False, "") to stay neutral. Returning (False, FILTER_HOOK_FORCE_JOB)
+    # force-includes the job: it is then exempt from the later "filter not
+    # affected jobs" pass, which would otherwise drop it when no changed file
+    # matches its digest_config.
+    FILTER_HOOK_FORCE_JOB = "force"
+
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
         SCHEDULE = "schedule"
         DISPATCH = "dispatch"
         MERGE_QUEUE = "merge_queue"
+
+    class Engine:
+        PRAKTIKA = "praktika"
+        GH_ACTIONS = "GHActions"
+
+    class OrchestratorAI:
+        @dataclass
+        class Config:
+            # Master switch. False means the orchestrator behaves exactly as if
+            # no AI advisor existed for this workflow.
+            enabled: bool = False
+            # Provider selector: registered name ("mock", "anthropic",
+            # "bedrock"), a custom AIProvider subclass, or a ready provider
+            # instance attached directly by the workflow.
+            provider: object = "mock"
+            # Provider-specific model/runtime target. Empty means "use the
+            # provider's default model".
+            model: str = ""
+            # Optional cumulative per-PR token cap (input + output). 0 disables
+            # the cap.
+            pr_token_cap: int = 0
+            # Optional cap on how many CI runs one AI round may span. 0 disables
+            # the cap.
+            max_rounds: int = 0
 
     @dataclass
     class Config:
@@ -25,6 +56,7 @@ class Workflow:
         name: str
         event: str
         jobs: List[Job.Config]
+        engine: str = "praktika"
         branches: List[str] = field(default_factory=list)
         base_branches: List[str] = field(default_factory=list)
         artifacts: List[Artifact.Config] = field(default_factory=list)
@@ -37,6 +69,9 @@ class Workflow:
         enable_automerge: bool = False
         enable_merge_ready_status: bool = False
         enable_gh_summary_comment: bool = False
+        # GitHub Actions engine only: post commit statuses for failed jobs.
+        # Ignored (no-op) on the Praktika engine, which always publishes
+        # workflow/job status via the GitHub Checks API.
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
@@ -56,11 +91,29 @@ class Workflow:
         enable_open_issues_check: bool = False
         # If enabled, CI events will be accumulated and stored, allowing users to subscribe to notifications via the Slack Praktika app
         enable_slack_feed: bool = False
+        # Per-workflow orchestrator AI configuration. ``None`` disables it.
+        ai_orchestrator: Optional["Workflow.OrchestratorAI.Config"] = None
+        # Optional orchestrator routing tag. Empty means the default/non-base
+        # orchestrator pool. Workflows tagged "base" are only picked up by the
+        # base orchestrator pool.
+        orchestrator_filter: str = ""
+        # Optional runner label override for Praktika-native jobs such as
+        # Config Workflow and Finish Workflow.
+        native_job_runs_on: List[str] = field(default_factory=list)
+        # Simple mode: the job is not required to dump a Result and praktika
+        # derives the job outcome purely from the script exit code
+        # (0 -> OK, non-zero -> FAIL). Setup-env / pre-run failures and
+        # timeouts still produce ERROR — those are infra failures, not job
+        # outcomes. For richer reporting (sub-results, per-test cases, custom
+        # info, links, files), the job should produce its own Result via the
+        # Result API instead of relying on this flag.
+        enable_exit_code_result: bool = False
         # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
         job_aliases: Dict[str, str] = field(default_factory=dict)
-        # If set, every runs_on label (across user-defined and praktika-injected jobs) is
-        # prefixed with this string, except "self-hosted". The intent is to route the
-        # workflow to an isolated fleet of runners that carry the prefixed labels.
+        # Backward-compatible extension bucket for future workflow-level knobs.
+        ext: Dict[str, Any] = field(default_factory=dict)
+        # If set, every runs_on label across user-defined and Praktika-injected
+        # jobs is prefixed with this string, except "self-hosted".
         runs_on_label_prefix: str = ""
         # If set, GHAuth mints the GitHub token for this workflow's jobs by
         # invoking this AWS Lambda instead of Settings.GH_AUTH_LAMBDA_NAME. Lets

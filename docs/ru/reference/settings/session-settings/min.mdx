@@ -126,6 +126,16 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Чтобы отключить split узлов `Resize`, установите для этой настройки значение 0. Это предотвратит split узлов `Resize` при генерации конвейера, и они сохранят исходную структуру без разделения на более мелкие узлы.
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Новая настройка для задания минимального оценочного отношения числа строк результата JOIN к числу строк со стороны построения, при котором полезная нагрузка hash join преобразуется в построчный формат. 0 означает, что преобразование разрешено всегда."}]}]} />
+
+Минимальное оценочное отношение числа строк результата JOIN к числу строк со стороны построения, при котором полезная нагрузка hash join преобразуется в построчный формат. 0 означает, что преобразование разрешено всегда.
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>
