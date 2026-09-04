@@ -151,11 +151,13 @@ public:
         sort();
     }
 
-    /// Throws if any sample's timestamp is outside the range.
+    /// Throws if any sample's timestamp is outside the closed range.
+    /// For a sorted buffer, checking the first and last timestamps is sufficient.
     template <typename RangeType>
     void checkTimestampsInRange(const RangeType & range) const
     {
-        if (sorted && !buffer.empty() && range.contains(buffer.front().first) && range.contains(buffer.back().first))
+        if (sorted && !buffer.empty() && range.contains(buffer.front().first)
+            && (buffer.size() == 1 || range.contains(buffer.back().first)))
             return;
 
         forEachSample([&range](TimestampType timestamp, ValueType)

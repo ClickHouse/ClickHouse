@@ -5,9 +5,9 @@
     </settings>
 
     <!--
-        Benchmarks deserialization of timeSeries*ToGrid aggregate states. The input rows are ordered by series and
-        timestamp, so every state is serialized with a sorted sample buffer and its first and last timestamps prove
-        that all samples belong to their bucket ranges. This isolates the endpoint fast path in
+        Benchmarks deserialization of timeSeries*ToGrid aggregate states. Each series receives timestamps in
+        ascending order, so every state is serialized with a sorted sample buffer and its first and last timestamps
+        prove that all samples belong to their bucket ranges. This isolates the endpoint fast path in
         AggregateFunctionTimeseriesSamples::checkTimestampsInRange from the grid calculation itself.
     -->
 
@@ -15,7 +15,7 @@
         CREATE TABLE ts_deserialization
         (
             id UInt16,
-            state AggregateFunction(timeSeriesRateToGrid(0, 100000, 100, 300), DateTime, Float64)
+            state AggregateFunction(timeSeriesRateToGrid(0, 10000, 100, 300), DateTime, Float64)
         )
         ENGINE = MergeTree
         ORDER BY id
@@ -26,7 +26,7 @@
         INSERT INTO ts_deserialization
         SELECT
             (number % 1000)::UInt16 AS id,
-            timeSeriesRateToGridState(0, 100000, 100, 300)(
+            timeSeriesRateToGridState(0, 10000, 100, 300)(
                 toDateTime(intDiv(number, 1000)),
                 (number % 1000)::Float64) AS state
         FROM numbers(1000 * 10000)
