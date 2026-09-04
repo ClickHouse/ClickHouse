@@ -1,14 +1,20 @@
--- map key: the index is used for a set that stores no elements
+-- map key: no granule is pruned for a mutable `ENGINE = Set`
+Parts: 1 | Granules: 3
+Granules: 3/3
+-- an `IN` set of the same shape that the query owns is still pruned
 Parts: 1 | Granules: 1
 Granules: 3/3
 Granules: 1/3
--- and the answer is the same as without the index
+-- and the answer is the same either way
 0
 0
--- JSON path: the index is used for a set that stores no elements
+-- JSON path: no granule is pruned for a mutable `ENGINE = Set`
+Parts: 1 | Granules: 3
+Granules: 3/3
+-- an `IN` set of the same shape that the query owns is still pruned
 Parts: 1 | Granules: 1
 Granules: 3/3
 Granules: 1/3
--- and the answer is the same as without the index
+-- and the answer is the same either way
 0
 0
