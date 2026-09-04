@@ -34,7 +34,7 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from github.GithubException import GithubException
 
@@ -54,8 +54,14 @@ from env_helper import (
     TEMP_PATH,
 )
 from get_robot_token import get_best_robot_token
-from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
-from github_helper import GitHub, PullRequest, PullRequests, Repository
+from git_helper import GIT_PREFIX, git_runner, is_shallow, removeprefix, stash
+from github_helper import (
+    GitHub,
+    PullRequest,
+    PullRequestInfo,
+    PullRequests,
+    Repository,
+)
 from pr_info import Labels
 from report import GITHUB_JOB_URL
 from s3_helper import S3Helper
@@ -666,6 +672,10 @@ class BackportPRs:
         self.release_branches: List[str] = []
         self.labels_to_backport: List[str] = []
         self.prs_for_backport = []  # type: PullRequests
+        # Original PRs that `reconcile_backport_branches` found stranded. They are
+        # unreachable through `receive_prs_for_backport`, so they are processed in
+        # addition to its search result.
+        self.prs_to_reprocess = []  # type: PullRequests
         self.error = None  # type: Optional[Exception]
 
     @property
@@ -783,8 +793,212 @@ class BackportPRs:
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
         )
 
+    def backport_branch_carries_changes(self, release: str, branch: str) -> bool:
+        """
+        Whether a backport branch has anything to open a backport PR for.
+
+        A freshly created backport branch is the release tip plus a
+        `merge -s ours` of the original PR's first parent, so it holds the
+        release branch's tree unchanged until a cherry-pick is merged into it.
+        The comparison is against the merge base -- the same commit
+        `create_backport` squashes onto -- and not against the release tip, so
+        the answer does not flip as the release branch moves on.
+        """
+        merge_base = git_runner(
+            f"git merge-base {self.remote}/{release} {self.remote}/{branch}"
+        )
+        return bool(
+            git_runner(f"git diff --name-only {merge_base} {self.remote}/{branch}")
+        )
+
+    def reconcile_backport_branches(self) -> None:
+        """
+        Recover backports whose work is finished but which have no backport PR.
+
+        A backport PR is only ever created while processing the ORIGINAL PR, and
+        the original is dropped from `receive_prs_for_backport` for good once it
+        carries `pr-backports-created`. A cherry-pick PR merged after that label
+        was set therefore leaves its resolution stranded on the `backport/*`
+        branch with nothing pointing at it. `check_open_prs` is the only existing
+        recovery path and it looks exclusively at cherry-pick PRs that are open at
+        the moment a run starts, so a reopen and a merge that both fall between
+        two runs are lost with no trace.
+
+        Every backport reaches a release branch through a
+        `backport/<release>/<PR>` branch, which makes the set of those branches a
+        complete work list. Anything that carries changes and has no backport PR
+        is unstuck here, independently of when, how fast or by whom the
+        cherry-pick was merged.
+        """
+        # branch -> (release branch, original PR number)
+        branches = {}  # type: Dict[str, Tuple[str, int]]
+        for release in self.release_branches:
+            refs = git_runner(
+                "git for-each-ref --format='%(refname:short)' "
+                f"'refs/remotes/{self.remote}/backport/{release}/*'"
+            ).split("\n")
+            for ref in refs:
+                branch = removeprefix(ref, f"{self.remote}/")
+                number = branch.rsplit("/", maxsplit=1)[-1]
+                if not number.isdigit():
+                    # Not an automation branch, e.g. `backport/release/26.2/wip`
+                    continue
+                branches[branch] = (release, int(number))
+
+        if not branches:
+            return
+
+        # One GraphQL request per 50 branches, instead of a REST request each
+        backport_prs = self.gh.get_pull_states_by_head_refs(
+            self._repo_name, sorted(branches)
+        )
+        stranded = [branch for branch in sorted(branches) if not backport_prs[branch]]
+        logging.info(
+            "Reconciliation: %s backport branches for active releases, "
+            "%s without a backport PR",
+            len(branches),
+            len(stranded),
+        )
+        if not stranded:
+            return
+
+        # A stranded branch is only actionable when the cherry-pick work on it is
+        # done: an open cherry-pick PR is still waiting for a human, and a closed
+        # one is a decision not to backport. A branch with no cherry-pick PR at
+        # all was pushed by the conflict-free path, which means `create_pull` did
+        # not run or did not survive.
+        cherrypick_prs = self.gh.get_pull_states_by_head_refs(
+            self._repo_name,
+            [ReleaseBranch.cp_branch(*branches[branch]) for branch in stranded],
+        )
+        # original PR number -> release branches it is stranded on
+        to_recover = {}  # type: Dict[int, List[str]]
+        for branch in stranded:
+            release, number = branches[branch]
+            states = [
+                state
+                for _, state in cherrypick_prs[ReleaseBranch.cp_branch(release, number)]
+            ]
+            if states and "MERGED" not in states:
+                continue
+            try:
+                carries_changes = self.backport_branch_carries_changes(release, branch)
+            except CalledProcessError as e:
+                # This is a safety net for the normal path that runs after it, so
+                # one unreadable branch must not stop the rest of the run
+                logging.error("Cannot inspect the branch %s: %s", branch, e)
+                self.error = e
+                continue
+            if not carries_changes:
+                # Nothing was applied to the branch yet, so there is no backport
+                # to open a PR for. Creating one would produce an empty PR.
+                continue
+            logging.warning(
+                "Backport branch %s carries changes but has no backport PR", branch
+            )
+            to_recover.setdefault(number, []).append(release)
+
+        if not to_recover:
+            return
+
+        general_backport_labels = {
+            Labels.MUST_BACKPORT,
+            Labels.MUST_BACKPORT_FORCE,
+        } | Labels.AUTO_BACKPORT
+        infos = self.gh.get_pulls_lightweight_by_numbers(
+            self._repo_name, sorted(to_recover)
+        )
+        for number, releases in sorted(to_recover.items()):
+            try:
+                self._recover_stranded_pr(
+                    number, releases, infos.get(number), general_backport_labels
+                )
+            except Exception as e:
+                logging.error("Cannot recover the PR #%s: %s", number, e)
+                self.error = e
+
+    def _recover_stranded_pr(
+        self,
+        number: int,
+        releases: List[str],
+        info: Optional[PullRequestInfo],
+        general_backport_labels: Iterable[str],
+    ) -> None:
+        """Put one stranded original PR back into the backport process."""
+        if info is None:
+            logging.error("Cannot fetch the original PR #%s, skipping", number)
+            return
+        if not info.merged:
+            # `create_cherrypick` needs the merge commit. A backport branch for an
+            # unmerged PR was not created by this automation.
+            logging.info("PR #%s is not merged, skipping", number)
+            return
+
+        # The labels may have been removed deliberately since the branch was
+        # created. Recreating a backport nobody asked for would be worse than
+        # leaving the branch alone, so re-check the targets. Unlike in
+        # `process_pr`, the labels are not guaranteed by the search here, so the
+        # no-label case has to be excluded before `select_backport_branches`
+        # asserts on it.
+        labels = set(info.label_names)
+        if not labels & set(general_backport_labels) and not any(
+            label_version(label) is not None for label in labels
+        ):
+            logging.info(
+                "PR #%s carries no backport label anymore, leaving the branch(es) alone",
+                number,
+            )
+            return
+        targets = select_backport_branches(
+            info.label_names,
+            self.release_branches,
+            general_backport_labels=set(general_backport_labels),
+            force_backport_label=Labels.MUST_BACKPORT_FORCE,
+        )
+        stale = [release for release in releases if release not in targets]
+        if stale:
+            logging.info(
+                "PR #%s no longer targets %s, leaving the branch(es) alone",
+                number,
+                ", ".join(stale),
+            )
+        wanted = [release for release in releases if release in targets]
+        if not wanted:
+            return
+
+        logging.info(
+            "PR #%s is stranded on %s, putting it back into the process",
+            number,
+            ", ".join(wanted),
+        )
+        if self.dry_run:
+            logging.info("DRY RUN: would reprocess PR #%s", number)
+            return
+
+        # Not `get_pull_cached`: the label set must be current, and it is about to
+        # be edited
+        pr = self.repo.get_pull(number)
+        if Labels.PR_BACKPORTS_CREATED in [label.name for label in pr.labels]:
+            # Dropping the label also makes the normal search pick the PR up on
+            # the next run, so the recovery is retried if this run dies before the
+            # backport PR is created
+            pr.remove_from_labels(Labels.PR_BACKPORTS_CREATED)
+            logging.info(
+                "Removed label %s from PR #%s", Labels.PR_BACKPORTS_CREATED, number
+            )
+        self.prs_to_reprocess.append(pr)
+
     def process_backports(self):
-        for pr in self.prs_for_backport:
+        prs = list(self.prs_for_backport)
+        numbers = {pr.number for pr in prs}
+        for pr in self.prs_to_reprocess:
+            # The search may already return a stranded PR, e.g. when its label was
+            # dropped by an earlier run
+            if pr.number not in numbers:
+                prs.append(pr)
+                numbers.add(pr.number)
+
+        for pr in prs:
             try:
                 self.process_pr(pr)
             except Exception as e:
@@ -1086,6 +1300,9 @@ def main():
     bpp.gh.cache_path = temp_path / "gh_cache"
     bpp.receive_release_prs()
     bpp.update_local_release_branches()
+    # Before the search, so a recovered PR is processed in this very run: it is
+    # invisible to `receive_prs_for_backport` until GitHub reindexes the label
+    bpp.reconcile_backport_branches()
     bpp.receive_prs_for_backport()
     bpp.process_backports()
     gh_cache.upload()

@@ -389,6 +389,45 @@ class GitHub(github.Github):
                 result[head] = oid
         return result
 
+    def get_pull_states_by_head_refs(
+        self, repo_name: str, head_refs: List[str]
+    ) -> Dict[str, List[Tuple[int, str]]]:
+        """For each head branch name, return `(number, state)` of every PR opened
+        from it, batching many head refs per GraphQL request.
+
+        `state` is GitHub's `PullRequestState`: `OPEN`, `CLOSED` or `MERGED`.
+        This is the general form of `get_backport_merge_commits`, which answers
+        only "was a PR from this branch merged", and it replaces one REST
+        `get_pulls(head=...)` request per branch.
+
+        A branch with no PR at all maps to an empty list, so every requested ref
+        is present in the result and callers need no `.get` with a default.
+        """
+        owner, name = repo_name.split("/")
+        result: Dict[str, List[Tuple[int, str]]] = {ref: [] for ref in head_refs}
+        batch_size = 50
+        for start in range(0, len(head_refs), batch_size):
+            batch = head_refs[start : start + batch_size]
+            aliases = " ".join(
+                f'b{i}: pullRequests(headRefName: "{head}", first: 10) '
+                "{ nodes { number state } }"
+                for i, head in enumerate(batch)
+            )
+            gql = (
+                "query($owner:String!, $name:String!) {"
+                f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
+                "}"
+            )
+            repository = (
+                self._graphql(gql, {"owner": owner, "name": name})["repository"] or {}
+            )
+            for i, head in enumerate(batch):
+                node = repository.get(f"b{i}") or {}
+                result[head] = [
+                    (pr["number"], pr["state"]) for pr in (node.get("nodes") or [])
+                ]
+        return result
+
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():
             if data["remaining"] == 0:
