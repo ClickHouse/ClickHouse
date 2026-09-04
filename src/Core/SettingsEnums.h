@@ -470,6 +470,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     S3_TABLES,
     ICEBERG_DELTA_SHARING,
     ICEBERG_HORIZON,
+    ICEBERG_JDBC,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
