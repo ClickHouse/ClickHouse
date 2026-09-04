@@ -2,9 +2,9 @@
 -- Johnson-Lindenstrauss) cosine estimator that, like `rabitq`, drops the vector norm and is therefore cosine-only.
 -- This checks the whole path - encode, the per-part codes subcolumn, and the two-stage shortlist rewrite ranked with
 -- `turboquant` codes - stays correct (exact top-k under a full-coverage shortlist, a high-recall shortlist, and
--- self-match). The codec is gated behind `allow_experimental_codecs`.
+-- self-match). The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
 -- the test harness randomizes the latter, which would shrink the shortlist and make the exact/recall checks flaky. Pin it.

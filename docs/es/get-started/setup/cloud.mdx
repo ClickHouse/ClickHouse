@@ -1,333 +1,349 @@
 ---
 slug: /getting-started/quick-start/cloud
-sidebarTitle: 'Cloud'
-keywords: ['ClickHouse', 'instalación', 'primeros pasos', 'inicio rápido']
+sidebarTitle: 'Inicio rápido en Cloud'
+keywords: ['ClickHouse', 'instalación', 'primeros pasos', 'inicio rápido', 'clickhousectl', 'CLI', 'automatización', 'agentes de IA']
 title: 'Inicio rápido de ClickHouse Cloud'
 description: 'Guía de inicio rápido para ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import CloudQuickstartCLI from "/snippets/es/quickstarts/_cloud_quickstart_cli.mdx";
 
-> La forma más rápida y sencilla de empezar a usar ClickHouse es crear un nuevo
-> servicio en [ClickHouse Cloud](https://console.clickhouse.cloud). En esta guía de inicio rápido, lo configurarás
-> en tres sencillos pasos.
+<Visibility for="agents">
+  <CloudQuickstartCLI />
+</Visibility>
 
-<Steps>
-  <Step title="Crear un servicio de ClickHouse" id="1-create-a-clickhouse-service">
-    Para crear un servicio gratuito de ClickHouse en [ClickHouse Cloud](https://console.clickhouse.cloud), solo tienes que registrarte siguiendo estos pasos:
+<Visibility for="humans">
+  <View title="UI de Cloud">
+    > La forma más rápida y sencilla de empezar a usar ClickHouse es crear un nuevo
+    > servicio en [ClickHouse Cloud](https://console.clickhouse.cloud). En esta guía de inicio rápido, te ayudaremos a configurarlo
+    > en tres sencillos pasos.
 
-    * Crea una cuenta en la [página de registro](https://console.clickhouse.cloud/signUp)
-    * Puedes elegir registrarte con tu correo electrónico o mediante Google SSO, Microsoft SSO, AWS Marketplace, Google Cloud o Microsoft Azure
-    * Si te registras con un correo electrónico y una contraseña, recuerda verificar tu dirección de correo en un plazo de 24 h mediante el enlace que recibirás por correo electrónico
-    * Inicia sesión con el nombre de usuario y la contraseña que acabas de crear
+    <Steps>
+      <Step title="Crear un servicio de ClickHouse" id="1-create-a-clickhouse-service">
+        Para crear un servicio gratuito de ClickHouse en [ClickHouse Cloud](https://console.clickhouse.cloud), solo tienes que registrarte siguiendo estos pasos:
 
-    <Image img="/images/_snippets/signup_page.webp" size="md" alt="Seleccionar plan" border />
+        * Crea una cuenta en la [página de registro](https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start)
+        * Puedes registrarte con tu correo electrónico o mediante Google SSO, Microsoft SSO, AWS Marketplace, Google Cloud o Microsoft Azure
+        * Si te registras con correo electrónico y contraseña, recuerda verificar tu dirección de correo electrónico en las siguientes 24 h mediante el enlace que recibirás por correo electrónico
+        * Inicia sesión con el nombre de usuario y la contraseña que acabas de crear
 
-    <br />
+        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="Seleccionar plan" border />
 
-    Una vez que hayas iniciado sesión, ClickHouse Cloud inicia el asistente de configuración, que te guía en la creación de un nuevo servicio de ClickHouse. Selecciona la región en la que quieres desplegar el servicio y asigna un nombre a tu nuevo servicio:
+        <br />
 
-    <Image img="/images/_snippets/createservice1.webp" size="md" alt="Nuevo servicio de ClickHouse" border />
+        Una vez que hayas iniciado sesión, ClickHouse Cloud inicia el asistente de onboarding, que te guía en la creación de un nuevo servicio de ClickHouse. Selecciona la región en la que deseas desplegar el servicio y asigna un nombre al nuevo servicio:
 
-    <br />
+        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="Nuevo servicio de ClickHouse" border />
 
-    De forma predeterminada, las nuevas organizaciones se asignan al nivel Scale y crearán 3 réplicas, cada una con 4 vCPU y 16 GiB de RAM. El [escalado vertical automático](/es/products/cloud/features/autoscaling/vertical) estará habilitado de forma predeterminada en el nivel Scale. Puedes cambiar el nivel de la organización más adelante en la página &#39;Plans&#39;.
+        <br />
 
-    Si es necesario, personaliza los recursos del servicio especificando un tamaño mínimo y máximo entre los que puedan escalar las réplicas. Cuando estés listo, selecciona `Create service`.
+        De forma predeterminada, las nuevas organizaciones se asignan al nivel Scale y crearán 3 réplicas, cada una con 4 vCPU y 16 GiB de RAM. El [autoescalado vertical](/es/products/cloud/features/autoscaling/vertical) estará habilitado de forma predeterminada en el nivel Scale. Más adelante, puedes cambiar el nivel de la organización en la página «Planes».
 
-    <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="Límites de escalado" border />
+        Personaliza los recursos del servicio si es necesario, especificando los tamaños mínimo y máximo entre los que podrán escalar las réplicas. Cuando estés listo, selecciona `Create service`.
 
-    <br />
+        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="Límites de escalado" border />
 
-    ¡Enhorabuena! Tu servicio de ClickHouse Cloud ya está en funcionamiento y la configuración inicial se ha completado. Sigue leyendo para obtener más información sobre cómo empezar a ingestar y consultar tus datos.
-  </Step>
+        <br />
 
-  <Step title="Conectarse a ClickHouse" id="2-connect-to-clickhouse">
-    Hay 2 formas de conectarse a ClickHouse:
+        ¡Felicidades! Tu servicio de ClickHouse Cloud ya está en funcionamiento y el onboarding se ha completado. Sigue leyendo para obtener más información sobre cómo empezar a ingestar y consultar tus datos.
+      </Step>
 
-    * Conectarse mediante nuestra consola SQL web
-    * Conectarse con su aplicación
+      <Step title="Conectar a ClickHouse" id="2-connect-to-clickhouse">
+        Hay 2 formas de conectarse a ClickHouse:
 
-    <br />
+        * Conectarse mediante nuestra consola SQL web
+        * Conectarse desde su aplicación
 
-    ### Conectarse mediante la consola SQL
+        <br />
 
-    Para empezar rápidamente, ClickHouse ofrece una consola SQL web a la que se le redirigirá al completar el onboarding.
+        ### Conectarse mediante la consola SQL
 
-    <Image img="/images/_snippets/createservice8.webp" size="md" alt="Consola SQL" border />
+        Para empezar rápidamente, ClickHouse ofrece una consola SQL web a la que se le redirigirá al completar el proceso de onboarding.
 
-    Cree una pestaña de consulta e introduzca una consulta sencilla para verificar que la conexión funciona:
+        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="Consola SQL" border />
 
-    ```sql
-    SHOW databases
-    ```
+        Cree una pestaña de consulta e introduzca una consulta sencilla para verificar que la conexión funciona:
 
-    Deberías ver 4 bases de datos en la lista, además de las que hayas agregado.
+        ```sql
+        SHOW databases
+        ```
 
-    <Image img="/images/_snippets/show_databases.webp" size="md" alt="SQL Console" border />
+        Deberías ver 4 bases de datos en la lista, además de las que hayas añadido.
 
-    <br />
+        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
 
-    Eso es todo: ¡ya estás listo para empezar a usar tu nuevo servicio de ClickHouse!
+        <br />
 
-    ### Conéctate desde tu aplicación
+        Eso es todo; ¡ya puedes empezar a usar tu nuevo servicio de ClickHouse!
 
-    Pulsa el botón Conectar en el menú de navegación. Se abrirá una ventana modal con las credenciales de tu servicio y un conjunto de instrucciones sobre cómo conectarte mediante tu interfaz o tus clientes para lenguajes.
+        ### Conecta tu aplicación
 
-    <Image img="/images/_snippets/service_connect.webp" size="md" alt="Conectar al servicio" border />
+        Pulsa el botón Conectar en el menú de navegación. Se abrirá un cuadro de diálogo con las credenciales de tu servicio y un conjunto de instrucciones para conectarte mediante tu interfaz o client de lenguaje.
 
-    <br />
+        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Conexión al servicio" border />
 
-    Si no ves el cliente para tu lenguaje, quizá quieras consultar nuestra lista de [Integrations](/es/integrations/home).
-  </Step>
+        <br />
 
-  <Step title="Agregar datos" id="3-add-data">
-    ¡ClickHouse es mejor con datos! Existen múltiples formas de agregar datos y la mayoría están disponibles en la página de Data Sources, a la que se puede acceder desde el menú de navegación.
+        Si no ves tu client de lenguaje, quizá te interese consultar nuestra lista de [Integrations](/es/integrations/home).
+      </Step>
 
-    <Image img="/images/_snippets/data_sources.webp" size="md" alt="Fuentes de datos" border />
+      <Step title="Añadir datos" id="3-add-data">
+        ¡ClickHouse es mejor con datos! Existen múltiples formas de añadir datos y la mayoría están disponibles en la página Data Sources, accesible desde el menú de navegación.
 
-    <br />
+        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="Fuentes de datos" border />
 
-    Puede cargar datos mediante los siguientes métodos:
+        <br />
 
-    * Configura un ClickPipe para empezar a ingestar datos desde fuentes como S3, Postgres, Kafka y GCS
-    * Usa la consola SQL
-    * Usa el cliente de ClickHouse
-    * Sube un archivo  - los formatos aceptados incluyen JSON, CSV y TSV
-    * Sube datos desde la URL de un archivo
+        Puede cargar datos mediante los siguientes métodos:
 
-    ### ClickPipes
+        * Configure un ClickPipe para empezar a ingerir datos desde fuentes como S3, Postgres, Kafka y GCS
+        * Use la consola SQL
+        * Use el cliente de ClickHouse
+        * Cargue un archivo  - los formatos admitidos incluyen JSON, CSV y TSV
+        * Cargue datos desde la URL de un archivo
 
-    [ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración administrada que hace que la ingesta de datos desde un conjunto diverso de fuentes sea tan sencilla como pulsar unos pocos botones. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse tanto para necesidades de transmisión a largo plazo como para trabajos puntuales de carga de datos.
+        ### ClickPipes
 
-    <Image img="/images/_snippets/select_data_source.webp" size="md" alt="Seleccionar fuente de datos" border />
+        [ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración gestionada que permite ingerir datos desde una gran variedad de fuentes con solo unos pocos clics. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse tanto para necesidades de transmisión a largo plazo como para una carga de datos puntual.
 
-    <br />
+        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="Seleccionar fuente de datos" border />
 
-    ### Agregar datos mediante la SQL Console
+        <br />
 
-    Al igual que la mayoría de los sistemas de gestión de bases de datos, ClickHouse agrupa lógicamente las tablas en **bases de datos**. Use el comando [`CREATE DATABASE`](/es/reference/statements/create/database) para crear una nueva base de datos en ClickHouse:
+        ### Añadir datos mediante la Consola SQL
 
-    ```sql
-    CREATE DATABASE IF NOT EXISTS helloworld
-    ```
+        Como la mayoría de los sistemas de gestión de bases de datos, ClickHouse agrupa lógicamente las tablas en **bases de datos**. Utilice el comando [`CREATE DATABASE`](/es/reference/statements/create/database) para crear una nueva base de datos en ClickHouse:
 
-    Ejecuta el siguiente comando para crear una tabla llamada `my_first_table` en la base de datos `helloworld`:
+        ```sql
+        CREATE DATABASE IF NOT EXISTS helloworld
+        ```
 
-    ```sql
-    CREATE TABLE helloworld.my_first_table
-    (
-        user_id UInt32,
-        message String,
-        timestamp DateTime,
-        metric Float32
-    )
-    ENGINE = MergeTree()
-    PRIMARY KEY (user_id, timestamp)
-    ```
+        Ejecute el siguiente comando para crear una tabla llamada `my_first_table` en la base de datos `helloworld`:
 
-    En el ejemplo anterior, `my_first_table` es una tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) con cuatro columnas:
+        ```sql
+        CREATE TABLE helloworld.my_first_table
+        (
+            user_id UInt32,
+            message String,
+            timestamp DateTime,
+            metric Float32
+        )
+        ENGINE = MergeTree()
+        PRIMARY KEY (user_id, timestamp)
+        ```
 
-    * `user_id`:  un entero sin signo de 32 bits ([UInt32](/es/reference/data-types/int-uint))
-    * `message`: un tipo de dato [String](/es/reference/data-types/string), que sustituye a tipos como `VARCHAR`, `BLOB`, `CLOB` y otros de otros sistemas de bases de datos
-    * `timestamp`: un valor [DateTime](/es/reference/data-types/datetime) que representa un instante en el tiempo
-    * `metric`: un número de coma flotante de 32 bits ([Float32](/es/reference/data-types/float))
+        En el ejemplo anterior, `my_first_table` es una tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) con cuatro columnas:
 
-    <Info>
-      **Motores de tabla**
+        * `user_id`: un entero sin signo de 32 bits ([UInt32](/es/reference/data-types/int-uint))
+        * `message`: un tipo de datos [String](/es/reference/data-types/string) que sustituye tipos como `VARCHAR`, `BLOB`, `CLOB` y otros de otros sistemas de bases de datos
+        * `timestamp`: un valor [DateTime](/es/reference/data-types/datetime) que representa un instante temporal
+        * `metric`: un número de coma flotante de 32 bits ([Float32](/es/reference/data-types/float))
 
-      Los motores de tabla determinan:
+        <Info>
+          **Motores de tabla**
 
-      * Cómo y dónde se almacenan los datos
-      * Qué consultas se admiten
-      * Si los datos se replican o no
+          Los motores de tabla determinan:
 
-      <br />
+          * Cómo y dónde se almacenan los datos
+          * Qué consultas se admiten
+          * Si los datos se replican o no
 
-      Hay muchos motores de tabla para elegir, pero para una tabla sencilla en un servidor ClickHouse de un solo nodo, [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) suele ser la opción más adecuada.
-    </Info>
+          <br />
 
-    #### Breve introducción a las claves primarias
+          Hay muchos motores de tabla entre los que elegir, pero para una tabla sencilla en un único servidor ClickHouse, [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) será probablemente la opción adecuada.
+        </Info>
 
-    Antes de continuar, es importante entender cómo funcionan las claves primarias en ClickHouse (¡la implementación
-    de las claves primarias puede resultar sorprendente!):
+        #### Breve introducción a las claves primarias
 
-    * las claves primarias en ClickHouse ***no son únicas*** para cada fila de una tabla
+        Antes de seguir adelante, es importante entender cómo funcionan las claves primarias en ClickHouse (¡la implementación
+        de las claves primarias puede resultar sorprendente!):
 
-    La clave primaria de una tabla de ClickHouse determina cómo se ordenan los datos al escribirse en disco. Cada 8.192 filas o 10 MB de
-    datos (denominado **granularidad de índice**) crea una entrada en el archivo de índice de clave primaria. Este concepto de granularidad
-    crea un **índice disperso** que cabe fácilmente en memoria, y los gránulos representan una franja de la cantidad mínima de
-    datos de columna que se procesa durante las consultas `SELECT`.
+        * las claves primarias de ClickHouse ***no son únicas*** para cada fila de una tabla
 
-    La clave primaria puede definirse mediante el parámetro `PRIMARY KEY`. Si se define una tabla sin especificar un `PRIMARY KEY`,
-    la clave pasa a ser la tupla indicada en la cláusula `ORDER BY`. Si se especifican tanto `PRIMARY KEY` como `ORDER BY`, la clave primaria debe ser un subconjunto del orden de clasificación.
+        La clave primaria de una tabla de ClickHouse determina cómo se ordenan los datos cuando se escriben en disco. Cada 8.192 filas o 10 MB de
+        datos (denominado **granularidad del índice**) crea una entrada en el archivo del índice de la clave primaria. Este concepto de granularidad
+        genera un **índice disperso** que cabe fácilmente en memoria, y los gránulos representan una franja de la menor cantidad de
+        datos de columna que se procesa durante las consultas `SELECT`.
 
-    La clave primaria es también la clave de ordenación, que es una tupla de `(user_id, timestamp)`. Por lo tanto, los datos almacenados en cada archivo de columna estarán ordenados por `user_id` y, a continuación, por `timestamp`.
+        La clave primaria puede definirse mediante el parámetro `PRIMARY KEY`. Si define una tabla sin especificar una `PRIMARY KEY`,
+        la clave pasa a ser la tupla indicada en la cláusula `ORDER BY`. Si especifica tanto una `PRIMARY KEY` como un `ORDER BY`, la clave primaria debe ser un subconjunto del orden de clasificación.
 
-    Para profundizar en los conceptos fundamentales de ClickHouse, consulte [&quot;Conceptos fundamentales&quot;](/es/concepts/core-concepts/index).
+        La clave primaria también es la clave de ordenación, que es una tupla de `(user_id, timestamp)`. Por lo tanto, los datos almacenados en cada
+        archivo de columna estarán ordenados por `user_id` y luego por `timestamp`.
 
-    #### Insertar datos en tu tabla
+        Para profundizar en los conceptos fundamentales de ClickHouse, consulte [&quot;Conceptos fundamentales&quot;](/es/concepts/core-concepts/index).
 
-    Puede utilizar el conocido comando [`INSERT INTO TABLE`](/es/reference/statements/insert-into) con ClickHouse, pero es importante entender que cada inserción en una tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) provoca que se cree una **parte** en el almacenamiento.
+        #### Inserte datos en su tabla
+
+        En ClickHouse puede usar el conocido comando [`INSERT INTO TABLE`](/es/reference/statements/insert-into), pero es importante tener en cuenta que cada inserción en una tabla [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) genera una **part** en el almacenamiento.
+
+        <Tip>
+          **Práctica recomendada de ClickHouse**
+
+          Inserte una gran cantidad de filas por lote: decenas de miles o incluso millones de
+          filas a la vez. No se preocupe: ClickHouse puede gestionar fácilmente ese volumen y le [ahorrará dinero](/es/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous) al enviar menos solicitudes de escritura a su servicio.
+        </Tip>
+
+        <br />
+
+        Incluso en un ejemplo sencillo, insertemos más de una fila a la vez:
+
+        ```sql
+        INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+            (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
+            (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
+            (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
+            (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
+        ```
+
+        <Note>
+          Tenga en cuenta que la columna `timestamp` se rellena mediante diversas funciones de [**Date**](/es/reference/data-types/date) y [**DateTime**](/es/reference/data-types/datetime). ClickHouse cuenta con cientos de funciones útiles que puede [consultar en la sección **Functions**](/es/reference/functions/index).
+        </Note>
+
+        Verifiquemos que ha funcionado:
+
+        ```sql
+        SELECT * FROM helloworld.my_first_table
+        ```
+
+        ### Añadir datos con ClickHouse Client
+
+        También puede conectarse a su servicio de ClickHouse Cloud mediante una herramienta de línea de comandos llamada [**clickhouse client**](/es/concepts/features/interfaces/client). Haga clic en `Connect` en el menú de la izquierda para acceder a estos detalles. En el cuadro de diálogo, seleccione `Native` en la lista desplegable:
+
+        <Image img="/images/_snippets/client_details.webp" size="lg" alt="Detalles de conexión de clickhouse client" border />
+
+        <br />
+
+        1. Instale [ClickHouse](/es/concepts/features/interfaces/cli).
+
+        2. Ejecute el comando y sustituya el nombre de host, el nombre de usuario y la contraseña por los suyos:
+
+        ```bash
+        ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
+        --secure --port 9440 \
+        --user default \
+        --password <password>
+        ```
+
+        Si aparece el prompt con la carita sonriente, ¡ya puedes ejecutar queries!
+
+        ```response
+        :)
+        ```
+
+        3. Pruébelo ejecutando la siguiente consulta:
+
+        <br />
+
+        ```sql
+        SELECT *
+        FROM helloworld.my_first_table
+        ORDER BY timestamp
+        ```
+
+        Observe que la respuesta se muestra en un formato de tabla claro:
+
+        ```response
+        ┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
+        │     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
+        │     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
+        │     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
+        │     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
+        └─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
+
+        4 rows in set. Elapsed: 0.008 sec.
+        ```
+
+        4. Añada una cláusula [`FORMAT`](/es/reference/statements/select/format) para especificar uno de los [muchos formatos de salida compatibles con ClickHouse](/es/reference/formats/index):
+
+        <br />
+
+        ```sql
+        SELECT *
+        FROM helloworld.my_first_table
+        ORDER BY timestamp
+        FORMAT TabSeparated
+        ```
+
+        En la consulta anterior, el resultado se devuelve separado por tabulaciones:
+
+        ```response
+        Query id: 3604df1c-acfd-4117-9c56-f86c69721121
+
+        102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
+        102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
+        101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
+        101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
+
+        4 rows in set. Elapsed: 0.005 sec.
+        ```
+
+        5. Para salir del `clickhouse client`, escriba el comando **exit**:
+
+        <br />
+
+        ```bash
+        exit
+        ```
+
+        ### Subir un archivo
+
+        Una tarea habitual al empezar a usar una base de datos es insertar datos que ya se tienen en archivos. Tenemos disponibles en línea
+        datos de ejemplo que puede insertar y que representan datos de flujo de clics: incluyen un ID de usuario, una URL visitada y
+        la marca de tiempo del evento.
+
+        Supongamos que tenemos el siguiente texto en un archivo CSV llamado `data.csv`:
+
+        ```bash title="data.csv"
+        102,This is data in a file,2022-02-22 10:43:28,123.45
+        101,It is comma-separated,2022-02-23 00:00:00,456.78
+        103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+        ```
+
+        1. El siguiente comando inserta los datos en `my_first_table`:
+
+        <br />
+
+        ```bash
+        ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
+        --secure --port 9440 \
+        --user default \
+        --password <password> \
+        --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+        ```
+
+        2. Observe que las nuevas filas ya aparecen en la tabla al realizar consultas desde la consola SQL:
+
+        <br />
+
+        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="Nuevas filas del archivo CSV" />
+
+        <br />
+      </Step>
+    </Steps>
 
     <Tip>
-      **Práctica recomendada de ClickHouse**
+      **Filtrado mediante listas de acceso IP**
 
-      Inserte una gran cantidad de filas en cada lote: decenas de miles o incluso millones de
-      filas de una sola vez. No se preocupe: ClickHouse puede manejar fácilmente ese volumen y [ahorrarle dinero](/es/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous) al enviar menos solicitudes de escritura a su servicio.
+      Antes de continuar, recomendamos configurar el filtrado mediante listas de acceso IP.
+      Consulta [&quot;Configuración de filtros IP&quot;](/es/products/cloud/guides/security/connectivity/setting-ip-filters) para obtener más información.
     </Tip>
 
-    <br />
+    ## ¿Qué sigue?
 
-    Incluso para un ejemplo sencillo, insertemos más de una fila a la vez:
+    * El [Tutorial](/es/get-started/quickstarts/tutorial) le permite insertar 2 millones de filas en una tabla y escribir algunas consultas analíticas
+    * Tenemos una lista de [datasets de ejemplo](/es/get-started/sample-datasets/index) con instrucciones sobre cómo insertarlos
+    * Consulte nuestro vídeo de 12 minutos sobre [Getting Started with ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
+    * Si sus datos proceden de una fuente externa, consulte nuestra [colección de guías de integración](/es/integrations/home) para conectarse a colas de mensajes, bases de datos, canalizaciones y más
+    * Si utiliza una herramienta de visualización de UI/BI, consulte las [guías de usuario para conectar una UI a ClickHouse](/es/integrations/connectors/data-visualization/index)
+    * La guía de usuario sobre [primary keys](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) contiene todo lo que necesita saber sobre las primary keys y cómo definirlas
+  </View>
 
-    ```sql
-    INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
-        (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
-        (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
-        (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
-        (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
-    ```
+  <View title="CLI">
+    Puedes seguir este path por tu cuenta, automatizarlo con un script o asignárselo a un AI Agent. Cambia a la vista de **Cloud UI** para la versión de consola.
 
-    <Note>
-      Observe que la columna `timestamp` se rellena mediante varias funciones [**Date**](/es/reference/data-types/date) y [**DateTime**](/es/reference/data-types/datetime). ClickHouse tiene cientos de funciones útiles que puede [ver en la sección **Funciones**](/es/reference/functions/index).
-    </Note>
-
-    Verifiquemos que funcionó:
-
-    ```sql
-    SELECT * FROM helloworld.my_first_table
-    ```
-
-    ### Agregar datos con el ClickHouse Client
-
-    También puede conectarse a su servicio de ClickHouse Cloud mediante una herramienta de línea de comandos llamada [**clickhouse client**](/es/concepts/features/interfaces/cli). Haga clic en `Connect` en el menú izquierdo para acceder a estos detalles. En el cuadro de diálogo, seleccione `Native` en el menú desplegable:
-
-    <Image img="/images/_snippets/client_details.webp" size="md" alt="detalles de conexión del cliente de ClickHouse" border />
-
-    <br />
-
-    1. Instale [ClickHouse](/es/concepts/features/interfaces/cli).
-
-    2. Ejecute el comando y sustituya el hostname, el nombre de usuario y la contraseña:
-
-    ```bash
-    ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
-    --secure --port 9440 \
-    --user default \
-    --password <password>
-    ```
-
-    Si aparece el indicador de carita sonriente, ya puede ejecutar consultas.
-
-    ```response
-    :)
-    ```
-
-    3. Pruébalo ejecutando la siguiente consulta:
-
-    <br />
-
-    ```sql
-    SELECT *
-    FROM helloworld.my_first_table
-    ORDER BY timestamp
-    ```
-
-    Observe que la respuesta se muestra en un formato de tabla claro:
-
-    ```response
-    ┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
-    │     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
-    │     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
-    │     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
-    │     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
-    └─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
-
-    4 rows in set. Elapsed: 0.008 sec.
-    ```
-
-    4. Añade una cláusula [`FORMAT`](/es/reference/statements/select/format) para especificar uno de los [muchos formatos de salida que admite ClickHouse](/es/reference/formats/index):
-
-    <br />
-
-    ```sql
-    SELECT *
-    FROM helloworld.my_first_table
-    ORDER BY timestamp
-    FORMAT TabSeparated
-    ```
-
-    En la consulta anterior, la salida se devuelve separada por tabulaciones:
-
-    ```response
-    Query id: 3604df1c-acfd-4117-9c56-f86c69721121
-
-    102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
-    102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
-    101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
-    101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
-
-    4 rows in set. Elapsed: 0.005 sec.
-    ```
-
-    5. Para salir de `clickhouse client`, escriba el comando **exit**:
-
-    <br />
-
-    ```bash
-    exit
-    ```
-
-    ### Subir un archivo
-
-    Una tarea habitual al comenzar a trabajar con una base de datos es insertar algunos datos que ya tienes en archivos. Disponemos de datos de muestra en línea que puedes insertar y que representan datos de clickstream: incluyen un ID de usuario, una URL visitada y la marca de tiempo del evento.
-
-    Supongamos que tenemos el siguiente texto en un archivo CSV llamado `data.csv`:
-
-    ```bash title="data.csv"
-    102,This is data in a file,2022-02-22 10:43:28,123.45
-    101,It is comma-separated,2022-02-23 00:00:00,456.78
-    103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
-    ```
-
-    1. El siguiente comando inserta los datos en la tabla `my_first_table`:
-
-    <br />
-
-    ```bash
-    ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
-    --secure --port 9440 \
-    --user default \
-    --password <password> \
-    --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
-    ```
-
-    2. Observe que las nuevas filas ya aparecen en la tabla al consultar desde SQL Console:
-
-    <br />
-
-    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="Nuevas filas de un archivo CSV" />
-
-    <br />
-  </Step>
-</Steps>
-
-<Tip>
-  **Filtrado mediante lista de acceso IP**
-
-  Antes de continuar, recomendamos configurar el filtrado mediante lista de acceso IP.
-  Consulta [&quot;Configurar filtros IP&quot;](/es/products/cloud/guides/security/connectivity/setting-ip-filters) para obtener más información.
-</Tip>
-
-<div id="whats-next">
-  ## ¿Qué sigue?
-</div>
-
-* El [Tutorial](/es/get-started/quickstarts/tutorial) te guía para insertar 2 millones de filas en una tabla y escribir algunas consultas analíticas
-* Tenemos una lista de [conjuntos de datos de ejemplo](/es/get-started/sample-datasets/index) con instrucciones sobre cómo insertarlos
-* Mira nuestro video de 12 minutos sobre [Primeros pasos con ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
-* Si tus datos provienen de una fuente externa, consulta nuestra [colección de guías de integración](/es/integrations/home) para conectarte a colas de mensajes, bases de datos, canalizaciones y más
-* Si usas una herramienta de visualización UI/BI, consulta las [guías de usuario para conectar una UI a ClickHouse](/es/integrations/connectors/data-visualization/index)
-* La guía de usuario sobre [claves primarias](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) contiene todo lo que necesitas saber sobre las claves primarias y cómo definirlas
+    <CloudQuickstartCLI />
+  </View>
+</Visibility>

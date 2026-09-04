@@ -25,6 +25,7 @@
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/TypeList.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -58,6 +59,27 @@ namespace ArrayImpl
 {
 template <ArrayElementExceptionMode mode>
 class NullMapBuilder;
+}
+
+/// Array element types with a dedicated fast path. The dispatch ladders below try them in this
+/// order, so the most common types come first; the generic fallback handles everything else.
+using ElementTypesWithFastPath = TypeList<
+    UInt8, UInt16, UInt32, UInt64,
+    Int8, Int16, Int32, Int64,
+    Float32, Float64,
+    Decimal32, Decimal64, Decimal128, Decimal256,
+    DateTime64,
+    Int128, UInt128, Int256, UInt256>;
+
+/// Types the index (second) argument may have, in dispatch order.
+using IndexTypes = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64>;
+
+/// Calls try_one<T> for each T in the list until one call succeeds. The fold expands to the same
+/// short-circuit `||` chain as spelling out one call per type.
+template <typename... Ts, typename F>
+bool tryEachType(TypeList<Ts...>, F && try_one)
+{
+    return (try_one.template operator()<Ts>() || ...);
 }
 
 
@@ -1530,48 +1552,18 @@ ColumnPtr FunctionArrayElement<mode>::executeArgument(
         builder.initSink(index_data.size());
 
     ColumnPtr res;
-    if (!((res = executeNumber<IndexType, UInt8>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt16>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int8>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int16>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Float32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Float64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal256>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, DateTime64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int256>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt256>(arguments, result_type, index_data, builder))
-          || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
-          || (res = executeString<IndexType>(arguments, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt8>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt16>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int8>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int16>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Float32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Float64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, DateTime64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayString<IndexType>(arguments, index_data, builder))
-          || (res = executeGeneric<IndexType>(arguments, index_data, builder))))
+    bool matched = tryEachType(
+                       ElementTypesWithFastPath{},
+                       [&]<typename T>() { return (res = executeNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
+        || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
+        || (res = executeString<IndexType>(arguments, index_data, builder))
+        || tryEachType(
+               ElementTypesWithFastPath{},
+               [&]<typename T>() { return (res = executeArrayNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
+        || (res = executeArrayString<IndexType>(arguments, index_data, builder))
+        || (res = executeGeneric<IndexType>(arguments, index_data, builder));
+
+    if (!matched)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
@@ -3248,14 +3240,9 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     const auto & replication_indexes = replicated_array->getIndexes();
     const auto & index_column = *args[1].column;
     /// Core loop to build result by dispatching based on the index type
-    if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<UInt16>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<UInt32>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<UInt64>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<Int8>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<Int16>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<Int32>(index_column, replication_indexes, offsets, *data, *result, builder)
-          || gatherReplicated<Int64>(index_column, replication_indexes, offsets, *data, *result, builder)))
+    if (!tryEachType(
+            IndexTypes{},
+            [&]<typename T>() { return gatherReplicated<T>(index_column, replication_indexes, offsets, *data, *result, builder); }))
     {
         /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
         /// materialize the array and let the generic path handle it.
@@ -3331,14 +3318,9 @@ ColumnPtr FunctionArrayElement<mode>::perform(
         return res;
     if (!isColumnConst(*arguments[1].column))
     {
-        if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt16>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt32>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt64>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int8>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int16>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int32>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int64>(arguments, result_type, builder, input_rows_count))))
+        if (!tryEachType(
+                IndexTypes{},
+                [&]<typename T>() { return (res = executeArgument<T>(arguments, result_type, builder, input_rows_count)) != nullptr; }))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
     }
     else
@@ -3362,46 +3344,17 @@ ColumnPtr FunctionArrayElement<mode>::perform(
             }
         }
 
-        if (!((res = executeNumberConst<UInt8>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt16>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int8>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int16>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Float32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Float64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal256>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<DateTime64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int256>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt256>(arguments, result_type, index, builder))
-              || (res = executeStringConst(arguments, index, builder))
-              || (res = executeArrayNumberConst<UInt8>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt16>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int8>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int16>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Float32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Float64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal256>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<DateTime64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int256>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt256>(arguments, result_type, index, builder))
-              || (res = executeArrayStringConst(arguments, index, builder)) || (res = executeGenericConst(arguments, index, builder))))
+        bool matched = tryEachType(
+                           ElementTypesWithFastPath{},
+                           [&]<typename T>() { return (res = executeNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
+            || (res = executeStringConst(arguments, index, builder))
+            || tryEachType(
+                   ElementTypesWithFastPath{},
+                   [&]<typename T>() { return (res = executeArrayNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
+            || (res = executeArrayStringConst(arguments, index, builder))
+            || (res = executeGenericConst(arguments, index, builder));
+
+        if (!matched)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}",

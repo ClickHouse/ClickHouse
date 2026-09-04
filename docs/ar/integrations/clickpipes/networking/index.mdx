@@ -1,13 +1,13 @@
 ---
-sidebarTitle: 'الشبكات'
-description: 'خيارات تهيئة الشبكات لـ ClickPipes.'
-slug: /integrations/clickpipes/networking
-title: 'الشبكات'
-doc_type: 'guide'
-keywords: ['شبكات ClickPipes', 'الشبكات الخاصة', 'نقطة نهاية خاصة عكسية', 'AWS PrivateLink', 'GCP Private Service Connect', 'الاتصال الخاص', 'Azure PrivateLink']
+title: "نظرة عامة"
+sidebarTitle: "نظرة عامة"
+description: "خيارات تهيئة الشبكات لـ ClickPipes."
+slug: "/integrations/clickpipes/networking"
+doc_type: "guide"
+keywords: ["شبكات ClickPipes", "الشبكات الخاصة", "نقطة نهاية خاصة عكسية", "AWS PrivateLink", "GCP Private Service Connect", "الاتصال الخاص", "Azure PrivateLink"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 بناءً على تهيئة الشبكة لمصدر البيانات الأساسي لديك، يمكنك توصيل ClickPipes باستخدام الأساليب التالية:
@@ -26,21 +26,20 @@ integration:
 
 يعتمد دعم RPE على موفر السحابة والمنطقة التي يُستضاف فيها مصدر بياناتك:
 
-| الموفر                                                                      | مدعوم | ملاحظات                                                                                                                                                                                            |
-| --------------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AWS PrivateLink](/ar/integrations/clickpipes/networking/aws-privatelink)      | نعم   | لمصادر البيانات المستضافة على AWS. يمكن تهيئة الاتصال عبر المناطق باستخدام خدمة نقطة نهاية VPC.                                                                                                    |
-| [GCP Private Service Connect](/ar/integrations/clickpipes/networking/gcp-psc)  | نعم   | لمصادر بيانات `AlloyDB` المستضافة على GCP. لا يُدعم الاتصال عبر المناطق باستخدام Global Access بعد؛ استخدم [نفق SSH](#ssh-tunneling) للوصول إلى مصدر بيانات `AlloyDB` خاص في منطقة GCP غير مدعومة. |
-| [Azure Private Link](/ar/integrations/clickpipes/networking/azure-privatelink) | لا    | استخدم [نفق SSH](#ssh-tunneling) للوصول إلى مصدر بيانات Azure خاص.                                                                                                                                 |
+| الموفر                                                                      | مدعوم | ملاحظات                                                                                                                                                                                        |
+| --------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [AWS PrivateLink](/ar/integrations/clickpipes/networking/aws-privatelink)      | نعم   | لمصادر البيانات المستضافة على AWS. يمكن تهيئة الاتصال عبر المناطق باستخدام خدمة نقطة نهاية VPC.                                                                                                |
+| [GCP Private Service Connect](/ar/integrations/clickpipes/networking/gcp-psc)  | نعم   | لمصادر البيانات المستضافة على GCP. يمكن تهيئة الاتصال عبر المناطق باستخدام [الوصول العام](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). |
+| [Azure Private Link](/ar/integrations/clickpipes/networking/azure-privatelink) | لا    | استخدم [نفق SSH](#ssh-tunneling) للوصول إلى مصدر بيانات Azure خاص.                                                                                                                             |
 
 <div id="ssh-tunneling">
   ## نفق SSH
 </div>
 
-بالنسبة إلى مصادر البيانات التي **لا** تتعرض للإنترنت العام و**لا يمكنها** استخدام نقاط النهاية الخاصة المُدارة، يمكنك الاتصال
-عبر نفق SSH باستخدام مضيف bastion. أضف [عناوين IP الثابتة لـ NAT](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي يتصل منها ClickPipes إلى قواعد جدار الحماية لمضيف bastion المصدر.
+بالنسبة إلى مصادر البيانات التي **لا** تتعرض للإنترنت العام و**لا يمكنها** استخدام نقاط النهاية الخاصة المُدارة، يمكنك الاتصال عبر نفق SSH باستخدام مضيف bastion. أضف [عناوين IP الثابتة لـ NAT](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي يتصل منها ClickPipes إلى قواعد جدار الحماية لمضيف bastion المصدر.
 
 استخدم هذا النهج في الحالات التالية:
 
 * يكون مصدر البيانات مستضافًا على Azure.
 * يكون مصدر البيانات وClickPipes مستضافين لدى موفري السحابة أو في مناطق مختلفة، ولا يتوفر خيار للاتصال عبر المناطق باستخدام [نقاط النهاية الخاصة المُدارة](#managed-private-endpoints).
-* لا يتوفر خيار لاستخدام [نقاط النهاية الخاصة المُدارة](#managed-private-endpoints)، مثل عمليات النشر المحلية التي لا يمكن الوصول إليها إلا عبر مضيف bastion.
+* لا يتوفر خيار لاستخدام [نقاط النهاية الخاصة المُدارة](#managed-private-endpoints)، *مثلًا* عمليات النشر المحلية التي لا يمكن الوصول إليها إلا عبر مضيف bastion.
