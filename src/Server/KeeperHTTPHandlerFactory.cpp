@@ -335,6 +335,20 @@ KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(
 {
 }
 
+static bool validateAndAssignCwd(KeeperClientBase & client, const String & cwd_param, HTTPServerResponse & response)
+{
+    const String normalized = cwd_param.empty() ? "/" : cwd_param;
+    if (!normalized.starts_with('/'))
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid cwd");
+        *response.send() << "Invalid cwd: must be an absolute path starting with '/'.\n";
+        return false;
+    }
+
+    client.cwd = fs::path(normalized);
+    return true;
+}
+
 void KeeperHTTPCommandsHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 try
@@ -355,6 +369,8 @@ try
 
     String command;
     String cwd = "/";
+    bool has_complete = false;
+    String complete_prefix;
 
     const auto params = uri.getQueryParameters();
     for (const auto & [key, value]: params)
@@ -363,6 +379,41 @@ try
             command = value;
         else if (key == "cwd")
             cwd = value;
+        else if (key == "complete")
+        {
+            has_complete = true;
+            complete_prefix = value;
+        }
+    }
+
+    if (has_complete)
+    {
+        setResponseDefaultHeaders(response);
+        response.setContentType("application/json");
+
+        std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        KeeperClientBase client(stream, stream);
+        client.zookeeper = keeper_client->get();
+        client.ask_confirmation = false;
+
+        if (!validateAndAssignCwd(client, cwd, response))
+            return;
+
+        const auto completion = client.completeQueryPrefix(complete_prefix);
+
+        Poco::JSON::Object response_json;
+        Poco::JSON::Array completions_array;
+        for (const auto & entry : completion.completions)
+            completions_array.add(entry);
+        response_json.set("completions", completions_array);
+        response_json.set("replace_start", static_cast<UInt64>(completion.replace_start));
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        oss.exceptions(std::ios::failbit);
+        Poco::JSON::Stringifier::stringify(response_json, oss);
+
+        *response.send() << oss.str();
+        return;
     }
 
     if (command.empty())
@@ -400,11 +451,18 @@ try
         std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         KeeperClientBase client(stream, stream);
         client.zookeeper = keeper_client->get();
-        client.cwd = cwd;
         client.ask_confirmation = false;  // Confirmations are not supported in UI
 
+        if (!validateAndAssignCwd(client, cwd, response))
+            return;
+
+        const auto cwd_before = client.cwd;
         client.processQueryText(command);
         response_json.set("result", stream.str());
+        /// Only `cd` changes cwd; return it when it changed so clients (e.g. the dashboard)
+        /// can track navigation without reimplementing path parsing / existence checks.
+        if (client.cwd != cwd_before)
+            response_json.set("cwd", client.cwd.string());
     }
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
