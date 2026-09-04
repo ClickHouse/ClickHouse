@@ -7,6 +7,16 @@ if (ENABLE_GPU)
         message (FATAL_ERROR "ENABLE_GPU is only wired up for Linux x86_64 so far.")
     endif ()
 
+    # Not a porting gap - the two cannot coexist. USE_MUSL links -static, and CUDA reaches
+    # its driver by dlopen'ing libcuda.so.1, which musl's static dlopen refuses outright
+    # ("Dynamic loading not supported"). libcudart_static.a also needs dlmopen, dlvsym and
+    # gnu_get_libc_version, none of which musl has. And libcuda.so.1 is NVIDIA's closed
+    # binary linked against glibc, so a musl process could not load it either way. A musl
+    # build wanting GPU work has to put it behind a separate glibc process.
+    if (USE_MUSL)
+        message (FATAL_ERROR "ENABLE_GPU is incompatible with USE_MUSL. See cmake/cuda.cmake.")
+    endif ()
+
     # nvcc's host pass uses system headers: contrib/sysroot ships no C++ stdlib and
     # crt/math_functions.h includes <cmath>. The link still resolves against the sysroot's
     # glibc 2.31, which works only because the C-ABI boundary keeps kernel host code to
@@ -55,17 +65,33 @@ if (ENABLE_GPU)
             "${GPU_CUDA_MINIMUM_VERSION}.")
     endif ()
 
-    find_library (GPU_CUDART_LIBRARY
-        NAMES cudart_static
-        HINTS "${GPU_CUDA_ROOT}"
-        PATH_SUFFIXES lib64 lib
-        REQUIRED)
-    find_library (GPU_CULIBOS_LIBRARY
-        NAMES culibos
-        HINTS "${GPU_CUDA_ROOT}"
-        PATH_SUFFIXES lib64 lib
-        REQUIRED)
-    mark_as_advanced (GPU_CUDART_LIBRARY GPU_CULIBOS_LIBRARY)
+    # Named by explicit path, not searched. ClickHouse forbids find_library in
+    # CMakeLists.txt (ci/jobs/scripts/check_style/check_cpp.sh) so a build cannot pick up
+    # whatever a machine happens to carry, and the same reasoning applies here even though
+    # this file is not itself scanned. `lib64` is the installer's layout, `lib` the
+    # redistributable tarball's - both are tried by existence rather than by search.
+    function (gpu_cuda_library var basename)
+        foreach (_dir "lib64" "lib")
+            if (EXISTS "${GPU_CUDA_ROOT}/${_dir}/lib${basename}.a")
+                set (${var} "${GPU_CUDA_ROOT}/${_dir}/lib${basename}.a" PARENT_SCOPE)
+                return ()
+            endif ()
+        endforeach ()
+        message (FATAL_ERROR "lib${basename}.a is missing from the CUDA toolkit at ${GPU_CUDA_ROOT}")
+    endfunction ()
+
+    # The static runtime, so the CUDA runtime lands inside the binary like the rest of
+    # ClickHouse's dependencies. The driver (libcuda.so.1) stays a run-time dependency: it
+    # is dlopen'd by cudart and cannot be linked statically.
+    gpu_cuda_library (GPU_CUDART_LIBRARY         cudart_static)
+    gpu_cuda_library (GPU_CULIBOS_LIBRARY        culibos)
+
+    # NVRTC and nvJitLink are how librtcx compiles cuDF's embedded CUDA fragments at query
+    # time, which makes them run-time requirements as much as build-time ones.
+    gpu_cuda_library (GPU_NVRTC_LIBRARY          nvrtc_static)
+    gpu_cuda_library (GPU_NVRTC_BUILTINS_LIBRARY nvrtc-builtins_static)
+    gpu_cuda_library (GPU_NVJITLINK_LIBRARY      nvJitLink_static)
+    gpu_cuda_library (GPU_NVPTXCOMPILER_LIBRARY  nvptxcompiler_static)
 
     set (CMAKE_CUDA_RUNTIME_LIBRARY None)
 

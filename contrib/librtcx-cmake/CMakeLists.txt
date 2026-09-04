@@ -12,16 +12,8 @@ endif ()
 
 set (RTCX_DIR "${ClickHouse_SOURCE_DIR}/contrib/librtcx")
 
-find_library (GPU_NVRTC_LIBRARY NAMES nvrtc_static nvrtc
-    HINTS "${GPU_CUDA_ROOT}" PATH_SUFFIXES lib64 lib REQUIRED)
-find_library (GPU_NVRTC_BUILTINS_LIBRARY NAMES nvrtc-builtins_static nvrtc-builtins
-    HINTS "${GPU_CUDA_ROOT}" PATH_SUFFIXES lib64 lib REQUIRED)
-find_library (GPU_NVJITLINK_LIBRARY NAMES nvJitLink_static nvJitLink
-    HINTS "${GPU_CUDA_ROOT}" PATH_SUFFIXES lib64 lib REQUIRED)
-find_library (GPU_NVPTXCOMPILER_LIBRARY NAMES nvptxcompiler_static
-    HINTS "${GPU_CUDA_ROOT}" PATH_SUFFIXES lib64 lib REQUIRED)
-mark_as_advanced (GPU_NVRTC_LIBRARY GPU_NVRTC_BUILTINS_LIBRARY
-                  GPU_NVJITLINK_LIBRARY GPU_NVPTXCOMPILER_LIBRARY)
+# GPU_NVRTC_* and GPU_NVJITLINK_* are resolved in cmake/cuda.cmake, by explicit path.
+# Searching for them here would trip ci/jobs/scripts/check_style/check_cpp.sh.
 
 add_library (_rtcx
     "${RTCX_DIR}/src/algorithm_launcher.cpp"
