@@ -3,9 +3,11 @@
 -- block - past the end of it. It is rejected at DDL time, like it already is for keys and indexes.
 
 DROP TABLE IF EXISTS t_check_array_join;
+DROP TABLE IF EXISTS t_check_array_join_subquery;
 
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK arrayJoin(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK unnest(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
+CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK UNNEST(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK length(arr) > 0) ENGINE = MergeTree ORDER BY k;
 SELECT 'accepted';
@@ -17,4 +19,12 @@ SELECT 'altered';
 INSERT INTO t_check_array_join VALUES (1, [1, 2]);
 SELECT count() FROM t_check_array_join;
 
+-- An `arrayJoin` inside a subquery has a scope of its own: it multiplies the rows of that subquery, and
+-- what reaches the constraint is the set it returns. Such a constraint is accepted and enforced.
+CREATE TABLE t_check_array_join_subquery (k UInt32, CONSTRAINT c CHECK k IN (SELECT arrayJoin([1, 2, 3]))) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_check_array_join_subquery VALUES (2);
+INSERT INTO t_check_array_join_subquery VALUES (4); -- { serverError VIOLATED_CONSTRAINT }
+SELECT 'subquery', count() FROM t_check_array_join_subquery;
+
 DROP TABLE t_check_array_join;
+DROP TABLE t_check_array_join_subquery;

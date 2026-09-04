@@ -58,9 +58,13 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
-    /// Rejects a `CHECK` expression that changes the number of rows. `CheckConstraintsTransform` reads the
-    /// constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked against
-    /// another row's value, or - when the column ends up shorter than the block - past the end of it.
+    /// Rejects a `CHECK` expression that changes the number of rows. `CheckConstraintsTransform` reads
+    /// the constraint's result column by block row, so an `arrayJoin` inside it makes a row be checked
+    /// against another row's value, or - when the column ends up shorter than the block - past the end of
+    /// it. The declaration's AST is read rather than the built expression, because a constraint that
+    /// cannot be built at all (a bare subquery as in `03594_constraint_subqery_logical_error`, a wrong
+    /// arity as in `04489_constraint_comparison_wrong_arity`) is only reported when a row is inserted, and
+    /// building it here would move that report to the DDL.
     /// Called from DDL only, so metadata stored before this check still loads.
     void checkExpressionsPreserveRowCount() const;
 

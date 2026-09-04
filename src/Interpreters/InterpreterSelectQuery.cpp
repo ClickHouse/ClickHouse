@@ -15,6 +15,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Functions/astContainsArrayJoin.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -378,23 +379,6 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 namespace
 {
-
-/// Whether the AST subtree contains an `arrayJoin` function call, without descending into
-/// nested subqueries (their `arrayJoin` belongs to a different scope). Used to disable the
-/// trivial-LIMIT source optimization, since `arrayJoin` changes row cardinality after the
-/// source has run. Mirrors `numbersLikeUtils::astContainsArrayJoinFunction`.
-bool selectListHasArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
-            return true;
-    return false;
-}
 
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
@@ -2799,7 +2783,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+    if ((query.select() && astContainsArrayJoin(*query.select())) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct

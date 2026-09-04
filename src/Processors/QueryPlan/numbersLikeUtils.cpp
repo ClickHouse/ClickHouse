@@ -4,8 +4,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Functions/astContainsArrayJoin.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/Pipe.h>
@@ -62,19 +62,6 @@ void addNullSource(Pipe & pipe, SharedHeader header)
 namespace
 {
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
     /// Reject negative, fractional, and zero limits for pushdown
@@ -100,7 +87,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
-    if (astContainsArrayJoinFunction(query.select()))
+    if (query.select() && astContainsArrayJoin(*query.select()))
         return false;
     if (query.arrayJoinExpressionList().first)
         return false;
