@@ -220,7 +220,38 @@ std::optional<DictGetFunctionInfo> tryParseDictFunctionCall(const QueryTreeNodeP
                 continue;
 
             NameAndTypePair outer_key_column{projection_columns[i].name, projection_columns[i].type};
-            info->key_expr_node = std::make_shared<ColumnNode>(outer_key_column, column_node->getColumnSource());
+            auto outer_source = column_node->getColumnSource();
+
+            if (const auto * outer_table_node = outer_source->as<TableNode>())
+            {
+                /// Crossed a view boundary: check access on the view's own exposed column, not on
+                /// whatever table its private inner resolution happens to use (which can run under
+                /// the view definer's rights, not the invoker's).
+                const auto & storage_id = outer_table_node->getStorageID();
+                if (!context->getAccess()->isGranted(
+                        AccessType::SELECT, storage_id.getDatabaseName(), storage_id.getTableName(), outer_key_column.name))
+                    return std::nullopt;
+            }
+            else if (const auto * key_column_node = info->key_expr_node->as<ColumnNode>())
+            {
+                /// Plain subquery boundary: no separate grant object, so check access on whatever
+                /// real table the key column is actually read from.
+                if (auto key_source = key_column_node->getColumnSourceOrNull())
+                {
+                    if (const auto * key_table_node = key_source->as<TableNode>())
+                    {
+                        const auto & key_storage_id = key_table_node->getStorageID();
+                        if (!context->getAccess()->isGranted(
+                                AccessType::SELECT,
+                                key_storage_id.getDatabaseName(),
+                                key_storage_id.getTableName(),
+                                key_column_node->getColumnName()))
+                            return std::nullopt;
+                    }
+                }
+            }
+
+            info->key_expr_node = std::make_shared<ColumnNode>(outer_key_column, outer_source);
             return info;
         }
 
