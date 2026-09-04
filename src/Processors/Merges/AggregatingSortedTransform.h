@@ -24,16 +24,18 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
-        bool allow_tuple_element_aggregation)
+        bool allow_tuple_element_aggregation,
+        UInt64 limit_ = 0)
         : IMergingTransform(
-            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
+            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ limit_, /*always_read_till_end_=*/ false,
             header,
             num_inputs,
             std::move(description_),
             max_block_size_rows,
             max_block_size_bytes,
             max_dynamic_subcolumns_,
-            allow_tuple_element_aggregation)
+            allow_tuple_element_aggregation,
+            limit_)
     {
     }
 

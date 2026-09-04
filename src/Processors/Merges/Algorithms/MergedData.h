@@ -33,6 +33,9 @@ public:
 
     bool hasEnoughRows() const;
 
+    void setLimit(UInt64 limit) { total_row_limit = limit; }
+    bool reachedLimit() const { return total_row_limit && total_merged_rows >= total_row_limit; }
+
     size_t rowsToInsertBeforeFlush(
         const ColumnRawPtrs & raw_columns,
         size_t start_index,
@@ -57,6 +60,7 @@ protected:
     UInt64 total_merged_rows = 0;
     UInt64 total_chunks = 0;
     UInt64 total_allocated_bytes = 0;
+    UInt64 total_row_limit = 0;
 
     const UInt64 max_block_size = 0;
     const UInt64 max_block_size_bytes = 0;

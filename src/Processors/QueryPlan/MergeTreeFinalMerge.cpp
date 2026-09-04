@@ -46,7 +46,8 @@ void addMergingFinal(
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final,
-    bool read_in_reverse)
+    bool read_in_reverse,
+    UInt64 limit)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -64,7 +65,7 @@ void addMergingFinal(
         {
             case MergeTreeData::MergingParams::Ordinary:
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, SortingQueueStrategy::Batch, limit);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
@@ -74,12 +75,12 @@ void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, limit);
             }
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
+                            sort_description, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, limit);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
@@ -98,12 +99,31 @@ void addMergingFinal(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<CoalescingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation);
+                            sort_description, merging_params.columns_to_sum, required_columns, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, merging_params.allow_tuple_element_aggregation, limit);
             }
         }
     };
 
-    pipe.addTransform(get_merging_processor());
+    auto merging_processor = get_merging_processor();
+
+    /// Expose the pushed-down limit in EXPLAIN PIPELINE output,
+    /// but only for modes that actually use it for early termination.
+    if (limit)
+    {
+        switch (merging_params.mode)
+        {
+            case MergeTreeData::MergingParams::Ordinary:
+            case MergeTreeData::MergingParams::Aggregating:
+            case MergeTreeData::MergingParams::Summing:
+            case MergeTreeData::MergingParams::Coalescing:
+                merging_processor->setDescription(fmt::format("limit {}", limit));
+                break;
+            default:
+                break;
+        }
+    }
+
+    pipe.addTransform(std::move(merging_processor));
     if (enable_vertical_final)
         pipe.addSimpleTransform([](const SharedHeader & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });

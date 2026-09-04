@@ -30,7 +30,8 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
-        bool allow_tuple_element_aggregation);
+        bool allow_tuple_element_aggregation,
+        UInt64 limit_ = 0);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

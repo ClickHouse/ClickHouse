@@ -1,0 +1,14 @@
+inner_join_top5_pushdown_on
+1	tag_1	3
+3	tag_3	3
+5	tag_5	3
+7	tag_7	3
+9	tag_9	3
+inner_join_top5_pushdown_off
+1	tag_1	3
+3	tag_3	3
+5	tag_5	3
+7	tag_7	3
+9	tag_9	3
+explain_inner_join_no_limit_in_merge
+1
