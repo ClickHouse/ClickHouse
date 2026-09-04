@@ -34,9 +34,11 @@ assert Settings.CI_CONFIG_RUNS_ON
 # Every image is built inside this one budget, so `Docker.build` is given what is left
 # of it and sizes its own bounds from that.
 DOCKER_BUILD_JOB_TIMEOUT_S = int(5.5 * 3600)
-# Cleanup runs inside the reserve the build ladder keeps back for recording a result, so
-# it must not be able to consume it: three of these fit in 360s of the 600s reserve.
-DOCKER_CLEANUP_TIMEOUT_S = 120
+# Cleanup is best effort and runs inside the reserve the build ladder keeps back for
+# recording a result, so the phase is bounded as a whole: a bounded call spends its own
+# timeout plus `_terminate`'s grace, which per-command bounds cannot cap. Worst case is
+# this budget plus one grace, 360s, leaving the reserve the ladder's kill and the upload.
+DOCKER_CLEANUP_BUDGET_S = 240
 
 
 _workflow_config_job = Job.Config(
@@ -206,21 +208,17 @@ def _build_dockers(workflow, job_name):
 
 
 def _clean_buildx_volumes():
-    Shell.check(
+    sw = Utils.Stopwatch()
+    for command in (
         "docker buildx rm --all-inactive --force",
-        verbose=True,
-        timeout=DOCKER_CLEANUP_TIMEOUT_S,
-    )
-    Shell.check(
         "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
-        verbose=True,
-        timeout=DOCKER_CLEANUP_TIMEOUT_S,
-    )
-    Shell.check(
         "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
-        verbose=True,
-        timeout=DOCKER_CLEANUP_TIMEOUT_S,
-    )
+    ):
+        left = int(DOCKER_CLEANUP_BUDGET_S - sw.duration)
+        if left < 1:
+            print(f"Out of cleanup budget, skipping: [{command}]")
+            continue
+        Shell.check(command, verbose=True, timeout=left)
 
 
 def _submodule_auth_env(workflow) -> dict:

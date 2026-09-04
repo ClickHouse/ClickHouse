@@ -176,6 +176,10 @@ class ContextManager:
 SHELL_TOTAL_TIMEOUT_MESSAGE = "ERROR: command exceeded its total timeout"
 SHELL_IDLE_TIMEOUT_MESSAGE = "ERROR: command produced no output within its idle timeout"
 
+# `_terminate` grants up to 100s of grace at 5s intervals before SIGKILL, so a caller that
+# joins for less than that can return while the process group is still alive.
+SHELL_TERMINATE_MAX_S = 120
+
 
 class Shell:
     @classmethod
@@ -340,6 +344,10 @@ class Shell:
                 deadlines.append(("idle", state["last_output"] + idle_timeout))
             passed = [(name, at) for name, at in deadlines if at <= now]
             if passed:
+                # Nothing to kill and nothing to report once the caller is done with the
+                # process, whatever the clock says.
+                if finished.is_set():
+                    return
                 # `min` keeps the first of equal keys, and `total` is listed first, so a
                 # child that never wrote anything is reported as the total expiry it is.
                 cause = min(passed, key=lambda item: item[1])[0]
@@ -493,10 +501,10 @@ class Shell:
                         finished.set()
 
                     if watchdog is not None:
-                        # The child is reaped by now, so `_terminate`'s poll loop exits on
-                        # its next look; the bound only covers the 5s it may be sleeping in.
-                        # Joining before reading is what makes the cause observable at all.
-                        watchdog.join(30)
+                        # Joined until the kill it started has finished: the grace waits on the
+                        # whole group, so returning earlier would hand the caller a live group.
+                        # Joining before reading is also what makes the cause observable at all.
+                        watchdog.join(SHELL_TERMINATE_MAX_S)
                         if watchdog_state["expired"]:
                             watchdog_expired = True
                             message = (
