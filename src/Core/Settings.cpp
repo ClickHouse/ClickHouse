@@ -9602,6 +9602,8 @@ struct ResolvedCompatibilityChange
 {
     size_t index;
     const Field * previous_value;
+    /// Whether `previous_value` is what the setting holds when nothing changed it.
+    bool previous_value_is_default;
 };
 
 using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
@@ -9611,6 +9613,7 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
     static const ResolvedCompatibilityHistory resolved_history = []
     {
         const auto & accessor = SettingsTraits::Accessor::instance();
+        const SettingsImpl default_settings;
         ResolvedCompatibilityHistory result;
         for (const auto & [version, changes] : getSettingsChangesHistory())
         {
@@ -9626,7 +9629,8 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
                 if (accessor.getTier(index) == SettingsTierType::OBSOLETE)
                     continue;
 
-                resolved_changes.push_back({index, &change.previous_value});
+                resolved_changes.push_back(
+                    {index, &change.previous_value, accessor.getValue(default_settings, index) == change.previous_value});
             }
             result.emplace_back(version, std::move(resolved_changes));
         }
@@ -9660,12 +9664,18 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            const bool changed_by_compatibility = isChangedByCompatibility(change.index);
+
             /// If this setting was changed manually, we don't change it
-            if (accessor.isValueChanged(*this, change.index) && !isChangedByCompatibility(change.index))
+            if (!changed_by_compatibility && accessor.isValueChanged(*this, change.index))
                 continue;
 
-            /// Don't mark as changed if the value isn't really changed
-            if (accessor.getValue(*this, change.index) == *change.previous_value)
+            /// Don't mark as changed if the value isn't really changed. A setting no older version
+            /// touched still holds its default, and whether that is the previous value is known from
+            /// the history alone, so most of the walk needs no value at all.
+            if (changed_by_compatibility
+                    ? accessor.getValue(*this, change.index) == *change.previous_value
+                    : change.previous_value_is_default)
                 continue;
 
             accessor.setValue(*this, change.index, *change.previous_value);
