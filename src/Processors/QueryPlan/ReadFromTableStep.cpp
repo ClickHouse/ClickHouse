@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -16,10 +17,12 @@ ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
+    FilterDAGInfoPtr row_policy_filter_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , row_policy_filter(std::move(row_policy_filter_))
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -42,6 +45,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (row_policy_filter)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +57,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (row_policy_filter)
+        row_policy_filter->serialize(ctx);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,13 +87,19 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    FilterDAGInfoPtr row_policy_filter;
+    if (flags & 16)
+        row_policy_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        ctx.output_header, table_name, table_expression_modifiers, row_policy_filter, use_parallel_replicas);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        getOutputHeader(), table_name, table_expression_modifiers, row_policy_filter, use_parallel_replicas);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
