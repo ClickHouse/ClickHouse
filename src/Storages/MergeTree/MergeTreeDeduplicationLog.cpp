@@ -169,27 +169,32 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
-    try
+    /// Open the new log before finalizing the current one. If opening fails, nothing has changed
+    /// and `current_writer` still points to a live buffer, so the log stays usable.
+    /// Otherwise, `current_writer` would be left finalized and the next write to it would fail
+    /// with the logical error "Cannot write to finalized buffer".
+    size_t new_log_number = current_log_number + 1;
+    MergeTreeDeduplicationLogNameDescription new_log_description{getLogPath(logs_dir, new_log_number), 0};
+    auto new_writer = disk->writeFile(new_log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    existing_logs.emplace(new_log_number, new_log_description);
+
+    /// Nothing below can throw.
+    if (current_writer)
     {
-        if (current_writer)
+        try
         {
             current_writer->finalize();
             current_writer->sync();
         }
-    } catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
-        if (current_writer)
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost records: " + DB::toString(existing_logs[current_log_number].entries_count));
             current_writer->cancel();
-        current_writer = nullptr;
+        }
     }
 
-    current_log_number++;
-    auto new_path = getLogPath(logs_dir, current_log_number);
-    MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
-    existing_logs.emplace(current_log_number, log_description);
-
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    current_log_number = new_log_number;
+    current_writer = std::move(new_writer);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
