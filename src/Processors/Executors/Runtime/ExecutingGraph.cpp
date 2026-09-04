@@ -65,7 +65,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-const ExecutingGraph::Node * ExecutingGraph::removeNode(ProcessorPtr processor)
+ExecutingGraph::Node * ExecutingGraph::getNodeToRemove(const ProcessorPtr & processor) const
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -78,11 +78,14 @@ const ExecutingGraph::Node * ExecutingGraph::removeNode(ProcessorPtr processor)
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
-    processors_map.erase(node_it);
-    processors->erase(node->processor_iter);
-    nodes.erase(node->self_iter);
-
     return node;
+}
+
+void ExecutingGraph::removeNode(Node & node)
+{
+    processors_map.erase(node.processor());
+    processors->erase(node.processor_iter);
+    nodes.erase(node.self_iter);
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
@@ -142,39 +145,15 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-void ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+void ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes)
 {
-    std::unordered_set<const void *> removed_edge_ids;
+    auto is_removed_edge = [&](const Edge & edge) { return removed_nodes.contains(edge.to); };
+    auto is_removed_id = [&](void * id) { return is_removed_edge(*static_cast<const Edge *>(id)); };
 
-    for (auto it = node.back_edges.begin(); it != node.back_edges.end();)
-    {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.back_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
-
-    for (auto it = node.direct_edges.begin(); it != node.direct_edges.end();)
-    {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.direct_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
-
-    /// We need to remove cached updates for removed edges. This updates now contain stale pointers.
-    if (!removed_edge_ids.empty())
-    {
-        auto is_stale = [&](void * id) { return removed_edge_ids.contains(id); };
-        std::erase_if(node.post_updated_input_ports, is_stale);
-        std::erase_if(node.post_updated_output_ports, is_stale);
-    }
+    std::erase_if(node.post_updated_input_ports, is_removed_id);
+    std::erase_if(node.post_updated_output_ports, is_removed_id);
+    std::erase_if(node.back_edges, is_removed_edge);
+    std::erase_if(node.direct_edges, is_removed_edge);
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
@@ -275,13 +254,16 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
 
 void ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
 {
-    std::unordered_set<const Node *> removed_nodes;
+    std::unordered_set<Node *> removed_nodes;
+    removed_nodes.reserve(group.processors.size());
+    for (const auto & removed_proc : group.processors)
+        removed_nodes.insert(getNodeToRemove(removed_proc));
 
     {
         std::lock_guard guard(processors_mutex);
 
-        for (const auto & removed_proc : group.processors)
-            removed_nodes.insert(removeNode(removed_proc));
+        for (auto * node : removed_nodes)
+            removeNode(*node);
     }
 
     for (const auto & removed_proc : group.processors)
