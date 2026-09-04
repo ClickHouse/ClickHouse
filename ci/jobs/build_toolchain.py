@@ -8,9 +8,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
-
-LLVM_VERSION = "22"
-
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
 NINJA_SOURCE_DIR = f"{TEMP}/ninja-src"
 NINJA_BUILD_DIR = f"{TEMP}/ninja-build"
@@ -40,7 +37,7 @@ STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
 # self-contained for all ClickHouse cross-compilation targets.
-# Must match the architectures supported in contrib/compiler-rt-cmake/CMakeLists.txt.
+# Must match triples in cmake/build_clang_builtin.cmake.
 CROSS_BUILTIN_TARGETS = [
     ("x86_64-unknown-linux-gnu", "Linux"),
     ("aarch64-unknown-linux-gnu", "Linux"),
@@ -128,7 +125,7 @@ def main():
             Result.from_commands_run(
                 name="Clone LLVM",
                 command=(
-                    f"git clone --depth 1 --branch release/{LLVM_VERSION}.x"
+                    f"git clone --depth 1 --branch release/21.x"
                     f" https://github.com/llvm/llvm-project.git {LLVM_SOURCE_DIR}"
                 ),
                 retries=3,
@@ -199,11 +196,11 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=Native"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_BUILD_INSTRUMENTED=IR"
-            f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
-            f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
+            f" -DCMAKE_C_COMPILER=clang-21"
+            f" -DCMAKE_CXX_COMPILER=clang++-21"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
+            f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DCMAKE_INSTALL_PREFIX={STAGE1_INSTALL_DIR}"
             f" -S {LLVM_SOURCE_DIR}/llvm"
@@ -316,19 +313,19 @@ def main():
                     " (link failures with instrumented compiler are expected)."
                     " Profraw files from compilation steps should still be available."
                 )
-                build_result.status = Result.Status.OK
+                build_result.status = Result.Status.SUCCESS
                 build_result.info = "Build failed at link step (expected); profraw files collected"
             results.append(build_result)
 
-        # Merge profraw files with the matching `llvm-profdata` (it supports the zlib-compressed
-        # profile format the instrumented clang can emit)
+        # Merge profraw files using system llvm-profdata (stage 1 build lacks zlib
+        # support, but the profraw files may contain zlib-compressed sections)
         profraw_dir = f"{STAGE1_BUILD_DIR}/profiles/"
         if os.path.isdir(profraw_dir) and os.listdir(profraw_dir):
             results.append(
                 Result.from_commands_run(
                     name="Merge PGO profiles",
                     command=(
-                        f"llvm-profdata-{LLVM_VERSION} merge"
+                        f"llvm-profdata-21 merge"
                         f" -output={PROFDATA_PATH}"
                         f" {profraw_dir}"
                     ),
@@ -407,14 +404,14 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=all"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
-            f" -DCMAKE_C_COMPILER=clang-{LLVM_VERSION}"
-            f" -DCMAKE_CXX_COMPILER=clang++-{LLVM_VERSION}"
+            f" -DCMAKE_C_COMPILER=clang-21"
+            f" -DCMAKE_CXX_COMPILER=clang++-21"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
             f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f' -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
             f" -DLLVM_ENABLE_TERMINFO=OFF"
-            f" -DLLVM_ENABLE_ZLIB=FORCE_ON"
+            f" -DLLVM_ENABLE_ZLIB=OFF"
             f" -DLLVM_ENABLE_ZSTD=OFF"
             f" -DLLVM_BINUTILS_INCDIR=/usr/include"
             f' -DLLVM_BUILTIN_TARGETS="{builtin_targets}"'
@@ -461,9 +458,9 @@ def main():
     if res and JobStages.BOLT_OPTIMIZATION in stages:
         bolt_ok = True
         bolt_results = []
-        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-{LLVM_VERSION}"
+        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-21"
 
-        # Find the actual clang binary (it may be a different version than expected)
+        # Find the actual clang binary (it may be clang-21, clang-20, etc.)
         if not os.path.exists(clang_binary):
             candidates = sorted(
                 glob.glob(f"{STAGE2_INSTALL_DIR}/bin/clang-[0-9]*"),
@@ -651,16 +648,6 @@ def main():
             os.makedirs(ninja_log_dir, exist_ok=True)
             shutil.copy2(ninja_log_saved, f"{ninja_log_dir}/ninja_log")
             print(f"Installed .ninja_log to {ninja_log_dir}/ninja_log")
-
-        # LLVM installs the versioned `clang-<version>` plus unversioned
-        # `clang++`->`clang`->`clang-<version>`, but not a versioned `clang++-<version>`. ClickHouse
-        # selects compilers by versioned name, so without this the C++ compiler resolves to whatever
-        # `clang++-<version>` is elsewhere on PATH (e.g. a distro one) while C/ASM use this
-        # toolchain - a silent mismatch. Add the missing symlink.
-        clangpp = f"{STAGE2_INSTALL_DIR}/bin/clang++-{LLVM_VERSION}"
-        if not os.path.lexists(clangpp):
-            os.symlink("clang", clangpp)
-            print(f"Created symlink {clangpp} -> clang")
 
         # Strip ELF executables and shared libraries to reduce archive size
         # (relocations from --emit-relocs and LTO symbols are no longer needed).

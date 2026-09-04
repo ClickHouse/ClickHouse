@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>

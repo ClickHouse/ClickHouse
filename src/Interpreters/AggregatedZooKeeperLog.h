@@ -23,7 +23,7 @@ struct AggregatedZooKeeperLogElement
 
     /// Group statistics.
     UInt32 count;
-    Coordination::ErrorCounter errors;
+    std::unique_ptr<Coordination::ErrorCounter> errors;
     UInt64 total_latency_microseconds;
 
     static std::string name() { return "AggregatedZooKeeperLog"; }
@@ -68,7 +68,7 @@ private:
     {
         UInt32 count = 0;
         UInt64 total_latency_microseconds = 0;
-        Coordination::ErrorCounter errors;
+        std::unique_ptr<Coordination::ErrorCounter> errors = std::make_unique<Coordination::ErrorCounter>();
 
         void observe(UInt64 latency_microseconds, Coordination::Error error);
     };

@@ -5,9 +5,6 @@ import io
 import json
 import logging
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(__file__))
 
 import test_parser
 from connection import execute_request

@@ -6,14 +6,9 @@ env:
 
 concurrency:
   group: cherry-pick
-  # Never run two cherry-pick jobs at the same time: a new scheduled run waits
-  # for the in-progress one to finish instead of cancelling it.
-  cancel-in-progress: false
 on: # yamllint disable-line rule:truthy
   schedule:
-    # Every 20 minutes. Offset from round values (e.g. */20 -> :00/:20/:40),
-    # which are popular and get their launches delayed by GitHub.
-    - cron: '9,29,49 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
