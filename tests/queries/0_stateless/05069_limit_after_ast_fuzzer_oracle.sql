@@ -3,6 +3,9 @@
 -- skip such queries instead of reporting a mismatch.
 SET ast_fuzzer_runs = 3;
 SET ast_fuzzer_oracle = 1;
+-- The random mutations also produce queries that fail, and the fuzzer logs every such failure at the
+-- error level; the test checks only the results, so those log lines must not reach the client.
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS t_oracle_range;
 CREATE TABLE t_oracle_range (n UInt8, p UInt8) ENGINE = Memory;
