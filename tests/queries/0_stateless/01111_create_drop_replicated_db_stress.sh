@@ -8,6 +8,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# A worker can enter one last query just before the 20-second stress deadline. Bound that query
+# well below the 300-second per-test limit so all workers and cleanup still have time to finish.
+MAX_EXECUTION_TIME=60
+LOCK_ACQUIRE_TIMEOUT=30
 
 function create_db()
 {
@@ -18,7 +22,7 @@ function create_db()
         SUFFIX=$(($RANDOM % 16))
         # Multiple database replicas on one server are actually not supported (until we have namespaces).
         # So CREATE TABLE queries will fail on all replicas except one. But it's still makes sense for a stress test.
-        $CLICKHOUSE_CLIENT --query \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --query \
         "create database if not exists ${CLICKHOUSE_DATABASE}_repl_01111_$SUFFIX engine=Replicated('/test/01111/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '$SHARD', '$REPLICA')" \
          2>&1| grep -Fa "Exception: " | grep -Fv "REPLICA_ALREADY_EXISTS" | grep -Fiv "Will not try to start it up" | \
          grep -Fv "Coordination::Exception" | grep -Fv "already contains some data and it does not look like Replicated database path" | grep -Fv QUERY_WAS_CANCELLED
@@ -33,7 +37,7 @@ function drop_db()
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
         if [ -z "$database" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --query \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --query \
         "drop database if exists $database" 2>&1| grep -Fa "Exception: " | grep -Fv DATABASE_NOT_EMPTY | grep -Fv QUERY_WAS_CANCELLED
         sleep 0.$RANDOM
     done
@@ -57,7 +61,7 @@ function create_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --lock_acquire_timeout=120 --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 -q \
         "create table $database.rmt_${RANDOM}_${RANDOM}_${RANDOM} (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' in engine arguments is" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv TABLE_IS_DROPPED | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
         sleep 0.$RANDOM
@@ -70,7 +74,7 @@ function alter_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --max_execution_time 300 --lock_acquire_timeout=120 --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 -q \
         "alter table $table update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv ABORTED | grep -Fv "There are no tables satisfied provided regexp" | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
         sleep 0.$RANDOM
@@ -83,7 +87,7 @@ function insert()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
-        $CLICKHOUSE_CLIENT -q \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT -q \
         "insert into $table values ($RANDOM)" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv TABLE_UUID_MISMATCH | grep -Fv QUERY_WAS_CANCELLED
     done
 }
@@ -106,5 +110,5 @@ wait
 readarray -t databases_arr < <(${CLICKHOUSE_CLIENT} -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}_%'")
 for db in "${databases_arr[@]}"
 do
-    $CLICKHOUSE_CLIENT -q "drop database if exists $db"
+    $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT -q "drop database if exists $db"
 done
