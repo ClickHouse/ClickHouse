@@ -3,7 +3,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -11,7 +14,9 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -36,6 +41,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -55,6 +62,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
@@ -68,6 +76,7 @@
 namespace ProfileEvents
 {
     extern const Event MutationAffectedRowsUpperBound;
+    extern const Event MutationUntouchedPartsByIndexAnalysis;
 }
 
 namespace DB
@@ -76,6 +85,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsString force_data_skipping_indices;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -108,6 +118,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 /// Returns whether the analyzer should be used for mutations.
@@ -139,6 +151,134 @@ void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
         NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
     }
+}
+
+bool mutationPredicateContainsDeferredSet(const ASTPtr & predicate)
+{
+    if (predicate->as<ASTSubquery>() || predicate->as<ASTSelectQuery>() || predicate->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * function = predicate->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            /// Only a literal tuple or array on the right-hand side is a stable constant set. A plain
+            /// identifier names a table, and any other function may be a table function; the analyzer
+            /// resolves both into a prepared set.
+            auto is_literal_enumeration = [](const ASTPtr & node, const auto & self) -> bool
+            {
+                if (node->as<ASTLiteral>())
+                    return true;
+
+                const auto * rhs_function = node->as<ASTFunction>();
+                if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                    return false;
+
+                return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child) { return self(child, self); });
+            };
+
+            if (!is_literal_enumeration(arguments[1], is_literal_enumeration))
+                return true;
+        }
+    }
+
+    return std::ranges::any_of(predicate->children, [](const auto & child) { return mutationPredicateContainsDeferredSet(child); });
+}
+
+std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
+    ASTPtr predicate,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextMutablePtr & context)
+{
+    std::optional<ActionsDAG> actions_dag;
+    const ActionsDAG::Node * predicate_node = nullptr;
+
+    if (shouldUseAnalyzerForMutations(context))
+    {
+        auto expression = buildQueryTree(predicate, context);
+
+        /// Resolve against the storage, so that its columns (including `ALIAS` and `EPHEMERAL`),
+        /// subcolumns and virtual columns (e.g. `_part`, `_partition_id`) are visible, just like
+        /// during the mutation execution.
+        auto table_expression = std::make_shared<TableNode>(storage, context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, table_expression, context);
+
+        GlobalPlannerContextPtr global_planner_context
+            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        /// Use plain column names for the DAG inputs (instead of planner column identifiers
+        /// like `__table1.x`), so that the caller can match them against key expression columns.
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/ {},
+            planner_context,
+            empty_correlated_columns_set,
+            /*use_column_identifier_as_action_node_name=*/ false);
+        correlated_subtrees.assertEmpty("in a mutation predicate");
+
+        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            createUniqueAliasesIfNecessary(query_tree, context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+
+        actions_dag.emplace(std::move(actions));
+        if (actions_dag->getOutputs().size() != 1)
+            return std::nullopt;
+        predicate_node = actions_dag->getOutputs().front();
+    }
+    else
+    {
+        /// Every column the mutation predicate may legally reference must be known here, otherwise
+        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+        /// A column that is not part of a key simply makes the expression opaque to the caller,
+        /// which then keeps the data - it does not have to be readable here.
+        auto columns = metadata_snapshot->getColumns().getAll();
+
+        NameSet column_names;
+        for (const auto & column : columns)
+            column_names.insert(column.name);
+        for (const auto & column : metadata_snapshot->virtuals)
+        {
+            if (!column_names.contains(column.name))
+                columns.emplace_back(column.name, column.type);
+        }
+
+        TreeRewriter tree_rewriter(context);
+        auto syntax_result = tree_rewriter.analyze(predicate, columns);
+        actions_dag.emplace(ExpressionAnalyzer(predicate, syntax_result, context).getActionsDAG(false));
+
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        predicate_node = actions_dag->tryFindInOutputs(predicate->getColumnName());
+    }
+
+    if (!predicate_node)
+        return std::nullopt;
+
+    return MutationPredicateActions{.dag = std::move(*actions_dag), .predicate = predicate_node};
 }
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
@@ -220,6 +360,68 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
+/// Tries to prove, from the part's partition value, minmax index and primary key index alone,
+/// that the predicates match no rows of the part, mirroring the index analysis the `SELECT count()`
+/// check query would perform. Conservative: returns false whenever exclusion cannot be proven.
+bool canExcludePartByIndexAnalysis(
+    const MergeTreeData::DataPartPtr & part,
+    const StoragePtr & storage_from_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    ASTs predicates,
+    ContextPtr context)
+{
+    /// The check query rejects a mutation whose predicate does not use a forced index;
+    /// excluding the part here would silently bypass that check.
+    if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+        return false;
+
+    /// Only the predicate rewrite/analysis below is allowed to fall back silently: a genuine
+    /// error there will surface again when the fallback path executes the check query. The
+    /// index analysis call further down reads primary key / minmax metadata and must not have
+    /// resource, I/O or cancellation errors swallowed here.
+    std::shared_ptr<ActionsDAGWithInversionPushDown> inverted_dag;
+    try
+    {
+        ASTPtr condition = makeASTForLogicalOr(std::move(predicates));
+
+        /// SQL UDF bodies are allowed to contain subqueries and table reads; the analysis below
+        /// expands them, so the guard must run after the same substitution, not on the raw predicate.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(condition, context);
+
+        /// Sets for subqueries and table references would be built again by the fallback path.
+        if (mutationPredicateContainsDeferredSet(condition))
+            return false;
+
+        /// Resolve the predicate with the analyzer that will interpret the mutation, so this
+        /// shortcut sees every predicate shape the fallback check query resolves.
+        auto actions = buildActionsForMutationPredicate(
+            condition, storage_from_part, metadata_snapshot, Context::createCopy(context));
+
+        if (!actions)
+            return false;
+
+        inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(actions->predicate, context, /*boolean_context=*/true);
+    }
+    catch (...)
+    {
+        /// An interruption or a resource limit is not a "cannot analyze this predicate" answer, so it
+        /// must not be turned into extra work on the fallback path.
+        const int code = getCurrentExceptionCode();
+        if (code == ErrorCodes::QUERY_WAS_CANCELLED || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+
+        tryLogCurrentException(
+            getLogger("MutationsInterpreter"),
+            "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
+            LogsLevel::debug);
+        return false;
+    }
+
+    static const LoggerPtr log = getLogger("MutationsInterpreter");
+    return MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(part, inverted_dag, metadata_snapshot, context, log);
+}
+
 }
 
 
@@ -241,6 +443,9 @@ IsStorageTouched isStorageTouchedByMutations(
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
 
+    /// A matching `IN PARTITION` clause is dropped from the collected predicates: it is a constant `true` for this part.
+    ASTs predicates_for_part;
+
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -261,33 +466,49 @@ IsStorageTouched isStorageTouchedByMutations(
                 return all_rows;
             }
 
+            bool partition_matches = true;
             if (alter->partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-                if (partition_id == source_part->info.getPartitionId())
-                    all_commands_can_be_skipped = false;
+                partition_matches = (partition_id == source_part->info.getPartitionId());
             }
             else if (alter->partitions)
             {
+                partition_matches = false;
                 for (const auto & partition_ast : alter->partitions->children)
                 {
                     const String partition_id = storage_from_part->getPartitionIDFromQuery(partition_ast, context);
                     if (partition_id == source_part->info.getPartitionId())
                     {
-                        all_commands_can_be_skipped = false;
+                        partition_matches = true;
                         break;
                     }
                 }
             }
-            else
+
+            if (partition_matches)
             {
                 all_commands_can_be_skipped = false;
+                predicates_for_part.push_back(ASTPtr(alter->predicate));
             }
         }
     }
 
     if (all_commands_can_be_skipped)
         return no_rows;
+
+    /// An empty part trivially has no rows to touch; this is not an index-analysis exclusion,
+    /// so it must not count towards MutationUntouchedPartsByIndexAnalysis. The check query
+    /// still rejects a predicate that does not use a forced index even for an empty part,
+    /// so the shortcut is gated the same way as `canExcludePartByIndexAnalysis`.
+    if (source_part->isEmpty() && !context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+        return {.any_rows_affected = false, .all_rows_affected = true};
+
+    if (canExcludePartByIndexAnalysis(source_part, storage_from_part, metadata_snapshot, std::move(predicates_for_part), context))
+    {
+        ProfileEvents::increment(ProfileEvents::MutationUntouchedPartsByIndexAnalysis);
+        return {.any_rows_affected = false, .all_rows_affected = source_part->rows_count == 0};
+    }
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;

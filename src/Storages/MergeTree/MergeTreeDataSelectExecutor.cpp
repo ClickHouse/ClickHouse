@@ -105,7 +105,11 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
+    extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_skip_indexes;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1923,6 +1927,95 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
     }
     return std::max(marks, min_marks);
+}
+
+bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
+    const MergeTreeData::DataPartPtr & part,
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log)
+{
+    /// `filterPartsByPartition` rejects such a part before it prunes anything; hold the same invariant
+    /// here so no shortcut below can classify a corrupted part as excluded.
+    if (!part->isEmpty() && !part->getMinMaxIndex()->initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
+
+    const auto & settings = context->getSettingsRef();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    auto storage_settings = part->storage.getSettings();
+    const bool skip_constant_folding = !settings[Setting::use_constant_folding_in_index_analysis];
+
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        PartitionPruner partition_pruner(
+            metadata_snapshot, *filter_dag, context, /*strict=*/false, /*skip_analysis=*/!settings[Setting::use_partition_pruning]);
+
+        if (!partition_pruner.isUseless() && partition_pruner.canBePruned(*part))
+            return true;
+    }
+
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, storage_settings); !minmax_columns.empty())
+    {
+        auto minmax_columns_types = minmax_columns.getTypes();
+        bool skip_minmax_analysis = !settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes];
+        auto minmax_factory = [context, metadata_snapshot, storage_settings, minmax_columns, skip_minmax_analysis]
+            (const ActionsDAG *, const ActionsDAG::Node * predicate)
+        {
+            auto minmax_expression = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), storage_settings, ExpressionActionsSettings(context));
+            ActionsDAGWithInversionPushDown wrapped(predicate, context, /*boolean_context=*/false);
+            return KeyCondition{wrapped, context, minmax_columns.getNames(), minmax_expression, /*single_point_=*/false, skip_minmax_analysis};
+        };
+        auto minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(
+            filter_dag, std::move(minmax_factory), metadata_snapshot, context, skip_constant_folding);
+
+        /// Checked unconditionally, like `selectPartsToRead` does: a condition that is useless before
+        /// substitution can still be decisive once specialized for this part's partition value.
+        if (!minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            return true;
+    }
+
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    if (!primary_key.column_names.empty())
+    {
+        bool skip_pk_analysis = !settings[Setting::use_primary_key];
+        auto key_condition_factory = [context, metadata_snapshot, skip_pk_analysis](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        {
+            ActionsDAGWithInversionPushDown wrapped(predicate, context, /*boolean_context=*/false);
+            return KeyCondition{wrapped, context, metadata_snapshot->getPrimaryKey(), /*single_point_=*/false, skip_pk_analysis};
+        };
+        auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(
+            filter_dag, std::move(key_condition_factory), metadata_snapshot, context, skip_constant_folding);
+
+        const auto & key_condition = key_condition_template->generateForPart(part);
+
+        if (key_condition.alwaysFalse())
+            return true;
+
+        if (!key_condition.alwaysUnknownOrTrue())
+        {
+            std::vector<std::optional<size_t>> pk_to_minmax_slot;
+            if (settings[Setting::use_partition_minmax_for_primary_key_pruning])
+                pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, storage_settings);
+            const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
+            auto mark_ranges = markRangesFromPKRange(
+                RangesInDataPart(part),
+                metadata_snapshot,
+                key_condition,
+                /*part_offset_condition=*/nullptr,
+                /*total_offset_condition=*/nullptr,
+                /*exact_ranges=*/nullptr,
+                pk_to_minmax_slot_ptr,
+                settings,
+                log);
+
+            if (mark_ranges.empty())
+                return true;
+        }
+    }
+
+    return false;
 }
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.

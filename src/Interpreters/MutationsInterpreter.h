@@ -61,6 +61,31 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// subqueries with "UNION mode UNION_DEFAULT must be normalized".
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
+/// Whether the mutation `predicate` needs a set that is only built when the predicate is evaluated:
+/// an `IN` over a subquery, a table or a table function. The analyzer turns all three forms into a
+/// prepared set, and every consumer of the predicate builds - and may evaluate - that set on its
+/// own. An analysis that only inspects the predicate must therefore leave such commands alone,
+/// rather than pay for the set once more and risk disagreeing with the execution about its contents.
+bool mutationPredicateContainsDeferredSet(const ASTPtr & predicate);
+
+struct MutationPredicateActions
+{
+    ActionsDAG dag;
+    /// Points into `dag`, which owns the nodes.
+    const ActionsDAG::Node * predicate = nullptr;
+};
+
+/// Builds the actions computing a mutation `predicate` over `storage`, using the analyzer that will
+/// interpret the mutation: some predicate shapes (e.g. qualified column names) resolve only under
+/// the query-tree analyzer. The DAG inputs carry plain column names, so a caller can match them
+/// against key expressions. The predicate AST is analyzed in place. Returns `std::nullopt` when the
+/// predicate does not resolve into a single filter node.
+std::optional<MutationPredicateActions> buildActionsForMutationPredicate(
+    ASTPtr predicate,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextMutablePtr & context);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter

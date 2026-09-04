@@ -109,6 +109,17 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    /// Whether the filter provably selects no rows of the part, using only the part's partition
+    /// value, minmax index and primary key index. Mirrors the per-part index analysis performed
+    /// for SELECT queries, including its settings gating, so a positive result implies a query
+    /// with this filter would have read no granules from the part.
+    static bool canExcludePartByIndexAnalysis(
+        const MergeTreeData::DataPartPtr & part,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log);
+
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
