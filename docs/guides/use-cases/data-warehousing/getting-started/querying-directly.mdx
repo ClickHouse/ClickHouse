@@ -8,7 +8,7 @@ keywords: ['data lake', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse provides table functions for querying data stored in open table formats directly in object storage. This does not require connecting to an external catalog - it queries the data in place, similar to how AWS Athena reads from S3.
 
@@ -350,7 +350,7 @@ paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
 
 ### Table engine {#paimon-table-engine}
 
-Paimon does not currently have a dedicated table engine in ClickHouse. Use the table functions above for querying Paimon tables.
+ClickHouse provides experimental [`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines](/reference/engines/table-engines/integrations/paimon). Enable them with `allow_experimental_paimon_storage_engine = 1`.
 
 For supported features including storage backends and more, see the [support matrix](/guides/use-cases/data-warehousing/support-matrix#format-support). For full reference, see the [`paimon` table function](/reference/functions/table-functions/paimon) documentation.
 

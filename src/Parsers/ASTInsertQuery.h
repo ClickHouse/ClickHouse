@@ -6,6 +6,8 @@
 
 class SipHash;
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -52,6 +54,9 @@ public:
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

@@ -1,0 +1,26 @@
+-- collision with a top-level column differing only by case blocks the rewrite
+0
+-- exact-case collision stays blocked
+0
+-- no collision: the rewrite fires
+1
+-- ORC: case-insensitive matching returns the tuple element, not the colliding column
+200
+201
+202
+1
+-- Parquet: same
+200
+201
+202
+1
+-- a structure that omits the colliding column: ORC returns the tuple element
+100
+101
+102
+1
+0
+-- a structure that omits the colliding column: Parquet refuses the ambiguous name
+100
+101
+102

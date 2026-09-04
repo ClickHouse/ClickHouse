@@ -13,6 +13,7 @@ doc_type: 'reference'
 Retorna um objeto geométrico em WKT (Well Known Text) a partir de vários [tipos de dados Geo](/pt-BR/reference/data-types/geo). Os objetos WKT compatíveis são:
 
 * POINT
+* MULTIPOINT
 * POLYGON
 * MULTIPOLYGON
 * LINESTRING
@@ -29,6 +30,7 @@ WKT(geo_data)
 `geo_data` pode ser um dos seguintes [Tipos de dados Geo](/pt-BR/reference/data-types/geo) ou um de seus tipos primitivos subjacentes:
 
 * [Point](/pt-BR/reference/data-types/geo#point)
+* [MultiPoint](/pt-BR/reference/data-types/geo#multipoint)
 * [Ring](/pt-BR/reference/data-types/geo#ring)
 * [Polygon](/pt-BR/reference/data-types/geo#polygon)
 * [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon)
@@ -38,6 +40,7 @@ WKT(geo_data)
 **Valor retornado**
 
 * O objeto geométrico WKT `POINT` é retornado para Point.
+* O objeto geométrico WKT `MULTIPOINT` é retornado para MultiPoint.
 * O objeto geométrico WKT `POLYGON` é retornado para Polygon
 * O objeto geométrico WKT `MULTIPOLYGON` é retornado para MultiPolygon.
 * O objeto geométrico WKT `LINESTRING` é retornado para LineString.
@@ -253,6 +256,44 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+<div id="readwktmultipoint">
+  ## readWKTMultiPoint
+</div>
+
+Analisa uma representação em Well-Known Text (WKT) de uma geometria MultiPoint e a retorna no formato interno do ClickHouse.
+
+<div id="syntax">
+  ### Sintaxe
+</div>
+
+```sql
+readWKTMultiPoint(wkt_string)
+```
+
+<div id="arguments">
+  ### Argumentos
+</div>
+
+* `wkt_string`: A string WKT de entrada que representa uma geometria MultiPoint.
+
+<div id="returned-value">
+  ### Valor retornado
+</div>
+
+A função retorna uma representação interna da geometria MultiPoint do ClickHouse.
+
+<div id="example">
+  ### Exemplo
+</div>
+
+```sql
+SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
+```
+
+```response
+[(1,1),(2,2),(3,3)]
 ```
 
 <div id="readwktring">
@@ -500,6 +541,44 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 </div>
 
 UInt8, 0 para false, 1 para true
+
+<div id="readwkbmultipoint">
+  ## readWKBMultiPoint
+</div>
+
+Analisa uma representação Well-Known Binary (WKB) de uma geometria MultiPoint e a retorna no formato interno do ClickHouse.
+
+<div id="syntax">
+  ### Sintaxe
+</div>
+
+```sql
+readWKBMultiPoint(wkb_string)
+```
+
+<div id="arguments">
+  ### Argumentos
+</div>
+
+* `wkb_string`: A string WKB de entrada que representa uma geometria MultiPoint.
+
+<div id="returned-value">
+  ### Valor retornado
+</div>
+
+A função retorna uma representação interna do ClickHouse para a geometria MultiPoint.
+
+<div id="example">
+  ### Exemplo
+</div>
+
+```sql
+SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
+```
+
+```response
+[(1,1),(2,2)]
+```
 
 <div id="polygonsdistancespherical">
   ## polygonsDistanceSpherical
@@ -764,6 +843,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 </div>
 
 Dois polígonos
+
+<div id="returned-value">
+  ### Valor retornado
+</div>
+
+UInt8, 0 para false, 1 para true
+
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+Retorna true se duas geometrias se intersectam (têm algum ponto, linha ou área em comum).
+
+Ao contrário de [`polygonsIntersectCartesian`](#polygonsintersectcartesian), aceita qualquer tipo de dado geométrico
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), incluindo o tipo comum
+[`Geometry`](/pt-BR/reference/data-types/geo#geometry), e os dois argumentos podem ser de tipos diferentes.
+
+As coordenadas estão no sistema de coordenadas cartesianas.
+
+<div id="example">
+  ### Exemplo
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### Parâmetros de entrada
+</div>
+
+Duas geometrias de qualquer tipo de dado geométrico (ou `Geometry`).
+
+<div id="returned-value">
+  ### Valor retornado
+</div>
+
+UInt8, 0 para false, 1 para true
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+Retorna true se duas geometrias se intersectam (têm algum ponto, linha ou área em comum).
+
+Diferentemente de [`polygonsIntersectSpherical`](#polygonsintersectspherical), ela aceita qualquer tipo de dado geométrico
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), incluindo o tipo comum
+[`Geometry`](/pt-BR/reference/data-types/geo#geometry), e os dois argumentos podem ser de tipos diferentes.
+
+As coordenadas são interpretadas como pertencentes a uma esfera ideal.
+
+<div id="example">
+  ### Exemplo
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### Parâmetros de entrada
+</div>
+
+Duas geometrias de qualquer tipo de dado geométrico (ou `Geometry`).
 
 <div id="returned-value">
   ### Valor retornado

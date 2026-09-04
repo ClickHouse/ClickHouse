@@ -6,13 +6,9 @@ title: 'Shared'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
-
-<div id="shared-database-engine">
-  # Shared database engine
-</div>
 
 O motor de banco de dados `Shared` funciona em conjunto com o Shared Catalog para gerenciar bancos de dados cujas tabelas usam motores de tabela sem estado, como [`SharedMergeTree`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree).
 Esses motores de tabela não gravam estado persistente em disco e são compatíveis com ambientes de compute dinâmico.
@@ -32,14 +28,14 @@ Cada nó acompanha apenas a última versão aplicada e, na inicialização, busc
   ## Sintaxe
 </div>
 
-Para usuários finais, o uso do Shared Catalog e do Shared motor de banco de dados não requer configuração adicional. A criação de bancos de dados é a mesma de sempre:
+Para usuários finais, o uso do Shared Catalog e do motor de banco de dados `Shared` não requer configuração adicional. A criação de bancos de dados é a mesma de sempre:
 
 ```sql
 CREATE DATABASE my_database;
 ```
 
-ClickHouse Cloud atribui automaticamente o Shared motor de banco de dados aos bancos de dados. Quaisquer tabelas criadas em um banco de dados desse tipo usando engines sem estado se beneficiarão automaticamente dos recursos de replicação e coordenação do Shared Catalog.
+ClickHouse Cloud atribui automaticamente o motor de banco de dados `Shared` aos bancos de dados. Quaisquer tabelas criadas em um banco de dados desse tipo usando engines sem estado se beneficiarão automaticamente dos recursos de replicação e coordenação do Shared Catalog.
 
 <Tip>
-  Para mais informações sobre o Shared Catalog e seus benefícios, consulte [&quot;Shared catalog and shared database engine&quot;](/pt-BR/products/cloud/features/infrastructure/shared-catalog) na seção de referência do Cloud.
+  Para mais informações, consulte [Shared catalog and shared database engine](/pt-BR/products/cloud/features/infrastructure/shared-catalog).
 </Tip>

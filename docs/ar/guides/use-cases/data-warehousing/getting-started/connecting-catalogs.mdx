@@ -4,11 +4,11 @@ sidebarTitle: 'الاتصال بالكتالوجات'
 slug: /use-cases/data-lake/getting-started/connecting-catalogs
 toc_max_heading_level: 3
 description: 'اربط ClickHouse بكتالوجات البيانات الخارجية باستخدام محرك قاعدة البيانات DataLakeCatalog لإتاحة جداول الكتالوج كقواعد بيانات ClickHouse أصلية.'
-keywords: ['بحيرة بيانات', 'lakehouse', 'كتالوج', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+keywords: ['بحيرة بيانات', 'lakehouse', 'كتالوج', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake', 'seaweedfs']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 في [القسم السابق](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly)، أجريتَ استعلامات على صيغ الجداول المفتوحة من خلال تمرير مسارات التخزين مباشرةً. عمليًا، تدير معظم المؤسسات البيانات الوصفية للجداول عبر **كتالوج بيانات** — وهو سجل مركزي يتتبّع مواقع الجداول، والمخططات، والأقسام. عند توصيل ClickHouse بكتالوج باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يُعرَض الكتالوج بالكامل كقاعدة بيانات في ClickHouse. ويظهر كل جدول في الكتالوج تلقائيًا، ويمكن الاستعلام عنه باستخدام ClickHouse SQL بالكامل، من دون الحاجة إلى معرفة مسارات الجداول الفردية أو إدارة بيانات الاعتماد لكل جدول.
 
@@ -21,6 +21,7 @@ import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | Lakekeeper           | [كتالوج Lakekeeper](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | Project Nessie       | [كتالوج Nessie](/ar/guides/use-cases/data-warehousing/nessie-catalog)         |
 | Microsoft OneLake    | [Fabric OneLake](/ar/guides/use-cases/data-warehousing/onelake-catalog)       |
+| SeaweedFS            | [كتالوج SeaweedFS](/ar/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
 <div id="connecting-to-unity-catalog">
   ## الاتصال بـ Unity Catalog
@@ -32,11 +33,10 @@ import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يوفّر [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) حوكمة مركزية لبيانات lakehouse في Databricks.
 
-يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. ومع ClickHouse، يمكنك الاستعلام من جداول Unity Catalog بكلٍّ من Delta وIceberg.
+يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. ومع ClickHouse، يمكنك الاستعلام من جداول Delta وIceberg في Unity Catalog التي تستخدم مواقع external storage.
 
 <Note>
-  يعمل التكامل مع Unity Catalog مع الجداول المُدارة والجداول الخارجية.
-  هذا التكامل مدعوم حاليًا على AWS فقط.
+  هذا التكامل مدعوم حاليًا على AWS فقط. الجداول الموجودة على Databricks managed storage غير مدعومة لأن Unity Catalog لا يوفّر credential vending لتلك المواقع. راجع [مرجع Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) للحصول على التفاصيل.
 </Note>
 
 <div id="configuring-unity-in-databricks">

@@ -1,0 +1,20 @@
+<clickhouse>
+    <!--
+        Custom top-level key referenced via config:// from an HTTP handler.
+        The server must accept this during unknown-key validation, because
+        StaticRequestHandler intentionally supports config://<path> lookups.
+    -->
+    <my_static_response_payload>Hello from config://</my_static_response_payload>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/my_static_response</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://my_static_response_payload</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

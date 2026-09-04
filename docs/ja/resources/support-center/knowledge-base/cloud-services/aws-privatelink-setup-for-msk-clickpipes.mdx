@@ -6,59 +6,118 @@ tags: ['セキュリティと認証', 'Cloud 管理']
 keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
 ---
 
-{frontMatter.description}
-
-{/* 省略 */}
-
 <div id="overview">
   ## 概要
 </div>
 
-このガイドでは、[ClickPipes リバース プライベート エンドポイント](/ja/integrations/clickpipes/aws-privatelink#msk-multi-vpc)で使用する **MSK マルチ VPC** の設定を始める方法を説明します。
+このガイドでは、[ClickPipes リバース プライベート エンドポイント](/ja/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc)で使用する **MSK マルチ VPC** の設定を始める方法を説明します。
+
+ClickPipes はクライアント VPC を所有し、マネージド VPC 接続を作成します。ネットワーク接続を確立するには、MSK クラスターでマルチ VPC プライベート接続を有効にし、クラスターのポリシーで ClickPipes の AWS アカウントを承認します。
 
 <div id="requirements">
   ## 要件
 </div>
 
-MSK クラスターの VPC は、ClickPipes のいずれかのリージョンに配置されている必要があります。サポート対象リージョンの一覧については、[ClickPipes リージョン](/ja/integrations/clickpipes/aws-privatelink#aws-privatelink-regions)を参照してください。
+MSK クラスターの VPC は、ClickPipes のいずれかのリージョンに配置されている必要があります。サポート対象リージョンの一覧については、[ClickPipes リージョン](/ja/integrations/clickpipes/networking/aws-privatelink#aws-privatelink-regions)を参照してください。
 
 <div id="enabling-multi-vpc-connectivity">
   ## MSK マルチ VPC 接続を有効にする
 </div>
 
-1. MSK クラスターに移動します。
-   * Amazon MSK コンソールの左側のナビゲーションペインで「Clusters」を選択します。
-   * MSK マルチ VPC 接続を設定する対象の MSK クラスターを選択します。
-2. MSK マルチ VPC 接続を有効にします
-   * **Connectivity** タブで、**Multi-VPC connectivity** セクションを見つけます。
-   * **Edit** をクリックします。
-   * **Turn-on MSK multi-VPC connectivity** オプションを有効にします。
-   * 画面の指示に従います
-3. ClickPipes アカウントのプリンシパルをクラスターのポリシーに追加します
-   * **Configuration** タブに移動します。
-   * **Cluster policy** セクションで **Edit** をクリックします。
-   * **IAM policy** に `arn:aws:iam::072088201116:root` を含めます。例:
-     ```json
-     {
-         "Version": "2012-10-17",
-         "Statement": [
-             {
-                 "Effect": "Allow",
-                 "Principal": {
-                     "AWS": [
-                         "arn:aws:iam::072088201116:root"
-                     ]
-                 },
-                 "Action": [
-                     "kafka:CreateVpcConnection",
-                     "kafka:GetBootstrapBrokers",
-                     "kafka:DescribeCluster",
-                     "kafka:DescribeClusterV2"
-                 ]
-             }
-         ]
-     }
-     ```
+<Tabs>
+  <Tab title="AWS コンソール" id="aws-console">
+    1. MSK クラスターに移動します。
+       * Amazon MSK コンソールの左側のナビゲーションペインで「Clusters」を選択します。
+       * MSK マルチ VPC 接続を設定する対象の MSK クラスターを選択します。
+    2. MSK マルチ VPC 接続を有効にします
+       * **Connectivity** タブで、**Multi-VPC connectivity** セクションを見つけます。
+       * **Edit** をクリックします。
+       * **Turn-on MSK multi-VPC connectivity** オプションを有効にします。
+       * 画面の指示に従います
+    3. ClickPipes アカウントのプリンシパルをクラスターのポリシーに追加します
+       * **Configuration** タブに移動します。
+       * **Cluster policy** セクションで **Edit** をクリックします。
+       * **IAM policy** に `arn:aws:iam::072088201116:root` を含めます。例:
+         ```json
+         {
+             "Version": "2012-10-17",
+             "Statement": [
+                 {
+                     "Effect": "Allow",
+                     "Principal": {
+                         "AWS": [
+                             "arn:aws:iam::072088201116:root"
+                         ]
+                     },
+                     "Action": [
+                         "kafka:CreateVpcConnection",
+                         "kafka:GetBootstrapBrokers",
+                         "kafka:DescribeCluster",
+                         "kafka:DescribeClusterV2"
+                     ],
+                     "Resource": "<MSK_CLUSTER_ARN>"
+                 }
+             ]
+         }
+         ```
+  </Tab>
+
+  <Tab title="Terraform" id="terraform-msk">
+    クラスターとマルチ VPC 接続の両方で、MSK の認証方法を有効にします。次の例では SASL/IAM を使用しています。SASL/SCRAM を使用するには、代わりに `scram = true` を設定します。
+
+    ```hcl
+    resource "aws_msk_cluster" "this" {
+      # ... 既存の設定 ...
+
+      client_authentication {
+        sasl {
+          iam = true
+        }
+      }
+
+      broker_node_group_info {
+        # ... 既存の設定 ...
+
+        connectivity_info {
+          vpc_connectivity {
+            client_authentication {
+              sasl {
+                iam = true
+              }
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    MSK クラスターポリシーで ClickPipes AWS アカウントを承認します。
+
+    ```hcl
+    resource "aws_msk_cluster_policy" "clickpipes" {
+      cluster_arn = aws_msk_cluster.this.arn
+
+      policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Sid       = "ClickPipesMultiVpc"
+          Effect    = "Allow"
+          Principal = { AWS = "arn:aws:iam::072088201116:root" }
+          Action = [
+            "kafka:CreateVpcConnection",
+            "kafka:GetBootstrapBrokers",
+            "kafka:DescribeCluster",
+            "kafka:DescribeClusterV2",
+          ]
+          Resource = aws_msk_cluster.this.arn
+        }]
+      })
+    }
+    ```
+
+    クラスターにすでにポリシーがある場合は、ClickPipes の権限を追加する際に既存のステートメントを保持します。
+  </Tab>
+</Tabs>
 
 <Tip>
   クラスター IAM ポリシーにより、ClickPipes からお使いの MSK クラスターへの接続を開始できるようになります。
@@ -69,4 +128,26 @@ MSK クラスターの VPC は、ClickPipes のいずれかのリージョンに
   ## リバースプライベートエンドポイントの作成
 </div>
 
-リバースプライベートエンドポイントの作成については、[ClickPipes ドキュメント](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe) の手順に従ってください。
+<Tabs>
+  <Tab title="ClickPipes UI" id="clickpipes-ui">
+    [ClickPipes ドキュメント](/ja/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)に記載されている手順に従って、リバースプライベートエンドポイントを作成します。
+  </Tab>
+
+  <Tab title="Terraform" id="terraform-rpe">
+    [ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint)を使用して、リバースプライベートエンドポイントを作成します。
+
+    ```hcl
+    resource "clickhouse_clickpipes_reverse_private_endpoint" "msk" {
+      service_id         = var.clickhouse_service_id
+      description        = "MSK multi-VPC reverse private endpoint"
+      type               = "MSK_MULTI_VPC"
+      msk_cluster_arn    = aws_msk_cluster.this.arn
+      msk_authentication = "SASL_IAM" # Or "SASL_SCRAM"
+
+      depends_on = [aws_msk_cluster_policy.clickpipes]
+    }
+    ```
+
+    リソースのフィールドは変更できません。フィールドを変更すると、リバースプライベートエンドポイントは削除され、再作成されます。
+  </Tab>
+</Tabs>

@@ -80,7 +80,7 @@ Settings can be configured differently: for a user account, in its granted roles
 1.  User account settings.
 2.  The settings for the default roles of the user account. If a setting is configured in some roles, then order of the setting application is undefined.
 3.  The settings from settings profiles assigned to a user or to its default roles. If a setting is configured in some profiles, then order of setting application is undefined.
-4.  Settings applied to the entire server by default or from the [default profile](/reference/settings/server-settings/settings#default_profile).
+4.  Settings applied to the entire server by default or from the [default profile](/reference/settings/server-settings/settings/default#default_profile).
 
 ### Role {#role-management}
 
@@ -107,6 +107,8 @@ Privileges can be granted to a role by the [GRANT](/reference/statements/grant) 
 #### Row policy {#row-policy-management}
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
+
+A row policy applies where the table data is read locally. For a [Distributed](/reference/engines/table-engines/special/distributed) table, or another table that delegates reading to remote servers, define the policy on the underlying tables on each server: a policy on the remote-backed table itself cannot be applied to the shipped query, and reads through it are rejected instead. Such a policy on an underlying table is not applied when the initiator ships an already-built read plan, so keep [`serialize_query_plan = 0`](/reference/settings/session-settings/serialize#serialize_query_plan) for users whose row policies must be enforced (see [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
 <Note>
 Row policies makes sense only if you have readonly access. If you can modify table or copy partitions between tables, it defeats the restrictions of row policies.
@@ -151,7 +153,7 @@ Management queries:
 
 - Setup a directory for configuration storage.
 
-    ClickHouse stores access entity configurations in the folder set in the [access_control_path](/reference/settings/server-settings/settings#access_control_path) server configuration parameter.
+    ClickHouse stores access entity configurations in the folder set in the [access_control_path](/reference/settings/server-settings/settings/access-control#access_control_path) server configuration parameter.
 
 - Enable SQL-driven access control and account management for at least one user account.
 

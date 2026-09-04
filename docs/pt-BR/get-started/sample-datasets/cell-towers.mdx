@@ -28,7 +28,7 @@ Neste guia, você aprenderá a:
 
 Veja uma prévia do dashboard criado neste guia:
 
-<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Dashboard de torres de telefonia celular por tipo de rádio no mcc 204" />
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Dashboard de torres de celular por tipo de rádio no mcc 204" />
 
 <div id="get-the-dataset">
   ## Obtenha o conjunto de dados
@@ -48,11 +48,11 @@ O projeto OpenCelliD é licenciado sob a Creative Commons Attribution-ShareAlike
 
     <ActionsMenu menu="Carregar dados" />
 
-    Escolha o conjunto de dados **Cell Towers** na aba **Dados de exemplo** e clique em **Carregar dados**:
+    Escolha o conjunto de dados **torre de celular** na aba **Dados de exemplo** e clique em **Carregar dados**:
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Carregar conjunto de dados de torres de celular" />
 
-    ### Examine o schema da tabela cell_towers
+    ### Examine o schema da tabela cell&#95;towers
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -109,7 +109,7 @@ O projeto OpenCelliD é licenciado sob a Creative Commons Attribution-ShareAlike
     2. Importe o conjunto de dados de um bucket público do S3 (686 MB):
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>

@@ -1,4 +1,5 @@
 #include <Analyzer/ValidationUtils.h>
+#include <Interpreters/GetAggregatesVisitor.h>
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -209,7 +210,7 @@ public:
             return;
 
         auto column_node_source = column_node->getColumnSource();
-        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
             return;
         if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
             return;
@@ -264,26 +265,31 @@ private:
 void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
-    auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
+    auto join_tree_node_type = query_node_typed.getJoinTreeNode()->getNodeType();
     bool join_tree_is_subquery = join_tree_node_type == QueryTreeNodeType::QUERY || join_tree_node_type == QueryTreeNodeType::UNION;
 
     if (!join_tree_is_subquery)
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoGroupingFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+        assertNoAggregateFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+        assertNoGroupingFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+        assertNoWindowFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
     }
+
+    /// `SELECT count() AS c FROM t WHERE c > 1` is the common shape: the alias is expanded before this
+    /// check, so the user is told about an aggregate in WHERE that they never wrote. Name the clause that
+    /// does accept it. The text is shared with the old analyzer's copy of the check.
+    static const String use_having_hint = AGGREGATE_IN_WHERE_HINT;
 
     if (query_node_typed.hasWhere())
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
+        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE", use_having_hint);
         assertNoGroupingFunctionNodes(query_node_typed.getWhere(), "in WHERE");
         assertNoWindowFunctionNodes(query_node_typed.getWhere(), "in WHERE");
     }
 
     if (query_node_typed.hasPrewhere())
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
+        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE", use_having_hint);
         assertNoGroupingFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
         assertNoWindowFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
     }
@@ -607,7 +613,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
     const auto & root_query_node = node->as<QueryNode &>();
     auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
 
-    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTree() };
+    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTreeNode() };
 
     while (!nodes_to_process.empty())
     {
@@ -645,7 +651,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-                nodes_to_process.push_back(array_join_node.getTableExpression());
+                nodes_to_process.push_back(array_join_node.getTableExpressionNode());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -658,8 +664,8 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
-                nodes_to_process.push_back(join_node.getRightTableExpression());
-                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                nodes_to_process.push_back(join_node.getRightTableExpressionNode());
+                nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
                 break;
             }
             default:

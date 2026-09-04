@@ -23,7 +23,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -75,13 +74,14 @@ namespace QueryRunnerSetting
     extern const QueryRunnerSettingsUInt64 max_queue_size;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
     extern const QueryRunnerSettingsString shard;
-    extern const QueryRunnerSettingsUInt64 threads;
+    extern const QueryRunnerSettingsNonZeroUInt64 threads;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -125,6 +125,22 @@ struct QueryRunnerJobOrigin
 {
     std::optional<UUID> user_id;
     std::optional<std::vector<UUID>> roles;
+    /// External (pushed) roles of the originating session. Carried over and re-applied via `setUser`
+    /// so a role that exists only as an external role is not lost or rejected with
+    /// `SET_NON_GRANTED_ROLE` when the deferred job rebuilds the context. Empty in the DEFINER/NONE
+    /// cases, which intentionally run as a different (or no) principal.
+    std::vector<UUID> external_roles;
+    /// Credential grant limit of the originating session (null if the session is not limited).
+    /// Carried over so a limited credential does not regain full rights when the deferred job runs
+    /// under a freshly-built context. Only meaningful in the INVOKER case; the DEFINER/NONE cases
+    /// intentionally run as a different (or no) principal, so it stays null there.
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
+    /// Expiry (VALID UNTIL) of the authenticating method of the originating session, 0 if none.
+    /// Carried over so the deferred job fails closed if the credential has expired between the
+    /// insert and the moment the job runs. The synchronous path re-checks expiry per query in
+    /// `Session::checkIfUserIsStillValid`, but the deferred job has no session, so it must re-check
+    /// here. Only meaningful in the INVOKER case; 0 (no expiry) in the DEFINER/NONE cases.
+    time_t authentication_valid_until = 0;
     String current_user;
     String initial_user;
     String authenticated_user;
@@ -208,14 +224,34 @@ private:
     size_t remaining;
 };
 
+class QueryRunnerJobCompletion
+{
+public:
+    QueryRunnerJobCompletion(PrefixLatch & pending_, std::shared_ptr<CountDownLatch> batch_)
+        : pending(pending_), batch(std::move(batch_)), seq(pending.issue())
+    {
+    }
+
+    ~QueryRunnerJobCompletion()
+    {
+        if (batch)
+            batch->countDown();
+        pending.retire(seq);
+    }
+
+private:
+    PrefixLatch & pending;
+    const std::shared_ptr<CountDownLatch> batch;
+    const UInt64 seq;
+};
+
 struct QueryRunnerJob
 {
     String query;
     String database;
     SettingsChanges settings_changes;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
-    std::shared_ptr<CountDownLatch> batch;
-    UInt64 seq = 0;
+    std::shared_ptr<QueryRunnerJobCompletion> completion;
 };
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
@@ -307,52 +343,32 @@ public:
         : WithContext(global_context_)
         , cluster_name(cluster_name_)
         , shard_selector(shard_selector_)
-        , queue(max_queue_size_)
-        , num_threads(num_threads_)
         , max_queue_size(max_queue_size_)
         , log(log_)
-        , pool(CurrentMetrics::QueryRunnerThreads, CurrentMetrics::QueryRunnerThreadsActive, CurrentMetrics::QueryRunnerThreadsScheduled, num_threads_)
+        , pool(
+              CurrentMetrics::QueryRunnerThreads,
+              CurrentMetrics::QueryRunnerThreadsActive,
+              CurrentMetrics::QueryRunnerThreadsScheduled,
+              num_threads_,
+              0,
+              num_threads_ + max_queue_size_)
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
     }
 
-    void start()
-    {
-        try
-        {
-            for (size_t i = 0; i < num_threads; ++i)
-                pool.scheduleOrThrowOnError([this] { workerLoop(); });
-        }
-        catch (...)
-        {
-            shutdown();
-            throw;
-        }
-    }
-
     void submit(QueryRunnerJob job)
     {
-        job.seq = pending.issue();
-        const auto batch = job.batch;
-        const UInt64 seq = job.seq;
-        try
-        {
-            if (queue.tryPush(std::move(job)))
-                return;
-        }
-        catch (...)
-        {
-            finishJob(batch, seq);
-            throw;
-        }
+        if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
+            return;
 
-        if (queue.isFinished())
+        if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
-        finishJob(batch, seq);
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Cannot schedule the query (max_queue_size = {}), discarding it", max_queue_size);
     }
+
+    PrefixLatch & getPending() { return pending; }
 
     void waitForAllPending(const QueryStatusPtr & query_status)
     {
@@ -364,41 +380,23 @@ public:
         if (shutdown_called.exchange(true))
             return;
 
-        queue.finish();
-
-        QueryRunnerJob job;
-        while (queue.tryPop(job))
-            finishJob(job.batch, job.seq);
-
+        pool.finish();
         cluster_executors.cancelAll();
         pool.wait();
     }
 
 private:
-    void finishJob(const std::shared_ptr<CountDownLatch> & batch, UInt64 seq)
-    {
-        if (batch)
-            batch->countDown();
-        pending.retire(seq);
-    }
-
-    void workerLoop()
+    void runJob(const QueryRunnerJob & job)
     {
         setThreadName(ThreadName::QUERY_RUNNER);
 
-        QueryRunnerJob job;
-        while (queue.pop(job))
+        try
         {
-            try
-            {
-                executeJob(job);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to execute a query");
-            }
-
-            finishJob(job.batch, job.seq);
+            executeJob(job);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to execute a query");
         }
     }
 
@@ -425,20 +423,39 @@ private:
         if (job.origin->user_id)
         {
             chassert(cluster_name.empty());
-            job_context->setUser(*job.origin->user_id);
+            /// Fail closed if the authentication method that queued this job has expired between the
+            /// insert and now. The synchronous path re-checks per query in
+            /// `Session::checkIfUserIsStillValid`; the deferred job has no session, so without this a
+            /// token could enqueue work just before expiry and keep executing it afterwards.
+            /// `authentication_valid_until` is 0 (no check) in the DEFINER/NONE cases and for an
+            /// unrestricted credential.
+            if (job.origin->authentication_valid_until != 0)
+            {
+                const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                if (now > job.origin->authentication_valid_until)
+                    throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred query has expired");
+            }
+
+            /// Replay the whole originating identity in one call: the external (pushed) roles, the
+            /// credential grant limit and its expiry are restored together with the user, so a limited
+            /// credential does not regain full rights and a pushed-role session does not fail role
+            /// revalidation when the deferred job runs. `authentication_grants` is null in the
+            /// DEFINER/NONE cases (a no-op).
+            job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants, job.origin->authentication_valid_until);
         }
         if (job.origin->roles)
         {
             chassert(cluster_name.empty());
-            job_context->setCurrentRoles(*job.origin->roles);
+            /// These are the session's *effective* current roles, which already include the external
+            /// roles restored above. Re-apply them without the grant check: external roles are not
+            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+            /// granted current roles are kept and the external ones come from `setUser`.
+            job_context->setCurrentRoles(*job.origin->roles, /*check_grants=*/ false);
         }
 
         job_context->setCurrentUserName(job.origin->current_user);
         job_context->setInitialUserName(job.origin->initial_user);
         job_context->setAuthenticatedUserName(job.origin->authenticated_user);
-
-        if (cluster_name.empty() && !job.database.empty())
-            job_context->setCurrentDatabase(job.database);
 
         job_context->setCurrentQueryId({});
 
@@ -449,6 +466,12 @@ private:
                 job_context->checkSettingsConstraints(job.settings_changes, SettingSource::QUERY);
             job_context->applySettingsChanges(job.settings_changes);
         }
+
+        /// After the job's settings, so the database explicitly recorded for the job wins over a
+        /// `database` setting carried by the job's settings changes; `setCurrentDatabase` mirrors it
+        /// back into the setting, keeping the two in sync for `executeQuery`.
+        if (cluster_name.empty() && !job.database.empty())
+            job_context->setCurrentDatabase(job.database);
 
         /// The engine always discards query results, so there is no point in transferring them over the network.
         job_context->setSetting("discard_query_data", true);
@@ -557,7 +580,7 @@ private:
     void executeOnShard(UInt64 shard_num, const QueryRunnerJob & job, ContextMutablePtr job_context)
     {
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
-        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef(), /*force_connected=*/ true);
+        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
@@ -609,29 +632,29 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
-        QueryLogElement elem;
-        elem.type = type;
-        elem.event_time = timeInSeconds(event_time);
-        elem.event_time_microseconds = timeInMicroseconds(event_time);
-        elem.query_start_time = timeInSeconds(query_start_time);
-        elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
-        elem.query_duration_ms = duration_ms;
-        elem.query = job.query;
-        elem.current_database = job.database;
-        elem.log_comment = settings[Setting::log_comment];
-        elem.client_info = job_context->getClientInfo();
-        elem.is_internal = true;
-
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = std::make_shared<Settings>(settings);
-
-        if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+        query_log->add([&](QueryLogElement & element)
         {
-            elem.exception_code = getCurrentExceptionCode();
-            elem.exception = getCurrentExceptionMessage(false);
-        }
+            element.type = type;
+            element.event_time = timeInSeconds(event_time);
+            element.event_time_microseconds = timeInMicroseconds(event_time);
+            element.query_start_time = timeInSeconds(query_start_time);
+            element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
+            element.query_duration_ms = duration_ms;
+            element.query = job.query;
+            element.current_database = job.database;
+            element.log_comment = settings[Setting::log_comment];
+            element.client_info = job_context->getClientInfo();
+            element.is_internal = true;
 
-        query_log->add(std::move(elem));
+            if (settings[Setting::log_query_settings])
+                element.query_settings = settings.changedToMap();
+
+            if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+            {
+                element.exception_code = getCurrentExceptionCode();
+                element.exception = getCurrentExceptionMessage(false);
+            }
+        });
     }
 
     static constexpr std::string_view client_name = "QueryRunner";
@@ -639,15 +662,12 @@ private:
     const String cluster_name;
     const ShardSelector shard_selector;
     ClientInfo client_info;
-    ConcurrentBoundedQueue<QueryRunnerJob> queue;
-    const size_t num_threads;
     const size_t max_queue_size;
     LoggerPtr log;
+    PrefixLatch pending;
     ThreadPool pool;
 
     std::atomic<bool> shutdown_called = false;
-
-    PrefixLatch pending;
 
     std::mutex pools_mutex;
     std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
@@ -714,7 +734,7 @@ public:
             }
 
             job.origin = origin;
-            job.batch = batch;
+            job.completion = std::make_shared<QueryRunnerJobCompletion>(dispatcher.getPending(), batch);
 
             dispatcher.submit(std::move(job));
         }
@@ -779,11 +799,6 @@ StorageQueryRunner::StorageQueryRunner(
 
 StorageQueryRunner::~StorageQueryRunner() = default;
 
-void StorageQueryRunner::startup()
-{
-    dispatcher->start();
-}
-
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
     dispatcher->shutdown();
@@ -804,6 +819,9 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
         origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
             .user_id = {},
             .roles = {},
+            .external_roles = {},
+            .authentication_grants = {},
+            .authentication_valid_until = 0,
             .current_user = {},
             .initial_user = {},
             .authenticated_user = inserter.authenticated_user,
@@ -817,6 +835,9 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = local_context->getUserID(),
                     .roles = local_context->getCurrentRoles(),
+                    .external_roles = local_context->getExternalRoles(),
+                    .authentication_grants = local_context->getAuthenticationGrants(),
+                    .authentication_valid_until = local_context->getAuthenticationValidUntil(),
                     .current_user = inserter.current_user,
                     .initial_user = inserter.initial_user,
                     .authenticated_user = inserter.authenticated_user,
@@ -826,6 +847,9 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = metadata_snapshot->getDefinerID(local_context),
                     .roles = {},
+                    .external_roles = {},
+                    .authentication_grants = {},
+                    .authentication_valid_until = 0,
                     .current_user = *metadata_snapshot->definer,
                     .initial_user = *metadata_snapshot->definer,
                     .authenticated_user = inserter.authenticated_user,
@@ -835,6 +859,9 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = {},
                     .roles = {},
+                    .external_roles = {},
+                    .authentication_grants = {},
+                    .authentication_valid_until = 0,
                     .current_user = {},
                     .initial_user = {},
                     .authenticated_user = inserter.authenticated_user,
@@ -915,7 +942,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
         settings.loadFromQuery(*args.storage_def);
 
         const UInt64 num_threads = settings[QueryRunnerSetting::threads];
-        if (num_threads < 1 || num_threads > 1024)
+        if (num_threads > 1024)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine must be in the range [1, 1024], got {}", num_threads);
 
         const UInt64 max_queue_size = settings[QueryRunnerSetting::max_queue_size];

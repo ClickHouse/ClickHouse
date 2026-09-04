@@ -2,13 +2,17 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/ParseError.h>
+
+#include <optional>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -134,49 +138,46 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
 
 
 void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     if (!use_default_null_map)
     {
         settings.path.push_back(Substream::NullMap);
-        if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
+        if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumn()))
         {
             /// Data was inserted from cache.
         }
         else if (auto * stream = settings.getter(settings.path))
         {
-            size_t prev_size = col.getNullMapColumnPtr()->size();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+            size_t prev_size = col.getNullMapColumn().size();
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+            size_t n = col.getNullMapColumn().size() - prev_size;
             addColumnWithNumReadRowsToSubstreamsCache(
-                cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
+                cache, settings.path, col.getNullMapColumn().getPtr(), n);
         }
         settings.path.pop_back();
     }
 
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state, cache);
     settings.path.pop_back();
 
     if (use_default_null_map)
         col.getNullMapData().resize_fill(col.getNestedColumn().size());
 
-    auto null_map = col.getNullMapColumnPtr();
-    auto nested_column = col.getNestedColumnPtr();
-    if (null_map->size() != nested_column->size())
+    if (col.getNullMapColumn().size() != col.getNestedColumn().size())
         throw Exception(
             settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal after deserialization (null map size = {}, nested "
             "column size = {})",
-            null_map->size(),
-            nested_column->size());
+            col.getNullMapColumn().size(),
+            col.getNestedColumn().size());
 }
 
 
@@ -686,9 +687,24 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
+    {
         writeString(settings.csv.null_representation, ostr);
-    else
-        nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
+        return;
+    }
+
+    /// A NULL value of a Nullable(Tuple) occupies a single \\N field, but a non-null tuple value
+    /// serialized into separate columns would occupy several fields, making the per-row width
+    /// row-dependent and breaking CSVWithNames(AndTypes). Keep a Nullable(Tuple) as a single quoted
+    /// CSV value so every row (NULL or not) is exactly one field (issue #107342).
+    if (settings.csv.serialize_tuple_into_separate_columns && typeid_cast<const SerializationTuple *>(nested.get()))
+    {
+        FormatSettings tuple_as_single_field = settings;
+        tuple_as_single_field.csv.serialize_tuple_into_separate_columns = false;
+        nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, tuple_as_single_field);
+        return;
+    }
+
+    nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void SerializationNullable::serializeNullCSV(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
@@ -803,11 +819,27 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
     return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);
 }
 
+/// A Nullable(Tuple) value is written as a single CSV field (see serializeTextCSV), so it must be
+/// read back as one field too. Disable separate-columns parsing for the nested tuple to keep the
+/// input symmetric with the output (issue #107342).
+static void adjustCSVSettingsForNullableTuple(
+    const SerializationPtr & nested, const FormatSettings & settings, std::optional<FormatSettings> & storage)
+{
+    if (settings.csv.deserialize_separate_columns_into_tuple && typeid_cast<const SerializationTuple *>(nested.get()))
+    {
+        storage = settings;
+        storage->csv.deserialize_separate_columns_into_tuple = false;
+    }
+}
+
 void SerializationNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null = false;
-    deserializeTextCSVImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
+    std::optional<FormatSettings> settings_storage;
+    adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    const FormatSettings & effective_settings = settings_storage ? *settings_storage : settings;
+    deserializeTextCSVImpl<void>(col.getNestedColumn(), istr, effective_settings, nested, is_null);
     safeAppendToNullMap<void>(col, is_null);
 }
 
@@ -815,7 +847,10 @@ bool SerializationNullable::tryDeserializeTextCSV(IColumn & column, ReadBuffer &
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null = false;
-    return deserializeTextCSVImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
+    std::optional<FormatSettings> settings_storage;
+    adjustCSVSettingsForNullableTuple(nested, settings, settings_storage);
+    const FormatSettings & effective_settings = settings_storage ? *settings_storage : settings;
+    return deserializeTextCSVImpl<bool>(col.getNestedColumn(), istr, effective_settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
 }
 
 bool SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
@@ -829,6 +864,19 @@ bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(DB::IColu
 {
     bool is_null = false;
     return deserializeTextCSVImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
+}
+
+void SerializationNullable::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        /// Hive's LazySimpleSerDe uses `\N` as its default null sequence (serialization.null.format).
+        /// Write it directly instead of reusing format_csv_null_representation, whose custom value would
+        /// otherwise leak into HiveText output and no longer be recognized by Hive as null.
+        writeCString("\\N", ostr);
+    else
+        nested->serializeTextHive(col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void SerializationNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

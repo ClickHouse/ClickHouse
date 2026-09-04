@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
@@ -241,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
@@ -267,7 +267,7 @@ ORDER BY c DESC LIMIT 5
 └──────────┴─────┘
 ```
 
-Аналогично, эти связи не относятся к событиям, которые происходят слишком часто:
+Аналогично, эти связи возникают не слишком часто:
 
 ```sql
 SELECT
@@ -417,4 +417,4 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
   ### Стриминг
 </div>
 
-В качестве альтернативы это можно делать вне ClickHouse, до вставки, с помощью стриминговых технологий, таких как [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink). Также для выполнения этого процесса по мере вставки данных можно использовать инкрементальные [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).
+В качестве альтернативы это можно выполнить вне ClickHouse, до вставки, с помощью технологий стриминга, таких как [Apache Flink](/ru/integrations/connectors/data-ingestion/apache-flink). Также для выполнения этого процесса по мере вставки данных можно использовать инкрементальные [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).

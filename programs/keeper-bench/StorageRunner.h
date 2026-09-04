@@ -143,7 +143,7 @@ private:
     DB::KeeperContextPtr keeper_context;
 
     DB::SharedMutex state_machine_storage_mutex;
-    std::unique_ptr<Storage> storage;
+    std::shared_ptr<Storage> storage;
 
     NodesSetup nodes_setup;
     /// Shared by all generator threads; immutable after startup.

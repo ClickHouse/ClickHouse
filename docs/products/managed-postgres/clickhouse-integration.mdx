@@ -1,25 +1,25 @@
 ---
 slug: /cloud/managed-postgres/clickhouse-integration
-sidebarTitle: 'ClickHouse integration'
-title: 'ClickHouse integration'
+sidebarTitle: 'Sync to ClickHouse'
+title: 'Sync to ClickHouse'
 description: 'Replicate your Postgres data to ClickHouse using built-in CDC capabilities'
 keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'clickpipes', 'data sync']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-Every Managed Postgres instance comes with built-in CDC capabilities to any of your ClickHouse services. This allows you to move some or all of the data on your Postgres instance to ClickHouse and have changes in data on Postgres be reflected on ClickHouse continuous and nearly real-time. This is powered by [ClickPipes](/integrations/clickpipes/home) under the hood.
+Every ClickHouse Managed Postgres instance comes with built-in CDC capabilities to any of your ClickHouse services. This allows you to move some or all of the data on your Postgres instance to ClickHouse and have changes in data on Postgres be reflected on ClickHouse continuous and nearly real-time. This is powered by [ClickPipes](/integrations/clickpipes/home) under the hood.
 
-To access this, click on **ClickHouse Integration** in the sidebar of your Postgres instance.
+To access this, click on **Sync to ClickHouse** in the sidebar of your Postgres instance.
 
 <Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="ClickHouse integration landing page showing the integration option in the sidebar" size="md" border/>
 
 <Note>
-Before you proceed, ensure that your Postgres service is accessible to the ClickPipes service. This should be the case by default, but if you've restricted IP access you may need to grant access to some source IPs from [this](/integrations/clickpipes/home#list-of-static-ips) list based on the region where your **ClickHouse service** is located.
+Before you proceed, ensure that your Postgres service is accessible to the ClickPipes service. This should be the case by default, but if you've restricted IP access you may need to grant access to some source IPs from [this](/integrations/clickpipes/networking/static-ips) list based on the region where your **ClickHouse service** is located.
 </Note>
 
 Click **Replicate data in ClickHouse** to start setting up your ClickPipe.
@@ -61,7 +61,7 @@ Choose a destination database and select which tables to replicate:
 
 - **Destination database**: Select an existing ClickHouse database or create a new one
 - **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
-- **Preserve NULL values from source**: Maintains NULL values instead of converting to defaults
+- **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. This setting applies to all tables in the pipe and cannot be changed after the pipe is created.
 - **Remove deleted rows during merges**: For [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
 
 Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.

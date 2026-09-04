@@ -90,7 +90,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 * **ClickHouse Connector for AWS Glue**
   Vous pouvez désormais utiliser le [ClickHouse Connector for AWS Glue](/fr/integrations/connectors/data-ingestion/AWS/glue) officiel, disponible sur [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). Il utilise le moteur serverless basé sur Apache
   Spark d&#39;AWS Glue pour l&#39;extraction, la transformation et le chargement de données entre ClickHouse et d&#39;autres sources de données. Pour
-  commencer, suivez le billet de [blog](http://clickhouse.com/blog/clickhouse-connector-aws-glue) d&#39;annonce expliquant comment créer des tables, écrire et lire des données entre ClickHouse et Spark.
+  commencer, suivez le billet de [blog](https://clickhouse.com/blog/clickhouse-connector-aws-glue) d&#39;annonce expliquant comment créer des tables, écrire et lire des données entre ClickHouse et Spark.
 * **Modification du nombre minimal de répliques dans un service**
   Les services qui ont été mis à l&#39;échelle à la hausse peuvent désormais être [redimensionnés à la baisse](/fr/products/cloud/features/autoscaling/overview) afin d&#39;utiliser une seule réplique (auparavant, le minimum était de 2 répliques). Remarque : les services à réplique unique offrent une disponibilité réduite et ne sont pas recommandés pour une utilisation en production.
 * ClickHouse Cloud commencera à envoyer des notifications liées à la mise à l&#39;échelle des services et aux mises à niveau de version des services, par défaut pour les rôles d&#39;administrateur. Les administrateurs peuvent ajuster leurs préférences de notification dans les paramètres de notification.
@@ -238,7 +238,7 @@ pour démarrer rapidement.
   et des étapes en libre-service pour résoudre les échecs.
 * La **préversion privée de MySQL CDC** est désormais ouverte. Elle permet aux clients de répliquer des bases de données MySQL
   vers ClickHouse Cloud en quelques clics, pour effectuer rapidement des analyses et
-  supprimer le besoin d’outils ETL externes. Le connector prend en charge à la fois la réplication continue
+  supprimer le besoin d’outils ETL externes. Le connecteur prend en charge à la fois la réplication continue
   et les migrations ponctuelles, que MySQL soit dans le cloud (RDS,
   Aurora, Cloud SQL, Azure, etc.) ou on-premise. Vous pouvez vous inscrire à la préversion privée
   en [suivant ce lien](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
@@ -247,7 +247,7 @@ pour démarrer rapidement.
   et ClickHouse Cloud. Cela peut se faire sans exposer le trafic à
   l’internet public lors du transfert de données depuis des sources telles que Postgres, MySQL et
   MSK sur AWS. Cette fonctionnalité prend également en charge l’accès cross-region via des endpoints de service VPC.
-  La configuration de la connectivité PrivateLink est désormais [entièrement en libre-service](/fr/integrations/clickpipes/aws-privatelink)
+  La configuration de la connectivité PrivateLink est désormais [entièrement en libre-service](/fr/integrations/clickpipes/networking/aws-privatelink)
   via ClickPipes.
 
 <div id="april-4-2025">
@@ -276,7 +276,7 @@ pour démarrer rapidement.
   pour récupérer les informations d’utilisation. Il s’agit d’un endpoint au niveau de l’organisation, et les coûts d’utilisation
   peuvent être interrogés sur une période maximale de 31 jours. Les métriques pouvant être
   récupérées incluent Storage, Compute, le transfert de données et ClickPipes. Veuillez consulter
-  la [documentation](/fr/api-reference/billing/get-organization-usage-costs) pour plus de détails.
+  la [documentation](/fr/products/cloud/api-reference/billing/get-organization-usage-costs) pour plus de détails.
 * La version [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) du provider Terraform permet d’activer l’endpoint MySQL.
 
 <div id="february-21-2025">
@@ -436,12 +436,12 @@ JDBC / Java sera disponible dans[ 0.8.0](https://github.com/ClickHouse/clickhous
 
 Nous avons apporté plusieurs améliorations à l’intégration Prometheus :
 
-* **Endpoint au niveau de l’organisation**. Nous avons amélioré notre intégration Prometheus pour ClickHouse Cloud. En plus des métriques au niveau du service, l’API inclut désormais un endpoint pour les **métriques au niveau de l’organisation**. Ce nouvel endpoint collecte automatiquement les métriques de tous les services de votre organisation, ce qui simplifie leur exportation vers votre collector Prometheus. Ces métriques peuvent être intégrées à des outils de visualisation comme Grafana et Datadog afin d’offrir une vue plus complète des performances de votre organisation.
+* **Endpoint au niveau de l’organisation**. Nous avons amélioré notre intégration Prometheus pour ClickHouse Cloud. En plus des métriques au niveau du service, l’API inclut désormais un endpoint pour les **métriques au niveau de l’organisation**. Ce nouvel endpoint collecte automatiquement les métriques de tous les services de votre organisation, ce qui simplifie l’exportation des métriques vers votre collector Prometheus. Ces métriques peuvent être intégrées à des outils de visualisation comme Grafana et Datadog afin d’offrir une vue plus complète des performances de votre organisation.
 
-  Cette fonctionnalité est d’ores et déjà disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
+  Cette fonctionnalité est maintenant disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
 
-* **Métriques filtrées**. Nous avons ajouté la prise en charge du renvoi d’une liste filtrée de métriques dans notre intégration Prometheus pour ClickHouse Cloud. Cette fonctionnalité permet de réduire la taille du payload de réponse en vous permettant de vous concentrer sur les métriques essentielles à la surveillance de l’état de santé de votre service.
+* **Métriques filtrées**. Nous avons ajouté la prise en charge du renvoi d’une liste filtrée de métriques dans notre intégration Prometheus pour ClickHouse Cloud. Cette fonctionnalité permet de réduire la taille du payload de la réponse en vous aidant à vous concentrer sur les métriques essentielles à la surveillance de l’état de santé de votre service.
 
-  Cette fonctionnalité est disponible via un paramètre de requête facultatif dans l’API, ce qui facilite l’optimisation de votre collecte de données et simplifie les intégrations avec des outils comme Grafana et Datadog.
+  Cette fonctionnalité est disponible via un query parameter facultatif dans l’API, ce qui facilite l’optimisation de votre collecte de données et simplifie les intégrations avec des outils comme Grafana et Datadog.
 
-  La fonctionnalité de métriques filtrées est désormais disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
+  La fonctionnalité de métriques filtrées est maintenant disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).

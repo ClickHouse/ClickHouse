@@ -9,54 +9,418 @@ keywords: ['托管 ClickStack', '入门', 'ClickHouse Cloud']
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-import SetupManagedIngestion from '/snippets/zh/clickstack/_setup_managed_ingestion.mdx';
-import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
-import NavigateClickStackUI from '/snippets/zh/clickstack/_navigate_managed.mdx';
+import ExampleOTelConfig from '/snippets/zh/clickstack/_config_example_otel.mdx';
 
-最简单的入门方式是在 **ClickHouse Cloud** 上部署 **托管 ClickStack**。它提供完全托管且安全的后端，同时仍保留对摄取、schema 和可观测性工作流的完全控制。这样一来，你无需自行运维 ClickHouse，还可获得以下一系列优势：
+在 ClickHouse Cloud 上部署托管 ClickStack，通过摄取管道发送测试事件，并确认该事件已显示在 ClickStack UI 中。
+
+ClickHouse Cloud 负责运维 ClickHouse 后端，而你仍可控制摄取管道和 schema。托管 ClickStack 提供：
 
 * 计算资源自动扩缩容，并与存储分离
-* 基于对象存储的低成本、近乎无限的保留能力
-* 可通过仓库独立隔离读写工作负载
+* 基于对象存储的低成本、近乎无限的数据保留能力
+* 通过[仓库](/zh/products/cloud/features/infrastructure/warehouses)独立隔离读写工作负载
 * 集成身份验证
 * 自动备份
 * 安全与合规功能
 * 无缝升级
 
-<Steps>
-  <Step>
-    ## 注册 ClickHouse Cloud
+<div id="before-you-begin">
+  ## 开始之前
+</div>
 
-    要在 [ClickHouse Cloud](https://console.clickhouse.cloud) 中创建托管 ClickStack 服务，请先完成 [ClickHouse Cloud 快速入门指南](/zh/get-started/setup/cloud)中的**第一步**。
+您也可以通过[支持的集成](/zh/integrations/home)，使用自己的 schema 将数据直接发送到 ClickHouse。
 
-    <ProviderSelection />
-  </Step>
+<div id="create-a-managed-clickstack-service">
+  ### 创建 ClickHouse Cloud 服务
+</div>
 
-  <Step>
-    ## 设置摄取
+按照 ClickHouse Cloud 快速入门完成[创建 ClickHouse 服务](/zh/get-started/setup/cloud#1-create-a-clickhouse-service)的步骤。继续前，请确认该服务正在运行。
 
-    服务预配完成后，请确保已选中该服务，然后在左侧菜单中点击 &quot;ClickStack&quot;。
+<View title="OpenTelemetry">
+  <Tip>
+    本页面显示的是 **OpenTelemetry** 路径。使用本指南顶部附近的选择器，可在 **OpenTelemetry** (推荐) 和 **Vector** 之间切换。
+  </Tip>
 
-    <SetupManagedIngestion />
-  </Step>
+  ### 准备摄取环境
 
-  <Step>
-    ## 进入 ClickStack UI
+  * 若要启动新的 [OpenTelemetry Collector](/zh/clickstack/ingesting-data/collector)，请安装 [Docker](https://docs.docker.com/get-docker/)。对于 Kubernetes，请使用 [Helm](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 部署 collector。
+  * 若要使用现有 collector，请以 [gateway 角色](/zh/clickstack/ingesting-data/collector#collector-roles)运行它，并确保其发行版包含 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)。您将在本指南中添加所需配置。
 
-    <NavigateClickStackUI />
-  </Step>
+  ## 配置托管 ClickStack
 
-  <Step>
-    ## 后续步骤
+  <Steps titleSize="h3">
+    <Step title="选择摄取源和 collector 配置" id="choose-an-ingestion-source">
+      从您的 ClickHouse Cloud 服务中启动 ClickStack。在 ClickStack 的**入门**页面上，选择**开始摄取**。
 
-    <Warning>
-      **记录默认凭据**
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="开始摄取" border />
 
-      如果你在上述步骤中尚未记录默认凭据，请进入该服务并选择 `Connect`，记下密码以及 HTTP/native 端点。请妥善保管这些管理员凭据，以便在后续指南中重复使用。
-    </Warning>
+      在**选择摄取源**页面上，选择 [OpenTelemetry](https://opentelemetry.io/)。
 
-    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+      <Info>
+        **推荐使用 OpenTelemetry**
 
-    如需执行预配新用户或添加更多数据源等任务，请参阅[托管 ClickStack 部署指南](/zh/clickstack/deployment/managed#additional-tasks)。
-  </Step>
-</Steps>
+        OpenTelemetry 为日志、追踪、指标和会话提供预配置的架构。
+      </Info>
+
+      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="选择 OpenTelemetry 作为摄取源" border />
+
+      <Tabs>
+        <Tab title="启动新的收集器">
+          ClickStack 会使用 `default` 管理员凭据生成收集器命令。建议使用专用摄取凭据，以便将摄取访问与管理操作分开，并避免依赖管理员密码。
+
+          <Accordion title="创建专用摄取凭据（推荐）">
+            在 ClickHouse Cloud 中，打开服务的 SQL 控制台并运行：
+
+            ```sql
+            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+            ```
+
+            在生成的命令中，将 `CLICKHOUSE_USER="default"` 替换为 `CLICKHOUSE_USER="clickstack-ingest"`，并将 `CLICKHOUSE_PASSWORD` 设置为专用用户的密码。
+          </Accordion>
+
+          若要继续使用 `default` 管理员凭据，请从**启动收集器**选项卡复制命令。ClickStack 会预先填入服务端点。将密码占位符替换为服务密码。如果您不再拥有该密码，请[获取或重置连接信息](/zh/products/cloud/guides/sql-console/connection-details)。
+
+          该命令格式如下：
+
+          ```shell
+          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+              -e CLICKHOUSE_USER="default" \
+              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+              -p 4317:4317 -p 4318:4318 \
+              clickhouse/clickstack-otel-collector:latest
+          ```
+
+          将 `<host>` 和 `<your_password_here>` 替换为 ClickHouse Cloud 服务的相应值，然后运行该命令。
+
+          收集器将在前台运行。请保持此终端处于打开状态，并使用第二个终端运行本指南中的其余命令。
+
+          <Note>
+            此命令会在未经身份验证的情况下暴露 OTLP 端口，仅适用于本地评估。在发送生产流量前，请[保护收集器](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+          </Note>
+        </Tab>
+
+        <Tab title="使用现有收集器">
+          选择**配置现有收集器**，然后调整收集器配置。
+
+          将收集器作为应用程序与 ClickHouse Cloud 之间的网关运行。以下配置会添加所需的 ClickHouse exporter 和信号管道。
+
+          该示例使用 ClickStack 生成的 `default` 凭据。若要使用专用摄取凭据，请按照**启动新的收集器**选项卡中的可选设置操作。在两个 ClickHouse exporter 块中，将 `username: default` 替换为 `username: clickstack-ingest`，并将 `password` 设置为专用用户的密码。
+
+          请将以下组件合并到现有配置中，而不要替换无关的 receiver、processor、exporter 或 extension。
+
+          <Info>
+            **必需的收集器组件**
+
+            收集器发行版必须包含 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 和 [routing connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector)。OpenTelemetry Collector Contrib 发行版包含这两个组件。
+          </Info>
+
+          该示例添加了 OTLP receiver、批处理和内存限制、Session Replay 路由以及 ClickHouse exporter。
+
+          <ExampleOTelConfig />
+
+          复用现有的 OTLP receiver，并保留其身份验证和 TLS 设置。如果配置已使用示例中的组件或管道 ID，请合并或重命名它们，而不要创建重复的 ID。在端口 `4317` 和 `4318` 上运行两个 receiver 会导致端口冲突。
+
+          合并配置后，请使用现有部署流程重新加载或重启收集器。
+
+          有关配置 OpenTelemetry 收集器的更多信息，请参阅[使用 OpenTelemetry 摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+        </Tab>
+      </Tabs>
+    </Step>
+
+    <Step title="发送测试数据" id="send-test-data">
+      使用当前时间戳发送一条测试日志：
+
+      ```shell
+      NOW_NANO="$(date +%s)000000000"
+
+      curl -i "http://localhost:4318/v1/logs" \
+        -H "Content-Type: application/json" \
+        --data-binary @- <<EOF
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [{
+              "key": "service.name",
+              "value": {"stringValue": "clickstack-docs-test"}
+            }]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "clickstack-docs-test"},
+            "logRecords": [{
+              "timeUnixNano": "${NOW_NANO}",
+              "severityText": "INFO",
+              "body": {"stringValue": "ClickStack ingestion test"}
+            }]
+          }]
+        }]
+      }
+      EOF
+      ```
+
+      如果使用现有的 collector，请将 `http://localhost:4318` 替换为其 OTLP HTTP 端点。如果 receiver 需要身份验证，请在 `curl` 命令中添加所需的请求头。
+
+      请求成功时将返回 `HTTP/1.1 200 OK`。
+    </Step>
+
+    <Step title="开始探索并确认数据已摄取" id="open-clickstack-and-confirm-ingestion">
+      当 ClickStack 检测到 OpenTelemetry 数据源后，选择 **开始探索**，打开 **搜索** 视图。搜索 `ClickStack ingestion test`。
+
+      结果中应显示服务名称为 `clickstack-docs-test` 的测试事件。
+
+      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack 日志视图，显示 ClickStack 摄取测试事件" border />
+    </Step>
+  </Steps>
+</View>
+
+<View title="Vector">
+  ### 准备摄取环境
+
+  先准备一个可以向 ClickHouse 发送数据的[现有 Vector 管道](/zh/clickstack/ingesting-data/vector)。
+
+  ## 设置托管 ClickStack
+
+  <Steps titleSize="h3">
+    <Step title="选择 Vector 并配置数据摄取" id="choose-an-ingestion-source-vector">
+      在您的 ClickHouse Cloud 服务中启动 ClickStack。在 ClickStack 的 **Getting Started** 页面中，选择 **Start ingestion**。
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="开始摄取数据" border />
+
+      在 **Choose an ingestion source** 页面上，选择 [Vector](https://vector.dev/)。
+
+      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="选择 Vector 作为摄取来源" border />
+
+      [Vector](https://vector.dev) 是一款高性能、厂商中立的可观测性数据管道，凭借灵活性强、资源占用低的特点，在日志摄取场景中尤为流行。
+
+      将 Vector 与 ClickStack 搭配使用时，schema 由你自行定义。它既可以遵循 OpenTelemetry 约定，也可以使用特定于你自己事件的字段。
+
+      <Info>
+        **需要已有的 Vector 管道**
+
+        如果您已经在运行包含输入管道的 Vector，请继续阅读本指南。通过该管道发送的数据必须包含**时间戳列**或等效的时间字段；您需要在 ClickStack UI 中配置数据源时选择该字段。
+
+        以下步骤将在现有管道中添加一个 ClickHouse sink。
+      </Info>
+
+      #### 创建 database 和表
+
+      在配置 Vector sink 之前，请先创建数据库和表。
+
+      在 ClickHouse Cloud 中，打开服务的 SQL 控制台并创建一个数据库：
+
+      例如，为日志创建一个数据库：
+
+      ```sql
+      CREATE DATABASE IF NOT EXISTS logs
+      ```
+
+      然后创建一个 schema 与日志数据结构相匹配的表。以下示例假定采用经典的 Nginx 访问日志格式：
+
+      ```sql
+      CREATE TABLE logs.nginx_logs
+      (
+          `time_local` DateTime,
+          `remote_addr` IPv4,
+          `remote_user` LowCardinality(String),
+          `request` String,
+          `status` UInt16,
+          `body_bytes_sent` UInt64,
+          `http_referer` String,
+          `http_user_agent` String,
+          `http_x_forwarded_for` LowCardinality(String),
+          `request_time` Float32,
+          `upstream_response_time` Float32,
+          `http_host` String
+      )
+      ENGINE = MergeTree
+      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+      ```
+
+      您的表必须与 Vector 生成的输出 schema 保持一致。请参照推荐的 [schema 最佳实践](/zh/concepts/best-practices/select-data-type)，根据自身数据情况调整 schema。
+
+      我们强烈建议先了解 [主键](/zh/concepts/core-concepts/primary-indexes) 在 ClickHouse 中的工作原理，并根据实际的访问模式来选择排序键。关于如何选择主键，请参阅 [ClickStack 专项](/zh/clickstack/managing/performance-tuning#choosing-a-primary-key)指南。
+
+      #### 配置 ClickHouse sink
+
+      表创建完成后，在 Vector 配置中添加一个 ClickHouse sink：
+
+      ```yaml
+      sinks:
+        clickhouse:
+          type: clickhouse
+          inputs:
+            - your_input
+          endpoint: "https://<host>:8443"
+          database: logs
+          table: nginx_logs
+          format: json_each_row
+          skip_unknown_fields: true
+          auth:
+            strategy: basic
+            user: default
+            password: "<your_password_here>"
+      ```
+
+      将 `your_input` 替换为现有管道中的输入。将 `<host>` 和 `<your_password_here>` 替换为你的 ClickHouse Cloud 服务对应的值。如有需要，可更改目标数据库或表。
+
+      <Accordion title="使用专用摄取凭据（推荐）">
+        在生产环境中，请创建一个专用用户，并授予其访问 Vector 目标表的权限。在 ClickHouse Cloud 中，打开服务的 SQL 控制台并运行：
+
+        ```sql
+        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+        ```
+
+        在 Vector sink 中将 `default` 替换为 `clickstack-ingest`，并将 `password` 设置为专用用户的密码。
+      </Accordion>
+
+      保存更新后的配置，然后按照现有的部署流程重新加载或重启 Vector。
+
+      有关使用 Vector 摄取数据的更多示例，请参阅 [使用 Vector 摄取](/zh/clickstack/ingesting-data/vector)；如需了解高级选项，请参阅 [Vector ClickHouse sink 文档](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)。
+
+      #### 创建 ClickStack 数据源
+
+      为 Vector 管道写入数据的表创建一个数据源。首次登录时，ClickStack 会提示你创建数据源。
+
+      该表单会自动填入默认 OpenTelemetry schema 对应的表达式。对于本指南中创建的 Nginx 表，请按以下配置值配置 source：
+
+      | 设置               | 值                                                                                                               |
+      | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+      | **名称**           | `Nginx 日志`                                                                                                      |
+      | **源数据类型**        | 日志                                                                                                              |
+      | **服务器连接**        | `Default`                                                                                                       |
+      | **数据库**          | `logs`                                                                                                          |
+      | **表**            | `nginx_logs`                                                                                                    |
+      | **时间戳列**         | `time_local`                                                                                                    |
+      | **默认 SELECT 查询** | `time_local, remote_addr, status, request`                                                                      |
+      | **服务名称表达式**      | `'nginx'`                                                                                                       |
+      | **日志级别表达式**      | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
+      | **日志属性表达式**      | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+      | **资源属性表达式**      | `map('service.name', 'nginx')`                                                                                  |
+      | **显示的时间戳列**      | `time_local`                                                                                                    |
+      | **Trace ID 表达式** | `''`                                                                                                            |
+      | **Span ID 表达式**  | `''`                                                                                                            |
+      | **隐式列表达式**       | `request`                                                                                                       |
+
+      Nginx 表中不包含 `Body` 列。请将 **Body Expression** 设置为：
+
+      ```sql
+      concat(
+        remote_addr, ' ',
+        remote_user, ' ',
+        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+        '"', request, '" ',
+        toString(status), ' ',
+        toString(body_bytes_sent), ' ',
+        '"', http_referer, '" ',
+        '"', http_user_agent, '" ',
+        '"', http_x_forwarded_for, '" ',
+        toString(request_time), ' ',
+        toString(upstream_response_time), ' ',
+        '"', http_host, '"'
+      )
+      ```
+
+      有关其他 source 设置，请参阅 [ClickStack 配置参考](/zh/clickstack/managing/config)。
+    </Step>
+
+    <Step title="发送测试数据" id="send-test-data-vector">
+      通过现有 Vector 管道的输入端发送一个代表性事件。
+
+      有关更多 Vector 源和转换示例，请参阅[使用 Vector 摄取数据](/zh/clickstack/ingesting-data/vector)。
+    </Step>
+
+    <Step title="开始探索并确认数据摄取" id="open-clickstack-and-confirm-ingestion-vector">
+      创建数据源后，选择 **开始探索**，打开 **搜索** 视图。选择对应表的数据源，并确认其中包含您发送的事件。
+
+      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI 中的日志" />
+    </Step>
+  </Steps>
+</View>
+
+现在，你已拥有托管 ClickStack 服务、可正常使用的摄取路径，以及可在 ClickStack 中查看的测试事件。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+如果后续指南需要使用您的 ClickHouse Cloud 端点或密码，请先[获取或重置连接信息](/zh/products/cloud/guides/sql-console/connection-details)。
+
+<div id="send-application-and-infrastructure-data">
+  ### 发送应用程序和基础设施数据
+</div>
+
+根据要发送到 ClickStack 的数据选择相应指南：
+
+<CardGroup cols={2}>
+  <Card title="为应用程序添加埋点" icon="code" href="/zh/clickstack/ingesting-data/sdks/index">
+    使用受支持的 OpenTelemetry SDK 发送应用程序的链路追踪和日志。
+  </Card>
+
+  <Card title="收集主机日志" icon="server" href="/zh/clickstack/integration-examples/host-logs">
+    转发由以 agent 角色运行的 OpenTelemetry Collector 收集的主机日志。
+  </Card>
+
+  <Card title="监控 Kubernetes" icon="cubes" href="/zh/clickstack/integration-examples/kubernetes">
+    从 Kubernetes 集群收集日志、指标和链路追踪。
+  </Card>
+
+  <Card title="探索其他集成" icon="plug" href="/zh/clickstack/integration-examples/index">
+    查找其他应用程序和遥测数据源的指南。
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### 探索样本数据
+</div>
+
+使用样本数据集，通过更丰富的遥测数据探索 ClickStack：
+
+<CardGroup cols={2}>
+  <Card title="样本日志、链路追踪和指标" href="/zh/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    从公网演示环境加载数据并诊断问题。本指南假定您已启动一个新的本地 OpenTelemetry Collector。若您配置的是现有 collector，请根据您的部署调整端点和身份验证设置。
+  </Card>
+
+  <Card title="本地日志和指标" href="/zh/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    在 macOS 或 Linux 上收集本地文件和系统指标。
+  </Card>
+</CardGroup>
+
+<div id="generate-synthetic-data">
+  ### 生成合成数据
+</div>
+
+使用生成器测试数据摄取，无需现有应用程序或数据集：
+
+<CardGroup cols={2}>
+  <Card title="使用 otelgen 生成数据" icon="terminal" href="/zh/clickstack/example-datasets/otelgen">
+    发送一小批合成 OTLP 日志、链路追踪和指标。
+  </Card>
+
+  <Card title="使用 telemetrygen 生成数据" icon="terminal" href="/zh/clickstack/example-datasets/telemetrygen">
+    为多个服务生成可配置的 OpenTelemetry 信号。
+  </Card>
+</CardGroup>
+
+参阅[所有 ClickStack 样本数据和演示](/zh/clickstack/example-datasets/index)。
+
+<div id="prepare-for-production">
+  ### 为生产环境做好准备
+</div>
+
+在使用 ClickStack 持续处理工作负载之前，请先查阅生产环境和资源规模评估指南：
+
+<CardGroup cols={2}>
+  <Card title="投入生产环境" icon="shield" href="/zh/clickstack/managing/production">
+    查阅有关摄取凭据、安全、数据保留和运维的指南。
+  </Card>
+
+  <Card title="估算资源" icon="chart-line" href="/zh/clickstack/managing/estimating-resources">
+    根据预期摄取量评估所需的计算资源。
+  </Card>
+</CardGroup>
+
+有关部署任务，请参阅[托管 ClickStack 部署指南](/zh/clickstack/deployment/managed#additional-tasks)。

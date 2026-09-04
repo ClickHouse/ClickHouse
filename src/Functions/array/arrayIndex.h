@@ -864,6 +864,14 @@ private:
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
 
+        /// A float zero equals two byte-distinct dictionary entries, -0.0 and 0.0, and a single index
+        /// cannot denote both, so leave a zero needle to the path that compares values. The needle
+        /// type is narrowed only so that reading it as a float is total.
+        const auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (isFloat(removeNullable(target_type)) && (isNumber(needle_type) || isEnum(needle_type))
+            && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
+            return nullptr;
+
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();

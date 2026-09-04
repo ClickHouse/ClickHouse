@@ -6,6 +6,16 @@ doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import UploadCsvCLI from "/snippets/cloud/migration/_upload_csv_cli.mdx";
+
+<Visibility for="agents">
+
+<UploadCsvCLI />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 ClickHouse Cloud provides an easy way to import your files and supports the
 following formats:
@@ -101,3 +111,14 @@ the data based on the error message for the failed insert.
 <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
 </Step>
 </Steps>
+
+</View>
+
+<View title="CLI">
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<UploadCsvCLI />
+
+</View>
+</Visibility>

@@ -1,0 +1,46 @@
+Array(Int64) / 10, equals	2	2
+Array(Int64) / 10, range	2	2
+Array(Int64) / 4	1	1
+Array(Int64) / 10, IN	3	3
+ORDER BY intDiv(Array(Int64), 10)	[[1,0],[1,0],[1,10],[2,0]]	[[1,0],[1,0],[1,10],[2,0]]
+Tuple(Int64, Int64) / 10	2	2
+Array(Array(Int64)) / 10	2	2
+Nullable(Tuple(Int64, Int64)) / 10	2	2
+Array(Int128) / 10	2	2
+Array(UInt64) / 1e18 signed wrap	1	1
+Array(UInt64) / 1 still wraps	1	1
+Tuple(UInt64, UInt64) / 1e18 signed wrap	1	1
+Array(Int8) / toUInt8(200) direction flip	1	1
+Array(Int8) / toUInt8(200), IN	2	2
+Tuple(Int8, Int8) / toUInt8(200)	1	1
+Tuple(Int8, Int64) / toUInt8(200)	1	1
+divide(Array(Int64), 1) above 2^53	1	1
+ORDER BY divide(Array(Int64), 1) above 2^53	[[9007199254740992,1],[9007199254740992,5]]	[[9007199254740992,1],[9007199254740992,5]]
+divide(Array(Int32), 5e-324) saturates	3	3
+mixed arity, implicit projections on	2	2
+mixed arity, implicit projections off	2	2
+intDiv(const, Array key)	1	1
+divide(const, Array key)	1	1
+plus(Array key, Array const)	1	1
+minus(Array key, Array const)	1	1
+plus(Array key, Array const) interior overflow	1	1
+minus(Array key, Array const) interior overflow	1	1
+multiply(Tuple key, Tuple const) = dotProduct	1	1
+intDiv(Array const, scalar key)	1	1
+divide(Array const, scalar key)	1	1
+multiply(Array const, scalar key)	1	1
+scalar intDiv still prunes	1
+scalar divide still prunes	1
+scalar plus still prunes	1
+scalar multiply still prunes	1
+scalar intDiv answers	1	1
+String key + INTERVAL still prunes	1
+Date + Tuple(Interval) still prunes	1
+DateTime + Tuple(Interval) still prunes	1
+Date32 + Tuple(Interval) still prunes	1
+DateTime64 + Tuple(Interval) still prunes	1
+Tuple(Interval) + Date still prunes	1
+Tuple(Interval) + Date answers	1	1
+Tuple(Interval) + DateTime still prunes	1
+modulo over Array answers	2	2
+multiply(Array key, scalar const) answers	1	1

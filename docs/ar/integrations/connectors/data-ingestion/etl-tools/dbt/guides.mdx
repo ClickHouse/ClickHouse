@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -100,32 +100,32 @@ CREATE TABLE imdb.roles
 ```sql
 INSERT INTO imdb.actors
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_actors.tsv.gz', NOSIGN,
 'TSVWithNames');
 
 INSERT INTO imdb.directors
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_directors.tsv.gz', NOSIGN,
 'TSVWithNames');
 
 INSERT INTO imdb.genres
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_genres.tsv.gz', NOSIGN,
 'TSVWithNames');
 
 INSERT INTO imdb.movie_directors
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies_directors.tsv.gz', NOSIGN,
         'TSVWithNames');
 
 INSERT INTO imdb.movies
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_movies.tsv.gz', NOSIGN,
 'TSVWithNames');
 
 INSERT INTO imdb.roles(actor_id, movie_id, role)
 SELECT actor_id, movie_id, role
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz',
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/imdb/imdb_ijs_roles.tsv.gz', NOSIGN,
 'TSVWithNames');
 ```
 
@@ -211,7 +211,7 @@ LIMIT 5;
 
    <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_02.webp" size="lg" alt="مشروع dbt جديد" />
 
-4. حدّث ملف `dbt_project.yml` لتحديد أول model لدينا، وهو `actor_summary`، واضبط profile على `clickhouse_imdb`.
+4. حدّث ملف `dbt_project.yml` لتحديد أول نموذج لدينا، وهو `actor_summary`، واضبط profile على `clickhouse_imdb`.
 
    <Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_03.webp" size="lg" alt="ملف تعريف dbt" />
 

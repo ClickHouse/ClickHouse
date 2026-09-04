@@ -1,0 +1,28 @@
+<clickhouse>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <prometheus>
+        <port>8001</port>
+
+        <handlers>
+            <metrics_rule>
+                <url>/metrics</url>
+                <handler>
+                    <type>metrics</type>
+                    <metrics>true</metrics>
+                    <events>true</events>
+                    <asynchronous_metrics>true</asynchronous_metrics>
+                    <errors>true</errors>
+                    <!-- Constant labels configured inside a "handlers" block go through a different
+                         config prefix ("prometheus.handlers.*.handler.labels") than the top-level
+                         "prometheus.labels" section, so this exercises that path specifically. -->
+                    <labels>
+                        <environment>staging</environment>
+                        <shard from_env="PROM_SHARD"></shard>
+                    </labels>
+                </handler>
+            </metrics_rule>
+        </handlers>
+    </prometheus>
+</clickhouse>

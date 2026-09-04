@@ -45,11 +45,25 @@ def has_new_integration_tests(changed_files):
 
 
 def has_new_unit_tests(changed_files):
+    # Share the unit-test bugfix validator's exact predicate so this gate's "unit tests
+    # added" shortcut fires ONLY when that (blocking) validator would actually run a
+    # suite. A broader check (any path under src/**/tests/**) would let a non-runnable
+    # file — wrong extension, no `<Component>` dir, or a `.cpp` with no gtest macro —
+    # satisfy the bugfix gate while the validator skips with "nothing to validate", so
+    # the bug would never be reproduced. Imported lazily to avoid pulling the validator's
+    # build-time deps at hook module load.
+    from ci.jobs.unit_tests_bugfix_validation_job import (
+        _UNIT_TEST_FILE_RE,
+        derive_test_suites,
+    )
+
+    matched = []
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("src") and "/tests/" in file and Path(file).is_file():
-            return True
-    return False
+        if _UNIT_TEST_FILE_RE.match(file) and Path(file).is_file():
+            matched.append(file)
+    # Require an actual runnable gtest suite, exactly as the validator does.
+    return bool(derive_test_suites(matched))
 
 
 def has_new_integration_test_docker_images(changed_files):
@@ -70,10 +84,6 @@ def has_new_integration_test_docker_images(changed_files):
     return False
 
 
-def has_ci_report_link(pr_body):
-    return "s3.amazonaws.com/clickhouse-test-reports" in pr_body
-
-
 # Per-arch Bugfix Validation job names that this post-hook OR's together.
 # Each per-arch job runs the new/modified test on master HEAD and on the PR;
 # the per-arch runner inverts the test status (XFAIL): the job reports OK
@@ -91,14 +101,14 @@ _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES = (
 )
 
 
-def any_bugfix_validation_passed():
-    """Return True iff at least one per-arch Bugfix Validation job in the
-    current workflow result reported a success status (OK / XFAIL).
+def per_arch_validation_states():
+    """Return the per-arch Bugfix Validation sub-results of the current workflow
+    result, in report order. Empty when none is present or the file is unreadable.
 
-    SKIPPED jobs do NOT count as a pass: a job that filter_job skipped
-    because the corresponding test type wasn't changed has no opinion on
-    whether the bug was validated. We use `is_success()` (strict - OK or
-    XFAIL only) rather than `is_ok()` (which treats SKIPPED as OK).
+    This is the snapshot as this post-hook sees it, which is not necessarily a job's
+    final status: `_finish_workflow` runs the post-hooks before it reconciles jobs
+    that GitHub has not completed, so a job read here as `PENDING` can end up
+    `ERROR` in the published report.
     """
     info = Info()
     try:
@@ -110,35 +120,87 @@ def any_bugfix_validation_passed():
             f"WARNING: failed to read workflow result for "
             f"[{info.workflow_name}]: {e}"
         )
-        return False
-    matched = []
-    passed = []
-    for sub in workflow_result.results:
-        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES:
-            matched.append((sub.name, sub.status))
-            if sub.is_success():
-                passed.append(sub.name)
-    if matched:
-        print(
-            f"Bugfix validation per-arch jobs: {matched} - "
-            f"passed: {passed if passed else 'none'}"
+        return []
+    return [
+        sub
+        for sub in workflow_result.results
+        if sub.name in _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES
+    ]
+
+
+def describe_per_arch_validation(states):
+    """Render the observed per-arch state, one line per job, with the reason the job
+    recorded for itself: its own `info`, then every note attached to it. A job dropped
+    behind a failed dependency carries an empty `info` and names the upstream job that
+    failed in a note instead. The `info` is what tells apart a `SKIPPED` that
+    `filter_job` produced because this PR changed no test of that type from a
+    `SKIPPED` the validator produced because the test still passed on master HEAD.
+    """
+    if not states:
+        return (
+            "No per-arch Bugfix validation job is present in the workflow result "
+            "as seen by this check."
         )
-    else:
-        print(
-            "WARNING: no Bugfix Validation per-arch jobs found in workflow "
-            "result - were they all filtered/skipped?"
+    lines = ["Bugfix validation as seen by this check:"]
+    for sub in states:
+        recorded = [sub.info] + [
+            str(note.get("message", ""))
+            for note in ((sub.ext or {}).get("notes") or [])
+        ]
+        reason = " | ".join(
+            part.strip()
+            for chunk in recorded
+            for part in chunk.splitlines()
+            if part.strip()
         )
+        lines.append(f"  {sub.name}: {sub.status}" + (f" ({reason})" if reason else ""))
+    return "\n".join(lines)
+
+
+def any_bugfix_validation_passed(states=None):
+    """Return True iff at least one per-arch Bugfix Validation job reported a
+    success status: `OK` or `XFAIL`, i.e. `Result.is_success` rather than `Result.is_ok`,
+    which would also accept `SKIPPED`. A job that `filter_job` skipped because the
+    corresponding test type wasn't changed has no opinion on whether the bug was
+    validated, so `SKIPPED` cannot count as a pass.
+    """
+    if states is None:
+        states = per_arch_validation_states()
+    passed = [sub.name for sub in states if sub.is_success()]
+    if passed:
+        print(f"Bugfix validation passed on: {passed}")
     return bool(passed)
 
 
+def unit_bugfix_validation_refuted():
+    """Return True iff the unit-test Bugfix Validation job definitively FAILED to
+    reproduce — status FAIL, i.e. the added/changed test PASSES on the merge-base
+    "before" binary, so it does not catch the bug the fix addresses.
+
+    OK/XFAIL (reproduced, or skipped because there was nothing to validate) do NOT count,
+    and crucially neither does ERROR: an inconclusive run — the before-binary could not be
+    compiled (the test references PR-introduced code), or it crashed before any test ran,
+    or submodules were missing — means "we couldn't determine", which must not block
+    merge. The job is `allow_failure=True`; this is the only outcome that blocks.
+    """
+    info = Info()
+    try:
+        workflow_result = Result.from_fs(info.workflow_name)
+    except Exception as e:
+        # Defensive: result file not on disk yet / unreadable. Fail open (don't block) —
+        # consistent with treating uncertainty as non-blocking for the unit case.
+        print(f"WARNING: failed to read workflow result for [{info.workflow_name}]: {e}")
+        return False
+    for sub in workflow_result.results:
+        if sub.name == JobNames.BUGFIX_VALIDATE_UT:
+            print(f"Unit-test Bugfix Validation job status: {sub.status}")
+            return sub.status == Result.Status.FAIL
+    print("WARNING: no unit-test Bugfix Validation job found in workflow result")
+    return False
+
+
 def check():
-    # read actual PR body from GH API - fallback to workflow context if failed
-    title, body, labels = GH.get_pr_title_body_labels()
-    if body:
-        pr_body = body
-    else:
-        print("WARNING: Failed to get PR body from GH API - using workflow context")
-        pr_body = Info().pr_body
+    _title, _body, labels = GH.get_pr_title_body_labels()
     if not labels:
         labels = Info().pr_labels
 
@@ -157,39 +219,47 @@ def check():
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
-    # so neither the unit-only shortcut nor the CI-report-link fallback
-    # can bypass per-arch Bugfix Validation when the PR adds functional
-    # or integration regression tests. (Bot reviews on PR #103541,
-    # 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
+    # so the unit-only shortcut cannot bypass per-arch Bugfix Validation
+    # when the PR adds functional or integration regression tests. (Bot
+    # reviews on PR #103541, 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
 
     # New functional or integration regression tests exist. Those tests
     # MUST validate on at least one arch (the bug reproduces on master
-    # HEAD and is fixed on the PR). The CI-report-link fallback is NOT
-    # accepted here - it would let an unvalidated FT/IT regression test
-    # through and weaken the contract this hook enforces. The presence
-    # of an additional unit test alongside FT/IT does not relax this
-    # requirement either.
+    # HEAD and is fixed on the PR). The presence of an additional unit
+    # test alongside FT/IT does not relax this requirement either.
     if has_ft or has_it:
-        if any_bugfix_validation_passed():
+        states = per_arch_validation_states()
+        if any_bugfix_validation_passed(states):
             print(
                 "At least one per-arch Bugfix Validation job validated the bug - pass"
             )
             return True
+        print(describe_per_arch_validation(states))
         print(
-            "No per-arch Bugfix Validation job validated the bug - the test "
-            "either passes on master HEAD on every arch (so it's not actually "
-            "a regression test for the fix) or every arch errored out. See "
-            "the per-arch Bugfix validation jobs in the report."
+            "A bug fix is validated when at least one per-arch Bugfix validation "
+            "job reports OK or XFAIL; none did."
         )
         return False
 
-    # Unit-only PR. Unit tests can't be auto-validated by re-running
-    # master HEAD (they live in compiled C++ and the validation
-    # framework can't selectively run them against the master binary),
-    # so the per-arch Bugfix Validation machinery doesn't apply. Adding
-    # new unit tests is accepted as proof on its own.
+    # Unit-only PR. The unit-test Bugfix Validation job builds a merge-base "before"
+    # binary and runs the touched gtest suite against it. Block ONLY if that job
+    # definitively refuted the test (status FAIL: it passes on the merge-base too, so it
+    # doesn't catch the bug). A reproduction (OK/XFAIL) passes, and an inconclusive run
+    # (ERROR — before-binary couldn't compile or crashed) does NOT block: "we couldn't
+    # determine" is not grounds to block merge. (The job is allow_failure, so its raw
+    # status never hard-blocks; this hook is the merge gate.)
     if has_unit:
-        print("New unit tests added (no functional/integration tests) - pass")
+        if unit_bugfix_validation_refuted():
+            print(
+                "Unit-test Bugfix Validation FAILED to reproduce: the added test passes "
+                "on the merge-base 'before' binary too, so it does not catch the bug. "
+                "See the 'Bugfix validation (unit tests)' job."
+            )
+            return False
+        print(
+            "New unit tests added and the unit Bugfix Validation did not refute them "
+            "(reproduced, inconclusive, or skipped) - pass"
+        )
         return True
 
     # Integration-test Docker image change only (no new FT/IT/unit
@@ -206,16 +276,7 @@ def check():
         )
         return True
 
-    # No new tests at all. Allow a link to a CI report in the PR body as
-    # proof the bug exists and was fixed (operator-supplied evidence in
-    # lieu of an automated test). This fallback applies only here - it
-    # does NOT override per-arch Bugfix Validation when FT/IT tests are
-    # present (see the branch above).
-    if has_ci_report_link(pr_body):
-        print(
-            "No new tests have been added, but the PR description has a link to a CI report - pass"
-        )
-        return True
+    # No new tests at all.
     print("No new tests have been added")
     return False
 

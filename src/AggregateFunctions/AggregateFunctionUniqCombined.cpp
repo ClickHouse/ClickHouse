@@ -73,7 +73,7 @@ It provides the result deterministically (it does not depend on the query proces
 
 :::note
 Since it uses a 32-bit hash for non-String types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (the error will raise quickly after a few tens of billions of distinct values).
-In the case cardinalities are larger than `UINT_MAX`, you should use [`uniqCombined64`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined64) instead.
+In the case cardinalities are larger than `UINT_MAX`, you should use [`uniqCombined64`](/reference/functions/aggregate-functions/uniqCombined64) instead.
 :::
 
 Compared to the uniq function, the uniqCombined function:
@@ -140,15 +140,15 @@ SELECT uniqCombined(15)(number) FROM numbers(1e5);
     /// uniqCombined64 documentation
     FunctionDocumentation::Description description_uniqCombined64 = R"(
 Calculates the approximate number of different argument values.
-It is the same as [`uniqCombined`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined), but uses a 64-bit hash for all data types rather than just for the String data type.
+It is the same as [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined), but uses a 64-bit hash for all data types rather than just for the String data type.
 
 This function provides the result deterministically (it does not depend on the query processing order).
 
 :::note
-Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [`uniqCombined`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqcombined) does, which uses a 32-bit hash for non-String types.
+Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined) does, which uses a 32-bit hash for non-String types.
 :::
 
-Compared to the [uniq](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniq) function, the uniqCombined64 function:
+Compared to the [uniq](/reference/functions/aggregate-functions/uniq) function, the uniqCombined64 function:
 - Consumes several times less memory
 - Calculates with several times higher accuracy
 
@@ -197,11 +197,9 @@ SELECT uniqCombined(number) FROM numbers(1e10);
 ┌─uniqCombined64(number)─┐
 │             9998568925 │
 └────────────────────────┘
-approximately 10.00 billion
 ┌─uniqCombined(number)─┐
 │           5545308725 │
 └──────────────────────┘
-approximately 5.55 billion
         )"
     }
     };

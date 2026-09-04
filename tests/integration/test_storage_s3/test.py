@@ -291,7 +291,7 @@ def test_partition_by(started_cluster):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -304,7 +304,7 @@ def test_partition_by(started_cluster):
 
     filename = "test2_{_partition_id}.csv"
     instance.query(
-        f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV') partition by column3"
+        f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', partition_strategy='wildcard') partition by column3"
     )
     instance.query(f"insert into p values {values}")
     assert "1,2,3\n" == get_s3_file_content(
@@ -329,7 +329,7 @@ def test_partition_by_string_column(started_cluster):
     values = "(1, 'foo/bar'), (3, 'йцук'), (78, '你好')"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -355,7 +355,7 @@ def test_partition_by_const_column(started_cluster):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
-        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}')
+        s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{id}/{filename}', 'CSV', '{table_format}', partition_strategy='wildcard')
         PARTITION BY {partition_by} VALUES {values}"""
 
     run_query(instance, put_query)
@@ -416,6 +416,53 @@ def test_get_path_with_special(started_cluster, special):
     instance = started_cluster.instances["dummy"]
     get_query = f"SELECT * FROM s3('http://resolver:8082/get-my-path/{safe_symbol}.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
     assert run_query(instance, get_query).splitlines() == [f"/{symbol}.csv"]
+
+
+# The echo mock returns the raw request path it observed, so this asserts the
+# on-wire behavior of `enable_url_encoding` regardless of how any S3 server
+# decodes paths (stateless CI runs SeaweedFS, which URL-decodes the raw path
+# before routing, so 02833_url_without_path_encoding cannot check this there).
+def test_url_encoding_on_wire(started_cluster):
+    instance = started_cluster.instances["dummy"]
+
+    # With enable_url_encoding=0 the path must reach the server unchanged.
+    get_query = "SELECT * FROM url('http://resolver:8082/get-my-path/test%2Fa.csv', 'CSV', 'column1 String') SETTINGS enable_url_encoding=0 FORMAT TSV"
+    assert run_query(instance, get_query).splitlines() == ["/test%2Fa.csv"]
+
+    # With enable_url_encoding=1 the path is decoded before sending.
+    get_query = "SELECT * FROM url('http://resolver:8082/get-my-path/test%2Fa.csv', 'CSV', 'column1 String') SETTINGS enable_url_encoding=1 FORMAT TSV"
+    assert run_query(instance, get_query).splitlines() == ["/test/a.csv"]
+
+
+# A non-empty object whose key ends with '/' is a legal S3 key shape. SeaweedFS
+# stores such a key as a directory and silently drops its content, so stateless
+# CI cannot cover it (03271_s3_table_function_asterisk_glob) - the coverage
+# lives here on MinIO.
+def test_asterisk_glob_non_empty_trailing_slash_object(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    id = uuid.uuid4()
+    base_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/trailing_slash_{id}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    run_query(
+        instance,
+        f"INSERT INTO FUNCTION s3('{base_url}/', {auth}, 'Parquet') SELECT 0 AS num",
+    )
+    run_query(
+        instance,
+        f"INSERT INTO FUNCTION s3('{base_url}/file1', {auth}, 'Parquet') SELECT 1 AS num",
+    )
+    run_query(
+        instance,
+        f"INSERT INTO FUNCTION s3('{base_url}/file2', {auth}, 'Parquet') SELECT 2 AS num",
+    )
+
+    query = f"SELECT * FROM s3('{base_url}/*', {auth}, 'Parquet') ORDER BY ALL SETTINGS s3_skip_empty_files=0"
+    assert run_query(instance, query).splitlines() == ["0", "1", "2"]
+
+    query = f"SELECT * FROM s3Cluster(cluster, '{base_url}/*', {auth}, 'Parquet') ORDER BY ALL SETTINGS s3_skip_empty_files=0"
+    assert run_query(instance, query).splitlines() == ["0", "1", "2"]
 
 
 # Test put no data to S3.
@@ -785,7 +832,7 @@ def test_s3_glob_scheherazade(started_cluster):
         count = min(start + batch, 1001) - start
         run_query(
             instance,
-            "insert into table function s3('http://{}:{}/{}/night_{{_partition_id}}/tale.csv', 'CSV', '{}') "
+            "insert into table function s3('http://{}:{}/{}/night_{{_partition_id}}/tale.csv', 'CSV', '{}', partition_strategy='wildcard') "
             "partition by column1 select number, 1, 1 from numbers({}, {}) settings s3_truncate_on_insert=1".format(
                 started_cluster.minio_ip,
                 MINIO_INTERNAL_PORT,
@@ -896,7 +943,7 @@ def test_s3_glob_many_objects_under_selection(started_cluster):
         count = min(start + batch, 1008) - start
         run_query(
             instance,
-            "insert into table function s3('http://{}:{}/{}/folder1/file{{_partition_id}}.csv', 'CSV', '{}') "
+            "insert into table function s3('http://{}:{}/{}/folder1/file{{_partition_id}}.csv', 'CSV', '{}', partition_strategy='wildcard') "
             "partition by column1 select number, 1, 1 from numbers({}, {}) settings s3_truncate_on_insert=1".format(
                 started_cluster.minio_ip,
                 MINIO_INTERNAL_PORT,
@@ -2382,7 +2429,7 @@ def test_s3_list_objects_failure(started_cluster):
 
     put_query = f"""
         INSERT INTO TABLE FUNCTION
-        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32')
+        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32', partition_strategy='wildcard')
         PARTITION BY c1 % 20
         SELECT number FROM numbers(100)
         SETTINGS s3_truncate_on_insert=1
@@ -2731,13 +2778,13 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     assert int(result) == 42
 
     error = instance.query_and_get_error(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 42 settings s3_truncate_on_insert=0"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 42 settings s3_truncate_on_insert=0"
     )
 
     assert "BAD_ARGUMENTS" in error
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 43 settings s3_truncate_on_insert=1"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 43 settings s3_truncate_on_insert=1"
     )
 
     result = instance.query(
@@ -2747,7 +2794,7 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     assert int(result) == 43
 
     instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64') partition by 42 select 44 settings s3_truncate_on_insert=0, s3_create_new_file_on_insert=1"
+        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_partitioned_write{{_partition_id}}.csv', 'CSV', 'x UInt64', partition_strategy='wildcard') partition by 42 select 44 settings s3_truncate_on_insert=0, s3_create_new_file_on_insert=1"
     )
 
     result = instance.query(
@@ -3104,27 +3151,23 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
         in node.query_and_get_error(
             f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'wildcard')
     PARTITION BY (b, c)
-    """,
-            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+    """
         )
     )
 
     # `compatibility` older than `26.6` resolves
-    # `file_like_engine_default_partition_strategy` to `wildcard` via
-    # `SettingsChangesHistory`, so the same path must raise the same error
-    # without an explicit setting override.
-    assert (
-        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
-        in node.query_and_get_error(
-            f"""
+    # `file_like_engine_default_partition_strategy` to `wildcard`. Without an
+    # explicit strategy, preserve the old read-only behavior instead of failing.
+    node.query(
+        f"""
     CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-            settings={"compatibility": "26.5"},
-        )
+        settings={"compatibility": "26.5"},
     )
+    node.query(f"DROP TABLE {table_name}")
 
     # From `26.6` onwards the default flips to `hive`, so the same statement
     # under `compatibility = '26.6'` must succeed.
@@ -3714,3 +3757,38 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
 
     instance.query(f"DROP TABLE {table_name}")
 
+
+def test_row_policy_over_csv(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    filename = "test_row_policy_over_csv.csv"
+    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}"
+
+    run_query(
+        instance,
+        f"INSERT INTO TABLE FUNCTION s3('{url}', 'CSV', 'id UInt64, region String') "
+        f"SELECT number, ['East', 'West'][number % 2 + 1] FROM numbers(6) "
+        f"SETTINGS s3_truncate_on_insert=1",
+    )
+    run_query(
+        instance,
+        f"CREATE TABLE test_row_policy_csv (id UInt64, region String) ENGINE = S3('{url}', 'CSV')",
+    )
+    run_query(
+        instance,
+        "CREATE ROW POLICY test_row_policy_csv_p ON test_row_policy_csv "
+        "USING region = 'East' TO ALL",
+    )
+    try:
+        assert (
+            run_query(instance, "SELECT id, region FROM test_row_policy_csv ORDER BY id")
+            == "0\tEast\n2\tEast\n4\tEast\n"
+        )
+        assert (
+            run_query(instance, "SELECT id FROM test_row_policy_csv ORDER BY id")
+            == "0\n2\n4\n"
+        )
+        assert run_query(instance, "SELECT count() FROM test_row_policy_csv") == "3\n"
+    finally:
+        run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
+        run_query(instance, "DROP TABLE test_row_policy_csv")

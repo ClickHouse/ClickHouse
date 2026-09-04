@@ -32,9 +32,7 @@ Cette option inclut l’authentification, ce qui permet de conserver les tableau
 <br />
 
 <Steps>
-  <Step>
-    ### Déployer avec Docker
-
+  <Step title="Déployer avec Docker" id="deploy-with-docker">
     La commande suivante exécute un collector OpenTelemetry (sur les ports 4317 et 4318) ainsi que l’interface HyperDX (sur le port 8080).
 
     ```shell
@@ -48,24 +46,20 @@ Cette option inclut l’authentification, ce qui permet de conserver les tableau
     </Info>
   </Step>
 
-  <Step>
-    ### Accéder à l’interface HyperDX
-
+  <Step title="Accéder à l’interface HyperDX" id="navigate-to-hyperdx-ui">
     Accédez à [http://localhost:8080](http://localhost:8080) pour ouvrir l’interface HyperDX.
 
     Créez un utilisateur en indiquant un nom d’utilisateur et un mot de passe conformes aux exigences.
 
     Lorsque vous cliquez sur `Create`, des sources de données sont créées pour l’instance ClickHouse intégrée.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="interface HyperDX" size="lg" />
 
     Pour voir un exemple utilisant une autre instance ClickHouse, consultez [« Using ClickHouse Cloud »](#using-clickhouse-cloud).
   </Step>
 
-  <Step>
-    ### Ingérer des données
-
-    Pour ingérer des données, consultez [« Ingesting data »](/fr/clickstack/ingesting-data/index).
+  <Step title="Ingérer des données" id="ingest-data">
+    Pour ingérer des données, consultez [« Ingesting data »](/fr/clickstack/ingesting-data/overview).
   </Step>
 </Steps>
 

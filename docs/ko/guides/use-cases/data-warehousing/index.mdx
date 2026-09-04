@@ -2,7 +2,7 @@
 description: 'ClickHouse를 사용하여 Apache Iceberg, Delta Lake, Apache Hudi, Apache Paimon과 같은 오픈 테이블 포맷의 데이터를 쿼리하고, 가속화하며, 분석할 수 있습니다.'
 slug: /use-cases/data-lake
 title: '데이터 레이크'
-keywords: ['data lake', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+keywords: ['data lake', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake', 'SeaweedFS']
 doc_type: 'landing-page'
 ---
 
@@ -16,7 +16,7 @@ ClickHouse는 [Apache Iceberg](/ko/reference/engines/table-engines/integrations/
   ### 기존 데이터를 원본 위치에서 쿼리하기
 </div>
 
-ClickHouse는 데이터를 복제하지 않고도 객체 스토리지에 있는 오픈 테이블 포맷을 직접 쿼리할 수 있습니다. Iceberg, Delta Lake, Hudi 또는 Paimon을 표준으로 사용하는 조직은 ClickHouse가 기존 테이블을 가리키도록 설정한 뒤 즉시 SQL 방언, 분석 함수, 효율적인 네이티브 Parquet 리더를 활용할 수 있습니다. 동시에 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local) 및 [chDB](/ko/products/chdb/index)와 같은 도구를 사용하면 원격 스토리지의 70개 이상의 파일 포맷에 걸쳐 탐색적이고 애드혹 분석을 수행할 수 있으므로, 별도의 인프라 설정 없이 데이터 레이크 데이터셋을 대화형으로 탐색할 수 있습니다.
+ClickHouse는 데이터를 복제하지 않고도 객체 스토리지에 있는 오픈 테이블 포맷을 직접 쿼리할 수 있습니다. Iceberg, Delta Lake, Hudi 또는 Paimon을 표준으로 사용하는 조직은 ClickHouse가 기존 테이블을 가리키도록 설정한 뒤 즉시 SQL 방언, 분석 함수, 효율적인 네이티브 Parquet 리더를 활용할 수 있습니다. 동시에 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local) 및 [chDB](/ko/chdb/index)와 같은 도구를 사용하면 원격 스토리지의 70개 이상의 파일 포맷에 걸쳐 탐색적이고 애드혹 분석을 수행할 수 있으므로, 별도의 인프라 설정 없이 데이터 레이크 데이터셋을 대화형으로 탐색할 수 있습니다.
 
 이 작업은 [테이블 함수와 테이블 엔진](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)을 사용하는 직접 읽기 방식이나 [데이터 카탈로그에 연결](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)하는 방식으로 수행할 수 있습니다.
 
@@ -48,15 +48,16 @@ ClickHouse는 객체 스토리지에 있는 오픈 테이블 포맷을 직접 �
 
 지원되는 카탈로그는 다음과 같습니다:
 
-| 카탈로그                  | Guide                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------- |
+| 카탈로그                     | Guide                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------- |
 | AWS Glue                 | [Glue 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/glue-catalog)             |
-| BigLake Metastore        | [BigLake 메타스토어 가이드](/ko/guides/use-cases/data-warehousing/biglake-catalog)         |
+| BigLake Metastore        | [BigLake 메타스토어 가이드](/ko/guides/use-cases/data-warehousing/biglake-catalog)      |
 | Databricks Unity Catalog | [Unity 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/unity-catalog)           |
-| Iceberg REST Catalog     | [REST 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/rest-catalog)                |
+| Iceberg REST Catalog     | [REST 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/rest-catalog)             |
 | Lakekeeper               | [Lakekeeper 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog) |
-| Project Nessie           | [Nessie 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/nessie-catalog)            |
+| Project Nessie           | [Nessie 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/nessie-catalog)         |
 | Microsoft OneLake        | [OneLake 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/onelake-catalog)       |
+| SeaweedFS                | [SeaweedFS 카탈로그 가이드](/ko/guides/use-cases/data-warehousing/seaweedfs-catalog)   |
 
 카탈로그 연결 방법은 [카탈로그 연결하기](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) 시작하기 가이드를 참조하십시오.
 
@@ -70,6 +71,12 @@ ClickHouse는 데이터를 오픈 테이블 포맷에 다시 쓰는 기능을 �
 * **역방향 ETL** - ClickHouse 내에서 materialized view 또는 예약 쿼리를 사용해 변환을 수행한 뒤, 그 결과를 데이터 생태계의 다른 도구에서 활용할 수 있도록 오픈 테이블 포맷에 저장하려는 경우입니다.
 
 자세한 내용은 [데이터 레이크에 쓰기](/ko/guides/use-cases/data-warehousing/getting-started/writing-data) 시작하기 가이드를 참조하세요.
+
+<div id="best-practices">
+  ### 모범 사례
+</div>
+
+운영 환경의 워크로드에서는 테이블 함수, 테이블 엔진 또는 카탈로그 연결 선택, 성능 설정 조정, 데이터 레이크 쿼리 디버깅에 대한 지침은 [데이터 레이크 모범 사례](/ko/guides/use-cases/data-warehousing/getting-started/best-practices)를 참조하십시오.
 
 <div id="next-steps">
   ## 다음 단계

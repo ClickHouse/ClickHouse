@@ -1,0 +1,5 @@
+<clickhouse>
+    <create_union_system_log_tables>
+        <cluster>system_logs_cluster</cluster>
+    </create_union_system_log_tables>
+</clickhouse>

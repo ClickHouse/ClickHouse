@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -16,6 +17,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class IStreamingStorage;
 struct ObjectMetadata;
 
 class ObjectStorageQueueSource final : public ISource, WithContext
@@ -73,6 +75,11 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        /// Refresh bucket locks which were not refreshed for more than a quarter of
+        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
+        /// meant to remove locks of dead servers).
+        void refreshExpiringBucketLocks();
+
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
     private:
@@ -124,6 +131,10 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
+        /// next() stops returning keys, isFinished returns true.
+        std::atomic_bool iterator_invalidated = false;
+
         bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
@@ -137,6 +148,7 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,
@@ -183,8 +195,10 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_,
         bool commit_once_processed_,
+        bool is_direct_select_,
         bool add_deduplication_info_,
-        bool is_deduplication_v2_);
+        bool is_deduplication_v2_,
+        IStreamingStorage & streaming_storage_);
 
     static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
@@ -257,6 +271,9 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    const bool is_direct_select;
+    IStreamingStorage & streaming_storage;
+    const UInt64 cancel_epoch;
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
@@ -279,6 +296,10 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
+        /// The object's own last-modified time, if object storage reported one.
+        /// Used to update the "newest object committed" pipeline-lag watermark.
+        time_t last_modified = 0;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

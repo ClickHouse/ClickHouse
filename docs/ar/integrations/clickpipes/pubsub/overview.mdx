@@ -80,7 +80,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
 
-يوفّر جدول الملخّص عناصر تحكّم لعرض بيانات عيّنة من المصدر أو من الجدول الهدف في ClickHouse
+يوفّر جدول الملخّص عناصر تحكّم لعرض بيانات عيّنة من المصدر أو من جدول الوجهة في ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
 
@@ -253,6 +253,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## المصادقة
 </div>
 
-يُجري ClickPipes for Pub/Sub المصادقة مع GCP باستخدام مفتاح JSON لحساب خدمة. ترفع ملف المفتاح عند إنشاء الـ pipe؛ ويشفّر ClickPipes هذا المفتاح عند تخزينه ويستخدمه في وقت التشغيل لاستهلاك الرسائل وإدارة دورة حياة الاشتراك المُدار.
+يُجري ClickPipes for Pub/Sub المصادقة مع GCP باستخدام مفتاح JSON لحساب خدمة. تُحمِّل ملف المفتاح عند إنشاء الـ pipe؛ ويشفّره ClickPipes أثناء التخزين ويستخدمه في وقت التشغيل لاستهلاك الرسائل وإدارة دورة حياة الاشتراك المُدار.
 
-للاطلاع على القائمة الدقيقة بأذونات IAM المطلوبة وتعريف دور مخصص مُوصى به، راجع [دليل أذونات IAM لـ Pub/Sub](/ar/integrations/clickpipes/pubsub/auth).
+للاطلاع على القائمة الدقيقة لأذونات IAM المطلوبة وتعريف دور مخصص موصى به، راجع [دليل أذونات IAM لـ Pub/Sub](/ar/integrations/clickpipes/pubsub/auth).

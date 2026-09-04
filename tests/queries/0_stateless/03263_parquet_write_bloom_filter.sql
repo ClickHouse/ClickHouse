@@ -5,6 +5,9 @@ set output_format_parquet_row_group_size = 100;
 set input_format_parquet_filter_push_down = 0;
 set input_format_parquet_page_filter_push_down = 0;
 set input_format_parquet_bloom_filter_push_down = 1;
+-- This test isolates bloom filter pushdown; disable dictionary filtering so the "no bf" baseline
+-- stays unpruned (the dictionary would otherwise prune row groups by itself).
+set input_format_parquet_dictionary_filter_push_down = 0;
 set schema_inference_make_columns_nullable = 'auto';
 SET enable_analyzer = 1; -- required for multiple array joins
 set max_block_size = 1000000; -- have only one block to make sure rows are split into row groups deterministically
