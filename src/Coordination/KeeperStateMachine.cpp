@@ -88,7 +88,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
-    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 /// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).

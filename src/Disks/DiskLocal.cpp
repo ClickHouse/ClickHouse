@@ -98,7 +98,10 @@ void syncLocalPath(const fs::path & path, int open_flags, bool is_directory)
     catch (...)
     {
         if (fd != -1)
-            ::close(fd);
+        {
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+        }
         throw;
     }
 }
