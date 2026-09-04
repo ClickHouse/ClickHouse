@@ -13,6 +13,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <base/scope_guard.h>
+#include <filesystem>
 
 
 namespace ProfileEvents
@@ -34,6 +35,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -139,6 +141,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    const std::string & active_registry_id_,
     LoggerPtr log_)
     : path(path_)
     , zookeeper_name(zookeeper_name_)
@@ -147,6 +150,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , max_loading_retries(max_loading_retries_)
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , active_registry_id(use_persistent_processing_nodes_ ? active_registry_id_ : "")
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -260,12 +264,15 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::c
     return metadata;
 }
 
-std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string & processor_id)
+std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(
+    const std::string & processor_id, const std::string & active_registry_id)
 {
     /// Add information which will be useful for debugging just in case.
     Poco::JSON::Object json;
     json.set("hostname", DNSResolver::instance().getHostName());
     json.set("processor_id", processor_id);
+    if (!active_registry_id.empty())
+        json.set("active_registry_id", active_registry_id);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -323,6 +330,103 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     return success;
 }
 
+void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_interval_seconds, bool force)
+{
+    if (!use_persistent_processing_nodes || !created_processing_node || active_registry_id.empty())
+        return;
+    if (!force && refresh_interval_seconds
+        && processing_node_age_watch.elapsedSeconds() < static_cast<double>(refresh_interval_seconds))
+        return;
+
+    const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
+    const auto registry_path = queue_path / "registry" / active_registry_id;
+    bool ownership_lost = false;
+    bool active_registry_lost = false;
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        Coordination::Stat stat;
+        std::string data;
+        if (!zk_client->tryGet(processing_node_path, data, &stat) || data != processor_info)
+        {
+            ownership_lost = true;
+            return;
+        }
+
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeCheckRequest(registry_path, -1));
+        requests.push_back(zkutil::makeSetRequest(processing_node_path, data, stat.version));
+        Coordination::Responses responses;
+        const auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            processing_node_version = stat.version + 1;
+            return;
+        }
+        if (code == Coordination::Error::ZNONODE
+            && !responses.empty()
+            && responses.front()->error == Coordination::Error::ZNONODE)
+        {
+            /// The claim is still ours, but this process's ephemeral registry node was
+            /// lost with the Keeper session. Keep ownership set so teardown removes the
+            /// persistent claim; the next streaming cycle will recreate the registry.
+            active_registry_lost = true;
+            return;
+        }
+        if (code == Coordination::Error::ZBADVERSION)
+        {
+            Coordination::Stat current_stat;
+            std::string current_data;
+            if (zk_client->tryGet(processing_node_path, current_data, &current_stat)
+                && current_data == processor_info)
+            {
+                /// Another refresh by this owner won the race.
+                processing_node_version = current_stat.version;
+                return;
+            }
+            ownership_lost = true;
+            return;
+        }
+        if (code == Coordination::Error::ZNONODE)
+        {
+            ownership_lost = true;
+            return;
+        }
+        zkutil::KeeperMultiException::check(code, requests, responses);
+    });
+
+    if (ownership_lost)
+    {
+        created_processing_node = false;
+        (*file_status).reset();
+        /// Not a logical error: a claim of a process which was unregistered and did not
+        /// refresh for longer than the abandoned-reclaim TTL (e.g. it was paused with
+        /// SYSTEM STOP, or lost its Keeper session for that long) is legitimately
+        /// reclaimed by cleanup. The owner detects it here and releases the work.
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Lost ownership of persistent processing node {} (processor: {}, active registry: {})",
+            processing_node_path,
+            processor_info,
+            active_registry_id);
+    }
+    if (active_registry_lost)
+        throw zkutil::KeeperException::fromPath(Coordination::Error::ZNONODE, registry_path);
+
+    processing_node_age_watch.restart();
+}
+
+void ObjectStorageQueueIFileMetadata::addProcessingNodeRemovalRequest(Coordination::Requests & requests) const
+{
+    if (!active_registry_id.empty())
+    {
+        const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
+        requests.push_back(zkutil::makeCheckRequest(queue_path / "registry" / active_registry_id, -1));
+    }
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, processing_node_version));
+}
+
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
@@ -370,6 +474,8 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         chassert(!processor_info.empty());
 
         created_processing_node = true;
+        processing_node_version = 0;
+        processing_node_age_watch.restart();
         file_status->onProcessing();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
     }
@@ -402,7 +508,10 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     });
 
     Coordination::Requests requests;
-    prepareResetProcessingRequests(requests);
+    /// Resetting releases work without marking the object processed or deleting it.
+    /// It is therefore safe to remove a versioned claim that still contains our exact
+    /// processor identity even if the ephemeral active-registry entry was just lost.
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, processing_node_version));
 
     Coordination::Responses responses;
     Coordination::Error code = {};
@@ -410,22 +519,17 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     zk_retry.retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-        if (zk_retry.isRetry())
+        /// On retry: it is possible that we fail "after operation", e.g. we successfully
+        /// removed the node, but did not get confirmation, and a retry could remove a
+        /// newly recreated node. On the first attempt: the claim may have been reclaimed
+        /// by abandoned-claim cleanup (e.g. after a long pause or Keeper disconnection)
+        /// and possibly recreated by another server. Either way ownership is gone, the
+        /// work is already released, and the node must not be touched.
+        if (!checkProcessingOwnership(zk_client))
         {
-            /// It is possible that we fail "after operation",
-            /// e.g. we successfully removed the node, but did not get confirmation,
-            /// but then if we retry - we can remove a newly recreated node,
-            /// therefore avoid this with this check.
-            if (!checkProcessingOwnership(zk_client))
-            {
-                LOG_TEST(log, "Will not remove processing node, ownership changed");
-                code = Coordination::Error::ZOK;
-                return;
-            }
-        }
-        else
-        {
-            chassert(checkProcessingOwnership(zk_client));
+            LOG_TEST(log, "Will not remove processing node, ownership changed");
+            code = Coordination::Error::ZOK;
+            return;
         }
         code = zk_client->tryMulti(requests, responses);
     });
@@ -440,9 +544,23 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         return;
     }
 
-    const auto failed_path = responses[0]->error != Coordination::Error::ZOK
-        ? requests[0]->getPath()
-        : requests[1]->getPath();
+    if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
+    {
+        /// The claim was reclaimed (and possibly recreated by another server) between the
+        /// ownership check above and the removal. The reset's goal is already achieved.
+        LOG_TEST(log, "Will not remove processing node {}, it was already removed or recreated", processing_node_path);
+        return;
+    }
+
+    std::string failed_path = processing_node_path;
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        if (responses[i]->error != Coordination::Error::ZOK)
+        {
+            failed_path = requests[i]->getPath();
+            break;
+        }
+    }
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -453,7 +571,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
 {
     LOG_TEST(log, "Resetting processing for {}", path);
-    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    addProcessingNodeRemovalRequest(requests);
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
@@ -597,7 +715,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
         permanently_failed = true;
 
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
@@ -637,7 +755,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
         permanently_failed = true;
 
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
         /// Remove /failed/node_hash.retriable node.
         requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
         /// Create a persistent node /failed/node_hash.
@@ -646,7 +764,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     else
     {
         /// Remove Processing node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        addProcessingNodeRemovalRequest(requests);
 
         if (node_metadata.retries == 0)
         {

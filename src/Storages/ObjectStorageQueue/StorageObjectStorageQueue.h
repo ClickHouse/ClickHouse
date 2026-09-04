@@ -191,7 +191,8 @@ private:
     /// borrowed from it (e.g. its table metadata) is used.
     std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
-    std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
+    std::shared_ptr<FileIterator> createFileIterator(
+        ContextPtr local_context, const ActionsDAG::Node * predicate, bool track_active_registry);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,

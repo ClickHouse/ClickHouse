@@ -18,6 +18,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::string & active_registry_id_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 

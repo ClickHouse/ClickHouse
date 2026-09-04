@@ -109,6 +109,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
+    bool track_active_registry_,
     std::atomic<bool> & shutdown_called_)
     : WithContext(context_)
     , metadata(metadata_)
@@ -122,6 +123,10 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
+    , active_registry_id(
+        track_active_registry_ && metadata->usePersistentProcessingNode()
+            ? ObjectStorageQueueMetadata::getActiveRegistryID(storage_id_)
+            : "")
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -293,7 +298,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        /* bucket_info */ {},
+                        active_registry_id); /// No buckets for Unordered mode.
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -672,8 +678,8 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
 void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
 {
-    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
-    if (!ttl_seconds)
+    const size_t refresh_interval_seconds = metadata->getPersistentProcessingNodeRefreshIntervalSeconds();
+    if (!refresh_interval_seconds)
         return;
 
     std::lock_guard lock(mutex);
@@ -686,7 +692,7 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     {
         for (auto & holder : *holders)
         {
-            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            if (holder->getAgeSeconds() >= static_cast<double>(refresh_interval_seconds))
             {
                 try
                 {
@@ -770,7 +776,7 @@ ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator
             bucket_info.processor.value(), processor);
     }
 
-    auto holder = metadata->tryAcquireBucket(bucket);
+    auto holder = metadata->tryAcquireBucket(bucket, active_registry_id);
     if (!holder)
     {
         LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})", bucket, bucket_info.keys.size());
@@ -1142,6 +1148,13 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
+        const size_t refresh_interval_seconds = files_metadata->getPersistentProcessingNodeRefreshIntervalSeconds();
+        if (refresh_interval_seconds)
+        {
+            for (const auto & processed_file : processed_files)
+                processed_file.metadata->refreshProcessingNode(refresh_interval_seconds);
+        }
+
         if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
 
@@ -1277,6 +1290,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
+            file_metadata->refreshProcessingNode(/* refresh_interval_seconds */ 0, /* force */ true);
             processed_files.emplace_back(file_metadata);
 
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
@@ -1526,6 +1540,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 {
     if (processed_files.empty())
         return;
+
+    for (const auto & processed_file : processed_files)
+        processed_file.metadata->refreshProcessingNode(/* refresh_interval_seconds */ 0, /* force */ true);
 
     LOG_TEST(
         log,
