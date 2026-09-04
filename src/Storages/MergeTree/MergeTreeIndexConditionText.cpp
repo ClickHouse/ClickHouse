@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -949,6 +950,21 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+/// The map value type behind a `mapValues(map_col)` index, taken from the index header column,
+/// which holds an Array of that type.
+static DataTypePtr getMapValueTypeFromIndexHeader(const Block & header, const String & map_column_name)
+{
+    auto index_column_name = fmt::format("mapValues({})", map_column_name);
+    if (!header.has(index_column_name))
+        return nullptr;
+
+    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByName(index_column_name).type.get());
+    if (!array_type)
+        return nullptr;
+
+    return array_type->getNestedType();
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -992,7 +1008,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
     bool candidate_for_exact_mode = true;
-    if (traverseMapElementValueNode(index_column_node, value_field))
+    if (traverseMapElementValueNode(function_node, index_column_node, value_field))
     {
         has_index_column = true;
 
@@ -1678,7 +1694,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     return true;
 }
 
-bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
+std::optional<String> MergeTreeIndexConditionText::tryGetMapNameForElementValueIndex(const RPNBuilderTreeNode & node) const
 {
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
     if (node.isFunction())
@@ -1686,21 +1702,32 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         const auto function = node.toFunctionNode();
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
-            const auto column_name = function.getArgumentAt(0).getColumnName();
-            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
+            auto column_name = function.getArgumentAt(0).getColumnName();
+            if (hasIndexForColumn(fmt::format("mapValues({})", column_name)))
+                return column_name;
         }
-        return false;
+        return {};
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
     auto parsed = tryParseMapSubcolumnName(node.getColumnName());
     if (!parsed)
-        return false;
+        return {};
     auto & [map_column_name, serialized_key] = *parsed;
-    return header.has(fmt::format("mapValues({})", map_column_name));
+    if (!header.has(fmt::format("mapValues({})", map_column_name)))
+        return {};
+    return map_column_name;
 }
 
-bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
+bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
+{
+    return tryGetMapNameForElementValueIndex(node).has_value();
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementValueNode(
+    const RPNBuilderFunctionTreeNode & function_node,
+    const RPNBuilderTreeNode & index_column_node,
+    const Field & const_value) const
 {
     /// Here we check whether we can use index defined for `mapValues(m)`
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1709,7 +1736,87 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
     if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
         return false;
 
-    return hasIndexForMapElementValue(index_column_node);
+    auto map_column_name = tryGetMapNameForElementValueIndex(index_column_node);
+    if (!map_column_name)
+        return false;
+
+    /// A map element reads the value type's default for a key the map does not hold, while the index
+    /// stores terms only for the elements it does hold. So the index can be used only for a function
+    /// that returns false for that default.
+    const auto * function_dag_node = function_node.getDAGNode();
+    const auto * element_dag_node = index_column_node.getDAGNode();
+
+    if (!function_dag_node || !element_dag_node
+        || !function_dag_node->function_base || !function_dag_node->isDeterministic()
+        || !WhichDataType(removeNullable(function_dag_node->result_type)).isUInt8())
+        return false;
+
+    auto value_type = getMapValueTypeFromIndexHeader(header, *map_column_name);
+    if (!value_type)
+        return false;
+
+    ActionsDAG::NodeMapping copy_map;
+    auto subdag = ActionsDAG::cloneSubDAG({function_dag_node}, copy_map, /*remove_aliases=*/ true);
+
+    auto copied_element = copy_map.find(element_dag_node);
+    if (copied_element == copy_map.end() || subdag.getOutputs().size() != 1)
+        return false;
+
+    /// The value is the map value type's default, but the type is the map element's own, which a
+    /// Nullable key widens to Nullable without an absent key reading NULL.
+    const auto * element_node = copied_element->second;
+    ColumnWithTypeAndName default_element
+    {
+        element_node->result_type->createColumnConst(1, value_type->getDefault()),
+        element_node->result_type,
+        element_node->result_name,
+    };
+
+    /// `substitute` rewrites a node in place, which would leave the subcolumn spelling's element
+    /// listed as a required input, so rewire the consumers of that spelling instead and let
+    /// `removeUnusedActions` drop the input it no longer feeds.
+    if (element_node->type == ActionsDAG::ActionType::INPUT)
+        subdag.substituteInputForConsumersOnly(element_node->result_name, default_element);
+    else
+        subdag.substitute({{element_node, default_element}});
+
+    subdag.removeUnusedActions(/*allow_remove_inputs=*/ true);
+
+    /// The function reads something besides the map element, e.g. a non-constant argument,
+    /// so its result for the default is not determined by the substitution alone.
+    if (!subdag.getRequiredColumns().empty())
+        return false;
+
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
+
+    auto output_column_name = subdag.getOutputs().front()->result_name;
+
+    Block block;
+    size_t num_rows = 1;
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block, num_rows);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    /// A Nullable map value type defaults to NULL, for which the function is NULL and not true.
+    return result_column->isNullAt(0) || !result_column->getBool(0);
 }
 
 bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(

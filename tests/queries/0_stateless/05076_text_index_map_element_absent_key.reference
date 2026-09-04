@@ -1,0 +1,17 @@
+S1 oracle	1
+S1 subcolumn	1
+S1 arrayElement	1
+S2 prunes	1
+S2 rows	0
+S2 present rows	1
+S3 oracle	0
+S3 rows	0
+S3 prunes	1
+S4 oracle	0
+S4 rows	0
+S4 prunes	1
+S5 oracle	1
+S5 rows	1
+S5 prunes	1
+S6 oracle	1
+S6 rows	1
