@@ -176,10 +176,9 @@ void ConstraintsDescription::checkExpressionsPreserveRowCount() const
     for (const auto & constraint : constraints)
     {
         const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.type == ASTConstraintDeclaration::Type::CHECK && declaration.expr
-            && astContainsArrayJoin(*declaration.expr))
+        if (declaration.expr && astContainsArrayJoin(*declaration.expr))
             throw Exception(
-                ErrorCodes::INCORRECT_QUERY, "CHECK constraint '{}' cannot contain array joins", declaration.name);
+                ErrorCodes::INCORRECT_QUERY, "Constraint '{}' cannot contain `arrayJoin`", declaration.name);
     }
 }
 

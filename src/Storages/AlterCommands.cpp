@@ -2070,9 +2070,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
-        /// A `CHECK` expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-        /// would check a row against another row's value, or read past the end of a shorter column.
-        if (command.type == AlterCommand::ADD_CONSTRAINT && command.constraint_decl)
+        /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside
+        /// it would check a row against another row's value, or read past the end of a shorter column.
+        /// `MODIFY CONSTRAINT` replaces the stored declaration in place, so it installs a new expression
+        /// just like `ADD CONSTRAINT` does.
+        if ((command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            && command.constraint_decl)
             ConstraintsDescription({command.constraint_decl}).checkExpressionsPreserveRowCount();
 
         /// `column_statistics_decl` covers the column-declaration spelling

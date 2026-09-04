@@ -9,11 +9,17 @@ CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK unnest(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK UNNEST(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
 
+-- An `ASSUME` constraint is substituted into queries by the constraint optimizer, and it has no more
+-- business changing the number of rows than a `CHECK` has.
+CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c ASSUME arrayJoin(arr) > 0) ENGINE = MergeTree ORDER BY k; -- { serverError INCORRECT_QUERY }
+
 CREATE TABLE t_check_array_join (k UInt32, arr Array(UInt32), CONSTRAINT c CHECK length(arr) > 0) ENGINE = MergeTree ORDER BY k;
 SELECT 'accepted';
 
 ALTER TABLE t_check_array_join ADD CONSTRAINT c2 CHECK arrayJoin(arr) > 0; -- { serverError INCORRECT_QUERY }
 ALTER TABLE t_check_array_join ADD CONSTRAINT c2 CHECK k < 1000;
+-- `MODIFY CONSTRAINT` replaces the stored declaration in place, so it states a new expression too.
+ALTER TABLE t_check_array_join MODIFY CONSTRAINT c2 CHECK arrayJoin(arr) > 0; -- { serverError INCORRECT_QUERY }
 SELECT 'altered';
 
 INSERT INTO t_check_array_join VALUES (1, [1, 2]);
