@@ -27,4 +27,11 @@ ALTER TABLE 05076_keepermap MODIFY COLUMN k COMMENT 'col-3';
 SELECT 'local:', extractAll(create_table_query, 'COMMENT \'([^\']*)\'') FROM system.tables WHERE database = currentDatabase() AND table = '05076_keepermap';
 SELECT 'keeper:', extractAll(value, 'COMMENT \'([^\']*)\'') FROM system.zookeeper WHERE path = '/clickhouse/databases/' || currentDatabase() || '/metadata' AND name = '05076_keepermap';
 
+SELECT '-- MODIFY/RESET SETTING are still refused, and change nothing:';
+ALTER TABLE 05076_keepermap MODIFY SETTING some_setting = 1; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE 05076_keepermap RESET SETTING some_setting; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE 05076_keepermap COMMENT COLUMN k 'col-4', MODIFY SETTING some_setting = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT 'local:', extractAll(create_table_query, 'COMMENT \'([^\']*)\'') FROM system.tables WHERE database = currentDatabase() AND table = '05076_keepermap';
+SELECT 'keeper:', extractAll(value, 'COMMENT \'([^\']*)\'') FROM system.zookeeper WHERE path = '/clickhouse/databases/' || currentDatabase() || '/metadata' AND name = '05076_keepermap';
+
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier} SYNC;

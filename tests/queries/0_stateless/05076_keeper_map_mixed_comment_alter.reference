@@ -7,3 +7,6 @@ keeper:	['col-2','tbl-2']
 -- Comment-only MODIFY COLUMN:
 local:	['col-3','tbl-2']
 keeper:	['col-3','tbl-2']
+-- MODIFY/RESET SETTING are still refused, and change nothing:
+local:	['col-3','tbl-2']
+keeper:	['col-3','tbl-2']
