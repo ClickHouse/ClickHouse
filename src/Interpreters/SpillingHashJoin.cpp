@@ -208,12 +208,6 @@ void SpillingHashJoin::switchToGraceHashJoin()
             grace_join->initialize(*left_sample_block);
             chosen_join = grace_join;
 
-            /// The query pipeline was built with a hash join, so report the algorithm that takes
-            /// over. Reported only here, once the takeover can no longer fail: `initialize` creates
-            /// the temporary files of the buckets and throws if it cannot, and a query that dies
-            /// there never ran a grace hash join.
-            QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
-
             /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
             /// see GRACE_HASH_JOIN and go directly to `grace_join`.
             state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
@@ -221,6 +215,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         /// Convert ConcurrentHashJoin slots into GraceHashJoin.
         /// Other build-phase threads will also help via `addBlockToJoin`.
         tryConvertSlots();
+
+        QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
         return;
     }
 
@@ -241,9 +237,6 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
     chosen_join->initialize(*left_sample_block);
 
-    /// Reported only once the takeover can no longer fail.
-    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
-
     /// Drain extracted blocks into GraceHashJoin one by one,
     /// freeing each after insertion to limit peak memory.
     while (!right_blocks.empty())
@@ -251,6 +244,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
         chosen_join->addBlockToJoin(right_blocks.front(), /*check_limits=*/false);
         right_blocks.pop_front();
     }
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 
     state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
 }

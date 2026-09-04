@@ -9,6 +9,10 @@
 -- The non-recursive member is a different subquery that is built exactly once, so its own joins are
 -- counted next to the ones of the recursive member instead of being deduplicated together with them.
 --
+-- The name of a CTE is only an alias, and one query may hold several independent `WITH RECURSIVE` that
+-- chose the same alias. Those are different joins and are counted apart, so the deduplication has to
+-- name the CTE instance and not the alias.
+--
 -- The recursion depth is fixed by the `WHERE`, so the number of iterations does not depend on the
 -- machine, and the algorithm is set explicitly, because the choice among the algorithms allowed by
 -- `join_algorithm` is made at run time and depends on the number of threads.
@@ -38,6 +42,26 @@ WITH RECURSIVE r AS (
 )
 SELECT count() FROM r
 SETTINGS log_comment = '05056_recursive_cte_b_both_members', join_algorithm = 'hash';
+
+SELECT 'two independent recursive CTEs that share the name r';
+SELECT
+    (
+        WITH RECURSIVE r AS (
+            SELECT toUInt64(1) AS n
+            UNION ALL
+            SELECT r.n + 1 AS n FROM r JOIN dim ON r.n = dim.a WHERE r.n < 5
+        )
+        SELECT count() FROM r
+    ) AS first_cte,
+    (
+        WITH RECURSIVE r AS (
+            SELECT toUInt64(1) AS n
+            UNION ALL
+            SELECT r.n + 1 AS n FROM r JOIN dim ON r.n = dim.a WHERE r.n < 5
+        )
+        SELECT count() FROM r
+    ) AS second_cte
+SETTINGS log_comment = '05056_recursive_cte_c_two_same_named', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness
