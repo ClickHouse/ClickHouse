@@ -35,11 +35,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Common/config_version.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+
+extern const char * GIT_HASH;
 
 namespace DB
 {
@@ -422,8 +425,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query, metadata and status endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/buildinfo).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -488,6 +491,13 @@ public:
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
                 formatQuery(getOutputStream(response), params->get("query", ""));
+                return;
+            }
+
+            if (uri_path.ends_with("/status/buildinfo"))
+            {
+                /// The buildinfo endpoint describes the server itself, so it doesn't need the TimeSeries table either.
+                writeBuildInfo(getOutputStream(response));
                 return;
             }
 
@@ -631,6 +641,19 @@ private:
         writeChar('}', out);
     }
 
+    /// Handles the status/buildinfo endpoint, which clients such as Grafana use to identify the backend.
+    /// It reports the ClickHouse version and commit hash in the shape of the Prometheus response; the other
+    /// fields describe a Prometheus build and are left empty. For the full build information of this
+    /// ClickHouse instance, query the `system.build_options` table.
+    static void writeBuildInfo(WriteBuffer & out)
+    {
+        writeString(R"({"status":"success","data":{"version":)", out);
+        writeJSONString(VERSION_STRING, out, FormatSettings{});
+        writeString(R"(,"revision":)", out);
+        writeJSONString(GIT_HASH, out, FormatSettings{});
+        writeString(R"(,"branch":"","buildUser":"","buildDate":"","goVersion":""}})", out);
+    }
+
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
     Int64 getMetadataLimitParam(const String & name) const
     {
@@ -724,7 +747,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, status/buildinfo)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
