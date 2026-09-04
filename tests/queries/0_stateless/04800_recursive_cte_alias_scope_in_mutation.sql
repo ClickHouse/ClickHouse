@@ -308,4 +308,13 @@ CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v13 AS
     WITH (99 IN src) AS flag SELECT toUInt64(flag) AS s;
 SELECT 'C31', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v13;
 
+-- An enclosing `readonly` makes the constraints drop the inner setting, so the name stays the
+-- alias (7), where C24 has the same inner clause and no enclosing one and reads the table (2).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id)
+                SELECT (SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0)
+                        SETTINGS readonly = 1))
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C32', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

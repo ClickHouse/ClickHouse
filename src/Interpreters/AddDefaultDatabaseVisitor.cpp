@@ -24,12 +24,12 @@ void AddDefaultDatabaseVisitor::appendSettings(SettingsChanges & changes, const 
     if (!set_query)
         return;
 
-    /// A clause of a view being stored may hold a query parameter, which has no value yet, so
-    /// only the settings that can decide alias inheritance are taken. `profile` can decide it
-    /// too, by naming a group that sets one of the other two.
+    /// A clause of a view being stored may hold a query parameter, which has no value yet, so only
+    /// the settings that can decide alias inheritance are taken: `profile` can name a group that
+    /// sets one of the others, and `readonly` makes the constraints drop a change to any of them.
     for (const SettingChange & change : set_query->changes)
         if (change.name == "enable_global_with_statement" || change.name == "compatibility"
-            || change.name == "profile")
+            || change.name == "profile" || change.name == "readonly")
             changes.push_back(change);
 }
 
