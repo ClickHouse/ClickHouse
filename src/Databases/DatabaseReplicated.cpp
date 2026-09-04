@@ -133,6 +133,7 @@ namespace FailPoints
     extern const char database_replicated_force_metadata_digest_check[];
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
+    extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
 }
 
@@ -442,6 +443,13 @@ ClusterPtr DatabaseReplicated::updateCluster(bool all_groups, bool force_overwri
     String cluster_name = database_name;
     if (all_groups)
         cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
+
+    /// The read of `database_name` above and the publication of the new cluster below must happen
+    /// under the same `mutex` lock. Otherwise a concurrent `RENAME DATABASE` slips in between and
+    /// the published cluster keeps the old name in its connection parameters, which breaks the
+    /// interserver handshake when `cluster_secret` is used. This pause point sits exactly in that
+    /// window to make it observable for tests.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_database_name_fetch);
 
     ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
