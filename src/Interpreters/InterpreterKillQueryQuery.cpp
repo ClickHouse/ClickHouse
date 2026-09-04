@@ -251,18 +251,23 @@ static Block runInternalSelect(const String & select_query, ContextMutablePtr qu
 
 /// Filtering a `ColumnLowCardinality` keeps the dictionary of the column it came from, so a surviving
 /// row's index depends on rows the caller cannot see. Every column is rebuilt, because a dictionary
-/// nested in a `Map` or an `Array` carries the same dependency.
-static void rebuildLowCardinalityDictionaries(Block & block)
+/// nested in a `Map` or an `Array` carries the same dependency. A copy rather than a replacement in
+/// place, so that the block it reads and the block it returns can be released independently.
+static Block withRebuiltLowCardinalityDictionaries(const Block & block)
 {
-    for (auto & elem : block)
+    Block res;
+    for (const auto & elem : block)
     {
-        if (!elem.column)
-            continue;
-
-        auto rebuilt = elem.type->createColumn();
-        rebuilt->insertRangeFrom(*elem.column, 0, elem.column->size());
-        elem.column = std::move(rebuilt);
+        ColumnPtr rebuilt;
+        if (elem.column)
+        {
+            auto column = elem.type->createColumn();
+            column->insertRangeFrom(*elem.column, 0, elem.column->size());
+            rebuilt = std::move(column);
+        }
+        res.insert({rebuilt, elem.type, elem.name});
     }
+    return res;
 }
 
 /// Reads the queries the caller is allowed to kill, under a context with full access.
@@ -296,17 +301,17 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
     inner_context->makeQueryContext();
     inner_context->setCurrentQueryId("");
 
-    Block res;
+    Block scan_result;
 
-    /// Outlives the read below, because the columns the scan allocates are released under this group.
+    /// Outlives the read below, because the block the scan allocates is released under this group.
     auto scan_group = ThreadGroup::createForQuery(inner_context);
 
-    /// This group's memory accounts to the global tracker and the caller's to their user's tracker, so
-    /// a column allocated here and released under the caller credits a tracker never charged for it.
-    Columns scan_owned;
+    /// This group's memory accounts to the global tracker and the caller's to their user's tracker, so a
+    /// block allocated here and released under the caller credits a tracker never charged for it. The
+    /// release is a scope exit because the caller's group is the one restored on the exception path too.
     SCOPE_EXIT({
         ThreadGroupSwitcher switcher(scan_group, getThreadName(), /*allow_existing_group=*/ true);
-        scan_owned.clear();
+        scan_result = {};
     });
 
     {
@@ -321,15 +326,11 @@ static Block readKillableProcesses(const ContextPtr & context, const StoragePtr 
                 ErrorCodes::LOGICAL_ERROR,
                 "Could not isolate the `system.processes` scan from the calling query's thread group");
 
-        res = runInternalSelect(select_query, std::move(inner_context));
+        scan_result = runInternalSelect(select_query, std::move(inner_context));
     }
 
-    scan_owned.reserve(res.columns());
-    for (const auto & elem : res)
-        scan_owned.push_back(elem.column);
-
-    rebuildLowCardinalityDictionaries(res);
-    return res;
+    /// The caller owns what is returned, so it is built here, under the caller's group.
+    return withRebuiltLowCardinalityDictionaries(scan_result);
 }
 
 /// Applies the caller's effective `system.processes` row policy to an already materialized block.
@@ -384,7 +385,7 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
 
     auto actions = VirtualColumnUtils::buildFilterExpression(std::move(filter_info.actions), policy_context);
     VirtualColumnUtils::filterBlockWithExpression(actions, block);
-    rebuildLowCardinalityDictionaries(block);
+    block = withRebuiltLowCardinalityDictionaries(block);
 }
 
 /// The relation below carries the rows under the table's name alone, so that is the longest qualifier

@@ -364,8 +364,8 @@ reset_arm
 
 # 23: a function body is substituted later than the statement's own AST is read, so a qualifier inside
 # one is shortened only if the body is inlined first. Both paths accept the same spelling.
-# The analyzer is pinned because the old one resolves no qualifier inside a function body on either
-# path, so under it the two halves would compare a spelling neither path has ever accepted.
+# The analyzer is pinned because the two paths diverge under the old one: the grant-free path inlines
+# the body before the read, so its qualifier resolves, while the granted path raises `UNKNOWN_IDENTIFIER`.
 via_http "CREATE OR REPLACE FUNCTION $F1 AS (id) -> system.processes.query_id = id"
 start_victim "$U1" "own23a$SUFFIX"
 echo -n "23 grant_free killed="
