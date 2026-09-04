@@ -1017,23 +1017,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
     }
 
-    /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
-    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
-    {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
-        {
-            auto & [map_column_name, _] = *parsed;
-            if (header.has(fmt::format("mapValues({})", map_column_name))
-                && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
-            {
-                has_index_column = true;
-                direct_read_mode = getHintOrNoneMode();
-                candidate_for_exact_mode = false;
-            }
-        }
-    }
-
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
