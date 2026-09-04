@@ -100,9 +100,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
 /// Version 11 adds the ReadInOrder info in the reading step in the plan
-/// Version 12 carries the join optimizer state of `JoinStepLogical`, so a step taken from the wire is
-/// in the same join optimizer state as one produced by `clone`. Join reordering is not a function of
-/// the fragment alone, so a receiver cannot re-derive that state.
+/// Version 12 tells a receiver of a `JoinStepLogical` that its join order was already chosen. Join
+/// reordering is not a function of the fragment alone, so a receiver that chooses again can choose
+/// differently from the sender.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
@@ -124,8 +124,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
 /// First query-plan serialization version that carries the ReadInOrder info
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 11;
-/// First query-plan serialization version that carries the join optimizer state of `JoinStepLogical`.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE = 12;
+/// First query-plan serialization version that carries the join order decision of `JoinStepLogical`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ORDER_DECIDED = 12;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
