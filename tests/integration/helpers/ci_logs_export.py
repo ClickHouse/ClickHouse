@@ -255,6 +255,20 @@ def write_instance_users_config(users_d_dir):
     shutil.copyfile(SENDER_USER_CONFIG, os.path.join(users_d_dir, USERS_CONFIG_NAME))
 
 
+def remove_instance_config(config_d_dir, users_d_dir):
+    """Undo write_instance_config and write_instance_users_config, for a server
+    that is about to be restarted into an old release: it may not know the
+    settings of the `ci_logs_sender` profile, and an unknown setting in a
+    profile stops the server from starting."""
+    for directory, name in (
+        (config_d_dir, CLUSTER_CONFIG_NAME),
+        (users_d_dir, USERS_CONFIG_NAME),
+    ):
+        path = os.path.join(directory, name)
+        if os.path.exists(path):
+            os.remove(path)
+
+
 def runs_binary_under_test(image, tag):
     """Whether the containers of this image and tag run the ClickHouse binary
     built for the commit under test, see CURRENT_BINARY_IMAGE_TAG_ENV."""
@@ -615,6 +629,31 @@ def _shutdown_statements(tables):
         "SYSTEM FLUSH ASYNC INSERT QUEUE",
         *(f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender" for table in tables),
     ]
+
+
+def teardown_for_instance(instance):
+    """Flush what has been collected so far and remove the export from a running
+    server, for an instance that is about to be restarted into an old release:
+    the `_watcher` views would keep referencing a `DEFINER` that
+    remove_instance_config takes away. Best effort: never raises."""
+    tables = getattr(instance, "ci_logs_export_tables", None)
+    if not tables:
+        return
+    flush_before_shutdown(instance)
+    instance.ci_logs_export_tables = []
+    statements = "".join(
+        f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
+        f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
+        for table in tables
+    )
+    try:
+        instance.query(statements, timeout=120)
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to remove the export from %s",
+            instance.name,
+            exc_info=True,
+        )
 
 
 def flush_before_shutdown(instance):

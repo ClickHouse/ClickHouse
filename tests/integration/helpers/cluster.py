@@ -5171,15 +5171,20 @@ class ClickHouseInstance:
 
         # Export of the system log tables to the CI Logs cluster, see
         # helpers/ci_logs_export.py. Only for servers that run the binary under
-        # test: instances running an old release image (or restarting into one
-        # via with_installed_binary) may not support the configs and the DDL
-        # that the export needs.
-        self.ci_logs_export_enabled = (
+        # test: a server of an old release may not support the configs and the
+        # DDL that the export needs.
+        self.ci_logs_export_supported = (
             ci_logs_export.is_enabled()
             and not cluster.with_dolor
-            and not with_installed_binary
             and ci_logs_export.runs_binary_under_test(image, tag)
             and config_root_name == "clickhouse"
+        )
+        # `with_installed_binary` starts the container with an old release
+        # installed over the image, so the export is off until (and unless) the
+        # instance switches to the binary under test, see
+        # restart_with_latest_version.
+        self.ci_logs_export_enabled = (
+            self.ci_logs_export_supported and not with_installed_binary
         )
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
@@ -5955,6 +5960,13 @@ class ClickHouseInstance:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
+        # The old release the server is about to become may not know the
+        # settings of the `ci_logs_sender` profile nor be able to run the
+        # `_watcher` views, see helpers/ci_logs_export.py
+        if self.ci_logs_export_enabled:
+            ci_logs_export.teardown_for_instance(self)
+            ci_logs_export.remove_instance_config(self.config_d_dir, self.users_d_dir)
+            self.ci_logs_export_enabled = False
         self.exec_in_container(
             ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
         )
@@ -6068,6 +6080,18 @@ class ClickHouseInstance:
                 "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
             ]
         )
+        # From here on the container runs the binary under test, so it can carry
+        # the export even if it was started from an installed old release, see
+        # helpers/ci_logs_export.py. The configs are written before the server
+        # starts, so it picks them up without a reload.
+        enable_ci_logs_export = (
+            self.ci_logs_export_supported and not self.ci_logs_export_enabled
+        )
+        if enable_ci_logs_export:
+            ci_logs_export.write_instance_config(self.config_d_dir)
+            ci_logs_export.write_instance_users_config(self.users_d_dir)
+            self.ci_logs_export_enabled = True
+
         if fix_metadata:
             # Versions older than 20.7 might not create .sql file for system and default database
             # Create it manually if upgrading from older version
@@ -6096,6 +6120,9 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+
+        if enable_ci_logs_export:
+            ci_logs_export.setup_for_instance(self.cluster, self)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
@@ -6353,6 +6380,7 @@ class ClickHouseInstance:
         self.config_d_dir = p.abspath(p.join(instance_config_dir, "config.d"))
         os.mkdir(self.config_d_dir)
         users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
+        self.users_d_dir = users_d_dir
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, "dictionaries"))
         os.mkdir(dictionaries_dir)
