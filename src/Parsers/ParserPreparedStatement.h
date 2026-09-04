@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 
