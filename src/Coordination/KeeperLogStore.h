@@ -49,9 +49,6 @@ public:
     /// unlike entry_at which requires the exclusive lock.
     nuraft::ptr<nuraft::log_entry> entry_at_ext(uint64_t index, bool for_commit) override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    /// Return entry at index only if it's in memory (no disk IO), nullptr otherwise.
-    nuraft::ptr<nuraft::log_entry> entry_at_in_memory(uint64_t index);
-
     bool is_conf(uint64_t index) override;
 
     /// Term if the index
