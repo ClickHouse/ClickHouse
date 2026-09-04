@@ -129,6 +129,8 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
+    virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
+
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
@@ -149,6 +151,8 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
+
+    virtual bool supportsFullyQualifiedPaths() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
