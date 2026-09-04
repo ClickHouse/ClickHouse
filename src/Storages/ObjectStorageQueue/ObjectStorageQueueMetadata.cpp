@@ -16,6 +16,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -55,6 +56,11 @@ namespace ErrorCodes
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_register_once[];
 }
 
 namespace Setting
@@ -788,20 +794,17 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
+            fiu_do_on(FailPoints::object_storage_queue_fail_register_once, {
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS, "Failed to register table");
+            });
+
             auto zk_client = getZooKeeper();
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
                 std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
-
-                if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
-                {
-                    LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
-                    created_new_metadata = true;
-                    code = Coordination::Error::ZOK;
-                    return;
-                }
 
                 created_new_metadata = false;
 
