@@ -29,11 +29,14 @@ REVISION = 54484
 
 INTERFACE_TCP = 1
 INTERFACE_HTTP = 2
-# Two bytes, both unmapped in both enums, one on each side of what `static_cast<Int8>` does to them:
-# 127 stays positive, 200 becomes -56. Every projection is reported both, so one keyed on the
-# narrowed value instead of on mapping membership fails whichever side of zero its threshold sits on.
-UNMAPPED_POSITIVE = 127
-UNMAPPED_NEGATIVE = 200
+# Each `*_LOW` byte is the smallest value its own enum does not name, so a projection keyed on a
+# threshold instead of on membership either passes it through, and rendering then throws, or has
+# already remapped a named value that `03258_refreshable_mv_misc` and `04306_create_handler_http`
+# pin. 200 narrows to -56, keeping the negative `Int8` class armed. Adding an enumerator to either
+# enum moves that field's `*_LOW` byte: it is the next value that enum would allocate.
+INTERFACE_UNMAPPED_LOW = 11
+HTTP_METHOD_UNMAPPED_LOW = 7
+UNMAPPED_HIGH_BIT = 200
 
 
 def writeVarUInt(x, ba):
@@ -249,22 +252,22 @@ def main():
     runQuery(
         "reported interface out of domain",
         "SELECT 1 SETTINGS log_comment = 'interface_enum_unknown'",
-        UNMAPPED_POSITIVE,
+        INTERFACE_UNMAPPED_LOW,
         0,
     )
     runQuery(
         "reported http_method out of domain",
         "SELECT 2 SETTINGS log_comment = 'http_method_enum_unknown'",
         INTERFACE_HTTP,
-        UNMAPPED_NEGATIVE,
+        UNMAPPED_HIGH_BIT,
     )
     # Two queries, because one cannot report an out-of-domain value for both columns at once:
     # `http_method` is only read off the wire when the reported interface is `HTTP`.
     # The `system.processes` probes carry the other byte of each pair, so both projections are
     # reported both classes across their two call sites.
-    observeSelfInProcesses("processes: reported interface out of domain", UNMAPPED_NEGATIVE, 0)
+    observeSelfInProcesses("processes: reported interface out of domain", UNMAPPED_HIGH_BIT, 0)
     observeSelfInProcesses(
-        "processes: reported http_method out of domain", INTERFACE_HTTP, UNMAPPED_POSITIVE
+        "processes: reported http_method out of domain", INTERFACE_HTTP, HTTP_METHOD_UNMAPPED_LOW
     )
 
 
