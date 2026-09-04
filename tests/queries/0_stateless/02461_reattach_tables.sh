@@ -1114,3 +1114,37 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_shadow"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_mt"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"
+
+# A table another query is using right now must NOT be reattached. The internal `DETACH TABLE ... SYNC`
+# removes the table from its database and then waits, with no deadline, for the detached storage to stop
+# being referenced, so the hook would hold this query for as long as the concurrent one runs — and the
+# script cannot end that one, because the session that would is the blocked one. The hook probes the
+# table's exclusive lock and skips a table that is in use.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_busy"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_busy (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+BUSY_QUERY_ID="reattach_busy_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$BUSY_QUERY_ID" --function_sleep_max_microseconds_per_block 60000000 \
+    -q "INSERT INTO t_reattach_busy SELECT sleep(1) FROM numbers(30) SETTINGS max_block_size = 1" > /dev/null 2>&1 &
+busy_pid=$!
+
+# Wait for the holder to be running rather than for a fixed time: whether it is still holding the table
+# when the hook probes is what the check below is about, and a slow runner must not decide it.
+for _ in {0..600}
+do
+    if [[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '$BUSY_QUERY_ID'")" -gt 0 ]]
+    then
+        break
+    fi
+    sleep 0.1
+done
+
+check_if_not_detached "SELECT count() FROM t_reattach_busy" "t_reattach_busy"
+
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$BUSY_QUERY_ID' SYNC" > /dev/null 2>&1
+wait "$busy_pid" 2>/dev/null
+
+# The same table is reattached again once nobody holds it.
+check_if_detached "SELECT count() FROM t_reattach_busy" "t_reattach_busy"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_busy"

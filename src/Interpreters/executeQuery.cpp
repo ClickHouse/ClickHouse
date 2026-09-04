@@ -2870,6 +2870,36 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             && !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
             continue;
 
+        /// A table another query is using right now must not be reattached. The internal
+        /// `DETACH TABLE ... SYNC` below removes the table from its database and then waits, with no
+        /// deadline of its own, for the detached storage to stop being referenced
+        /// (`IDatabase::waitDetachedTableNotInUse`). A test that keeps a long query running against a table
+        /// and then issues another statement on it from a second session would block in this hook for as
+        /// long as the first query runs — and the script cannot shorten that, because the session that
+        /// would is the blocked one. `INSERT INTO t SELECT sleep(1) FROM numbers(1000)` in a background
+        /// job, which several tests use to hold a table open, outlasts the whole test timeout that way.
+        ///
+        /// Probing the exclusive lock answers "is this table idle": it is the lock every reader and writer
+        /// of the table holds in shared mode for the duration of its query. It is taken here only to ask
+        /// that question and is released again right away, before the `DETACH`. Like the action-lock and
+        /// part-state checks above, this is best-effort and point-in-time — a query that starts right after
+        /// the probe is not caught, and then the `DETACH` does wait for it.
+        {
+            /// Short on purpose: the answer wanted here is "idle right now", and answering "no" for a table
+            /// that becomes idle a moment later only skips one randomization, which is always safe.
+            const Poco::Timespan busy_probe_timeout(0, 100 * 1000);
+            try
+            {
+                TableExclusiveLockHolder busy_probe = table->lockExclusively(context->getCurrentQueryId(), busy_probe_timeout);
+            }
+            catch (...)
+            {
+                /// `DEADLOCK_AVOIDED` — the table is in use — or `TABLE_IS_DROPPED` — a concurrent query
+                /// detached or dropped it first. Either way there is nothing to reattach here.
+                continue;
+            }
+        }
+
         table.reset();
 
         auto quoted_name = backQuoteIfNeed(table_id.getDatabaseName()) + "." + backQuoteIfNeed(table_id.getTableName());
