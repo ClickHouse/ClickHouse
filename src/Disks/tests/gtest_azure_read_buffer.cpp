@@ -103,7 +103,9 @@ struct ETagBehaviour
 /// caller believes), while `blob_size` is what the endpoint claims in `Content-Range`. With
 /// `ignore_range`, the endpoint disregards the requested range altogether and answers every
 /// request with `200 OK` and the object from byte 0, the way an endpoint that does not support
-/// ranged requests does.
+/// ranged requests does. With `blob_size_after_first`, the total advertised in `Content-Range`
+/// changes to that value from the second response on (an endpoint whose idea of the object size
+/// is not stable across the requests of one read).
 class MisbehavingRangeTransport : public Azure::Core::Http::HttpTransport
 {
 public:
@@ -114,7 +116,8 @@ public:
         bool send_etag_,
         std::optional<int64_t> reported_length_ = {},
         bool ignore_range_ = false,
-        ETagBehaviour etags_ = {})
+        ETagBehaviour etags_ = {},
+        std::optional<size_t> blob_size_after_first_ = {})
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
@@ -122,14 +125,17 @@ public:
         , reported_length(reported_length_)
         , ignore_range(ignore_range_)
         , etags(std::move(etags_))
+        , blob_size_after_first(blob_size_after_first_)
     {
     }
 
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context &) override
     {
-        const std::string & current_etag = (responses_sent == 0 || etags.etag_after_first.empty())
+        const bool first_response = responses_sent == 0;
+        const std::string & current_etag = (first_response || etags.etag_after_first.empty())
             ? etags.etag
             : etags.etag_after_first;
+        const size_t current_blob_size = first_response ? blob_size : blob_size_after_first.value_or(blob_size);
         ++responses_sent;
 
         if (etags.honour_if_match)
@@ -171,7 +177,7 @@ public:
         if (!ignore_range)
             response->SetHeader(
                 "Content-Range",
-                "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(blob_size));
+                "bytes " + std::to_string(range_start) + "-" + std::to_string(range_end) + "/" + std::to_string(current_blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
         if (send_etag)
             response->SetHeader("ETag", current_etag);
@@ -188,6 +194,7 @@ private:
     std::optional<int64_t> reported_length;
     bool ignore_range;
     ETagBehaviour etags;
+    std::optional<size_t> blob_size_after_first;
     size_t responses_sent = 0;
 };
 
@@ -231,7 +238,8 @@ std::string readWithRightBound(
 
 /// Reads a whole blob of `blob_size` bytes without any right bound, from an endpoint that answers
 /// every request with at most `max_response_size` bytes and reports `reported_length` as the
-/// `Content-Length` of every response no matter how many bytes it actually sends.
+/// `Content-Length` of every response no matter how many bytes it actually sends. With
+/// `blob_size_after_first`, every response after the first advertises that total in `Content-Range`.
 std::string readWithoutRightBound(
     size_t max_response_size,
     size_t blob_size,
@@ -239,12 +247,14 @@ std::string readWithoutRightBound(
     int64_t reported_length,
     size_t max_read_retries = 1,
     std::optional<size_t> served_size = {},
-    std::optional<size_t> known_object_size = {})
+    std::optional<size_t> known_object_size = {},
+    std::optional<size_t> blob_size_after_first = {})
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
     client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
-        max_response_size, served_size.value_or(blob_size), blob_size, /* send_etag */ true, reported_length);
+        max_response_size, served_size.value_or(blob_size), blob_size, /* send_etag */ true, reported_length,
+        /* ignore_range */ false, ETagBehaviour{}, blob_size_after_first);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
@@ -568,6 +578,27 @@ TEST(AzureReadWithoutRightBound, TruncatedObject)
             /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64, /* reported_length */ 40,
             /* max_read_retries */ 3, /* served_size */ 40);
         FAIL() << "Expected an exception on a response that ends before the advertised size of the object";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::UNEXPECTED_END_OF_FILE);
+    }
+}
+
+/// The size of the object is not known locally, and the endpoint's idea of it shrinks between the
+/// requests of one read: the first response advertises `bytes 0-39/1000`, the reopen after it
+/// advertises `bytes 40-79/80`, and nothing is served from byte 80 on. The lower bound learnt from
+/// the first response must stand - the object was declared to be at least 1000 bytes long - so the
+/// end of the second response at byte 80 is a premature end of the response and the read must
+/// fail rather than silently return 80 bytes as the whole file.
+TEST(AzureReadWithoutRightBound, ShrinkingReportedObjectSize)
+{
+    try
+    {
+        readWithoutRightBound(
+            /* max_response_size */ 40, /* blob_size */ 1000, /* buffer_size */ 64, /* reported_length */ 40,
+            /* max_read_retries */ 3, /* served_size */ 80, /* known_object_size */ std::nullopt, /* blob_size_after_first */ 80);
+        FAIL() << "Expected an exception when a later response advertises a smaller object than an earlier one did";
     }
     catch (const DB::Exception & e)
     {

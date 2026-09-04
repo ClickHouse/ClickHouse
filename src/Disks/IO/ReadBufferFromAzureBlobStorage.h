@@ -116,10 +116,11 @@ private:
     /// one logical read cannot be stitched together from two generations of the blob.
     String expected_etag;
 
-    /// The size of the whole object as advertised by the `Content-Range` of the last download
-    /// response. It is remote data, so it is only consulted for an unbounded read whose size is
-    /// not known locally, and only as a lower bound: a response body that ends before it is a
-    /// premature end of the response rather than the end of the file.
+    /// The largest size of the whole object advertised by the `Content-Range` of any download
+    /// response of the current logical read. It is remote data, so it is only consulted for an
+    /// unbounded read whose size is not known locally, and only as a lower bound: a response body
+    /// that ends before it is a premature end of the response rather than the end of the file. It
+    /// never decreases within one logical read and is reset by a seek.
     size_t reported_object_size = 0;
 
     bool initialized = false;

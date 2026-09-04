@@ -330,6 +330,9 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
             initialized = false;
     }
 
+    /// A seek starts a new logical read, so the lower bound on the object size learnt from the
+    /// responses of the previous one does not carry over.
+    reported_object_size = 0;
     offset = offset_;
     return offset;
 }
@@ -399,7 +402,11 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
             data_stream = std::move(download_response.Value.BodyStream);
-            reported_object_size = static_cast<size_t>(download_response.Value.BlobSize);
+            /// Only ever grows within one logical read: a later response that advertises a smaller
+            /// object than an earlier one did must not lower the bound again, or an endpoint whose
+            /// `Content-Range` totals shrink between reopens would get a premature end of the
+            /// response accepted as the end of the file after all.
+            reported_object_size = std::max(reported_object_size, static_cast<size_t>(download_response.Value.BlobSize));
 
             /// Defence in depth: the body stream is optional in the SDK, and everything below
             /// dereferences it, starting with `data_stream->Length()` in the log event. Check it
