@@ -691,10 +691,16 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     }
 }
 
-/// Has to be called even if totals are empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
     IJoin::setTotals(totals_block);
+}
+
+/// Finalizes the right side. Unlike `setTotals`, the post build phase is always reached, and it
+/// runs in the work context, which `mergeRightBlocks` requires because it drives a nested
+/// pipeline.
+void MergeJoin::runPostBuildPhase()
+{
     mergeRightBlocks();
 
     if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))

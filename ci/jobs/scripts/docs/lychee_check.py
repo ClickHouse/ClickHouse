@@ -129,15 +129,63 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
 
 def collect_generated_setting_anchors(page_path):
     """Expose client-side setting redirects as fragment aliases to lychee."""
-    manifest = os.path.splitext(page_path)[0] + "/manifest.json"
-    if not os.path.isfile(manifest):
-        return set()
-    try:
-        with open(manifest, encoding="utf-8") as f:
-            anchor_routes = json.load(f).get("anchorRoutes", {})
-    except (OSError, ValueError, TypeError):
-        return set()
-    return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+    page_path = os.fspath(page_path)
+    normalized_path = page_path.replace(os.sep, "/")
+    settings_routes = {
+        "/reference/settings/session-settings.mdx": (
+            "session-settings",
+            "/reference/settings/session-settings",
+        ),
+        "/reference/settings/formats.mdx": (
+            "format-settings",
+            "/reference/settings/formats",
+        ),
+        "/reference/settings/server-settings/settings.mdx": (
+            "server-settings",
+            "/reference/settings/server-settings/settings",
+        ),
+        "/reference/settings/merge-tree-settings.mdx": (
+            "mergetree-settings",
+            "/reference/settings/merge-tree-settings",
+        ),
+    }
+    matched = next(
+        (
+            (suffix, route_info)
+            for suffix, route_info in settings_routes.items()
+            if normalized_path.endswith(suffix)
+        ),
+        None,
+    )
+    if matched:
+        suffix, route_info = matched
+        family_name, base_route = route_info
+        docs_root = normalized_path[:-len(suffix)].replace("/", os.sep)
+        routes_path = os.path.join(
+            docs_root,
+            "_site/customizations/settings-legacy-routes",
+            family_name + ".js",
+        )
+        assignment = (
+            'window.clickhouseSettingsLegacyRoutes['
+            + json.dumps(base_route)
+            + '] = '
+        )
+        try:
+            with open(routes_path, encoding="utf-8") as f:
+                route_line = next(
+                    (line for line in f if line.startswith(assignment)),
+                    None,
+                )
+            if route_line is None or not route_line.rstrip().endswith(";"):
+                return set()
+            anchor_routes = json.loads(
+                route_line[len(assignment):].rstrip()[:-1]
+            )
+        except (OSError, ValueError, TypeError):
+            return set()
+        return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+    return set()
 
 
 def dump_inputs(docs_root):
@@ -283,8 +331,8 @@ def build_tree(docs_root, dest):
                 # Mintlify renders inline but lychee cannot see across the import.
                 anchors = collect_snippet_anchors(raw, docs_root, root, set())
                 # Split settings overview pages redirect their historical
-                # fragments client-side. Their generated manifest is the
-                # canonical alias registry; append its keys only in this
+                # fragments client-side. Their generated routing metadata is
+                # the canonical alias registry; append its keys only in this
                 # throwaway tree so static fragment validation matches runtime.
                 anchors |= collect_generated_setting_anchors(
                     os.path.join(root, name))
@@ -398,21 +446,30 @@ def report_snippet_links(docs_root, rel_files):
     return errors
 
 
-# Generated settings explorers keep their destinations in JSX data and render
-# them through ``href={`https://clickhouse.com/docs${item.value.href}`}``.
-# lychee does not parse JSX data or evaluate template literals, so materialize
-# those rendered links into a Markdown input in the throwaway tree. The
-# production origin and mount are checked before stripping them for offline
-# resolution against the docs root.
+# Generated settings explorers keep destination suffixes in JSX data. Their
+# overview MDX passes the locale-aware base route through an `href` prop, and
+# the component joins both pieces at render time. Older translated explorers
+# can still contain complete paths, so support both shapes while Locadex rolls
+# the new generator output through every locale. Lychee does not evaluate JSX,
+# so materialize the rendered links into Markdown in the throwaway tree.
 SETTINGS_EXPLORER_URL_PREFIX = "https://clickhouse.com/docs"
 SETTINGS_EXPLORER_ENTRY_HREF = re.compile(
     r'''(?:["']href["']|\bhref)\s*:\s*(?P<quote>["'])(?P<href>/[^"'`\s]+)(?P=quote)'''
 )
+SETTINGS_EXPLORER_ENTRY_PATH = re.compile(
+    r'''(?:["']path["']|\bpath)\s*:\s*(?P<quote>["'])(?P<path>/[^"'`\s]+)(?P=quote)'''
+)
 SETTINGS_EXPLORER_TEMPLATE_HREF = re.compile(
     r'''href\s*=\s*\{\s*`(?P<prefix>[^`]*)\$\{item\.value\.href\}(?P<suffix>[^`]*)`\s*\}'''
 )
+SETTINGS_EXPLORER_ROUTED_TEMPLATE_HREF = re.compile(
+    r'''href\s*=\s*\{\s*`(?P<prefix>[^`]*)\$\{baseRoute\}\$\{item\.value\.path\}(?P<suffix>[^`]*)`\s*\}'''
+)
 SETTINGS_EXPLORER_DIRECT_HREF = re.compile(
     r'''href\s*=\s*\{\s*item\.value\.href\s*\}'''
+)
+SETTINGS_EXPLORER_INVOCATION_HREF = re.compile(
+    r'''<(?P<component>[A-Za-z_$][\w$]*)\b[^>]*\bhref=(?P<quote>["'])(?P<href>/[^"'\s>]+)(?P=quote)[^>]*/>'''
 )
 
 
@@ -435,6 +492,24 @@ def settings_explorer_files(docs_root, locales=()):
             if os.path.isfile(path):
                 files.append(path)
     return files
+
+
+def settings_explorer_base_routes(docs_root, component_name, locale=None):
+    """Find the generated overview route passed to one explorer component."""
+    parts = [locale, "reference"] if locale else ["reference"]
+    search_root = os.path.join(docs_root, *parts)
+    routes = set()
+    for root, _dirs, names in os.walk(search_root):
+        for name in names:
+            if not name.endswith((".md", ".mdx")):
+                continue
+            path = os.path.join(root, name)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            for match in SETTINGS_EXPLORER_INVOCATION_HREF.finditer(text):
+                if match.group("component") == component_name:
+                    routes.add(match.group("href"))
+    return routes
 
 
 def write_settings_explorer_links(
@@ -460,8 +535,11 @@ def write_settings_explorer_links(
             text = f.read()
 
         templates = list(SETTINGS_EXPLORER_TEMPLATE_HREF.finditer(text))
+        routed_templates = list(
+            SETTINGS_EXPLORER_ROUTED_TEMPLATE_HREF.finditer(text)
+        )
         direct = list(SETTINGS_EXPLORER_DIRECT_HREF.finditer(text))
-        renderers = templates + direct
+        renderers = templates + routed_templates + direct
         if len(renderers) != 1:
             print(
                 f"[ERROR] {rel} | expected exactly one rendered "
@@ -472,17 +550,43 @@ def write_settings_explorer_links(
             continue
 
         renderer = renderers[0]
-        if templates:
+        if templates or routed_templates:
             prefix = renderer.group("prefix")
             suffix = renderer.group("suffix")
         else:
             prefix = ""
             suffix = ""
         line = text.count("\n", 0, renderer.start()) + 1
-        entry_hrefs = [
-            match.group("href")
-            for match in SETTINGS_EXPLORER_ENTRY_HREF.finditer(text)
-        ]
+        if routed_templates:
+            component_name = os.path.basename(os.path.dirname(path))
+            rel_parts = os.path.relpath(path, docs_root).split(os.sep)
+            locale = (
+                rel_parts[1]
+                if len(rel_parts) > 1
+                and rel_parts[0] == "snippets"
+                and rel_parts[1] in LOCALE_DIRS
+                else None
+            )
+            base_routes = settings_explorer_base_routes(
+                docs_root, component_name, locale)
+            if len(base_routes) != 1:
+                print(
+                    f"[ERROR] {rel} | expected exactly one MDX `href` base "
+                    f"for `{component_name}`, found {len(base_routes)}",
+                    flush=True,
+                )
+                errors += 1
+                continue
+            base_route = next(iter(base_routes))
+            entry_hrefs = [
+                base_route + match.group("path")
+                for match in SETTINGS_EXPLORER_ENTRY_PATH.finditer(text)
+            ]
+        else:
+            entry_hrefs = [
+                match.group("href")
+                for match in SETTINGS_EXPLORER_ENTRY_HREF.finditer(text)
+            ]
         if not entry_hrefs:
             print(f"[ERROR] {rel} | no settings links found", flush=True)
             errors += 1

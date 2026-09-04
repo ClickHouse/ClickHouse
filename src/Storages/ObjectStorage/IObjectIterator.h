@@ -1,6 +1,5 @@
 #pragma once
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/StorageID.h>
@@ -17,6 +16,9 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 struct ObjectInfo
 {

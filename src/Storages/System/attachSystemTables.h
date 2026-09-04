@@ -12,4 +12,8 @@ class IDatabase;
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server);
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics);
 
+void validateSystemUserQueryLog(ContextPtr context, const IDatabase & system_database);
+void attachSystemTableOne(ContextPtr context, IDatabase & system_database);
+void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server);
+
 }

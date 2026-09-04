@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ sur les migrations vers Managed Postgres'
+title: 'FAQ sur les migrations vers ClickHouse Managed Postgres'
 description: 'Questions fréquemment posées sur la migration des données vers ClickHouse Managed Postgres.'
 keywords: ['postgres', 'migration', 'FAQ', 'managed postgres', 'réplication logique', 'enum', 'contrainte d''unicité']
 doc_type: 'référence'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-De nombreuses questions sur le fonctionnement de la réplication de Postgres — notamment concernant les colonnes `TOAST`, les slots de réplication, les publications, les changements de schéma et les correspondances de types de données — sont abordées dans la [FAQ ClickPipes for Postgres](/fr/integrations/clickpipes/postgres/faq). Les informations qui y figurent s’appliquent également aux migrations vers Managed Postgres.
+De nombreuses questions sur le fonctionnement de la réplication de Postgres — notamment concernant les colonnes `TOAST`, les slots de réplication, les publications, les changements de schéma et les correspondances de types de données — sont abordées dans la [FAQ ClickPipes for Postgres](/fr/integrations/clickpipes/postgres/faq). Les informations qui y figurent s’appliquent également aux migrations vers ClickHouse Managed Postgres.
 
 <div id="invalid-enum-value">
   ### Je rencontre une erreur &quot;invalid input value for enum&quot; pendant la réplication
 </div>
 
-Cette erreur se produit lorsque le Postgres source contient une valeur enum qui n&#39;existe pas dans le Managed Postgres cible. La réplication logique ne propage pas automatiquement les commandes `ALTER TYPE ... ADD VALUE` ; par conséquent, les nouvelles valeurs enum ajoutées à la source après la configuration initiale du schéma entraîneront l&#39;échec des insertions sur la cible.
+Cette erreur se produit lorsque le Postgres source contient une valeur enum qui n&#39;existe pas dans le ClickHouse Managed Postgres cible. La réplication logique ne propage pas automatiquement les commandes `ALTER TYPE ... ADD VALUE` ; par conséquent, les nouvelles valeurs enum ajoutées à la source après la configuration initiale du schéma entraîneront l&#39;échec des insertions sur la cible.
 
 Pour corriger ce problème, ajoutez la valeur manquante au type enum sur le Postgres cible :
 
@@ -27,28 +27,72 @@ ALTER TYPE your_enum_type ADD VALUE 'new_value';
 
 Remplacez `your_enum_type` par le nom de votre type enum et `'new_value'` par la valeur manquante indiquée dans le message d’erreur.
 
-<div id="unique-constraint-violation">
-  ### Je rencontre une erreur de violation de contrainte d’unicité pendant la réplication
+<div id="constraint-violation">
+  ### Une erreur de violation de contrainte d’unicité ou de vérification survient pendant la réplication
 </div>
 
-Des violations de contrainte d’unicité peuvent se produire lors de la réplication logique lorsque l’ordre de réplication provoque un conflit avec une contrainte d’unicité existante sur la cible. Cela peut se produire dans des workloads CDC impliquant la relecture d’opérations qui violent temporairement l’unicité avant qu’une mise à jour ultérieure ne corrige le problème.
+Des violations de contraintes peuvent survenir lors de la réplication logique lorsque l’ordre de réplication entre en conflit avec une contrainte existante sur la cible.
 
-Pour débloquer la réplication, supprimez la contrainte d’unicité sur le Postgres cible :
+* **Contraintes d’unicité** : Nous appliquons les modifications sous forme d’opérations `MERGE`/`UPSERT` par lots, qui écrivent la valeur la plus récente pour chaque clé primaire. L’ordre des opérations pour une clé donnée peut donc ne pas correspondre à celui attendu par l’index unique. Cela peut entraîner temporairement une violation d’une contrainte `UNIQUE` au sein de la transaction, même si la contrainte est respectée une fois le `MERGE` terminé. Postgres ne peut pas différer les vérifications d’index uniques comme il le fait pour les clés étrangères. Il n’est donc pas possible de reporter la vérification à la fin de la transaction. Cela n’affecte pas la cohérence des données : l’identité des lignes est définie par la clé primaire, et la logique du `MERGE` repose sur cette même clé primaire.
+* **Contraintes de vérification** : Une contrainte de vérification sur la cible peut être plus stricte que sur la source, ou un état intermédiaire lors d’un `MERGE` par lots peut ne pas satisfaire la contrainte, même si l’état final la respecte. Comme pour les contraintes d’unicité, cela n’affecte pas la cohérence des données, car le `MERGE` repose sur la clé primaire qui définit l’identité des lignes.
+
+Pour débloquer la réplication, supprimez la contrainte problématique du Postgres cible :
 
 ```sql
+-- Drop a unique constraint
 ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+
+-- Drop a check constraint
+ALTER TABLE your_table DROP CONSTRAINT your_check_constraint_name;
 ```
 
-Vous pouvez trouver le nom de la contrainte en exécutant :
+Vous pouvez obtenir les détails de la contrainte à l’aide du nom indiqué dans le message d’erreur :
 
 ```sql
-SELECT conname, conrelid::regclass
+SELECT conname, conrelid::regclass, contype
 FROM pg_constraint
-WHERE contype = 'u';
+WHERE conname = 'your_constraint_name';
 ```
 
-Rétablissez la contrainte lors du basculement, une fois la réplication terminée et la source inactive :
+Réappliquez les contraintes lors du basculement, une fois la réplication terminée et la source n’est plus active :
 
 ```sql
 ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+ALTER TABLE your_table ADD CONSTRAINT your_check_constraint_name CHECK (column1 > 0);
 ```
+
+<div id="generated-always-column">
+  ### Une erreur &quot;cannot insert a non-DEFAULT value into column&quot; se produit lors de la réplication
+</div>
+
+Cette erreur se produit lorsqu&#39;une colonne de la cible — généralement la clé primaire — est définie comme `GENERATED ALWAYS AS IDENTITY`. La réplication logique transmet les valeurs explicites de la source, mais une colonne `GENERATED ALWAYS` rejette toute valeur autre que `DEFAULT` ; les insertions échouent donc avec :
+
+```text
+cannot insert a non-DEFAULT value into column "id"
+```
+
+Pour résoudre ce problème, modifiez la colonne dans le Postgres cible afin qu’elle accepte les valeurs fournies par l’utilisateur. Vous pouvez définir la colonne d’identité sur `GENERATED BY DEFAULT AS IDENTITY` :
+
+```sql
+ALTER TABLE your_table ALTER COLUMN id SET GENERATED BY DEFAULT;
+```
+
+`GENERATED BY DEFAULT AS IDENTITY` (ou une colonne `serial`/`bigserial`) génère toujours automatiquement des valeurs lorsqu’aucune n’est fournie, mais contrairement à `GENERATED ALWAYS`, accepte également les valeurs explicites répliquées depuis la source.
+
+<div id="extension-not-available">
+  ### Une erreur « extension is not available » s’affiche lors de la migration
+</div>
+
+Cette erreur se produit lors de la migration automatisée du schéma (`pg_dump`) lorsque le schéma source dépend d’une extension Postgres qui n’est pas installée ou disponible sur le Managed Postgres cible. Elle se présente sous l’une des formes suivantes :
+
+```text
+ERROR: extension "your_extension" is not available
+ERROR: could not open extension control file ".../your_extension.control": No such file or directory
+```
+
+Remplacez `your_extension` par l’extension indiquée dans votre message d’erreur.
+
+Pour résoudre ce problème, vous pouvez :
+
+* recréer le pipe en utilisant le mode Manuel de dump du schéma, afin d’ajuster le schéma pour supprimer ou remplacer la dépendance à l’extension non prise en charge ; ou
+* ouvrir un ticket auprès du Support pour faire activer l’extension sur le Managed Postgres cible.

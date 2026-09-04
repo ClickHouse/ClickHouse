@@ -6,6 +6,7 @@
 #include <optional>
 #include <ranges>
 #include <variant>
+#include <vector>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -27,6 +28,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
@@ -49,6 +51,10 @@ namespace ProfileEvents
     extern const Event KeeperLogsEntryReadFromCommitReadAhead;
     extern const Event KeeperChangelogWrittenBytes;
     extern const Event KeeperChangelogFileSyncMicroseconds;
+    extern const Event KeeperChangelogStartupReadMicroseconds;
+    extern const Event KeeperChangelogStartupStitchMicroseconds;
+    extern const Event KeeperChangelogStartupReadEntries;
+    extern const Event KeeperChangelogStartupReadBytes;
 }
 
 namespace CurrentMetrics
@@ -56,6 +62,9 @@ namespace CurrentMetrics
     extern const Metric KeeperChangelogReadAheadThreads;
     extern const Metric KeeperChangelogReadAheadThreadsActive;
     extern const Metric KeeperChangelogReadAheadThreadsScheduled;
+    extern const Metric KeeperChangelogStartupReadThreads;
+    extern const Metric KeeperChangelogStartupReadThreadsActive;
+    extern const Metric KeeperChangelogStartupReadThreadsScheduled;
 }
 
 namespace DB
@@ -155,6 +164,25 @@ struct ChangelogFileOperation
     ChangelogFileDescriptionPtr changelog;
     ChangelogFileOperationVariant operation;
     std::atomic<bool> done = false;
+
+    void setError(std::exception_ptr e)
+    {
+        if (!e)
+            return;
+        std::lock_guard lock(error_mutex);
+        if (!error)
+            error = e;
+    }
+
+    std::exception_ptr getError() const
+    {
+        std::lock_guard lock(error_mutex);
+        return error;
+    }
+
+private:
+    mutable std::mutex error_mutex;
+    std::exception_ptr error;
 };
 
 void ChangelogFileDescription::waitAllAsyncOperations()
@@ -617,6 +645,9 @@ struct ChangelogReadResult
     /// how many entries was already written in it.
     uint64_t total_entries_read_from_log{0};
 
+    /// Physical bytes consumed while validating complete records, including records skipped for retention.
+    uint64_t total_bytes_read_from_log{0};
+
     /// First index in log
     uint64_t log_start_index{0};
 
@@ -721,6 +752,7 @@ public:
                     entry_storage.cleanAfter(record.header.index - 1);
 
                 result.total_entries_read_from_log += 1;
+                result.total_bytes_read_from_log = read_buf->count();
 
                 /// Read but skip this entry because our state is already more fresh
                 if (record.header.index < start_log_index)
@@ -770,6 +802,360 @@ private:
     CompressionMethod compression_method;
     std::unique_ptr<ReadBuffer> read_buf;
 };
+
+namespace
+{
+
+/// One per validated record, in physical file order. Produced by readChangelogFile and
+/// consumed by the stitch (replayStartupMetadata / materializeEntryStorage).
+struct ChangelogEntryMetadata
+{
+    uint64_t index = 0;
+    uint64_t term = 0;
+    int32_t value_type = 0;
+    size_t position = 0;
+    size_t size_in_file = 0;
+    size_t blob_size = 0;
+
+    /// Set only when the record must survive by value: nuraft::conf records >= start (feeds
+    /// latest_config), or every record >= start in unlimited-cache mode (feeds the cache install).
+    LogEntryPtr retained_entry;
+};
+
+struct ChangelogFileStartupReadResult
+{
+    ChangelogFileDescriptionPtr file_description;
+    ChangelogReadResult read_result{};
+    std::vector<ChangelogEntryMetadata> entries; /// records with index >= start_log_index, physical order
+    std::exception_ptr fatal_exception;
+};
+
+/// Per-file metadata-only startup reader. Mirrors ChangelogReader::readChangelog's parse loop but
+/// mutates no LogEntryStorage state; materializes entry values only where the stitch needs them by value.
+ChangelogFileStartupReadResult readChangelogFile(
+    const ChangelogFileDescriptionPtr & file_description,
+    uint64_t start_log_index,
+    const ReadSettings & read_settings,
+    bool unlimited_cache_mode,
+    LoggerPtr log)
+{
+    ChangelogFileStartupReadResult result;
+    result.file_description = file_description;
+    result.read_result.compressed_log = false; /// parallel path never runs when a file is compressed
+    const auto & filepath = file_description->path;
+
+    std::unique_ptr<ReadBuffer> read_buf;
+    try
+    {
+        read_buf = file_description->disk->readFile(filepath, read_settings);
+    }
+    catch (...)
+    {
+        result.fatal_exception = std::current_exception();
+        return result;
+    }
+
+    try
+    {
+        while (!read_buf->eof())
+        {
+            const size_t last_position = read_buf->count();
+            result.read_result.last_position = static_cast<off_t>(last_position);
+
+            auto record = readChangelogRecord(*read_buf, filepath);
+
+            result.read_result.total_entries_read_from_log += 1;
+            result.read_result.total_bytes_read_from_log = read_buf->count();
+
+            if (record.header.index >= start_log_index)
+            {
+                ChangelogEntryMetadata meta;
+                meta.index = record.header.index;
+                meta.term = record.header.term;
+                meta.value_type = record.header.value_type;
+                meta.position = last_position;
+                meta.size_in_file = read_buf->count() - last_position;
+                meta.blob_size = record.header.blob_size;
+
+                if (result.read_result.first_read_index == 0)
+                    result.read_result.first_read_index = record.header.index;
+                result.read_result.last_read_index = record.header.index;
+
+                if (record.header.value_type == nuraft::conf || unlimited_cache_mode)
+                    meta.retained_entry = logEntryFromRecord(record);
+
+                result.entries.push_back(std::move(meta));
+            }
+
+            if (result.read_result.total_entries_read_from_log % 50000 == 0)
+                LOG_TRACE(log, "Reading changelog from path {}, entries {}", filepath, result.read_result.total_entries_read_from_log);
+        }
+    }
+    catch (const Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            result.fatal_exception = std::current_exception();
+        else
+        {
+            result.read_result.error = true;
+            LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());
+        }
+    }
+    catch (...)
+    {
+        result.read_result.error = true;
+        tryLogCurrentException(log);
+    }
+
+    LOG_TRACE(log, "Totally read from changelog {} {} entries", filepath, result.read_result.total_entries_read_from_log);
+    return result;
+}
+
+/// Shared between the serial and parallel startup readers: validates the very first in-scope
+/// changelog file against `start_to_read_from`/`last_commited_log_index`. Throws CORRUPTED_DATA if
+/// this file starts more than one index past what should already be committed (data loss); warns
+/// (but doesn't fail) if fewer logs than requested are retained on disk.
+void checkFirstChangelogFile(
+    uint64_t from_log_index, uint64_t to_log_index, uint64_t last_commited_log_index, uint64_t start_to_read_from, LoggerPtr log)
+{
+    LOG_INFO(
+        log, "from log index: {}, to log index: {}, last committed log index: {}", from_log_index, to_log_index, last_commited_log_index);
+
+    if (from_log_index > last_commited_log_index && (from_log_index - last_commited_log_index) > 1)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Some records were lost, last committed log index {}, smallest available log index on disk {}. Manual intervention "
+            "is necessary for recovery but removing changelogs can lead to data loss.",
+            last_commited_log_index,
+            from_log_index);
+
+    if (from_log_index > start_to_read_from)
+        LOG_WARNING(
+            log,
+            "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk "
+            "{}.",
+            start_to_read_from,
+            from_log_index);
+}
+
+/// Cross-file locals of the replay loop plus the outputs materializeEntryStorage consumes.
+struct StitchState
+{
+    /// A contiguous run of physical records within one file's `entries`, in final (post-trim)
+    /// index-ascending order. Segments are index-ascending across the vector too. Indices within a
+    /// segment are consecutive (`first_index + k`): writers never leave gaps within a file.
+    struct Segment
+    {
+        size_t result_idx = 0;
+        size_t first_offset = 0;   /// offset into results[result_idx].entries
+        size_t count = 0;
+        uint64_t first_index = 0;  /// == results[result_idx].entries[first_offset].index
+    };
+
+    struct ConfigOwner
+    {
+        size_t result_idx = 0;
+        size_t entry_offset = 0;
+    };
+
+    std::vector<Segment> segments;
+    std::map<uint64_t, ConfigOwner> config_owner;
+
+    std::optional<ChangelogReadResult> last_log_read_result;
+    uint64_t last_read_index = 0; /// doubles as the new max_log_id
+    uint64_t remove_logs_before_index = 0;
+    bool last_log_is_not_complete = false;
+};
+
+/// Replays the serial control flow over metadata only -- decisions, no LogEntryStorage mutation.
+/// Rethrows a file's captured fatal exception at the point the serial reader would have opened
+/// that file; a fatal in a file the serial loop never reaches is ignored, matching serial.
+StitchState replayStartupMetadata(
+    const std::vector<ChangelogFileStartupReadResult> & results,
+    uint64_t start_to_read_from,
+    uint64_t last_commited_log_index,
+    LoggerPtr log)
+{
+    StitchState stitch_state;
+
+    auto accumulated_min_index = [&]
+    {
+        return stitch_state.segments.front().first_index;
+    };
+    auto accumulated_max_index = [&]
+    {
+        const auto & segment = stitch_state.segments.back();
+        return segment.first_index + segment.count - 1;
+    };
+
+    /// Keep only entries with index <= cutoff_index (mirrors LogEntryStorage::cleanAfter(cutoff_index)).
+    auto trim_after = [&](uint64_t cutoff_index)
+    {
+        while (!stitch_state.segments.empty())
+        {
+            auto & segment = stitch_state.segments.back();
+            const uint64_t segment_last_index = segment.first_index + segment.count - 1;
+            if (segment_last_index <= cutoff_index)
+                break;
+            if (segment.first_index > cutoff_index)
+            {
+                stitch_state.segments.pop_back();
+                continue;
+            }
+            segment.count = cutoff_index - segment.first_index + 1;
+            break;
+        }
+        stitch_state.config_owner.erase(stitch_state.config_owner.upper_bound(cutoff_index), stitch_state.config_owner.end());
+
+    };
+
+    for (size_t i = 0; i < results.size(); ++i)
+    {
+        const auto & result = results[i];
+        const auto & file_description = result.file_description;
+
+        if (!stitch_state.last_log_read_result)
+        {
+            checkFirstChangelogFile(
+                file_description->from_log_index, file_description->to_log_index, last_commited_log_index, start_to_read_from, log);
+        }
+        else if (file_description->from_log_index > stitch_state.last_read_index
+                 && (file_description->from_log_index - stitch_state.last_read_index) > 1)
+        {
+            if (file_description->from_log_index <= last_commited_log_index)
+            {
+                LOG_INFO(
+                    log,
+                    "Found gap in changelogs from {} to {}, but these entries are already present in the existing "
+                    "snapshot (last committed: {}). Removing logs before index {}.",
+                    stitch_state.last_read_index,
+                    file_description->from_log_index,
+                    last_commited_log_index,
+                    file_description->from_log_index);
+
+                stitch_state.remove_logs_before_index = file_description->from_log_index;
+
+                /// Reset retained metadata: everything before the gap.
+                stitch_state.segments.clear();
+                stitch_state.config_owner.clear();
+                stitch_state.last_log_read_result.reset();
+            }
+            else
+            {
+                if (!stitch_state.last_log_read_result->error)
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Some records were lost, last found log index {}, while the next log index on disk is {}. Manual intervention "
+                        "is necessary for recovery but removing changelogs can lead to data loss.",
+                        stitch_state.last_read_index,
+                        file_description->from_log_index);
+                break;
+            }
+        }
+
+        /// Point where serial would have opened this file -- surface a captured fatal here.
+        if (result.fatal_exception)
+            std::rethrow_exception(result.fatal_exception);
+
+        for (size_t offset = 0; offset < result.entries.size(); ++offset)
+        {
+            const auto & entry = result.entries[offset];
+
+            if (!stitch_state.segments.empty() && entry.index >= accumulated_min_index() && entry.index <= accumulated_max_index())
+                trim_after(entry.index - 1);
+
+            chassert(entry.index >= start_to_read_from); /// only such records are retained
+
+            /// True when this record is physically the very next one (same file, no gap) after the
+            /// last kept segment, so it can extend that segment instead of starting a new one.
+            auto * last_segment = stitch_state.segments.empty() ? nullptr : &stitch_state.segments.back();
+            if (last_segment && last_segment->result_idx == i && last_segment->first_offset + last_segment->count == offset)
+            {
+                chassert(entry.index == last_segment->first_index + last_segment->count);
+                ++last_segment->count;
+            }
+            else
+                stitch_state.segments.push_back(
+                    StitchState::Segment{.result_idx = i, .first_offset = offset, .count = 1, .first_index = entry.index});
+
+            if (entry.value_type == nuraft::conf)
+                stitch_state.config_owner[entry.index] = StitchState::ConfigOwner{.result_idx = i, .entry_offset = offset};
+        }
+
+        if (result.read_result.first_read_index == 0)
+        {
+            LOG_TRACE(log, "Changelog is empty or contains only logs before {}", start_to_read_from);
+            continue;
+        }
+
+        auto & last_log_read_result = stitch_state.last_log_read_result;
+        last_log_read_result = result.read_result;
+        last_log_read_result->log_start_index = file_description->from_log_index;
+
+        if (last_log_read_result->last_read_index != 0)
+            stitch_state.last_read_index = last_log_read_result->last_read_index;
+
+        const uint64_t log_count = file_description->expectedEntriesCountInLog();
+        stitch_state.last_log_is_not_complete
+            = stitch_state.last_log_read_result->error || stitch_state.last_log_read_result->total_entries_read_from_log < log_count;
+    }
+
+    return stitch_state;
+}
+
+/// Walks the final segment list and builds the LogEntryStorage by-products (locations, valid_runs,
+/// term info, config index, latest_config, and -- in unlimited-cache mode -- the cache). Mutates
+/// `results`, freeing each file's `entries` once the walk moves past it.
+void materializeEntryStorage(
+    LogEntryStorage & entry_storage,
+    std::vector<ChangelogFileStartupReadResult> & results,
+    const StitchState & stitch_state,
+    bool unlimited_cache_mode)
+{
+    /// Install the config first: it points into some file's `entries`, which freeing below could dangle.
+    if (!stitch_state.config_owner.empty())
+    {
+        const auto & [index, owner] = *stitch_state.config_owner.rbegin();
+        auto & meta = results[owner.result_idx].entries[owner.entry_offset];
+        chassert(meta.retained_entry != nullptr);
+        entry_storage.setLatestConfig(index, meta.retained_entry);
+    }
+
+    size_t total_locations = 0;
+    for (const auto & segment : stitch_state.segments)
+        total_locations += segment.count;
+    entry_storage.reserveLocations(total_locations);
+
+    std::optional<size_t> previous_result_idx;
+    for (const auto & segment : stitch_state.segments)
+    {
+        /// result_idx is non-decreasing, so once we move past a file its entries are no longer needed; reset them to reduce memory usage.
+        if (previous_result_idx && *previous_result_idx != segment.result_idx)
+            results[*previous_result_idx].entries = {};
+        previous_result_idx = segment.result_idx;
+
+        auto & result = results[segment.result_idx];
+        for (size_t k = 0; k < segment.count; ++k)
+        {
+            auto & meta = result.entries[segment.first_offset + k];
+
+            LogLocation location{
+                .file_description = result.file_description,
+                .position = meta.position,
+                .entry_size = meta.blob_size,
+                .size_in_file = meta.size_in_file};
+            entry_storage.addLocation(meta.index, meta.term, meta.value_type, /*log_entry=*/nullptr, location);
+
+            if (unlimited_cache_mode)
+            {
+                chassert(meta.retained_entry != nullptr);
+                entry_storage.addEntryToLatestCache(meta.index, meta.retained_entry);
+            }
+        }
+    }
+}
+
+}
 
 void validateReadAheadSettings(const ReadAheadSettings & settings)
 {
@@ -956,11 +1342,12 @@ void LogEntryStorage::updateTermInfoWithNewEntry(uint64_t index, uint64_t term)
 
 void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location)
 {
-    auto entry_size = logEntrySize(log_entry);
-    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
-        latest_logs_cache.popOldestEntry();
-    latest_logs_cache.addEntry(index, entry_size, log_entry);
+    addEntryToLatestCache(index, log_entry);
+    addLocation(index, log_entry->get_term(), log_entry->get_val_type(), log_entry, std::move(log_location));
+}
 
+void LogEntryStorage::addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location)
+{
     log_location.file_description->valid_runs.addLocatedRecord(index, log_location.position, log_location.size_in_file);
     logs_location.emplace(index, std::move(log_location));
 
@@ -969,14 +1356,37 @@ void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & l
 
     max_index_with_location = index;
 
-    if (log_entry->get_val_type() == nuraft::conf)
+    if (value_type == nuraft::conf)
     {
-        latest_config = log_entry;
-        latest_config_index = index;
+        if (log_entry)
+        {
+            latest_config = log_entry;
+            latest_config_index = index;
+        }
+
         logs_with_config_changes.insert(index);
     }
 
-    updateTermInfoWithNewEntry(index, log_entry->get_term());
+    updateTermInfoWithNewEntry(index, term);
+}
+
+void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & log_entry)
+{
+    const auto entry_size = logEntrySize(log_entry);
+    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
+        latest_logs_cache.popOldestEntry();
+    latest_logs_cache.addEntry(index, entry_size, log_entry);
+}
+
+void LogEntryStorage::reserveLocations(size_t count)
+{
+    logs_location.reserve(count);
+}
+
+void LogEntryStorage::setLatestConfig(uint64_t index, LogEntryPtr log_entry)
+{
+    latest_config = std::move(log_entry);
+    latest_config_index = index;
 }
 
 void LogEntryStorage::cleanUpTo(uint64_t index)
@@ -3109,6 +3519,9 @@ Changelog::Changelog(
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
+    , startup_read_max_streams(
+          log_file_settings.startup_read_max_streams == 0 ? getNumberOfCPUCoresToUse() : log_file_settings.startup_read_max_streams)
+    , startup_read_buffer_size(log_file_settings.startup_read_buffer_size)
     , log(log_)
     , entry_storage(log_file_settings, readahead_settings_, keeper_context_)
     , write_operations(std::numeric_limits<size_t>::max())
@@ -3118,6 +3531,10 @@ Changelog::Changelog(
 {
     try
     {
+        /// Settings-layer NonZeroUInt64 can be bypassed by direct construction (gtests); re-check here.
+        if (log_file_settings.startup_read_buffer_size == 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "startup_read_buffer_size must be greater than 0");
+
         if (auto latest_log_disk = getLatestLogDisk();
             log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
         {
@@ -3240,10 +3657,6 @@ Changelog::Changelog(
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
 {
     std::lock_guard writer_lock(writer_mutex);
-    std::optional<ChangelogReadResult> last_log_read_result;
-
-    /// Last log has some free space to write
-    bool last_log_is_not_complete = false;
 
     /// We must start to read from this log index
     uint64_t start_to_read_from = last_commited_log_index + 1;
@@ -3253,6 +3666,38 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         start_to_read_from -= logs_to_keep;
     else
         start_to_read_from = 1;
+
+    /// Files with to_log_index >= start_to_read_from, in from_log_index order.
+    std::vector<ChangelogFileDescriptionPtr> in_scope_files;
+    for (const auto & [from_idx, file_description] : existing_changelogs)
+        if (file_description->to_log_index >= start_to_read_from)
+            in_scope_files.push_back(file_description);
+
+    /// Raw-seek reads are invalid for compressed files; only in-scope files matter (a stale
+    /// compressed file below the snapshot shouldn't disable the feature).
+    const bool any_in_scope_compressed
+        = std::ranges::any_of(in_scope_files, [](const auto & file_description) { return file_description->is_compressed; });
+
+    /// A single in-scope file has no parallelism to exploit; `startup_read_max_streams <= 1`
+    /// (explicitly requested, or auto-resolved to 1 on a single-core machine) selects serial too.
+    const bool use_serial_read = compress_logs || any_in_scope_compressed || force_serial_startup_read_for_test
+        || startup_read_max_streams <= 1 || in_scope_files.size() <= 1;
+
+    if (use_serial_read)
+        readChangelogAndInitWriterSerialLocked(last_commited_log_index, start_to_read_from);
+    else
+        readChangelogAndInitWriterParallelLocked(last_commited_log_index, start_to_read_from, std::move(in_scope_files));
+
+    initialized = true;
+}
+
+/// Keep this control flow in sync with replayStartupMetadata, which mirrors it over metadata only.
+void Changelog::readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from)
+{
+    std::optional<ChangelogReadResult> last_log_read_result;
+
+    /// Last log has some free space to write
+    bool last_log_is_not_complete = false;
 
     uint64_t last_read_index = 0;
 
@@ -3266,30 +3711,12 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         {
             if (!last_log_read_result) /// still nothing was read
             {
-                LOG_INFO(log, "from log index: {}, to log index: {}, last committed log index: {}", changelog_description.from_log_index, changelog_description.to_log_index, last_commited_log_index);
-                /// Our first log starts from the more fresh log_id than we required to read and this changelog is not empty log.
-                /// So we are missing something in our logs.
-                if (changelog_description.from_log_index > last_commited_log_index
-                    && (changelog_description.from_log_index - last_commited_log_index) > 1)
-                {
-                    throw Exception(
-                        ErrorCodes::CORRUPTED_DATA,
-                        "Some records were lost, last committed log index {}, smallest available log index on disk {}. Manual intervention "
-                        "is necessary for recovery but removing changelogs can lead to data loss.",
-                        last_commited_log_index,
-                        changelog_description.from_log_index);
-                }
-
-                if (changelog_description.from_log_index > start_to_read_from)
-                {
-                    /// We don't have required amount of reserved logs, but nothing was lost.
-                    LOG_WARNING(
-                        log,
-                        "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk "
-                        "{}.",
-                        start_to_read_from,
-                        changelog_description.from_log_index);
-                }
+                checkFirstChangelogFile(
+                    changelog_description.from_log_index,
+                    changelog_description.to_log_index,
+                    last_commited_log_index,
+                    start_to_read_from,
+                    log);
             }
             else if (changelog_description.from_log_index > last_read_index && (changelog_description.from_log_index - last_read_index) > 1)
             {
@@ -3353,6 +3780,23 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         }
     }
 
+    std::optional<LastChangelogReadOutcome> last_log_read_outcome;
+    if (last_log_read_result)
+        last_log_read_outcome = LastChangelogReadOutcome{
+            .log_start_index = last_log_read_result->log_start_index,
+            .last_read_index = last_log_read_result->last_read_index,
+            .error = last_log_read_result->error,
+            .compressed_log = last_log_read_result->compressed_log};
+
+    finalizeChangelogsAfterRead(last_commited_log_index, remove_logs_before_index, last_log_read_outcome, last_log_is_not_complete);
+}
+
+void Changelog::finalizeChangelogsAfterRead(
+    uint64_t last_commited_log_index,
+    uint64_t remove_logs_before_index,
+    const std::optional<LastChangelogReadOutcome> & last_log_read_outcome,
+    bool last_log_is_not_complete)
+{
     if (remove_logs_before_index)
         removeAllLogFilesBefore(remove_logs_before_index);
 
@@ -3366,8 +3810,8 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
-    /// we can have empty log (with zero entries) and last_log_read_result will be initialized
-    if (!last_log_read_result || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
+    /// we can have empty log (with zero entries) and last_log_read_outcome will be initialized
+    if (!last_log_read_outcome || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
     {
         /// Just to be sure they don't exist
         removeAllLogs();
@@ -3386,47 +3830,47 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
-        chassert(last_log_read_result != std::nullopt);
+        chassert(last_log_read_outcome != std::nullopt);
         chassert(!existing_changelogs.empty());
 
         /// Continue to write into incomplete existing log if it didn't finish with error
-        auto & description = existing_changelogs[last_log_read_result->log_start_index];
+        auto & description = existing_changelogs[last_log_read_outcome->log_start_index];
 
         const auto remove_invalid_logs = [&]
         {
             /// Actually they shouldn't exist, but to be sure we remove them
-            removeAllLogsAfter(last_log_read_result->log_start_index);
+            removeAllLogsAfter(last_log_read_outcome->log_start_index);
 
             /// This log, even if it finished with error shouldn't be removed
-            chassert(existing_changelogs.contains(last_log_read_result->log_start_index));
-            chassert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
+            chassert(existing_changelogs.contains(last_log_read_outcome->log_start_index));
+            chassert(existing_changelogs.find(last_log_read_outcome->log_start_index)->first == existing_changelogs.rbegin()->first);
         };
 
-        if (last_log_read_result->last_read_index == 0) /// If it's broken or empty log then remove it
+        if (last_log_read_outcome->last_read_index == 0) /// If it's broken or empty log then remove it
         {
             LOG_INFO(log, "Removing changelog {} because it's empty", description->path);
             remove_invalid_logs();
             description->disk->removeFile(description->path);
-            existing_changelogs.erase(last_log_read_result->log_start_index);
-            entry_storage.cleanAfter(last_log_read_result->log_start_index - 1);
+            existing_changelogs.erase(last_log_read_outcome->log_start_index);
+            entry_storage.cleanAfter(last_log_read_outcome->log_start_index - 1);
         }
-        else if (last_log_read_result->error)
+        else if (last_log_read_outcome->error)
         {
             LOG_INFO(log, "Changelog {} read finished with error but some logs were read from it, file will not be removed", description->path);
             remove_invalid_logs();
-            entry_storage.cleanAfter(last_log_read_result->last_read_index);
+            entry_storage.cleanAfter(last_log_read_outcome->last_read_index);
             description->broken_at_end = true;
             move_from_latest_logs_disks(description);
         }
         /// don't mix compressed and uncompressed writes
-        else if (compress_logs == last_log_read_result->compressed_log)
+        else if (compress_logs == last_log_read_outcome->compressed_log)
         {
             initWriter(description);
         }
     }
-    else if (last_log_read_result.has_value())
+    else if (last_log_read_outcome.has_value())
     {
-        move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
+        move_from_latest_logs_disks(existing_changelogs.at(last_log_read_outcome->log_start_index));
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
@@ -3449,8 +3893,83 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         if (description->disk != disk)
             moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
     }
+}
 
-    initialized = true;
+void Changelog::readChangelogAndInitWriterParallelLocked(
+    uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
+{
+    chassert(in_scope_files.size() > 1);
+    chassert(startup_read_max_streams > 0);
+
+    const bool unlimited_cache_mode = entry_storage.isUnlimitedCacheMode();
+
+    ReadSettings read_settings = getReadSettings();
+    read_settings.local_fs_settings.buffer_size = startup_read_buffer_size;
+    read_settings.remote_fs_settings.buffer_size = startup_read_buffer_size;
+
+    /// (1) parallel read. `results` outlives the pool, so its destructor joins all tasks first.
+    /// Never more threads than files.
+    const uint64_t pool_size = std::min<uint64_t>(startup_read_max_streams, in_scope_files.size());
+    chassert(pool_size > 0);
+    std::vector<ChangelogFileStartupReadResult> results(in_scope_files.size());
+    Stopwatch read_watch;
+    {
+        ThreadPool pool(
+            CurrentMetrics::KeeperChangelogStartupReadThreads,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+            pool_size,
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (size_t i = 0; i < in_scope_files.size(); ++i)
+            pool.scheduleOrThrowOnError([&, i]
+            {
+                results[i] = readChangelogFile(in_scope_files[i], start_to_read_from, read_settings, unlimited_cache_mode, log);
+            });
+        /// Tasks catch into results[i] instead of rethrowing; replayStartupMetadata rethrows a
+        /// fatal at the point serial would have opened that file.
+        pool.wait();
+    }
+    ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupReadMicroseconds, read_watch.elapsedMicroseconds());
+
+    uint64_t total_entries = 0;
+    uint64_t total_bytes = 0;
+    for (const auto & result : results)
+    {
+        total_entries += result.read_result.total_entries_read_from_log;
+        total_bytes += result.read_result.total_bytes_read_from_log;
+    }
+    ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupReadEntries, total_entries);
+    ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupReadBytes, total_bytes);
+
+    /// (2) metadata replay, decisions only. (3) build entry_storage state from the result.
+    Stopwatch stitch_watch;
+    StitchState stitch_state = replayStartupMetadata(results, start_to_read_from, last_commited_log_index, log);
+    materializeEntryStorage(entry_storage, results, stitch_state, unlimited_cache_mode);
+    max_log_id.store(stitch_state.last_read_index, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupStitchMicroseconds, stitch_watch.elapsedMicroseconds());
+
+    /// (4) disposition -- same tail as the serial path
+    std::optional<LastChangelogReadOutcome> last_log_read_outcome;
+    if (stitch_state.last_log_read_result)
+        last_log_read_outcome = LastChangelogReadOutcome{
+            .log_start_index = stitch_state.last_log_read_result->log_start_index,
+            .last_read_index = stitch_state.last_log_read_result->last_read_index,
+            .error = stitch_state.last_log_read_result->error,
+            .compressed_log = stitch_state.last_log_read_result->compressed_log};
+
+    finalizeChangelogsAfterRead(
+        last_commited_log_index, stitch_state.remove_logs_before_index, last_log_read_outcome, stitch_state.last_log_is_not_complete);
+
+    /// (5) seed the cache with the last live entry (skipped in unlimited mode). Reads max_log_id,
+    /// not stitch_state.last_read_index, since finalizeChangelogsAfterRead may have trimmed it.
+    if (!unlimited_cache_mode && !entry_storage.empty())
+    {
+        const auto last_index = max_log_id.load(std::memory_order_relaxed);
+        auto last_entry = entry_storage.getEntry(last_index);
+        chassert(last_entry);
+        entry_storage.addEntryToLatestCache(last_index, last_entry);
+    }
 }
 
 void Changelog::initWriter(ChangelogFileDescriptionPtr description)
@@ -3764,6 +4283,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         last_durable_idx = std::min(last_durable_idx, index - 1);
     }
 
+    /// Superseded-segment removals; wait outside writer_mutex so writeThread is not pinned on unlinks.
+    std::vector<ChangelogFileOperationPtr> pending_superseded_removes;
+
     {
         std::lock_guard lock(writer_mutex);
         /// This write_at require to overwrite everything in this file and also in previous file(s)
@@ -3803,9 +4325,26 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                removeChangelogAsync(itr->second);
+                pending_superseded_removes.push_back(removeChangelogAsync(itr->second));
                 itr = existing_changelogs.erase(itr);
             }
+        }
+    }
+
+    /// Append the rewrite only after superseded changelog files are gone.
+    for (const auto & op : pending_superseded_removes)
+    {
+        op->done.wait(false);
+        if (auto error = op->getError())
+        {
+            tryLogException(
+                std::move(error),
+                log,
+                fmt::format(
+                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
+                    index),
+                LogsLevel::fatal);
+            std::terminate();
         }
     }
 
@@ -4127,10 +4666,12 @@ void Changelog::backgroundChangelogOperationsThread()
                     catch (Exception & e)
                     {
                         LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                        changelog_operation->setError(std::current_exception());
                     }
                     catch (...)
                     {
                         tryLogCurrentException(log);
+                        changelog_operation->setError(std::current_exception());
                     }
                 });
         }
@@ -4184,9 +4725,11 @@ void Changelog::modifyChangelogAsync(ChangelogFileOperationPtr changelog_operati
     changelog_operation->changelog->file_operations.push_back(changelog_operation);
 }
 
-void Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
+ChangelogFileOperationPtr Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
 {
-    modifyChangelogAsync(std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{}));
+    auto operation = std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{});
+    modifyChangelogAsync(operation);
+    return operation;
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)

@@ -201,6 +201,11 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
+If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
+Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Tip>)DOCS_MD"},
+
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 
 The `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.

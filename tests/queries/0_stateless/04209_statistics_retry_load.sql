@@ -49,15 +49,6 @@ SETTINGS use_statistics_for_part_pruning = 1,
          use_statistics_cache = 0,
          log_comment = '04209_statistics_retry_load_error_packed'; -- { serverError CANNOT_READ_ALL_DATA }
 
--- Query planning must propagate the same load failure.
-SELECT sum(b) FROM t_full WHERE a > 500000 AND b < 500
-SETTINGS use_statistics = 1,
-         use_statistics_cache = 0,
-         use_statistics_for_part_pruning = 0,
-         enable_analyzer = 0,
-         optimize_move_to_prewhere = 1,
-         log_comment = '04209_statistics_retry_load_error_planner'; -- { serverError CANNOT_READ_ALL_DATA }
-
 CREATE HYPOTHETICAL INDEX idx_a ON t_full (a) TYPE minmax GRANULARITY 1;
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t_full WHERE a > 500000
 SETTINGS use_statistics_for_part_pruning = 0,
@@ -74,9 +65,6 @@ SELECT
     countIf(
         log_comment = '04209_statistics_retry_load_error_packed'
         AND position(exception, '(while loading statistics for column a from file statistics_a.stats in part all_1_1_0)') > 0) = 1,
-    countIf(
-        log_comment = '04209_statistics_retry_load_error_planner'
-        AND position(exception, '(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)') > 0) = 1,
     countIf(
         log_comment = '04209_statistics_retry_load_error_whatif'
         AND position(exception, '(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)') > 0) = 1

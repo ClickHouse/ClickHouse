@@ -195,6 +195,24 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t ADD STATISTIC
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns":', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
+-- ALTER ... STATISTICS ALL: `ParserAlterCommand` reads `IF EXISTS` and `IN PARTITION` only in the
+-- branch that also requires a column-list declaration, so the `ALL` forms (null `statistics_decl`)
+-- never carry either. `MATERIALIZE STATISTICS` has nowhere to print them, so both are silently
+-- dropped, and an absent partition means every partition when the formatted text is reparsed for
+-- execution. `CLEAR STATISTICS` prints `CLEAR STATISTICS IF EXISTS ALL`, which reparses as the
+-- statistic on a column named `ALL`, and `CLEAR STATISTICS ALL IN PARTITION 1`, which does not
+-- reparse at all. The `ALL` forms round-trip without either field:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS IF EXISTS a'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS IF EXISTS a IN PARTITION 1'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'), '"if_exists":false', '"if_exists":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'), '"if_exists":false', '"if_exists":true')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'), '"if_exists":false', '"if_exists":false,"partition":{"type":"Partition","value":{"type":"Literal","value":{"field_type":"UInt64","value":1}},"all":false,"fields_count":1}')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'), '"if_exists":false', '"if_exists":false,"partition":{"type":"Partition","value":{"type":"Literal","value":{"field_type":"UInt64","value":1}},"all":false,"fields_count":1}')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
 -- ALTER ... IN PARTITION: `partition` is parser-produced only for the `CLEAR`/`MATERIALIZE` forms of
 -- `DROP COLUMN`/`DROP INDEX`/`DROP STATISTICS`/`DROP PROJECTION` (where the corresponding `clear_*` flag
 -- is set). A plain `DROP COLUMN` carrying a `partition` would format `DROP COLUMN x IN PARTITION p`,

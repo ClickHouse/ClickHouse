@@ -65,6 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 readonly;
+    extern const SettingsBool resumable_backup_from_snapshot;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -76,6 +77,8 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
+    extern const char backups_pause_before_publishing_progress[];
+    extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
 }
 
@@ -86,6 +89,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int WRONG_BACKUP_SETTINGS;
 }
 
 using OperationID = BackupOperationID;
@@ -165,8 +169,8 @@ namespace
         /// Authorize the locator that will actually be opened: `BackupImpl::getBaseBackupUnlocked`
         /// fills the credentials from the outer locator first, so a base missing them is not malformed.
         BackupInfo effective_base_backup_info = *base_backup_info;
-        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
-            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info, context))
+            backup_info.copyS3CredentialsTo(effective_base_backup_info, context);
 
         BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
     }
@@ -433,6 +437,11 @@ struct BackupsWorker::BackupStarter
         backup_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
+        const bool resumable_backup_from_snapshot = backup_context->getSettingsRef()[Setting::resumable_backup_from_snapshot];
+        if (resumable_backup_from_snapshot)
+            throw Exception(
+                ErrorCodes::WRONG_BACKUP_SETTINGS,
+                "Setting `resumable_backup_from_snapshot` is only supported in ClickHouse Cloud");
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
 
@@ -1224,6 +1233,12 @@ void BackupsWorker::doRestore(
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
                                     backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
+
+        /// NOTE: the callback above runs inside each restore task, so every value it publishes is a
+        /// mid-flight snapshot. All the tasks have joined by now, so this publish is the authoritative one.
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_before_publishing_final_progress);
+        setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getTotalSize(), backup->getNumEntries(),
+                           backup->getUncompressedSize(), backup->getCompressedSize(), backup->getNumReadFiles(), backup->getNumReadBytes());
     }
 }
 
@@ -1436,6 +1451,10 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
+    /// The caller has already snapshotted the counters into the arguments, so a test can hold a
+    /// publisher here and let a later one publish first.
+    FailPointInjection::pauseFailPoint(FailPoints::backups_pause_before_publishing_progress);
+
     /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -1448,8 +1467,10 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     info.num_entries = num_entries;
     info.uncompressed_size = uncompressed_size;
     info.compressed_size = compressed_size;
-    info.num_read_files = num_read_files;
-    info.num_read_bytes = num_read_bytes;
+    /// A restore publishes these from inside each of its concurrent tasks, and a task's value is
+    /// snapshotted before this call, so a later call can carry an older count. They never decrease.
+    info.num_read_files = std::max(info.num_read_files, num_read_files);
+    info.num_read_bytes = std::max(info.num_read_bytes, num_read_bytes);
 }
 
 

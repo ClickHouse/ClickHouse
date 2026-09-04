@@ -1,0 +1,230 @@
+---
+title: 'CLI reference'
+sidebarTitle: 'CLI'
+description: 'Reference for the clicklink clctl commands: init, preflight, support sessions, gateway trust, audit, and access provisioning'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
+doc_type: 'reference'
+---
+
+The connector ships as a single binary named `clicklink`; the commands you run live under `clicklink clctl`. This page covers the commands used during installation and day-to-day operation. Run any command with `--help` for its full help text. Flags in the `troubleshoot` and `preflight` subtrees can also be supplied through `CLCTL_*` environment variables (named in each flag's help output) or `~/.clicklink/clctl.yaml`.
+
+## clicklink clctl init {#init}
+
+Bootstraps the connector from an enrollment token, a saved enrollment bundle, or an out-of-band signed certificate. One invocation stages configuration, provisions ClickHouse access, obtains the mTLS client certificate, deploys (Helm chart or systemd units), and verifies health. Re-running is safe: config and the cluster UUID are preserved, credentials are overwritten atomically, and an existing client key is reused unless you pass `--force`. See [onboarding](/products/bring-your-own-cloud/connector/onboarding) for the full flow.
+
+### Entry points {#init-entry-points}
+
+Exactly one of the three entry points is required; they are mutually exclusive.
+
+| Flag | Description |
+|------|-------------|
+| `--enroll <url>` | The standard flow. Takes your org connector endpoint (`https://<subdomain>.<connector domain>`), redeems a single-use enrollment token (prompted without echo on a terminal, otherwise read from the first line of stdin), writes the resulting bundle to `handoff.yaml` (mode 0600), and continues as `--handoff handoff.yaml`. The token never touches the command line, disk, or logs. |
+| `--handoff <path>` | Bootstraps from a saved enrollment bundle. Re-runs and recovery use this once `handoff.yaml` exists. |
+| `--signed-cert <path>` | Phase 2 of the air-gapped flow: installs a client certificate signed out of band and completes the staged install. `--chain <path>` optionally replaces the CA chain alongside it. |
+
+### Common flags {#init-common-flags}
+
+| Flag | Description |
+|------|-------------|
+| `--target <shape>` | Deployment shape: `systemd` (default; bootstrap the VM you are on) or `helm` (stage the `clicklink-connector` chart from a workstation with a kubeconfig). |
+| `--instance <spec>` | ClickHouse instance as comma-separated `key=value` pairs (`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`); repeatable. Skips the interactive instance prompts. |
+| `--operators <emails>` | Comma-separated operator emails allowed to open support sessions; enables the session gateway and skips the prompt. |
+| `--no-gateway` | Disables the session gateway (no OIDC-managed sessions); skips the prompt. On a VM, root on the host can still manage sessions through the local session file. |
+| `--force` | Overwrites an existing config or overlay and regenerates the client key; also acknowledges superseding an unexpired auto-signed certificate. The cluster UUID is preserved even under `--force`. |
+| `--skip-provision` | Stage only: skips per-role ClickHouse access provisioning (and, on the systemd target, the unit enable and verify). Run `clicklink clctl {scraper,troubleshoot} access provision` separately. |
+| `--ch-user-suffix <suffix>` | Optional suffix for the provisioned ClickHouse usernames (`pcm_scraper` becomes `pcm_scraper_<suffix>`), so a second connector deployment can share an instance without colliding on the first one's users. |
+| `--ch-admin-password-stdin` | Reads the ClickHouse admin password from stdin when SQL provisioning needs one; a terminal run prompts instead. |
+
+### Signing flags (phase 1 only) {#init-signing-flags}
+
+| Flag | Description |
+|------|-------------|
+| `--no-auto-sign` | Stage only: skips the automatic CSR signing over the enrollment endpoint, for air-gapped or out-of-band signing flows. |
+| `--sign-endpoint <url>` | Overrides the enrollment signing endpoint (default: derived from the bundle endpoint by inserting the `enroll` DNS label). Must be an HTTPS URL. |
+
+### Kubernetes-only flags {#init-kubernetes-flags}
+
+Valid only with `--target helm`.
+
+| Flag | Description |
+|------|-------------|
+| `--target-namespace <ns>` | Namespace the chart installs into and its Secrets land in (default `clicklink`; prompted on a terminal). |
+| `--instance-namespace <ns>` | Namespace of the target ClickHouse instance; seeds native-Service detection and the instance prompts. |
+| `--storage-class <name>` | StorageClass for the troubleshooter state volume (default: the cluster's default StorageClass; prompted or required when the cluster marks none). |
+| `--values <path>` | Path of the staged values overlay (default `clicklink-values.yaml`). |
+| `--chart <ref>` | Chart to deploy: a name resolved in `--chart-repo`, or a direct `oci://`, URL, or local reference for mirrored installs (default `clicklink-connector`). |
+| `--chart-repo <url>` | Helm repository the chart name resolves in (default `https://releases.clicklink.clickhouse.com/charts`); ignored for direct `--chart` references. |
+| `--chart-version <ver>` | Chart version to deploy (default: this binary's release version). |
+| `--ch-pod <ref>` | ClickHouse pod for the in-pod provisioning steps, as a name or `k=v` label selector (default: a Running pod backing each instance's Service). |
+| `--api-private-ca` | The API endpoint serves a certificate issued by the enrollment bundle's CA: stages `api.tls.caFile` pointing at the mounted CA chain instead of the system roots. |
+
+### VM-only flags {#init-vm-flags}
+
+Valid only with `--target systemd`.
+
+| Flag | Description |
+|------|-------------|
+| `--server <url>` | Kubernetes API server URL the access bundles point at (default: this host's kubeconfig, else prompted). |
+| `--ca-data <base64>` | Base64 `certificate-authority-data` for `--server` (default: this host's kubeconfig, else prompted). |
+
+### Flag conflicts {#init-flag-conflicts}
+
+- `--handoff`, `--enroll`, and `--signed-cert` are mutually exclusive; exactly one is required.
+- The Kubernetes-only flags are rejected unless `--target helm`; `--server` and `--ca-data` are rejected under `--target helm` (the Helm flow reads the workstation's kubeconfig).
+- `--no-auto-sign` and `--sign-endpoint` are mutually exclusive with each other, and both (plus `--api-private-ca`) are rejected with `--signed-cert`.
+- `--operators` and `--no-gateway` are mutually exclusive.
+- `--skip-provision` rejects `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data`, and `--ch-admin-password-stdin` (nothing provisions).
+
+## clicklink clctl preflight {#preflight}
+
+Runs the connector's check suite, grouped by category: config, files, network, clickhouse, systemd, access, disk, redaction. Each check reports pass, warn, fail, or skip. Exit code 0 means all checks passed (warnings are non-blocking); exit code 2 means one or more checks failed.
+
+The command runs locally by default. With `--k8s-namespace` it runs the connector pod's own binary via `kubectl exec` and renders the report locally (systemd checks are always skipped in pods). With the [remote channel flags](#channel-flags) it runs the installed binary on a remote VM instead.
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Path to the connector config file; under a remote target, the path on that host. |
+| `--output <fmt>`, `-o` | Output format: `text` (default) or `json`. |
+| `--timeout <dur>` | Overall timeout for all checks (default `30s`). |
+| `--skip-systemd` | Skips systemd unit-state checks (non-systemd hosts). |
+| `--k8s-namespace <ns>` | Namespace of the connector chart; runs preflight inside the connector pod via `kubectl exec`. |
+| `--k8s-component <name>` | Connector pod to run in: `scraper` (default) or `troubleshooter`. |
+| `--k8s-pod <ref>` | Pod name or `k=v` label selector override (default: the chart's component labels). |
+| `--k8s-container <name>` | Container to exec into (default: the component name). |
+
+The `--k8s-*` flags and the remote channel flags are mutually exclusive; pick one target.
+
+## clicklink clctl troubleshoot session {#troubleshoot-session}
+
+Enables, disables, and inspects the support session: the time-boxed window during which the troubleshooter accepts commands. When no session is active, the daemon refuses all commands even while its WebSocket is connected. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+
+The commands operate in one of two modes:
+
+- **Local file** (default): reads and writes the session state file on the host the troubleshooter runs on (default `/var/lib/clicklink/session.json`).
+- **Gateway**: with `--gateway-url`, acquires an OIDC ID token and calls the troubleshooter's session gateway instead, from your workstation.
+
+### Shared flags {#session-shared-flags}
+
+| Flag | Description |
+|------|-------------|
+| `--session-file <path>` | Path to the session state file (default `/var/lib/clicklink/session.json`). |
+| `--config <path>` | Connector config file; derives the session file path from its `troubleshooter` section. |
+| `--gateway-url <url>` | Session gateway base URL. When set, the command acquires an OIDC bearer token and calls the gateway instead of touching the local state file. Mutually exclusive with `--session-file` and `--config`. |
+| `--gateway-audience <aud>` | Audience claim the OIDC token is bound to (default `clicklink-clctl`, matching the gateway's own default). Set it only when the gateway audience was reconfigured. |
+| `--gateway-issuer <url>` | OIDC issuer the gateway validates against. Empty selects the Google path; set it together with `--oidc-client-id` to run the device-code flow against a non-Google identity provider. |
+| `--oidc-client-id <id>` | Public OIDC client ID for the device-code flow, registered at `--gateway-issuer` with the device grant enabled. |
+| `--token-file <path>` | File containing a pre-minted OIDC ID token, used as the bearer and bypassing the other token providers. |
+| `--gateway-ca <path>` | CA bundle that verifies the gateway certificate (bring-your-own certificate). When unset, a certificate pinned via `gateway trust` is used; a self-signed gateway with no pin fails closed. |
+
+### session enable {#session-enable}
+
+| Flag | Description |
+|------|-------------|
+| `--duration <dur>` | How long the session stays active (default `4h`, maximum `24h`). |
+| `--reason <text>` | Optional free-text reason recorded with the session (up to 256 characters). |
+| `--user <name>` | Operator identity to record in local-file mode; defaults to `$SUDO_USER` or `$USER`. In gateway mode the token-attested email is authoritative. |
+
+Enabling fails while a session is already active; disable it first or wait for expiry.
+
+### session disable {#session-disable}
+
+Deactivates the session immediately. A no-op when no session is active.
+
+### session status {#session-status}
+
+Shows whether the session is active, who enabled it, and when it expires. `--output` (`-o`) selects `table` (default) or `json`.
+
+On Kubernetes, reach the gateway over a port-forward:
+
+```bash
+kubectl -n <connector-namespace> port-forward \
+  statefulset/clicklink-connector-troubleshooter 8443:8443
+clicklink clctl troubleshoot session enable \
+  --gateway-url http://localhost:8443 \
+  --duration 1h --reason "support ticket 1234"
+```
+
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+
+On a VM the session gateway serves a self-signed TLS certificate. This command records the certificate's SHA-256 fingerprint in `~/.clicklink/clctl.yaml` so the `session` commands can verify it; a pinned fingerprint that stops matching fails closed. Trust is established out of band in one of two ways:
+
+- With the [remote channel flags](#channel-flags), the certificate is read directly off the VM over the already-authenticated channel and pinned.
+- Without a channel, pass `--gateway-fingerprint` with the SHA-256 value the connector logged when it generated the certificate; the fetched certificate is pinned only if it matches. Omitting the flag prints the presented fingerprint without pinning anything.
+
+| Flag | Description |
+|------|-------------|
+| `--gateway-url <url>` | Gateway base URL to trust (required), for example `https://<vm-host>:8443`. |
+| `--gateway-fingerprint <sha256>` | Expected SHA-256 fingerprint from the connector log, verified before pinning. Colons and letter case are ignored. |
+| `--remote-cert-file <path>` | Path to the gateway certificate on the VM, read over the channel (default `/var/lib/clicklink/gateway/tls/server.crt`). |
+
+```bash
+clicklink clctl troubleshoot gateway trust \
+  --gateway-url https://<vm-host>:8443 \
+  --gateway-fingerprint <sha256-from-connector-log>
+```
+
+On Kubernetes, pinning is not used: expose the gateway through an Ingress with a CA-issued certificate, or use a port-forward.
+
+## clicklink clctl troubleshoot audit tail {#audit-tail}
+
+Prints the last entries of the troubleshooter audit log: newline-delimited JSON, one entry per command the daemon accepted or blocked. The command opens the log read-only and never modifies it.
+
+| Flag | Description |
+|------|-------------|
+| `--lines <n>`, `-n` | Number of trailing entries to print (default 50). |
+| `--path <path>` | Path to the audit log file (default `/var/log/clicklink/troubleshoot-audit.log`). |
+
+The connector's runtime image has no shell, so on Kubernetes this command is the supported reader:
+
+```bash
+kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+## Access provisioning {#access-provision}
+
+`clicklink clctl scraper access provision` and `clicklink clctl troubleshoot access provision` create, and with `--force` rotate, a component's per-instance access bundle: the read-only ClickHouse user and its grants, plus the Kubernetes ServiceAccount, RBAC, and token the component uses. `init` runs this inline during install; the standalone commands are the re-run and rotation path.
+
+| Flag | Description |
+|------|-------------|
+| `--instance <name>` | Instance name from the configuration (required). |
+| `--server <url>` | Kubernetes API server URL (required). |
+| `--ca-data <base64>` | Base64 cluster CA certificate for the generated kubeconfig. |
+| `--config <path>` | Connector config file to read the instance from. |
+| `--target <shape>` | `systemd` (default: ship the bundle to a VM over a remote channel, or generate in place with `--provider local`) or `helm` (push the bundle as a Kubernetes Secret for the chart). |
+| `--target-namespace <ns>` | Namespace the bundle Secret lands in (required with `--target helm`). |
+| `--instance-namespace <ns>` | (`--target helm`) Namespace of the target ClickHouse instance. |
+| `--force` | Overwrites an existing bundle: the re-run and credential-rotation path. |
+| `--secret-name <name>` | Overrides the bundle Secret name (default `clicklink-connector-<component>-access-<instance>`). |
+| `--output-dir <path>` | (`--target helm` or `--provider local`) Root directory where the bundle lands. |
+| `--ch-admin-user <name>` | ClickHouse admin user for applying grants (default `default`). |
+| `--ch-admin-password-stdin` | Reads the ClickHouse admin password from stdin. |
+| `--ch-user-suffix <suffix>` | Optional suffix for the provisioned ClickHouse username. |
+| `--ch-user-via <mode>` | How the ClickHouse user is provisioned: `sql` (default; applies the generated grants as `--ch-admin-user`) or `cr` (writes the user into the instance's custom resource, for operator-managed instances with no SQL-capable admin). |
+| `--apply-ch-grants` | (`--target helm`) Applies the generated grants in-pod via `kubectl exec` instead of leaving them for you to apply. |
+| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` | (`--target helm` with `--apply-ch-grants` or `--ch-user-via cr`) Select the ClickHouse pod and container to exec into. |
+| `--token-duration <dur>` | ServiceAccount token lifetime (default `2160h`, 90 days; EKS caps grants at 24 hours). |
+| `--skip-restart` | Skips restarting the component after provisioning. |
+| `--dry-run` | Prints the plan and exits; no Kubernetes, remote, or ClickHouse writes. |
+
+Rotate an instance's credentials for one component:
+
+```bash
+clicklink clctl scraper access provision --target helm \
+  --target-namespace <connector-namespace> \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+```
+
+## Remote channel flags {#channel-flags}
+
+`preflight`, `gateway trust`, and `access provision` accept a shared set of flags that select how a VM target is reached:
+
+| Flag | Description |
+|------|-------------|
+| `--provider <name>` | Execution channel: `ssh`, `aws` (SSM), or `gcp` (IAP) for remote VMs, or `local` when running on the target VM itself. Inferred from the per-provider flags when not set explicitly; `local` is never inferred. |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH connection details (`--provider ssh`); user, port, and key default to your SSH configuration. |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>` | EC2 instance, region, and shared-config profile for SSM (`--provider aws`). |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>` | Project, zone, and instance for IAP tunneling (`--provider gcp`). |

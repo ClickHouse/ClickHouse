@@ -1,0 +1,229 @@
+---
+slug: /integrations/probedeck
+sidebarTitle: 'ProbeDeck'
+description: 'وصّل ProbeDeck على iOS أو iPadOS بـ ClickHouse Cloud أو بخادم ClickHouse مستضاف ذاتيًا.'
+title: 'وصّل ProbeDeck بـ ClickHouse'
+doc_type: 'guide'
+keywords: ['probedeck', 'sql client', 'ios', 'ipados', 'mobile', 'monitoring', 'on-call']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة خادم ClickHouse، وفحص
+جداول `system`، وتشغيل استعلامات SQL. يتصل بواجهة ClickHouse HTTP عبر شبكة الجهاز
+أو من خلال مضيف bastion عبر SSH؛ ولا يتطلب خادم ترحيل.
+
+<div id="before-you-begin">
+  ## قبل البدء
+</div>
+
+* ثبّت [ProbeDeck من App Store](https://apps.apple.com/app/id6791261174).
+* استخدم iOS أو iPadOS 17.0 أو إصدارًا أحدث.
+* اسمح للجهاز بالوصول إلى نقطة نهاية ClickHouse عبر HTTP أو HTTPS من خلال شبكته أو شبكة VPN أو
+  مضيف bastion عبر SSH.
+* أنشئ مستخدم ClickHouse لديه حق الوصول إلى قواعد البيانات التي تريد الاستعلام عنها.
+* امنح المستخدم صلاحية `SELECT` على جداول `system` ذات الصلة لأغراض المراقبة.
+
+| ProbeDeck     | ClickHouse Cloud | ClickHouse المستضاف ذاتيًا         | ملاحظات                                                                                                    |
+| ------------- | ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1.1.7 أو أحدث | الخدمة الحالية   | لا يوجد حد أدنى ثابت لإصدار الخادم | يستخدم واجهة HTTP(S). اختبر الاتصال وتحقق من كل قسم للمراقبة وفقًا لإصدار الخادم والصلاحيات الممنوحة لديك. |
+
+تعتمد بعض أقسام المراقبة على جداول السجل الاختيارية أو جداول النظام الأحدث. على سبيل المثال،
+يتطلب `system.server_settings`، الذي يستخدمه ProbeDeck لمعرفة حد الذاكرة المُهيأ، ClickHouse
+23.3 أو إصدارًا أحدث. يضع ProbeDeck علامة «محدود» على القسم المتأثر عندما يكون مصدره غير متاح.
+
+<div id="how-it-works">
+  ## آلية العمل
+</div>
+
+1. يرسل ProbeDeck طلبات SQL إلى نقطة نهاية ClickHouse عبر HTTP(S).
+2. يقرأ بيانات المراقبة من جداول `system` باستخدام مستخدم ClickHouse المُهيأ.
+3. يعرض التطبيق نتائج الاستعلام وعروض المراقبة على الجهاز. ويمكن لمضيف bastion عبر SSH تمرير
+   اتصال HTTP(S) نفسه عندما لا يتوفر مسار مباشر إلى نقطة النهاية من الجهاز.
+
+<div id="connect-to-clickhouse-cloud">
+  ## الاتصال بـ ClickHouse Cloud
+</div>
+
+<Steps>
+  <Step title="جمع تفاصيل الاتصال بالخدمة" id="gather-cloud-details">
+    في وحدة تحكم ClickHouse Cloud، افتح خدمتك، واختر **Connect**، ثم اختر **HTTPS**.
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="إضافة اتصال في ProbeDeck" id="add-cloud-connection">
+    1. في شاشة **اتصال**، اضغط على **+**.
+    2. أدخل اسمًا للاتصال واسم المضيف من دون `https://`.
+    3. اضبط **Port** على `8443` وفعّل **TLS**.
+    4. أدخل اسم مستخدم قاعدة البيانات وكلمة المرور من مربع الحوار **Connect**. اسم قاعدة البيانات
+       اختياري.
+    5. اضغط على **اختبار الاتصال**. يعرض ProbeDeck إصدار الخادم وزمن الرحلة ذهابًا وإيابًا بعد
+       نجاح التحقق.
+    6. اضغط على **حفظ**.
+
+    يُصادق ProbeDeck طلبات SQL المرسلة إلى نقطة نهاية الخدمة باستخدام بيانات اعتماد قاعدة البيانات هذه.
+    يستخدم ClickHouse Cloud مفاتيح على مستوى المؤسسة من صفحة **API Keys** لواجهة برمجة تطبيقات Cloud
+    ونقاط نهاية واجهة برمجة تطبيقات الاستعلام. ولا يستخدم مسار اتصال SQL في ProbeDeck هذه المفاتيح.
+
+    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse" />
+  </Step>
+</Steps>
+
+<div id="connect-to-self-hosted-clickhouse">
+  ## الاتصال بـ ClickHouse المستضاف ذاتيًا
+</div>
+
+<Steps>
+  <Step title="اختيار نقطة نهاية HTTP" id="choose-self-hosted-endpoint">
+    استخدم المنفذ `8123` لواجهة HTTP الافتراضية غير المشفّرة. لاستخدام HTTPS، فعّل **TLS** واستخدم
+    المنفذ المهيأ على خادمك؛ ويُعد `8443` خيارًا شائعًا.
+
+    <Note>
+      المنفذان `9000` و`9440` مخصّصان لبروتوكول ClickHouse الأصلي. يستخدم ProbeDeck واجهة
+      HTTP(S)، لذا أدخل منفذ HTTP الخاص بالخادم.
+    </Note>
+  </Step>
+
+  <Step title="إضافة الاتصال واختباره" id="add-self-hosted-connection">
+    1. في شاشة **الاتصالات**، اضغط على **+**.
+    2. أدخل مضيف الخادم من دون مخطط URL.
+    3. اضبط منفذ HTTP(S) وخيار TLS.
+    4. أدخل اسم مستخدم ClickHouse وكلمة المرور وقاعدة البيانات الاختيارية.
+    5. اضغط على **اختبار الاتصال**، ثم **حفظ**.
+
+    بالنسبة إلى خادم على الشبكة المحلية، قد يطلب iOS إذن الوصول إلى الشبكة المحلية. وصّل الجهاز أولًا بشبكة VPN الخاصة به
+    إذا كانت نقطة النهاية متاحة فقط من شبكة الشركة.
+  </Step>
+</Steps>
+
+<div id="connect-through-an-ssh-bastion">
+  ## الاتصال عبر مضيف Bastion لـ SSH
+</div>
+
+فعّل **SSH Tunnel** في نموذج الاتصال وأدخل:
+
+1. مضيف Bastion ومنفذ SSH (الافتراضي هو `22`).
+2. اسم مستخدم SSH.
+3. إما كلمة مرور SSH أو مفتاحًا خاصًا.
+
+يفتح ProbeDeck قناة SSH من نوع `direct-tcpip` من مضيف Bastion إلى مضيف ClickHouse ومنفذ HTTP(S)
+في قسم **Server**. عند الاتصال لأول مرة، قارن بصمة مفتاح مضيف Bastion بتنسيق SHA-256
+بالقيمة التي يزوّدك بها مسؤول الخادم قبل قبولها.
+
+<div id="configure-authentication-and-tls">
+  ## تهيئة المصادقة وTLS
+</div>
+
+يرسل ProbeDeck اسم مستخدم قاعدة البيانات وكلمة المرور في ترويسات الطلب `X-ClickHouse-User` و
+`X-ClickHouse-Key`. ولا يضع بيانات الاعتماد في عنوان URL.
+
+لاستخدام TLS المتبادل، فعّل **TLS Client Certificate** واستورد ملف PKCS#12 (`.p12`) يحتوي على
+شهادة العميل ومفتاحه الخاص، ثم أدخل عبارة المرور الخاصة به.
+
+عندما تعرض نقطة نهاية مستضافة ذاتيًا شهادة موقعة ذاتيًا أو شهادة صادرة عن
+CA خاصة، يعرض ProbeDeck بصمة SHA-256 والجهة المُصدِرة والموضوع وفترة الصلاحية. قارن
+البصمة بالقيمة التي يقدمها مسؤول الخادم قبل قبولها. يربط ProbeDeck هذا
+القرار بذلك الاتصال؛ ويؤدي تغيير الشهادة إلى إيقاف الاتصال حتى تراجعه.
+
+يخزن ProbeDeck أسرار الاتصال ومواد المفاتيح المستوردة في سلسلة مفاتيح iOS على الجهاز.
+
+<div id="monitor-clickhouse">
+  ## مراقبة ClickHouse
+</div>
+
+افتح الاتصال المحفوظ واختر **المراقبة**. تعرض لوحة المعلومات ملخصًا للمصادر التالية:
+
+| المجال                                                              | مصدر ClickHouse                                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| الاستعلامات قيد التشغيل، والوقت المنقضي، والذاكرة، والصفوف المقروءة | `system.processes`                                                        |
+| حالة النسخ المتماثل وقائمة الانتظار                                 | `system.replicas`, `system.replication_queue`                             |
+| الأقراص، والأجزاء، وعمليات الدمج                                    | `system.disks`, `system.parts`, `system.merges`                           |
+| الطفرات                                                             | `system.mutations`                                                        |
+| مقاييس الذاكرة والخادم                                              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
+| المعدلات السابقة للاستعلامات والأقراص                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
+
+<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة" />
+
+انقر على **الاستعلامات قيد التشغيل** لفرز الاستعلامات النشطة حسب الوقت المنقضي، وفحص الذاكرة والصفوف المقروءة.
+
+<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتبة حسب الوقت المنقضي" />
+
+<div id="query-the-uk-property-price-dataset">
+  ## الاستعلام عن مجموعة بيانات UK Property Price
+</div>
+
+يستخدم هذا المثال [مجموعة بيانات UK Property Price](/ar/get-started/sample-datasets/uk-price-paid).
+حمّل مجموعة البيانات إلى `uk_price_paid`، ثم:
+
+1. افتح الاتصال واختر **البيانات**.
+2. افتح محرر SQL.
+3. شغّل هذا الاستعلام المحدود والقراءة فقط:
+
+```sql
+SELECT
+    town,
+    count() AS sales,
+    round(avg(price)) AS average_price
+FROM uk_price_paid
+GROUP BY town
+ORDER BY sales DESC
+LIMIT 10
+```
+
+يجب أن تتضمن النتيجة عشر بلدات مع عدد المعاملات ومتوسط الأسعار لكل منها.
+
+<div id="known-limits">
+  ## القيود المعروفة
+</div>
+
+* يعمل ProbeDeck على نظامَي iOS وiPadOS بالإصدار 17.0 أو أحدث.
+* يمكن للمستخدمين المجانيين حفظ اتصال واحد في كل مرة. ويؤدي حذفه إلى إتاحة الخانة؛ بينما يتيح ProbeDeck Pro
+  عددًا غير محدود من الاتصالات المحفوظة.
+* يدعم واجهة ClickHouse عبر HTTP(S)، وليس البروتوكول الأصلي.
+* يحمّل ProbeDeck نتائج SQL على صفحات تضم 200 صف، ويحدّ كل طلب بـ 10,000 صف. استخدم
+  عبارة `WHERE` انتقائية و`LIMIT` للجداول الكبيرة.
+* تعتمد إمكانية الوصول إلى Monitoring على أذونات مستخدم ClickHouse وعلى جداول السجل الاختيارية.
+* يحتاج الجهاز إلى مسار للوصول إلى نقطة النهاية عبر شبكته أو VPN أو نفق SSH المدمج.
+* لا يتطلب Monitoring وSQL للقراءة فقط عملية شراء داخل التطبيق. تتطلب `KILL QUERY` و`KILL MUTATION`،
+  وعبارات الكتابة وDDL، والإجراءات التشغيلية الأخرى ProbeDeck Pro.
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<Accordion title="فشلت المصادقة">
+  انسخ اسم مستخدم قاعدة البيانات وكلمة المرور مجددًا. بالنسبة إلى نقطة نهاية خدمة ClickHouse Cloud، استخدم
+  بيانات اعتماد قاعدة البيانات من مربع الحوار **Connect** الخاص بالخدمة. لا تستخدم بدلًا منها مفتاحًا على مستوى المؤسسة
+  من صفحة **API Keys** في ClickHouse Cloud.
+</Accordion>
+
+<Accordion title="رُفض الاتصال أو انتهت مهلته">
+  تأكد من أن الجهاز يستطيع الوصول إلى المضيف ومنفذ HTTP(S). تحقق من قائمة عناوين IP المسموح لها بالوصول في Cloud، وشبكة VPN،
+  وجدار الحماية، وتعيين المنافذ. لا تستخدم منافذ البروتوكول الأصلي `9000` أو `9440`.
+</Accordion>
+
+<Accordion title="يعرض Monitoring أذونات محدودة">
+  لا يستطيع مستخدم ClickHouse قراءة جدول واحد أو أكثر من جداول `system` المطلوبة. اطلب من مسؤول الخادم
+  الحد الأدنى من أذونات `SELECT` اللازمة لأقسام المراقبة التي تنوي استخدامها، ثم أعد الاتصال.
+</Accordion>
+
+<Accordion title="تغيرت بصمة TLS">
+  اطلب من مسؤول الخادم تأكيد تدوير الشهادة قبل قبول البصمة الجديدة. قد يشير التغيير غير المتوقع إلى
+  نقطة نهاية مختلفة أو مسار اعتراض TLS.
+</Accordion>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* اطّلع على [موقع ProbeDeck الإلكتروني](https://probedeck.app) للحصول على تفاصيل خاصة بالمنتج.
+ * اطّلع على [وثائق واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http) لمعرفة إعدادات الخادم.

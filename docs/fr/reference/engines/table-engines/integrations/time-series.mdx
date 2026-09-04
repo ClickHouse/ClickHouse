@@ -26,7 +26,7 @@ metric_name2[...] = ...
 <Info>
   Il s&#39;agit d&#39;une fonctionnalité expérimentale qui pourra, dans les versions ultérieures, évoluer de manière incompatible avec les versions précédentes.
   Activez l&#39;utilisation du moteur de table TimeSeries
-  à l&#39;aide du paramètre [allow&#95;experimental&#95;time&#95;series&#95;table](/fr/reference/settings/session-settings#allow_experimental_time_series_table).
+  à l&#39;aide du paramètre [allow&#95;experimental&#95;time&#95;series&#95;table](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table).
   Saisissez la commande `set allow_experimental_time_series_table = 1`.
 </Info>
 
@@ -115,7 +115,7 @@ Cela revient à déclarer directement les types des colonnes `timestamp` et `val
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Si les deux formes sont utilisées dans la même instruction `CREATE TABLE`, les types déclarés doivent être identiques.
@@ -144,11 +144,16 @@ La table *samples* contient des séries temporelles associées à un certain ide
 
 La table *samples* doit comporter les colonnes suivantes :
 
-| Nom         | Obligatoire ? | Type par défaut | Types possibles        | Description                                               |
-| ----------- | ------------- | --------------- | ---------------------- | --------------------------------------------------------- |
-| `id`        | [x]           | `UUID`          | tout type              | Identifie une combinaison de noms de métriques et de tags |
-| `timestamp` | [x]           | `DateTime64(3)` | `DateTime64(X)`        | Un instant donné                                          |
-| `value`     | [x]           | `Float64`       | `Float32` ou `Float64` | Une valeur associée au `timestamp`                        |
+| Nom         | Obligatoire ? | Type par défaut       | Types possibles        | Description                                               |
+| ----------- | ------------- | --------------------- | ---------------------- | --------------------------------------------------------- |
+| `id`        | [x]           | `Tuple(UInt64, UUID)` | tout type              | Identifie une combinaison de noms de métriques et de tags |
+| `timestamp` | [x]           | `DateTime64(3)`       | `DateTime64(X)`        | Un instant donné                                          |
+| `value`     | [x]           | `Float64`             | `Float32` ou `Float64` | Une valeur associée au `timestamp`                        |
+
+Les colonnes créées par le moteur lui-même reçoivent des codecs de compression pour séries temporelles :
+`timestamp CODEC(DoubleDelta, ZSTD(1))` et `value CODEC(ZSTD(3))`. Les horodatages quasi monotones se
+compressent très peu avec des codecs génériques et peuvent sinon représenter l&#39;essentiel de la taille sur disque de la table *samples*.
+Voir aussi [Ajustement des types de colonnes](#adjusting-column-types).
 
 <div id="tags-table">
   ### Table des tags
@@ -158,15 +163,14 @@ La table *tags* contient des identifiants calculés pour chaque combinaison d&#3
 
 La table *tags* doit contenir les colonnes suivantes :
 
-| Nom                  | Obligatoire ? | Type par défaut                       | Types possibles                                                                                                         | Description                                                                                                                                                                                     |
-| -------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]           | `UUID`                                | tout type (doit correspondre au type de `id` dans la table [samples](#samples-table))                                   | Un `id` identifie une combinaison d&#39;un nom de métrique et de tags. L&#39;expression DEFAULT indique comment calculer un tel identifiant                                                     |
-| `metric_name`        | [x]           | `LowCardinality(String)`              | `String` ou `LowCardinality(String)`                                                                                    | Le nom d&#39;une métrique                                                                                                                                                                       |
-| `<tag_value_column>` | [ ]           | `String`                              | `String` ou `LowCardinality(String)` ou `LowCardinality(Nullable(String))`                                              | La valeur d&#39;un tag spécifique ; le nom du tag et celui de la colonne correspondante sont indiqués dans le paramètre [tags&#95;to&#95;columns](#settings)                                    |
-| `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` ou `Map(LowCardinality(String), String)` ou `Map(LowCardinality(String), LowCardinality(String))` | Map des tags, à l&#39;exclusion du tag `__name__` qui contient le nom d&#39;une métrique, ainsi que des tags dont les noms sont énumérés dans le paramètre [tags&#95;to&#95;columns](#settings) |
-| `all_tags`           | [ ]           | `Map(String, String)`                 | `Map(String, String)` ou `Map(LowCardinality(String), String)` ou `Map(LowCardinality(String), LowCardinality(String))` | Colonne éphémère : chaque ligne est une map de tous les tags, à l&#39;exclusion du seul tag `__name__` qui contient le nom d&#39;une métrique. Cette colonne sert uniquement au calcul de `id`  |
-| `min_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | Horodatage minimal des séries temporelles associées à cet `id`. La colonne est créée si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) vaut `true`                                |
-| `max_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | Horodatage maximal des séries temporelles associées à cet `id`. La colonne est créée si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) vaut `true`                                |
+| Nom                  | Obligatoire ? | Type par défaut                       | Types possibles                                                                                                         | Description                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | [x]           | `Tuple(UInt64, UUID)`                 | tout type (doit correspondre au type de `id` dans la table [samples](#samples-table))                                   | Un `id` identifie une combinaison d&#39;un nom de métrique et de tags. L&#39;expression DEFAULT indique comment calculer un tel identifiant                                                                                                                                                                                                                                            |
+| `metric_name`        | [x]           | `LowCardinality(String)`              | `String` ou `LowCardinality(String)`                                                                                    | Le nom d&#39;une métrique                                                                                                                                                                                                                                                                                                                                                              |
+| `<tag_value_column>` | [ ]           | `String`                              | `String` ou `LowCardinality(String)` ou `LowCardinality(Nullable(String))`                                              | La valeur d&#39;un tag spécifique ; le nom du tag et celui de la colonne correspondante sont indiqués dans le paramètre [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                           |
+| `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` ou `Map(LowCardinality(String), String)` ou `Map(LowCardinality(String), LowCardinality(String))` | Map de tous les tags, y compris le tag `__name__` qui contient le nom d&#39;une métrique et les tags dont les noms sont énumérés dans le paramètre [tags&#95;to&#95;columns](#settings). Les tables créées par des versions antérieures de ClickHouse ne stockaient dans cette colonne que les tags sans colonnes dédiées et sans le nom de la métrique ; la lecture gère les deux cas |
+| `min_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | Horodatage minimal des séries temporelles associées à cet `id`. La colonne est créée si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) vaut `true`                                                                                                                                                                                                                       |
+| `max_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | Horodatage maximal des séries temporelles associées à cet `id`. La colonne est créée si [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) vaut `true`                                                                                                                                                                                                                       |
 
 <div id="metrics-table">
   ### Table *metrics*
@@ -210,21 +214,20 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -245,28 +248,28 @@ et chaque table cible possède son propre jeu de colonnes :
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -279,6 +282,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 <div id="create-as">
@@ -295,21 +299,21 @@ L’instruction n’est pas autorisée si `existing_table` comporte des cibles e
 La liste des colonnes externes est régénérée et non copiée.
 
 <div id="adjusting-column-types">
-  ## Modifier le type des colonnes
+  ## Ajustement des types de colonnes
 </div>
 
-Vous pouvez modifier le type des colonnes dans les tables cibles internes à l’aide de la clause `INNER COLUMNS`. Par exemple, pour stocker les horodatages en microsecondes et les valeurs en `Float32` :
+Vous pouvez modifier le type des colonnes dans les tables cibles internes à l’aide de la clause `INNER COLUMNS`. Par exemple, pour stocker les horodatages en microsecondes et les valeurs en `Float32`, utilisez :
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
+```
+
+Spécifier des colonnes internes sans codec revient à utiliser le codec par défaut pour celles-ci :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-La même clause peut être utilisée pour spécifier des codecs et d’autres attributs de colonne :
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 <div id="id-column">
@@ -317,31 +321,34 @@ SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 </div>
 
 La colonne `id` contient des identifiants ; chacun d’eux est calculé à partir d’une combinaison d’un nom de métrique et de tags.
-Le type et l’expression `DEFAULT` utilisés pour générer les identifiants peuvent être personnalisés via la clause `TAGS INNER COLUMNS` :
+Le type et l’expression `DEFAULT` utilisés pour générérer les identifiants peuvent être personnalisés via la clause `TAGS INNER COLUMNS` :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 ```
 
-Le type de la colonne `id` doit être l’un des suivants : `UUID`, `UInt64`, `UInt128` ou `FixedString(16)`. Si aucune expression `DEFAULT` n’est définie, ClickHouse la choisira automatiquement en fonction du type de `id`. Les types de `id` déclarés dans les tables internes samples et tags doivent correspondre.
+La colonne `id` peut être de tout type comparable non-`Nullable`. Les types de `id` déclarés dans les tables internes samples et tags doivent correspondre.
+
+Si aucune expression `DEFAULT` n’est définie pour la colonne `id` et que le paramètre `id_generator` n’est pas défini, ClickHouse choisira automatiquement l’expression `DEFAULT` en fonction du type de `id`, mais uniquement si celui-ci est `UUID`, `UInt64`, `UInt128`, `FixedString(16)` ou un tuple de deux de ces types. Pour un tel tuple, l’expression choisie automatiquement calcule un hash du nom de métrique dans le premier composant et un hash de tous les tags dans le second composant.
 
 Le paramètre `id_generator` offre la même possibilité de personnalisation sans utiliser la clause `INNER COLUMNS` :
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+SETTINGS id_generator = 'sipHash64(tags)'
 ```
 
 Si ce paramètre est défini, il est utilisé pour générer `id`, même si le `DEFAULT` de la colonne contient une expression différente.
 
-<div id="tags-and-all-tags">
-  ## Les colonnes `tags` et `all_tags`
+<div id="tags-column">
+  ## La colonne `tags`
 </div>
 
-Il existe deux colonnes contenant des maps de tags : `tags` et `all_tags`. Dans cet exemple, elles ont la même signification, mais elles peuvent être différentes
-si le paramètre `tags_to_columns` est utilisé. Ce paramètre permet de spécifier qu&#39;un tag donné doit être stocké dans une colonne distincte plutôt que
-dans une map au sein de la colonne `tags` :
+La colonne `tags` contient tous les tags d’une série temporelle, y compris le tag `__name__` avec le nom d’une métrique.
+
+Le paramètre `tags_to_columns` permet de spécifier qu’un tag donné doit également être stocké dans une colonne distincte
+en plus de la map au sein de la colonne `tags` :
 
 ```sql
 CREATE TABLE my_table
@@ -350,9 +357,13 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ```
 
 Cette instruction ajoute les colonnes `instance` et `job` à la table cible interne des [tags](#tags-table).
-Dans ce cas, la colonne `tags` ne contiendra pas les tags `instance` et `job`,
-mais la colonne `all_tags`, si. La colonne `all_tags` est éphémère et sert uniquement à être utilisée dans l’expression DEFAULT
-de la colonne `id`.
+Les valeurs des tags `instance` et `job` seront stockées à la fois dans ces colonnes et dans la colonne `tags`.
+
+<Note>
+  Dans les tables créées par d’anciennes versions de ClickHouse, la colonne `tags` contient uniquement les tags sans colonnes
+  dédiées et sans le nom de la métrique, et la colonne `all_tags` est une colonne éphémère qui était remplie lors de l’insertion
+  avec tous les tags à l’exception du nom de la métrique.
+</Note>
 
 <div id="inner-table-engines">
   ## Moteurs des tables cibles internes
@@ -375,7 +386,7 @@ TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
 
-La table [tags](#tags-table) conserve les colonnes de tag (et les Maps `tags`/`all_tags`) en dehors de sa clé de tri,
+La table [tags](#tags-table) conserve les colonnes de tag (et le Map `tags`) en dehors de sa clé de tri,
 ce que `AggregatingMergeTree` refuse par défaut (voir [`allow_dimensions_outside_sorting_key`](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree)).
 C’est sans danger ici, car ces colonnes dépendent fonctionnellement de `id`, qui fait partie de la clé de tri, de sorte que toutes les
 lignes qu’une fusion en arrière-plan regroupe partagent les mêmes valeurs. Lorsque la table interne de tags est générée ou que son
@@ -419,7 +430,7 @@ Deux paramètres peuvent être modifiés après `CREATE` :
 * `filter_by_min_time_and_max_time`
 
 ```sql
-ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ```
 
@@ -433,14 +444,19 @@ Les autres paramètres ne peuvent pas être modifiés avec `ALTER ... MODIFY SET
 
 Voici la liste des paramètres qui peuvent être spécifiés lors de la définition d&#39;une table `TimeSeries` :
 
-| Nom                                  | Type       | Par défaut             | Description                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------ | ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id_generator`                       | Expression | dépend du type de `id` | Expression qui calcule l&#39;identifiant (empreinte) d&#39;une série temporelle à partir de ses tags. Si elle n&#39;est pas définie, l&#39;expression par défaut de la colonne `id` est utilisée. Si l&#39;expression par défaut de la colonne `id` n&#39;est pas définie non plus, l&#39;expression est choisie automatiquement |
-| `tags_to_columns`                    | Map        | {}                     | Map indiquant quels tags doivent être placés dans des colonnes distinctes de la table [tags](#tags-table). Syntaxe : `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                |
-| `use_all_tags_column_to_generate_id` | Bool       | true                   | Lors de la génération d&#39;une expression pour calculer l&#39;identifiant d&#39;une série temporelle, ce paramètre active l&#39;utilisation de la colonne `all_tags` dans ce calcul                                                                                                                                             |
-| `store_min_time_and_max_time`        | Bool       | true                   | Si la valeur est true, la table stocke `min_time` et `max_time` pour chaque série temporelle                                                                                                                                                                                                                                     |
-| `aggregate_min_time_and_max_time`    | Bool       | true                   | Lors de la création de la table cible interne `tags`, ce paramètre active l&#39;utilisation de `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` au lieu de `Nullable(DateTime64(3))` comme type de la colonne `min_time`, et de même pour la colonne `max_time`                                                           |
-| `filter_by_min_time_and_max_time`    | Bool       | true                   | Si la valeur est true, la table utilise les colonnes `min_time` et `max_time` pour filtrer les séries temporelles                                                                                                                                                                                                                |
+| Nom                                  | Type       | Par défaut                                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------ | ---------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id_generator`                       | Expression | dépend du type de `id`                                        | Expression qui calcule l&#39;identifiant (empreinte) d&#39;une série temporelle à partir de ses tags. Si elle n&#39;est pas définie, l&#39;expression par défaut de la colonne `id` est utilisée. Si l&#39;expression par défaut de la colonne `id` n&#39;est pas définie non plus, l&#39;expression est choisie automatiquement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `tags_to_columns`                    | Map        | {}                                                            | Map indiquant quels tags doivent être placés dans des colonnes distinctes de la table [tags](#tags-table). Syntaxe : `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `use_all_tags_column_to_generate_id` | Bool       | false                                                         | Paramètre obsolète, ne fait rien                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `store_min_time_and_max_time`        | Bool       | true                                                          | Si la valeur est true, la table stocke `min_time` et `max_time` pour chaque série temporelle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `aggregate_min_time_and_max_time`    | Bool       | true                                                          | Lors de la création de la table cible interne `tags`, ce paramètre active l&#39;utilisation de `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` au lieu de `Nullable(DateTime64(3))` comme type de la colonne `min_time`, et de même pour la colonne `max_time`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `filter_by_min_time_and_max_time`    | Bool       | true                                                          | Si la valeur est true, la table utilise les colonnes `min_time` et `max_time` pour filtrer les séries temporelles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `samples_index_granularity`          | UInt64     | 32768                                                         | Définit `index_granularity` de la table interne [samples](#samples-table). Lorsqu&#39;il est défini explicitement, il surcharge `index_granularity` de la déclaration du moteur. Ignoré pour une table samples externe et un moteur autre que MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `tags_index_granularity`             | UInt64     | 8192                                                          | Définit `index_granularity` de la table interne [tags](#tags-table). Lorsqu&#39;il est défini explicitement, il surcharge `index_granularity` de la déclaration du moteur. Ignoré pour une table tags externe et un moteur autre que MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | Durée de conservation de la table cible supplémentaire `recent samples`, dans laquelle chaque échantillon inséré est également écrit. Une table interne recent samples reçoit toujours le `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` dérivé de ce paramètre (surchargeant tout TTL de la déclaration du moteur) ; une table externe recent samples doit conserver au moins ce nombre de secondes de données. Les requêtes dont l&#39;intervalle de temps tient dans la fenêtre TTL privilégient la table recent samples à la table samples principale (voir le paramètre au niveau de la requête `time_series_prefer_recent_samples_table`). La valeur par défaut est de 4 jours ; la valeur effective est figée dans la définition de la table lors de CREATE. Définissez la valeur sur 0 pour désactiver la table recent samples |
+| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Clé de partition de la table interne `recent samples`, par exemple `toStartOfHour(timestamp)`. Nécessite que `recent_samples_ttl_seconds` soit différent de zéro                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Définit `index_granularity` de la table interne `recent samples`. Nécessite que `recent_samples_ttl_seconds` soit différent de zéro                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 <div id="functions">
   # Fonctions

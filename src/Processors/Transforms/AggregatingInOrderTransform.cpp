@@ -5,6 +5,7 @@
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
@@ -13,6 +14,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char aggregating_in_order_transform_mid_loop_pause[];
+}
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     SharedHeader header,
@@ -154,13 +160,22 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
     }
 
+    size_t interval_index = 0;
+
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
         /// Cancellation is only checked between work() calls, but one consume() over a chunk with many
         /// keys can run for a long time; check per key interval so a cancelled query stops promptly.
         if (isCancelled())
+        {
+            LOG_TEST(log, "Cancelled between key intervals");
             return;
+        }
+
+        if (interval_index == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::aggregating_in_order_transform_mid_loop_pause);
+        ++interval_index;
 
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);

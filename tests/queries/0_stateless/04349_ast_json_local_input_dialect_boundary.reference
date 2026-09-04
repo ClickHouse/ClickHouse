@@ -1,2 +1,3 @@
 json_dialect_ok
 json_gate_ok
+kusto_query_local_dialect_ok
