@@ -242,6 +242,10 @@ bool guardsHold(const ReadFromMergeTree & reading)
         if (!useful.index->isTextIndex())
             return false;
 
+    /// The effective row policy may belong to a wrapper such as `Alias`.
+    if (reading.getRowLevelFilter())
+        return false;
+
     /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
     auto storage_id = reading.getStorageID();
     if (!storage_id.hasDatabase())

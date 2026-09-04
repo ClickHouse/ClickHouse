@@ -2,7 +2,7 @@
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
