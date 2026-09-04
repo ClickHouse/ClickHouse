@@ -128,6 +128,90 @@ namespace
         }
     }
 
+    /// Clamps the ratio argument of `limit_ratio` to [-1, 1], like Prometheus does instead of failing.
+    /// NaN passes through and then keeps nothing, which is what Prometheus's ratio sampler does too.
+    ScalarType clampRatio(ScalarType scalar)
+    {
+        if (scalar > 1)
+            return 1;
+        if (scalar < -1)
+            return -1;
+        return scalar;
+    }
+
+    /// SQL version of clampRatio(): greatest(-1, least(1, x)).
+    ASTPtr clampRatio(ASTPtr scalar)
+    {
+        return makeASTFunction("greatest",
+            make_intrusive<ASTLiteral>(-1.0),
+            makeASTFunction("least", make_intrusive<ASTLiteral>(1.0), std::move(scalar)));
+    }
+
+    struct RatioArgument
+    {
+        ASTPtr ast;
+        /// Whether `ast` is an Array(Float64) aligned to the time grid rather than a single Float64.
+        bool per_step;
+    };
+
+    /// Converts the ratio parameter to an AST usable as `r` below. Unlike getK() it stays a Float64 in [-1, 1].
+    RatioArgument getRatio(SQLQueryPiece && r_arg, ConverterContext & context)
+    {
+        switch (r_arg.store_method)
+        {
+            case StoreMethod::CONST_SCALAR:
+            {
+                return {make_intrusive<ASTLiteral>(clampRatio(r_arg.scalar_value)), /* per_step = */ false};
+            }
+            case StoreMethod::SINGLE_SCALAR:
+            {
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::SCALAR});
+                auto subquery_id = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+                /// Wrap with assumeNotNull() because scalar subqueries make their result nullable,
+                /// but StoreMethod::SINGLE_SCALAR always means one row.
+                auto assumed = makeASTFunction("assumeNotNull", std::move(subquery_id));
+                return {clampRatio(std::move(assumed)), /* per_step = */ false};
+            }
+            case StoreMethod::SCALAR_GRID:
+            {
+                /// SELECT arrayMap(x -> clampRatio(x), values) AS values FROM <scalar_grid>
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(r_arg.select_query), SQLSubqueryType::TABLE});
+                String inner_subquery_name = context.subqueries.back().name;
+
+                SelectQueryBuilder builder;
+                builder.from_table = inner_subquery_name;
+                builder.select_list.push_back(makeASTFunction("arrayMap",
+                    makeASTLambda({"x"}, clampRatio(make_intrusive<ASTIdentifier>("x"))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                builder.select_list.back()->setAlias(ColumnNames::Values);
+
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::SCALAR});
+                return {make_intrusive<ASTIdentifier>(context.subqueries.back().name), /* per_step = */ true};
+            }
+            default:
+            {
+                throwUnexpectedStoreMethod(r_arg, context);
+            }
+        }
+    }
+
+    /// Whether a series is kept for ratio `r`, given its sampling offset off = sampling_key / 2^64 in [0, 1):
+    /// if(r >= 0, off < r, off >= 1 + r). This is Prometheus's ratio sampler, and it depends only on the series
+    /// itself - no comparison against the other series of the group, and so no `by`/`without` effect.
+    ASTPtr makeRatioCondition(ASTPtr r)
+    {
+        auto offset = makeASTFunction("divide",
+            makeASTFunction("toFloat64",
+                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))),
+            make_intrusive<ASTLiteral>(18446744073709551616.0)); /// 2^64
+
+        return makeASTFunction("if",
+            makeASTFunction("greaterOrEquals", r->clone(), make_intrusive<ASTLiteral>(0.0)),
+            makeASTFunction("less", offset->clone(), r->clone()),
+            makeASTFunction("greaterOrEquals", std::move(offset),
+                makeASTFunction("plus", make_intrusive<ASTLiteral>(1.0), std::move(r))));
+    }
+
     struct ImplInfo
     {
         /// The aggregate function selecting which series to keep at each time step (see Step 1 below).
@@ -150,12 +234,70 @@ namespace
             return nullptr;
         return &it->second;
     }
+
+    /// `limit_ratio` keeps each series on its own sampling offset instead of ranking it against the other
+    /// series, so it needs neither the bounded-heap aggregate nor the join the operators above use.
+    ///
+    ///   SELECT group, values FROM <vector_grid> WHERE <kept>
+    ///
+    /// or, when the ratio varies along the grid, masking the dropped steps instead of filtering rows:
+    ///
+    ///   SELECT group, arrayMap((x, r) -> if(<kept>, x, NULL), values, <ratios>) AS values FROM <vector_grid>
+    ///
+    /// A series dropped at every step becomes all-NULL and is filtered out when the query is finalized.
+    SQLQueryPiece applyLimitRatioOperator(
+        const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    {
+        checkArgumentTypes(operator_node, arguments, context);
+
+        auto & r_arg = arguments[0];
+        auto & vector_arg = arguments[1];
+
+        /// If either argument is empty then the result is also empty.
+        if (r_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
+            return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+
+        vector_arg = toVectorGrid(std::move(vector_arg), context);
+
+        RatioArgument ratio = getRatio(std::move(r_arg), context);
+
+        auto res = vector_arg;
+        res.node = operator_node;
+
+        SelectQueryBuilder builder;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::TABLE});
+        builder.from_table = context.subqueries.back().name;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+        if (ratio.per_step)
+        {
+            builder.select_list.push_back(makeASTFunction("arrayMap",
+                makeASTLambda({"x", "r"},
+                    makeASTFunction("if",
+                        makeRatioCondition(make_intrusive<ASTIdentifier>("r")),
+                        make_intrusive<ASTIdentifier>("x"),
+                        make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                std::move(ratio.ast)));
+            builder.select_list.back()->setAlias(ColumnNames::Values);
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            builder.where = makeRatioCondition(std::move(ratio.ast));
+        }
+
+        res.select_query = builder.getSelectQuery();
+        return res;
+    }
 }
 
 
 bool isLimitAggregationOperator(std::string_view operator_name)
 {
-    return getImplInfo(operator_name) != nullptr;
+    return (operator_name == "limit_ratio") || (getImplInfo(operator_name) != nullptr);
 }
 
 
@@ -163,6 +305,9 @@ SQLQueryPiece applyLimitAggregationOperator(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
+
+    if (operator_name == "limit_ratio")
+        return applyLimitRatioOperator(operator_node, std::move(arguments), context);
 
     const ImplInfo * impl_info = getImplInfo(operator_name);
     chassert(impl_info);
