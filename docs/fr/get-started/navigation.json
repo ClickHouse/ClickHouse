@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "fr/get-started/index",
-        "fr/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Guides de démarrage rapide",
+          "pages": [
+            "fr/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Tous les cas d’usage",
+              "pages": [
+                "fr/get-started/setup/cloud",
+                "fr/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "fr/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "fr/get-started/quickstarts/creating-tables",
+                "fr/get-started/quickstarts/writing-queries",
+                "fr/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Analytique en temps réel",
+              "pages": [
+                "fr/get-started/quickstarts/create-your-first-materialized-view",
+                "fr/get-started/quickstarts/create-your-first-projection",
+                "fr/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Entrepôt de données",
+              "pages": [
+                "fr/get-started/quickstarts/connect-your-iceberg-catalog",
+                "fr/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Observabilité",
+              "pages": [
+                "fr/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
