@@ -70,9 +70,11 @@ Cada flush cria pelo menos uma parte para cada valor distinto da chave de partic
   ### Desduplicação e confiabilidade
 </div>
 
-Por padrão, o ClickHouse realiza desduplicação automática em inserções síncronas, o que torna as tentativas de repetição seguras em cenários de falha. No entanto, isso fica desabilitado para inserções assíncronas, a menos que seja explicitamente habilitado (isso não deve ser habilitado se você tiver visões materializadas dependentes — [veja a issue](https://github.com/ClickHouse/ClickHouse/issues/66003)).
+Desde a versão 26.2, o ClickHouse realiza desduplicação automática tanto para inserções assíncronas quanto para síncronos, o que torna seguras as novas tentativas em tabelas que mantêm um registro de desduplicação. Os motores `*ReplicatedMergeTree` mantêm um por padrão; uma tabela `MergeTree` simples precisa ter `non_replicated_deduplication_window` definido com um valor positivo. Ambos os tipos de insert são controlados por [`deduplicate_insert`](/pt-BR/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), cujo valor padrão é `enable`. Visões materializadas dependentes são compatíveis.
 
-Na prática, se a desduplicação estiver ativada e a mesma inserção for repetida — por exemplo, devido a um timeout ou a uma interrupção de rede — o ClickHouse pode ignorar a duplicata com segurança. Isso ajuda a manter a idempotência e evita a gravação duplicada de dados.
+Na prática, se o mesmo insert for repetido — por exemplo, devido a um timeout ou a uma queda de rede — o ClickHouse poderá ignorar a duplicata com segurança. Isso ajuda a manter a idempotência e evita a gravação duplicada de dados. Para inserções assíncronas, a desduplicação funciona por consulta do usuário, e não por batch descarregado; portanto, uma consulta duplicada não descarta as outras consultas agrupadas com ela.
+
+Para obter detalhes e conhecer a única restrição aplicável a visões materializadas em inserções assíncronas, consulte [Desduplicação de inserts em novas tentativas](/pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
 <div id="enabling-asynchronous-inserts">
   ### Habilitando inserções assíncronas

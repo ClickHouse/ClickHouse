@@ -45,7 +45,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 <div id="acosh">
@@ -114,7 +114,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -134,7 +134,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 <div id="asinh">
@@ -647,7 +647,7 @@ Devuelve el factorial del valor de entrada como UInt64. Devuelve 1 para el valor
 **Ejemplo de uso**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -993,7 +993,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 <div id="log10">
@@ -1560,7 +1560,7 @@ widthBucket(operand, low, high, count)
 **Argumentos**
 
 * `operand` — El valor para el que se debe determinar el bucket. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
-* `low` — El límite inferior del rango del histograma. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `low` — El límite inferior del intervalo del histograma. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
 * `high` — El límite superior del rango del histograma. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
 * `count` — El número de buckets de igual ancho. No puede ser cero. [`UInt8/16/32/64`](/es/reference/data-types/int-uint)
 
@@ -1573,7 +1573,7 @@ Devuelve el número de bucket como un valor entero. Devuelve 0 si operand &lt; l
 **Ejemplo de uso**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response

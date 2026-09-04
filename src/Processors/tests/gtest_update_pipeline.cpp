@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>

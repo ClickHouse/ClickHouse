@@ -41,6 +41,8 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
+    bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;

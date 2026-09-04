@@ -1,0 +1,107 @@
+---
+sidebarTitle: 'JWT 인증 설정'
+slug: /cloud/security/jwt-authentication-setup
+title: 'JWT 인증 설정'
+description: '콘솔에서 ClickHouse Cloud 서비스별 JWT(JWKS) 인증 공급자를 구성하는 방법'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', '인증', 'IdP(Identity Provider)', 'RS256']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="사용자 정의 아이덴티티 제공자를 통한 JWT 인증" />
+
+<Tip>
+  이 가이드에서는 Cloud 콘솔에서 JWKS 제공자를 구성하는 방법을 다룹니다. JWT 생성 방법과 JWT의 구조(필수 클레임, 역할 및 권한 부여 클레임, 임시 사용자의 작동 방식)에 관해서는 [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt) 참고 문서를 참조하십시오.
+</Tip>
+
+ClickHouse Cloud에서는 자체 JSON Web Key Set(JWKS) 엔드포인트를 통해 검증된 JSON Web Token(JWT)으로 서비스 연결을 인증할 수 있습니다. 데이터베이스 자격 증명을 관리하는 대신 IdP(Identity Provider)가 단기간 유효한 토큰을 발급하며, ClickHouse는 구성한 JWKS URL에 게시된 공개 키를 사용해 이를 검증합니다.
+
+ClickHouse Cloud 콘솔의 **설정 → 보안**에서 서비스별로 JWKS 제공자를 직접 구성할 수 있습니다.
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+서비스에 JWT 제공자를 구성하려면 다음이 필요합니다.
+
+* **Enterprise** 플랜의 조직
+* **ClickHouse 버전 26.4 이상**을 실행하는 서비스
+* 서비스에서 `control-plane:service:manage` permission을 가진 역할(예: **관리자** 또는 **Service admin**). 이 permission이 없는 멤버에게는 이 섹션이 읽기 전용으로 표시됩니다.
+* 최소 1개의 **RSA** 키(`RS256`) 또는 버전 26.8 이상의 서비스에서는 **EC** 키(`ES256`, `ES384`, `ES512`)를 게시하는 공개적으로 접근 가능한 **HTTPS** JWKS URL
+
+<Note>
+  JWKS 기반 provider는 **RSA** 키와 버전 26.8부터 P-256, P-384, P-521 곡선의 **EC** 키를 허용합니다. JWKS 문서에 다른 키 타입이 포함될 수는 있지만, 사용 가능한 키가 최소 1개 있어야 합니다.
+</Note>
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+클라이언트(IdP(Identity Provider) 또는 애플리케이션)는 JWT를 생성하고 **private key**로 서명합니다. 토큰은 예상되는 [토큰 형식](/ko/concepts/features/security/external-authenticators/jwt#token-claims)을 따라야 합니다. 이후 ClickHouse는 JWKS URL에 게시된 **공개** 키를 사용하여 토큰을 검증합니다.
+
+1. ClickHouse는 토큰의 `kid`(key ID) header를 읽고 문서에서 일치하는 key를 선택합니다.
+2. 해당 공개 키로 토큰 서명을 검증하고, `iss`(issuer) 및 `aud`(audience) 클레임을 provider 구성과 대조합니다.
+3. 검증에 성공하면 연결은 임시 사용자로 실행됩니다. 이 사용자의 접근 권한은 토큰의 `clickhouse:grants` 및 `clickhouse:roles` 클레임에서 가져오며, permission limit(`default` 사용자)을 초과할 수 없습니다. 자세한 내용은 [접근 권한](/ko/concepts/features/security/external-authenticators/jwt#access-rights)을 참조하십시오.
+
+ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증하고 가져옵니다. 따라서 구성이 잘못되었거나 연결할 수 없는 URL은 사전에 거부됩니다.
+
+<div id="add-a-jwt-provider">
+  ## JWT 제공자 추가
+</div>
+
+<Steps>
+  <Step title="서비스 보안 설정 열기" id="open-security-settings">
+    서비스로 이동하여 **설정**를 열고 **Security** 섹션으로 스크롤합니다. **JWT authentication** 카드를 찾습니다.
+
+    <Image img="/images/cloud/security/jwt/jwt-section.png" size="lg" alt="서비스 보안 설정의 JWT authentication 섹션" force />
+  </Step>
+
+  <Step title="provider 플라이아웃 열기" id="open-flyout">
+    **Set up JWT 제공자**를 선택합니다(이미 provider가 있는 경우 **Manage JWT 제공자**). 입력할 새 provider 양식이 표시된 플라이아웃이 열립니다.
+  </Step>
+
+  <Step title="provider 세부 정보 입력" id="fill-provider-details">
+    provider 양식을 작성하고 **Save**를 선택합니다.
+
+    | 필드                      | 설명                                                                                                        |
+    | ----------------------- | --------------------------------------------------------------------------------------------------------- |
+    | **Name**                | 서비스 내에서 이 provider를 식별하는 고유한 이름입니다. 생성 후에는 변경할 수 없습니다.                                                    |
+    | **Issuer**              | 수신 토큰의 예상 `iss` 클레임입니다.                                                                                   |
+    | **Audience**            | 수신 토큰의 예상 `aud` 클레임입니다.                                                                                   |
+    | **JWKS URL**            | 토큰 서명 검증에 사용하는 공개 키를 게시하는 공개 HTTPS URL입니다.                                                                |
+    | **Roles claim** (선택 사항) | ClickHouse 역할을 읽어 올 토큰 클레임입니다. 기본 클레임 이름인 `clickhouse:roles`를 사용하려면 비워 둡니다. 토큰에 지정된 역할은 서비스에 이미 존재해야 합니다. |
+  </Step>
+
+  <Step title="필요한 경우 provider 추가" id="add-more-providers">
+    **Add another provider**를 사용하여 추가 provider를 구성합니다. 서비스당 제공자는 최대 5개까지 설정할 수 있습니다.
+  </Step>
+</Steps>
+
+<Warning>
+  JWT 제공자를 삭제하면 해당 provider용으로 발급된 토큰은 즉시 허용되지 않으며, 해당 토큰으로 계속 인증하는 모든 워크로드가 작동을 멈춥니다.
+</Warning>
+
+<div id="limits">
+  ## 제한 사항
+</div>
+
+* 서비스당 JWT 제공자는 최대 **5개**까지 사용할 수 있습니다.
+* JWKS 제공자는 **RSA 키**(`RS256`) 및 버전 26.8부터 **EC 키**(`ES256`, `ES384`, `ES512`)를 지원합니다.
+* JWKS URL은 Public HTTPS endpoint여야 합니다. Private, 내부 또는 link-local 주소는 거부됩니다.
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt) — 토큰 클레임, 임시 사용자 및 클라이언트 사용법.

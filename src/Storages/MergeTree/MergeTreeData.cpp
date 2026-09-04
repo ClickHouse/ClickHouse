@@ -57,6 +57,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -157,6 +158,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <base/hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -174,6 +176,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <absl/container/inlined_vector.h>
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
@@ -790,15 +793,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -1117,12 +1113,15 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
+
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
 
         for (const String & col : used_columns)
         {
@@ -5957,6 +5956,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -5973,8 +5988,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6356,15 +6369,8 @@ void MergeTreeData::changeSettings(
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
@@ -10265,6 +10271,26 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
+    /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than
+    /// a counter, because the directory can live on storage shared with other servers, where a
+    /// process-local counter restarts and repeats itself.
+    ///
+    /// A dry run cannot simply reuse the directory name of the merge it simulates: the two would then
+    /// claim the same name, which is the very `LOGICAL_ERROR` this fixes, only raised by the real
+    /// merge instead. The name therefore has to be distinct, and the only cost that can be minimized
+    /// is by how much it exceeds the budget of the merge being simulated.
+    ///
+    /// 48 random bits, written as 12 hexadecimal digits, are kept out of the generated UUID, so the
+    /// whole basename is a fixed `tmp_merge_dr_<12 hex>`: 25 bytes of the filename limit, 36 once
+    /// `IMergeTreeDataPart::remove` prepends `delete_tmp_`, which is 6 bytes more than the merge of
+    /// the shortest possible pair of parts takes and no more than the merge of any part whose name
+    /// is 15 characters or longer. The temporary directory of a dry run lives only for that one query, and
+    /// there are at most a handful of them at a time, so 48 bits leave the collision probability at
+    /// nothing.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX)
+        + getHexUIntLowercase(UUIDHelpers::getLowBytes(UUIDHelpers::generateV4())).substr(4);
+
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -10278,7 +10304,10 @@ void MergeTreeData::optimizeDryRun(
         deduplicate_by_columns,
         cleanup,
         merging_params,
-        nullptr /* txn */);
+        nullptr /* txn */,
+        /*projection=*/ nullptr,
+        /*parent_part=*/ nullptr,
+        dry_run_suffix);
 
     auto new_part = executeHere(merge_task);
 
@@ -11080,6 +11109,85 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
+namespace
+{
+
+/// NULL and NaN sort above every ordinary value in a key while min/max skip them, so a bound
+/// holding one at any depth does not answer the aggregate.
+/// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
+bool containsOrderInconsistentValue(const Field & field)
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (current->isNull() || isNaNField(*current))
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+/// Both ends the same degenerate value means the part holds no ordinary comparable value, which only
+/// follows when the pair samples both physical ends. Matched by exact value, because the whole-universe
+/// pair [-Inf, +Inf] means "nothing is known" and must not qualify.
+bool isRepeatedDegenerateBound(const Field & left, const Field & right)
+{
+    auto is_plain_null = [](const Field & f) { return f.isNull() && !f.isPositiveInfinity() && !f.isNegativeInfinity(); };
+
+    if (is_plain_null(left) && is_plain_null(right))
+        return true;
+    if (left.isPositiveInfinity() && right.isPositiveInfinity())
+        return true;
+    return isNaNField(left) && isNaNField(right);
+}
+
+/// A minmax column's bounds are computed per column, so a Tuple bound is a component-wise
+/// envelope that need not be any row. The other composites select a real row and stay usable.
+bool isUnusableComputedBound(const Field & left, const Field & right, const Field & value)
+{
+    if (isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value) || value.getType() == Field::Types::Tuple;
+}
+
+/// The primary key's bounds are stored index rows, so a composite is a genuine value here and only
+/// order-inconsistent leaves break the equivalence. Without a final mark the index samples granule
+/// starts only, so its last entry is not the part's last row and the pair proves nothing.
+bool isUnusableIndexBound(const Field & left, const Field & right, const Field & value, bool bounds_sample_both_ends)
+{
+    if (bounds_sample_both_ends && isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value);
+}
+
+}
+
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -11259,6 +11367,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.left))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -11270,6 +11380,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.right))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -11285,8 +11397,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, lowest, part->index_granularity->hasFinalMark()))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(min_column, primary_key_column[0]);
+                insert(min_column, lowest);
             }
         }
         ++pos;
@@ -11297,8 +11413,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, highest, part->index_granularity->hasFinalMark()))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(max_column, primary_key_column[primary_key_column.size() - 1]);
+                insert(max_column, highest);
             }
         }
         ++pos;
@@ -12007,6 +12127,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
         if (canUseAdaptiveGranularity() && !src_part->index_granularity_info.mark_type.adaptive)
             return false;
     }
+
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
 
     return true;
 }

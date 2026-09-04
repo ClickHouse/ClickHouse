@@ -348,7 +348,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### オプションパラメータ
 </div>
 
-| Parameter                                       | Description                                                                                                                                                                                                            | Default Value                            |
+| パラメータ                                       | Description                                                                                                                                                                                                            | デフォルト値                            |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `region`                                        | S3 のリージョン名。                                                                                                                                                                                                            | -                                        |
 | `support_batch_delete`                          | バッチ削除のサポートを確認するかどうかを制御します。Google Cloud Storage (GCS) を使用する場合、GCS はバッチ削除をサポートしていないため、`false` に設定してください。                                                                                                                 | `true`                                   |
@@ -372,14 +372,12 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | RPS 制限に達するまでの最大同時実行 PUT リクエスト数。                                                                                                                                                                                        | `s3_max_put_rps` と同じ                     |
 | `s3_max_get_rps`                                | スロットリングが適用されるまでの 1 秒あたりの最大 GET リクエスト数。                                                                                                                                                                                 | `0` (無制限)                                |
 | `s3_max_get_burst`                              | RPS 制限に達するまでの最大同時実行 GET リクエスト数。                                                                                                                                                                                        | `s3_max_get_rps` と同じ                     |
-| `read_resource`                                 | [scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling) で読み取りリクエストに割り当てるリソース名。                                                                                                                | 空文字列 (無効)                                |
-| `write_resource`                                | [scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling) で書き込みリクエストに割り当てるリソース名。                                                                                                                | 空文字列 (無効)                                |
 | `key_template`                                  | [re2](https://github.com/google/re2/wiki/Syntax) 構文を使用してオブジェクトキー生成フォーマットを定義します。`storage_metadata_write_full_object_key` フラグが必要です。`endpoint` の `root path` とは互換性がありません。`key_compatibility_prefix` が必要です。                | -                                        |
 | `key_compatibility_prefix`                      | `key_template` とともに必要です。古いバージョンのメタデータを読み取るため、`endpoint` の以前の `root path` を指定します。                                                                                                                                       | -                                        |
 | `read_only`                                     | ディスクからの読み取りのみを許可します。                                                                                                                                                                                                   | -                                        |
 
 <Note>
-  Google Cloud Storage (GCS) も、`s3` タイプを使用してサポートされています。詳しくは [GCS バックエンドの MergeTree](/ja/integrations/connectors/data-sources/gcs) を参照してください。
+  Google Cloud Storage (GCS) は、`s3` タイプを使用してもサポートされています。[GCS backed MergeTree](/ja/integrations/connectors/data-sources/gcs) を参照してください。
 </Note>
 
 <div id="plain-storage">
@@ -523,13 +521,11 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### その他のパラメータ
 </div>
 
-| パラメータ                            | 説明                                                                                                | デフォルト値                                   |
-| -------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `metadata_path`                  | Blob Storage のメタデータファイルを保存するローカルファイルシステム上のパス。                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`              | `true` の場合、起動時のディスクアクセスチェックをスキップします。                                                              | `false`                                  |
-| `read_resource`                  | [スケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)される読み取りリクエストのリソース名。 | 空文字列 (無効)                                |
-| `write_resource`                 | [スケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)される書き込みリクエストのリソース名。 | 空文字列 (無効)                                |
-| `metadata_keep_free_space_bytes` | メタデータ用ディスク上で確保しておく空き容量。                                                                           | -                                        |
+| パラメータ                            | 説明                                            | デフォルト値                                   |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------- |
+| `metadata_path`                  | Blob Storage のメタデータファイルを保存するローカルファイルシステム上のパス。 | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | `true` の場合、起動時のディスクアクセスチェックをスキップします。          | `false`                                  |
+| `metadata_keep_free_space_bytes` | メタデータ用ディスク上で確保しておく空き容量。                       | -                                        |
 
 動作する構成例は結合テストディレクトリにあります (例: [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) または [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml) を参照してください) 。
 
