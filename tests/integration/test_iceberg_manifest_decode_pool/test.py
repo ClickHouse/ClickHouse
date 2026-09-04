@@ -55,3 +55,44 @@ def test_nested_iceberg_read_with_single_pool_thread(started_cluster):
 
     node.query("DROP TABLE ice_main")
     node.query("DROP TABLE ice_parts")
+
+
+def test_join_of_two_iceberg_tables_with_single_pool_thread(started_cluster):
+    node.query(
+        """
+        CREATE TABLE ice_left (id Int64)
+        ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/ice_left/'))
+        """
+    )
+    node.query(
+        """
+        CREATE TABLE ice_right (id Int64)
+        ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/ice_right/'))
+        """
+    )
+    # One commit per insert, so each side has several data files to hand over.
+    for i in range(8):
+        node.query(
+            f"INSERT INTO ice_left SELECT number + {i} * 10 FROM numbers(10) "
+            "SETTINGS allow_insert_into_iceberg = 1"
+        )
+        node.query(
+            f"INSERT INTO ice_right SELECT number + {i} * 10 FROM numbers(10) "
+            "SETTINGS allow_insert_into_iceberg = 1"
+        )
+
+    result = node.query(
+        "SELECT count() FROM ice_left AS l INNER JOIN ice_right AS r ON l.id = r.id",
+        settings={
+            "iceberg_manifest_decode_concurrency": 4,
+            # The smallest queue: the second data file of a side already has to wait for the
+            # query to consume the first one, which is what used to park a pool thread.
+            "iceberg_file_entries_queue_size": 1,
+            "use_iceberg_metadata_files_cache": 0,
+        },
+        timeout=120,
+    )
+    assert int(result.strip()) == 80
+
+    node.query("DROP TABLE ice_left")
+    node.query("DROP TABLE ice_right")

@@ -190,7 +190,8 @@ DataFileEntriesStream::DataFileEntriesStream(
     IcebergDataSnapshotPtr data_snapshot_,
     std::function<void()> prepare_,
     CreateManifestIterator create_manifest_iterator_)
-    : decode_concurrency(decode_concurrency_)
+    : chunk_size(queue_size_)
+    , decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
     , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
@@ -258,12 +259,12 @@ void DataFileEntriesStream::run()
 
     auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
-    std::deque<std::future<void>> in_flight;
+    std::deque<std::unique_ptr<InFlightManifest>> in_flight;
     SCOPE_EXIT({
-        for (auto & future : in_flight)
+        for (auto & manifest : in_flight)
         {
-            if (future.valid())
-                future.wait();
+            if (manifest->future.valid())
+                manifest->future.wait();
         }
     });
 
@@ -276,28 +277,53 @@ void DataFileEntriesStream::run()
             const size_t index = next_index++;
             if (manifest_list_entries[index].content_type != ManifestFileContentType::DATA)
                 continue;
-            auto stream = [this, index]() { streamManifest(data_snapshot->manifest_list_entries[index]); };
-            in_flight.push_back(stream_runner(std::move(stream), Priority{}));
+            auto manifest = std::make_unique<InFlightManifest>();
+            manifest->key = manifest_list_entries[index];
+            auto * scheduled = manifest.get();
+            manifest->future = stream_runner([this, scheduled] { decodeChunk(*scheduled); }, Priority{});
+            in_flight.push_back(std::move(manifest));
         }
 
         if (in_flight.empty())
             return;
 
-        in_flight.front().get();
-        in_flight.pop_front();
+        auto & manifest = *in_flight.front();
+        manifest.future.get();
+
+        for (auto & entry : manifest.chunk)
+        {
+            if (!queue.push(std::move(entry)))
+                return;
+        }
+        manifest.chunk.clear();
+
+        if (manifest.exhausted)
+            in_flight.pop_front();
+        else
+            manifest.future = stream_runner([this, scheduled = &manifest] { decodeChunk(*scheduled); }, Priority{});
     }
 }
 
-void DataFileEntriesStream::streamManifest(const ManifestFileCacheKey & manifest_list_entry)
+void DataFileEntriesStream::decodeChunk(InFlightManifest & manifest)
 {
     if (stopped.load(std::memory_order_relaxed))
-        return;
-
-    auto manifest_file_iterator = create_manifest_iterator(manifest_list_entry, &stopped);
-    while (auto entry = manifest_file_iterator->next())
     {
-        if (!queue.push(std::move(entry)))
+        manifest.exhausted = true;
+        return;
+    }
+
+    if (!manifest.iterator)
+        manifest.iterator = create_manifest_iterator(manifest.key, &stopped);
+
+    while (manifest.chunk.size() < chunk_size)
+    {
+        auto entry = manifest.iterator->next();
+        if (!entry)
+        {
+            manifest.exhausted = true;
             return;
+        }
+        manifest.chunk.push_back(std::move(entry));
     }
 }
 

@@ -19,7 +19,9 @@
 #include <Common/ThreadPool_fwd.h>
 
 #include <atomic>
+#include <future>
 #include <mutex>
+#include <vector>
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -53,10 +55,20 @@ public:
     std::exception_ptr getException() const;
 
 private:
+    struct InFlightManifest
+    {
+        ManifestFileCacheKey key;
+        ManifestIteratorPtr iterator;
+        std::vector<ProcessedManifestFileEntryPtr> chunk;
+        bool exhausted = false;
+        std::future<void> future;
+    };
+
     void run();
-    void streamManifest(const ManifestFileCacheKey & manifest_list_entry);
+    void decodeChunk(InFlightManifest & manifest);
     void stop();
 
+    const size_t chunk_size;
     const size_t decode_concurrency;
     const IcebergDataSnapshotPtr data_snapshot;
 
