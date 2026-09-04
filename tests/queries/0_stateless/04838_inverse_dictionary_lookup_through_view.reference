@@ -190,6 +190,25 @@ Expression ((Project names + Projection))
         Granules: 1/100
         Search Algorithm: binary search
       Ranges: 1
+-- A dictGet(...) whose dictionary was dropped after the view was created must not break the
+-- optimization pass itself: the lookup used to check the dictGet grant fails closed (skips the
+-- rewrite), and the query fails with the same error regardless of the setting.
+DROP VIEW IF EXISTS view_lookup_missing_dict_v;
+DROP DICTIONARY IF EXISTS view_lookup_missing_dict;
+DROP TABLE IF EXISTS view_lookup_missing_dict_ref;
+CREATE TABLE view_lookup_missing_dict_ref (id UInt64, name String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO view_lookup_missing_dict_ref VALUES (4242, 'match');
+CREATE DICTIONARY view_lookup_missing_dict (id UInt64, name String)
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'view_lookup_missing_dict_ref')) LAYOUT(HASHED()) LIFETIME(0);
+CREATE VIEW view_lookup_missing_dict_v AS
+SELECT id, dictGetString('view_lookup_missing_dict', 'name', id) AS name FROM view_lookup_data;
+DROP DICTIONARY view_lookup_missing_dict;
+SET optimize_inverse_dictionary_lookup = 1;
+SELECT count() FROM view_lookup_missing_dict_v WHERE name = 'match'; -- { serverError BAD_ARGUMENTS }
+SET optimize_inverse_dictionary_lookup = 0;
+SELECT count() FROM view_lookup_missing_dict_v WHERE name = 'match'; -- { serverError BAD_ARGUMENTS }
+DROP VIEW view_lookup_missing_dict_v;
+DROP TABLE view_lookup_missing_dict_ref;
 DROP VIEW view_lookup_v;
 DROP VIEW view_lookup_grouped_v;
 DROP VIEW view_lookup_no_key_v;
