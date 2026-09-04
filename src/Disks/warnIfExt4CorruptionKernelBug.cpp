@@ -8,7 +8,7 @@
 #include <atomic>
 #include <filesystem>
 #include <mutex>
-#include <optional>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -17,30 +17,30 @@ namespace DB
 
 namespace
 {
-    /// One slot, since every probe reports under the same warning type and the last write wins
-    /// there anyway. Guarded on its own so recording never touches the context's lock.
-    std::mutex pending_warning_mutex;
-    std::optional<PreformattedMessage> pending_warning;
+    /// Every recorded message, not just the last: publishing drops those matching
+    /// `warning_supress_regexp`, so a later suppressed probe must not erase an earlier one here.
+    /// Guarded on its own so recording never touches the context's lock.
+    std::mutex pending_warnings_mutex;
+    std::vector<PreformattedMessage> pending_warnings;
 
     /// Only reached on Linux; the probe below is compiled out elsewhere.
     [[maybe_unused]] void recordWarning(PreformattedMessage message)
     {
-        std::lock_guard lock(pending_warning_mutex);
-        pending_warning = std::move(message);
+        std::lock_guard lock(pending_warnings_mutex);
+        pending_warnings.push_back(std::move(message));
     }
 }
 
 void flushExt4CorruptionKernelBugWarning(const Context & context)
 {
-    std::optional<PreformattedMessage> message;
+    std::vector<PreformattedMessage> messages;
     {
-        std::lock_guard lock(pending_warning_mutex);
-        message.swap(pending_warning);
+        std::lock_guard lock(pending_warnings_mutex);
+        messages.swap(pending_warnings);
     }
-    /// Taken rather than copied: publishing stores it, so re-publishing on every read would be
-    /// wasted work. A probe that fires later simply refills the slot.
-    if (message)
-        context.addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG, *message);
+    /// Published in probe order, so the last unsuppressed one wins exactly as with direct publication.
+    for (const auto & message : messages)
+        context.addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG, message);
 }
 
 void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & directory, [[maybe_unused]] const String & description)
