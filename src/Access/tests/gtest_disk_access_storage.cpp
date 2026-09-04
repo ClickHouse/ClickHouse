@@ -90,9 +90,8 @@ TEST(DiskAccessStorageShutdown, DoesNotWaitOutTheListsWritingTimeout)
     AccessChangesNotifier notifier;
 
     /// Shutting down right after the insert races the request to stop the background lists-writing
-    /// thread against that thread starting to wait for the request, and which one wins varies per
-    /// pass, hence the repetition. Writing the lists takes milliseconds, while the thread's batching
-    /// timeout is a minute.
+    /// thread against that thread starting to wait for it, and neither order is guaranteed, hence
+    /// the repetition. Writing the lists takes milliseconds, while the batching timeout is a minute.
     for (size_t iteration = 0; iteration != 20; ++iteration)
     {
         Poco::TemporaryFile temp_dir;
