@@ -1,0 +1,6 @@
+window state -> Merge:
+█████
+direct aggregation:
+█████
+AggregatingMergeTree merge of two window-state parts:
+▇▇▇▇█

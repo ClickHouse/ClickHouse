@@ -1,0 +1,8 @@
+Int64 key just below the bucket-1 boundary (must be bucket 0):
+█ 
+UInt64 key just below the bucket-1 boundary (must be bucket 0):
+█ 
+First key of bucket 1 (must be bucket 1):
+ █
+The two keys straddling the exact midpoint land in distinct buckets:
+██
