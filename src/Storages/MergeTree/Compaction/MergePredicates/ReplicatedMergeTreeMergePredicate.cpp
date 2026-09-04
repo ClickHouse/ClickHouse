@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
@@ -88,7 +87,7 @@ ReplicatedMergeTreeZooKeeperMergePredicate::ReplicatedMergeTreeZooKeeperMergePre
     }
 
     /// Load current quorum status.
-    auto quorum_status_future = zookeeper->asyncTryGet(pathToGenericString(fs::path(queue.zookeeper_path) / "quorum" / "status"));
+    auto quorum_status_future = zookeeper->asyncTryGet(zkutil::joinZooKeeperPath(queue.zookeeper_path, "quorum", "status"));
     committing_blocks = std::make_shared<CommittingBlocks>(getCommittingBlocks(zookeeper, queue.zookeeper_path, partition_ids_hint, /*with_data=*/ false));
 
     std::tie(merges_version, std::ignore) = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);

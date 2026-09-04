@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -93,17 +92,15 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 String KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    /// A ZooKeeper path, not a filesystem one, so normalize it lexically and read it back
-    /// `/`-separated. `weakly_canonical` - which this used to call - stats every prefix against
-    /// the local filesystem and resolves any symlink it finds there, which for a znode path is
-    /// both wasted work and wrong; and on Windows it would hand back backslashes.
-    const auto absolute = relative.starts_with('/') ? pathFromString(relative) : pathFromString(cwd) / relative;
-    String result = pathToGenericString(absolute.lexically_normal());
-
-    if (result.ends_with('/') && result.size() > 1)
-        result.pop_back();
-
-    return result;
+    /// A ZooKeeper path, not a filesystem one, so it is joined and normalized as a string.
+    /// `weakly_canonical` - which this used to call - stats every prefix against the local
+    /// filesystem and resolves any symlink it finds there, which for a znode path is both wasted
+    /// work and wrong; and `std::filesystem` on Windows treats `\` as a separator and reads the
+    /// path through the active code page. `lexicallyNormalizeZooKeeperPath` leaves no trailing
+    /// separator, so there is nothing to trim afterwards.
+    if (relative.starts_with('/'))
+        return zkutil::lexicallyNormalizeZooKeeperPath(relative);
+    return zkutil::lexicallyNormalizeZooKeeperPath(zkutil::joinZooKeeperPath(cwd, relative));
 }
 
 void KeeperClientBase::loadCommands(std::vector<Command> && new_commands)

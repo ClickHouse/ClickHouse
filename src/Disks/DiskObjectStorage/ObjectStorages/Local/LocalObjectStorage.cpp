@@ -12,6 +12,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFile.h>
@@ -109,7 +110,7 @@ bool isVanishedEntryError(const std::error_code & error)
 std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
 {
     struct stat file_stat{};
-    if (0 != ::stat(resolved_path.c_str(), &file_stat))
+    if (0 != platformStat(resolved_path, file_stat))
     {
         std::error_code error(errno, std::generic_category());
         if (isVanishedEntryError(error))
@@ -664,7 +665,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     Int32 error_code = 0;
     String error_message;
 
-    if (0 != unlink(resolved_path.data()))
+    if (0 != platformUnlink(resolved_path))
     {
         error_code = errno;
         error_message = errnoToString();
@@ -704,8 +705,8 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
             pathToGenericString(dir), dir.has_parent_path(), dir.has_relative_path(), pathToGenericString(root), pathStartsWith(dir, root));
 
-        std::string dir_str = pathToGenericString(dir);
-        if (0 != rmdir(dir_str.data()))
+        std::string dir_str = pathToString(dir);
+        if (0 != platformRmdir(dir_str))
         {
             if (errno == ENOTDIR || errno == ENOTEMPTY)
                 break;
@@ -807,7 +808,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// ever compare unequal there, turning a conditional write into an unconditional
     /// `PreconditionFailed`.
     struct stat file_stat{};
-    if (0 != ::stat(resolved_path.c_str(), &file_stat))
+    if (0 != platformStat(resolved_path, file_stat))
         throw fs::filesystem_error(
             "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
 

@@ -1,7 +1,6 @@
 #include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
-#include <base/pathToString.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -17,6 +16,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -140,7 +140,7 @@ void readFolder(
     const ObjectStorageQueueMetadata & metadata,
     ZooKeeperRetriesControl & zk_retries,
     size_t batch_size,
-    const std::filesystem::path & base_path,
+    const String & base_path,
     const std::string & folder,
     bool need_count,
     bool need_contents,
@@ -150,7 +150,7 @@ void readFolder(
     if (!need_count && !need_contents)
         return;
 
-    const std::string folder_path = pathToGenericString(base_path / folder);
+    const std::string folder_path = zkutil::joinZooKeeperPath(base_path, folder);
     if (!need_contents)
     {
         Coordination::Stat stat;
@@ -172,7 +172,7 @@ void readFolder(
     std::vector<std::string> node_paths;
     node_paths.reserve(nodes.size());
     for (const auto & node : nodes)
-        node_paths.push_back(pathToGenericString(base_path / folder / node));
+        node_paths.push_back(zkutil::joinZooKeeperPath(base_path, folder, node));
 
     const auto data = readNodeDataBatched(metadata, zk_retries, batch_size, node_paths);
 
@@ -199,17 +199,17 @@ NodeContents readProcessedPointers(
     const ObjectStorageQueueMetadata & metadata,
     ZooKeeperRetriesControl & zk_retries,
     size_t batch_size,
-    const std::filesystem::path & base_path)
+    const String & base_path)
 {
     std::vector<std::string> roots;
     if (metadata.useBucketsForProcessing())
     {
         for (size_t bucket = 0; bucket < metadata.getBucketsNum(); ++bucket)
-            roots.push_back(pathToGenericString(base_path / "buckets" / toString(bucket) / "processed"));
+            roots.push_back(zkutil::joinZooKeeperPath(base_path, "buckets", toString(bucket), "processed"));
     }
     else
     {
-        roots.push_back(pathToGenericString(base_path / "processed"));
+        roots.push_back(zkutil::joinZooKeeperPath(base_path, "processed"));
     }
 
     std::vector<std::string> leaf_paths;
@@ -243,7 +243,7 @@ NodeContents readProcessedPointers(
             leaf_is_node_metadata.push_back(1);
             for (const auto & partition : partitions)
             {
-                leaf_paths.push_back(pathToGenericString(pathFromString(root) / partition));
+                leaf_paths.push_back(zkutil::joinZooKeeperPath(root, partition));
                 leaf_is_node_metadata.push_back(0);
             }
         }
@@ -263,8 +263,14 @@ NodeContents readProcessedPointers(
         std::string file_path = leaf_is_node_metadata[i]
             ? ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path
             : *data[i];
-        auto key = pathToGenericString(pathFromString(leaf_paths[i]).lexically_relative(base_path));
-        result.emplace_back(std::move(key), std::move(file_path));
+        /// Every `leaf_paths[i]` was built by appending to `base_path`, so the key is whatever
+        /// follows it - computed in Keeper-path string space, since these are znode paths.
+        std::string_view key = leaf_paths[i];
+        chassert(key.starts_with(base_path));
+        key.remove_prefix(base_path.size());
+        while (key.starts_with('/'))
+            key.remove_prefix(1);
+        result.emplace_back(String(key), std::move(file_path));
     }
     return result;
 }
@@ -321,7 +327,7 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
         /// prefixed with "<keeper>:". It is used only for display. Keeper reads
         /// must use the raw path returned by `getPath`; the client returned by
         /// `getZooKeeper` is already bound to the right Keeper.
-        const std::filesystem::path base_path = pathFromString(metadata->getPath());
+        const String base_path = metadata->getPath();
         const bool unordered = metadata->getTableMetadata().mode == "unordered";
         const size_t batch_size = std::max<size_t>(1, metadata->getKeeperMultireadBatchSize());
 

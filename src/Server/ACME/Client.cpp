@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
@@ -57,7 +56,6 @@ namespace ErrorCodes
 namespace ACME
 {
 
-namespace fs = std::filesystem;
 using DirectoryPtr = std::shared_ptr<Directory>;
 
 Client & Client::instance()
@@ -99,8 +97,8 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
     /// All domains have the same certificate
     std::string domain = domains.front();
 
-    zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key"), pkey);
-    zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate"), certificate);
+    zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "private_key"), pkey);
+    zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "certificate"), certificate);
 
     if (pkey.empty() || certificate.empty())
     {
@@ -167,13 +165,13 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     auto zk = Context::getGlobalContextInstance()->getZooKeeper();
 
-    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path)), "");
-    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname), "");
-    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "challenges"), "");
-    zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains"), "");
+    zk->createIfNotExists(zookeeper_path, "");
+    zk->createIfNotExists(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname), "");
+    zk->createIfNotExists(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "challenges"), "");
+    zk->createIfNotExists(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains"), "");
 
     for (const auto & domain : domains)
-        zk->createIfNotExists(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain), "");
+        zk->createIfNotExists(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain), "");
 
     BackgroundSchedulePoolPtr bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
@@ -207,8 +205,8 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             std::string private_key;
             std::string pem_certificate;
 
-            zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key"), private_key);
-            zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate"), pem_certificate);
+            zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "private_key"), private_key);
+            zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "certificate"), pem_certificate);
 
             if (private_key.empty() || pem_certificate.empty())
             {
@@ -243,13 +241,13 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             return;
         }
 
-        auto active_order_path = fs::path(zookeeper_path) / acme_hostname / "active_order";
-        if ((!lock || !lock->isLocked()) && zk->exists(pathToGenericString(active_order_path)))
+        auto active_order_path = zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "active_order");
+        if ((!lock || !lock->isLocked()) && zk->exists(active_order_path))
         {
             LOG_DEBUG(
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
-                pathToGenericString(active_order_path),
+                active_order_path,
                 REFRESH_TASK_HAPPY_PATH_MS
             );
             refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -259,13 +257,13 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         /// Start the order
         if (!active_order.has_value())
         {
-            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, pathToGenericString(fs::path(zookeeper_path) / acme_hostname), "active_order", "ACME::Client");
+            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname), "active_order", "ACME::Client");
             if (!lock->tryLock())
             {
                 LOG_DEBUG(
                     log,
                     "Certificate order lock {} is active; retrying after {}ms",
-                    pathToGenericString(active_order_path),
+                    active_order_path,
                     REFRESH_TASK_HAPPY_PATH_MS
                 );
                 refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -274,9 +272,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             auto order_callback = [&](std::string token)
             {
-                auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
+                auto path = zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "challenges", token);
 
-                zk->createOrUpdate(pathToGenericString(path), token, zkutil::CreateMode::Ephemeral);
+                zk->createOrUpdate(path, token, zkutil::CreateMode::Ephemeral);
             };
 
             active_order = api->order(domains, order_callback);
@@ -290,7 +288,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             LOG_DEBUG(
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
-                pathToGenericString(active_order_path),
+                active_order_path,
                 REFRESH_TASK_HAPPY_PATH_MS
             );
             refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
@@ -319,8 +317,8 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             for (const auto & domain : domains)
             {
-                auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key";
-                zk->createOrUpdate(pathToGenericString(path), pkey, zkutil::CreateMode::Persistent);
+                auto path = zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "private_key");
+                zk->createOrUpdate(path, pkey, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated private key for domain {}", domain);
             }
 
@@ -345,8 +343,8 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             for (const auto & domain : domains)
             {
-                auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate";
-                zk->createOrUpdate(pathToGenericString(path), certificate, zkutil::CreateMode::Persistent);
+                auto path = zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "domains", domain, "certificate");
+                zk->createOrUpdate(path, certificate, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated certificate for domain {}", domain);
             }
 
@@ -436,7 +434,7 @@ void Client::refreshKeyTask()
         auto context = Context::getGlobalContextInstance();
         auto zk = context->getZooKeeper();
 
-        zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key);
+        zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "account_private_key"), private_key);
         if (private_key.empty())
         {
             LOG_INFO(log, "Generating new RSA private key for ACME account");
@@ -444,12 +442,12 @@ void Client::refreshKeyTask()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            auto code = zk->tryCreate(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key, zkutil::CreateMode::Persistent);
+            auto code = zk->tryCreate(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "account_private_key"), private_key, zkutil::CreateMode::Persistent);
             if (code == Coordination::Error::ZNODEEXISTS)
             {
                 /// Another node has already created the key, use it instead.
                 private_key.clear();
-                zk->tryGet(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "account_private_key"), private_key);
+                zk->tryGet(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "account_private_key"), private_key);
             }
         }
     }
@@ -516,7 +514,7 @@ std::string Client::requestChallenge(const std::string & uri)
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    auto active_challenges = zk->getChildren(pathToGenericString(fs::path(zookeeper_path) / acme_hostname / "challenges"));
+    auto active_challenges = zk->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, acme_hostname, "challenges"));
 
     if (active_challenges.empty())
     {

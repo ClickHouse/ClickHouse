@@ -1,13 +1,9 @@
 #pragma once
 
-#include <base/pathToString.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-
-namespace fs = std::filesystem;
 
 namespace zkutil
 {
@@ -47,7 +43,7 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
             ops.emplace_back(makeRemoveRequest(path, 0));
             ops.emplace_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
             /// May fail with ZNODEEXISTS
-            ops.emplace_back(makeCreateRequest(pathToGenericString(fs::path(path) / persistent_multiple_leaders), persistent_identifier, zkutil::CreateMode::Persistent));
+            ops.emplace_back(makeCreateRequest(zkutil::joinZooKeeperPath(path, persistent_multiple_leaders), persistent_identifier, zkutil::CreateMode::Persistent));
         }
         else
         {
@@ -56,10 +52,10 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
                 return;
 
             /// Ensure that current leader supports multi-leader mode and make it persistent
-            auto current_leader = fs::path(path) / potential_leaders.front();
+            auto current_leader = zkutil::joinZooKeeperPath(path, potential_leaders.front());
             Coordination::Stat leader_stat;
             String identifier;
-            if (!zookeeper.tryGet(pathToGenericString(current_leader), identifier, &leader_stat))
+            if (!zookeeper.tryGet(current_leader, identifier, &leader_stat))
             {
                 LOG_INFO(log, "LeaderElection: leader suddenly changed, will retry");
                 continue;
@@ -70,9 +66,9 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
 
             /// Version does not matter, just check that it still exists.
             /// May fail with ZNONODE
-            ops.emplace_back(makeCheckRequest(pathToGenericString(current_leader), leader_stat.version));
+            ops.emplace_back(makeCheckRequest(current_leader, leader_stat.version));
             /// May fail with ZNODEEXISTS
-            ops.emplace_back(makeCreateRequest(pathToGenericString(fs::path(path) / persistent_multiple_leaders), persistent_identifier, zkutil::CreateMode::Persistent));
+            ops.emplace_back(makeCreateRequest(zkutil::joinZooKeeperPath(path, persistent_multiple_leaders), persistent_identifier, zkutil::CreateMode::Persistent));
         }
 
         Coordination::Responses res;

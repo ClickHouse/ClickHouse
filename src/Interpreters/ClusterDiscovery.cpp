@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -60,9 +59,9 @@ namespace FailPoints
 namespace
 {
 
-fs::path getShardsListPath(const String & zk_root)
+String getShardsListPath(const String & zk_root)
 {
-    return fs::path(zk_root + "/shards");
+    return zk_root + "/shards";
 }
 
 }
@@ -309,12 +308,12 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             callback = res.first;
         }
         nodes = zk->getChildrenWatch(
-            pathToGenericString(getShardsListPath(zk_root)),
+            getShardsListPath(zk_root),
             &stat,
             Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
     }
     else
-        nodes = zk->getChildren(pathToGenericString(getShardsListPath(zk_root)), &stat);
+        nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
 
     if (version)
         *version = stat.cversion;
@@ -329,7 +328,7 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
     for (const auto & node_uuid : node_uuids)
     {
         String payload;
-        bool ok = zk->tryGet(pathToGenericString(getShardsListPath(zk_root) / node_uuid), payload) &&
+        bool ok = zk->tryGet(zkutil::joinZooKeeperPath(getShardsListPath(zk_root), node_uuid), payload) &&
                   NodeInfo::parse(payload, result[node_uuid]);
         if (!ok)
         {
@@ -510,7 +509,7 @@ void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
     /// Create root node in observer mode not to get 'No node' error
-    String node_path = pathToGenericString(getShardsListPath(info.zk_root) / current_node_name);
+    String node_path = zkutil::joinZooKeeperPath(getShardsListPath(info.zk_root), current_node_name);
     zk->createAncestors(node_path);
 
     if (info.current_node_is_observer)

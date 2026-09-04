@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -62,7 +61,7 @@ try
 {
     auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
-    std::vector<String> paths = zookeeper->getChildren(pathToGenericString(path));
+    std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
     for (String & p : paths)
     {
@@ -85,7 +84,7 @@ template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
     , update_wait(saturatedMilliseconds(getCacheUpdateWaitMs(*storage.getSettings()).count()))
-    , path(fs::path(storage.getZooKeeperPath()) / dir_name)
+    , path(zkutil::joinZooKeeperPath(storage.getZooKeeperPath(), dir_name))
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
 {

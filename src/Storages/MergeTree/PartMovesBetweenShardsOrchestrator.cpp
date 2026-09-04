@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -226,7 +225,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             ReplicatedMergeTreeLogEntryData sync_source_log_entry;
 
-            String sync_source_log_entry_barrier_path = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString()));
+            String sync_source_log_entry_barrier_path = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString()));
             Coordination::Stat sync_source_log_entry_stat;
             String sync_source_log_entry_str;
             if (zk->tryGet(sync_source_log_entry_barrier_path, sync_source_log_entry_str, &sync_source_log_entry_stat))
@@ -282,7 +281,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             ReplicatedMergeTreeLogEntryData sync_destination_log_entry;
 
-            String sync_destination_log_entry_barrier_path = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString()));
+            String sync_destination_log_entry_barrier_path = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString()));
             Coordination::Stat sync_destination_log_entry_stat;
             String sync_destination_log_entry_str;
             if (zk->tryGet(sync_destination_log_entry_barrier_path, sync_destination_log_entry_str, &sync_destination_log_entry_stat))
@@ -346,7 +345,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             ReplicatedMergeTreeLogEntryData fetch_log_entry;
 
-            String fetch_log_entry_barrier_path = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString()));
+            String fetch_log_entry_barrier_path = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString()));
             Coordination::Stat fetch_log_entry_stat;
             String fetch_log_entry_str;
             if (zk->tryGet(fetch_log_entry_barrier_path, fetch_log_entry_str, &fetch_log_entry_stat))
@@ -392,7 +391,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
         case EntryState::DESTINATION_ATTACH:
         {
-            String attach_log_entry_barrier_path = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString()));
+            String attach_log_entry_barrier_path = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString()));
 
             if (entry.rollback)
             {
@@ -413,7 +412,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
 
                 String attach_rollback_log_entry_barrier_path
-                    = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString() + "_rollback"));
+                    = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString() + "_rollback"));
                 Coordination::Stat attach_rollback_log_entry_stat;
                 String attach_rollback_log_entry_str;
                 if (zk->tryGet(attach_rollback_log_entry_barrier_path, attach_rollback_log_entry_str, &attach_rollback_log_entry_stat))
@@ -562,7 +561,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
             ReplicatedMergeTreeLogEntryData source_drop_log_entry;
 
-            String source_drop_log_entry_barrier_path = pathToGenericString(fs::path(entry.znode_path) / ("log_" + entry.state.toString()));
+            String source_drop_log_entry_barrier_path = zkutil::joinZooKeeperPath(entry.znode_path, ("log_" + entry.state.toString()));
             Coordination::Stat source_drop_log_entry_stat;
             String source_drop_log_entry_str;
             if (zk->tryGet(source_drop_log_entry_barrier_path, source_drop_log_entry_str, &source_drop_log_entry_stat))

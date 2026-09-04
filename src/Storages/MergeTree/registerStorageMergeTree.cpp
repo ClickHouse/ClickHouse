@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -162,7 +161,7 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const TableZnodeInf
         throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure, because there no other replicas in zookeeper. You must specify the structure manually"};
 
     Coordination::Stat columns_stat;
-    return ColumnsDescription::parse(zookeeper->get(pathToGenericString(fs::path(zookeeper_info.path) / "columns"), &columns_stat));
+    return ColumnsDescription::parse(zookeeper->get(zkutil::joinZooKeeperPath(zookeeper_info.path, "columns"), &columns_stat));
 }
 
 /// Returns whether a new syntax is used to define a table engine, i.e. MergeTree() PRIMARY KEY ... PARTITION BY ... SETTINGS ...
