@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -95,11 +96,26 @@ public:
     /// Probably for overflow function in the future.
     using ColumnResult = ColumnVectorOrDecimal<ResultT>;
 
-    explicit MovingImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, {}, createResultType(data_type_))
+    explicit MovingImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, parameters_, createResultType(data_type_))
         , window_size(window_size_) {}
 
     String getName() const override { return Data::name; }
+
+    /// The window size accepts both Int64 and UInt64, so the printed type name needs the type
+    /// suffix to round-trip: without it 42::Int64 reparses as UInt64.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
+    /// The window size only affects finalization, not the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
 
     static DataTypePtr createResultType(const DataTypePtr & argument)
     {
@@ -228,14 +244,14 @@ template <typename T, typename LimitNumberOfElements> using MovingSumTemplate = 
 template <typename T, typename LimitNumberOfElements> using MovingAvgTemplate = typename MovingAvg<T, LimitNumberOfElements>::Function;
 
 template <template <typename, typename> class Function, typename HasLimit, typename DecimalArg, typename ... TArgs>
-inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
+inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
     AggregateFunctionPtr res;
 
     if constexpr (DecimalArg::value)
-        res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...));
     else
-        res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...));
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
@@ -279,13 +295,13 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     if (!limit_size)
     {
         if (isDecimal(argument_type))
-            return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type);
-        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type);
+            return createAggregateFunctionMovingImpl<Function, std::false_type, std::true_type>(name, argument_type, parameters);
+        return createAggregateFunctionMovingImpl<Function, std::false_type, std::false_type>(name, argument_type, parameters);
     }
 
     if (isDecimal(argument_type))
-        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, max_elems);
-    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, max_elems);
+        return createAggregateFunctionMovingImpl<Function, std::true_type, std::true_type>(name, argument_type, parameters, max_elems);
+    return createAggregateFunctionMovingImpl<Function, std::true_type, std::false_type>(name, argument_type, parameters, max_elems);
 }
 
 }
