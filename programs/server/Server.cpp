@@ -141,6 +141,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/ProxyV1HandlerFactory.h>
+#include <Server/RedisHandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/KeeperHTTPHandlerFactory.h>
 #include <Server/ArrowFlight/ArrowFlightServer.h>
@@ -4694,6 +4695,28 @@ void Server::createServers(
                          makeServerParams(server_settings),
                          connection_filter));
 #endif
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::REDIS))
+        {
+            port_name = "redis_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Redis compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new RedisHandlerFactory(*this),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
             });
         }
 
