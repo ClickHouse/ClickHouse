@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1090366",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1107336",
       "email": "support@clickhouse.com"
     }
   },
@@ -7793,6 +7793,123 @@
         "x-mint": {
           "content": "Create a new ClickPipe."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/context": {
+      "get": {
+        "summary": "Get ClickPipes service context",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns service-level ClickPipes capabilities and Private Preview workload identity context, including the GCP service account to grant access to customer source resources.",
+        "operationId": "clickPipesServiceContextGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service to get ClickPipes context for.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickPipesServiceContext"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickPipes"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}": {
@@ -21021,7 +21138,10 @@
             "description": "Google Cloud service account JSON key file content, base64 encoded.",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "serviceAccountFile"
+        ]
       },
       "ClickPipeKafkaOffset": {
         "properties": {
@@ -21169,7 +21289,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -21177,7 +21297,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21274,7 +21395,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -21282,7 +21403,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21350,13 +21472,21 @@
                 "$ref": "#/components/schemas/MutualTLS"
               }
             ]
+          },
+          "protobufSchema": {
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Supported only with Protobuf format and cannot be combined with schemaRegistry.",
+            "type": "string",
+            "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
+            "maxLength": 1048576,
+            "minLength": 1,
+            "writeOnly": true
           }
         }
       },
       "ClickPipePatchKafkaSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": [
               "string",
               "null"
@@ -21367,7 +21497,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21671,7 +21802,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21680,7 +21811,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21808,7 +21940,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21817,7 +21949,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21889,7 +22022,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21898,7 +22031,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -22325,9 +22459,10 @@
             "example": "-----BEGIN CERTIFICATE-----\n..."
           },
           "disableTls": {
-            "description": "Disable TLS for the Postgres connection. Use with caution in production environments.",
+            "description": "Disable TLS for the Postgres connection. Use with caution in production environments. Defaults to false when omitted.",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the Postgres connection. Use with caution in production environments.",
@@ -22812,9 +22947,10 @@
             "example": "-----BEGIN CERTIFICATE-----\n..."
           },
           "disableTls": {
-            "description": "Disable TLS for the MySQL connection. Use with caution in production environments.",
+            "description": "Disable TLS for the MySQL connection. Use with caution in production environments. Defaults to false when omitted.",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the MySQL connection. Use with caution in production environments.",
@@ -22979,7 +23115,10 @@
             "description": "Number of parallel tables to snapshot.",
             "type": "number"
           }
-        }
+        },
+        "required": [
+          "replicationMode"
+        ]
       },
       "ClickPipeBigQueryPipeTableMapping": {
         "properties": {
@@ -23022,27 +23161,96 @@
               "Null"
             ]
           }
-        }
+        },
+        "required": [
+          "sourceDatasetName",
+          "sourceTable",
+          "targetTable"
+        ]
+      },
+      "ClickPipeBigQueryServiceAccountSource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticated with a Google Cloud service account JSON key.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication"
+        ]
+      },
+      "ClickPipeBigQueryWorkloadIdentitySource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticated with the ClickPipes service tenant identity. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources. Older pipes created outside OpenAPI may omit this field.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication"
+        ]
       },
       "ClickPipeBigQuerySource": {
-        "properties": {
-          "snapshotStagingPath": {
-            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
-            "type": "string"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipeBigQueryServiceAccountSource"
           },
-          "settings": {
-            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
-          },
-          "tableMappings": {
-            "type": "array",
-            "description": "Table mappings for BigQuery pipe.",
-            "items": {
-              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
-            }
+          {
+            "$ref": "#/components/schemas/ClickPipeBigQueryWorkloadIdentitySource"
           }
-        }
+        ]
       },
-      "ClickPipeMutateBigQuerySource": {
+      "ClickPipePostBigQueryServiceAccountSource": {
         "properties": {
           "snapshotStagingPath": {
             "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
@@ -23057,11 +23265,79 @@
             "items": {
               "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
             }
+          },
+          "authentication": {
+            "description": "Authenticate with a Google Cloud service account JSON key. Defaults to SERVICE_ACCOUNT when omitted.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
           },
           "credentials": {
             "$ref": "#/components/schemas/ServiceAccount"
           }
-        }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostBigQueryWorkloadIdentitySource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticate with the ClickPipes service tenant identity. Customer credentials must not be provided. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ],
+            "example": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication",
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipeMutateBigQuerySource": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipePostBigQueryServiceAccountSource"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipePostBigQueryWorkloadIdentitySource"
+          }
+        ]
       },
       "ClickPipeMongoDBPipeSettings": {
         "properties": {
@@ -23301,7 +23577,8 @@
           "disableTls": {
             "description": "Disable TLS for the MongoDB connection. Defaults to false (TLS enabled).",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the MongoDB connection. Use with caution in production environments.",
@@ -23439,10 +23716,11 @@
             "example": "my-topic"
           },
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authentication method to use with GCP Pub/Sub. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
             "type": "string",
             "enum": [
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "SERVICE_ACCOUNT"
           },
@@ -23498,7 +23776,7 @@
           "seekType"
         ]
       },
-      "ClickPipePostPubSubSource": {
+      "ClickPipePostPubSubServiceAccountSource": {
         "properties": {
           "format": {
             "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
@@ -23521,7 +23799,7 @@
             "example": "my-topic"
           },
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authenticate with a GCP service account JSON key.",
             "type": "string",
             "enum": [
               "SERVICE_ACCOUNT"
@@ -23582,18 +23860,113 @@
           "authentication",
           "seekType",
           "serviceAccountKey"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostPubSubWorkloadIdentitySource": {
+        "properties": {
+          "format": {
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "type": "string",
+            "enum": [
+              "JSONEachRow",
+              "Avro",
+              "Protobuf"
+            ],
+            "example": "JSONEachRow"
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the Pub/Sub topic.",
+            "type": "string",
+            "example": "my-gcp-project"
+          },
+          "topic": {
+            "description": "Pub/Sub topic name (not the fully-qualified path).",
+            "type": "string",
+            "example": "my-topic"
+          },
+          "authentication": {
+            "description": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ],
+            "example": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+          },
+          "seekType": {
+            "description": "Starting position strategy for consuming the subscription. The seekTimestamp companion is required only when seekType is \"timestamp\"; setting it for a mismatched seek type is rejected.",
+            "type": "string",
+            "enum": [
+              "latest",
+              "earliest",
+              "timestamp"
+            ],
+            "example": "earliest"
+          },
+          "seekTimestamp": {
+            "description": "RFC 3339 / ISO 8601 timestamp to seek to. Required when seekType is \"timestamp\"; must be omitted otherwise.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-04-10T12:00:00Z"
+          },
+          "filter": {
+            "description": "Optional Pub/Sub subscription filter expression (CEL). Maximum 256 characters.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "enableOrdering": {
+            "description": "Whether to enable ordered delivery of messages (requires messages to be published with ordering keys).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ackDeadline": {
+            "description": "Acknowledgement deadline for messages, in seconds. Must be between 10 and 600.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 10,
+            "maximum": 600
+          }
+        },
+        "required": [
+          "format",
+          "projectId",
+          "topic",
+          "authentication",
+          "seekType"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostPubSubSource": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipePostPubSubServiceAccountSource"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipePostPubSubWorkloadIdentitySource"
+          }
         ]
       },
       "ClickPipePatchPubSubSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authentication method to use with GCP Pub/Sub. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
             "type": [
               "string",
               "null"
             ],
             "enum": [
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "SERVICE_ACCOUNT"
           },
@@ -23618,9 +23991,38 @@
           }
         },
         "required": [
-          "authentication",
-          "serviceAccountKey"
+          "authentication"
         ]
+      },
+      "ClickPipesGcpWorkloadIdentityContext": {
+        "properties": {
+          "supported": {
+            "description": "Whether the ClickPipes deployment supports GCP workload identity, which is in Private Preview. The principal field identifies the GCP service account used for source access.",
+            "type": "boolean"
+          },
+          "ready": {
+            "description": "Whether the service tenant identity is ready for workload identity authentication.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "principal": {
+            "description": "GCP service account used by ClickPipes for workload identity authentication. Grant this service account access to customer source resources.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ch-deadbeef@clickpipes-development.iam.gserviceaccount.com"
+          }
+        }
+      },
+      "ClickPipesServiceContext": {
+        "properties": {
+          "gcpWorkloadIdentity": {
+            "$ref": "#/components/schemas/ClickPipesGcpWorkloadIdentityContext"
+          }
+        }
       },
       "ClickPipeScaling": {
         "properties": {

@@ -142,6 +142,7 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
