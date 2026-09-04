@@ -2895,7 +2895,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             catch (...)
             {
                 /// `DEADLOCK_AVOIDED` — the table is in use — or `TABLE_IS_DROPPED` — a concurrent query
-                /// detached or dropped it first. Either way there is nothing to reattach here.
+                /// detached or dropped it first. Either outcome is ok here: there is nothing left for this
+                /// hook to reattach, and the randomization is skipped for that table.
                 continue;
             }
         }
