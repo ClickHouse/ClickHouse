@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -50,6 +50,19 @@ std::vector<char> bytesOf(const std::vector<T> & values)
         pos += sizeof(T);
     }
     return bytes;
+}
+
+/// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order.
+void expectPool(const char * name, std::initializer_list<std::string_view> extras)
+{
+    Codecs pool;
+    ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*type(name), defaultCodec())) << "type " << name;
+    ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
+    EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
+    EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
+    size_t i = 2;
+    for (const auto extra : extras)
+        EXPECT_EQ(pool[i++]->getCodecDesc()->formatForLogging(), extra) << "type " << name;
 }
 
 /// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.
@@ -97,25 +110,20 @@ TEST(AdaptiveCodecPool, CandidateTypesGetT64)
           "Decimal(9, 2)",
           "Decimal(18, 2)",
           "IPv4"})
-    {
-        Codecs pool;
-        ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*type(name), defaultCodec())) << "type " << name;
-        ASSERT_EQ(pool.size(), 3u) << "type " << name;
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
-        EXPECT_EQ(pool[2]->getMethodByte(), T64) << "type " << name;
-    }
+        expectPool(name, {"T64"});
+}
+
+TEST(AdaptiveCodecPool, FloatTypesGetALPVariants)
+{
+    /// STD before RD because STD decompressed faster (we want it in case of tie)
+    for (const auto * name : {"Float32", "Float64"})
+        expectPool(name, {"ALP(STD)", "ALP(RD)"});
 }
 
 TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
 {
-    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "Float32", "Float64", "UUID"})
-    {
-        auto pool = AdaptiveCodec::poolForType(*type(name), defaultCodec());
-        EXPECT_EQ(pool.size(), 2u) << "type " << name;
-        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name;
-        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name;
-    }
+    for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "UUID", "BFloat16"})
+        expectPool(name, {});
 }
 
 TEST(AdaptiveCodecPool, MultipleCodecAggregatesEncryption)

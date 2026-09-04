@@ -135,7 +135,10 @@ public:
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
-        buffer.reserve(sample_count);
+        /// The sample count is read from the state and cannot be trusted, so only a bounded amount is reserved
+        /// upfront and `add` grows the buffer while the samples are read. That way a corrupted count fails with
+        /// an end-of-buffer error instead of allocating memory for the claimed number of samples.
+        buffer.reserve(std::min(sample_count, MAX_SAMPLES_TO_RESERVE));
         /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `sort` restores the invariant if it was violated.
         for (size_t s = 0; s < sample_count; ++s)
         {
@@ -179,6 +182,9 @@ public:
     }
 
 private:
+    /// How many samples `deserialize` reserves before reading the data. Bigger buckets grow while they are read.
+    static constexpr size_t MAX_SAMPLES_TO_RESERVE = 4096;
+
     /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
     using Buffer = absl::InlinedVector<
         std::pair<TimestampType, ValueType>,

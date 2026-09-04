@@ -15,9 +15,11 @@ from threading import Thread
 
 import yaml
 
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -863,17 +865,29 @@ def create_log_export_configs():
         return True
     try:
         host, password = log_export.get_credentials()
-        for config_dir, binary in (
-            (perf_left_config, f"{perf_left}/clickhouse"),
-            (perf_right_config, f"{perf_right}/clickhouse"),
-        ):
+    except Exception:
+        # Best effort: a job that cannot export its system logs still runs.
+        traceback.print_exc()
+        return True
+    for config_dir, binary in (
+        (perf_left_config, f"{perf_left}/clickhouse"),
+        (perf_right_config, f"{perf_right}/clickhouse"),
+    ):
+        # Per server: the export of the one whose config cannot be written is
+        # the only one lost. The reference server runs an older build, and it
+        # is the one whose `system.settings` probe can fail; the patched server
+        # is the side the check reports on, and it keeps its export.
+        try:
             if not log_export.create_config(config_dir, host, password):
                 print(f"WARNING: Failed to write the log export config into [{config_dir}]")
                 continue
             write_ci_logs_sender_user(config_dir, binary)
-    except Exception:
-        # Best effort: a job that cannot export its system logs still runs.
-        traceback.print_exc()
+        except Exception:
+            traceback.print_exc()
+            print(
+                f"WARNING: Failed to configure the log export of the server in "
+                f"[{config_dir}], its system logs will not be exported"
+            )
     return True
 
 
@@ -1274,10 +1288,19 @@ def parse_args():
     return parser.parse_args()
 
 
+def master_build_link(sha, build_type):
+    """Ask praktika where `MasterCI` published the build of master commit `sha`,
+    so that a later change of the prefix layout is picked up here for free."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{prefix}/{build_type}/clickhouse"
+
+
 def find_prev_build(info, build_type):
     commits = info.get_kv_data("master_track_commits_sha") or []
     for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        link = master_build_link(sha, build_type)
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
     return None
@@ -1287,7 +1310,7 @@ def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
     for sha in commits:
-        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        link = master_build_link(sha, build_type)
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
     return None
@@ -1425,6 +1448,14 @@ MASTER_RUN_INCOMPLETE = "incomplete"
 MASTER_WORKFLOW_RESULT_FILE = "result_masterci.json"
 
 
+def master_report_link(sha, file_name):
+    """Link to a report file published by `MasterCI` at master commit `sha`."""
+    prefix = _Environment.get_s3_prefix_static(
+        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+    )
+    return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{prefix}/{file_name}"
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -1450,10 +1481,7 @@ def classify_missing_prev_master_run(job_name, sha):
     or parsed. Those all stop the walk, and the caller falls back to the
     absolute gate for this one run - the next master run finds this run's own
     result and gets its delta back."""
-    link = (
-        "https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/"
-        f"{sha}/{MASTER_WORKFLOW_RESULT_FILE}"
-    )
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
     state, out = fetch_prev_master_result(link)
     if state == FETCH_MISSING:
         print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
@@ -1507,7 +1535,7 @@ def find_prev_master_slower_count(job_name, commits, release_base_sha):
     before reaching the previous run that did measure this job."""
     result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
     for sha in commits:
-        link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
+        link = master_report_link(sha, result_file_name)
         state, out = fetch_prev_master_result(link)
         if state == FETCH_MISSING:
             if classify_missing_prev_master_run(job_name, sha) == MASTER_RUN_INCOMPLETE:
@@ -1756,9 +1784,7 @@ def main():
     if Utils.is_arm():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_arm_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
@@ -1767,9 +1793,7 @@ def main():
     elif Utils.is_amd():
         if compare_against_master:
             link_for_ref_ch = find_prev_build(info, "build_amd_release")
-            if not link_for_ref_ch:
-                print("WARNING: No build found for master track commits, falling back to latest master build")
-                link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
