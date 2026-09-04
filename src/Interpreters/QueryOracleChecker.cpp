@@ -109,6 +109,7 @@ const std::unordered_set<String> non_deterministic_functions = {
     "anyRespectNulls", "anyLastRespectNulls",
     "first_value", "last_value",
     "topK", "topKWeighted",
+    "approx_top_k", "approx_top_sum",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
     /// than direct computation due to approximate merging algorithms. Block both
