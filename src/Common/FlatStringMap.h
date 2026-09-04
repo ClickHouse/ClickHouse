@@ -30,6 +30,12 @@ struct FlatStringMap
     size_t size() const { return ends.size() / 2; }
     bool empty() const { return ends.empty(); }
 
+    void reserve(size_t entries, size_t bytes)
+    {
+        ends.reserve(2 * entries);
+        data.reserve(bytes);
+    }
+
     /// f(std::string_view key, std::string_view value)
     template <typename F>
     void forEach(F && f) const

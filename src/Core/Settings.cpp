@@ -9496,6 +9496,12 @@ FlatStringMap SettingsImpl::changedToFlatMap() const
 {
     FlatStringMap result;
 
+    /// What makes this dump large is an old `compatibility` value, and how many settings that changed
+    /// is already known, so the buffer can be sized up front instead of growing a dozen times. A name
+    /// and its value take 38 bytes on average.
+    const size_t expected_entries = num_settings_changed_by_compatibility_setting + 32;
+    result.reserve(expected_entries, expected_entries * 48);
+
     const auto & accessor = Traits::Accessor::instance();
     const size_t num_settings = accessor.size();
     for (size_t i = 0; i < num_settings; ++i)
