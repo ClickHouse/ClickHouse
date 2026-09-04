@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,9 +161,12 @@ ALTER TABLE table DROP INDEX text_idx;
   Los separadores pueden especificarse mediante un parámetro opcional; por ejemplo, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Tenga en cuenta que cada cadena puede constar de varios caracteres (`', '` en el ejemplo).
   La lista de separadores predeterminada, si no se especifica explícitamente (por ejemplo, `tokenizer = splitByString`), es un único espacio en blanco `[' ']`.
-* `splitByRegexp(re)` divide cadenas usando un separador de expresión regular `re` definido por el usuario (consulte la función [splitByRegexp](/es/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  El argumento `re` es obligatorio; por ejemplo, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  A diferencia de las cadenas separadoras fijas de `splitByString`, un separador de expresión regular puede conservar tokens que contienen caracteres especiales (como `C++` o `C#`) que los demás tokenizadores dividirían.
+* `splitByRegexp(regexp[, match_tokens])` divide cadenas según una expresión regular `regexp` definida por el usuario.
+  El argumento `regexp` es obligatorio; por ejemplo, `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  El argumento opcional `match_tokens` (`false` de forma predeterminada; también se aceptan `0`/`1`) controla qué representa `regexp`:
+  * con `match_tokens = false` (el valor predeterminado), `regexp` representa separadores: los tokens son los fragmentos de texto (no vacíos) situados entre coincidencias sucesivas (la misma semántica que la función [splitByRegexp](/es/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  * con `match_tokens = true`, en su lugar se busca la coincidencia directa de `regexp`: cada coincidencia aporta como máximo un token —su primer grupo de captura, o la coincidencia completa si `regexp` no tiene ningún grupo de captura— y todo lo que queda fuera de las coincidencias se descarta. Por ejemplo, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexa `hello` y `world` a partir de `tag:hello tag:world`, descartando el prefijo `tag:`. La coincidencia usa [RE2](https://github.com/google/re2), el mismo motor que emplean todas las funciones basadas en expresiones regulares en ClickHouse; solo se utiliza el primer grupo de captura, por lo que los grupos posteriores únicamente restringen lo que coincide. Un grupo de captura que no participó en la coincidencia, o que coincidió con una cadena vacía, no aporta ningún token, y el análisis siempre se reanuda después de la coincidencia completa en lugar de después del fragmento capturado (de modo que las coincidencias nunca se superponen).
+    Con `match_tokens = true`, tenga en cuenta que los patrones de búsqueda de las funciones de búsqueda de texto se tokenizan con el propio tokenizador del índice, por lo que un patrón de cadena simple que no coincida por sí mismo con `regexp` no genera tokens y, por tanto, tampoco resultados. Los patrones pasados como arrays a las funciones de búsqueda de texto no se tokenizan y, por ello, se recomiendan para su uso con tokenizadores de expresiones regulares.
 * `asciiCJK` divide cadenas en tokens usando reglas de límites de palabra de Unicode (similares a [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Los caracteres ASCII alfanuméricos y los guiones bajos forman tokens con conectores (ASCII `:` para letras, `.` y `'` para caracteres del mismo tipo). Los caracteres Unicode no ASCII, incluidos los caracteres [CJK](https://en.wikipedia.org/wiki/CJK_characters), se convierten en tokens de un solo carácter.
 * `chinese[(granularity)]` segmenta texto chino en palabras mediante un diccionario y un modelo oculto de Markov (el algoritmo sigue [jieba](https://github.com/fxsjy/jieba); los datos del diccionario y del modelo integrados derivan de [cppjieba](https://github.com/yanyiwu/cppjieba)). A diferencia de `asciiCJK`, que trata cada carácter no ASCII como un token de un solo carácter, `chinese` agrupa caracteres chinos consecutivos en palabras (por ejemplo, `北京大学` se convierte en un token `北京大学` en lugar de cuatro tokens de un solo carácter). Esto genera tokens más significativos para texto chino y una mayor calidad de búsqueda. Para texto general o mixto, use `asciiCJK`; para texto exclusivamente chino, use `chinese`. El argumento opcional `granularity` es `'coarse_grained'` (el valor predeterminado si no se especifica) o `'fine_grained'`. Este último además enumera subpalabras superpuestas; por ejemplo, `北京邮电大学` también genera `北京`, `邮电`, `大学`. La tokenización de granularidad fina mejora la exhaustividad a costa de un índice más grande.
   Busque en un índice de texto `chinese` con [hasAnyTokens](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens) (que tokenizan el patrón con el tokenizador `chinese`), no con `hasToken` (que solo divide en separadores ASCII).

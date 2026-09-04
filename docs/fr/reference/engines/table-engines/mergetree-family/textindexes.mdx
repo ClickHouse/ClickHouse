@@ -70,7 +70,7 @@ Nous recommandons vivement d’utiliser ClickHouse version 26.2 ou ultérieure p
   Les index de texte peuvent être utilisés avec n’importe quelle version de ClickHouse &gt;= 26.2, quel que soit le paramètre de [compatibilité](/fr/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
-Pour créer un index de texte, utilisez la syntaxe suivante :
+Pour créer un index de texte, utilisez la syntaxe suivante :
 
 ```sql title="Query"
 CREATE TABLE table
@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -104,7 +104,7 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
-Les index de texte peuvent être définis sur des colonnes des types suivants :
+Les index de texte peuvent être définis sur des colonnes des types suivants :
 
 * [String](/fr/reference/data-types/string) et [FixedString](/fr/reference/data-types/fixedstring),
 * [Array(String)](/fr/reference/data-types/array) et [Array(FixedString)](/fr/reference/data-types/array),
@@ -113,7 +113,7 @@ Les index de texte peuvent être définis sur des colonnes des types suivants :
 
 Les colonnes de type [Nullable(T)](/fr/reference/data-types/nullable) et [LowCardinality()](/fr/reference/data-types/lowcardinality) sont également prises en charge, y compris `Array(Nullable(String or FixedString))`.
 
-Autrement, pour ajouter un index de texte à une table existante :
+Autrement, pour ajouter un index de texte à une table existante :
 
 ```sql title="Query"
 ALTER TABLE table
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -154,21 +154,24 @@ Pour supprimer un index de texte, exécutez
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
-**Argument du tokenizer (obligatoire)**. L’argument `tokenizer` précise le tokenizer :
+**Argument du tokenizer (obligatoire)**. L’argument `tokenizer` précise le tokenizer :
 
 * `splitByNonAlpha` divise les chaînes selon les caractères ASCII non alphanumériques (voir la fonction [splitByNonAlpha](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` divise les chaînes à l&#39;aide de certaines chaînes séparatrices `S` définies par l&#39;utilisateur (voir la fonction [splitByString](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
   Les séparateurs peuvent être spécifiés à l&#39;aide d&#39;un paramètre facultatif, par exemple `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Notez que chaque chaîne peut être composée de plusieurs caractères (`', '` dans l&#39;exemple).
   La liste de séparateurs par défaut, si elle n&#39;est pas explicitement spécifiée (par exemple `tokenizer = splitByString`), est un seul espace `[' ']`.
-* `splitByRegexp(re)` divise les chaînes selon un séparateur d’expression régulière `re` défini par l’utilisateur (voir la fonction [splitByRegexp](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  L’argument `re` est obligatoire, par exemple `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  Contrairement aux chaînes séparatrices fixes de `splitByString`, un séparateur d’expression régulière peut préserver les tokens contenant des caractères spéciaux (comme `C++` ou `C#`) que les autres tokenizers sépareraient.
+* `splitByRegexp(regexp[, match_tokens])` divise les chaînes selon une expression régulière `regexp` définie par l’utilisateur.
+  L’argument `regexp` est obligatoire, par exemple `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  L’argument facultatif `match_tokens` (`false` par défaut ; `0`/`1` sont également acceptés) détermine ce que représente `regexp` :
+  * avec `match_tokens = false` (la valeur par défaut), `regexp` représente des séparateurs : les tokens sont les portions de texte (non vides) situées entre deux correspondances successives (même sémantique que la fonction [splitByRegexp](/fr/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  * avec `match_tokens = true`, `regexp` fait au contraire l’objet d’une correspondance directe : chaque correspondance produit au plus un token — son premier groupe de capture, ou la correspondance entière si `regexp` ne comporte aucun groupe de capture — et tout ce qui se trouve en dehors des correspondances est ignoré. Par exemple, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexe `hello` et `world` à partir de `tag:hello tag:world`, en supprimant le préfixe `tag:`. La correspondance s’appuie sur [RE2](https://github.com/google/re2), le même moteur que celui utilisé par toutes les fonctions fondées sur les expressions régulières dans ClickHouse ; seul le premier groupe de capture est utilisé, les groupes suivants ne font donc que restreindre ce qui correspond. Un groupe de capture n’ayant pas participé à la correspondance, ou ayant correspondu à une chaîne vide, ne produit aucun token, et le parcours reprend toujours après la correspondance complète plutôt qu’après le span capturé (les correspondances ne se chevauchent donc jamais).
+    Avec `match_tokens = true`, notez que les needles de recherche des fonctions de recherche de texte sont tokenisés avec le tokenizer propre à l’index : un needle sous forme de chaîne simple qui ne correspond pas lui-même à `regexp` ne produit donc aucun token, et par conséquent aucun résultat. Les needles transmis sous forme de tableaux aux fonctions de recherche de texte ne sont pas tokenisés ; leur utilisation est donc recommandée avec les tokenizers regexp.
 * `asciiCJK` divise les chaînes en tokens selon les règles de délimitation des mots Unicode (comme dans [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Les caractères ASCII alphanumériques et les traits de soulignement forment des tokens avec des connecteurs (ASCII `:` pour les lettres, `.` et `'` pour les caractères de même type). Les caractères Unicode non ASCII, y compris les caractères [CJK](https://en.wikipedia.org/wiki/CJK_characters), deviennent des tokens d&#39;un seul caractère.
-* `chinese[(granularity)]` segmente le texte chinois en mots à l’aide d’un dictionnaire et d’un modèle de Markov caché (l’algorithme suit [jieba](https://github.com/fxsjy/jieba) ; les données du dictionnaire et du modèle intégrés sont dérivées de [cppjieba](https://github.com/yanyiwu/cppjieba)). Contrairement à `asciiCJK`, qui traite chaque caractère non ASCII comme un token d’un seul caractère, `chinese` regroupe les caractères chinois consécutifs en mots (par exemple, `北京大学` devient un seul token `北京大学` plutôt que quatre tokens d’un seul caractère). Cela produit des tokens plus significatifs pour le texte chinois et améliore la qualité de recherche. Pour le texte général ou mixte, utilisez `asciiCJK` ; pour le texte exclusivement chinois, utilisez `chinese`. L’argument facultatif `granularity` est soit `'coarse_grained'` (la valeur par défaut s’il n’est pas spécifié), soit `'fine_grained'`. Ce dernier répertorie également les sous-mots qui se chevauchent ; par exemple, `北京邮电大学` produit également `北京`, `邮电`, `大学`. La tokenisation fine améliore le rappel au prix d’un index plus volumineux.
+* `chinese[(granularity)]` segmente le texte chinois en mots à l’aide d’un dictionnaire et d’un modèle de Markov caché (l’algorithme suit [jieba](https://github.com/fxsjy/jieba) ; les données du dictionnaire et du modèle intégrés sont dérivées de [cppjieba](https://github.com/yanyiwu/cppjieba)). Contrairement à `asciiCJK`, qui traite chaque caractère non ASCII comme un token d’un seul caractère, `chinese` regroupe les caractères chinois consécutifs en mots (par exemple, `北京大学` devient un seul token `北京大学` plutôt que quatre tokens d’un seul caractère). Cela produit des tokens plus significatifs pour le texte chinois et améliore la qualité de recherche. Pour le texte général ou mixte, utilisez `asciiCJK` ; pour le texte exclusivement chinois, utilisez `chinese`. L’argument facultatif `granularity` est soit `'coarse_grained'` (la valeur par défaut s’il n’est pas spécifié), soit `'fine_grained'`. Ce dernier répertorie également les sous-mots qui se chevauchent ; par exemple, `北京邮电大学` produit également `北京`, `邮电`, `大学`. La tokenisation fine améliore le rappel au prix d’un index plus volumineux.
   Recherchez dans un index de texte `chinese` avec [hasAnyTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/fr/reference/functions/regular-functions/string-search-functions#hasAllTokens) (qui tokenisent le needle avec le tokenizer `chinese`), et non avec `hasToken` (qui divise uniquement selon les séparateurs ASCII).
-* `icu(locale)` divise les chaînes en tokens de mots à l’aide de la segmentation des mots Unicode (UAX #29) de la bibliothèque [ICU](https://icu.unicode.org/). Pour les écritures qui ne séparent pas les mots par des espaces (p. ex. le chinois, le japonais, le thaï), ICU applique une segmentation fondée sur un dictionnaire : contrairement à `asciiCJK`, ce texte est donc divisé en mots significatifs de plusieurs caractères plutôt qu’en caractères uniques. Ici, « dictionnaire » désigne les listes de mots intégrées d’ICU pour ces écritures (voir [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)) ; ICU choisit le découpage le plus probable parmi ces mots.
-  `locale` correspond aux paramètres régionaux ICU transmis au segmenteur ; la segmentation est principalement déterminée par l’écriture et le dictionnaire, et les paramètres régionaux sélectionnent les adaptations propres à ICU. Il s’agit d’un paramètre obligatoire, par exemple `tokenizer = icu('ja')` ou `tokenizer = icu('zh')`.
+* `icu(locale)` divise les chaînes en tokens de mots à l’aide de la segmentation des mots Unicode (UAX #29) de la bibliothèque [ICU](https://icu.unicode.org/). Pour les écritures qui ne séparent pas les mots par des espaces (p. ex. le chinois, le japonais, le thaï), ICU applique une segmentation fondée sur un dictionnaire : contrairement à `asciiCJK`, ce texte est donc divisé en mots significatifs de plusieurs caractères plutôt qu’en caractères uniques. Ici, « dictionnaire » désigne les listes de mots intégrées d’ICU pour ces écritures (voir [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)) ; ICU choisit le découpage le plus probable parmi ces mots.
+  `locale` correspond aux paramètres régionaux ICU transmis au segmenteur ; la segmentation est principalement déterminée par l’écriture et le dictionnaire, et les paramètres régionaux sélectionnent les adaptations propres à ICU. Il s’agit d’un paramètre obligatoire, par exemple `tokenizer = icu('ja')` ou `tokenizer = icu('zh')`.
   Les paramètres régionaux disponibles peuvent être répertoriés avec `SELECT * FROM system.collations`.
 * `japanese` divise le texte japonais en mots à l’aide de l’analyseur morphologique [MeCab](https://github.com/taku910/mecab). Contrairement à `asciiCJK`, qui produit des tokens d’un seul caractère pour les entrées CJK, ce tokenizer effectue une segmentation correcte des mots. Il nécessite un dictionnaire chargé à l’exécution à partir de la configuration du serveur (voir [Dictionnaire du tokenizer japonais](#japanese-tokenizer-dictionary)).
 * `ngrams(N)` divise les chaînes en `N`-grammes de taille identique (voir la fonction [ngrams](/fr/reference/functions/regular-functions/splitting-merging-functions#ngrams)).

@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,9 +161,12 @@ ALTER TABLE table DROP INDEX text_idx;
   可以通过可选参数指定分隔符，例如 `tokenizer = splitByString([', ', '; ', '\n', '\\'])`。
   请注意，每个分隔符字符串都可以包含多个字符 (如示例中的 `', '`) 。
   如果未显式指定，默认分隔符列表 (例如 `tokenizer = splitByString`) 为单个空格字符 `[' ']`。
-* `splitByRegexp(re)` 按用户定义的正则表达式分隔符 `re` 拆分字符串 (参见函数 [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)) 。
-  `re` 参数为必需参数，例如 `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`。
-  与 `splitByString` 的固定分隔符字符串不同，正则表达式分隔符可以保留包含特殊字符的标记 (如 `C++` 或 `C#`)，而其他分词器会将其拆分。
+* `splitByRegexp(regexp[, match_tokens])` 按用户定义的正则表达式 `regexp` 拆分字符串。
+  `regexp` 参数为必需参数，例如 `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`。
+  可选的 `match_tokens` 参数 (默认为 `false`；也接受 `0`/`1`) 控制 `regexp` 所表示的含义：
+  * 当 `match_tokens = false` (默认值) 时，`regexp` 表示分隔符：标记是相邻两次匹配之间的 (非空) 文本片段 (语义与函数 [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 相同) 。
+  * 当 `match_tokens = true` 时，则直接对 `regexp` 进行匹配：每次匹配最多贡献一个标记 — 即其第一个捕获组，若 `regexp` 没有捕获组则为整个匹配 — 匹配之外的内容都会被丢弃。例如，`tokenizer = splitByRegexp('tag:(\w+)', true)` 会从 `tag:hello tag:world` 中索引 `hello` 和 `world`，并丢弃 `tag:` 前缀。匹配使用 [RE2](https://github.com/google/re2)，即 ClickHouse 中所有基于正则表达式的函数所使用的同一引擎；始终只使用第一个捕获组，因此后续的捕获组仅用于约束匹配内容。未参与匹配或匹配到空字符串的捕获组不会贡献标记，并且扫描始终从整个匹配之后继续，而不是从捕获的 span 之后继续 (因此匹配之间不会重叠) 。
+    在 `match_tokens = true` 时，请注意文本搜索函数中的搜索 needle 会使用索引自身的分词器进行分词，因此本身不匹配 `regexp` 的普通字符串 needle 不会产生任何标记，也就不会有任何结果。以数组形式传递给文本搜索函数的 needle 不会被分词，因此推荐与 regexp 分词器搭配使用。
 * `asciiCJK` 使用 Unicode 单词边界规则将字符串拆分为标记 (类似于 [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)) 。ASCII 字母数字字符和下划线会与连接符一起组成标记 (字母使用 ASCII `:`，同类字符使用 `.` 和 `'`) 。非 ASCII Unicode 字符 (包括 [CJK](https://en.wikipedia.org/wiki/CJK_characters) 字符) 会成为单字符标记。
 * `chinese[(granularity)]` 使用字典和隐马尔可夫模型将中文文本分词 (该算法遵循 [jieba](https://github.com/fxsjy/jieba)；内置字典和模型数据源自 [cppjieba](https://github.com/yanyiwu/cppjieba))。与将每个非 ASCII 字符视为单字符标记的 `asciiCJK` 不同，`chinese` 会将连续的中文字符组合成词语 (例如 `北京大学` 会成为一个标记 `北京大学`，而不是四个单字符标记)。这可为中文文本生成更有意义的标记，并提高搜索质量。对于通用/混合文本，请使用 `asciiCJK`；对于纯中文文本，请使用 `chinese`。可选的 `granularity` 参数可以是 `'coarse_grained'` (未指定时的默认值) 或 `'fine_grained'`。后者还会枚举重叠的子词，例如 `北京邮电大学` 还会生成 `北京`、`邮电`、`大学`。细粒度分词可提高召回率，但会导致索引更大。
   使用 [hasAnyTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens) 搜索 `chinese` 文本索引 (它们会使用 `chinese` 分词器对 needle 进行分词)，而不要使用 `hasToken` (它只按 ASCII 分隔符拆分)。

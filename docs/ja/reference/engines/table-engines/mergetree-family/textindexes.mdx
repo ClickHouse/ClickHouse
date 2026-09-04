@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,11 +161,13 @@ ALTER TABLE table DROP INDEX text_idx;
   区切り文字は省略可能なパラメータで指定できます。たとえば、`tokenizer = splitByString([', ', '; ', '\n', '\\'])` のように指定します。
   各 String は複数文字で構成することもできます (例では `', '`) 。
   明示的に指定しない場合 (たとえば `tokenizer = splitByString`) 、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
-* `splitByRegexp(re)` は、ユーザー定義の正規表現区切り文字 `re` で String を分割します (関数 [splitByRegexp](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) を参照) 。
-  `re` 引数は必須です。たとえば、`tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')` のように指定します。
-  固定の区切り String を使用する `splitByString` とは異なり、正規表現区切り文字では、他のトークナイザーでは分割される `C++` や `C#` などの特殊文字を含むトークンを保持できます。
-* `asciiCJK` は、Unicode の単語境界規則を使用して String をトークンに分割します ([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/) に類似) 。
-  ASCII の英数字とアンダースコアは、コネクタ (文字に対する ASCII `:`、同種の文字に対する `.` および `'`) を含むトークンを構成します。非 ASCII の Unicode 文字は、[CJK](https://en.wikipedia.org/wiki/CJK_characters) 文字を含め、1 文字のトークンになります。
+* `splitByRegexp(regexp[, match_tokens])` は、ユーザー定義の正規表現 `regexp` に従って String を分割します。
+  `regexp` 引数は必須です。たとえば、`tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')` のように指定します。
+  省略可能な `match_tokens` 引数 (デフォルトは `false`、`0`/`1` も指定可能) は、`regexp` が何を表すかを制御します。
+  * `match_tokens = false` (デフォルト) の場合、`regexp` は区切り文字を表します。トークンは、連続するマッチの間にある (空でない) テキスト片です (関数 [splitByRegexp](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) と同じセマンティクスです) 。
+  * `match_tokens = true` の場合、代わりに `regexp` が直接マッチされます。各マッチが生成するトークンは最大 1 つで、それは最初のキャプチャグループ、あるいは `regexp` にキャプチャグループがない場合はマッチ全体です。マッチの外側にあるものはすべて破棄されます。たとえば、`tokenizer = splitByRegexp('tag:(\w+)', true)` は `tag:hello tag:world` から `hello` と `world` を索引付けし、`tag:` というプレフィックスは取り除かれます。マッチングには、ClickHouse のすべての正規表現ベースの関数が使用するのと同じエンジンである [RE2](https://github.com/google/re2) を使用します。使用されるのは常に最初のキャプチャグループのみであるため、それ以降のグループはマッチ対象を制約するだけです。マッチに関与しなかったキャプチャグループ、または空文字列にマッチしたキャプチャグループはトークンを生成しません。また、スキャンは常にキャプチャされた span の後ではなくマッチ全体の後から再開されます (そのため、マッチが重複することはありません) 。
+    `match_tokens = true` の場合、テキスト検索関数の search needle は索引自身のトークナイザーでトークン化される点に注意してください。そのため、それ自体が `regexp` にマッチしない単純な String の needle はトークンを生成せず、したがって結果も得られません。テキスト検索関数に Array として渡された needle はトークン化されないため、regexp トークナイザーと併用することが推奨されます。
+* `asciiCJK` は、Unicode の単語境界規則を使用して String をトークンに分割します ([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/) に類似) 。ASCII の英数字とアンダースコアは、コネクタ (文字に対する ASCII `:`、同種の文字に対する `.` および `'`) を含むトークンを構成します。非 ASCII の Unicode 文字は、[CJK](https://en.wikipedia.org/wiki/CJK_characters) 文字を含め、1 文字のトークンになります。
 * `chinese[(granularity)]` は、Dictionary と隠れマルコフモデルを使用して中国語テキストを単語に分割します (アルゴリズムは [jieba](https://github.com/fxsjy/jieba) に従い、埋め込み Dictionary とモデルデータは [cppjieba](https://github.com/yanyiwu/cppjieba) に由来します) 。非 ASCII 文字をすべて 1 文字のトークンとして扱う `asciiCJK` とは異なり、`chinese` は連続する中国語文字を単語にまとめます (たとえば、`北京大学` は 4 つの 1 文字トークンではなく、1 つのトークン `北京大学` になります) 。これにより、中国語テキストに対してより意味のあるトークンが得られ、検索品質が向上します。一般的なテキストや混在テキストには `asciiCJK` を、中国語のみのテキストには `chinese` を使用してください。省略可能な `granularity` 引数には、`'coarse_grained'` (指定しない場合のデフォルト) または `'fine_grained'` を指定します。後者では、たとえば `北京邮电大学` に対して `北京`、`邮电`、`大学` も生成されるよう、重複するサブワードも列挙します。きめ細かいトークン化は、より大きな索引を必要とする代わりに再現率を向上させます。
   `chinese` テキスト索引の検索には、`hasToken` (ASCII の区切り文字でのみ分割) ではなく、[hasAnyTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens) (needle を `chinese` トークナイザーでトークン化) を使用します。
 * `icu(locale)` は、[ICU](https://icu.unicode.org/) ライブラリの Unicode 単語分割 (UAX #29) を使用して String を単語トークンに分割します。単語間に空白を入れない文字体系 (中国語、日本語、タイ語など) では、ICU は Dictionaryベースの分割を適用するため、`asciiCJK` とは異なり、このようなテキストは単一文字ではなく意味のある複数文字の単語に分割されます。ここでの「Dictionary」とは、これらの文字体系用に ICU にバンドルされている単語リストを意味します ([`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries) を参照) 。ICU はこれらの単語に基づいて最も可能性の高い分割を選択します。

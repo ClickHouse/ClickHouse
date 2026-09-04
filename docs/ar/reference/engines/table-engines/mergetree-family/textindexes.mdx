@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -142,7 +142,7 @@ ALTER TABLE table
 
 ```
 
-إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات مسح بالقوة الغاشمة بطيئة).
+إذا أضفت فهرسًا إلى جدول موجود، فنوصي بإنشاء الفهرس فعليًا لأجزاء الجدول الحالية (وإلا فسيعتمد البحث في الأجزاء التي لا تحتوي على فهرس على عمليات فحص بالقوة الغاشمة بطيئة).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -154,30 +154,33 @@ ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
-**الوسيطة `tokenizer` (إلزامية)**. تحدد الوسيطة `tokenizer` مُقسِّم الرموز:
+**الوسيطة `tokenizer` (إلزامية)**. تحدد الوسيطة `tokenizer` مُقسِّم الرموز:
 
 * `splitByNonAlpha` يقسم السلاسل النصية عند محارف ASCII غير الأبجدية الرقمية (راجع الدالة [splitByNonAlpha](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` يقسم السلاسل النصية باستخدام سلاسل فاصلة `S` يحددها المستخدم (راجع الدالة [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
   يمكن تحديد الفواصل باستخدام معلمة اختيارية، على سبيل المثال: `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   لاحظ أن كل سلسلة يمكن أن تتكون من عدة محارف (`', '` في المثال).
-  قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً (على سبيل المثال: `tokenizer = splitByString`)، هي مسافة بيضاء واحدة `[' ']`.
-* `splitByRegexp(re)` يقسم السلاسل النصية باستخدام فاصل تعبير نمطي `re` يحدده المستخدم (راجع الدالة [splitByRegexp](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  الوسيطة `re` إلزامية، على سبيل المثال: `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  بخلاف سلاسل الفواصل الثابتة في `splitByString`، يمكن لفاصل التعبير النمطي الاحتفاظ بالرموز التي تحتوي على محارف خاصة (مثل `C++` أو `C#`) والتي ستقسمها مُقسِّمات الرموز الأخرى.
-* `asciiCJK` يقسم السلاسل النصية إلى رموز وفقًا لقواعد حدود الكلمات في Unicode (على غرار [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). وتُشكِّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (ASCII `:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII، بما في ذلك محارف [CJK](https://en.wikipedia.org/wiki/CJK_characters)، فتصبح رموزًا من محرف واحد.
-* `chinese[(granularity)]` يقسم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وبخلاف `asciiCJK`، الذي يعامل كل محرف غير ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات (على سبيل المثال، تصبح `北京大学` رمزًا واحدًا `北京大学` بدلًا من أربعة رموز من محرف واحد). ينتج عن ذلك رموز أكثر معنى للنص الصيني وجودة بحث أعلى. للنص العام/المختلط، يُرجى استخدام `asciiCJK`، وللنص الصيني فقط، يُرجى استخدام `chinese`. تكون معلمة `granularity` الاختيارية إما `'coarse_grained'` (القيمة الافتراضية إذا لم تُحدَّد) أو `'fine_grained'`. ويُعدِّد الأخير أيضًا الكلمات الفرعية المتداخلة؛ فعلى سبيل المثال، تُنتج `北京邮电大学` أيضًا `北京` و`邮电` و`大学`. يحسّن تقسيم الرموز الدقيق الاسترجاع على حساب فهرس أكبر.
-  ابحث في فهرس نصي `chinese` باستخدام [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) (اللذين يقسمان needle إلى رموز باستخدام مُقسِّم الرموز `chinese`)، وليس `hasToken` (الذي يقسم باستخدام فواصل ASCII فقط).
-* `icu(locale)` يقسم السلاسل النصية إلى رموز كلمات باستخدام تقسيم الكلمات في Unicode ‏(UAX #29) الخاص بمكتبة [ICU](https://icu.unicode.org/). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبق ICU تقسيمًا قائمًا على القواميس، لذلك — بخلاف `asciiCJK` — يُقسَّم هذا النص إلى كلمات مفيدة متعددة المحارف بدلًا من محارف مفردة. ويعني &quot;القاموس&quot; هنا قوائم الكلمات المضمّنة في ICU لتلك أنظمة الكتابة (راجع [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries))؛ إذ تختار ICU التقسيم الأكثر احتمالًا لهذه الكلمات.
-  `locale` هي اللغة المحلية لـ ICU التي تُمرَّر إلى المُقسِّم؛ ويعتمد التقسيم أساسًا على نظام الكتابة والقاموس، وتحدد اللغة المحلية تخصيص ICU الخاص بها. وهي معلمة إلزامية، على سبيل المثال: `tokenizer = icu('ja')` أو `tokenizer = icu('zh')`.
+  قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً (على سبيل المثال: `tokenizer = splitByString`)، هي مسافة بيضاء واحدة `[' ']`.
+* `splitByRegexp(regexp[, match_tokens])` يقسم السلاسل النصية وفقًا لتعبير نمطي `regexp` يحدده المستخدم.
+  الوسيطة `regexp` إلزامية، على سبيل المثال: `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  تتحكم الوسيطة الاختيارية `match_tokens` (‏`false` افتراضيًا؛ كما تُقبل القيمتان `0`/`1`) في ما يمثله `regexp`:
+  * مع `match_tokens = false` (القيمة الافتراضية)، يمثل `regexp` الفواصل: تكون الرموز هي أجزاء النص (غير الفارغة) الواقعة بين التطابقات المتتالية (بالدلالات نفسها للدالة [splitByRegexp](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  * مع `match_tokens = true`، يُطابَق `regexp` مباشرةً بدلًا من ذلك: إذ يسهم كل تطابق برمز واحد على الأكثر — وهو أول capture group فيه، أو التطابق بأكمله إذا لم يكن لـ `regexp` أي capture group — ويُهمَل كل ما هو خارج التطابقات. على سبيل المثال، `tokenizer = splitByRegexp('tag:(\w+)', true)` يفهرس `hello` و`world` من `tag:hello tag:world`، مع إسقاط prefix ‏`tag:`. وتستخدم المطابقة [RE2](https://github.com/google/re2)، وهو المحرك نفسه الذي تستخدمه كل دالة قائمة على التعبيرات النمطية في ClickHouse؛ ولا يُستخدَم سوى أول capture group، لذا فإن المجموعات اللاحقة تقيّد فقط ما يتطابق. أما capture group التي لم تشارك في التطابق، أو التي طابقت سلسلة فارغة، فلا تسهم بأي رمز، ويستأنف الفحص دائمًا بعد التطابق بأكمله وليس بعد span الملتقط (وبذلك لا تتداخل التطابقات أبدًا).
+    مع `match_tokens = true`، لاحظ أن search needles في دوال البحث النصي تُقسَّم إلى رموز باستخدام مُقسِّم الرموز الخاص بالفهرس نفسه، لذا فإن needle بسيطًا على هيئة سلسلة نصية لا يطابق `regexp` بذاته لن يُنتج أي رموز وبالتالي لا نتائج. أما needles التي تُمرَّر كمصفوفات إلى دوال البحث النصي فلا تُقسَّم إلى رموز، ولذلك يُوصى باستخدامها مع مُقسِّمات الرموز القائمة على التعبيرات النمطية.
+* `asciiCJK` يقسم السلاسل النصية إلى رموز وفقًا لقواعد حدود الكلمات في Unicode (على غرار [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). وتُشكِّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (ASCII `:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII، بما في ذلك محارف [CJK](https://en.wikipedia.org/wiki/CJK_characters)، فتصبح رموزًا من محرف واحد.
+* `chinese[(granularity)]` يقسم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وبخلاف `asciiCJK`، الذي يعامل كل محرف غير ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات (على سبيل المثال، تصبح `北京大学` رمزًا واحدًا `北京大学` بدلًا من أربعة رموز من محرف واحد). ينتج عن ذلك رموز أكثر معنى للنص الصيني وجودة بحث أعلى. للنص العام/المختلط، يُرجى استخدام `asciiCJK`، وللنص الصيني فقط، يُرجى استخدام `chinese`. تكون معلمة `granularity` الاختيارية إما `'coarse_grained'` (القيمة الافتراضية إذا لم تُحدَّد) أو `'fine_grained'`. ويُعدِّد الأخير أيضًا الكلمات الفرعية المتداخلة؛ فعلى سبيل المثال، تُنتج `北京邮电大学` أيضًا `北京` و`邮电` و`大学`. يحسّن تقسيم الرموز الدقيق الاسترجاع على حساب فهرس أكبر.
+  ابحث في فهرس نصي `chinese` باستخدام [hasAnyTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ar/reference/functions/regular-functions/string-search-functions#hasAllTokens) (اللذين يقسمان needle إلى رموز باستخدام مُقسِّم الرموز `chinese`)، وليس `hasToken` (الذي يقسم باستخدام فواصل ASCII فقط).
+* `icu(locale)` يقسم السلاسل النصية إلى رموز كلمات باستخدام تقسيم الكلمات في Unicode ‏(UAX #29) الخاص بمكتبة [ICU](https://icu.unicode.org/). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبق ICU تقسيمًا قائمًا على القواميس، لذلك — بخلاف `asciiCJK` — يُقسَّم هذا النص إلى كلمات مفيدة متعددة المحارف بدلًا من محارف مفردة. ويعني &quot;القاموس&quot; هنا قوائم الكلمات المضمّنة في ICU لتلك أنظمة الكتابة (راجع [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries))؛ إذ تختار ICU التقسيم الأكثر احتمالًا لهذه الكلمات.
+  `locale` هي اللغة المحلية لـ ICU التي تُمرَّر إلى المُقسِّم؛ ويعتمد التقسيم أساسًا على نظام الكتابة والقاموس، وتحدد اللغة المحلية تخصيص ICU الخاص بها. وهي معلمة إلزامية، على سبيل المثال: `tokenizer = icu('ja')` أو `tokenizer = icu('zh')`.
   يمكن إدراج اللغات المحلية المتاحة باستخدام `SELECT * FROM system.collations`.
-* `japanese` يقسم النص الياباني إلى كلمات باستخدام المحلل الصرفي [MeCab](https://github.com/taku910/mecab). وبخلاف `asciiCJK`، الذي يُنتج رموزًا من محرف واحد لمدخلات CJK، يُجري مُقسِّم الرموز هذا تقسيمًا صحيحًا للكلمات. ويتطلب قاموسًا يُحمَّل في وقت التشغيل من تهيئة الخادم (راجع [قاموس مُقسِّم الرموز الياباني](#japanese-tokenizer-dictionary)).
+* `japanese` يقسم النص الياباني إلى كلمات باستخدام المحلل الصرفي [MeCab](https://github.com/taku910/mecab). وبخلاف `asciiCJK`، الذي يُنتج رموزًا من محرف واحد لمدخلات CJK، يُجري مُقسِّم الرموز هذا تقسيمًا صحيحًا للكلمات. ويتطلب قاموسًا يُحمَّل في وقت التشغيل من تهيئة الخادم (راجع [قاموس مُقسِّم الرموز الياباني](#japanese-tokenizer-dictionary)).
 * `ngrams(N)` يقسم السلاسل النصية إلى n-grams متساوية الحجم بطول `N` (راجع الدالة [ngrams](/ar/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
   يمكن تحديد طول ngram باستخدام معلمة عدد صحيح اختيارية بين 1 و8، على سبيل المثال: `tokenizer = ngrams(3)`.
-  حجم ngram الافتراضي، إذا لم يُحدَّد صراحةً (على سبيل المثال: `tokenizer = ngrams`)، هو 3.
+  حجم ngram الافتراضي، إذا لم يُحدَّد صراحةً (على سبيل المثال: `tokenizer = ngrams`)، هو 3.
 * `sparseGrams(min_length, max_length, min_cutoff_length)` يقسم السلاسل النصية إلى n-grams متغيرة الطول، بحيث لا يقل طولها عن `min_length` ولا يزيد على `max_length` (شاملًا) من المحارف (راجع الدالة [sparseGrams](/ar/reference/functions/regular-functions/string-functions#sparseGrams)).
-  ما لم يُحدَّد ذلك صراحةً، تكون القيم الافتراضية لـ `min_length` و`max_length` هي 3 و100.
+  ما لم يُحدَّد ذلك صراحةً، تكون القيم الافتراضية لـ `min_length` و`max_length` هي 3 و100.
   إذا تم توفير المعلمة `min_cutoff_length`، فلن تُعاد إلا n-grams التي يكون طولها أكبر من أو مساويًا لـ `min_cutoff_length`.
-  مقارنةً بـ `ngrams(N)`، يُنتج مُقسِّم الرموز `sparseGrams` ‏N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي.
+  مقارنةً بـ `ngrams(N)`، يُنتج مُقسِّم الرموز `sparseGrams` ‏N-grams متغيرة الطول، مما يتيح تمثيلًا أكثر مرونة للنص الأصلي.
   على سبيل المثال، `tokenizer = sparseGrams(3, 5, 4)` يُنشئ داخليًا 3- و4- و5-grams من سلسلة الإدخال، لكن لا تُعاد إلا 4- و5-grams.
 * `array` لا يُجري أي تقسيم إلى رموز، أي إن كل قيمة في row هي رمز (راجع الدالة [array](/ar/reference/functions/regular-functions/array-functions#array)). للتوافق مع الأنظمة الأخرى، يتوفر `keyword` كاسم مستعار لـ `array`.
 

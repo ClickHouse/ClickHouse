@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,9 +161,12 @@ ALTER TABLE table DROP INDEX text_idx;
   Os separadores podem ser especificados usando um parâmetro opcional; por exemplo, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   Observe que cada string pode ser composta por vários caracteres (`', '` no exemplo).
   A lista padrão de separadores, se não for especificada explicitamente (por exemplo, `tokenizer = splitByString`), é um único espaço em branco `[' ']`.
-* `splitByRegexp(re)` divide strings usando um separador de expressão regular `re` definido pelo usuário (consulte a função [splitByRegexp](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
-  O argumento `re` é obrigatório; por exemplo, `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  Diferentemente das strings separadoras fixas de `splitByString`, um separador de expressão regular pode preservar tokens que contêm caracteres especiais (como `C++` ou `C#`) que os outros tokenizadores separariam.
+* `splitByRegexp(regexp[, match_tokens])` divide strings de acordo com uma expressão regular `regexp` definida pelo usuário.
+  O argumento `regexp` é obrigatório; por exemplo, `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  O argumento opcional `match_tokens` (`false` por padrão; `0`/`1` também são aceitos) controla o que `regexp` representa:
+  * com `match_tokens = false` (o padrão), `regexp` representa separadores: os tokens são os trechos de texto (não vazios) entre correspondências sucessivas (mesma semântica da função [splitByRegexp](/pt-BR/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)).
+  * com `match_tokens = true`, `regexp` é correspondido diretamente: cada correspondência contribui com no máximo um token — seu primeiro grupo de captura ou a correspondência inteira, caso `regexp` não tenha grupo de captura — e tudo fora das correspondências é descartado. Por exemplo, `tokenizer = splitByRegexp('tag:(\w+)', true)` indexa `hello` e `world` a partir de `tag:hello tag:world`, removendo o prefixo `tag:`. A correspondência usa [RE2](https://github.com/google/re2), o mesmo engine utilizado por todas as funções baseadas em regex no ClickHouse; apenas o primeiro grupo de captura é usado, de modo que grupos adicionais apenas restringem o que é correspondido. Um grupo de captura que não participou da correspondência, ou que correspondeu a uma string vazia, não contribui com nenhum token, e a varredura sempre é retomada após a correspondência completa, e não após o span capturado (portanto, as correspondências nunca se sobrepõem).
+    Com `match_tokens = true`, observe que os termos buscados nas funções de busca textual são tokenizados com o próprio tokenizador do índice; assim, um termo buscado em texto simples que não corresponda ao `regexp` não gera tokens e, portanto, nenhum resultado. Termos buscados passados como arrays para funções de busca textual não são tokenizados e, por isso, são recomendados para uso com tokenizadores regexp.
 * `asciiCJK` divide strings em tokens usando regras de limite de palavras do Unicode (semelhantes a [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Caracteres ASCII alfanuméricos e sublinhados formam tokens com conectores (ASCII `:` para letras, `.` e `'` para caracteres do mesmo tipo). Caracteres Unicode não ASCII, incluindo caracteres [CJK](https://en.wikipedia.org/wiki/CJK_characters), tornam-se tokens de um único caractere.
 * `chinese[(granularity)]` segmenta texto chinês em palavras usando um dicionário e um modelo oculto de Markov (o algoritmo segue [jieba](https://github.com/fxsjy/jieba); o dicionário e os dados do modelo embutidos são derivados de [cppjieba](https://github.com/yanyiwu/cppjieba)). Diferentemente de `asciiCJK`, que trata cada caractere não ASCII como um token de um único caractere, `chinese` agrupa caracteres chineses consecutivos em palavras (por exemplo, `北京大学` se torna um token `北京大学`, em vez de quatro tokens de um único caractere). Isso gera tokens mais significativos para texto chinês e maior qualidade de busca. Para texto geral/misto, use `asciiCJK`; para texto somente em chinês, use `chinese`. O argumento opcional `granularity` é `'coarse_grained'` (o padrão, se não for especificado) ou `'fine_grained'`. Este último também enumera subpalavras sobrepostas; por exemplo, `北京邮电大学` também gera `北京`, `邮电`, `大学`. A tokenização granular melhora o recall, ao custo de um índice maior.
   Pesquise um índice de texto `chinese` com [hasAnyTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/pt-BR/reference/functions/regular-functions/string-search-functions#hasAllTokens) (que tokenizam o termo buscado com o tokenizador `chinese`), e não com `hasToken` (que divide apenas em separadores ASCII).

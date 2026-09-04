@@ -81,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -121,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -161,9 +161,12 @@ ALTER TABLE table DROP INDEX text_idx;
   구분자는 선택적 매개변수로 지정할 수 있습니다. 예: `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   각 문자열은 여러 문자로 구성될 수 있습니다(예시의 `', '`).
   명시적으로 지정하지 않으면(예: `tokenizer = splitByString`) 기본 구분자 목록은 공백 1개인 `[' ']`입니다.
-* `splitByRegexp(re)`는 사용자가 정의한 정규식 구분자 `re`를 기준으로 문자열을 분할합니다(함수 [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 참조).
-  `re` 인수는 필수입니다. 예: `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  `splitByString`의 고정 구분자 문자열과 달리, 정규식 구분자는 다른 토크나이저가 분할하는 `C++` 또는 `C#` 같은 특수 문자가 포함된 토큰을 보존할 수 있습니다.
+* `splitByRegexp(regexp[, match_tokens])`는 사용자가 정의한 정규식 `regexp`에 따라 문자열을 분할합니다.
+  `regexp` 인수는 필수입니다. 예: `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  선택적 `match_tokens` 인수(기본값 `false`, `0`/`1`도 허용됨)는 `regexp`가 무엇을 나타내는지를 제어합니다.
+  * `match_tokens = false`(기본값)인 경우 `regexp`는 구분자를 나타냅니다. 즉, 연속된 일치 항목 사이의 (비어 있지 않은) 텍스트 조각이 토큰이 됩니다(함수 [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)와 동일한 의미).
+  * `match_tokens = true`인 경우 `regexp`가 직접 매칭됩니다. 각 일치 항목은 최대 하나의 토큰(첫 번째 캡처 그룹, 또는 `regexp`에 캡처 그룹이 없으면 일치 항목 전체)만 생성하며, 일치 항목 밖의 모든 내용은 버려집니다. 예를 들어 `tokenizer = splitByRegexp('tag:(\w+)', true)`는 `tag:hello tag:world`에서 `tag:` 접두사를 제외하고 `hello`와 `world`를 인덱싱합니다. 매칭에는 ClickHouse의 모든 정규식 기반 함수가 사용하는 것과 동일한 엔진인 [RE2](https://github.com/google/re2)가 사용됩니다. 항상 첫 번째 캡처 그룹만 사용되므로, 이후의 그룹은 무엇이 일치할지를 제한하는 역할만 합니다. 매칭에 참여하지 않았거나 빈 문자열과 일치한 캡처 그룹은 토큰을 생성하지 않으며, 스캔은 캡처된 스팬 이후가 아니라 항상 일치 항목 전체 이후부터 재개됩니다(따라서 일치 항목은 서로 겹치지 않습니다).
+    `match_tokens = true`인 경우, 텍스트 검색 함수의 검색 니들은 해당 인덱스 자체의 토크나이저로 토큰화된다는 점에 유의하십시오. 따라서 `regexp`와 일치하지 않는 일반 문자열 니들은 토큰을 생성하지 않으므로 결과도 반환되지 않습니다. 텍스트 검색 함수에 배열로 전달된 니들은 토큰화되지 않으므로, regexp 토크나이저와 함께 사용하는 것을 권장합니다.
 * `asciiCJK`는 유니코드 단어 경계 규칙을 사용해 문자열을 토큰으로 분할합니다([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)와 유사). ASCII 영숫자와 밑줄은 연결 문자와 함께 토큰을 이룹니다(문자의 경우 ASCII `:`, 같은 유형의 문자에는 `.` 및 `'`). [CJK](https://en.wikipedia.org/wiki/CJK_characters) 문자를 포함한 비ASCII 유니코드 문자는 한 글자 토큰이 됩니다.
 * `chinese[(granularity)]`는 딕셔너리와 은닉 마르코프 모델을 사용해 중국어 텍스트를 단어로 세분화합니다(알고리즘은 [jieba](https://github.com/fxsjy/jieba)를 따르며, 내장 딕셔너리와 모델 데이터는 [cppjieba](https://github.com/yanyiwu/cppjieba)에서 파생되었습니다). 모든 비ASCII 문자를 한 글자 토큰으로 처리하는 `asciiCJK`와 달리, `chinese`는 연속된 중국어 문자를 단어로 그룹화합니다(예: `北京大学`는 한 글자 토큰 4개가 아니라 하나의 토큰 `北京大学`가 됩니다). 이를 통해 중국어 텍스트에 더 의미 있는 토큰과 더 높은 검색 품질을 제공합니다. 일반/혼합 텍스트에는 `asciiCJK`를 사용하고, 중국어 전용 텍스트에는 `chinese`를 사용하십시오. 선택적 `granularity` 인수는 `'coarse_grained'`(지정하지 않은 경우 기본값) 또는 `'fine_grained'`입니다. 후자는 겹치는 하위 단어도 추가로 열거하므로, 예를 들어 `北京邮电大学`에서는 `北京`, `邮电`, `大学`도 생성됩니다. 세분화 수준이 높은 토큰화는 더 큰 인덱스를 사용하는 대신 재현율을 높입니다.
   `chinese` 텍스트 인덱스는 ASCII 구분자만 기준으로 분할하는 `hasToken`이 아니라, 니들을 `chinese` 토크나이저로 토큰화하는 [hasAnyTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)로 검색하십시오.
