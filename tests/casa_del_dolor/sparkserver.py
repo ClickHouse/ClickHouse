@@ -9,9 +9,9 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-from integration.helpers.cluster import is_port_free
-from utils.httpserver import DolorHTTPServer
-from catalogs.datalakes import SparkHandler
+from tests.integration.helpers.cluster import is_port_free
+from tests.casa_del_dolor.utils.httpserver import DolorHTTPServer
+from tests.casa_del_dolor.catalogs.datalakes import SparkHandler
 
 
 def get_unique_free_ports(total: int) -> list[int]:

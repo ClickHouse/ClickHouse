@@ -1554,27 +1554,45 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-
     )
-    buzz_fuzzer_jobs = Job.Config(
-        name=JobNames.BUZZHOUSE,
+    lacasadeldolor_jobs = Job.Config(
+        name=JobNames.LACASADELDOLOR,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/buzzhouse_job.py",
+        command="python3 ./ci/jobs/lacasadeldolor_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/fuzzer",
-                "./ci/jobs/buzzhouse_job.py",
+                "./ci/docker/integration",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/lacasadeldolor_job.py",
+                "./ci/jobs/scripts/cidb_cluster.py",
+                "./ci/jobs/scripts/clickhouse_service.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
+                "./ci/jobs/scripts/integration_tests_configs.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/users.d/ci_logs_sender.yaml",
                 "./ci/jobs/scripts/fuzzer/",
+                "./ci/jobs/scripts/server_fuzzer/",
+                "./tests/casa_del_dolor/",
+                # The whole tree, as Keeper Stress does: listing only the imported modules
+                # misses the configs `cluster.py` reads through `write_embedded_config`.
+                "./tests/integration/helpers/",
                 "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
+        # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
+        # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
+        # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
+        # and a nested OOM spills onto the runner instead of being classified here.
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+        # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
+        # this its containers, images and volumes outlive the run and the next job on the runner
+        # inherits them. Same hook the other integration-tests-runner jobs register.
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",

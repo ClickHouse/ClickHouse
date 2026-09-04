@@ -16,7 +16,11 @@ from typing import List
 
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
-from ci.jobs.scripts.log_parser import FuzzerLogParser
+from ci.jobs.scripts.log_parser import (
+    EXPECTED_KILL_PATTERN,
+    SANITIZER_OOM_PATTERN,
+    FuzzerLogParser,
+)
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1044,27 +1048,41 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             )
         )
 
-        def pick_latest_file(pattern: str) -> Path | None:
+        def pick_all_files(pattern: str) -> list[Path]:
             log_dir = Path(self.log_dir)
-            candidates = list(log_dir.glob(pattern))
-            candidates = [p for p in candidates if p.is_file()]
-            if not candidates:
-                return None
-            return max(candidates, key=lambda p: p.stat().st_mtime)
+            return sorted(
+                (p for p in log_dir.glob(pattern) if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
 
-        def pick_file_with(pattern: str, needle: str) -> Path | None:
+        def pick_file_with(pattern: str, regex: str) -> Path | None:
             # Select the specific log that contains the hit, not merely the most
             # recently modified one. On multi-server runs (e.g. DatabaseReplicated)
             # the crashed server stops logging first and so has the OLDEST mtime,
             # while surviving replicas keep writing - picking by mtime would hand
             # the parser a log without the crash and yield a bogus "Unknown error".
+            # `-z` because the logger rotates and compresses on every server open, so
+            # the only copy of the hit may sit in a `.gz`.
             out = Shell.get_output(
-                f"cd {self.log_dir} && grep -la '{needle}' {pattern} 2>/dev/null | head -n 1 || true"
+                f"cd {self.log_dir} && rg -lz --text '{regex}' {pattern} 2>/dev/null | head -n 1 || true"
             ).strip()
             return Path(self.log_dir) / out if out else None
 
+        # Trigger on exactly what the parser can classify, taken from the parser itself so
+        # this prefilter cannot end up narrower than what `parse_failure` understands:
+        # `SANITIZER_ERROR_PATTERN` covers the reports that name a sanitizer,
+        # `RUNTIME_ERROR_PATTERN` the bare "runtime error:" lines UBSan prints without
+        # naming itself. Matching on the literal "anitizer" instead used to drop the
+        # latter, leaving the parser uncalled for a failure it can describe.
+        sanitizer_pattern = (
+            f"{FuzzerLogParser.SANITIZER_ERROR_PATTERN}|"
+            f"{FuzzerLogParser.RUNTIME_ERROR_PATTERN}"
+        )
+        # `stderr*.log*` with `rg -z`, not `stderr*.log`: the logger rotates and compresses
+        # on every server open, so a report can survive only in `stderr.log.1.gz`.
         sanitizer_hits = Shell.get_output(
-            f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
+            f"rg -z --text --no-filename '{sanitizer_pattern}' {self.log_dir}/stderr*.log* 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
@@ -1073,17 +1091,37 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
-            f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
+            f"cd {self.log_dir} && rg -z --text --no-filename '<Fatal>' clickhouse-server*.log* 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = (
-                pick_file_with("clickhouse-server*.err.log", "<Fatal>")
-                or pick_file_with("clickhouse-server*.log", "<Fatal>")
-                or pick_latest_file("clickhouse-server*.err.log")
-                or pick_latest_file("clickhouse-server*.log")
-            )
-            stderr_log = pick_latest_file("stderr*.log")
-            if not (server_log or stderr_log):
+            # Every server log, not just the one that won the prefilter. Handing the parser a
+            # single file defeats `EXPECTED_PATTERNS`: it can only defer a node's expected
+            # `Child process was terminated by signal 9 (KILL)` in favour of another node's real
+            # crash if it is given both. `clickhouse-server*.log*` already globs the `.err.log*`
+            # files, and the `<Fatal>` one is moved to the front so that when several qualify the
+            # name, stack trace and STID come from it - the same ordering `stderr_logs` gets below.
+            server_logs = pick_all_files("clickhouse-server*.log*")
+            matched_server = pick_file_with(
+                "clickhouse-server*.err.log*", "<Fatal>"
+            ) or pick_file_with("clickhouse-server*.log*", "<Fatal>")
+            if matched_server:
+                server_logs = [matched_server] + [
+                    p for p in server_logs if p != matched_server
+                ]
+            # `sanitizer_hits` greps every stderr*.log*, so the parser has to see every one
+            # of them, not just the newest: a node that died on a sanitizer report stops
+            # writing and ends up with the OLDEST mtime, exactly as `pick_file_with` notes
+            # above. The rotated ones are included because `parse_failure` searches them
+            # too, and a report that rotated away still fails the run. The matching log is
+            # moved to the front so the reported sanitizer name, stack trace and STID come
+            # from it rather than from a healthy node.
+            stderr_logs = pick_all_files("stderr*.log*")
+            matched_stderr = pick_file_with("stderr*.log*", sanitizer_pattern)
+            if matched_stderr:
+                stderr_logs = [matched_stderr] + [
+                    p for p in stderr_logs if p != matched_stderr
+                ]
+            if not (server_logs or stderr_logs):
                 results.append(
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
@@ -1096,26 +1134,59 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                 try:
                     # Either log may be absent (e.g. a sanitizer report goes
                     # only to stderr when the server dies before opening its
-                    # log). `str(None)` would become the literal path "None",
-                    # which `FuzzerLogParser.get_stack_trace` then fails to
-                    # open; fall back to whichever log exists instead.
+                    # log), so pass only the logs that exist - the parser skips
+                    # missing sources instead of trying to open the literal
+                    # path "None".
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log or stderr_log),
-                        stderr_log=str(stderr_log or server_log),
-                        fuzzer_log="",
+                        server_logs=server_logs or None,
+                        stderr_logs=stderr_logs or None,
                     )
                     name, description, files = log_parser.parse_failure()
-                    results.append(
-                        Result.create_from(
-                            name=name,
-                            info=description,
-                            status=Result.Status.FAIL,
-                            files=files,
-                            labels=[
-                                Result.Label.BLOCKER
-                            ],  # to explicitly block the merge
+                    # The prefilter fires on lines a healthy run writes too (the restart
+                    # SIGKILL is `<Fatal>`, a benign OOM report matches the sanitizer
+                    # patterns), which `parse_failure` defers into "Unknown error". But
+                    # `parse_failure` only ever names one of `ERROR_PATTERNS` - a `<Fatal>`
+                    # line matching none of them (a signature the parser has no pattern for
+                    # yet) comes back as the same "Unknown error", so a name in the second
+                    # pass proves only that an expected line exists *somewhere*, not that
+                    # every `<Fatal>` line is accounted for. Require that too before trusting it.
+                    expected_only = (
+                        log_parser.parse_failure(allow_expected_only=True)[0]
+                        if name == FuzzerLogParser.UNKNOWN_ERROR
+                        else None
+                    )
+                    unexplained_fatal = bool(
+                        expected_only
+                        and Shell.get_output(
+                            f"rg -z --text '<Fatal>' "
+                            f"{' '.join(str(p) for p in server_logs + stderr_logs)}"
+                            f" | rg --text -v '{SANITIZER_OOM_PATTERN}|{EXPECTED_KILL_PATTERN}'"
                         )
                     )
+                    if (
+                        expected_only
+                        and expected_only != FuzzerLogParser.UNKNOWN_ERROR
+                        and not unexplained_fatal
+                    ):
+                        results.append(
+                            Result.create_from(
+                                name="Sanitizer assert or Fatal messages in server logs",
+                                info=f"only expected messages found: {expected_only}",
+                                status=Result.Status.OK,
+                            )
+                        )
+                    else:
+                        results.append(
+                            Result.create_from(
+                                name=name,
+                                info=description,
+                                status=Result.Status.FAIL,
+                                files=files,
+                                labels=[
+                                    Result.Label.BLOCKER
+                                ],  # to explicitly block the merge
+                            )
+                        )
                 except Exception:
                     results.append(
                         Result.create_from(

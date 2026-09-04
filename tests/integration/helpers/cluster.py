@@ -142,6 +142,31 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+CLICKHOUSE_GDB_LOG_FILE = "/var/log/clickhouse-server/gdb.log"
+
+# The stress suite gives the same dump `timeout 30m` (tests/docker_scripts/stress_tests.lib),
+# but it takes one at the very end of a run. This one runs on every give-up, including the
+# restarts in the middle of a run, so a stall here holds up everything after it. Five minutes
+# is far above the observed cost of dumping an 800-thread sanitizer build.
+GDB_BACKTRACE_TIMEOUT_SECONDS = 300
+
+# Graceful-stop window for builds that are simply slow rather than stuck: LLVM coverage
+# and the sanitizers. Only ever reached when a stop is not finishing, so a healthy test
+# never pays it.
+SLOW_BUILD_STOP_WAIT_SECONDS = 180
+
+# The slow-build probe reads system.build_options, so it needs a live server. It normally
+# runs at cluster start while the server is known healthy; the fallback in stop_clickhouse()
+# may instead run against the wedged server it is about to stop, before SIGTERM is even sent.
+# Bound it well under SLOW_BUILD_STOP_WAIT_SECONDS so a hung probe cannot outlast the window
+# it exists to grant - on timeout we simply keep the caller's normal stop window.
+SLOW_BUILD_PROBE_TIMEOUT_SECONDS = 20
+
+# A sanitizer report still being symbolized would be truncated by a force kill, so the kill
+# waits for `llvm-symbolizer` to finish. Bounded, because waiting forever to diagnose a hang
+# just moves the hang.
+SYMBOLIZER_WAIT_SECONDS = 600
+
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
@@ -2765,7 +2790,7 @@ class ClickHouseCluster:
             if not detach:
                 assert not get_exec_id
                 return output.decode()
-            return exec_id if get_exec_id else output
+            return exec_id["Id"] if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -4321,11 +4346,20 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_last_exit_code = None
+                    instance.clickhouse_forced_stop = False
+                    # Same ordering as `start_clickhouse`: `exec_in_container` throws when the
+                    # server exits immediately, so clear the handle first and take the new one
+                    # only once the start returned, never leaving a finished exec behind.
+                    instance.clickhouse_exec_id = ""
+                    exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
                     )
+                    instance.clickhouse_exec_id = exec_id
 
             start_timeout = 300.0  # seconds
             connection_timeout = None
@@ -4355,6 +4389,10 @@ class ClickHouseCluster:
                 instance.client = Client(
                     instance.ip_address, command=self.client_bin_path
                 )
+
+                # While the server is known healthy, so `stop_clickhouse()` does not have to
+                # query a possibly wedged one before it can send SIGTERM.
+                instance.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
 
             self.is_up = True
             self.save_logs()
@@ -4406,13 +4444,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5155,10 +5186,18 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
+        # Terminal state of the last server exec. `clickhouse_exec_id` is dropped once
+        # the process is gone, so these keep how it went away available to callers.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
+        # Filled by `probe_slow_build()`; `None` until the server has been asked successfully.
+        self._is_slow_build = None
 
-    def is_built_with_sanitizer(self, sanitizer_name=""):
+    def is_built_with_sanitizer(self, sanitizer_name="", timeout=None):
         build_opts = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'",
+            timeout=timeout,
         )
         if not sanitizer_name:
             # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
@@ -5172,11 +5211,29 @@ class ClickHouseInstance:
         )
         return "NDEBUG" not in build_opts
 
-    def is_built_with_llvm_coverage(self):
+    def is_built_with_llvm_coverage(self, timeout=None):
         with_coverage = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'",
+            timeout=timeout,
         )
         return "ON" in with_coverage.upper()
+
+    def probe_slow_build(self, timeout=None):
+        """Cache whether this is an LLVM-coverage or sanitizer build, which `stop_clickhouse()`
+        gives a longer graceful-stop window. Returns `None` when the server could not be asked.
+
+        A failed probe is deliberately not cached: this runs at cluster start, where the server
+        is healthy, but a test that replaces the binary or restarts into a different build still
+        gets another chance later.
+        """
+        if self._is_slow_build is None:
+            try:
+                self._is_slow_build = self.is_built_with_llvm_coverage(
+                    timeout=timeout
+                ) or self.is_built_with_sanitizer(timeout=timeout)
+            except Exception as e:
+                logging.warning(f"Could not detect a slow build on {self.name}: {e}")
+        return self._is_slow_build
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -5504,6 +5561,60 @@ class ClickHouseInstance:
             method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
         )
 
+    def _capture_clickhouse_exit(self):
+        """Record the exit code of the server exec before its id is dropped.
+
+        `clickhouse_exec_id` is the only handle to the finished exec, so the code has
+        to be read here or it is lost and the caller can no longer tell a clean
+        shutdown from a forced one.
+        """
+        if not self.clickhouse_exec_id:
+            return
+        try:
+            info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            self.clickhouse_last_exit_code = info["ExitCode"]
+        except Exception as e:
+            logging.warning(f"Could not inspect exec of {self.name}: {e}")
+
+    def wait_for_symbolizer(self, wait_sec=SYMBOLIZER_WAIT_SECONDS):
+        """Let an in-flight sanitizer report finish symbolizing before killing the server."""
+        deadline = time.time() + wait_sec
+        while self.get_process_pid("llvm-symbolizer") is not None:
+            if time.time() > deadline:
+                logging.warning(
+                    f"llvm-symbolizer still running after {wait_sec}s on {self.name}, "
+                    "the sanitizer report may be truncated"
+                )
+                return
+            time.sleep(1)
+
+    def dump_backtrace(self, occasion: str) -> bool:
+        """Append `thread apply all backtrace` of the running server to gdb.log.
+
+        Same shape as the stress suite's `stop_server` (tests/docker_scripts/
+        stress_tests.lib): one dedicated file, appended, each dump headed by whatever
+        prompted it and when, so a run that gives up on a server more than once keeps them
+        all and they can be lined up against the run log. Returns False when there is no
+        process left to dump.
+        """
+        pid = self.get_process_pid("clickhouse")
+        if pid is None:
+            return False
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f'echo "thread apply all backtrace ({occasion}) at $(date -u +%FT%TZ)"'
+                f" >> {CLICKHOUSE_GDB_LOG_FILE}; "
+                f"timeout {GDB_BACKTRACE_TIMEOUT_SECONDS}"
+                f" gdb -batch -ex 'thread apply all bt' -p {pid}"
+                f" >> {CLICKHOUSE_GDB_LOG_FILE} 2>&1",
+            ],
+            user="root",
+            nothrow=True,
+        )
+        return True
+
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception(
@@ -5528,15 +5639,17 @@ class ClickHouseInstance:
             # which is reliable - unlike LLVM_PROFILE_FILE, which is set for every
             # container regardless of build. restart_clickhouse() delegates here, so it
             # is covered too.
-            if not kill and stop_wait_sec < 180:
-                if getattr(self, "_built_with_llvm_coverage", None) is None:
-                    try:
-                        self._built_with_llvm_coverage = self.is_built_with_llvm_coverage()
-                    except Exception as e:
-                        logging.warning(f"Could not detect LLVM coverage build: {e}")
-                        self._built_with_llvm_coverage = False
-                if self._built_with_llvm_coverage:
-                    stop_wait_sec = 180
+            # A sanitizer build needs the same allowance for a different reason: teardown
+            # destroys every MergeTree part with each read instrumented, so a server holding
+            # a lot of parts can still be making steady progress when a short window runs
+            # out, and gets force killed as though it had deadlocked.
+            # Normally already answered at cluster start, while the server was healthy. The
+            # fallback probe here would be querying the server we are about to stop, which may
+            # be the wedged one, so it is bounded and simply leaves the caller's window in
+            # place if it cannot get an answer.
+            if not kill and stop_wait_sec < SLOW_BUILD_STOP_WAIT_SECONDS:
+                if self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS):
+                    stop_wait_sec = SLOW_BUILD_STOP_WAIT_SECONDS
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
@@ -5547,27 +5660,27 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self._capture_clickhouse_exit()
+                    self.clickhouse_exec_id = ""  # old exec is no longer valid
                     return True
                 else:
                     time.sleep(1)
 
             # Some sanitizer report in progress?
-            while self.get_process_pid("llvm-symbolizer") is not None:
-                time.sleep(1)
+            self.wait_for_symbolizer()
 
             pid = self.get_process_pid("clickhouse")
             if pid is not None:
                 logging.warning(
                     f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
                 )
-                self.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                    ],
-                    user="root",
-                )
+                # This used to redirect `>` over stdout.log, which destroyed the server's
+                # own stdout - where a sanitizer report lands - and left only the last
+                # backtrace of a run that force-kills more than once.
+                self.dump_backtrace("on stop")
+                # Escalation only: a caller that asked for kill=True directly wanted a
+                # hard stop, but reaching here means a graceful stop timed out.
+                self.clickhouse_forced_stop = True
                 self.stop_clickhouse(kill=True)
             else:
                 ps_all = self.exec_in_container(
@@ -5602,6 +5715,14 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
+                self.clickhouse_last_exit_code = None
+                self.clickhouse_forced_stop = False
+                # Drop the previous exec before starting, and take the new id only once the
+                # start returned. `exec_in_container` inspects the exec it just created and
+                # throws when the server exited immediately, so assigning in one statement
+                # would leave the finished exec of the *previous* server in place, and its
+                # exit code would then be read as if it belonged to this one.
+                self.clickhouse_exec_id = ""
                 exec_id = self.exec_in_container(
                     [
                         "bash",
@@ -5618,6 +5739,11 @@ class ClickHouseInstance:
                     get_exec_id=True,
                     environment=environment,
                 )
+                # Only a foreground start hands back a handle on the server itself. With
+                # `--daemon` the exec is a launcher that exits 0 as soon as it has forked,
+                # so its code says nothing about how the server later went away - reading
+                # it as the server's would turn a crash into a clean shutdown.
+                self.clickhouse_exec_id = "" if daemon else exec_id
                 if not wait_start:
                     return exec_id
                 if expected_to_fail:
@@ -5636,6 +5762,10 @@ class ClickHouseInstance:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
                     )
+                    # `wait_start` already dumped this process to gdb.log on its way out,
+                    # so only give a sanitizer report in flight time to finish: the kill
+                    # below would truncate it.
+                    self.wait_for_symbolizer()
                     self.exec_in_container(
                         ["bash", "-c", f"kill -9 {pid}"], user="root", nothrow=True
                     )
@@ -5678,12 +5808,7 @@ class ClickHouseInstance:
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
-                user="root",
-            )
+        self.dump_backtrace("on start timeout")
         if last_err is not None:
             raise last_err
 
@@ -5701,12 +5826,7 @@ class ClickHouseInstance:
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
-                user="root",
-            )
+        self.dump_backtrace("on shutdown timeout")
         raise Exception(
             "ClickHouse server is still running, but was expected to shutdown. Check logs."
         )
@@ -5919,16 +6039,19 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_original_version(
-        self,
-        stop_start_wait_sec=300,
-        callback_onstop=None,
-        signal=15,
-        clear_data_dir=False,
-    ):
-        begin_time = time.time()
-        if not self.stay_alive:
-            raise Exception("Cannot restart not stay alive container")
+    def _stop_for_binary_swap(self, signal, stop_start_wait_sec):
+        """Stop the server so a version-swap helper can replace its binary.
+
+        Not `stop_clickhouse`: these helpers stop with a caller-chosen signal and start the
+        replacement themselves. The bookkeeping a stop owes is the same though - the exit
+        code of the exec that just ended, and whether the stop had to escalate to SIGKILL -
+        so a server that hung on shutdown is not reported as a clean restart.
+        """
+        # Both describe the stop that is about to happen. Cleared here rather than at the
+        # start below, so what this one learns survives into the replacement server and a
+        # second swap cannot leave the first one's verdict standing.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
         self.exec_in_container(
             ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
         )
@@ -5943,12 +6066,48 @@ class ClickHouseInstance:
 
         # force kill if server hangs
         if self.get_process_pid("clickhouse server"):
+            logging.warning(
+                f"Force kill clickhouse on {self.name}: it did not stop on signal {signal}"
+            )
+            self.clickhouse_forced_stop = True
             # server can die before kill, so don't throw exception, it's expected
             self.exec_in_container(
                 ["bash", "-c", "pkill -{} clickhouse".format(9)],
                 nothrow=True,
                 user="root",
             )
+        self._capture_clickhouse_exit()
+
+    def _start_after_binary_swap(self):
+        """Start the replacement server of a version-swap helper.
+
+        The exec id has to go and stay gone: this start daemonizes, so the exec is a launcher
+        that exits 0 the moment it has forked, and keeping its id would let
+        `_capture_clickhouse_exit` report a clean exit for a server that went on to crash.
+        What `_stop_for_binary_swap` recorded about the server being replaced is kept, so a
+        caller can still see it had to be force killed and with what code it went - a plain
+        `start_clickhouse` clears both, but there the caller had a window between the two
+        calls to read them, and here there is none.
+        """
+        self.clickhouse_exec_id = ""
+        self.exec_in_container(
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+        )
+
+    def restart_with_original_version(
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
+    ):
+        begin_time = time.time()
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self._stop_for_binary_swap(signal, stop_start_wait_sec)
 
         if callback_onstop:
             callback_onstop(self)
@@ -5978,10 +6137,7 @@ class ClickHouseInstance:
             ],
             user="root",
         )
-        self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
-            user=str(os.getuid()),
-        )
+        self._start_after_binary_swap()
 
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
@@ -5989,6 +6145,10 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+        # The binary just changed, so the cached answer describes the previous one. Re-probe
+        # now, while this server is known healthy, exactly as `cluster.start()` does.
+        self._is_slow_build = None
+        self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
 
     def restart_with_latest_version(
         self,
@@ -6000,26 +6160,7 @@ class ClickHouseInstance:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
-        self.exec_in_container(
-            ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
-        )
-        retries = int(stop_start_wait_sec / 0.5)
-        local_counter = 0
-        # wait stop
-        while local_counter < retries:
-            if not self.get_process_pid("clickhouse server"):
-                break
-            time.sleep(0.5)
-            local_counter += 1
-
-        # force kill if server hangs
-        if self.get_process_pid("clickhouse server"):
-            # server can die before kill, so don't throw exception, it's expected
-            self.exec_in_container(
-                ["bash", "-c", "pkill -{} clickhouse".format(9)],
-                nothrow=True,
-                user="root",
-            )
+        self._stop_for_binary_swap(signal, stop_start_wait_sec)
 
         if callback_onstop:
             callback_onstop(self)
@@ -6059,10 +6200,7 @@ class ClickHouseInstance:
                     "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
-        self.exec_in_container(
-            ["bash", "-c", self.clickhouse_start_command_in_daemon],
-            user=str(os.getuid()),
-        )
+        self._start_after_binary_swap()
 
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
@@ -6070,6 +6208,10 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+        # The binary just changed, so the cached answer describes the previous one. Re-probe
+        # now, while this server is known healthy, exactly as `cluster.start()` does.
+        self._is_slow_build = None
+        self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
 
     def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
@@ -6377,7 +6519,14 @@ class ClickHouseInstance:
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
-        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        if not self.cluster.with_dolor:
+            # The `Detect passwords in tests` rule throws on match to catch a test
+            # leaking a password into the logs. La Casa del Dolor generates DDL with the
+            # integration-test credentials by construction (e.g.
+            # `ENGINE = PostgreSQL(..., 'ClickHouse_PostgreSQL_P@ssw0rd', ...)`), and a
+            # query that fails to parse is logged before the arguments can be masked, so
+            # the rule turns fuzzer noise into a spurious logical error.
+            write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
@@ -6554,7 +6703,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command
