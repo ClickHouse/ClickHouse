@@ -12,16 +12,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 В этом руководстве показаны два способа управления пользователями базы данных: через консоль SQL и непосредственно в базе данных.
 
 <div id="sql-console-passwordless-authentication">
-  ### Беспарольная аутентификация в консоли SQL
+  ### Беспарольная аутентификация в консоли SQL {#sql-console-passwordless-authentication}
 </div>
 
 Пользователи консоли SQL создаются для каждого сеанса и проходят аутентификацию с помощью сертификатов X.509, которые автоматически обновляются. Пользователь удаляется после завершения сеанса. При составлении списков доступа для аудита перейдите на вкладку Settings сервиса в консоли и учитывайте доступ к консоли SQL наряду с пользователями базы данных, существующими в базе данных. Если настроены пользовательские роли, доступ пользователя указан в роли, имя которой оканчивается на его имя пользователя.
 
-<div id="sql-console-users-and-roles">
-  ## Пользователи и роли консоли SQL
-</div>
+## Пользователи и роли консоли SQL {#sql-console-users-and-roles}
 
-Базовые роли консоли SQL можно назначать пользователям с разрешениями Service Read Only и Service Admin. Подробнее см. в разделе [Управление назначением ролей консоли SQL](/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). В этом руководстве показано, как создать пользовательскую роль для пользователя консоли SQL.
+Базовые роли консоли SQL можно назначать пользователям с разрешениями Service Read Only и Service Admin. Подробнее см. в разделе [Управление пользователями Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). В этом руководстве показано, как создать пользовательскую роль для пользователя консоли SQL.
 
 <Tip>
   Предпочтительно используйте [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (бета) для управления доступом к базе данных из консоли. Роли `sql-console-role:<email>` несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
@@ -57,11 +55,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Steps>
 
 <div id="database-authentication">
-  ## Аутентификация в базе данных
+  ## Аутентификация в базе данных {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### Идентификатор пользователя базы данных и пароль
+  ### Идентификатор пользователя базы данных и пароль {#database-user-id--password}
 </div>
 
 Используйте метод SHA256&#95;hash при [создании учётных записей пользователей](/ru/reference/statements/create/user) для защиты паролей. Пароли пользователей базы данных ClickHouse должны содержать не менее 12 символов и соответствовать требованиям сложности: включать прописные и строчные буквы, цифры и/или специальные символы.
@@ -78,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Пользователь базы данных с SSH-аутентификацией
+  ### Пользователь базы данных с SSH-аутентификацией {#database-ssh}
 </div>
 
 Чтобы настроить SSH-аутентификацию для пользователя базы данных ClickHouse Cloud.
@@ -90,9 +88,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 Подробное пошаговое руководство с примерами см. в статье [How to connect to ClickHouse Cloud using SSH keys](/ru/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) в нашей базе знаний.
 
-<div id="database-permissions">
-  ## Разрешения на уровне базы данных
-</div>
+## Разрешения на уровне базы данных {#database-permissions}
 
 Настройте следующие параметры в сервисах и базах данных с помощью SQL-оператора [GRANT](/ru/reference/statements/grant).
 
@@ -110,7 +106,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Иллюстрация, показывающая различные способы выдачи разрешений пользователю" size="md" background="black" />
 
 <div id="initial-settings">
-  ### Начальные настройки
+  ### Начальные настройки {#initial-settings}
 </div>
 
 В базах данных автоматически создается учетная запись с именем `default`, и при создании сервиса ей назначается `default_role`. Пользователю, который создает сервис, показывается автоматически сгенерированный случайный пароль, назначенный учетной записи `default` при создании сервиса. После первоначальной настройки пароль больше не отображается, но позже его может изменить любой пользователь с правами Service Admin в консоли. Эта учетная запись или учетная запись с привилегиями Service Admin в консоли может в любое время создавать дополнительных пользователей базы данных и роли.
@@ -128,9 +124,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 Вы можете использовать генератор SHA256-хеша или такую библиотеку, как `hashlib` в Python, чтобы преобразовать пароль длиной не менее 12 символов с достаточной сложностью в строку SHA256 и передать её системному администратору в качестве пароля. Это гарантирует, что администратор не увидит пароль и не будет работать с ним в открытом виде.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### Списки доступа к базе данных для пользователей консоли SQL
-</div>
+### Списки доступа к базе данных для пользователей консоли SQL {#database-access-listings-with-sql-console-users}
 
 Следующий процесс можно использовать, чтобы получить полный список доступа в консоли SQL и базах данных вашей организации.
 
@@ -176,8 +170,6 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Пользователи хранилища
-</div>
+## Пользователи хранилища {#warehouse-users}
 
 Пользователи хранилища общие для всех сервисов в рамках одного хранилища. Подробнее см. в разделе [управление доступом к хранилищу](/ru/products/cloud/features/infrastructure/warehouses#access-controls).

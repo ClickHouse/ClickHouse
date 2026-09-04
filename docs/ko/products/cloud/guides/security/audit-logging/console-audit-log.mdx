@@ -9,11 +9,15 @@ keywords: ['감사 로그']
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-콘솔 활동은 감사 로그에 기록됩니다. 조직에서 관리자 또는 Developer 역할이 있으면 로그를 검토하고 로깅 시스템과 통합할 수 있습니다.
+콘솔 활동은 감사 로그에 기록됩니다. 액세스 권한이 있는 사용자는 로그를 검토하고 로깅 시스템과 통합할 수 있습니다. 감사 로그에 대한 액세스는 **View audit logs** 권한(`control-plane:organization:view-activities`)으로 제어됩니다.
 
-<div id="console-audit-log-ui">
-  ## 사용자 인터페이스를 통해 콘솔 로그에 액세스하기
-</div>
+* 조직에서 관리자 역할을 가진 사용자는 기본적으로 액세스할 수 있습니다.
+* 그 외 콘솔 사용자는 조직 액세스 권한과 함께 **View audit logs** 권한이 포함된 [custom 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles)이 필요합니다.
+* API Key에는 동일한 권한이 포함된 역할이 필요합니다.
+
+모든 권한에 대한 설명은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+
+## 사용자 인터페이스를 통해 콘솔 로그에 액세스하기 {#console-audit-log-ui}
 
 <Steps>
   <Step title="조직 선택" id="select-org">
@@ -49,14 +53,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 <div id="console-audit-log-api">
-  ## API를 통해 콘솔 감사 로그에 액세스하기
+  ## API를 통해 콘솔 감사 로그에 액세스하기 {#console-audit-log-api}
 </div>
 
 ClickHouse Cloud API의 `activity` 엔드포인트를 사용하여 감사 이벤트 내보내기 데이터를 가져올 수 있습니다. 자세한 내용은 [API 참조](/ko/products/cloud/api-reference/organization/get-list-of-available-organizations)에서 확인할 수 있습니다.
 
-<div id="log-integrations">
-  ## 로그 통합
-</div>
+## 로그 통합 {#log-integrations}
 
 선택한 로깅 플랫폼과 통합하는 데 API를 사용할 수 있습니다. 다음 커넥터는 기본적으로 지원됩니다.
 
