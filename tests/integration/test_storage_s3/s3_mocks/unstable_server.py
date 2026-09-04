@@ -2,6 +2,7 @@ import http.server
 import random
 import re
 import sys
+import threading
 import time
 
 
@@ -42,10 +43,56 @@ lines = (
     + f"0,0,0,{-sum_in_4_column}\n".encode()
 )
 
+cancel_test_condition = threading.Condition()
+# State controlled through `/cancel_test/*`. ClickHouse reads the simulated S3 object through the
+# `resolver:8081` Docker address, while the test invokes this private API as `localhost:8081` from
+# inside the resolver container.
+cancel_test_requests = 0
+cancel_test_release = False
+
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
+    def send_text(self, text):
+        data = text.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_cancel_test_control(self):
+        """Reset, inspect, or release the response used by the cancellation test."""
+        global cancel_test_requests
+        global cancel_test_release
+
+        if self.path == "/cancel_test/reset":
+            with cancel_test_condition:
+                cancel_test_requests = 0
+                cancel_test_release = False
+            self.send_text("OK")
+            return True
+
+        if self.path == "/cancel_test/status":
+            with cancel_test_condition:
+                requests = cancel_test_requests
+            self.send_text(str(requests))
+            return True
+
+        if self.path == "/cancel_test/release":
+            with cancel_test_condition:
+                cancel_test_release = True
+                cancel_test_condition.notify_all()
+            self.send_text("OK")
+            return True
+
+        return False
+
     def do_HEAD(self):
-        if self.path == "/root/test.csv" or self.path == "/root/slow_send_test.csv":
+        if self.path in (
+            "/root/test.csv",
+            "/root/slow_send_test.csv",
+            "/root/cancel_during_retry.csv",
+        ):
             self.from_bytes = 0
             self.end_bytes = len(lines)
             self.size = self.end_bytes
@@ -85,7 +132,33 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_GET(self):
+        global cancel_test_requests
+
+        if self.handle_cancel_test_control():
+            return
+
         self.do_HEAD()
+        if self.path == "/root/cancel_during_retry.csv":
+            with cancel_test_condition:
+                cancel_test_requests += 1
+
+            # Send a prefix of the requested range, then wait for the test to decide exactly when
+            # reading the response stream should fail. Keep it at least one byte shorter than the
+            # advertised `Content-Length`, including for short ranged requests.
+            requested_length = self.end_bytes - self.from_bytes
+            prefix_length = min(1024 * 1024, max(0, requested_length - 1))
+            self.wfile.write(
+                lines[self.from_bytes : self.from_bytes + prefix_length]
+            )
+            self.wfile.flush()
+
+            with cancel_test_condition:
+                cancel_test_condition.wait_for(lambda: cancel_test_release)
+
+            # Return with fewer bytes than promised by `Content-Length`; the test pauses
+            # `processException` after this stream failure and cancels the query there.
+            return
+
         if self.path == "/root/test.csv":
             for c, i in enumerate(
                 range(self.from_bytes, self.end_bytes, self.send_block_size)
