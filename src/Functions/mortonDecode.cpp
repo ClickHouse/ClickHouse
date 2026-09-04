@@ -258,13 +258,34 @@ struct MortonNDCompressDecoder
     constexpr auto Decode(UInt64 code) const { return decodeImpl(code, std::make_index_sequence<Dimensions>{}); }
 };
 
-/// Field 0 spans every bit position congruent to 0 mod ND up to bit 63, not just the low
-/// FieldBits of them. These are the dimensions where the two spans differ, and where a
-/// shorter mask decodes a code with the top bit set into the wrong field width.
-static_assert(std::get<0>(MortonNDCompressDecoder<3>().Decode(0x8000000000000000ULL)) == 2097152);
-static_assert(std::get<0>(MortonNDCompressDecoder<5>().Decode(0x1000000000000000ULL)) == 4096);
-static_assert(std::get<0>(MortonNDCompressDecoder<6>().Decode(0x1000000000000000ULL)) == 1024);
-static_assert(std::get<0>(MortonNDCompressDecoder<7>().Decode(0x8000000000000000ULL)) == 512);
+/// Both decoders are GF(2)-linear bit maps, so agreement on the 64 single-bit codes implies
+/// agreement on every 64-bit code. Checked at compile time, so a change to fieldMask,
+/// moveMasks or the dimension list cannot silently alter what mortonDecode returns.
+template <size_t Dimensions, size_t FieldBits>
+constexpr bool compressMatchesLut()
+{
+    constexpr auto lut = mortonnd::MortonNDLutDecoder<Dimensions, FieldBits, 8>();
+    constexpr auto compress = MortonNDCompressDecoder<Dimensions>();
+    for (size_t bit = 0; bit < 64; ++bit)
+    {
+        const UInt64 code = UInt64(1) << bit;
+        bool equal = true;
+        [&]<size_t... I>(std::index_sequence<I...>)
+        {
+            ((equal = equal
+                  && UInt64(std::get<I>(lut.Decode(code))) == UInt64(std::get<I>(compress.Decode(code)))), ...);
+        }(std::make_index_sequence<Dimensions>{});
+        if (!equal)
+            return false;
+    }
+    return true;
+}
+
+static_assert(compressMatchesLut<2, 32>());
+static_assert(compressMatchesLut<3, 21>());
+static_assert(compressMatchesLut<5, 12>());
+static_assert(compressMatchesLut<6, 10>());
+static_assert(compressMatchesLut<7, 9>());
 
 /// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. The
 /// compress decoder wins there at every dimension except 4 and 8, where the lookup table's
