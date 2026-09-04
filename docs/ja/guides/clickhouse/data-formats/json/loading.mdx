@@ -72,7 +72,7 @@ ClickHouse は複数のフォーマットで JSON データを読み込むこと
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +87,7 @@ LIMIT 1
 ファイルのフォーマットを指定する必要がない点に注目してください。代わりに、glob パターンを使用してバケット内のすべての `*.json.gz` ファイルを読み込みます。ClickHouse はファイルの拡張子と内容からフォーマットが `JSONEachRow` (ndjson) であることを自動的に推測します。ClickHouse が検出できない場合は、パラメータ関数を使ってフォーマットを手動で指定できます。
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 これらのファイルの行を読み込むには、[`INSERT INTO SELECT`](/ja/reference/statements/insert-into#inserting-the-results-of-select) を使用します。
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -139,7 +139,7 @@ FORMAT JSONEachRow
 
 ClickHouse では、専用の [`JSON`](/ja/reference/data-types/newjson) 型でこれに対応しています。
 
-次に、上記の [Python PyPI dataset](https://clickpy.clickhouse.com/) を拡張したバージョンの例を見てみましょう。ここでは、任意のキーと値のペアを含む `tags` カラムを追加しています。
+次に、上記の [Python PyPIデータセット](https://clickpy.clickhouse.com/) を拡張したバージョンの例を見てみましょう。ここでは、任意のキーと値のペアを含む `tags` カラムを追加しています。
 
 ```json
 {
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 元のデータセットと同じ方法で、テーブルにデータを取り込みます。
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

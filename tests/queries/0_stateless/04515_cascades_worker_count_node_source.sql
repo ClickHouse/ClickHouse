@@ -21,13 +21,13 @@ INSERT INTO t_worker_count SELECT number, number % 200 FROM numbers(1000000);
 SELECT '-- one worker: local plan, no exchange';
 EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    enable_parallel_replicas = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 1;
 
 SELECT '-- four workers: distributed plan with shuffle and gather exchanges';
 EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
+    enable_parallel_replicas = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 4;
 
 -- A many-shard shuffle must still aggregate correctly and still distribute.

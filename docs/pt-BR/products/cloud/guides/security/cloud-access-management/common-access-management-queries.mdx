@@ -52,7 +52,11 @@ Os usuários Admin recebem a função `sql_console_admin` por padrão, então na
   ### Controle de acesso granular
 </div>
 
-Essa funcionalidade de controle de acesso também pode ser configurada manualmente com granularidade por usuário. Antes de atribuir as novas funções `sql_console_*` aos usuários, devem ser criadas funções de banco de dados específicos por usuário do console SQL que sigam o namespace `sql-console-role:<email>`. Por exemplo:
+<Tip>
+  Prefira [funções de banco de dados gerenciadas na Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+Essa funcionalidade de controle de acesso também pode ser configurada manualmente com granularidade por usuário. Antes de atribuir as novas funções `sql_console_*` aos usuários, devem ser criadas funções de banco de dados específicos por usuário do SQL Console que sigam o namespace `sql-console-role:<email>`. Por exemplo:
 
 ```sql
 CREATE ROLE OR REPLACE sql-console-role:<email>;

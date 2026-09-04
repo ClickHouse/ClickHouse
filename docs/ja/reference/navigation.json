@@ -1,18 +1,18 @@
 {
   "icon": "/images/icons/icon-reference.svg",
-  "item": "リファレンス",
+  "item": "Reference",
   "pages": [
     "ja/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQLリファレンス",
+      "group": "SQL Reference",
       "pages": [
         "ja/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "文",
+          "group": "Statements",
           "pages": [
             "ja/reference/statements/index",
             {
@@ -66,7 +66,7 @@
                     "ja/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "レイアウト",
+                      "group": "Layouts",
                       "pages": [
                         "ja/reference/statements/create/dictionary/layouts/overview",
                         "ja/reference/statements/create/dictionary/layouts/flat",
@@ -85,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "SOURCES",
+                      "group": "Sources",
                       "pages": [
                         "ja/reference/statements/create/dictionary/sources/overview",
                         "ja/reference/statements/create/dictionary/sources/local-file",
@@ -108,6 +108,7 @@
                 },
                 "ja/reference/statements/create/masking-policy",
                 "ja/reference/statements/create/function",
+                "ja/reference/statements/create/handler",
                 "ja/reference/statements/create/named-collection",
                 "ja/reference/statements/create/quota",
                 "ja/reference/statements/create/role",
@@ -115,7 +116,7 @@
                 "ja/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "テーブル",
+                  "group": "TABLE",
                   "pages": [
                     "ja/reference/statements/create/table",
                     "ja/reference/statements/create/table/codec",
@@ -191,7 +192,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "演算子",
+          "group": "Operators",
           "pages": [
             "ja/reference/operators/index",
             "ja/reference/operators/exists",
@@ -203,12 +204,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "データ型",
+      "group": "Data Types",
       "pages": [
         "ja/reference/data-types/index",
         {
           "expanded": false,
-          "group": "数値型",
+          "group": "Numeric types",
           "pages": [
             "ja/reference/data-types/int-uint",
             "ja/reference/data-types/float",
@@ -218,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "文字列型",
+          "group": "String types",
           "pages": [
             "ja/reference/data-types/string",
             "ja/reference/data-types/fixedstring"
@@ -226,7 +227,7 @@
         },
         {
           "expanded": false,
-          "group": "日付と時刻型",
+          "group": "Date and time types",
           "pages": [
             "ja/reference/data-types/date",
             "ja/reference/data-types/date32",
@@ -238,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "ネットワーク型",
+          "group": "Network types",
           "pages": [
             "ja/reference/data-types/ipv4",
             "ja/reference/data-types/ipv6"
@@ -246,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "複合型",
+          "group": "Composite types",
           "pages": [
             "ja/reference/data-types/array",
             "ja/reference/data-types/tuple",
@@ -256,7 +257,7 @@
         },
         {
           "expanded": false,
-          "group": "半構造化型",
+          "group": "Semi-structured types",
           "pages": [
             "ja/reference/data-types/newjson",
             "ja/reference/data-types/dynamic",
@@ -265,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable型とオプショナル型",
+          "group": "Nullable and optional types",
           "pages": [
             "ja/reference/data-types/nullable",
             "ja/reference/data-types/lowcardinality"
@@ -273,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "特殊型",
+          "group": "Specialized types",
           "pages": [
             "ja/reference/data-types/uuid",
             "ja/reference/data-types/enum",
@@ -284,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "集約関数型",
+          "group": "Aggregate function types",
           "pages": [
             "ja/reference/data-types/aggregatefunction",
             "ja/reference/data-types/simpleaggregatefunction"
@@ -292,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "特殊なデータ型",
+          "group": "Special Data Types",
           "pages": [
             "ja/reference/data-types/special-data-types/index",
             "ja/reference/data-types/special-data-types/expression",
@@ -302,7 +303,7 @@
           ]
         },
         {
-          "group": "バイナリエンコーディング",
+          "group": "Binary encoding",
           "pages": [
             "ja/reference/data-types/data-types-binary-encoding"
           ]
@@ -312,17 +313,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "エンジン",
+      "group": "Engines",
       "pages": [
         "ja/reference/engines/engines",
         {
           "expanded": false,
-          "group": "テーブルエンジン",
+          "group": "Table Engines",
           "pages": [
             "ja/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "インテグレーション",
+              "group": "Integrations",
               "pages": [
                 "ja/reference/engines/table-engines/integrations/index",
                 "ja/reference/engines/table-engines/integrations/arrowflight",
@@ -356,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Logファミリー",
+              "group": "Log Family",
               "pages": [
                 "ja/reference/engines/table-engines/log-family/index",
                 "ja/reference/engines/table-engines/log-family/log",
@@ -366,7 +367,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTreeファミリー",
+              "group": "MergeTree Family",
               "pages": [
                 "ja/reference/engines/table-engines/mergetree-family/index",
                 "ja/reference/engines/table-engines/mergetree-family/mergetree",
@@ -385,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "特殊",
+              "group": "Special",
               "pages": [
                 "ja/reference/engines/table-engines/special/index",
                 "ja/reference/engines/table-engines/special/alias",
@@ -412,7 +413,7 @@
         },
         {
           "expanded": false,
-          "group": "データベース エンジン",
+          "group": "Database Engines",
           "pages": [
             "ja/reference/engines/database-engines/index",
             "ja/reference/engines/database-engines/atomic",
@@ -432,12 +433,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "関数",
+      "group": "Functions",
       "pages": [
         "ja/reference/functions/index",
         {
           "expanded": false,
-          "group": "通常関数",
+          "group": "Regular functions",
           "pages": [
             "ja/reference/functions/regular-functions/overview",
             "ja/reference/functions/regular-functions/ai-functions",
@@ -503,7 +504,7 @@
         },
         {
           "expanded": false,
-          "group": "集約関数",
+          "group": "Aggregate Functions",
           "pages": [
             "ja/reference/functions/aggregate-functions/index",
             "ja/reference/functions/aggregate-functions/combinators",
@@ -511,7 +512,7 @@
             "ja/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "リファレンス",
+              "group": "Reference",
               "pages": [
                 "ja/reference/functions/aggregate-functions/reference-index",
                 "ja/reference/functions/aggregate-functions/aggThrow",
@@ -556,6 +557,7 @@
                 "ja/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ja/reference/functions/aggregate-functions/first_value",
                 "ja/reference/functions/aggregate-functions/flame_graph",
+                "ja/reference/functions/aggregate-functions/gini",
                 "ja/reference/functions/aggregate-functions/groupArray",
                 "ja/reference/functions/aggregate-functions/groupArrayArray",
                 "ja/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -678,7 +680,7 @@
         },
         {
           "expanded": false,
-          "group": "テーブル関数",
+          "group": "Table functions",
           "pages": [
             "ja/reference/functions/table-functions/index",
             "ja/reference/functions/table-functions/arrowflight",
@@ -745,7 +747,7 @@
         },
         {
           "expanded": false,
-          "group": "ウィンドウ関数",
+          "group": "Window functions",
           "pages": [
             "ja/reference/functions/window-functions/index",
             "ja/reference/functions/window-functions/cume_dist",
@@ -765,7 +767,7 @@
           ]
         },
         {
-          "group": "ユーザー定義関数",
+          "group": "User Defined Functions",
           "pages": [
             "ja/reference/functions/regular-functions/udf",
             "ja/reference/functions/regular-functions/wasm_udf"
@@ -776,7 +778,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "フォーマット",
+      "group": "Formats",
       "pages": [
         "ja/reference/formats/index",
         {
@@ -963,7 +965,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "インターフェイス",
+      "group": "Interfaces",
       "pages": [
         "ja/reference/interfaces/specs/NativeProtocol",
         "ja/reference/interfaces/specs/NativeFormat"
@@ -972,7 +974,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "設定",
+      "group": "Settings",
       "pages": [
         "ja/reference/settings/index",
         {
@@ -993,7 +995,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "システムテーブル",
+      "group": "System Tables",
       "pages": [
         "ja/reference/system-tables/overview",
         "ja/reference/system-tables/aggregate_function_combinators",
@@ -1138,6 +1140,7 @@
         "ja/reference/system-tables/settings_profile_elements",
         "ja/reference/system-tables/settings_profiles",
         "ja/reference/system-tables/stack_trace",
+        "ja/reference/system-tables/statements",
         "ja/reference/system-tables/stemmers",
         "ja/reference/system-tables/storage_policies",
         "ja/reference/system-tables/symbols",
@@ -1171,7 +1174,7 @@
       ]
     },
     {
-      "group": "データレイク",
+      "group": "Data Lakes",
       "pages": [
         "ja/reference/datalakes"
       ]
