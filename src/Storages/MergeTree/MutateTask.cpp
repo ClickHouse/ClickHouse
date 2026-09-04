@@ -993,17 +993,18 @@ getColumnsForNewDataPart(
         }
     }
 
-    /// Column mutations preserve source part serialization settings even when they differ from storage defaults,
-    /// and in this case mutated columns are explicitly added to serialization infos to prevent storage serialization
-    /// inheritance
-    bool materialize_updated_column_serialization_infos = !affects_all_columns
-        && source_part_serialization_settings != storage_serialization_settings;
+    /// Full-part mutations need serialization infos for columns missing them in the source part.
+    /// Column mutations need them when preserving source settings that differ from storage defaults.
+    bool materialize_updated_column_serialization_infos = affects_all_columns
+        || source_part_serialization_settings != storage_serialization_settings;
 
     if (materialize_updated_column_serialization_infos)
     {
         for (const auto & column : updated_header.getNamesAndTypesList())
         {
             if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+                continue;
+            if (affects_all_columns && (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*column.type)))
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
