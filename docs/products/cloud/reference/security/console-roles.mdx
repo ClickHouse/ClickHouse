@@ -33,7 +33,7 @@ Service permissions must be explicitly granted by an admin to users with roles o
 | Basic service API reader | API permissions to use query API endpoints.                  | 
 
 ## SQL console roles {#sql-console-roles}
-Refer to [Manage SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) for instructions on assigning SQL console roles.
+Refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments) for instructions on assigning SQL console roles.
 To customize database permissions for an individual SQL console user, see [SQL console users and roles](/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles).
 
 | Role                  | Description                                                                                    |
@@ -50,6 +50,7 @@ The table below describes the ClickHouse console and SQL console permissions. Mo
 | **Organization** ([more info](/products/cloud/guides/security/cloud-access-management/manage-cloud-users)) | Organization-level permissions |
 | control-plane:organization:view | View organization details and read-only metadata. |
 | control-plane:organization:manage | Manage organization settings and users. |
+| control-plane:organization:view-activities | View organization audit logs in the Console and through the Cloud API. |
 | control-plane:organization:create-service | Create new services in the organization. |
 | **Billing** ([more info](/products/cloud/reference/billing/billing-overview)) | Billing and invoice management |
 | control-plane:organization:manage-billing | Manage billing settings, payment methods, and invoices. |
@@ -85,5 +86,5 @@ The table below describes the ClickHouse console and SQL console permissions. Mo
 | control-plane:service:manage-scaling-config | Modify scaling configuration and trigger scaling operations. |
 | **ClickStack** ([more info](/clickstack/overview)) | ClickStack observability integrations |
 | control-plane:service:manage-clickstack-api | Manage ClickStack API access and related integrations. |
-| **SQL console role mapping** ([more info](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | Manage SQL console role assignments |
+| **SQL console role mapping** ([more info](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments)) | Manage SQL console role assignments |
 | sql-console:database:access | Passwordless access to the database via SQL console (may only be used with sql-console-admin or sql-console-readonly) |
