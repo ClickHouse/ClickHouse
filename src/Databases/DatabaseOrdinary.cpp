@@ -11,6 +11,7 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Storages/StorageProxy.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
@@ -534,15 +535,33 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
-    if (!rmt)
-        return;
-
+    /// Look for the flag before touching the storage: with `lazy_load_tables` the catalog holds a
+    /// stand-in whose `startup` did nothing, so the cast below would not see the real engine and the
+    /// whole restore would be skipped - the table would stay replicated with no metadata in ZooKeeper,
+    /// i.e. read-only, and the flag would never be removed, so no restart could ever heal it.
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
-    auto storage_disks = table->getStoragePolicy()->getDisks();
-    auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
+    /// A stand-in has no storage policy of its own; the database's own disk is where the flag of a table
+    /// on the default policy lives, and materializing every deferred table here just to ask it for its
+    /// disks would defeat `lazy_load_tables`.
+    DiskPtr checking_disk = getDisk();
+    if (auto storage_policy = table->getStoragePolicy())
+    {
+        auto storage_disks = storage_policy->getDisks();
+        if (!storage_disks.empty())
+            checking_disk = storage_disks[0];
+    }
+
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+        return;
+
+    /// The conversion needs the real storage, so materialize the stand-in now that the flag is known
+    /// to be there.
+    if (auto * proxy = dynamic_cast<StorageProxy *>(table.get()))
+        table = proxy->getNested();
+
+    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    if (!rmt)
         return;
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);

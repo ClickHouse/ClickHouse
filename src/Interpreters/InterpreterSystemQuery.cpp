@@ -75,6 +75,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -1372,7 +1373,13 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    /// With `lazy_load_tables` the catalog holds a stand-in until the table is first accessed, and the
+    /// cast below would not see the real engine - the documented recovery from a half-finished
+    /// conversion to `ReplicatedMergeTree` would report "Table is not replicated" instead of running.
+    if (auto * proxy = dynamic_cast<StorageProxy *>(table_ptr.get()))
+        table_ptr = proxy->getNested();
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
 
