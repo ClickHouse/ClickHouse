@@ -95,14 +95,52 @@ is enabled:
 
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
-If there are multiple profiles active for a user, then constraints are merged. 
-The Merge process depends on `settings_constraints_replace_previous`:
-- **true** (recommended): constraints for the same setting are replaced during 
-  merge, such that the last constraint is used and all previous ones are ignored.
-  This includes fields that are not set in new constraint.
-- **false** (default): constraints for the same setting are merged in a way that
-  every unset type of constraint is taken from the previous profile and every 
-  set type of constraint is replaced by the value from the new profile.
+If several profiles apply to a user, their constraints are combined per setting:
+`min` and `max` come from the last profile which sets them, the disallowed values
+of all the profiles are collected together, and the writability (`readonly`,
+`const`, `changeable_in_readonly`) comes from the last profile which constrains
+that setting.
+
+A profile applied with [`SET profile`](/sql-reference/statements/set) follows a
+different rule. It can add restrictions, but it cannot remove or weaken a
+restriction that already applies to the session.
+
+For example, suppose the profile assigned to a user limits `max_threads` to `8`:
+
+```xml
+<restricted>
+  <constraints>
+    <max_threads>
+      <max>8</max>
+    </max_threads>
+  </constraints>
+</restricted>
+```
+
+The user can apply another profile with a lower limit:
+
+```xml
+<single_threaded>
+  <constraints>
+    <max_threads>
+      <max>1</max>
+    </max_threads>
+  </constraints>
+</single_threaded>
+```
+
+```sql
+SET profile = 'single_threaded';
+SET max_threads = 1; -- allowed
+SET max_threads = 8; -- an exception: the active limit is now 1
+```
+
+In a new session with the original limit of `8`, a profile that sets
+`max_threads` to `16` cannot raise that limit. The session remains limited to
+`8` after `SET profile` applies that profile. The same rule means that `SET
+profile` cannot remove `readonly`, remove a disallowed value, or grant
+`changeable_in_readonly` access. Any user can apply a settings profile, so a
+session profile cannot bypass the constraints in your configuration.
 
 ## Read-only mode {#read-only}
 

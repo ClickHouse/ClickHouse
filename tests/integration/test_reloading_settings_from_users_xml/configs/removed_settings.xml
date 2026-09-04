@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles replace="replace">
+        <default>
+            <load_balancing>first_or_random</load_balancing>
+            <replication_alter_partitions_sync>2</replication_alter_partitions_sync>
+        </default>
+    </profiles>
+</clickhouse>
