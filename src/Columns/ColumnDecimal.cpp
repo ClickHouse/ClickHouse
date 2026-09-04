@@ -132,12 +132,6 @@ void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
-}
-
-template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
@@ -668,6 +662,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <is_decimal T>

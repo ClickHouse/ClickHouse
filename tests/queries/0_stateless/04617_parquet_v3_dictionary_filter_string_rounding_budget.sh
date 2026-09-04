@@ -10,9 +10,10 @@
 # This test builds a dictionary of 19999 three-char strings plus one two-char string per row group,
 # so the mean value size is 2.99995: the floored estimate would charge `2 * 2 * 20000` bytes for the
 # materialized `chars` while the exact one charges `2 * 59999`. The watermark is pinned inside that
-# gap: with the exact reservation the value set does not fit and the filter falls back to a full
-# scan; a regression to the floored estimate would consider it affordable and prune again, flipping
-# `rows_read` and failing this test.
+# gap (the absolute value also covers the hash vector and the per-value materialization terms of the
+# reservation): with the exact reservation the value set does not fit and the filter falls back to a
+# full scan; a regression to the floored estimate would consider it affordable and prune again,
+# flipping `rows_read` and failing this test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -54,7 +55,7 @@ echo "generous memory budget: the dictionary filter prunes row group 1, only 200
 run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category = '!a'"
 
 echo "watermark between the floored and the exact value-set footprint: pruning must be skipped, all 40000 rows are read"
-run 9170000 "select count() from file('${DATA_FILE}', Parquet) where category = '!a'"
+run 6615000 "select count() from file('${DATA_FILE}', Parquet) where category = '!a'"
 
 echo "extreme memory budget (1 byte): pruning is skipped, result is still correct"
 run 1 "select count() from file('${DATA_FILE}', Parquet) where category = '!a'"
@@ -62,5 +63,5 @@ run 1 "select count() from file('${DATA_FILE}', Parquet) where category = '!a'"
 echo "results are identical regardless of the memory budget, including across row groups"
 diff \
     <(${CH} --input_format_parquet_memory_high_watermark=4000000000 --query="select category, count(), sum(n) from file('${DATA_FILE}', Parquet) where category in ('!a', '!b', 'aaf', '45d') group by category order by category") \
-    <(${CH} --input_format_parquet_memory_high_watermark=9170000 --query="select category, count(), sum(n) from file('${DATA_FILE}', Parquet) where category in ('!a', '!b', 'aaf', '45d') group by category order by category") \
+    <(${CH} --input_format_parquet_memory_high_watermark=6615000 --query="select category, count(), sum(n) from file('${DATA_FILE}', Parquet) where category in ('!a', '!b', 'aaf', '45d') group by category order by category") \
     && echo "OK"
