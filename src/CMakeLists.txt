@@ -1023,6 +1023,14 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
     endif()
 
+    if (TARGET ch_contrib::ldap)
+        # `gtest_http_user_directory_config.cpp` includes `<Access/ExternalAuthenticators.h>`,
+        # which pulls in `LDAPClient.h` and thus `<ldap.h>` directly; like `ch_contrib::lz4`
+        # above, the include path only propagates transitively in full-library builds, so
+        # declare the dependency explicitly.
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::ldap)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()

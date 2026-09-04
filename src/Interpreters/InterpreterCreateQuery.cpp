@@ -3704,6 +3704,23 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             const auto user = access_control.read<User>(definer_name);
             if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
             {
+                /// The persistent shadow is a snapshot of the stored entity, and there is exactly one
+                /// shadow per username, replaced on every DEFINER creation. Roles attached to the
+                /// authentication only (external roles, e.g. from the `http` user directory) are not
+                /// part of the stored entity, and two simultaneous authentications of the same
+                /// username may carry different role sets, so no single shadow can represent them:
+                /// copying them would let a later creation by the same username silently change
+                /// the authorization of earlier views. Fail closed instead. Only roles attached by
+                /// the authentication count: roles propagated by an initiator (e.g. the `ON CLUSTER`
+                /// worker replaying the initiator's roles) are not evidence of such an authentication,
+                /// and refusing on them would break ephemeral users whose authentication returns no
+                /// roles at all.
+                if (user->getName() == current_user_name && !context_->getAuthenticationExternalRoles().empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "SQL SECURITY DEFINER is not supported for user {}: its access rights come from "
+                        "authentication-scoped roles, which cannot be snapshotted into a persistent definer. "
+                        "Use SQL SECURITY INVOKER or SQL SECURITY NONE instead", backQuote(current_user_name));
+
                 definer_name = user->getName() + ":definer";
                 sql_security.definer = make_intrusive<ASTUserNameWithHost>(definer_name);
                 auto new_user = typeid_cast<std::shared_ptr<User>>(user->clone());

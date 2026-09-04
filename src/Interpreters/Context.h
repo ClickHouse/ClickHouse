@@ -373,6 +373,9 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
+    /// The subset of `external_roles` attached by the authentication that created this context
+    /// (see `setUserFromAuthentication`); empty for identities set or replayed through `setUser`.
+    std::shared_ptr<std::vector<UUID>> authentication_external_roles;
     /// If not null, the access rights are limited to the intersection with these elements.
     /// This comes from the GRANTS clause of the authentication method the user logged in with.
     std::shared_ptr<const AccessRightsElements> authentication_grants;
@@ -921,8 +924,33 @@ public:
     /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
     /// must read both limits back from the source context and pass them here, so the session cannot
     /// escape its credential's limit by impersonating a less restricted principal.
+    /// `external_roles_` become effective for authorization (privileges, row policies, role hierarchy,
+    /// quotas) but do not take part in the settings-profile initialization: this entry point sets or
+    /// replays an already-established identity (interserver, DDL worker, deferred executors, `EXECUTE AS`),
+    /// and a propagated role list is not fresh profile input. See `setUserFromAuthentication`.
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
+
+    /// What a successful authentication attached to the user: roles returned by an external user
+    /// directory, the GRANTS clause of the authentication method, and its expiry.
+    struct AuthenticatedUserParams
+    {
+        std::vector<UUID> external_roles;
+        std::shared_ptr<const AccessRightsElements> grants;
+        time_t valid_until = 0;
+    };
+
+    /// Builds a FRESH authenticated context. The authentication's external roles participate in the
+    /// settings-profile initialization (their role-attached settings values and constraints become
+    /// creation-time state of this context) and, together with `propagated_external_roles_` (roles
+    /// pushed by the initiator of an interserver query), become effective for authorization. Only the
+    /// authentication's roles are profile input; propagated roles are authorization-only.
+    void setUserFromAuthentication(const UUID & user_id_, const AuthenticatedUserParams & authentication, const std::vector<UUID> & propagated_external_roles_ = {});
     UserPtr getUser() const;
+
+    /// Replaces the external roles of this context (including replacement by an empty set).
+    /// External roles are authentication-scoped: returned by an external user directory or
+    /// pushed by the initiator of an interserver query.
+    void setExternalRoles(const std::vector<UUID> & new_external_roles);
 
     /// Limits the access rights to the intersection with the elements (or resets the limit if null).
     /// See the GRANTS clause of the authentication methods in CREATE USER.
@@ -953,6 +981,10 @@ public:
     /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
     /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.
     std::vector<UUID> getExternalRoles() const;
+    /// External roles attached by the authentication itself, as opposed to roles propagated by an
+    /// initiator or replayed from another context. Non-empty only for a context created through
+    /// `setUserFromAuthentication` whose authentication returned roles.
+    std::vector<UUID> getAuthenticationExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
@@ -2086,6 +2118,14 @@ private:
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
+    /// Common implementation of `setUser` and `setUserFromAuthentication`. `profile_initialization_roles_`
+    /// must be a subset of `effective_external_roles_`: a role whose profile is installed must be effective.
+    void setUserImpl(
+        const UUID & user_id_,
+        const std::vector<UUID> & effective_external_roles_,
+        const std::vector<UUID> & profile_initialization_roles_,
+        const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+        time_t authentication_valid_until_);
 
     void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
 
