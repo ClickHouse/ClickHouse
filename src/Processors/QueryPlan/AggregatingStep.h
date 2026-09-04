@@ -37,8 +37,6 @@ public:
     {
         PartialAggregation = 0,
         FinalAggregation = 1,
-        Scatter = 2,
-        AggregatingSharded = 3,
     };
 
     AggregatingStep(
@@ -56,8 +54,7 @@ public:
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_,
         bool memory_bound_merging_of_aggregation_results_enabled_,
-        bool explicit_sorting_required_for_aggregation_in_order_,
-        bool enable_sharding_aggregator_);
+        bool explicit_sorting_required_for_aggregation_in_order_);
 
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -101,7 +98,6 @@ public:
     const SortDescription & getSortDescription() const override;
 
     bool canUseProjection() const;
-    bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
     /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
     /// for the trace log.
     const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
@@ -183,7 +179,6 @@ private:
     bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
-    bool enable_sharding_aggregator;
 
     size_t limit_hint = 0;
 
@@ -191,7 +186,6 @@ private:
     Processors aggregating_sorted;
     Processors finalizing;
 
-    Processors scatter;
     Processors aggregating;
 };
 

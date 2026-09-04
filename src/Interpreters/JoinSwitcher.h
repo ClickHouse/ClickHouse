@@ -21,7 +21,7 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
         bool any_take_last_row_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
@@ -94,6 +94,8 @@ public:
     bool preservesLeftBlockOrder() const override { return false; }
 
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
+
+    void onProbePhaseFinish(size_t matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 

@@ -45,7 +45,7 @@ hop(time_attr, hop_interval, window_interval[, timezone])
 
 * `time_attr` — Дата и время. [`DateTime`](/ru/reference/data-types/datetime)
 * `hop_interval` — Положительный интервал hop. [`Interval`](/ru/reference/data-types/int-uint)
-* `window_interval` — Положительный интервал window. [`Interval`](/ru/reference/data-types/int-uint)
+* `window_interval` — Положительный интервал окна. [`Interval`](/ru/reference/data-types/int-uint)
 * `timezone` — Необязательно. Имя часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
@@ -57,11 +57,11 @@ hop(time_attr, hop_interval, window_interval[, timezone])
 **Hopping window**
 
 ```sql title=Query
-SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hop(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-('2024-07-03 00:00:00','2024-07-05 00:00:00')
+('2026-01-01 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="hopEnd">
@@ -70,7 +70,7 @@ SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
 
 Добавленный в: v22.1.0
 
-Возвращает невключающую верхнюю границу соответствующего hopping-окна.
+Возвращает исключённую верхнюю границу соответствующего hopping-окна.
 
 Поскольку одна запись может относиться к нескольким hop-окнам, функция возвращает только границу первого окна, если функция hop используется без `WINDOW VIEW`.
 
@@ -84,23 +84,23 @@ hopEnd(time_attr, hop_interval, window_interval[, timezone])
 
 * `time_attr` — Дата и время. [`DateTime`](/ru/reference/data-types/datetime)
 * `hop_interval` — Положительный интервал Hop. [`Interval`](/ru/reference/data-types/int-uint)
-* `window_interval` — Положительный интервал Window. [`Interval`](/ru/reference/data-types/int-uint)
+* `window_interval` — Положительный интервал окна. [`Interval`](/ru/reference/data-types/int-uint)
 * `timezone` — Необязательно. Имя часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Возвращает верхнюю границу соответствующего hopping-окна, не включаемую в интервал. [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает исключённую верхнюю границу соответствующего hopping-окна. [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 
 **Конец hopping-окна**
 
 ```sql title=Query
-SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="hopStart">
@@ -122,7 +122,7 @@ hopStart(time_attr, hop_interval, window_interval[, timezone])
 **Аргументы**
 
 * `time_attr` — Дата и время. [`DateTime`](/ru/reference/data-types/datetime)
-* `hop_interval` — Положительный интервал шага. [`Interval`](/ru/reference/data-types/int-uint)
+* `hop_interval` — Положительный интервал hop. [`Interval`](/ru/reference/data-types/int-uint)
 * `window_interval` — Положительный интервал окна. [`Interval`](/ru/reference/data-types/int-uint)
 * `timezone` — Необязательно. Имя часового пояса. [`String`](/ru/reference/data-types/string)
 
@@ -135,11 +135,11 @@ hopStart(time_attr, hop_interval, window_interval[, timezone])
 **Начало hopping-окна**
 
 ```sql title=Query
-SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)
+SELECT hopStart(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)
 ```
 
 ```response title=Response
-2024-07-03 00:00:00
+2026-01-01 00:00:00
 ```
 
 <div id="tumble">
@@ -164,18 +164,18 @@ tumble(time_attr, interval[, timezone])
 
 **Возвращаемое значение**
 
-Возвращает нижнюю границу (включительно) и верхнюю границу (исключая) соответствующего неперекрывающегося окна. [`Tuple(DateTime, DateTime)`](/ru/reference/data-types/tuple)
+Возвращает нижнюю границу (включительно) и исключённую верхнюю границу соответствующего неперекрывающегося окна. [`Tuple(DateTime, DateTime)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
 **Неперекрывающееся окно**
 
 ```sql title=Query
-SELECT tumble(now(), toIntervalDay('1'))
+SELECT tumble(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-('2024-07-04 00:00:00','2024-07-05 00:00:00')
+('2026-01-02 00:00:00','2026-01-03 00:00:00')
 ```
 
 <div id="tumbleEnd">
@@ -184,7 +184,7 @@ SELECT tumble(now(), toIntervalDay('1'))
 
 Добавленный в: v22.1.0
 
-Возвращает верхнюю границу соответствующего неперекрывающегося окна, не включая её.
+Возвращает исключённую верхнюю границу соответствующего неперекрывающегося окна.
 
 **Синтаксис**
 
@@ -200,18 +200,18 @@ tumbleEnd(time_attr, interval[, timezone])
 
 **Возвращаемое значение**
 
-Возвращает верхнюю границу соответствующего неперекрывающегося окна, не включая её. [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает исключённую верхнюю границу соответствующего неперекрывающегося окна. [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 
 **Конец неперекрывающегося окна**
 
 ```sql title=Query
-SELECT tumbleEnd(now(), toIntervalDay('1'))
+SELECT tumbleEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-05 00:00:00
+2026-01-03 00:00:00
 ```
 
 <div id="tumbleStart">
@@ -243,11 +243,11 @@ tumbleStart(time_attr, interval[, timezone])
 **Начало неперекрывающегося окна**
 
 ```sql title=Query
-SELECT tumbleStart(now(), toIntervalDay('1'))
+SELECT tumbleStart(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
 ```
 
 ```response title=Response
-2024-07-04 00:00:00
+2026-01-02 00:00:00
 ```
 
 <div id="windowID">
@@ -269,7 +269,7 @@ windowID(time_attr, interval[, timezone])
 
 * `time_attr` — Дата и время. [`DateTime`](/ru/reference/data-types/datetime)
 * `interval` — Интервал окна, тип Interval. [`Interval`](/ru/reference/data-types/int-uint)
-* `timezone` — Необязательно. Название часового пояса. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательно. имя часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -280,7 +280,11 @@ windowID(time_attr, interval[, timezone])
 **Идентификатор окна**
 
 ```sql title=Query
-SELECT windowID(now(), toIntervalDay('1'))
+SELECT windowID(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))
+```
+
+```response title=Response
+1767398400
 ```
 
 {/*AUTOGENERATED_END*/}

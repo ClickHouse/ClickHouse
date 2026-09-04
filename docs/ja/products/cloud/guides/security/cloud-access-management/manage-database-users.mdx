@@ -23,11 +23,9 @@ SQL コンソールのユーザーはセッションごとに作成され、自�
 
 基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[SQL Console ロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。このガイドでは、SQL コンソールのユーザー用のカスタムロールを作成する方法を説明します。
 
-<Note>
-  **コンソールからデータベースロールを管理する (ベータ)&#x20;**
-
-  カスタムロールにデータ権限を追加することで、ClickHouse Cloud コンソールから直接データベースロールを管理することもできます。この機能はベータ版であり、ClickHouse バージョン 26.4 以降を実行しているサービスで利用できます。`sql-console-role:<email>` の命名規則を使用して手動で割り当てたロールは、コンソールを通じて割り当てたロールよりも優先されます。詳細については、[データベースロールを管理する](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)を参照してください。
-</Note>
+<Tip>
+  コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用をお勧めします。`sql-console-role:<email>` ロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) と互換性がありません。
+</Tip>
 
 SQL コンソールのユーザー用のカスタムロールを作成し、それに汎用ロールを付与するには、次のコマンドを実行します。メールアドレスは、コンソール上のユーザーのメールアドレスと一致している必要があります。
 

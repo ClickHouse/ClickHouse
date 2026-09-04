@@ -1,0 +1,60 @@
+---
+description: 'منفذ بروتوكول أصلي يتيح تنفيذ الاستعلامات أثناء بدء تشغيل الخادم أو إيقاف تشغيله، عندما لا تقبل المنافذ العادية الاتصالات.'
+sidebarTitle: 'منفذ الاستبطان'
+slug: /operations/introspection-port
+title: 'منفذ الاستبطان'
+doc_type: 'reference'
+---
+
+عندما يتعطل `clickhouse-server` أثناء بدء التشغيل أو الإيقاف، لا تقبل المنافذ العادية الاتصالات، ولا يمكن الاستعلام من الخادم عمّا يفعله.
+
+منفذ الاستبطان هو مستمع TCP للبروتوكول الأصلي يبدأ قبل أن يبدأ الخادم بإرفاق الجداول، ولا يتوقف إلا بعد اكتمال فصل الجداول. خلال هذه الفترات، يمكن للمشغّل الاتصال به باستخدام `clickhouse-client` القياسي وتشغيل استعلامات مثل `SHOW PROCESSLIST`، أو `SELECT * FROM system.stack_trace`، أو `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+منفذ الاستبطان هو نقطة نهاية لـ [بروتوكول قابل للتركيب](/ar/concepts/features/configuration/server-config/composable-protocols) موسومة بـ `<introspection>true</introspection>`. لا يُهيَّأ أي منفذ للاستبطان افتراضيًا:
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+بما أنه نقطة نهاية عادية لبروتوكول قابل للتركيب، فهو يدعم كل ما تدعمه نقطة النهاية: `host` و`port` و`description` وقائمة السماح `networks` و`default_database`، وإحاطته بطبقتي `tls` و`proxy1`.
+
+العلامة `introspection` هي خاصية لنقطة النهاية — أي الإدخال الذي يحمل `port` — ولا تُورَّث عبر مراجع `impl`، لذا يمكن مشاركة طبقة بين نقطة نهاية للاستبطان وأخرى عادية.
+
+يجب أن تنتهي المكدسة بطبقة `tcp`، لأن الدلالات المذكورة أدناه ينفذها معالج البروتوكول الأصلي. عند بدء التشغيل، يُرفض تمييز نقطة نهاية تحتوي مكدستها على طبقة `http` أو `mysql` أو `postgres` أو `prometheus` أو `interserver`، ويُصدر الخطأ `INVALID_CONFIG_PARAMETER`، بدلًا من إنشاء منفذ يتوقف عن الاستجابة عند اشتداد الحاجة إليه.
+
+| المفتاح         | الوصف                                                                              |
+| --------------- | ---------------------------------------------------------------------------------- |
+| `introspection` | يميّز نقطة نهاية لبروتوكول قابل للتركيب كمنفذ استبطان. القيمة الافتراضية: `false`. |
+
+<div id="behavior">
+  ## السلوك
+</div>
+
+* الاستعلامات المقبولة هي `SELECT` و`SHOW` و`DESCRIBE` و`EXPLAIN` و`EXISTS` و`KILL QUERY` و`SYSTEM` و`SET` و`USE`. ويُرفض كل ما عدا ذلك، بما في ذلك استعلامات DDL والاستعلامات التي تعدّل البيانات، بالخطأ `QUERY_IS_PROHIBITED`، لأن المنفذ يكون مفتوحًا بينما يكون الخادم إما لم يكتمل إنشاؤه بعد أو قيد الإيقاف.
+* يُرفض `SYSTEM RELOAD CONFIG` و`SYSTEM RELOAD USERS` بالخطأ `QUERY_IS_PROHIBITED` إلى أن يبدأ الخادم بالكامل، لأن إعادة تحميل التهيئة أثناء بدء التشغيل قد تُخلّ بترتيب التهيئة.
+* تتجاوز الاستعلامات على هذه المنافذ `max_concurrent_queries` ومجدول أعباء العمل، كما يفعل `SHOW PROCESSLIST`.
+* تُخدَم الاتصالات بواسطة تجمع خيوط مخصص، لذلك لا يؤثر استنفاد تجمع الاتصالات العادي في هذه المنافذ. ويُحدَّد حجم هذا التجمع بواسطة `max_connections`.
+* تُقبل الاتصالات حتى عندما يرفض الخادم الاتصالات العادية بسبب الحمل الزائد على CPU.
+* تُطبَّق المصادقة والتخويل بالكامل كالمعتاد: لا يمنح الاتصال بهذا المنفذ أي حقوق وصول إضافية. لكنه يرفع حدود التزامن المذكورة أعلاه، لذا اربطه بعنوان لا يمكن الوصول إليه إلا من قِبل المشغّلين.
+* لا تخضع هذه المنافذ لـ`SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (بما في ذلك `ALL` و`CUSTOM`) ولا يُعاد تهيئتها عند إعادة تحميل التهيئة.
