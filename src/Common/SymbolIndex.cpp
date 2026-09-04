@@ -3,13 +3,19 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
+#include <exception>
+#include <limits>
 #include <optional>
+#include <utility>
 
 #include <filesystem>
+
+#include <lzma.h>
 
 #if defined(OS_DARWIN)
 #include <Common/MachO.h>
@@ -343,6 +349,120 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 }
 
 
+bool decompressGNUDebugData(const Elf::Section & section, std::vector<char> & decompressed)
+{
+    if (section.size() < 2 * LZMA_STREAM_HEADER_SIZE)
+        return false;
+
+    const auto * compressed = reinterpret_cast<const uint8_t *>(section.begin());
+    const size_t footer_offset = section.size() - LZMA_STREAM_HEADER_SIZE;
+
+    /// The xz footer locates the Index, which records the uncompressed size
+    /// across all blocks in this single stream.
+    lzma_stream_flags footer_flags{};
+    if (lzma_stream_footer_decode(&footer_flags, compressed + footer_offset) != LZMA_OK
+        || footer_flags.version != 0
+        || footer_flags.backward_size < LZMA_BACKWARD_SIZE_MIN
+        || !std::in_range<size_t>(footer_flags.backward_size))
+        return false;
+
+    const size_t index_size = static_cast<size_t>(footer_flags.backward_size);
+    if (index_size > footer_offset - LZMA_STREAM_HEADER_SIZE)
+        return false;
+
+    constexpr uint64_t memory_limit = 500ULL << 20;
+    uint64_t index_memory_limit = memory_limit;
+    lzma_index * index = nullptr;
+    size_t index_position = 0;
+    const lzma_ret index_result = lzma_index_buffer_decode(
+        &index,
+        &index_memory_limit,
+        nullptr,
+        compressed + footer_offset - index_size,
+        &index_position,
+        index_size);
+
+    if (index_result != LZMA_OK)
+        return false;
+
+    const lzma_vli uncompressed_size = lzma_index_uncompressed_size(index);
+    const bool valid_index = index_position == index_size
+        && lzma_index_size(index) == footer_flags.backward_size
+        && std::in_range<size_t>(uncompressed_size);
+    lzma_index_end(index, nullptr);
+
+    if (!valid_index)
+        return false;
+
+    constexpr size_t max_expansion_ratio = 1024;
+    /// MiniDebugInfo normally expands about 20 times; this bound rejects corrupt indexes before allocation.
+    const size_t max_uncompressed_size = section.size() > std::numeric_limits<size_t>::max() / max_expansion_ratio
+        ? std::numeric_limits<size_t>::max()
+        : section.size() * max_expansion_ratio;
+    const size_t decompressed_size = static_cast<size_t>(uncompressed_size);
+    if (decompressed_size > max_uncompressed_size)
+        return false;
+
+    decompressed.resize(decompressed_size);
+
+    uint64_t decoder_memory_limit = memory_limit;
+    size_t input_position = 0;
+    size_t output_position = 0;
+    const lzma_ret result = lzma_stream_buffer_decode(
+        &decoder_memory_limit,
+        LZMA_CONCATENATED,
+        nullptr,
+        compressed,
+        &input_position,
+        section.size(),
+        reinterpret_cast<uint8_t *>(decompressed.data()),
+        &output_position,
+        decompressed.size());
+
+    if (result != LZMA_OK || input_position != section.size())
+        return false;
+
+    if (output_position < decompressed.size())
+    {
+        decompressed.resize(output_position);
+        decompressed.shrink_to_fit();
+    }
+
+    return true;
+}
+
+
+void searchAndCollectSymbolsFromGNUDebugData(SymbolIndex::Object & object, std::vector<SymbolIndex::Symbol> & symbols)
+{
+    const size_t initial_symbol_count = symbols.size();
+
+    try
+    {
+        auto section = object.elf->findSectionByName(".gnu_debugdata");
+        if (!section)
+            return;
+
+        auto gnu_debugdata = std::make_shared<std::vector<char>>();
+        if (!decompressGNUDebugData(*section, *gnu_debugdata))
+            return;
+
+        auto gnu_debugdata_elf = std::make_shared<Elf>(gnu_debugdata->data(), gnu_debugdata->size(), object.name + "(.gnu_debugdata)");
+
+        searchAndCollectSymbolsFromELFSymbolTable(*gnu_debugdata_elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+
+        if (symbols.size() != initial_symbol_count)
+        {
+            object.gnu_debugdata = std::move(gnu_debugdata);
+            object.gnu_debugdata_elf = std::move(gnu_debugdata_elf);
+        }
+    }
+    catch (const std::exception &) // Ok: MiniDebugInfo lookup is best-effort, not critical
+    {
+        symbols.resize(initial_symbol_count);
+    }
+}
+
+
 void collectSymbolsFromELF(
     DynamicLinkingProgramHeaderInfo * info,
     std::vector<SymbolIndex::Symbol> & symbols,
@@ -460,7 +580,10 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
+    const size_t initial_symbol_count = symbols.size();
     searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+    if (symbols.size() == initial_symbol_count)
+        searchAndCollectSymbolsFromGNUDebugData(objects.back(), symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL

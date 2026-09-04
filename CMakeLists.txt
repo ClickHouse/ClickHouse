@@ -269,6 +269,26 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol table format retained in packaged binaries")
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab gnu_debugdata)
+
+if (NOT SYMBOL_SECTIONS STREQUAL "symtab" AND NOT SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    message(FATAL_ERROR "Unsupported SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Expected 'symtab' or 'gnu_debugdata'.")
+endif()
+
+if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+    if (NOT SPLIT_DEBUG_SYMBOLS)
+        message(FATAL_ERROR "SYMBOL_SECTIONS=gnu_debugdata requires SPLIT_DEBUG_SYMBOLS=ON")
+    endif()
+
+    ch_find_program(XZ_PATH NAMES "xz")
+    if (XZ_PATH)
+        message(STATUS "Using xz: ${XZ_PATH}")
+    else()
+        message(FATAL_ERROR "Cannot find xz required by SYMBOL_SECTIONS=gnu_debugdata")
+    endif()
+endif()
+
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
