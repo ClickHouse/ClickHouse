@@ -1673,7 +1673,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (build_mixed_join_expression)
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
-        auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        auto on_clause_expression = ExpressionActions::create(std::move(on_clause_dag), optimization_settings.actions_settings);
         /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
         /// mixed join expression is consumed only by the hash-family algorithms.
         if (ie_join_description)

@@ -297,7 +297,9 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
+        /// `AdaptiveExpressionActions` keeps profiling state, so every executable lambda
+        /// needs an independent instance.
+        return std::make_unique<ExecutableFunctionCapture>(expression_actions->clone(), capture);
     }
 
     const LambdaCapture & getCapture() const { return *capture; }

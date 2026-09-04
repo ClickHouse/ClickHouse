@@ -7,11 +7,14 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <optional>
 
 
 namespace ProfileEvents
@@ -443,7 +446,15 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
+ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run, FunctionExecutionProfile * profile) const
+{
+    if (profile)
+        return reduceImpl<true>(dry_run, profile);
+    return reduceImpl<false>(dry_run, nullptr);
+}
+
+template <bool with_profile>
+ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, FunctionExecutionProfile * profile [[maybe_unused]]) const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -452,6 +463,11 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call function {} because is has {} "
                         "arguments but {} columns were captured.",
                         function->getName(), toString(args), toString(captured));
+
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> watch;
+    if constexpr (with_profile)
+        watch.emplace();
 
     ColumnsWithTypeAndName columns = captured_columns;
     /// Arguments of lazy executed function can also be lazy executed.
@@ -466,15 +482,34 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce(dry_run);
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(i, FunctionExecutionProfile());
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        columns[i] = arg->reduceImpl<true>(dry_run, &arg_profile);
+                    }
+                    else
+                        columns[i] = arg->reduceImpl<false>(dry_run, nullptr);
+                }
             }
         }
         else
         {
-            for (auto & col : columns)
+            for (size_t i = 0; i < columns.size(); ++i)
             {
+                auto & col = columns[i];
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce(dry_run);
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(i, FunctionExecutionProfile());
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        col = arg->reduceImpl<true>(dry_run, &arg_profile);
+                    }
+                    else
+                        col = arg->reduceImpl<false>(dry_run, nullptr);
+                }
             }
         }
     }
@@ -485,10 +520,21 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, dry_run);
+    res.column = function->execute(columns, res.type, elements_size, dry_run, profile);
     /// The result can be lazily replicated (ColumnReplicated), e.g. when the lambda just returns a captured column. Materialize it here so
     /// consumers of reduce don't have to handle ColumnReplicated.
     res.column = res.column->convertToFullColumnIfReplicated();
+
+    if constexpr (with_profile)
+    {
+        size_t total_elapsed = watch->elapsed();
+        size_t side_elapsed = 0;
+        for (const auto & arg_profile : profile->argument_profiles)
+            side_elapsed += arg_profile.second.lazy_executed_additional_elapsed;
+        profile->lazy_executed_additional_elapsed = side_elapsed;
+        profile->execution_elapsed = total_elapsed;
+    }
+
     if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

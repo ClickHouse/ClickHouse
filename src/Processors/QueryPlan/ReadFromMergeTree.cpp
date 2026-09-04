@@ -5201,7 +5201,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     /// apply row policy after FINAL if needed (must be applied before prewhere)
-    auto add_deferred_filter = [&pipe](ActionsDAG filter_dag, const String & column_name, bool remove_column)
+    auto add_deferred_filter = [&pipe, context = context](ActionsDAG filter_dag, const String & filter_column_name, bool remove_filter_column)
     {
         NameSet input_names;
         for (const auto * input : filter_dag.getInputs())
@@ -5209,14 +5209,27 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         restoreDAGInputs(filter_dag, input_names);
 
         /// The filter column can be a source column, which the stream must keep for the rest of the query.
-        if (input_names.contains(column_name))
-            remove_column = false;
+        if (input_names.contains(filter_column_name))
+            remove_filter_column = false;
 
-        auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
-        pipe.addSimpleTransform([&, actions, remove_column](const SharedHeader & header)
+        ExpressionActionsSettings expression_actions_settings(context);
+        if (expression_actions_settings.enable_adaptive_short_circuit_lazy_execution)
         {
-            return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
-        });
+            auto deferred_filter_dag = std::make_shared<ActionsDAG>(std::move(filter_dag));
+            pipe.addSimpleTransform([deferred_filter_dag, expression_actions_settings, filter_column_name, remove_filter_column](const SharedHeader & header)
+            {
+                auto actions = ExpressionActions::create(deferred_filter_dag->clone(), expression_actions_settings);
+                return std::make_shared<FilterTransform>(header, std::move(actions), filter_column_name, remove_filter_column);
+            });
+        }
+        else
+        {
+            auto actions = ExpressionActions::create(std::move(filter_dag), expression_actions_settings);
+            pipe.addSimpleTransform([actions, filter_column_name, remove_filter_column](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header, actions, filter_column_name, remove_filter_column);
+            });
+        }
     };
 
     if (deferred_row_level_filter)

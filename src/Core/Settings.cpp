@@ -9205,6 +9205,9 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_short_circuit_lazy_execution, false, R"(
+Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

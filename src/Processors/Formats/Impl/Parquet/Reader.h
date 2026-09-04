@@ -492,7 +492,7 @@ struct Reader
 
     struct Step
     {
-        ExpressionActions actions;
+        ExpressionActionsPtr actions;
         std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
         std::vector<std::pair<String, size_t>> idxs_in_output_block {};

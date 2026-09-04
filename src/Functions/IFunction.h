@@ -5,6 +5,7 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -37,6 +38,26 @@ class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 
+struct FunctionExecutionProfile
+{
+    /// executed_rows records the number of rows processed by a function. In a short-circuit function,
+    /// the executed_rows for lazily executed arguments can be less than the input rows, as some rows may
+    /// be filtered out before the argument is executed.
+    size_t executed_rows = 0;
+
+    /// The total executed elapsed, including lazy_executed_additional_elapsed.
+    size_t execution_elapsed = 0;
+
+    /// When executing a function lazily, we filter out unprocessed rows using a bitmap and expand the
+    /// result to the original size. The lazy_executed_additional_elapsed metric includes the time for these
+    /// operations, along with the lazy_executed_additional_elapsed times of its lazily executed arguments.
+    size_t lazy_executed_additional_elapsed = 0;
+
+    /// For short-circuit lazy executed arguments, their execution must be profiled, with the first element
+    /// of the pair indicating the argument's index.
+    VectorWithMemoryTracking<std::pair<size_t, FunctionExecutionProfile>> argument_profiles;
+};
+
 /// The simplest executable object.
 /// Motivation:
 ///  * Prepare something heavy once before main execution loop instead of doing it for each columns.
@@ -52,7 +73,8 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+    // profile is optional. It helps to improve expression execution.
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run, FunctionExecutionProfile * profile = nullptr) const;
 
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
@@ -62,6 +84,8 @@ protected:
     friend struct ::FunctionsStressTestThread;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+
+    virtual ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const;
 
     virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -137,22 +161,42 @@ protected:
 private:
 
     ColumnPtr defaultImplementationForConstantArguments(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr defaultImplementationForNulls(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr defaultImplementationForNothing(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     ColumnPtr executeWithoutLowCardinalityColumns(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr executeWithoutSparseColumns(
-            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr executeWithoutReplicatedColumns(
-         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
     double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
@@ -175,6 +219,13 @@ public:
         size_t input_rows_count,
         bool dry_run) const;
 
+    virtual ColumnPtr execute( /// NOLINT
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecutionProfile * profile) const;
+
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -183,6 +234,13 @@ public:
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
+
+    /// Whether `execute` never throws an exception because of invalid input values. For example,
+    /// `modulo(a, b)` throws when `b` is zero, so it is not "no except". This does not include the
+    /// exceptions for invalid argument types, which are thrown before the execution.
+    /// It is a stricter notion than `IExecutableFunction::canThrow`, which is currently derived from
+    /// `isSuitableForShortCircuitArgumentsExecution` and is also true for the functions which are merely expensive.
+    virtual bool isNoExcept() const { return false; }
 
 #if USE_EMBEDDED_COMPILER
     virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
@@ -570,6 +628,13 @@ public:
     ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
     ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+
+    virtual ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecutionProfile * profile) const;
+
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
@@ -650,6 +715,7 @@ public:
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
+    virtual bool isNoExcept() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
