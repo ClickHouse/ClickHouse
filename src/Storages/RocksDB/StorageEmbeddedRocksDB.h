@@ -71,7 +71,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
-    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
+    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &, DDLGuardPtr &) override;
 
     bool optimize(
         const ASTPtr & query,

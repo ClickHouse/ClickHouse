@@ -337,15 +337,21 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
-BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
+BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
     const auto & settings = context->getSettingsRef();
 
+    /// Each segment takes its own locks, a multi-segment ALTER is not atomic against concurrent DDL.
     for (auto & segment : segments)
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
+            /// DDLGuard before the table locks, same order as RENAME/EXCHANGE/DROP take them.
+            DDLGuardPtr ddl_guard;
+            if (!no_ddl_lock)
+                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
@@ -364,12 +370,13 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            table->alter(*alter_commands, context, alter_lock);
+            table->alter(*alter_commands, context, alter_lock, ddl_guard);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
+                auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
@@ -388,6 +395,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
@@ -396,6 +404,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
+            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -505,6 +514,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    /// Re-resolve by name: the resolution above pins a UUID, and a concurrent EXCHANGE can move it
+    /// to another name, making the UUID lookup return nothing. Temporary tables cannot be renamed.
+    /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
+    /// that table, and it may not be visible by name yet, so keep the storage resolved above.
+    if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        table = database->tryGetTable(table_id.table_name, getContext());
+
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
 
@@ -522,8 +538,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-
     if (modify_query)
     {
         // Expand CTE before filling default database
@@ -540,17 +554,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);
 
-    if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
     {
-        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
-        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
-        QueryPlanResourceHolder update_resources;
-        update_resources.table_locks.emplace_back(std::move(table_lock));
-        lightweight_result->pipeline.addResources(std::move(update_resources));
-        return std::move(lightweight_result.value());
+        auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
+        {
+            /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+            /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+            QueryPlanResourceHolder update_resources;
+            update_resources.table_locks.emplace_back(std::move(table_lock));
+            lightweight_result->pipeline.addResources(std::move(update_resources));
+            return std::move(lightweight_result.value());
+        }
+        /// Released here: holding a share lock across the segments' DDLGuard acquisition
+        /// would invert the lock order of RENAME/EXCHANGE/DROP.
     }
 
-    return runCommandSegments(segments, table, getContext());
+    return runCommandSegments(segments, table, getContext(), alter.no_ddl_lock);
 }
 
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
