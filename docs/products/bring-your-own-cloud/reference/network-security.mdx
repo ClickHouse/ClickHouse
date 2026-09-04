@@ -174,6 +174,7 @@ Egress to the public internet leaves your BYOC network through a small, fixed se
 | Private client ingress load balancer (default with a customer-managed VPC) | Same ports as above | Networks you nominate | Query traffic from peered networks | Source-range allowlist you control |
 | Private endpoint service (optional) | Same ports as above | Private endpoints you create in your own account, project, or subscription | Query traffic with no internet exposure | Each endpoint must be registered with ClickHouse by its endpoint ID before it can connect — see [Connect to your BYOC service](/products/bring-your-own-cloud/configuration/connect) |
 | Kubernetes API server | TCP 443 | ClickHouse management services | Cluster management | Differs per cloud — see [Kubernetes API server exposure](#kubernetes-api-server-exposure) |
+| Monitoring endpoint (present once the private load balancer is enabled) | TCP 443 | Networks that can reach your BYOC network privately | PromQL queries and federation against the in-cluster Prometheus and Thanos stack | Reachable over private paths only, never the public internet. It does not require authentication, so network reachability is the access control — see [observability](/products/bring-your-own-cloud/reference/observability-aws) |
 | Tailscale peer relay (optional, off by default) | UDP 40000 | ClickHouse tailnet peers | Improves NAT traversal for the management mesh | Accepts only mutually authenticated WireGuard peers; payloads stay end-to-end encrypted |
 
 Two ports are sometimes visible on these load balancers but are not client-facing: TCP 15021 serves the provider's own health checks against the ingress gateway and carries no query traffic, and the MySQL interface (port 3306) is not currently exposed in BYOC — see the [FAQ](/products/bring-your-own-cloud/reference/faq).
@@ -185,7 +186,9 @@ Which of the two load balancers is enabled by default depends on your networking
 Wherever the public path is enabled, we strongly recommend configuring an [IP filter](/products/cloud/guides/security/connectivity/setting-ip-filters), and you can add a private path — see [Private networking setup](/products/bring-your-own-cloud/onboarding/network) — and then disable public access entirely. Note that IP filtering is enforced at the ingress proxy layer, so the load balancer ports may appear open in a scan while connections from unlisted sources are rejected.
 
 <Note>
-There are no other inbound listeners. In particular there is no SSH, no bastion host, and no standing administrative credential. Query traffic never traverses ClickHouse-owned infrastructure in either direction: your clients connect straight to the ingress inside your own network.
+Beyond the listeners above there is no SSH, no bastion host, and no standing administrative credential. Query traffic never traverses ClickHouse-owned infrastructure in either direction: your clients connect straight to the ingress inside your own network.
+
+Additional protocol ports can be enabled per deployment — certificate-authenticated native access and Arrow Flight are the current examples — so confirm the exact port set for your own deployment with your ClickHouse team before you write firewall rules from this table.
 </Note>
 
 #### Kubernetes API server exposure {#kubernetes-api-server-exposure}
