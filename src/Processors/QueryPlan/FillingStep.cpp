@@ -74,16 +74,9 @@ FillingStep::FillingStep(
 {
 }
 
-Names FillingStep::getPreservedSortPrefixColumns() const
+size_t FillingStep::getPreservedSortPrefixSize() const
 {
-    const size_t size = preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix);
-
-    Names columns;
-    columns.reserve(size);
-    for (size_t i = 0; i < size; ++i)
-        columns.push_back(sort_description[i].column_name);
-
-    return columns;
+    return preservedSortPrefixSize(sort_description, use_with_fill_by_sorting_prefix);
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

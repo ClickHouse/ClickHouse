@@ -1,9 +1,9 @@
 -- A generated `WITH FILL` row writes a default value into every `ORDER BY` key that is neither filled nor
 -- part of the filling sorting prefix, so the stream stops being ordered by that key and `DISTINCT` in order
 -- must not group by it. The keys ahead of it stay ordered and must keep driving the optimization.
--- The labelled line after each result reports (sorted transform chosen, hash transform chosen). C1, C2, D
--- and F are sensitivity controls: shapes that do stay ordered must keep the sorted transform, so refusing
--- the optimization for every `WITH FILL` query also fails this test.
+-- The labelled line after each result reports (sorted transform chosen, hash transform chosen). C1, C2, D,
+-- F and G are sensitivity controls: shapes that do stay ordered must keep the optimization, so refusing it
+-- for every `WITH FILL` query also fails this test.
 
 -- A: two `WITH FILL` keys with a non-fill key between them, so generated rows default `s`. The order by `i`
 -- survives and still drives the sorted transform; only `s` must be left out of it, which is what A2 detects.
@@ -108,3 +108,14 @@ FROM (EXPLAIN PIPELINE
         ORDER BY i ASC WITH FILL, s ASC, d ASC WITH FILL
     )
 ) SETTINGS optimize_distinct_in_order = 1;
+
+-- G: a collated key in the filling sorting prefix. Filling copies the prefix into generated rows, so the
+-- key keeps its collated order and an outer sort over it is still avoidable. One inner sort, no outer one.
+SELECT 'G', countIf(explain ILIKE '%MergeSortingTransform%')
+FROM (EXPLAIN PIPELINE
+    SELECT s, i, t, d FROM (
+        SELECT toString(number % 3) AS s, number AS i, 'x' AS t, 1 AS d FROM numbers(1000)
+        ORDER BY s ASC COLLATE 'en', i ASC WITH FILL, t ASC, d ASC WITH FILL
+    )
+    ORDER BY s ASC COLLATE 'en', i ASC, t ASC, d ASC
+) SETTINGS max_threads = 1, optimize_sorting_by_input_stream_properties = 1;
