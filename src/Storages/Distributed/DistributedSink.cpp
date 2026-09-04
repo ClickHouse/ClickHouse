@@ -31,6 +31,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
@@ -40,8 +41,10 @@
 
 #include <base/range.h>
 
+#include <chrono>
 #include <climits>
 #include <filesystem>
+#include <functional>
 
 
 namespace CurrentMetrics
@@ -97,6 +100,11 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_sink_pause_before_push[];
 }
 
 namespace
@@ -155,11 +163,20 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
+static void writeBlockConvert(
+    PushingPipelineExecutor & executor,
+    const Block & block,
+    size_t repeats,
+    LoggerPtr log,
+    const std::function<void()> & check_before_push = {})
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
+    {
+        if (check_before_push)
+            check_before_push();
         executor.push(adopted_block);
+    }
 }
 
 
@@ -336,7 +353,24 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
 
 void DistributedSink::waitForJobs()
 {
+    /// A job captures this sink's `job` and the caller's block, so it can never be abandoned - but a job
+    /// that no worker has started yet can be discarded: `finish` drops exactly those, while the `wait`
+    /// below still joins the ones already running.
+    while (!pool->waitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)))
+    {
+        if (isCancelled() || (insert_timeout && static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout))
+        {
+            pool->finish();
+            break;
+        }
+    }
+
     pool->wait();
+
+    /// Neither the elapsed-time verdict below nor the job count says anything useful about an insert
+    /// that is being cancelled.
+    if (isCancelled())
+        return;
 
     if (insert_timeout)
     {
@@ -503,6 +537,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
             Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            FailPointInjection::pauseFailPoint(FailPoints::distributed_sink_pause_before_push);
+            throwIfCancelled();
             job.executor->push(adopted_shard_block);
         }
         else // local
@@ -534,7 +570,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 job.executor->start();
             }
 
-            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log, [this] { throwIfCancelled(); });
         }
 
         job.blocks_written += 1;
@@ -699,19 +735,17 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel() noexcept
 {
-    std::lock_guard lock(execution_mutex);
-    if (pool && !pool->isFinished())
-    {
-        try
-        {
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
-        }
-    }
+    /// Never waits: `writeSync` holds `execution_mutex` across its own wait for the writing jobs, so
+    /// waiting here would make cancellation as slow as the insert it is meant to interrupt. When the
+    /// lock is taken, the thread holding it cancels the executors once it has drained the pool.
+    std::unique_lock lock(execution_mutex, std::try_to_lock);
+    if (lock.owns_lock())
+        cancelExecutors();
+}
 
+
+void DistributedSink::cancelExecutors() noexcept
+{
     for (auto & shard_jobs : per_shard_jobs)
     {
         for (JobReplica & job : shard_jobs.replicas_jobs)
@@ -727,7 +761,23 @@ void DistributedSink::onCancel() noexcept
             }
         }
     }
+}
 
+
+void DistributedSink::throwIfCancelled()
+{
+    if (isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+}
+
+
+DistributedSink::~DistributedSink()
+{
+    /// `~PushingPipelineExecutor` requires each executor to be finished or the stack to be unwinding, and
+    /// a cancelled insert reaches neither: `onFinish` is not called, and `onCancel` leaves the executors
+    /// of a sink that was mid-write to the thread that was writing.
+    std::lock_guard lock(execution_mutex);
+    cancelExecutors();
 }
 
 
