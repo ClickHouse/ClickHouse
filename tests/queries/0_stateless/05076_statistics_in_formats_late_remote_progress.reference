@@ -1,6 +1,12 @@
+	"rows_before_limit_at_least": 5,
 		"rows_read": 11,
+	"rows_before_limit_at_least": 5,
 		"rows_read": 11,
+	"rows_before_limit_at_least": 5,
 		"rows_read": 11,
+	"rows_before_limit_at_least": 5,
 		"rows_read": 11,
+	<rows_before_limit_at_least>5</rows_before_limit_at_least>
 		<rows_read>11</rows_read>
+	<rows_before_limit_at_least>5</rows_before_limit_at_least>
 		<rows_read>11</rows_read>
