@@ -99,6 +99,8 @@
         FROM numbers_mt(200000)
     </fill_query>
 
+    <!-- Empty by() should use the constant empty group instead of transforming every input tag group. -->
+    <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'sum by() (foo)', 100) SETTINGS max_threads = 1 FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'sum by (namespace) (foo)', 100) FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'foo / on(pod) bar', 100) FORMAT Null</query>
 
