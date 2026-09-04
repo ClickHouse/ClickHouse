@@ -31,7 +31,7 @@ private:
     /// If set, overrides the `default_session_user` server setting for this listener.
     std::optional<String> default_session_user;
 
-    VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
     explicit PostgreSQLHandlerFactory(
