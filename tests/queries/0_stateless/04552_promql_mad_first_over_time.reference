@@ -1,0 +1,10 @@
+-- first_over_time(up[3m]): the earliest (smallest timestamp) sample in the range window, keeps the metric name.
+-- host1 -> 10, host2 -> 5, host3 -> 100; host4's only sample is older than the window, so it is dropped.
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	5
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	100
+-- mad_over_time(up[3m]): the median absolute deviation of the in-range samples, drops the metric name.
+-- host1 = 10 (median 20, deviations 10/0/10), host2 = 10 (median 15, deviations 10/0/10), host3 = 0.
+[('instance','host1')]	2023-11-14 22:13:20.000	10
+[('instance','host2')]	2023-11-14 22:13:20.000	10
+[('instance','host3')]	2023-11-14 22:13:20.000	0

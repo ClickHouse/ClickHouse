@@ -1,0 +1,34 @@
+-- ts_of_first_over_time(up[3m]): timestamp (Unix seconds) of the earliest sample; keeps the metric name.
+-- earliest sample of every series is at 1699999880; host4's only sample is older than the window, so it is dropped.
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1699999880
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	1699999880
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	1699999880
+[('__name__','up'),('instance','host5')]	2023-11-14 22:13:20.000	1699999880
+[('__name__','up'),('instance','host6')]	2023-11-14 22:13:20.000	1699999880
+-- ts_of_last_over_time(up[3m]): timestamp of the latest sample; keeps the metric name.
+-- latest sample of every series is at 1700000000.
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1700000000
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	1700000000
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	1700000000
+[('__name__','up'),('instance','host5')]	2023-11-14 22:13:20.000	1700000000
+[('__name__','up'),('instance','host6')]	2023-11-14 22:13:20.000	1700000000
+-- ts_of_min_over_time(up[3m]): timestamp of the minimum-value sample (latest one on ties); drops the metric name.
+-- host1 min 10 @1699999880, host2 min 5 @1700000000, host3 constant -> latest tie @1700000000.
+-- host5 min 10 (a NaN sample loses to any real value) @1699999940, host6 all-NaN -> latest timestamp @1700000000.
+[('instance','host1')]	2023-11-14 22:13:20.000	1699999880
+[('instance','host2')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host3')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host5')]	2023-11-14 22:13:20.000	1699999940
+[('instance','host6')]	2023-11-14 22:13:20.000	1700000000
+-- ts_of_max_over_time(up[3m]): timestamp of the maximum-value sample (latest one on ties); drops the metric name.
+-- host1 max 30 @1700000000, host2 max 25 @1699999880, host3 constant -> latest tie @1700000000.
+-- host5 max 30 (a NaN sample loses to any real value) @1700000000, host6 all-NaN -> latest timestamp @1700000000.
+[('instance','host1')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host2')]	2023-11-14 22:13:20.000	1699999880
+[('instance','host3')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host5')]	2023-11-14 22:13:20.000	1700000000
+[('instance','host6')]	2023-11-14 22:13:20.000	1700000000
+-- Float32 sample values: timestamps still come back as exact Float64 Unix seconds
+-- (1699999940 and 1699999880 are not representable in Float32 and would round to multiples of 128).
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1699999880
+[('instance','host1')]	2023-11-14 22:13:20.000	1699999940

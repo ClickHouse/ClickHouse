@@ -57,6 +57,19 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
+/// Uses `Traits::ResultType` when defined; otherwise falls back to `Traits::ValueType`.
+template <typename Traits, typename = void>
+struct TimeSeriesTraitsResultType
+{
+    using Type = typename Traits::ValueType;
+};
+
+template <typename Traits>
+struct TimeSeriesTraitsResultType<Traits, std::void_t<typename Traits::ResultType>>
+{
+    using Type = typename Traits::ResultType;
+};
+
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
 /// equal sizes and adding the data to the grid buckets. The actual aggregation logic within buckets is implemented in derived classes.
@@ -70,9 +83,11 @@ public:
     using TimestampType = typename Traits::TimestampType;
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
+    using ResultType = typename TimeSeriesTraitsResultType<Traits>::Type;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
 
     using Bucket = typename Traits::Bucket;
 
@@ -151,7 +166,7 @@ public:
         else
         {
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
         }
     }
@@ -182,7 +197,7 @@ public:
             flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
         const TimestampType * timestamp_data = timestamp_column.getData().data();
         const ValueType * value_data = value_column.getData().data();
 
@@ -397,7 +412,7 @@ protected:
         data_to.resize(old_size + grid_size);
         nulls_to.resize(old_size + grid_size);
 
-        ValueType * values = data_to.data() + old_size;
+        ResultType * values = data_to.data() + old_size;
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
@@ -491,7 +506,7 @@ private:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ValueType>>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -1148,7 +1163,7 @@ private:
         {
             /// Each row holds a single sample.
             const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType &>(*columns[1]).getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecValueType &>(*columns[1]).getData().data();
 
             if (!flags_data)
                 addMany(place, timestamp_data, value_data, row_begin, row_end);
@@ -1175,7 +1190,7 @@ private:
             timestamp_offsets = array_column.getOffsets().data();
             value_offsets = timestamp_offsets;
             timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(tuple_column.getColumn(1)).getData().data();
+            value_data = typeid_cast<const ColVecValueType &>(tuple_column.getColumn(1)).getData().data();
         }
         else
         {
@@ -1185,7 +1200,7 @@ private:
             timestamp_offsets = timestamp_array_column.getOffsets().data();
             value_offsets = value_array_column.getOffsets().data();
             timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ColVecResultType &>(value_array_column.getData()).getData().data();
+            value_data = typeid_cast<const ColVecValueType &>(value_array_column.getData()).getData().data();
         }
 
         size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
@@ -1265,7 +1280,7 @@ private:
     }
 
     /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
-    void storeGridResult(size_t grid_index, const std::optional<ValueType> & result, ValueType * values, UInt8 * nulls) const
+    void storeGridResult(size_t grid_index, const std::optional<ResultType> & result, ResultType * values, UInt8 * nulls) const
     {
         chassert(grid_index < grid_size);
         if (result)
@@ -1275,7 +1290,7 @@ private:
         }
         else
         {
-            values[grid_index] = ValueType{};
+            values[grid_index] = ResultType{};
             nulls[grid_index] = 1;
         }
     }
