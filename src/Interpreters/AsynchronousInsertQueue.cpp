@@ -636,6 +636,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data_kind};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
+    size_t entry_data_size = entry->chunk.byteSize();
 
     size_t shard_num = static_cast<size_t>(key.hash % pool_size);
     auto & shard = queue_shards[shard_num];
@@ -672,7 +673,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
-        size_t entry_data_size = entry->chunk.byteSize();
 
         chassert(data);
         auto size_in_bytes = data->size_in_bytes;
@@ -763,6 +763,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     {
         .status = PushResult::OK,
         .future = std::move(progress_future),
+        .accepted_bytes = entry_data_size,
         .insert_data_buffer = nullptr,
     };
 }

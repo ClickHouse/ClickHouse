@@ -32,7 +32,7 @@ bool Progress::empty() const
         && total_rows_to_read == 0
         && result_rows == 0
         && result_bytes == 0;
-    /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
+    /// Ignore values that should not trigger progress reporting on their own.
 }
 
 
@@ -108,6 +108,10 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"read_bytes\"", read_bytes);
     write("\"written_rows\"", written_rows);
     write("\"written_bytes\"", written_bytes);
+    if (write_zero_values && accepted_rows)
+        write("\"accepted_rows\"", accepted_rows);
+    if (write_zero_values && accepted_bytes)
+        write("\"accepted_bytes\"", accepted_bytes);
     write("\"total_rows_to_read\"", total_rows_to_read);
     write("\"result_rows\"", result_rows);
     write("\"result_bytes\"", result_bytes);
@@ -126,6 +130,9 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 
     written_rows += rhs.written_rows;
     written_bytes += rhs.written_bytes;
+
+    accepted_rows += rhs.accepted_rows;
+    accepted_bytes += rhs.accepted_bytes;
 
     result_rows += rhs.result_rows;
     result_bytes += rhs.result_bytes;
@@ -148,6 +155,9 @@ void Progress::reset()
     written_rows = 0;
     written_bytes = 0;
 
+    accepted_rows = 0;
+    accepted_bytes = 0;
+
     result_rows = 0;
     result_bytes = 0;
 
@@ -168,6 +178,9 @@ ProgressValues Progress::getValues() const
 
     res.written_rows = written_rows.load(std::memory_order_relaxed);
     res.written_bytes = written_bytes.load(std::memory_order_relaxed);
+
+    res.accepted_rows = accepted_rows.load(std::memory_order_relaxed);
+    res.accepted_bytes = accepted_bytes.load(std::memory_order_relaxed);
 
     res.result_rows = result_rows.load(std::memory_order_relaxed);
     res.result_bytes = result_bytes.load(std::memory_order_relaxed);
@@ -192,6 +205,9 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.accepted_rows = accepted_rows.fetch_and(0);
+    res.accepted_bytes = accepted_bytes.fetch_and(0);
+
     res.result_rows = result_rows.fetch_and(0);
     res.result_bytes = result_bytes.fetch_and(0);
 
@@ -215,6 +231,9 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.accepted_rows = accepted_rows.fetch_and(0);
+    res.accepted_bytes = accepted_bytes.fetch_and(0);
+
     res.result_rows = result_rows.fetch_and(0);
     res.result_bytes = result_bytes.fetch_and(0);
 
@@ -235,6 +254,9 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     written_rows = other.written_rows.load(std::memory_order_relaxed);
     written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+
+    accepted_rows = other.accepted_rows.load(std::memory_order_relaxed);
+    accepted_bytes = other.accepted_bytes.load(std::memory_order_relaxed);
 
     result_rows = other.result_rows.load(std::memory_order_relaxed);
     result_bytes = other.result_bytes.load(std::memory_order_relaxed);

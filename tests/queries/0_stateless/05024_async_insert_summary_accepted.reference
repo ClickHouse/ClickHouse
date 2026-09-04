@@ -1,0 +1,11 @@
+fire-and-forget:
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","accepted_bytes":"positive","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}
+waited:
+< X-ClickHouse-Summary: {"read_rows":"4","read_bytes":"positive","written_rows":"4","written_bytes":"positive","accepted_rows":"4","accepted_bytes":"positive","total_rows_to_read":"0","result_rows":"4","result_bytes":"positive"}
+progress headers must not contain accepted fields:
+0
+progress headers must not be emitted empty by the accepted-only update:
+0
+empty fire-and-forget must not emit progress headers:
+0
+total_rows	12
