@@ -67,9 +67,9 @@ private:
 ///    freed. The runs contain only the non-constant columns - the constant columns are re-attached from
 ///    the header after the merge. A key column whose type is not comparable (e.g. `AggregateFunction`)
 ///    is written as its serialized values and compared as bytes, and deserialized back after the merge.
-///  - Nothing is emitted anymore until the input is exhausted. Incoming chunks are sorted and accumulated,
-///    and written out as further runs (locally deduplicated, flag not set) each time the memory usage
-///    exceeds the threshold again.
+///  - Nothing is emitted anymore until the input is exhausted. Incoming chunks are sorted, deduplicated
+///    within the chunk and accumulated, and written out as further runs (deduplicated across the chunks of
+///    the run, flag not set) each time the memory usage exceeds the threshold again.
 ///  - At the end, all runs are merged by a MergingSortedTransform (plus the leftover in-memory chunks as
 ///    the last input), and DistinctSortedFilter keeps the first occurrence of each distinct key that
 ///    was not emitted before the spill. The first run is the merge input 0, and the merge breaks ties by
@@ -126,7 +126,8 @@ private:
     /// Takes a spill-layout chunk (see stripConstantColumns, buildChunkFromKeys), replaces the
     /// non-comparable key columns by their serialized values (see spill_serialized_key_columns_pos),
     /// appends the arrival numbers of its rows (when the input order is preserved) and the "already
-    /// emitted" flag column, and sorts by the key columns.
+    /// emitted" flag column, and sorts by the key columns; the chunks that do not belong to the first run
+    /// also lose their duplicates (the first-received row of each key stays).
     Chunk prepareSpillChunk(Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const;
 
     /// Assembles a spill-layout chunk (without the flag column) of the first run from the extracted key
@@ -193,9 +194,11 @@ private:
     size_t temporary_files_num = 0;
     std::unique_ptr<MergeSorter> merge_sorter;
     /// Local deduplication of the run that is currently being written (an I/O saver, not needed for
-    /// correctness; the first run is unique by construction and bypasses it).
+    /// correctness). Each chunk is deduplicated on its own when it is sorted (see prepareSpillChunk), so
+    /// only a run merged from several chunks has anything left to deduplicate: a run of one chunk, like
+    /// the first run (unique by construction), bypasses it.
     DistinctSortedFilter run_dedup;
-    bool current_run_is_first = false;
+    bool current_run_is_deduplicated = false;
     ProcessorPtr external_merging_sorted;
     /// The stages the merged stream of the runs passes through before it comes back into the transform:
     /// the deduplication (see DistinctSortedFilter) and, when the input order is preserved, the sort by

@@ -462,15 +462,22 @@ Chunk ExternalDistinctTransform::prepareSpillChunk(Chunk chunk, bool already_emi
     columns.emplace_back(ColumnUInt8::create(num_rows, static_cast<UInt8>(already_emitted)));
 
     /// sortBlock needs a Block to resolve the sort description; the service columns (the arrival numbers,
-    /// the flag) just follow the permutation. The sort must be stable: the deduplication of the merged
-    /// runs keeps the first row of each range of equal keys, and the first row must stay the
-    /// first-received one - both for the non-key columns of a row (when the DISTINCT key is a subset of
-    /// the columns) and for the choice among values that compare equal but differ in the binary
-    /// representation (0. and -0., NaN payloads).
+    /// the flag) just follow the permutation. The sort must be stable: every deduplication below keeps the
+    /// first row of each range of equal keys, and the first row must stay the first-received one - both for
+    /// the non-key columns of a row (when the DISTINCT key is a subset of the columns) and for the choice
+    /// among values that compare equal but differ in the binary representation (0. and -0., NaN payloads).
+    ///
+    /// The duplicates within a chunk are dropped right here, before the chunk is accumulated, merged and
+    /// written: with a skewed input most rows repeat within a chunk, and dropping them at once keeps the
+    /// post-spill work proportional to the distinct rows, as the hash set kept it before the spill. The
+    /// rows of the first run come from the set and have no duplicates.
     Block block = spill_header->cloneWithColumns(columns);
-    sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
+    if (already_emitted)
+        sortBlock(block, description, /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
+    else
+        sortBlockAndDeduplicate(block, description, IColumn::PermutationSortStability::Stable);
 
-    return Chunk(block.getColumns(), num_rows);
+    return Chunk(block.getColumns(), block.rows());
 }
 
 void ExternalDistinctTransform::startFirstSpill()
@@ -519,12 +526,13 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
     const size_t reserve_size = run_bytes + min_free_disk_space;
     TemporaryBlockStreamHolder tmp_stream(spill_header, tmp_data, reserve_size);
 
+    current_run_is_deduplicated = is_first_run || run_chunks.size() == 1;
+    if (!current_run_is_deduplicated)
+        run_dedup.reset();
+
     /// The limit hint cannot be applied inside the sort or the merge: rows are suppressed by the
     /// deduplication after them, so cutting the streams at `limit_hint` rows could lose distinct values.
     merge_sorter = std::make_unique<MergeSorter>(spill_header, std::move(run_chunks), description, max_block_size_rows, /*limit=*/ 0);
-    current_run_is_first = is_first_run;
-    if (!is_first_run)
-        run_dedup.reset();
 
     auto sink = std::make_shared<BufferingToFileSink>(spill_header, std::move(tmp_stream), log);
     auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
@@ -854,7 +862,7 @@ void ExternalDistinctTransform::serialize()
         if (!current_chunk)
             break;
 
-        if (current_run_is_first)
+        if (current_run_is_deduplicated)
             return;
 
         /// Local deduplication of the run. Pushing an empty chunk would end the temporary file stream
