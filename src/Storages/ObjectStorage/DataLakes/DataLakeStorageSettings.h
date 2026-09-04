@@ -54,6 +54,8 @@ class SettingsChanges;
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
+
+When the named file sits in a subdirectory of the queried path rather than in its own `metadata` directory, that subdirectory is the table's root, and the queried path also covers whatever else lives under it. The table is then read-only: `INSERT`, `ALTER`, mutations, `OPTIMIZE`, `expire_snapshots` and `remove_orphan_files` are refused, because they are scoped to the queried path and would reach outside the table. `DROP` keeps the data instead of deleting it, even with `iceberg_delete_data_on_drop` enabled.
 )", 0) \
     DECLARE(String, iceberg_metadata_table_uuid, "", R"(
 Explicit table UUID to read metadata for. Ignored if iceberg_metadata_file_path is set.
