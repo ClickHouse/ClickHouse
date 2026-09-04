@@ -216,10 +216,12 @@ private:
         /// block, so without squashing a step that produces many small chunks leaves many tiny
         /// blocks behind and the read of the next step degrades.
         ///
-        /// The thresholds follow the same policy as a regular `INSERT` into the same storage: the
-        /// intermediate table is a `Memory` table, which prefers smaller blocks for cache locality,
-        /// so squashing must not coalesce beyond `max_block_size` rows there. The upper bounds are
-        /// enforced only with `use_strict_insert_block_limits`, as for `INSERT`.
+        /// The thresholds follow the same policy as a regular `INSERT` into the same storage. Today the
+        /// intermediate table is always a `Memory` table, which prefers smaller blocks for cache
+        /// locality, so squashing accumulates only up to `max_block_size` rows before flushing; the
+        /// `prefersLargeBlocks` branch keeps the policy in sync with `INSERT` should the storage of the
+        /// intermediate table ever change. The upper bounds are enforced only with
+        /// `use_strict_insert_block_limits`, as for `INSERT`.
         const bool prefers_large_blocks = intermediate_temporary_table_storage->prefersLargeBlocks();
         const size_t squashing_min_block_size_rows = prefers_large_blocks
             ? recursive_subquery_settings[Setting::min_insert_block_size_rows]

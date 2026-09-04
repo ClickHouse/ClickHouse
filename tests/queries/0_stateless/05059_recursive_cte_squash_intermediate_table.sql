@@ -34,6 +34,10 @@ SELECT max(bs), uniqExact(bs) FROM t WHERE step = 1;
 
 SET max_block_size = DEFAULT, max_insert_block_size = DEFAULT, use_strict_insert_block_limits = DEFAULT;
 
+-- The following two cases are invariance checks rather than regression coverage: `ARRAY JOIN` already
+-- emits the whole expansion of a block as one chunk unless it exceeds `max_block_size`, so they hold
+-- without squashing as well.
+
 -- The third step reads the 400 rows produced by the second one as a single block.
 WITH RECURSIVE t AS
 (
@@ -43,8 +47,8 @@ WITH RECURSIVE t AS
 )
 SELECT max(bs) = 400, uniqExact(bs) = 1 FROM t WHERE step = 3;
 
--- The intermediate table is a `Memory` table, which prefers smaller blocks, so the squashing is
--- bounded by `max_block_size` rather than by the insert thresholds.
+-- The intermediate table is a `Memory` table, which prefers smaller blocks, so the squashing
+-- accumulates only up to `max_block_size` rows before flushing rather than up to the insert thresholds.
 SET max_block_size = 10;
 
 WITH RECURSIVE t AS
@@ -64,6 +68,19 @@ WITH RECURSIVE t AS
     SELECT intDivOrZero(toInt128(1024), n) FROM t WHERE toLowCardinality(9223372036854775806) >= n AND n > 0 GROUP BY ALL WITH TOTALS
 )
 SELECT count() FROM t;
+
+-- The extremes stream is dropped by the sink in the same way as the totals stream.
+SET extremes = 1;
+
+WITH RECURSIVE t AS
+(
+    SELECT 1 AS n
+    UNION ALL
+    SELECT n + 1 FROM t WHERE n < 5
+)
+SELECT count() FROM t FORMAT Null;
+
+SET extremes = DEFAULT;
 
 -- The result of the recursion does not depend on the block layout. Every recursive step re-plans and
 -- re-executes the member, which is slow in sanitizer builds, so keep the depth moderate.
