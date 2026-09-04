@@ -45,7 +45,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 | Position deletes | ✅ | ✅ | See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
 | Equality deletes | ✅ | ✅ | Table functions and table engines, from v25.8+. See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
 | Merge-on-read | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. Supported for [delete operations](/reference/functions/table-functions/iceberg#iceberg-writes-delete). |
-| Format versions | ⚠️ Partial | ⚠️ Partial | v1 and v2 are supported. V3 support is partial; deletion vectors and manifest compaction aren't supported. |
+| Format versions | ⚠️ Partial | ⚠️ Partial | v1 and v2 are supported. v3 support is partial; experimental deletion vector reads require `allow_iceberg_deletion_vectors = 1`; manifest compaction isn't supported. |
 | Column statistics | ✅ | ✅ | |
 | Bloom filters / puffin files | ❌ | ❌ | Bloom filter indexes in Puffin files aren't supported |
 | Virtual columns | ✅ | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/iceberg#virtual-columns). |

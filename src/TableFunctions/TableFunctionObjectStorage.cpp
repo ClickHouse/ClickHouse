@@ -1512,7 +1512,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ```
 
 <Warning>
-ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial; deletion vectors and manifest compaction aren't supported.
+ClickHouse supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `IcebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines. Support for v3 is partial. Experimental deletion vector reads are supported with `allow_iceberg_deletion_vectors = 1`; manifest compaction isn't supported.
 </Warning>
 
 ## Defining a named collection {#defining-a-named-collection}
@@ -1590,8 +1590,7 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ClickHouse supports Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) and [equality deletes](https://iceberg.apache.org/spec/#equality-delete-files). Equality deletes are supported from v25.8.
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3) when `allow_iceberg_deletion_vectors = 1`. This support is read-only: ClickHouse does not write, update, or compact deletion vectors, and `ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 

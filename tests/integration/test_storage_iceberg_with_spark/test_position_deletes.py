@@ -298,10 +298,10 @@ def test_v3_deletion_vectors_table_function(
 
     # Must read data files; SELECT count() uses metadata optimization and skips delete transforms.
     default_behavior_error = instance.query_and_get_error(f"SELECT min(id) FROM {expression}")
-    assert "Iceberg v3 deletion vectors are not enabled. Set allow_experimental_iceberg_deletion_vectors = 1" in default_behavior_error
+    assert "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1" in default_behavior_error
 
     settings = {
-        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
@@ -330,7 +330,7 @@ def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spar
         format_version=3)
 
     settings = {
-        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(10, 90))
@@ -362,7 +362,7 @@ def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg
         format_version=3)
 
     settings = {
-        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_iceberg_deletion_vectors": 1,
         "allow_insert_into_iceberg": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
@@ -431,7 +431,7 @@ def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_
         table_function=True)
 
     settings = {
-        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 200))
@@ -460,7 +460,7 @@ def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_icebe
         table_function=True)
 
     settings = {
-        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))

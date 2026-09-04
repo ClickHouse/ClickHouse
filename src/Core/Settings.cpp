@@ -8653,7 +8653,7 @@ Internal processes include dictionary reloads, refreshable materialized view rel
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
-    DECLARE(Bool, allow_experimental_iceberg_deletion_vectors, false, R"(
+    DECLARE(Bool, allow_iceberg_deletion_vectors, false, R"(
 Allow reading Iceberg v3 deletion vectors. This feature is experimental.
 )", EXPERIMENTAL) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
