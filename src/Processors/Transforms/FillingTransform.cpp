@@ -257,6 +257,22 @@ static bool isNullPrefixSkippable(
         || sort_description[0].column_name == fill_description[0].column_name;
 }
 
+/// Under `NULLS FIRST` a `NaN` sorts next to the `NULL`s, before every other value, so it belongs to the
+/// same prefix; `Field` comparison instead places it above every value. False for every non-float type.
+static bool isNullPrefixField(const Field & field)
+{
+    return field.isNull() || field.isNaN();
+}
+
+static bool isNullPrefixRow(const FillingRow & row)
+{
+    for (size_t i = 0, size = row.size(); i < size; ++i)
+        if (!isNullPrefixField(row[i]))
+            return false;
+
+    return true;
+}
+
 FillingTransform::FillingTransform(
     SharedHeader header_,
     const SortDescription & sort_description_,
@@ -801,9 +817,9 @@ void FillingTransform::transformRange(
         logDebug("next_row", next_row);
 
         bool should_insert_first = next_row < filling_row
-            /// A `NULL` previous row sorts before the filling row, which the comparison above cannot
+            /// A prefix previous row sorts before the filling row, which the comparison above cannot
             /// express, so the pending row is still unplaced.
-            || (null_prefix_skippable && next_row.isNull() && !filling_row.isNull() && !filling_row_inserted);
+            || (null_prefix_skippable && isNullPrefixRow(next_row) && !isNullPrefixRow(filling_row) && !filling_row_inserted);
         logDebug("should_insert_first", should_insert_first);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -811,19 +827,19 @@ void FillingTransform::transformRange(
 
         logDebug("next_row updated", next_row);
 
-        /// The `NULL` prefix does not anchor the range, so the first row with a value does, exactly as
+        /// The prefix does not anchor the range, so the first row with an ordinary value does, exactly as
         /// the preamble anchors a range that starts with one.
-        if (null_prefix_skippable && filling_row.isNull() && !next_row.isNull())
+        if (null_prefix_skippable && isNullPrefixRow(filling_row) && !isNullPrefixRow(next_row))
             for (size_t i = 0, size = filling_row.size(); i < size; ++i)
                 filling_row[i] = next_row[i];
 
         /// No generated row may precede a row that sorts before all of them.
-        const bool null_prefix_row = null_prefix_skippable && next_row.isNull();
+        const bool null_prefix_row = null_prefix_skippable && isNullPrefixRow(next_row);
 
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
+        if (should_insert_first && !null_prefix_row && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);

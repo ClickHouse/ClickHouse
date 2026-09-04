@@ -12,14 +12,14 @@ SELECT (countIf(explain ILIKE '%DistinctSortedStreamTransform%') > 0)
     EXPLAIN PIPELINE
     SELECT DISTINCT x FROM
     (
-        SELECT if(number = 0, NULL, toNullable(toInt32(5))) AS x FROM numbers(2)
+        SELECT CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
         ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
     )
 )
 SETTINGS optimize_distinct_in_order = 1;
 SELECT DISTINCT x FROM
 (
-    SELECT if(number = 0, NULL, toNullable(toInt32(5))) AS x FROM numbers(2)
+    SELECT CAST(NULL, 'Nullable(Int32)') AS x FROM numbers(2)
     ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
 )
 SETTINGS optimize_distinct_in_order = 1;
