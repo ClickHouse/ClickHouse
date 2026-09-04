@@ -192,15 +192,18 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->hasClusterFunctionReadTaskCallback())
         new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
+    auto changed_settings = context->getSettingsRef().changes();
+    /// Invoker filters must not be injected into a DEFINER/NONE body.
+    changed_settings.removeSetting("additional_table_filters");
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        new_context->applySettingsChanges(changed_settings);
         return new_context;
     }
 
     new_context->setUser(getDefinerID(context));
 
-    auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
