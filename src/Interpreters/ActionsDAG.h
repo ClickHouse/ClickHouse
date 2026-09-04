@@ -243,6 +243,9 @@ public:
     /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
     void removeFromOutputs(const NameSet & node_names);
 
+    /// Whether the DAG contains `__plannerOnlyFilter` wrappers.
+    bool hasPlannerOnlyFilters() const;
+
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.

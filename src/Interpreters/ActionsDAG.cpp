@@ -12,6 +12,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -791,6 +792,15 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 
     for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
         if (*old_it != *new_it)
+            return true;
+
+    return false;
+}
+
+bool ActionsDAG::hasPlannerOnlyFilters() const
+{
+    for (const auto & node : nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && isPlannerOnlyFilterFunction(*node.function_base))
             return true;
 
     return false;

@@ -316,6 +316,7 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -2339,6 +2340,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->not_null_filters_derived_left = not_null_filters_derived_left;
+    result_step->not_null_filters_derived_right = not_null_filters_derived_right;
 
     return result_step;
 }

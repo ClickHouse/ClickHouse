@@ -1,0 +1,50 @@
+-- An arithmetic expression propagates NULLs, so the filter is derived and the LEFT join converts.
+15	705
+15	705
+Type: INNER
+Type: INNER
+-- A chain of NULL-propagating functions is followed to the column.
+15	705
+15	705
+Type: INNER
+Type: INNER
+-- An expression over two Nullable columns derives a filter for both of them.
+10	460
+10	460
+Type: INNER
+Type: INNER
+-- An inequality condition over an expression also rejects NULLs and converts.
+30	1310
+30	1310
+Type: INNER
+-- `coalesce` does not propagate NULLs, so no filter is derived and the LEFT join stays.
+85	4245
+Type: INNER
+Type: LEFT
+-- `if` does not propagate NULLs of the branch that is not taken, so the LEFT join stays.
+35	1520
+Type: INNER
+Type: LEFT
+-- A natively Nullable column under an expression is rejected with join_use_nulls = 0 as well.
+15	705
+15	705
+Type: INNER
+Type: INNER
+-- An explicit CAST to a Nullable type propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- `toNullable` propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- `toLowCardinality` propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- A CAST to a non-Nullable type throws on a NULL instead of returning one, so no filter is derived.
+Type: INNER
+Type: LEFT

@@ -17,7 +17,7 @@ Expression ((Project names + Projection))
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
       Expression (Right Pre Join Actions)
-        Expression (Change column names to column identifiers)
+        Expression ((Derived NOT NULL filter from JOIN condition + Change column names to column identifiers))
           ReadFromObjectStorage
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
@@ -26,7 +26,7 @@ Expression ((Project names + Projection))
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
       Expression (Right Pre Join Actions)
-        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Expression ((Derived NOT NULL filter from JOIN condition + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
           ReadFromObjectStorage
 4
 4

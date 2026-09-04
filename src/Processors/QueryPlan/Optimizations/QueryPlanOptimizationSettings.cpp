@@ -148,6 +148,9 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool query_plan_derive_not_null_filters_from_joins;
+    extern const SettingsBool query_plan_allow_derived_not_null_filters_execution;
+    extern const SettingsDouble query_plan_max_selectivity_for_not_null_filters_execution;
 }
 
 namespace ServerSetting
@@ -381,6 +384,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
+
+    derive_not_null_filters_from_joins = from[Setting::query_plan_convert_outer_join_to_inner_join]
+        && from[Setting::query_plan_derive_not_null_filters_from_joins];
+
+    allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
+
+    max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

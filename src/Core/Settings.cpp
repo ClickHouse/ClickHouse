@@ -8748,6 +8748,21 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
+    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
+Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
+
+Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
+
+The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+
+The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
+Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
+)", 0) \
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
+The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
+)", 0) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
