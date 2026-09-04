@@ -1,15 +1,15 @@
 {
-  "group": "Собственное облако",
+  "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Обзор",
+      "group": "Overview",
       "pages": [
         "ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ru/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Конфигурация",
+      "group": "Configuration",
       "pages": [
         "ru/products/bring-your-own-cloud/configuration/configurations",
         "ru/products/bring-your-own-cloud/configuration/connect",
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Начальная настройка",
+      "group": "Onboarding",
       "pages": [
         "ru/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Настройка",
+          "group": "Customization",
           "pages": [
             "ru/products/bring-your-own-cloud/onboarding/customization-aws",
             "ru/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Сеть",
+          "group": "Network",
           "pages": [
             "ru/products/bring-your-own-cloud/onboarding/network",
             "ru/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "Коннектор",
+      "group": "Connector",
       "pages": [
         "ru/products/bring-your-own-cloud/connector/overview",
         "ru/products/bring-your-own-cloud/connector/onboarding",
@@ -49,7 +49,7 @@
         "ru/products/bring-your-own-cloud/connector/configuration",
         "ru/products/bring-your-own-cloud/connector/operations",
         {
-          "group": "Справочник",
+          "group": "Reference",
           "pages": [
             "ru/products/bring-your-own-cloud/connector/reference/cli",
             "ru/products/bring-your-own-cloud/connector/reference/configuration",
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "group": "Справочник",
+      "group": "Reference",
       "pages": [
         "ru/products/bring-your-own-cloud/reference/network-security",
         "ru/products/bring-your-own-cloud/reference/privilege",

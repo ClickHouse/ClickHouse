@@ -5,12 +5,12 @@
     "ar/clickstack/index",
     {
       "expanded": true,
-      "group": "البدء",
+      "group": "Get started",
       "pages": [
         "ar/clickstack/overview",
         {
           "expanded": true,
-          "group": "البدء السريع",
+          "group": "Quickstarts",
           "pages": [
             "ar/clickstack/getting-started/index",
             "ar/clickstack/getting-started/managed",
@@ -18,7 +18,7 @@
           ]
         },
         {
-          "group": "مجموعات بيانات نموذجية",
+          "group": "Sample datasets",
           "pages": [
             "ar/clickstack/example-datasets/index",
             "ar/clickstack/example-datasets/sample-data",
@@ -37,14 +37,14 @@
       ]
     },
     {
-      "group": "الميزات",
+      "group": "Features",
       "pages": [
         {
-          "group": "النشر",
+          "group": "Deployment",
           "pages": [
             "ar/clickstack/deployment/overview",
             {
-              "group": "مفتوح المصدر",
+              "group": "Open Source",
               "pages": [
                 "ar/clickstack/deployment/oss",
                 "ar/clickstack/deployment/all-in-one",
@@ -63,7 +63,7 @@
                       ]
                     },
                     {
-                      "group": "v1.x (مهمل)",
+                      "group": "v1.x (deprecated)",
                       "pages": [
                         "ar/clickstack/deployment/helm-v1",
                         "ar/clickstack/deployment/helm-configuration-v1",
@@ -84,7 +84,7 @@
         },
         "ar/clickstack/features/search",
         {
-          "group": "لوحات المعلومات",
+          "group": "Dashboards",
           "pages": [
             "ar/clickstack/features/dashboards/overview",
             "ar/clickstack/features/dashboards/dashboard-templates",
@@ -103,14 +103,14 @@
         "ar/clickstack/mcp",
         "ar/clickstack/url-parameters",
         {
-          "group": "أيام العروض التوضيحية",
+          "group": "Demo days",
           "pages": [
             "ar/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
                 {
-                  "group": "أغسطس",
+                  "group": "August",
                   "pages": [
                     "ar/clickstack/demo-days/2026/2026-08-21",
                     "ar/clickstack/demo-days/2026/2026-08-15",
@@ -118,7 +118,7 @@
                   ]
                 },
                 {
-                  "group": "يوليو",
+                  "group": "July",
                   "pages": [
                     "ar/clickstack/demo-days/2026/2026-07-31",
                     "ar/clickstack/demo-days/2026/2026-07-24",
@@ -128,7 +128,7 @@
                   ]
                 },
                 {
-                  "group": "يونيو",
+                  "group": "June",
                   "pages": [
                     "ar/clickstack/demo-days/2026/2026-06-26",
                     "ar/clickstack/demo-days/2026/2026-06-18",
@@ -137,7 +137,7 @@
                   ]
                 },
                 {
-                  "group": "مايو",
+                  "group": "May",
                   "pages": [
                     "ar/clickstack/demo-days/2026/2026-05-29",
                     "ar/clickstack/demo-days/2026/2026-05-22",
@@ -146,7 +146,7 @@
                   ]
                 },
                 {
-                  "group": "أبريل",
+                  "group": "April",
                   "pages": [
                     "ar/clickstack/demo-days/2026/2026-04-17",
                     "ar/clickstack/demo-days/2026/2026-04-10",
@@ -161,7 +161,7 @@
     },
     {
       "expanded": true,
-      "group": "إدارة ClickStack",
+      "group": "Managing ClickStack",
       "pages": [
         "ar/clickstack/managing/overview",
         "ar/clickstack/managing/admin",
@@ -175,11 +175,11 @@
       ]
     },
     {
-      "group": "الأدلة",
+      "group": "Guides",
       "pages": [
         {
           "expanded": true,
-          "group": "استيعاب البيانات",
+          "group": "Ingesting data",
           "pages": [
             "ar/clickstack/ingesting-data/overview",
             "ar/clickstack/ingesting-data/opentelemetry",
@@ -189,7 +189,7 @@
             "ar/clickstack/ingesting-data/schema/map-vs-json",
             "ar/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "التكاملات",
+              "group": "Integrations",
               "pages": [
                 "ar/clickstack/integration-examples/index",
                 "ar/clickstack/integration-examples/nginx-logs",
@@ -199,7 +199,7 @@
                 "ar/clickstack/integration-examples/cloudwatch",
                 "ar/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "سجلات المضيف",
+                  "group": "Host logs",
                   "pages": [
                     "ar/clickstack/integration-examples/host-logs",
                     "ar/clickstack/integration-examples/host-logs/ec2"
@@ -220,7 +220,7 @@
               ]
             },
             {
-              "group": "حِزم SDK للغات",
+              "group": "Language SDKs",
               "pages": [
                 "ar/clickstack/ingesting-data/sdks/index",
                 "ar/clickstack/ingesting-data/sdks/browser",
@@ -241,11 +241,11 @@
         },
         {
           "expanded": true,
-          "group": "أدلة الترحيل",
+          "group": "Migration guides",
           "pages": [
             "ar/clickstack/migration/index",
             {
-              "group": "الترحيل من Elastic",
+              "group": "Migrating from Elastic",
               "pages": [
                 "ar/clickstack/migration/elastic/index",
                 "ar/clickstack/migration/elastic/intro",
@@ -264,7 +264,7 @@
     },
     {
       "expanded": true,
-      "group": "شركاء التكامل",
+      "group": "Integration partners",
       "pages": [
         "ar/clickstack/integration-partners/index",
         "ar/clickstack/integration-partners/bindplane",
@@ -274,7 +274,7 @@
     },
     {
       "expanded": true,
-      "group": "مرجع واجهة برمجة تطبيقات",
+      "group": "API reference",
       "openapi": {
         "directory": "ar/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
