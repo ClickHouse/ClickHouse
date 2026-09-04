@@ -8,6 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A `TTLDrop` merge is assigned from the bounds stored in `ttl.txt`, so it must still evaluate the
 # current TTL expression over the rows before deciding that nothing survives. `OPTIMIZE ... FINAL`
 # always assigns `MergeType::Regular`, so these cases rely on background TTL merges.
+#
+# The merge-selecting task backs off to `max_merge_selecting_sleep_ms`, 60 seconds by default, once it
+# finds nothing to assign, so a selection attempt can be further away than the waits below allow.
+# Every table pins that cadence, which bounds each wait by the pinned value instead.
 
 function wait_for_ttl_merge_matching()
 {
@@ -32,18 +36,23 @@ function wait_for_ttl_drop_merge()
     wait_for_ttl_merge_matching "$1" "TTLDropMerge"
 }
 
-function wait_for_row_count()
+function wait_for_query_result()
 {
-    local table=$1
+    local query=$1
     local want=$2
     for _ in $(seq 1 120); do
-        local count
-        count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM $table")
-        if [ "$count" = "$want" ]; then
+        local got
+        got=$(${CLICKHOUSE_CLIENT} -q "$query")
+        if [ "$got" = "$want" ]; then
             return
         fi
         sleep 0.5
     done
+}
+
+function wait_for_row_count()
+{
+    wait_for_query_result "SELECT count() FROM $1" "$2"
 }
 
 echo "-- a TTLDrop merge keeps rows the current expression does not expire"
@@ -52,7 +61,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_ttl_drop_reeval (id UInt64, ts DateTime)
     ENGINE = MergeTree ORDER BY id
     TTL ts + INTERVAL 1 SECOND
-    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0;
+    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
 
     SYSTEM STOP MERGES t_ttl_drop_reeval;
     INSERT INTO t_ttl_drop_reeval SELECT number, now() - INTERVAL 1 DAY FROM numbers(100);
@@ -84,7 +94,8 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY id
     TTL ts + INTERVAL 1 SECOND
     SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0,
-             max_bytes_to_merge_at_max_space_in_pool = 4096;
+             max_bytes_to_merge_at_max_space_in_pool = 4096,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
 
     SYSTEM STOP MERGES t_ttl_drop_sized;
     INSERT INTO t_ttl_drop_sized SELECT number, randomString(1000), now() - INTERVAL 1 DAY FROM numbers(20);
@@ -110,7 +121,8 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY id
     TTL ts + INTERVAL 1 SECOND
     SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0,
-             max_bytes_to_merge_at_max_space_in_pool = 1024;
+             max_bytes_to_merge_at_max_space_in_pool = 1024,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
 
     SYSTEM STOP MERGES t_ttl_drop_oversized;
     INSERT INTO t_ttl_drop_oversized SELECT number, randomString(1000), now() - INTERVAL 1 DAY FROM numbers(50);
@@ -142,7 +154,8 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY k
     TTL ts + INTERVAL 1 SECOND GROUP BY k SET v = max(v)
     SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1,
-             enable_block_offset_column = 1, merge_with_ttl_timeout = 0;
+             enable_block_offset_column = 1, merge_with_ttl_timeout = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
 
     SYSTEM STOP MERGES t_ttl_group_by_stays;
     INSERT INTO t_ttl_group_by_stays VALUES (1, now() - INTERVAL 1 DAY, 10), (1, now() - INTERVAL 1 DAY, 20);
@@ -156,7 +169,7 @@ wait_for_ttl_merge_matching "t_ttl_group_by_stays" "TTL%"
 # Both rows survived that merge, so the rollup below is a rule that was kept rather than a fixture
 # that never had rows left to roll up.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT rows FROM system.part_log
+    SELECT merge_reason, rows FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_group_by_stays'
       AND event_type = 'MergeParts' AND merge_reason LIKE 'TTL%'
     ORDER BY event_time_microseconds LIMIT 1"
@@ -165,3 +178,59 @@ wait_for_row_count "t_ttl_group_by_stays" 1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_group_by_stays"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_group_by_stays"
+
+echo "-- a rows TTL whose rows survive stays selectable for a later delete"
+
+# Observed the same way as the GROUP BY case above, through the consequence of the flag rather than
+# the flag itself.
+#
+# `MergeTreeDataPartTTLInfos::update` rebuilds only GROUP BY entries as unfinished, so for a rows or
+# a column TTL a forced merge cannot clear the flag and the poisoning merge may be `OPTIMIZE FINAL`.
+# The live rule lands 10 seconds ahead, which is both after that merge and before the wait below.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_rows_stays_selectable (ts DateTime, v UInt64)
+    ENGINE = MergeTree ORDER BY tuple()
+    TTL ts + INTERVAL 1 SECOND
+    SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
+
+    SYSTEM STOP MERGES t_ttl_rows_stays_selectable;
+    INSERT INTO t_ttl_rows_stays_selectable VALUES (now() - INTERVAL 1 DAY, 42);
+    ALTER TABLE t_ttl_rows_stays_selectable MODIFY TTL ts + INTERVAL 1 DAY + INTERVAL 10 SECOND
+    SETTINGS materialize_ttl_after_modify = 0;
+    SYSTEM START MERGES t_ttl_rows_stays_selectable;
+    OPTIMIZE TABLE t_ttl_rows_stays_selectable FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_rows_stays_selectable"
+
+wait_for_row_count "t_ttl_rows_stays_selectable" 0
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_rows_stays_selectable"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_rows_stays_selectable"
+
+echo "-- a column TTL whose values survive stays selectable for a later reset"
+
+# Same shape for `TTLColumnAlgorithm`: the reset of `v` below can only happen if the merge left the
+# rule unfinished. `count()` is read alongside it because an empty table also sums to zero.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_column_stays_selectable (ts DateTime, v UInt64 TTL ts + INTERVAL 1 SECOND)
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0,
+             merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 500;
+
+    SYSTEM STOP MERGES t_ttl_column_stays_selectable;
+    INSERT INTO t_ttl_column_stays_selectable VALUES (now() - INTERVAL 1 DAY, 7777);
+    ALTER TABLE t_ttl_column_stays_selectable
+    MODIFY COLUMN v UInt64 TTL ts + INTERVAL 1 DAY + INTERVAL 10 SECOND
+    SETTINGS materialize_ttl_after_modify = 0;
+    SYSTEM START MERGES t_ttl_column_stays_selectable;
+    OPTIMIZE TABLE t_ttl_column_stays_selectable FINAL;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_column_stays_selectable"
+
+wait_for_query_result "SELECT sum(v) FROM t_ttl_column_stays_selectable" 0
+
+${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(v) FROM t_ttl_column_stays_selectable"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_column_stays_selectable"

@@ -7,5 +7,11 @@
 -- an expired part larger than the byte budget is still dropped
 0
 -- a GROUP BY TTL whose rows survive stays selectable for a later rollup
-2
+TTLDropMerge	2
 1	20
+-- a rows TTL whose rows survive stays selectable for a later delete
+1	42
+0
+-- a column TTL whose values survive stays selectable for a later reset
+1	7777
+1	0
