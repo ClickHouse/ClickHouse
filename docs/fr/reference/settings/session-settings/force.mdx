@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
+import { CloudOnlyBadge } from "/snippets/fr/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -28,6 +29,16 @@ Force l’utilisation de l’optimisation lorsqu’elle est applicable, même si
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ce paramètre est utilisé par le serveur lui-même pour prendre en charge les requêtes distribuées. Ne le modifiez pas manuellement, car cela perturberait le fonctionnement normal. (Force l&#39;utilisation de l&#39;agrégation dans l&#39;ordre sur les nœuds distants lors de l&#39;agrégation distribuée).
+
+<div id="force_creating_set_partitions_independently">
+  ## force_creating_set_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de forcer la prédéduplication pour chaque partition lors de la création d'ensembles pour `IN (subquery)`, même lorsque la vérification du déséquilibre des partitions l'ignorerait."}]}]} />
+
+Force la prédéduplication pour chaque partition lors de la création d&#39;ensembles pour `IN (subquery)` lorsqu&#39;elle est applicable, mais que la vérification du déséquilibre des partitions (la plus grande partition représente plus du double de la moyenne) a décidé de ne pas l&#39;utiliser. Contourne uniquement la vérification du déséquilibre de [allow&#95;creating&#95;set&#95;partitions&#95;independently](/fr/reference/settings/session-settings/allow#allow_creating_set_partitions_independently) ; les autres conditions s&#39;appliquent toujours.
 
 <div id="force_data_skipping_indices">
   ## force_data_skipping_indices
@@ -102,6 +113,18 @@ Fonctionne avec les tables de la famille MergeTree.
 
 Si `force_primary_key=1`, ClickHouse vérifie si la requête comporte une condition sur la clé primaire qui peut être utilisée pour restreindre les plages de données. S’il n’existe pas de condition appropriée, une exception est levée. Cependant, ClickHouse ne vérifie pas si cette condition réduit la quantité de données à lire. Pour plus d’informations sur les plages de données dans les tables MergeTree, voir [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
+<div id="force_read_through_distributed_cache">
+  ## force_read_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Nouveau paramètre qui surcharge le paramètre serveur `enable_read_through_distributed_cache` pour une seule requête."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Nouveau paramètre qui surcharge le paramètre serveur `enable_read_through_distributed_cache` pour une seule requête."}]}]} />
+
+N&#39;a d&#39;effet que dans ClickHouse Cloud. Surcharge le paramètre serveur `enable_read_through_distributed_cache` pour une seule requête. `auto` (valeur par défaut) indique d&#39;utiliser le paramètre serveur.
+
 <div id="force_remove_data_recursively_on_drop">
   ## force_remove_data_recursively_on_drop
 </div>
@@ -109,5 +132,27 @@ Si `force_primary_key=1`, ClickHouse vérifie si la requête comporte une condit
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Supprime récursivement les données lors d’une requête DROP. Évite l’erreur &#39;Directory not empty&#39;, mais peut supprimer silencieusement des données detached
+
+<div id="force_window_partitions_independently">
+  ## force_window_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de forcer l’évaluation indépendante des fonctions de fenêtre pour chaque partition, même lorsque l’heuristique de coût déciderait de ne pas l’appliquer."}]}]} />
+
+Force l’évaluation indépendante des fonctions de fenêtre pour chaque partition lorsqu’elle est applicable, mais que l’heuristique de coût a décidé de ne pas l’utiliser. Contourne uniquement l’heuristique de coût de [allow&#95;window&#95;partitions&#95;independently](/fr/reference/settings/session-settings/allow#allow_window_partitions_independently) ; les autres conditions restent applicables.
+
+<div id="force_write_through_distributed_cache">
+  ## force_write_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Nouveau paramètre qui surcharge, pour une seule requête, le paramètre serveur `enable_write_through_distributed_cache`."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Nouveau paramètre qui surcharge, pour une seule requête, le paramètre serveur `enable_write_through_distributed_cache`."}]}]} />
+
+N’a d’effet que dans ClickHouse Cloud. Surcharge, pour une seule requête, le paramètre serveur `enable_write_through_distributed_cache`. `auto` (valeur par défaut) signifie que le paramètre serveur est utilisé.
 
 {/*AUTOGENERATED_END*/}
