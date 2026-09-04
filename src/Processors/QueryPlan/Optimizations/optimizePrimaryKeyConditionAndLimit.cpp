@@ -37,11 +37,6 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            /// Same as for an ExpressionStep below: an arrayJoin changes the row count, so neither the limit nor
-            /// a filter composed through it may reach the source.
-            if (filter_step->getExpression().hasArrayJoin())
-                break;
-
             auto filter_dag = filter_step->getExpression().clone();
             auto filter_column_name = filter_step->getFilterColumnName();
 
