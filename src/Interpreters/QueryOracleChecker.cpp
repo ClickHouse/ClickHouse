@@ -1,5 +1,6 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -236,7 +237,9 @@ String stripAggregateCombinators(String name)
 }
 
 /// True if `name`, after removing zero or more combinator suffixes, names an
-/// entry of `non_deterministic_functions` (matched case-insensitively).
+/// entry of `non_deterministic_functions` (matched case-insensitively), either
+/// directly or through an aggregate-function alias (`array_agg` -> `groupArray`,
+/// `medianTDigest` -> `quantileTDigest`, `lttb` -> `largestTriangleThreeBuckets`).
 /// Membership must be tested at EVERY stripping stage, not only at the
 /// fixpoint: real aggregate names can themselves end in a combinator-looking
 /// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
@@ -244,9 +247,13 @@ String stripAggregateCombinators(String name)
 /// `groupUniq`, which the set does not contain.
 bool isOracleUnsafeFunctionName(String name)
 {
+    const auto & aggregate_factory = AggregateFunctionFactory::instance();
     while (true)
     {
         if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+            return true;
+        if (aggregate_factory.isAlias(name)
+            && non_deterministic_functions_lower.contains(Poco::toLower(aggregate_factory.aliasTo(name))))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
