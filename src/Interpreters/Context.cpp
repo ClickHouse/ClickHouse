@@ -3710,13 +3710,7 @@ void Context::resetSettingsToDefaultValueRespectingCompatibility(const std::vect
         return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
-    {
         settings->setDefaultValueRespectingCompatibility(name);
-        /// `Settings` stores a `merge_tree_`-prefixed name as a custom setting, under the exact name that
-        /// wrote it. Resetting one name of a setting therefore has to clear what its other names wrote.
-        for (const auto & equivalent_name : settingEquivalentNames(name))
-            settings->setDefaultValueRespectingCompatibility(equivalent_name);
-    }
     /// A reset can move a setting the same way an assignment can, so the invariants the assignment
     /// path establishes have to be re-established here too.
     applySettingsQuirks(*settings);
