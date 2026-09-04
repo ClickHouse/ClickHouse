@@ -86,7 +86,30 @@ SELECT
     (SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere PREWHERE rowNumberInBlock() < 1 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
   = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_prewhere PREWHERE rowNumberInBlock() < 1 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
 
+-- A non-deterministic condition is kept out for the same reason even when it is not stateful:
+-- `blockSize` reports the row count of the block it is evaluated on.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT k FROM t_topk_prewhere PREWHERE blockSize() > 100 ORDER BY k LIMIT 10)
+WHERE explain ILIKE '%FUNCTION \_\_topKFilter%';
+
 DROP TABLE t_topk_prewhere;
+
+-- Rows for that condition. It needs a read order unrelated to `k`, and enough rows for the threshold
+-- to cut inside a block, so it gets its own table. Compared arm to arm for the reason above.
+DROP TABLE IF EXISTS t_topk_blocksize;
+
+CREATE TABLE t_topk_blocksize (k UInt32)
+ENGINE = MergeTree ORDER BY intHash32(k)
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_topk_blocksize SELECT number FROM numbers(100000);
+
+SELECT
+    (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0)
+  = (SELECT groupArray(k) FROM (SELECT k FROM t_topk_blocksize PREWHERE blockSize() > 100 ORDER BY k LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1);
+
+DROP TABLE t_topk_blocksize;
 
 -- A stored column whose name is the name the threshold filter's own column gets must not be taken
 -- for it. The name only reaches the read's PREWHERE actions when the column takes part in the

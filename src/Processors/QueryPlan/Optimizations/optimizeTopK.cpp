@@ -294,8 +294,11 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (existing_prewhere_info)
     {
         /// Each read step filters the block the next one sees, and the split preserves the order of the
-        /// root's conjuncts, so a stateful condition would observe a different block than it does alone.
-        if (existing_prewhere_info->prewhere_actions.hasStatefulFunctions())
+        /// root's conjuncts, so a condition whose value depends on the block it is evaluated on would
+        /// observe a different block than it does alone. That covers stateful conditions and also
+        /// non-deterministic ones such as `blockSize` and `rand`, which are not stateful.
+        if (existing_prewhere_info->prewhere_actions.hasStatefulFunctions()
+            || existing_prewhere_info->prewhere_actions.hasNonDeterministic())
             return;
 
         ActionsDAG combined = existing_prewhere_info->prewhere_actions.clone();
