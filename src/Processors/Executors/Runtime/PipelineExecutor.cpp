@@ -306,8 +306,15 @@ void PipelineExecutor::finalizeExecution()
     checkTimeLimit();
 
     auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
+    if (status == ExecutionStatus::CancelledByUser)
         return;
+
+    /// `checkTimeLimit` above has not thrown, so with `timeout_overflow_mode = 'break'` the partial result
+    /// is returned to the client as a success, and the pipeline has to be finalized as usual - in particular,
+    /// the output format has to write its epilogue, otherwise the response would be truncated. The only
+    /// difference is that the processors were stopped in the middle of the execution, so not all of them are
+    /// finished, and the "pipeline stuck" check does not apply.
+    const bool stopped_in_the_middle = status == ExecutionStatus::CancelledByTimeout;
 
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
@@ -316,9 +323,10 @@ void PipelineExecutor::finalizeExecution()
         {
             /// Single thread, do not hold mutex
             all_processors_finished = false;
-            break;
+            if (!stopped_in_the_middle)
+                break;
         }
-        if (node.processor() && read_progress_callback)
+        else if (node.processor() && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
             /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
@@ -341,7 +349,7 @@ void PipelineExecutor::finalizeExecution()
         }
     }
 
-    if (!all_processors_finished)
+    if (!all_processors_finished && !stopped_in_the_middle)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 
     for (auto & node : graph->nodes)
