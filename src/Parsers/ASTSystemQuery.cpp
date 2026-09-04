@@ -620,6 +620,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_STATISTICS_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:
         case Type::CLEAR_UNCOMPRESSED_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:

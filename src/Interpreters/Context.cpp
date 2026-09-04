@@ -55,6 +55,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/PartStatisticsCache.h>
+#include <Storages/MergeTree/SelectivityEstimatorCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
@@ -622,6 +624,10 @@ struct ContextSharedPart : boost::noncopyable
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
+    mutable OnceFlag part_statistics_cache_initialized;
+    mutable PartStatisticsCachePtr part_statistics_cache TSA_GUARDED_BY(mutex);      /// Cache of deserialized column statistics of data parts.
+    mutable OnceFlag selectivity_estimator_cache_initialized;
+    mutable SelectivityEstimatorCachePtr selectivity_estimator_cache TSA_GUARDED_BY(mutex); /// Cache of selectivity estimators built from part statistics.
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
@@ -4862,6 +4868,39 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
     return shared->primary_index_cache;
 }
 
+PartStatisticsCachePtr Context::getPartStatisticsCache() const
+{
+    callOnce(shared->part_statistics_cache_initialized, [&] {
+        std::lock_guard lock(shared->mutex);
+        shared->part_statistics_cache = std::make_shared<PartStatisticsCache>(
+            PartStatisticsCache::DEFAULT_POLICY, PartStatisticsCache::DEFAULT_MAX_SIZE_BYTES, PartStatisticsCache::DEFAULT_SIZE_RATIO);
+    });
+
+    SharedLockGuard lock(shared->mutex);
+    return shared->part_statistics_cache;
+}
+
+SelectivityEstimatorCachePtr Context::getSelectivityEstimatorCache() const
+{
+    callOnce(shared->selectivity_estimator_cache_initialized, [&] {
+        std::lock_guard lock(shared->mutex);
+        shared->selectivity_estimator_cache = std::make_shared<SelectivityEstimatorCache>(
+            SelectivityEstimatorCache::DEFAULT_POLICY, SelectivityEstimatorCache::DEFAULT_MAX_SIZE_BYTES, SelectivityEstimatorCache::DEFAULT_SIZE_RATIO);
+    });
+
+    SharedLockGuard lock(shared->mutex);
+    return shared->selectivity_estimator_cache;
+}
+
+void Context::clearStatisticsCaches() const
+{
+    /// Clear the caches without holding the context mutex to avoid blocking the context for long.
+    if (auto cache = getPartStatisticsCache())
+        cache->clear();
+    if (auto cache = getSelectivityEstimatorCache())
+        cache->clear();
+}
+
 SystemAllocatedMemoryHolderPtr Context::getSystemAllocatedMemoryHolder() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5495,6 +5534,12 @@ void Context::clearCaches() const
 
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();
+
+    if (shared->part_statistics_cache)
+        shared->part_statistics_cache->clear();
+
+    if (shared->selectivity_estimator_cache)
+        shared->selectivity_estimator_cache->clear();
 
     if (shared->index_uncompressed_cache)
         shared->index_uncompressed_cache->clear();

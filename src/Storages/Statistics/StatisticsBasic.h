@@ -44,6 +44,8 @@ public:
     std::optional<Float64> estimateEqual(const Field & val) const override;
     String getNameForLogs() const override;
 
+    size_t memoryUsageBytes() const override;
+
     bool isCompatibleWith(const IStatistics & other) const override;
 
     bool hasNumericMinMax() const { return tracks_numeric; }

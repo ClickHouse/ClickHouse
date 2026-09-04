@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/PartStatisticsCache.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1075,6 +1076,7 @@ void IMergeTreeDataPart::clearCaches()
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
     removeIndexMarksFromCache(storage.getContext()->getIndexMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
+    removeStatisticsFromCache(storage.getContext()->getPartStatisticsCache().get());
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
@@ -1314,14 +1316,10 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
-    {
+    /// An empty set means all columns. Subcolumn aliases (`<col>.null`) are already folded
+    /// into parent names by the caller.
+    if (!required_columns.empty() && !required_columns.contains(column_name))
         return nullptr;
-    }
 
     return all_columns.tryGet(column_name);
 }
@@ -1418,25 +1416,50 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
     return result;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
+ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns) const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
     if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, {});
+        return loadStatisticsPacked(*reader, required_columns);
 
-    return loadStatisticsWide({});
+    return loadStatisticsWide(required_columns);
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
+UInt128 IMergeTreeDataPart::getStatisticsCacheKey() const
 {
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    /// Must use `getRelativePathOfActivePart` (not the current relative path), like the other
+    /// part caches, so lookup and removal address the same entry after a rename.
+    /// The path alone is not enough: a part directory can be reused with different bytes (e.g.
+    /// files replaced between DETACH and ATTACH), and the entry of the old part object is only
+    /// removed when that object is destroyed, which a running query can delay past the load of
+    /// the new one. The content checksum makes such an entry unreachable, exactly like in the
+    /// selectivity estimator cache key.
+    return PartStatisticsCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart(), checksums.getTotalChecksumUInt128());
+}
 
-    if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, required_columns_set);
+std::shared_ptr<const ColumnsStatistics> IMergeTreeDataPart::loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const
+{
+    if (!cache)
+        return std::make_shared<ColumnsStatistics>(loadStatistics(required_columns));
 
-    return loadStatisticsWide(required_columns_set);
+    /// A cache entry has to serve any later column set, so only a request for all columns may
+    /// populate it. A narrower request that misses reads exactly its own columns and is not
+    /// cached: statistics are advisory per column, and populating from a narrow request would
+    /// let an unreadable statistics file of a column the query never referenced fail that query.
+    if (required_columns.empty())
+        return cache->getOrSet(getStatisticsCacheKey(), [this] { return std::make_shared<ColumnsStatistics>(loadStatistics({})); });
+
+    if (auto cached = cache->get(getStatisticsCacheKey()))
+        return cached;
+
+    return std::make_shared<ColumnsStatistics>(loadStatistics(required_columns));
+}
+
+void IMergeTreeDataPart::removeStatisticsFromCache(PartStatisticsCache * cache) const
+{
+    if (cache)
+        cache->remove(getStatisticsCacheKey());
 }
 
 Estimates IMergeTreeDataPart::getEstimates() const
@@ -1446,15 +1469,18 @@ Estimates IMergeTreeDataPart::getEstimates() const
     if (estimates.has_value())
         return *estimates;
 
-    /// The raw statistics are transient, so load them in the default arena; only the cached
-    /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
-    /// arena, like the rest of the part's metadata.
-    auto statistics = loadStatistics();
+    /// The raw statistics are cache-owned or transient, so load them in the default arena; only
+    /// the cached estimates map is long-lived (kept on the part until reload), so build it in the
+    /// dedicated arena, like the rest of the part's metadata.
+    /// The part statistics cache is used unconditionally here: this method has no query
+    /// context to consult `use_statistics_cache`, and the computed estimates are memoized on
+    /// the part below anyway, so the setting could never force a fresh load at this site.
+    auto statistics = loadStatisticsWithCache(storage.getContext()->getPartStatisticsCache().get(), {});
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         Estimates new_estimates;
-        for (const auto & [column_name, stats] : statistics)
+        for (const auto & [column_name, stats] : *statistics)
             new_estimates.emplace(column_name, stats->getEstimate());
         estimates = std::move(new_estimates);
     }
@@ -1466,6 +1492,12 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(estimates_mutex);
     estimates = new_estimates;
+}
+
+void IMergeTreeDataPart::resetEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+    estimates.reset();
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

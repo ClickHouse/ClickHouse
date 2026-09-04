@@ -101,6 +101,7 @@ struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 class PrimaryIndexCache;
+class PartStatisticsCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
 class DeleteBitmapCache;
@@ -239,10 +240,22 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    /// An empty `required_columns` set means all columns.
+    ColumnsStatistics loadStatistics(const NameSet & required_columns) const;
+
+    /// Load statistics through the shared part statistics cache when one is configured
+    /// (statistics of a part are immutable, so the entry stays valid for the part's lifetime).
+    /// A cache entry always holds all columns, so only an empty `required_columns` set may fill
+    /// it; a narrower request is served from an existing entry or read directly from disk.
+    /// Loads directly when `cache` is nullptr. The returned object may be shared with the cache
+    /// and must not be mutated.
+    std::shared_ptr<const ColumnsStatistics> loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const;
+    void removeStatisticsFromCache(PartStatisticsCache * cache) const;
+    UInt128 getStatisticsCacheKey() const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
+    /// Drops the memoized estimates, so the next `getEstimates` reads the statistics again.
+    void resetEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

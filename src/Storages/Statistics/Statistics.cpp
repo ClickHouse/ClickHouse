@@ -38,6 +38,11 @@ extern const int LOGICAL_ERROR;
 }
 
 
+size_t StatisticsUtils::fieldMemoryUsageBytes(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().capacity() : 0;
+}
+
 bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunction & b)
 {
     if (a.sizeOfData() != b.sizeOfData())
@@ -206,6 +211,30 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     }
 }
 
+size_t ColumnStatistics::memoryUsageBytes() const
+{
+    size_t res = sizeof(*this);
+    for (const auto & [type, stat] : stats)
+    {
+        res += sizeof(type) + sizeof(stat);
+        if (stat)
+            res += stat->memoryUsageBytes();
+    }
+    return res;
+}
+
+size_t ColumnsStatistics::memoryUsageBytes() const
+{
+    size_t res = 0;
+    for (const auto & [column_name, column_stats] : *this)
+    {
+        res += sizeof(String) + column_name.size() + sizeof(column_stats);
+        if (column_stats)
+            res += column_stats->memoryUsageBytes();
+    }
+    return res;
+}
+
 bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 {
     /// A collector is built once from the declared column type, so merging a part statistic built on a
@@ -239,6 +268,14 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
     return MergeTreeStatisticsFactory::instance().get(stats_desc);
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::clone() const
+{
+    WriteBufferFromOwnString out;
+    serialize(out);
+    ReadBufferFromString in(out.str());
+    return deserialize(in, stats_desc.data_type);
 }
 
 UInt64 IStatistics::estimateCardinality() const

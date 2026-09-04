@@ -107,6 +107,10 @@
     M(UniqueKeyBitmapUpdates, "Number of UNIQUE KEY delete-bitmap sidecar files written (one per supersession / DELETE commit).", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PartStatisticsCacheHits, "Number of times the statistics of a data part were found in the part statistics cache, so they did not have to be read from disk.", ValueType::Number) \
+    M(PartStatisticsCacheMisses, "Number of times the statistics of a data part were not found in the part statistics cache, so they had to be read from disk and deserialized, which adds to query latency.", ValueType::Number) \
+    M(SelectivityEstimatorCacheHits, "Number of times a selectivity estimator was found in the selectivity estimator cache, so it did not have to be rebuilt from part statistics.", ValueType::Number) \
+    M(SelectivityEstimatorCacheMisses, "Number of times a selectivity estimator was not found in the selectivity estimator cache and had to be built from part statistics, which adds to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \

@@ -106,6 +106,11 @@ String StatisticsMinMax::getNameForLogs() const
     return fmt::format("MinMax: ({}, {})", applyVisitor(FieldVisitorToString(), min), applyVisitor(FieldVisitorToString(), max));
 }
 
+size_t StatisticsMinMax::memoryUsageBytes() const
+{
+    return sizeof(*this) + StatisticsUtils::fieldMemoryUsageBytes(min) + StatisticsUtils::fieldMemoryUsageBytes(max);
+}
+
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     auto inner_data_type = removeNullable(data_type);

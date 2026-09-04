@@ -79,6 +79,8 @@ private:
     void unloadPrimaryKeys();
     void loadOrUnloadPrimaryKeysImpl(bool load);
 
+    void clearStatisticsCaches(const ContextPtr & system_context);
+
     [[clang::xray_never_instrument]] void instrumentWithXRay(bool add, ASTSystemQuery & query);
 
     void syncReplicatedDatabase(ASTSystemQuery & query);

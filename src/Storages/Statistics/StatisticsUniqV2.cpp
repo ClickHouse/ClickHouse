@@ -113,6 +113,18 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
     return cardinality;
 }
 
+size_t StatisticsUniqV2::memoryUsageBytes() const
+{
+    /// The `uniqCombined64` state is a `CombinedCardinalityEstimator` whose only inline container
+    /// is the small set. Past that it owns a heap-allocated hash set of at most 2^(precision - 5)
+    /// 8-byte keys, and past that a heap-allocated HyperLogLog of 2^precision 6-bit registers,
+    /// which is the larger of the two. Neither is observable through `IAggregateFunction`, so
+    /// charge one byte per HyperLogLog register, which covers the registers plus bookkeeping.
+    /// Overestimating evicts early, which is the safe direction for a cache.
+    static constexpr size_t max_heap_bytes = 1ULL << UNIQ_COMBINED_PRECISION;
+    return sizeof(*this) + collector->sizeOfData() + arena->allocatedBytes() + max_heap_bytes;
+}
+
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);

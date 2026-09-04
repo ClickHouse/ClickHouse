@@ -125,6 +125,9 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/PartStatisticsCache.h>
+#include <Storages/MergeTree/SelectivityEstimatorCache.h>
+#include <Common/SipHash.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -924,6 +927,47 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
     return results;
 }
 
+/// `SipHash::update(String)` hashes the bare bytes, so a sequence of names must be
+/// length-prefixed to keep `{"a", "bc"}` and `{"ab", "c"}` distinct.
+static void updateHashWithString(SipHash & hash, const String & value)
+{
+    hash.update(value.size());
+    hash.update(value);
+}
+
+/// Estimators are cached per (table, ordered part set with content checksums, requested
+/// column set). Parts are immutable, so an equal key implies an equal estimator. The column
+/// names are sorted because call sites pass the same columns in different orders.
+/// The table schema is deliberately not part of the key: estimators are built purely from
+/// part contents (covered by the checksums), and statistics whose stored type no longer
+/// matches the table's current column type are excluded at estimation time by
+/// `isCompatibleStatistics` against the caller's metadata snapshot, exactly as on the
+/// uncached path.
+static UInt128 selectivityEstimatorCacheKey(const StorageID & table_id, const RangesInDataParts & parts, const Names & required_columns)
+{
+    SipHash hash;
+    hash.update(table_id.uuid);
+    updateHashWithString(hash, table_id.database_name);
+    updateHashWithString(hash, table_id.table_name);
+    hash.update(parts.size());
+    for (const auto & part : parts)
+    {
+        updateHashWithString(hash, part.data_part->name);
+        /// Content-sensitive: a part name can be recycled with different bytes (e.g. files
+        /// replaced between DETACH and ATTACH), and estimator entries have no per-part
+        /// invalidation; the checksum makes such an entry unreachable instead.
+        hash.update(part.data_part->checksums.getTotalChecksumUInt128());
+    }
+
+    Names sorted_columns = required_columns;
+    std::sort(sorted_columns.begin(), sorted_columns.end());
+    hash.update(sorted_columns.size());
+    for (const auto & column_name : sorted_columns)
+        updateHashWithString(hash, column_name);
+
+    return hash.get128();
+}
+
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
     const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const
 {
@@ -933,34 +977,48 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    ConditionSelectivityEstimatorPtr cached;
-    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
-    {
-        std::lock_guard<std::mutex> lock(stats_mutex);
-        cached = cached_estimator;
-    }
+    /// `use_statistics_cache = 0` is the escape hatch that restores uncached, from-disk loading.
+    const bool use_cache = local_context->getSettingsRef()[Setting::use_statistics_cache];
 
-    /// The cache contains statistics for the active-part snapshot seen by the last refresh.
-    /// Reuse it only when the query reads the same ordered parts. Otherwise load and merge
-    /// statistics for the parts left after partition and primary-key pruning. A changed active-part
-    /// sequence invalidates the full-set cache until a refresh publishes the new active snapshot.
-    /// The copied shared pointer keeps the cached snapshot alive after the mutex is released.
-    if (cached && !cached->isStale(parts))
-        return cached;
+    SelectivityEstimatorCachePtr estimator_cache;
+    UInt128 estimator_key{};
+    if (use_cache)
+    {
+        estimator_cache = getContext()->getSelectivityEstimatorCache();
+        estimator_key = selectivityEstimatorCacheKey(getStorageID(), parts, required_columns);
+        if (auto cached = estimator_cache->get(estimator_key))
+            return cached;
+    }
 
     LOG_DEBUG(log, "Loading statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
+    auto stats_cache = use_cache ? getContext()->getPartStatisticsCache() : nullptr;
+
+    /// `<col>.null` may appear in the required columns when `optimize_functions_to_subcolumns = 1`;
+    /// statistics of the parent column serve it, so fold the parent names into the lookup set.
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    for (const auto & column_name : required_columns)
+        if (column_name.ends_with(".null"))
+            required_columns_set.insert(column_name.substr(0, column_name.size() - std::string_view(".null").size()));
+
     for (const auto & part : parts)
     {
-        auto parts_lock = readLockParts();
-        auto stats = part.data_part->loadStatistics(required_columns);
-        estimator_builder.markDataPart(part.data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
+        /// No parts lock: the `DataPartPtr` keeps the part alive, and statistics files are
+        /// read without the lock elsewhere too (`getEstimates`), like any other part file.
+        auto stats = part.data_part->loadStatisticsWithCache(stats_cache.get(), required_columns_set);
+        estimator_builder.incrementRowCount(part.data_part->rows_count);
+        for (const auto & [column_name, stat] : *stats)
+        {
+            if (required_columns_set.empty() || required_columns_set.contains(column_name))
+                estimator_builder.addStatistics(column_name, stat);
+        }
     }
 
-    return estimator_builder.getEstimator();
+    auto estimator = estimator_builder.getEstimator();
+    if (use_cache && estimator)
+        estimator_cache->set(estimator_key, estimator);
+    return estimator;
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -3376,29 +3434,20 @@ void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
 try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
-    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-    if (cached_estimator)
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    if (!metadata_snapshot->hasStatistics())
     {
-        if (!cached_estimator->isStale(data_parts))
-        {
-            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
-            if (interval_seconds)
-                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-            return;
-        }
+        if (interval_seconds)
+            refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+        return;
     }
+    /// Prewarm the part statistics cache so queries do not pay the disk reads; queries build
+    /// (and cache) their own estimators from it for exactly the part and column sets they need.
+    /// On an already-warm cache this loop is only a key lookup per part.
     LOG_DEBUG(log, "Refreshing statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
-    for (const DataPartPtr & data_part : data_parts)
-    {
-        auto parts_lock = readLockParts();
-        auto stats = data_part->loadStatistics();
-        estimator_builder.markDataPart(data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
-    }
-    std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
+    auto stats_cache = getContext()->getPartStatisticsCache();
+    for (const DataPartPtr & data_part : getDataPartsVectorForInternalUsage())
+        data_part->loadStatisticsWithCache(stats_cache.get(), {});
     if (interval_seconds)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
 }
@@ -3414,7 +3463,7 @@ catch (...)
 MergeTreeData::~MergeTreeData()
 {
     /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
-    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
+    /// `unexpected_data_parts`, `refresh_parts_mutex`) that
     /// are declared after their task holders, so they are destroyed before the holders' own
     /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
     /// activated after the shutdown (a table startup or an ALTER of
@@ -13648,6 +13697,12 @@ void MergeTreeData::unloadPrimaryKeys()
     {
         const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
     }
+}
+
+void MergeTreeData::resetPartEstimates() const
+{
+    for (const auto & part : getAllDataPartsVector())
+        part->resetEstimates();
 }
 
 size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()

@@ -900,7 +900,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (result_statistics.empty())
                 continue;
 
-            auto part_statistics = part->loadStatistics();
+            auto part_statistics = part->loadStatistics({});
 
             for (const auto & [column_name, column_stats] : result_statistics)
             {

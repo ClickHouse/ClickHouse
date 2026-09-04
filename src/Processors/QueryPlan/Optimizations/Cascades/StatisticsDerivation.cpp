@@ -348,7 +348,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+            auto relation_profile = estimator->estimateRelationProfile(read_step.getContext(), nullptr, nullptr, prewhere_node);
 
             /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
             /// Without a `PREWHERE` the profile carries no filter, its row count is only the

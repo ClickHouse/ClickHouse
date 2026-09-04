@@ -151,7 +151,7 @@ TEST(Statistics, Estimator)
     ColumnStatisticsPtr stats_c = mock_statistics("c");
     stats_c->build(std::move(c));
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     estimator_builder.addStatistics("a", stats_a);
     estimator_builder.addStatistics("b", stats_b);
     estimator_builder.addStatistics("c", stats_c);
@@ -313,7 +313,7 @@ TEST(Statistics, NullableEstimatorWithBasic)
     ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
     ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
 
-    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder builder;
     builder.addStatistics("a", stats_a);
     builder.addStatistics("b", stats_b);
     builder.incrementRowCount(1000);
@@ -409,7 +409,7 @@ TEST(Statistics, LikeSelectivity)
     auto stats = MergeTreeStatisticsFactory::instance().get(column_desc);
     stats->build(std::move(col));
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     estimator_builder.addStatistics("a", stats);
     estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();

@@ -2434,7 +2434,9 @@ Possible values:
 - none - empty scope, do not search
 )", 0) \
     DECLARE(Seconds, refresh_statistics_interval, 300, R"(
-The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
+The interval in seconds at which the statistics of all data parts of the table are loaded into the part statistics cache in the background.
+If it is set to zero, this background refresh is disabled. The statistics caches are populated and used by queries regardless of this setting.
+The query-level setting `use_statistics_cache = 0` bypasses them only when the selectivity estimator is built; statistics-based part pruning always uses the part statistics cache.
 )", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
 Minimal number of parts to activated distributed index analysis

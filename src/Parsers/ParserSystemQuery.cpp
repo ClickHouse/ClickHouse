@@ -308,6 +308,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP CONNECTIONS CACHE", Type::CLEAR_CONNECTIONS_CACHE},
             {"DROP MARK CACHE", Type::CLEAR_MARK_CACHE},
             {"DROP PRIMARY INDEX CACHE", Type::CLEAR_PRIMARY_INDEX_CACHE},
+            {"DROP STATISTICS CACHE", Type::CLEAR_STATISTICS_CACHE},
             {"DROP UNCOMPRESSED CACHE", Type::CLEAR_UNCOMPRESSED_CACHE},
             {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
             {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
@@ -1258,6 +1259,11 @@ Clears the mark cache.
 
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
 Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
+
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Clears the caches used for query planning with column statistics: the cache of deserialized data part statistics, the cache of selectivity estimators built from them, and the per-part estimates memoized for statistics-based part pruning.
+The next query that plans with statistics reads them from disk again.
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 

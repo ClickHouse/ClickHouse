@@ -287,6 +287,11 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
         && has_default_count == other_basic->has_default_count;
 }
 
+size_t StatisticsBasic::memoryUsageBytes() const
+{
+    return sizeof(*this) + StatisticsUtils::fieldMemoryUsageBytes(min) + StatisticsUtils::fieldMemoryUsageBytes(max);
+}
+
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)
 {
     /// `basic` supports any column type: a default-value count (`getNumberOfDefaultRows`) is defined

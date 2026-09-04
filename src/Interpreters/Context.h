@@ -105,6 +105,8 @@ class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
+class PartStatisticsCache;
+class SelectivityEstimatorCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -1591,6 +1593,13 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    /// Cache of deserialized column statistics of data parts and cache of selectivity
+    /// estimators built from them. Created lazily on first access with fixed budgets;
+    /// need no configuration.
+    std::shared_ptr<PartStatisticsCache> getPartStatisticsCache() const;
+    std::shared_ptr<SelectivityEstimatorCache> getSelectivityEstimatorCache() const;
+    void clearStatisticsCaches() const;
 
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;

@@ -1602,6 +1602,9 @@ public:
     void loadPrimaryKeys() const;
     void unloadPrimaryKeys();
 
+    /// Drops the estimates memoized on all data parts for statistics-based part pruning.
+    void resetPartEstimates() const;
+
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
@@ -2137,8 +2140,6 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);

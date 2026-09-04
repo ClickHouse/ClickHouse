@@ -512,6 +512,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
             break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
+            clearStatisticsCaches(system_context);
+            break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
@@ -2442,6 +2446,24 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+void InterpreterSystemQuery::clearStatisticsCaches(const ContextPtr & system_context)
+{
+    system_context->clearStatisticsCaches();
+
+    /// Statistics-based part pruning uses the estimates memoized on the parts themselves and does
+    /// not consult the shared caches once they are set, so those are dropped too. The shared caches
+    /// go first: a query racing with this command then re-memoizes estimates read from disk rather
+    /// than from a cache entry that is about to be dropped.
+    for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    {
+        for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+        {
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                merge_tree->resetPartEstimates();
+        }
+    }
+}
+
 #if USE_XRAY
 void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
 {
@@ -2809,6 +2831,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_STATISTICS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_STATISTICS_CACHE);
             break;
         case Type::CLEAR_MMAP_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);
