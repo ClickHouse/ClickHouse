@@ -28,6 +28,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTFunction;
+class ASTIdentifier;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -261,6 +262,7 @@ private:
     NameToNameMap last_query_parameters;
     /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
     uint32_t param_counter = 0;
+    static constexpr uint32_t max_query_parameters = 10;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -364,6 +366,7 @@ private:
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);
+    void callTableAsParameterizedView(ASTTableExpression & table);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
@@ -385,6 +388,9 @@ private:
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
     String generateParamValue();
+    ASTPtr makeQueryParameter(const String & type, const String & value);
+    ASTPtr makeLimitExpression(const Field & value);
+    ASTPtr makeParameterizedIdentifier(const ASTIdentifier & ident);
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
