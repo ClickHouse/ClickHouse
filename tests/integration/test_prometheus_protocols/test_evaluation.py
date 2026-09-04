@@ -1153,6 +1153,31 @@ def test_function_absent():
     )
 
 
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            'absent(nonexistent_metric_name{job="api"})',
+            '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        ),
+        (
+            "scalar(nonexistent_metric_name)",
+            '{"resultType": "scalar", "result": [130, "NaN"]}',
+        ),
+    ],
+)
+def test_empty_aggregation_setting_does_not_change_promql(query, expected):
+    actual = execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        query,
+        timestamp=130,
+        params={"empty_result_for_aggregation_by_empty_set": 1},
+    )
+    assert http_api_response_close_to(actual, expected)
+
+
 def test_literals():
     timestamp = 250
     do_query_test(

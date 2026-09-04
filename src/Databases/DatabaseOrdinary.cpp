@@ -82,6 +82,7 @@ namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsBool lazy_load_tables;
 extern const DatabaseMetadataDiskSettingsString disk;
+extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 }
 
 
@@ -113,6 +114,8 @@ DatabaseOrdinary::DatabaseOrdinary(
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);
     else
         metadata_disk_ptr = getContext()->getDatabaseDisk();
+
+    max_tables = database_metadata_disk_settings[DatabaseMetadataDiskSetting::max_tables].value;
 
     LOG_INFO(log, "Metadata disk {}, path {}", metadata_disk_ptr->getName(), metadata_disk_ptr->getPath());
 }
