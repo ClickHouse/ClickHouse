@@ -65,6 +65,8 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void describeActions(FormatSettings &) const override;
@@ -224,8 +226,9 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;
