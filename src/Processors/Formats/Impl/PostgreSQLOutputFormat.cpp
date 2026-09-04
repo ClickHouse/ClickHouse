@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -14,6 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace FailPoints
+{
+extern const char postgresql_output_format_mid_loop_pause[];
 }
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -59,6 +65,9 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
         /// Check for cancellation periodically, use throw instead of return.
         if (isCancelled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+        if (i == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::postgresql_output_format_mid_loop_pause);
 
         const Columns & columns = chunk.getColumns();
         VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;

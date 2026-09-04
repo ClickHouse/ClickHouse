@@ -99,6 +99,21 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 
 Serialize the distributed query plan for execution at replicas.
 
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the table's sorting key can skip the sort and stop early. Off by default: only shapes where no exchange survives between the read and the sort are safe today."}]}]}/>
+
+Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
+table's sorting key can skip the sort and stop early instead of scanning and sorting.
+
+Off by default: the rewrite that distributes a sort assumes the sort it wraps does not depend on its input
+already being ordered, and a sort that does can be fed rows through an exchange that does not preserve
+order. Only shapes where no exchange survives between the read and the sort are safe today.
+
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <ExperimentalBadge/>

@@ -11,7 +11,13 @@ doc_type: 'reference'
   ## 説明
 </div>
 
-CREATE HANDLER で作成された、SQL で定義されるすべての HTTP ハンドラーの一覧を含みます。
+[`CREATE HANDLER`](/ja/reference/statements/create/handler) で作成された、SQL で定義されるすべての HTTP ハンドラーの一覧を含みます。
+
+このテーブルを読み取るには `SHOW HANDLERS` 権限が必要です。この権限がない場合、テーブルは空に見えます。ハンドラーのクエリに
+埋め込まれている可能性がある secret (たとえば、テーブル関数に渡す認証情報) は、ユーザーに secret の表示が許可されている場合にのみ、
+`query` および `create_query` カラムに表示されます (`display_secrets_in_show_and_select` サーバー設定と `format_display_secrets_in_show_and_select` フォーマット
+設定が有効であり、ユーザーが `displaySecretsInShowAndSelect` 権限を持っている場合) 。それ以外の場合は、
+`SHOW CREATE TABLE` とまったく同様にマスクされます。
 
 <div id="columns">
   ## カラム

@@ -36,7 +36,6 @@ void registerStatementUndrop(StatementFactory & factory);
 void registerStatementUnion(StatementFactory & factory);
 void registerStatementUpdate(StatementFactory & factory);
 void registerStatementUse(StatementFactory & factory);
-void registerStatementWatch(StatementFactory & factory);
 void registerStatementWith(StatementFactory & factory);
 void registerStatementCheckGrant(StatementFactory & factory);
 void registerStatementExecuteAs(StatementFactory & factory);

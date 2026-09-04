@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1078296",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1107336",
       "email": "support@clickhouse.com"
     }
   },
@@ -7793,6 +7793,123 @@
         "x-mint": {
           "content": "Create a new ClickPipe."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/context": {
+      "get": {
+        "summary": "Get ClickPipes service context",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns service-level ClickPipes capabilities and Private Preview workload identity context, including the GCP service account to grant access to customer source resources.",
+        "operationId": "clickPipesServiceContextGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service to get ClickPipes context for.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickPipesServiceContext"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickPipes"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}": {
@@ -19459,11 +19576,11 @@
             ]
           },
           "minReplicaMemoryGb": {
-            "description": "Minimum memory per replica (Gb) when no schedule entry is active.",
+            "description": "Minimum memory per replica (Gb) when no schedule entry is active. Absent for services that do not autoscale memory.",
             "type": "number"
           },
           "maxReplicaMemoryGb": {
-            "description": "Maximum memory per replica (Gb) when no schedule entry is active.",
+            "description": "Maximum memory per replica (Gb) when no schedule entry is active. Absent for services that do not autoscale memory.",
             "type": "number"
           },
           "minReplicas": {
@@ -21021,7 +21138,10 @@
             "description": "Google Cloud service account JSON key file content, base64 encoded.",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "serviceAccountFile"
+        ]
       },
       "ClickPipeKafkaOffset": {
         "properties": {
@@ -21169,7 +21289,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -21177,7 +21297,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21274,7 +21395,7 @@
             "example": "my-clickpipe-consumer-group"
           },
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": "string",
             "enum": [
               "PLAIN",
@@ -21282,7 +21403,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21350,13 +21472,21 @@
                 "$ref": "#/components/schemas/MutualTLS"
               }
             ]
+          },
+          "protobufSchema": {
+            "description": "Base64-encoded .proto source or serialized FileDescriptorSet. Supported only with Protobuf format and cannot be combined with schemaRegistry.",
+            "type": "string",
+            "example": "c3ludGF4ID0gInByb3RvMyI7IG1lc3NhZ2UgRXZlbnQge30=",
+            "maxLength": 1048576,
+            "minLength": 1,
+            "writeOnly": true
           }
         }
       },
       "ClickPipePatchKafkaSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method of the Kafka source. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
+            "description": "Authentication method of the Kafka source. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. Supported authentication methods: kafka: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, msk: SCRAM-SHA-512, IAM_ROLE, IAM_USER, MUTUAL_TLS, gcmk: PLAIN, MUTUAL_TLS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY, confluent: PLAIN, MUTUAL_TLS, warpstream: PLAIN, azureeventhub: PLAIN, redpanda: SCRAM-SHA-256, SCRAM-SHA-512, MUTUAL_TLS, dokafka: SCRAM-SHA-256, MUTUAL_TLS",
             "type": [
               "string",
               "null"
@@ -21367,7 +21497,8 @@
               "SCRAM-SHA-512",
               "IAM_ROLE",
               "IAM_USER",
-              "MUTUAL_TLS"
+              "MUTUAL_TLS",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21671,7 +21802,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21680,7 +21811,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21808,7 +21940,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21817,7 +21949,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -21889,7 +22022,7 @@
             "example": "events/2026-06-01/"
           },
           "authentication": {
-            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
+            "description": "Authentication method. IAM_USER is for S3, GCS, and DigitalOcean Spaces. IAM_ROLE is for S3 only. SERVICE_ACCOUNT is for GCS only. For GCS, SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources. CONNECTION_STRING is for Azure Blob Storage. PUBLIC uses no authentication.",
             "type": [
               "string",
               "null"
@@ -21898,7 +22031,8 @@
               "IAM_ROLE",
               "IAM_USER",
               "CONNECTION_STRING",
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ]
           },
           "iamRole": {
@@ -22325,9 +22459,10 @@
             "example": "-----BEGIN CERTIFICATE-----\n..."
           },
           "disableTls": {
-            "description": "Disable TLS for the Postgres connection. Use with caution in production environments.",
+            "description": "Disable TLS for the Postgres connection. Use with caution in production environments. Defaults to false when omitted.",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the Postgres connection. Use with caution in production environments.",
@@ -22812,9 +22947,10 @@
             "example": "-----BEGIN CERTIFICATE-----\n..."
           },
           "disableTls": {
-            "description": "Disable TLS for the MySQL connection. Use with caution in production environments.",
+            "description": "Disable TLS for the MySQL connection. Use with caution in production environments. Defaults to false when omitted.",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the MySQL connection. Use with caution in production environments.",
@@ -22979,7 +23115,10 @@
             "description": "Number of parallel tables to snapshot.",
             "type": "number"
           }
-        }
+        },
+        "required": [
+          "replicationMode"
+        ]
       },
       "ClickPipeBigQueryPipeTableMapping": {
         "properties": {
@@ -23022,27 +23161,96 @@
               "Null"
             ]
           }
-        }
+        },
+        "required": [
+          "sourceDatasetName",
+          "sourceTable",
+          "targetTable"
+        ]
+      },
+      "ClickPipeBigQueryServiceAccountSource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticated with a Google Cloud service account JSON key.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication"
+        ]
+      },
+      "ClickPipeBigQueryWorkloadIdentitySource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticated with the ClickPipes service tenant identity. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources. Older pipes created outside OpenAPI may omit this field.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication"
+        ]
       },
       "ClickPipeBigQuerySource": {
-        "properties": {
-          "snapshotStagingPath": {
-            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
-            "type": "string"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipeBigQueryServiceAccountSource"
           },
-          "settings": {
-            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
-          },
-          "tableMappings": {
-            "type": "array",
-            "description": "Table mappings for BigQuery pipe.",
-            "items": {
-              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
-            }
+          {
+            "$ref": "#/components/schemas/ClickPipeBigQueryWorkloadIdentitySource"
           }
-        }
+        ]
       },
-      "ClickPipeMutateBigQuerySource": {
+      "ClickPipePostBigQueryServiceAccountSource": {
         "properties": {
           "snapshotStagingPath": {
             "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
@@ -23057,11 +23265,79 @@
             "items": {
               "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
             }
+          },
+          "authentication": {
+            "description": "Authenticate with a Google Cloud service account JSON key. Defaults to SERVICE_ACCOUNT when omitted.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT"
+            ]
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
           },
           "credentials": {
             "$ref": "#/components/schemas/ServiceAccount"
           }
-        }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostBigQueryWorkloadIdentitySource": {
+        "properties": {
+          "snapshotStagingPath": {
+            "description": "GCS bucket path for staging snapshot data (e.g., gs://my-bucket/staging/). Data will be automatically cleaned up after initial load.",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ClickPipeBigQueryPipeSettings"
+          },
+          "tableMappings": {
+            "type": "array",
+            "description": "Table mappings for BigQuery pipe.",
+            "items": {
+              "$ref": "#/components/schemas/ClickPipeBigQueryPipeTableMapping"
+            }
+          },
+          "authentication": {
+            "description": "Authenticate with the ClickPipes service tenant identity. Customer credentials must not be provided. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ],
+            "example": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the BigQuery resources.",
+            "type": "string",
+            "example": "my-gcp-project"
+          }
+        },
+        "required": [
+          "snapshotStagingPath",
+          "settings",
+          "tableMappings",
+          "authentication",
+          "projectId"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipeMutateBigQuerySource": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipePostBigQueryServiceAccountSource"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipePostBigQueryWorkloadIdentitySource"
+          }
+        ]
       },
       "ClickPipeMongoDBPipeSettings": {
         "properties": {
@@ -23301,7 +23577,8 @@
           "disableTls": {
             "description": "Disable TLS for the MongoDB connection. Defaults to false (TLS enabled).",
             "type": "boolean",
-            "example": false
+            "example": false,
+            "default": false
           },
           "skipCertVerification": {
             "description": "Skip TLS certificate verification for the MongoDB connection. Use with caution in production environments.",
@@ -23439,10 +23716,11 @@
             "example": "my-topic"
           },
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authentication method to use with GCP Pub/Sub. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
             "type": "string",
             "enum": [
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "SERVICE_ACCOUNT"
           },
@@ -23498,7 +23776,7 @@
           "seekType"
         ]
       },
-      "ClickPipePostPubSubSource": {
+      "ClickPipePostPubSubServiceAccountSource": {
         "properties": {
           "format": {
             "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
@@ -23521,7 +23799,7 @@
             "example": "my-topic"
           },
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authenticate with a GCP service account JSON key.",
             "type": "string",
             "enum": [
               "SERVICE_ACCOUNT"
@@ -23582,18 +23860,113 @@
           "authentication",
           "seekType",
           "serviceAccountKey"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostPubSubWorkloadIdentitySource": {
+        "properties": {
+          "format": {
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "type": "string",
+            "enum": [
+              "JSONEachRow",
+              "Avro",
+              "Protobuf"
+            ],
+            "example": "JSONEachRow"
+          },
+          "projectId": {
+            "description": "GCP project ID that owns the Pub/Sub topic.",
+            "type": "string",
+            "example": "my-gcp-project"
+          },
+          "topic": {
+            "description": "Pub/Sub topic name (not the fully-qualified path).",
+            "type": "string",
+            "example": "my-topic"
+          },
+          "authentication": {
+            "description": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
+            "type": "string",
+            "enum": [
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+            ],
+            "example": "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+          },
+          "seekType": {
+            "description": "Starting position strategy for consuming the subscription. The seekTimestamp companion is required only when seekType is \"timestamp\"; setting it for a mismatched seek type is rejected.",
+            "type": "string",
+            "enum": [
+              "latest",
+              "earliest",
+              "timestamp"
+            ],
+            "example": "earliest"
+          },
+          "seekTimestamp": {
+            "description": "RFC 3339 / ISO 8601 timestamp to seek to. Required when seekType is \"timestamp\"; must be omitted otherwise.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-04-10T12:00:00Z"
+          },
+          "filter": {
+            "description": "Optional Pub/Sub subscription filter expression (CEL). Maximum 256 characters.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "enableOrdering": {
+            "description": "Whether to enable ordered delivery of messages (requires messages to be published with ordering keys).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ackDeadline": {
+            "description": "Acknowledgement deadline for messages, in seconds. Must be between 10 and 600.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 10,
+            "maximum": 600
+          }
+        },
+        "required": [
+          "format",
+          "projectId",
+          "topic",
+          "authentication",
+          "seekType"
+        ],
+        "additionalProperties": false
+      },
+      "ClickPipePostPubSubSource": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickPipePostPubSubServiceAccountSource"
+          },
+          {
+            "$ref": "#/components/schemas/ClickPipePostPubSubWorkloadIdentitySource"
+          }
         ]
       },
       "ClickPipePatchPubSubSource": {
         "properties": {
           "authentication": {
-            "description": "Authentication method to use with GCP Pub/Sub. Currently only SERVICE_ACCOUNT is supported.",
+            "description": "Authentication method to use with GCP Pub/Sub. SERVICE_ACCOUNT_WORKLOAD_IDENTITY is in Private Preview. ClickPipes uses the GCP service account returned in gcpWorkloadIdentity.principal by the operation with operationId clickPipesServiceContextGet; grant it access to the source resources.",
             "type": [
               "string",
               "null"
             ],
             "enum": [
-              "SERVICE_ACCOUNT"
+              "SERVICE_ACCOUNT",
+              "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
             ],
             "example": "SERVICE_ACCOUNT"
           },
@@ -23618,9 +23991,38 @@
           }
         },
         "required": [
-          "authentication",
-          "serviceAccountKey"
+          "authentication"
         ]
+      },
+      "ClickPipesGcpWorkloadIdentityContext": {
+        "properties": {
+          "supported": {
+            "description": "Whether the ClickPipes deployment supports GCP workload identity, which is in Private Preview. The principal field identifies the GCP service account used for source access.",
+            "type": "boolean"
+          },
+          "ready": {
+            "description": "Whether the service tenant identity is ready for workload identity authentication.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "principal": {
+            "description": "GCP service account used by ClickPipes for workload identity authentication. Grant this service account access to customer source resources.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ch-deadbeef@clickpipes-development.iam.gserviceaccount.com"
+          }
+        }
+      },
+      "ClickPipesServiceContext": {
+        "properties": {
+          "gcpWorkloadIdentity": {
+            "$ref": "#/components/schemas/ClickPipesGcpWorkloadIdentityContext"
+          }
+        }
       },
       "ClickPipeScaling": {
         "properties": {
@@ -25093,6 +25495,7 @@
             "type": "string",
             "enum": [
               "QUERY_ERROR",
+              "QUERY_TIMEOUT",
               "WEBHOOK_ERROR",
               "INVALID_ALERT",
               "UNKNOWN"
@@ -25218,6 +25621,15 @@
           }
         ]
       },
+      "ClickStackAlertChannels": {
+        "type": "array",
+        "description": "Notification channels to trigger when the alert fires or resolves. Between 1 and 10 channels; duplicates are rejected.",
+        "minItems": 1,
+        "maxItems": 10,
+        "items": {
+          "$ref": "#/components/schemas/ClickStackAlertChannel"
+        }
+      },
       "ClickStackAlertResponse": {
         "properties": {
           "dashboardId": {
@@ -25266,9 +25678,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25323,6 +25736,9 @@
           },
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
             "description": "Human-friendly alert name.",
@@ -25463,9 +25879,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25520,6 +25937,9 @@
           },
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
           },
           "name": {
             "description": "Human-friendly alert name.",
@@ -25603,9 +26023,10 @@
             "example": 500
           },
           "interval": {
-            "description": "Evaluation interval for the alert.",
+            "description": "Evaluation interval for the alert. `30s` requires the 30s alert interval feature to be enabled for your team.",
             "type": "string",
             "enum": [
+              "30s",
               "1m",
               "5m",
               "15m",
@@ -25661,6 +26082,9 @@
           "channel": {
             "$ref": "#/components/schemas/ClickStackAlertChannel"
           },
+          "channels": {
+            "$ref": "#/components/schemas/ClickStackAlertChannels"
+          },
           "name": {
             "description": "Human-friendly alert name.",
             "type": [
@@ -25695,10 +26119,10 @@
           }
         }
       },
-      "ClickStackSavedFilterValue": {
+      "ClickStackSqlSavedFilterValue": {
         "properties": {
           "type": {
-            "description": "Filter type. Currently only \"sql\" is supported.",
+            "description": "Filter type.",
             "type": "string",
             "enum": [
               "sql"
@@ -25713,6 +26137,48 @@
         },
         "required": [
           "condition"
+        ]
+      },
+      "ClickStackVariableSavedFilterValue": {
+        "properties": {
+          "type": {
+            "description": "Filter type.",
+            "type": "string",
+            "enum": [
+              "variable"
+            ],
+            "example": "variable"
+          },
+          "name": {
+            "description": "The variableName of the dashboard variable this selection belongs to. Only allowed for variable-enabled filters.",
+            "type": "string",
+            "example": "service"
+          },
+          "values": {
+            "type": "array",
+            "description": "Selected values",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "hdx-oss-dev-api"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "values"
+        ]
+      },
+      "ClickStackSavedFilterValue": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackSqlSavedFilterValue"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackVariableSavedFilterValue"
+          }
         ]
       },
       "ClickStackNumberFormat": {
@@ -26511,6 +26977,26 @@
           "aggFn"
         ]
       },
+      "ClickStackFormula": {
+        "properties": {
+          "expression": {
+            "description": "Arithmetic expression over the select items by position, e.g. \"A / (A + B) * 100\" for a success-rate percentage.",
+            "type": "string",
+            "example": "A / (A + B) * 100"
+          },
+          "alias": {
+            "description": "Display label for the formula series in chart legends and column headers. Falls back to the raw expression text when unset.",
+            "type": "string",
+            "example": "Success rate %"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
       "ClickStackLineBuilderChartConfig": {
         "properties": {
           "displayType": {
@@ -26559,6 +27045,22 @@
           },
           "compareToPreviousPeriod": {
             "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
             "type": "boolean"
           }
         },
@@ -26609,6 +27111,22 @@
           },
           "numberFormat": {
             "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived series computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula series are returned; the raw operand series are hidden.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -26860,6 +27378,17 @@
           },
           "onClick": {
             "$ref": "#/components/schemas/ClickStackOnClick"
+          },
+          "formulas": {
+            "type": "array",
+            "description": "Derived columns computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Cannot be combined with asRatio.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
+            }
+          },
+          "showOperandSeries": {
+            "description": "Only meaningful with formulas. When false, only the formula columns are returned; the raw operand columns are hidden.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -26885,9 +27414,16 @@
           },
           "select": {
             "type": "array",
-            "description": "Exactly one aggregated value to display as a single number.",
+            "description": "Exactly one aggregated value to display as a single number — unless \"formulas\" is set, in which case the select items are the formula's operands and the (single) formula value is displayed instead.",
             "items": {
               "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "formulas": {
+            "type": "array",
+            "description": "A single derived value computed from the select items via letter-ref arithmetic (\"A\" = select[0], \"B\" = select[1], ...). Metric, log, and trace sources only. Number tiles display the formula value and always hide the operand series.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackFormula"
             }
           },
           "numberFormat": {
@@ -26965,7 +27501,7 @@
             "$ref": "#/components/schemas/ClickStackNumberFormat"
           },
           "limit": {
-            "description": "Maximum number of slices (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first slices in that order. Omit to fetch all groups.",
+            "description": "Maximum number of slices (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first slices in that order. Omit or set 0 to fetch all groups.",
             "type": "integer",
             "example": 10
           }
@@ -27012,7 +27548,7 @@
             "$ref": "#/components/schemas/ClickStackNumberFormat"
           },
           "limit": {
-            "description": "Maximum number of bars (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first bars in that order. Omit to fetch all groups.",
+            "description": "Maximum number of bars (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first bars in that order. Omit or set 0 to fetch all groups.",
             "type": "integer",
             "example": 10
           }
@@ -27796,7 +28332,7 @@
             "example": "Environment"
           },
           "expression": {
-            "description": "Key expression used when applying this dashboard filter key",
+            "description": "SQL expression used when querying values for this filter, and when applying this dashboard filter to tiles.",
             "type": "string",
             "example": "environment"
           },
@@ -27833,13 +28369,28 @@
           },
           "appliesToSourceIds": {
             "type": "array",
-            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s). Scopes the broadcast condition only, so a non-empty array is rejected when isBroadcastEnabled is false, and is omitted from responses for such a filter.",
             "items": {
               "type": "string"
             },
             "example": [
               "65f5e4a3b9e77c001a111111"
             ]
+          },
+          "isBroadcastEnabled": {
+            "description": "Whether the selected value is applied as a filter condition on every builder tile this filter applies to (see appliesToSourceIds), and every raw sql tile using the $__filters macro. Omitting the field means enabled.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Whether the selected value is exposed to tile queries as a dashboard variable named by variableName. Tiles may reference it as `$variableName` or using the (preferred) `$__filter($<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed, so a variable-enabled filter whose name derives nothing usable must send this field explicitly. Variable names must be unique across a dashboard's variable-enabled filters. Names the variable only, so the field is rejected when isVariableEnabled is not true, and is omitted from responses for such a filter.",
+            "type": "string",
+            "example": "environment"
           }
         },
         "required": [
@@ -27865,7 +28416,7 @@
             "example": "Environment"
           },
           "expression": {
-            "description": "Key expression used when applying this dashboard filter key",
+            "description": "SQL expression used when querying values for this filter, and when applying this dashboard filter to tiles.",
             "type": "string",
             "example": "environment"
           },
@@ -27902,13 +28453,28 @@
           },
           "appliesToSourceIds": {
             "type": "array",
-            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s). Scopes the broadcast condition only, so a non-empty array is rejected when isBroadcastEnabled is false, and is omitted from responses for such a filter.",
             "items": {
               "type": "string"
             },
             "example": [
               "65f5e4a3b9e77c001a111111"
             ]
+          },
+          "isBroadcastEnabled": {
+            "description": "Whether the selected value is applied as a filter condition on every builder tile this filter applies to (see appliesToSourceIds), and every raw sql tile using the $__filters macro. Omitting the field means enabled.",
+            "type": "boolean",
+            "example": false
+          },
+          "isVariableEnabled": {
+            "description": "Whether the selected value is exposed to tile queries as a dashboard variable named by variableName. Tiles may reference it as `$variableName` or using the (preferred) `$__filter($<variableName>)` and `$__conditionalAll(<condition>, $<variableName>)` macros.",
+            "type": "boolean",
+            "example": true
+          },
+          "variableName": {
+            "description": "Token tiles reference this filter's selected value by, as `$variableName`. Must start with a letter and may contain only letters, numbers, and underscores. Defaults to the display name with whitespace replaced by underscores and remaining illegal characters removed, so a variable-enabled filter whose name derives nothing usable must send this field explicitly. Variable names must be unique across a dashboard's variable-enabled filters. Names the variable only, so the field is rejected when isVariableEnabled is not true, and is omitted from responses for such a filter.",
+            "type": "string",
+            "example": "environment"
           },
           "id": {
             "description": "Unique dashboard filter key ID",
@@ -27949,7 +28515,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys to add to the dashboard and apply across all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilterInput"
             }
@@ -28072,7 +28638,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys on the dashboard, applied across all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilter"
             }
@@ -28149,7 +28715,7 @@
           },
           "filters": {
             "type": "array",
-            "description": "Dashboard filter keys added to the dashboard and applied to all tiles",
+            "description": "Dropdown filters added to the dashboard. Each one broadcasts its selected value as a condition, acts as a variable which can be referenced in tile queries, or both.",
             "items": {
               "$ref": "#/components/schemas/ClickStackFilter"
             }
@@ -28322,6 +28888,29 @@
         "required": [
           "permissions"
         ]
+      },
+      "ClickStackValidationErrorItemErrors": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ClickStackValidationErrorItem": {
+        "properties": {
+          "type": {
+            "description": "Request part that failed validation.",
+            "type": "string",
+            "example": "Body"
+          },
+          "errors": {
+            "$ref": "#/components/schemas/ClickStackValidationErrorItemErrors"
+          }
+        }
+      },
+      "ClickStackValidationError": {
+        "type": "array",
+        "description": "zod-express-middleware validation failures.",
+        "items": {
+          "$ref": "#/components/schemas/ClickStackValidationErrorItem"
+        }
       },
       "ClickStackSavedSearchFilter": {
         "properties": {
@@ -28513,7 +29102,7 @@
       "ClickStackFilterSettingsColumn": {
         "properties": {
           "name": {
-            "description": "Column name used to load filters for prepending to every query for the source.",
+            "description": "Column of the source's table that selected filter values are matched against. Also the key the selection is persisted under in links, saved searches, and dashboards.",
             "type": "string",
             "example": "ServiceName"
           },
@@ -28521,6 +29110,19 @@
             "description": "Display label for the column",
             "type": "string",
             "example": "Service Name"
+          },
+          "valueExpression": {
+            "description": "Optional SQL expression, evaluated against the filter-values table, that produces the available filter options. Use it when the options live in a differently-named column, or must be transformed to match the values stored in the source table. Defaults to reading `name` as a plain column when omitted.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "lower(service_name)"
+          },
+          "allowAll": {
+            "description": "Whether to offer an \"All\" option that expands to every available value at query time. Best suited to low-cardinality columns. Defaults to false.",
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -28822,6 +29424,14 @@
               "null"
             ],
             "example": "ServiceName"
+          },
+          "serviceVersionExpression": {
+            "description": "Expression identifying the running release of a service. Defaults to the OpenTelemetry service.version resource attribute when unset. Where services carry the release on different attributes, fall back across them with coalesce(nullIf(a, ''), nullIf(b, '')).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ResourceAttributes['service.version']"
           },
           "severityTextExpression": {
             "description": "Expression to extract the severity/log level text.",
@@ -29133,6 +29743,14 @@
               "null"
             ],
             "example": "ServiceName"
+          },
+          "serviceVersionExpression": {
+            "description": "Expression identifying the running release of a service. Defaults to the OpenTelemetry service.version resource attribute when unset. Where services carry the release on different attributes, fall back across them with coalesce(nullIf(a, ''), nullIf(b, '')).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "ResourceAttributes['service.version']"
           },
           "resourceAttributesExpression": {
             "description": "Expression to extract resource-level attributes.",

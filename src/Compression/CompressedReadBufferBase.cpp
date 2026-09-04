@@ -129,8 +129,7 @@ static void readHeaderAndGetCodecAndSize(
     size_t & size_decompressed,
     size_t & size_compressed_without_checksum,
     bool allow_different_codecs,
-    bool external_data,
-    bool bound_decompressed_size)
+    bool external_data)
 {
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
@@ -165,7 +164,7 @@ static void readHeaderAndGetCodecAndSize(
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
                         "Most likely corrupted data.", size_compressed_without_checksum);
 
-    if (bound_decompressed_size && size_decompressed > DBMS_MAX_COMPRESSED_SIZE)
+    if (size_decompressed > DBMS_MAX_DECOMPRESSED_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_decompressed: {}. "
                         "Most likely corrupted data.", size_decompressed);
 
@@ -209,8 +208,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             size_decompressed,
             size_compressed_without_checksum,
             allow_different_codecs,
-            external_data,
-            bound_decompressed_size);
+            external_data);
         compressed_in->position() += size_header_plus_checksum;
     }
     else
@@ -232,8 +230,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             size_decompressed,
             size_compressed_without_checksum,
             allow_different_codecs,
-            external_data,
-            bound_decompressed_size);
+            external_data);
     }
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();

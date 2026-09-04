@@ -1388,8 +1388,10 @@ try
         auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
         pipeline.complete(Pipe(std::move(source)));
 
-        CompletedPipelineExecutor completed_executor(pipeline);
-        completed_executor.execute();
+        {
+            CompletedPipelineExecutor completed_executor(pipeline);
+            completed_executor.execute();
+        }
 
         finish_entries(std::move(pipeline), num_rows, num_bytes);
     }

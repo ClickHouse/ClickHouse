@@ -4,6 +4,8 @@
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -128,6 +130,22 @@ ExpressionSide getExpressionSide(
 
 using JoinConditionParts = std::vector<ActionsDAG>;
 
+/// `and` implicitly converts its arguments to booleans and returns 0 or 1, so a conjunct that is left
+/// alone after the other conjuncts have been moved into the JOIN has to be normalized the same way.
+/// A cast to the type of the original predicate does not do it: it maps values like 256 to `false`.
+/// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
+const ActionsDAG::Node & convertToBoolIfNeeded(ActionsDAG & filter_dag, const ActionsDAG::Node * predicate_expr)
+{
+    if (isBool(removeLowCardinalityAndNullable(predicate_expr->result_type)))
+        return *predicate_expr;
+
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    const auto & true_node = filter_dag.addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
+
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return filter_dag.addFunction(func_builder_and, {predicate_expr, &true_node}, {});
+}
+
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
     const ActionsDAG::Node * original_predicate,
@@ -230,10 +248,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
         if (rejected_conjuncts.size() == 1)
         {
-            filter_dag.addOrReplaceInOutputs(createResultPredicate(filter_dag, predicate, rejected_conjuncts.front()));
+            filter_dag.addOrReplaceInOutputs(createResultPredicate(
+                filter_dag, predicate, &convertToBoolIfNeeded(filter_dag, rejected_conjuncts.front())));
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
                 filter_dag,

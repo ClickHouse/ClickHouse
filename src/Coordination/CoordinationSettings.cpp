@@ -1,4 +1,5 @@
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <IO/WriteHelpers.h>
@@ -64,6 +65,7 @@ namespace ErrorCodes
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
     DECLARE(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
+    DECLARE(Int64, snapshot_zstd_compression_level, DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL, "ZSTD compression level for snapshots. Lower levels use less CPU but produce larger snapshots. Used only when compress_snapshots_with_zstd_format is enabled.", 0) \
     DECLARE(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
     DECLARE(UInt64, max_log_file_size, 50 * 1024 * 1024, "Max size of the Raft log file. If possible, each created log file will preallocate this amount of bytes on disk. Set to 0 to disable the limit", 0) \
     DECLARE(UInt64, log_file_overallocate_size, 50 * 1024 * 1024, "If max_log_file_size is not set to 0, this value will be added to it for preallocating bytes on disk. If a log record is larger than this value, it could lead to uncaught out-of-space issues so a larger value is preferred", 0) \

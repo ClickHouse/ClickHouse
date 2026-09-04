@@ -141,6 +141,12 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
     return pos;
 }
 
+/// re2 resolves `\<non-alphanumeric>` to that character itself, unlike a sequence such as `\d` or `\x41`.
+bool isEscapedLiteral(char c)
+{
+    return isASCII(c) && !isAlphaNumericASCII(c);
+}
+
 /// Recognizes `^literal`, `literal$` and `^literal$`: `^` and `$` are anchors only at the ends.
 RegexpMatchKind analyzeAnchoredLiteral(std::string_view regexp, std::string_view required_substring)
 {
@@ -175,16 +181,8 @@ RegexpMatchKind analyzeAnchoredLiteral(std::string_view regexp, std::string_view
                 if (pos == end)
                     return RegexpMatchKind::General;
 
-                switch (*pos)
-                {
-                    case '|': case '(': case ')': case '^': case '$': case '.': case '[': case ']':
-                    case '?': case '*': case '+': case '-': case '{': case '}': case '/':
-                        if (!take(*pos))
-                            return RegexpMatchKind::General;
-                        break;
-                    default:
-                        return RegexpMatchKind::General;
-                }
+                if (!isEscapedLiteral(*pos) || !take(*pos))
+                    return RegexpMatchKind::General;
                 break;
             }
 
@@ -352,31 +350,12 @@ const char * analyzeImpl(
                 if (pos == end)
                     break;
 
-                switch (*pos)
-                {
-                    case '|':
-                    case '(':
-                    case ')':
-                    case '^':
-                    case '$':
-                    case '.':
-                    case '[':
-                    case ']':
-                    case '?':
-                    case '*':
-                    case '+':
-                    case '-':
-                    case '{':
-                    case '}':
-                    case '/':
-                        goto ordinary;
-                    default:
-                        /// Unsupported escape: consume it whole, including hex/octal argument
-                        /// bytes, so they are not taken as a required substring (issue #106382).
-                        finish_non_trivial_char();
-                        pos = skipUnsupportedEscape(pos, end);
-                        break;
-                }
+                if (isEscapedLiteral(*pos))
+                    goto ordinary;
+
+                /// Consume the whole escape, so its argument bytes are not taken as a literal (issue #106382).
+                finish_non_trivial_char();
+                pos = skipUnsupportedEscape(pos, end);
 
                 break;
             }

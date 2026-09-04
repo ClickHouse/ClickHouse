@@ -86,6 +86,76 @@ struct BitPackedRLEDecoder : public PageDecoder
         out.resize(start + num_values);
         skipOrDecode<false>(num_values, &out[start]);
     }
+    /// Same, but adds the number of zero values to num_zeros.
+    void decodeArrayCountingZeros(size_t num_values, PaddedPODArray<T> & out, size_t & num_zeros)
+    {
+        size_t start = out.size();
+        out.resize(start + num_values);
+        skipOrDecode<false, /*count_zeros=*/ true>(num_values, &out[start], &num_zeros);
+    }
+
+    bool decodeAndIndex(size_t num_values, Dictionary & dictionary, IColumn & out) override
+    {
+        /// For Mode::Column the gather goes through IColumn::index, which needs the indexes as a
+        /// column anyway; let the caller take the unfused path.
+        if (dictionary.mode == Dictionary::Mode::Column)
+            return false;
+
+        if (bit_width == 0)
+        {
+            /// All indexes are 0.
+            if (limit == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
+            dictionary.appendRepeated(0, num_values, out);
+            return true;
+        }
+
+        const T value_mask = T((1ul << bit_width) - 1);
+        while (num_values)
+        {
+            if (run_length == 0)
+                startRun();
+
+            size_t n = std::min(run_length, num_values);
+            run_length -= n;
+            num_values -= n;
+
+            if (run_is_rle)
+            {
+                /// `val` was bounds-checked in startRun.
+                dictionary.appendRepeated(size_t(val), n, out);
+            }
+            else
+            {
+                /// Unpack a batch of indexes into a stack buffer, bounds-check the whole batch at
+                /// once (keeping the throw out of the inner loop), then gather the batch.
+                while (n)
+                {
+                    constexpr size_t batch = 512;
+                    UInt32 buf[batch];
+                    size_t m = std::min(n, batch);
+                    size_t max_seen = 0;
+                    for (size_t i = 0; i < m; ++i)
+                    {
+                        size_t x = 0;
+                        memcpy(&x, data + (bit_idx >> 3), 8);
+                        x = (x >> (bit_idx & 7)) & value_mask;
+                        max_seen = std::max(max_seen, x);
+                        buf[i] = static_cast<UInt32>(x);
+                        bit_idx += bit_width;
+                    }
+                    if (max_seen >= limit)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (bp)");
+                    dictionary.appendIndexes(buf, m, out);
+                    n -= m;
+                }
+
+                if (!run_length)
+                    data += run_bytes;
+            }
+        }
+        return true;
+    }
 
     void startRun()
     {
@@ -120,16 +190,25 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
     }
 
-    template <bool skip>
-    void skipOrDecode(size_t num_values, T * out)
+    template <bool skip, bool count_zeros = false>
+    void skipOrDecode(size_t num_values, T * out, size_t * num_zeros = nullptr)
     {
+        /// The skip path below advances `bit_idx` past a bit-packed run without looking at the
+        /// values, so it can't count zeros. Counting requires decoding.
+        static_assert(!(skip && count_zeros));
+
         if (bit_width == 0)
         {
             /// bit_width == 0 means all values are 0.
             if constexpr (!skip)
                 memset(out, 0, num_values * sizeof(T));
+            if constexpr (count_zeros)
+                *num_zeros += num_values;
             return;
         }
+        /// Accumulate in a local: a store through num_zeros may alias `out`, which would cost a
+        /// load and a store per value in the bit-packed loop below.
+        [[maybe_unused]] size_t zeros_acc = 0;
 
         const T value_mask = T((1ul << bit_width) - 1);
         /// TODO [parquet]: May make sense to have specialized version of this loop for bit_width=1,
@@ -155,6 +234,11 @@ struct BitPackedRLEDecoder : public PageDecoder
                     std::fill(out, out + n, v);
                     out += n;
                 }
+                if constexpr (count_zeros)
+                {
+                    if (val == 0)
+                        zeros_acc += n;
+                }
             }
             else
             {
@@ -171,6 +255,8 @@ struct BitPackedRLEDecoder : public PageDecoder
                         *out = static_cast<T>(x);
                         ++out;
                         bit_idx += bit_width;
+                        if constexpr (count_zeros)
+                            zeros_acc += x == 0;
                     }
                 }
                 else
@@ -182,6 +268,8 @@ struct BitPackedRLEDecoder : public PageDecoder
                     data += run_bytes;
             }
         }
+        if constexpr (count_zeros)
+            *num_zeros += zeros_acc;
     }
 };
 
@@ -1133,15 +1221,26 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected encoding {} for type {}", thriftToString(encoding), thriftToString(physical_type));
 }
 
-void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out)
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out, size_t * out_num_zeros)
 {
     if (max == 0)
+    {
+        /// All levels are implicitly 0, and `out` is left empty.
+        if (out_num_zeros)
+            *out_num_zeros += num_values;
         return;
+    }
     switch (encoding)
     {
         case parq::Encoding::RLE:
-            BitPackedRLEDecoder<UInt8>(data, size_t(max) + 1, /*has_header_byte=*/ false).decodeArray(num_values, out);
+        {
+            BitPackedRLEDecoder<UInt8> decoder(data, size_t(max) + 1, /*has_header_byte=*/ false);
+            if (out_num_zeros)
+                decoder.decodeArrayCountingZeros(num_values, out, *out_num_zeros);
+            else
+                decoder.decodeArray(num_values, out);
             break;
+        }
         case parq::Encoding::BIT_PACKED:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BIT_PACKED levels not implemented");
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected repetition/definition levels encoding: {}", thriftToString(encoding));
@@ -1356,9 +1455,8 @@ size_t Dictionary::decodedFootprintUpperBound(
 }
 
 template<size_t value_size>
-static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const char> data, std::span<char> to)
+static void indexImpl(const UInt32 * indexes, size_t size, std::span<const char> data, std::span<char> to)
 {
-    size_t size = indexes.size();
     for (size_t i = 0; i < size; ++i)
         memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
 }
@@ -1366,24 +1464,35 @@ static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const ch
 void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
 {
     const PaddedPODArray<UInt32> & indexes = indexes_col.getData();
+    if (mode == Mode::Column)
+    {
+        ColumnPtr temp = col->index(indexes_col, /*limit*/ 0);
+        out.insertRangeFrom(*temp, 0, indexes.size());
+        return;
+    }
+    appendIndexes(indexes.data(), indexes.size(), out);
+}
+
+void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out)
+{
     switch (mode)
     {
         case Mode::FixedSize:
         {
-            auto to = out.insertRawUninitialized(indexes.size());
-            chassert(to.size() == value_size * indexes.size());
+            auto to = out.insertRawUninitialized(n);
+            chassert(to.size() == value_size * n);
             /// Short variable-length memcpy is very slow compared to a simple mov, so we dispatch
             /// to specialized loops covering basic int types.
             switch (value_size)
             {
-                case 1: indexImpl<1>(indexes, data, to); break;
-                case 2: indexImpl<2>(indexes, data, to); break;
-                case 3: indexImpl<3>(indexes, data, to); break;
-                case 4: indexImpl<4>(indexes, data, to); break;
-                case 8: indexImpl<8>(indexes, data, to); break;
-                case 16: indexImpl<16>(indexes, data, to); break;
+                case 1: indexImpl<1>(indexes, n, data, to); break;
+                case 2: indexImpl<2>(indexes, n, data, to); break;
+                case 3: indexImpl<3>(indexes, n, data, to); break;
+                case 4: indexImpl<4>(indexes, n, data, to); break;
+                case 8: indexImpl<8>(indexes, n, data, to); break;
+                case 16: indexImpl<16>(indexes, n, data, to); break;
                 default:
-                    for (size_t i = 0; i < indexes.size(); ++i)
+                    for (size_t i = 0; i < n; ++i)
                         memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
             }
             break;
@@ -1391,9 +1500,10 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
         case Mode::StringPlain:
         {
             auto & c = assert_cast<ColumnString &>(out);
-            c.reserve(c.size() + indexes.size());
-            for (UInt32 idx : indexes)
+            c.reserve(c.size() + n);
+            for (size_t i = 0; i < n; ++i)
             {
+                UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
                 /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
@@ -1402,11 +1512,56 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
             break;
         }
         case Mode::Column:
+            /// Handled in `index` (needs the indexes as a column); the fused decode-and-index path
+            /// declines Mode::Column before getting here (see PageDecoder::decodeAndIndex).
+        case Mode::Uninitialized: chassert(false);
+    }
+}
+
+template <size_t value_size>
+static void fillImpl(const char * src, std::span<char> to, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        memcpy(to.data() + i * value_size, src, value_size);
+}
+
+void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
+{
+    chassert(idx < count);
+    switch (mode)
+    {
+        case Mode::FixedSize:
         {
-            ColumnPtr temp = col->index(indexes_col, /*limit*/ 0);
-            out.insertRangeFrom(*temp, 0, indexes.size());
+            auto to = out.insertRawUninitialized(n);
+            chassert(to.size() == value_size * n);
+            const char * src = data.data() + idx * value_size;
+            switch (value_size)
+            {
+                case 1: memset(to.data(), *src, n); break;
+                case 2: fillImpl<2>(src, to, n); break;
+                case 3: fillImpl<3>(src, to, n); break;
+                case 4: fillImpl<4>(src, to, n); break;
+                case 8: fillImpl<8>(src, to, n); break;
+                case 16: fillImpl<16>(src, to, n); break;
+                default:
+                    for (size_t i = 0; i < n; ++i)
+                        memcpy(to.data() + i * value_size, src, value_size);
+            }
             break;
         }
+        case Mode::StringPlain:
+        {
+            auto & c = assert_cast<ColumnString &>(out);
+            size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+            size_t len = offsets[idx] - start;
+            c.reserve(c.size() + n);
+            for (size_t i = 0; i < n; ++i)
+                c.insertData(data.data() + start, len);
+            break;
+        }
+        case Mode::Column:
+            out.insertManyFrom(*col, idx, n);
+            break;
         case Mode::Uninitialized: chassert(false);
     }
 }

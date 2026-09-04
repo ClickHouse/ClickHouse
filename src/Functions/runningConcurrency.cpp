@@ -134,7 +134,19 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        /// The result for a row depends on the rows processed before it, so it is not
+        /// predictable from a single evaluation, even within one query.
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     private:
         DataTypes argument_types;
@@ -195,6 +207,16 @@ namespace DB
         bool isStateful() const override
         {
             return true;
+        }
+
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
         }
 
         bool useDefaultImplementationForNulls() const override

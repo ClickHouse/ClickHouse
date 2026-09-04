@@ -16,14 +16,14 @@ Structure de la section `users` :
 
 ```xml
 <users>
-    <!-- If user name was not specified, 'default' user is used. -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
         <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
         <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
  
-        <!-- Or (exclusive) (N.B. multiple clés SSH are allowed for compatibilité descendante) -->
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
