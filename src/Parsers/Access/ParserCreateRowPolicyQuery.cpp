@@ -420,7 +420,7 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the roles enabled in the current session, not against every role granted to the user, so `SET ROLE` can change which policies apply.
+Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the current user's enabled roles ([`system.enabled_roles`](/reference/system-tables/enabled_roles)), not against every role granted to the user, so [`SET ROLE`](/reference/statements/set-role) can change which policies apply.
 
 ## AS Clause {#as-clause}
 
