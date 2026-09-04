@@ -900,7 +900,10 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order);
 
-    if (!query_analysis_result.aggregate_final)
+    /// `WITH CLUSTER` keeps the aggregation non-final only so that `ClusterMergingStep` can merge the
+    /// exact groups afterwards; it must still see every group, so the Top-K heap (which evicts groups
+    /// that fall outside `ORDER BY ... LIMIT`) is not allowed to prune them first.
+    if (!query_analysis_result.aggregate_final && !query_node.hasGroupByWithCluster())
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
 
     query_plan.addStep(std::move(aggregating_step));
