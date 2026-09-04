@@ -49,7 +49,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt64>(), "Patch component of the clickhouse-client or another TCP client version."},
 
-        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP."},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
         {"http_user_agent", std::make_shared<DataTypeString>(), "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},

@@ -72,7 +72,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "A sequential query number in a multi-query script."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "A line number in a multi-query script where the current query starts."},
-        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP."},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
         {"http_user_agent", low_cardinality_string, "The UserAgent header passed in the HTTP request."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header `X-Forwarded-For` passed in the HTTP query."},
