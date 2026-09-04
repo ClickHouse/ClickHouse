@@ -1437,17 +1437,14 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() c
     return maybe_new_zookeeper;
 }
 
-std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() const
+Strings StorageReplicatedMergeTree::getDiskTypesWithZeroCopy() const
 {
     const auto settings = getSettings();
     if (!(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
-    {
         return {};
-    }
 
-    const auto & disks = getStoragePolicy()->getDisks();
     std::set<String> disk_types_with_zero_copy;
-    for (const auto & disk : disks)
+    for (const auto & disk : getStoragePolicy()->getDisks())
     {
         if (!disk->supportZeroCopyReplication())
             continue;
@@ -1455,6 +1452,16 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
         disk_types_with_zero_copy.insert(disk->getDataSourceDescription().name());
     }
 
+    return {disk_types_with_zero_copy.begin(), disk_types_with_zero_copy.end()};
+}
+
+std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() const
+{
+    auto disk_types_with_zero_copy = getDiskTypesWithZeroCopy();
+    if (disk_types_with_zero_copy.empty())
+        return {};
+
+    const auto settings = getSettings();
     const auto actual_table_shared_id = getTableSharedID();
 
     std::vector<String> result;
@@ -1469,6 +1476,21 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
 
         result.push_back(zero_copy_path / actual_table_shared_id);
     }
+
+    return result;
+}
+
+std::vector<String> StorageReplicatedMergeTree::getLegacyZeroCopyLockPaths() const
+{
+    auto disk_types_with_zero_copy = getDiskTypesWithZeroCopy();
+    if (disk_types_with_zero_copy.empty())
+        return {};
+
+    std::vector<String> result;
+    result.reserve(disk_types_with_zero_copy.size());
+
+    for (const auto & disk_type : disk_types_with_zero_copy)
+        result.push_back(fs::path(zookeeper_path) / fmt::format("zero_copy_{}", disk_type) / "shared");
 
     return result;
 }
@@ -1494,6 +1516,77 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
             chassert(code == Coordination::Error::ZOK);
         }
     }
+}
+
+void StorageReplicatedMergeTree::removeReplicaZeroCopyLocks(
+    zkutil::ZooKeeperPtr zookeeper, const std::vector<String> & zero_copy_locks_roots, const String & replica_name, LoggerPtr logger)
+{
+    /// Layout under each root is <part_name>/<uniq_id>/<replica_name> (see lockSharedData()/unlockSharedDataByID()).
+    /// We only ever remove the leaf named after `replica_name`: a live replica relies on <part_name>/<uniq_id>
+    /// being present (even childless) to correctly decide whether it is the last owner of that part's blobs, so
+    /// we must not remove those nodes ourselves, even if our removal leaves them with no children.
+    for (const auto & zero_copy_locks_root : zero_copy_locks_roots)
+    {
+        Strings part_names;
+        if (zookeeper->tryGetChildren(zero_copy_locks_root, part_names) != Coordination::Error::ZOK)
+            continue;
+
+        for (const auto & part_name : part_names)
+        {
+            auto part_path = fs::path(zero_copy_locks_root) / part_name;
+
+            Strings uniq_ids;
+            if (zookeeper->tryGetChildren(part_path, uniq_ids) != Coordination::Error::ZOK)
+                continue;
+
+            for (const auto & uniq_id : uniq_ids)
+            {
+                auto lock_path = part_path / uniq_id / replica_name;
+                auto code = zookeeper->tryRemove(lock_path);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    LOG_WARNING(logger, "Failed to remove zero-copy lock {} left by dropped replica {}: {}",
+                                lock_path.string(), replica_name, code);
+            }
+        }
+    }
+}
+
+std::vector<String> StorageReplicatedMergeTree::getZeroCopyLockPathsForOrphanReplicaDrop(
+    zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger)
+{
+    std::vector<String> roots;
+
+    Strings disk_types_with_zero_copy;
+    for (const auto & [_, disk] : local_context->getDisksMap())
+        if (disk->supportZeroCopyReplication())
+            disk_types_with_zero_copy.push_back(disk->getDataSourceDescription().name());
+
+    if (disk_types_with_zero_copy.empty())
+        return roots;
+
+    /// The legacy/compat-mode root is exact: it hangs off the table's own zookeeper_path, which we always know.
+    for (const auto & disk_type : disk_types_with_zero_copy)
+        roots.push_back(fs::path(zookeeper_info.path) / fmt::format("zero_copy_{}", disk_type) / "shared");
+
+    /// The modern root additionally needs table_shared_id, which we must read now: it will be removed once the
+    /// last replica of an orphaned table is dropped (see removeTableNodesFromZooKeeper()).
+    String table_shared_id;
+    if (!zookeeper->tryGet(zookeeper_info.path + "/table_shared_id", table_shared_id) || table_shared_id.empty())
+        return roots;
+
+    /// Neither `allow_remote_fs_zero_copy_replication` nor `remote_fs_zero_copy_zookeeper_path` are recorded
+    /// anywhere in ZooKeeper for a table we don't have locally, so we assume the default zero-copy path here.
+    /// If this table used a custom remote_fs_zero_copy_zookeeper_path, its modern-root locks won't be found.
+    static constexpr auto DEFAULT_ZERO_COPY_ZOOKEEPER_PATH = "/clickhouse/zero_copy";
+    LOG_INFO(logger, "Assuming default remote_fs_zero_copy_zookeeper_path ('{}') while looking for zero-copy locks "
+                     "of a replica dropped without a local table for {}; locks under a custom zero-copy path, "
+                     "if any, will not be cleaned up here", DEFAULT_ZERO_COPY_ZOOKEEPER_PATH, zookeeper_info.path);
+
+    auto zero_copy_zookeeper_path = fs::path(local_context->getMacros()->expand(DEFAULT_ZERO_COPY_ZOOKEEPER_PATH));
+    for (const auto & disk_type : disk_types_with_zero_copy)
+        roots.push_back(zero_copy_zookeeper_path / fmt::format("zero_copy_{}", disk_type) / table_shared_id);
+
+    return roots;
 }
 
 void StorageReplicatedMergeTree::drop()
@@ -1699,9 +1792,28 @@ bool StorageReplicatedMergeTree::dropReplica(const String & drop_replica, Logger
     if (zookeeper->exists(zookeeper_info.path + "/replicas/" + drop_replica + "/is_active"))
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", drop_replica);
 
+    /// Capture the zero-copy lock roots before removing the replica: getZookeeperZeroCopyLockPaths() relies on
+    /// getTableSharedID(), which becomes unreadable once the last replica is dropped and the table's ZooKeeper
+    /// nodes are removed. `drop_replica` is a different, dead replica of this same table, so this table's own
+    /// disks/shared-id are the right reference for it too.
+    auto zero_copy_locks_roots = getZookeeperZeroCopyLockPaths();
+    auto legacy_zero_copy_locks_roots = getLegacyZeroCopyLockPaths();
+    zero_copy_locks_roots.insert(zero_copy_locks_roots.end(), legacy_zero_copy_locks_roots.begin(), legacy_zero_copy_locks_roots.end());
+
     TableZnodeInfo info = zookeeper_info;
     info.replica_name = drop_replica;
-    return dropReplica(zookeeper, info, logger);
+    bool last_replica_dropped = dropReplica(zookeeper, info, logger);
+
+    /// SYSTEM DROP REPLICA is meant for a dead replica, which will never come back to run its own
+    /// unlockSharedData(...) and release the zero-copy locks it took on its parts. Do it here instead, so a live
+    /// replica's own unlockSharedDataByID(...) doesn't see a phantom lock and refuse to free blobs it
+    /// legitimately owns alone.
+    removeReplicaZeroCopyLocks(zookeeper, zero_copy_locks_roots, drop_replica, logger);
+
+    if (last_replica_dropped)
+        dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_roots, logger);
+
+    return last_replica_dropped;
 }
 
 

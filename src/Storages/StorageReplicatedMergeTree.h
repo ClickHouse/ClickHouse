@@ -260,6 +260,24 @@ public:
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
+    /// Removes the persistent zero-copy lock leaf that belongs to a specific replica, wherever it exists under
+    /// the given zero-copy root paths (one leaf per part/uniq_id). Used after a replica is dropped (normally or
+    /// via SYSTEM DROP REPLICA) so a live replica's own unlockSharedDataByID(...) no longer sees a phantom lock
+    /// from a replica that will never come back to release it itself.
+    /// NOTE: this never removes the (possibly emptied) parent part-name/uniq-id nodes, only the replica's own
+    /// leaf -- so the normal zero-copy unlocking code on a live replica can still safely decide whether it is
+    /// the last owner of a part's blobs.
+    static void removeReplicaZeroCopyLocks(zkutil::ZooKeeperPtr zookeeper, const std::vector<String> & zero_copy_locks_roots,
+                                            const String & replica_name, LoggerPtr logger);
+
+    /// Best-effort reconstruction of the zero-copy lock root paths for a table that has no local
+    /// StorageReplicatedMergeTree instance (used by `SYSTEM DROP REPLICA ... FROM ZKPATH`). The legacy/compat-mode
+    /// root is exact (it hangs off the table's own zookeeper_path); the modern root assumes the default
+    /// remote_fs_zero_copy_zookeeper_path and every zero-copy-capable disk configured on this server, since
+    /// neither piece of information is recorded anywhere in ZooKeeper for a table we don't have locally.
+    static std::vector<String> getZeroCopyLockPathsForOrphanReplicaDrop(
+        zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger);
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(
         zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info2,
@@ -1021,7 +1039,16 @@ private:
 
     void startupImpl(bool from_attach_thread, const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
+    /// Names (getDataSourceDescription().name()) of the disks of this table's storage policy that support
+    /// zero-copy replication, or empty if zero-copy replication is disabled for this table.
+    Strings getDiskTypesWithZeroCopy() const;
+
     std::vector<String> getZookeeperZeroCopyLockPaths() const;
+
+    /// Same as getZookeeperZeroCopyLockPaths(), but for the legacy/compat-mode root that hangs off this table's
+    /// own zookeeper_path (see remote_fs_zero_copy_path_compatible_mode).
+    std::vector<String> getLegacyZeroCopyLockPaths() const;
+
     static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
                                                std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
 
