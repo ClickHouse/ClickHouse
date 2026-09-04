@@ -328,7 +328,16 @@ def test_s3_read_stops_after_max_execution_time(
     assert_no_s3_requests(node, query_id)
 
 
-def test_prefetch_stops_after_native_client_cancel(s3_cancellation_table):
+@pytest.mark.parametrize(
+    "cancel_method,expected_exception",
+    [
+        ("cancel-packet", "QUERY_WAS_CANCELLED_BY_CLIENT"),
+        ("disconnect", "ABORTED"),
+    ],
+)
+def test_prefetch_stops_after_native_client_cancel(
+    s3_cancellation_table, cancel_method, expected_exception
+):
     node, table = s3_cancellation_table
     query_id = uuid.uuid4().hex
     failpoint = "s3_read_before_get_object"
@@ -343,13 +352,18 @@ def test_prefetch_stops_after_native_client_cancel(s3_cancellation_table):
 
     try:
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
-        query_request.process.send_signal(signal.SIGINT)
+        if cancel_method == "disconnect":
+            query_request.process.kill()
+        else:
+            query_request.process.send_signal(signal.SIGINT)
+
         wait_until_query_is_cancelled(node, query_id)
         node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
 
         answer, error = query_request.get_answer_and_error()
-        assert answer == "", answer
-        assert error == "", error
+        if cancel_method == "cancel-packet":
+            assert answer == "", answer
+            assert error == "", error
     finally:
         node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -364,7 +378,7 @@ def test_prefetch_stops_after_native_client_cancel(s3_cancellation_table):
             f"WHERE query_id='{query_id}' AND type='ExceptionWhileProcessing' "
             "GROUP BY exception_code"
         ).strip()
-        == "QUERY_WAS_CANCELLED_BY_CLIENT\t0\t0"
+        == f"{expected_exception}\t0\t0"
     )
 
 

@@ -3199,6 +3199,10 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
             /// the mutex is released during stack unwinding, and a pipeline worker thread can acquire it
             /// and attempt to read from the canceled ReadBuffer before the executor is canceled.
             state.stop_query = true;
+
+            if (auto process_list_element = state.query_context->getProcessListElementSafe())
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::current_exception());
+
             throw;
         }
     }
