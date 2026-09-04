@@ -94,7 +94,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -604,12 +603,6 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
     in.ignore(string_size_with_zero_byte);
 
     return ret;
-}
-
-template <typename ColumnType>
-void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
 
 template <typename ColumnType>
