@@ -52,10 +52,11 @@ private:
     std::variant<std::string, NumberGetter> value;
 };
 
-/// Draws paths from one or more `PathSet`s: a literal path list, one
-/// `children_of` reference, or one or more `tagged` references. With several
-/// sets, a path is drawn uniformly from their union: first a set is picked with
-/// probability proportional to its size, then a path within it.
+/// Draws paths from one or more `PathSet`s: the literal path list, and any
+/// number of `children_of` and `tagged` references, in any combination. With
+/// several sets, a path is drawn uniformly from their union: first a set is
+/// picked with probability proportional to its estimated size, then a path
+/// within it.
 struct PathGetter
 {
     static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);

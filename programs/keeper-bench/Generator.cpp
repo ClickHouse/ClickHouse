@@ -180,49 +180,42 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
         }
     }
 
-    size_t num_source_kinds = (literal_paths.empty() ? 0 : 1) + (parent_paths.empty() ? 0 : 1) + (tag_names.empty() ? 0 : 1);
-    if (num_source_kinds == 0)
+    if (literal_paths.empty() && parent_paths.empty() && tag_names.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "PathGetter has no paths configured for key '{}'", key);
-    if (num_source_kinds > 1 || parent_paths.size() > 1)
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "`path` for key '{}' must draw from exactly one kind of source: literal path(s), one `children_of`, or `tagged` set(s)",
-            key);
 
     PathGetter path_getter;
-    if (!literal_paths.empty())
-        path_getter.sets.push_back(nodes_setup.createLiteralSet(std::move(literal_paths)));
-    else if (!parent_paths.empty())
-        path_getter.sets.push_back(nodes_setup.getOrCreateChildrenOfSet(parent_paths[0]));
-    else
+    auto add_set = [&](PathSetPtr set)
     {
-        for (const auto & tag_name : tag_names)
-        {
-            auto set = nodes_setup.getOrCreateTagSet(tag_name);
-            if (std::find(path_getter.sets.begin(), path_getter.sets.end(), set) != path_getter.sets.end())
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Tag \"{}\" is referenced twice in `path` for key '{}'", tag_name, key);
-            path_getter.sets.push_back(std::move(set));
-        }
-    }
-
-    for (const auto & set : path_getter.sets)
+        if (std::find(path_getter.sets.begin(), path_getter.sets.end(), set) != path_getter.sets.end())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "{} is referenced twice in `path` for key '{}'", set->name, key);
         set->used_as_input = true;
+        path_getter.sets.push_back(std::move(set));
+    };
+
+    /// All literal paths form one set; every `children_of` and `tagged` entry
+    /// references its own (shared) set.
+    if (!literal_paths.empty())
+        add_set(nodes_setup.createLiteralSet(std::move(literal_paths)));
+    for (const auto & parent_path : parent_paths)
+        add_set(nodes_setup.getOrCreateChildrenOfSet(parent_path));
+    for (const auto & tag_name : tag_names)
+        add_set(nodes_setup.getOrCreateTagSet(tag_name));
 
     return path_getter;
 }
 
 std::optional<std::string> PathGetter::getPath(GenerateContext & ctx) const
 {
-    /// Pick a set with probability proportional to its size (weighted reservoir
-    /// sampling over the sets, one pass), then a uniformly random path from it.
-    /// Sizes are read without locking, so they may lag slightly behind concurrent
-    /// updates of dynamic sets; that only skews the weights a little. With a
-    /// single set this degenerates to one relaxed load and no extra RNG draws.
+    /// Pick a set with probability proportional to its estimated size (weighted
+    /// reservoir sampling over the sets, one pass), then a uniformly random path
+    /// from it. Sizes are read without locking, so they may lag slightly behind
+    /// concurrent updates of dynamic sets; that only skews the weights a little.
+    /// With a single set this degenerates to one relaxed load and no extra RNG draws.
     const PathSet * chosen = nullptr;
     size_t total = 0;
     for (const auto & set : sets)
     {
-        size_t size = set->approximateShardSize(ctx.thread_idx);
+        size_t size = set->approximateSize(ctx.thread_idx);
         if (size == 0)
             continue;
         total += size;

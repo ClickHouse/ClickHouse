@@ -84,10 +84,14 @@ struct PathSet
     /// Current size of the calling thread's shard. Thread-safe.
     size_t shardSize(size_t thread_idx) const;
 
-    /// Size of the calling thread's shard read without locking. May be slightly
-    /// stale relative to a concurrent `add`/`takeRandom`. Used to weight sets
-    /// against each other when a `PathGetter` draws from several of them.
-    size_t approximateShardSize(size_t thread_idx) const;
+    /// Estimate of the whole set's size as seen from the calling thread: the
+    /// thread's shard size (read without locking, so possibly slightly stale
+    /// relative to a concurrent `add`/`takeRandom`) scaled by the number of
+    /// shards. Used to weight sets against each other when a `PathGetter` draws
+    /// from several of them, so that a per-thread sharded dynamic set is not
+    /// underweighted against an unsharded one. Returns 0 if the thread's shard
+    /// is empty.
+    size_t approximateSize(size_t thread_idx) const;
 
     size_t totalSize() const;
 

@@ -93,11 +93,11 @@ size_t PathSet::shardSize(size_t thread_idx) const
     return shard.paths.size();
 }
 
-size_t PathSet::approximateShardSize(size_t thread_idx) const
+size_t PathSet::approximateSize(size_t thread_idx) const
 {
     if (shards.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set {} is not finalized", name);
-    return shards[shardFor(thread_idx)].cached_size.load(std::memory_order_relaxed);
+    return shards[shardFor(thread_idx)].cached_size.load(std::memory_order_relaxed) * shards.size();
 }
 
 size_t PathSet::totalSize() const
