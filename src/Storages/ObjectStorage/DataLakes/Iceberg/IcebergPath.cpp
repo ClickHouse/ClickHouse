@@ -31,7 +31,7 @@ String toIcebergURIScheme(const String & storage_type_name)
 String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path)
 {
     String uri = toIcebergURIScheme(storage_type_name) + "://" + authority;
-    if (!path.starts_with('/'))
+    if (!authority.empty() || !path.starts_with('/'))
         uri += '/';
     uri += path;
     return uri;

@@ -60,8 +60,8 @@ private:
 String toIcebergURIScheme(const String & storage_type_name);
 
 /// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
-/// Exactly one `/` separates authority from path. A backend with no namespace concept has an
-/// empty authority and an absolute path, which already carries that separator itself.
+/// A non-empty authority is always followed by a separator, so a leading `/` stays part of the
+/// object name. An empty authority contributes none: such a path is already absolute.
 String makeIcebergLocationURI(const String & storage_type_name, const String & authority, const String & path);
 
 /// Converts Iceberg metadata paths to actual object storage paths.
