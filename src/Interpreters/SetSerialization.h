@@ -1,5 +1,8 @@
 #pragma once
+#include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
+
+#include <list>
 
 namespace DB
 {

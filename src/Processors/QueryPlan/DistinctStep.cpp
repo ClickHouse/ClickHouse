@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -145,24 +146,107 @@ void DistinctStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+namespace
+{
+
+/// A step with disjoint input streams and no merge is not the same relation as one that merges,
+/// so it has no logical digest; the full digest still has it.
+constexpr bool mergesStreams(const DistinctWire & wire)
+{
+    return !wire.skip_stream_merging;
+}
+
+/// `Distinct` and `PreDistinct` are two serialization names over the same wire struct.
+constexpr auto makeDistinctManifest(const char * name)
+{
+    return StepManifest<DistinctStep, DistinctWire>(name)
+        .nameIntroducedIn(1)
+        .baseFormat(
+            field("columns", WireFieldClass::Logical, &DistinctWire::columns),
+            field("limit_hint", WireFieldClass::Logical, &DistinctWire::limit_hint),
+            field("distinct_sort_desc", WireFieldClass::Logical, &DistinctWire::distinct_sort_desc),
+            field("skip_stream_merging", WireFieldClass::Physical, &DistinctWire::skip_stream_merging))
+        .settings(
+            setting(QueryPlanSerializationSetting::max_rows_in_distinct, WireFieldClass::Logical, &DistinctWire::max_rows),
+            setting(QueryPlanSerializationSetting::max_bytes_in_distinct, WireFieldClass::Logical, &DistinctWire::max_bytes),
+            setting(QueryPlanSerializationSetting::distinct_overflow_mode, WireFieldClass::Logical, &DistinctWire::overflow_mode))
+        .logicalDigest(mergesStreams);
+}
+
+constexpr auto DISTINCT_MANIFEST = makeDistinctManifest("Distinct");
+constexpr auto PRE_DISTINCT_MANIFEST = makeDistinctManifest("PreDistinct");
+
+const auto & distinctManifest(bool pre_distinct)
+{
+    return pre_distinct ? PRE_DISTINCT_MANIFEST : DISTINCT_MANIFEST;
+}
+
+}
+
+DistinctWire DistinctStep::toWire() const
+{
+    return DistinctWire{
+        columns, limit_hint, distinct_sort_desc, skip_stream_merging,
+        set_size_limits.max_rows, set_size_limits.max_bytes, set_size_limits.overflow_mode};
+}
+
+QueryPlanStepPtr DistinctStep::fromWire(DistinctWire wire, Deserialization & ctx, bool pre_distinct_)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
+
+    auto step = std::make_unique<DistinctStep>(
+        ctx.input_headers.front(),
+        SizeLimits(wire.max_rows, wire.max_bytes, wire.overflow_mode),
+        wire.limit_hint,
+        std::move(wire.columns),
+        pre_distinct_);
+    if (!wire.distinct_sort_desc.empty())
+        step->applyOrder(std::move(wire.distinct_sort_desc));
+    if (wire.skip_stream_merging)
+        step->skipStreamMerging();
+    return step;
+}
+
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(distinctManifest(pre_distinct), toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
+void DistinctStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(distinctManifest(pre_distinct), toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(distinctManifest(pre_distinct_), ctx), ctx, pre_distinct_);
+    return deserializeLegacy(ctx, pre_distinct_);
+}
+
+void DistinctStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
     settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
 }
 
-void DistinctStep::serialize(Serialization & ctx) const
+void DistinctStep::serializeLegacy(Serialization & ctx) const
 {
-    /// Let's not serialize limit_hint.
-    /// Ideally, we can get if from a query plan optimization on the follower.
-
+    /// The older stream does not carry `limit_hint`, the sort description or the stream merging flag.
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+QueryPlanStepPtr DistinctStep::deserializeLegacy(Deserialization & ctx, bool pre_distinct_)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
@@ -201,8 +285,8 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
-    registry.registerStep("Distinct", DistinctStep::deserializeNormal);
-    registry.registerStep("PreDistinct", DistinctStep::deserializePre);
+    registerManifest<DISTINCT_MANIFEST>(registry, DistinctStep::deserializeNormal);
+    registerManifest<PRE_DISTINCT_MANIFEST>(registry, DistinctStep::deserializePre);
 }
 
 }

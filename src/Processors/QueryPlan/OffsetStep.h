@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct OffsetWire;
+
 /// Executes OFFSET (without LIMIT). See OffsetTransform.
 class OffsetStep : public ITransformingStep
 {
@@ -23,6 +25,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `OffsetStep.cpp` declares.
+    OffsetWire toWire() const;
+    static QueryPlanStepPtr fromWire(OffsetWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
 private:
@@ -31,7 +37,19 @@ private:
         output_header = input_headers.front();
     }
 
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
+
     size_t offset;
+};
+
+/// What `OffsetStep` puts on the wire in the framed format.
+struct OffsetWire
+{
+    UInt64 offset = 0;
+
+    bool operator==(const OffsetWire &) const = default;
 };
 
 }

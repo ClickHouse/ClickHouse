@@ -2,6 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingIndex.h>
 #include <Core/SettingsFields.h>
 
 namespace DB
@@ -87,6 +88,14 @@ struct QueryPlanSerializationSettings
     /// Applies the entries. An unknown one is skipped if it is marked ignorable and refused if it
     /// is not, and a value that does not use up exactly its own bytes is refused.
     void applyEntries(const std::vector<SerializedEntry> & entries);
+
+    /// The registered name of a setting, for the manifest baseline.
+    template <typename FieldType>
+    static String settingName(const SettingIndex<QueryPlanSerializationSettings, FieldType> & index)
+    {
+        return settingNameAtOffset(index.offset);
+    }
+    static String settingNameAtOffset(size_t offset);
 
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)

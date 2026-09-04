@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -106,7 +107,51 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
 }
 
+namespace
+{
+
+constexpr auto LIMIT_MANIFEST = StepManifest<LimitStep, LimitWire>("Limit")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("limit", WireFieldClass::Logical, &LimitWire::limit),
+        field("offset", WireFieldClass::Logical, &LimitWire::offset),
+        field("always_read_till_end", WireFieldClass::Logical, &LimitWire::always_read_till_end),
+        field("with_ties", WireFieldClass::Logical, &LimitWire::with_ties),
+        field("description", WireFieldClass::Logical, &LimitWire::description),
+        field("is_shard_limit", WireFieldClass::Logical, &LimitWire::is_shard_limit));
+
+}
+
+LimitWire LimitStep::toWire() const
+{
+    return LimitWire{limit, offset, always_read_till_end, with_ties, description, is_shard_limit};
+}
+
+QueryPlanStepPtr LimitStep::fromWire(LimitWire wire, Deserialization & ctx)
+{
+    auto step = std::make_unique<LimitStep>(
+        ctx.input_headers.front(), wire.limit, wire.offset, wire.always_read_till_end, wire.with_ties, std::move(wire.description));
+    if (wire.is_shard_limit)
+        step->markAsShardLimit();
+    return step;
+}
+
 void LimitStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(LIMIT_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(LIMIT_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void LimitStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (always_read_till_end)
@@ -123,7 +168,7 @@ void LimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -152,7 +197,7 @@ QueryPlanStepPtr LimitStep::clone() const
 void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Limit", LimitStep::deserialize);
+    registerManifest<LIMIT_MANIFEST>(registry, LimitStep::deserialize);
 }
 
 }

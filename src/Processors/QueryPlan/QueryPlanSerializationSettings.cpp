@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int CANNOT_PARSE_QUERY_PLAN;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -168,6 +169,15 @@ UInt64 QueryPlanSerializationSettings::minReaderVersionForEntry(const Serialized
     /// setting introduced later must return its introduced-at version here (an ignorable one
     /// never raises the floor: readers skip it by the wire flag).
     return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+}
+
+String QueryPlanSerializationSettings::settingNameAtOffset(size_t offset)
+{
+    const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
+    size_t index = accessor.findByOffset(offset);
+    if (index == static_cast<size_t>(-1))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query plan serialization setting at offset {}", offset);
+    return accessor.getName(index);
 }
 
 bool QueryPlanSerializationSettings::hasSetting(std::string_view name)
