@@ -452,9 +452,9 @@ def test_tracking_quota():
 
 
 def test_exceed_quota():
-    # Change quota, now the limits are tiny so we will exceed the quota.
-    copy_quota_xml("tiny_limits.xml")
     try:
+        # Change quota, now the limits are tiny so we will exceed the quota.
+        copy_quota_xml("tiny_limits.xml")
         check_system_quotas(
             [
                 [
@@ -1423,8 +1423,8 @@ def test_reload_users_xml_by_timer():
 
     time.sleep(1)  # The modification time of the 'quota.xml' file should be different,
     # because config files are reload by timer only when the modification time is changed.
-    copy_quota_xml("tiny_limits.xml", reload_immediately=False)
     try:
+        copy_quota_xml("tiny_limits.xml", reload_immediately=False)
         assert_eq_with_retry(
             instance,
             "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
