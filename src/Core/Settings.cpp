@@ -8910,11 +8910,14 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
 Enable evaluation of pattern predicates by scanning the inverted text index dictionary.
-Supports `LIKE` and `ILIKE` for generic tokenizers, and also `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8` for `jsonPathValues`.
+
+For generic tokenizers, the accelerated `LIKE` and `ILIKE` patterns are `%value%`, `value%` and `%value`; `startsWith` and `endsWith` calls, including those produced by `optimize_rewrite_like_perfect_affix`, are also supported.
+For `jsonPathValues`, this also enables `LIKE`, `ILIKE`, `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the fixed string or required substring in a pattern predicate for text index evaluation.
-For `jsonPathValues`, this also applies to `startsWith`, `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
+Minimum pattern length required to use text index evaluation.
+For generic tokenizers, this is the alphanumeric needle in a `LIKE` or `ILIKE` pattern, or the `startsWith` or `endsWith` needle.
+For `jsonPathValues`, this is the fixed string or required substring in `LIKE`, `ILIKE`, `startsWith`, `endsWith`, `match`, `multiSearchAny`, or `multiSearchAnyUTF8`.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
 Dictionary-scanned predicates require `use_text_index_like_evaluation_by_dictionary_scan`; `jsonPathValues` `startsWith` uses an ordered lookup instead.

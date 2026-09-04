@@ -36,7 +36,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
