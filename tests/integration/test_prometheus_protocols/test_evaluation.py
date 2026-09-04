@@ -1065,6 +1065,33 @@ def test_function_over_time():
         ],
     )
 
+    # max_over_time: uses `resets` (not `test`) because `test` never decreases, so max_over_time would equal
+    # last_over_time on it and not exercise the "extremum isn't the most recent sample" case.
+    do_query_test(
+        "max_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "5"], [135, "8"], [150, "8"], [165, "8"], [180, "6"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',8),('1970-01-01 00:02:30.000',8),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',6),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # min_over_time
+    do_query_test(
+        "min_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "2"], [180, "2"], [195, "10"], [210, "3"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',3)]",
+            ]
+        ],
+    )
+
 
 def test_function_absent():
     # A non-empty input produces an empty vector.

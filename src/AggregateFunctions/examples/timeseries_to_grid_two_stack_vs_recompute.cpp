@@ -10,6 +10,7 @@
 ///
 /// Run:   `clickhouse-examples timeseries_to_grid_two_stack_vs_recompute`
 
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesExtremumOverTime.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 
@@ -43,18 +44,19 @@ constexpr int REPEATS = 3;
 constexpr size_t WINDOWS[]
     = {2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40};
 
-/// Every non-invertible sliding aggregator stores its samples in this bucket type (one sample per step here).
-using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
-using Buckets = UnorderedMapWithMemoryTracking<size_t, Bucket>;
-using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
+/// One bucket map per series. The bucket type is per aggregator family: the linear-regression and extremum
+/// families both store raw samples (`AggregateFunctionTimeseriesSamples`).
+template <typename Bucket>
+using Dataset = std::vector<UnorderedMapWithMemoryTracking<size_t, Bucket>>;  /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Creates NUM_SERIES series, each with BASE_GRID single-sample buckets at indices 0..BASE_GRID-1 (dense).
-Dataset buildDataset()
+template <typename Bucket>
+Dataset<Bucket> buildDataset()
 {
-    Dataset dataset(NUM_SERIES);
+    Dataset<Bucket> dataset(NUM_SERIES);
     for (size_t series = 0; series < NUM_SERIES; ++series)
     {
-        Buckets & buckets = dataset[series];
+        auto & buckets = dataset[series];
         buckets.reserve(BASE_GRID);
         for (size_t k = 0; k < BASE_GRID; ++k)
         {
@@ -68,8 +70,8 @@ Dataset buildDataset()
 
 /// Returns the best (minimum over REPEATS) ns per grid point for sliding a window of `buckets_per_window` buckets.
 /// `stack_size` controls whether it's two-stack (stack_size > 0) or recompute algorithm (stack_size == 0).
-template <typename MakeAggregator>
-Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const Dataset & dataset,
+template <typename Bucket, typename MakeAggregator>
+Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const Dataset<Bucket> & dataset,
     const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     Float64 best = std::numeric_limits<Float64>::infinity();
@@ -99,8 +101,8 @@ Float64 measureNanoseconds(size_t buckets_per_window, size_t stack_size, const D
 
 /// Finds AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS and BPW_TO_FORCE_TWO_STACKS
 /// for a specified aggregator.
-template <typename MakeAggregator>
-void runFunction(const char * name, const Dataset & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
+template <typename Bucket, typename MakeAggregator>
+void runFunction(const char * name, const Dataset<Bucket> & dataset, const MakeAggregator & make_aggregator, Float64 & checksum)
 {
     fmt::println("\n{}: two-stacks vs recompute, ns per grid point ({} series x {} buckets).\n",
         name, NUM_SERIES, BASE_GRID);
@@ -130,14 +132,19 @@ void runFunction(const char * name, const Dataset & dataset, const MakeAggregato
 
 int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
 {
-    const Dataset dataset = buildDataset();
     Float64 checksum = 0;
 
     /// Linear regression (`timeSeriesDerivToGrid` / `timeSeriesPredictLinearToGrid` share the same `Summary`, so
     /// one measurement covers both).
     using LinearRegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<UInt32, /* IntervalType */ Int32, /* ValueType */ Float64, /* is_predict */ false>;
-    runFunction("timeSeriesDerivToGrid", dataset,
+    runFunction("timeSeriesDerivToGrid", buildDataset<AggregateFunctionTimeseriesSamples<UInt32, Float64>>(),
         [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* base */ UInt32(0), /* predict_offset */ Float64(0), /* timestamp_scale_multiplier */ UInt32(1)}; },
+        checksum);
+
+    /// Extremum (`timeSeriesMaxToGrid` / `timeSeriesMinToGrid` share the same `Summary`; max is measured).
+    using ExtremumTraits = AggregateFunctionTimeseriesExtremumOverTimeTraits<UInt32, /* IntervalType */ Int32, /* ValueType */ Float64, /* is_max */ true>;
+    runFunction("timeSeriesMaxToGrid", buildDataset<typename ExtremumTraits::Bucket>(),
+        [](size_t stack_size) { return typename ExtremumTraits::Aggregator{stack_size}; },
         checksum);
 
     /// Add other non-invertible functions here.
