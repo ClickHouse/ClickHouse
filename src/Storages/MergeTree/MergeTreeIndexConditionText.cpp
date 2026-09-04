@@ -911,8 +911,9 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     if (end - start < min_pattern_length)
         return {};
 
-    /// ILIKE folds non-ASCII code points onto ASCII characters (U+212A matches 'k'), but the dictionary keeps
-    /// only ASCII bytes, so the scan would prune a granule holding a matching row.
+    /// The scan matches tokens bytewise, ASCII case-insensitively (`ASCIICaseInsensitiveStringSearcher`), while
+    /// ILIKE folds per code point and also equates U+212A with 'k'. The token keeps the raw bytes, so the scan
+    /// cannot see such an occurrence and would prune a granule holding a matching row.
     if (case_insensitive && std::any_of(data + start, data + end, UTF8::isASCIIReachableByCaseFolding))
         return {};
 

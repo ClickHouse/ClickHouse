@@ -79,6 +79,19 @@ INSERT INTO tab VALUES (1, concat('zzzz', char(0xE2, 0x84, 0xAA), 'zzzz')), (2, 
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%';
 
+SELECT 'array tokenizer, same needle restriction';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt32, tag String, INDEX idx(tag) TYPE text(tokenizer = array))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab VALUES (1, concat('zzzz', char(0xE2, 0x84, 0xAA), 'zzzz')), (2, 'zzzkzzzz'), (3, 'hello world');
+
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zzzk%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zzzk%';
+-- The `k` needle must not reach the dictionary scan, a needle without one still must.
+SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzk%');
+SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzz%');
+
 SELECT 'Which predicates still reach the dictionary scan';
 
 DROP TABLE IF EXISTS tab;

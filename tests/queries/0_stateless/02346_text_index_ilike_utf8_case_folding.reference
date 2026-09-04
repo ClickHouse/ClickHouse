@@ -19,6 +19,11 @@ lower preprocessor, same as above
 upper preprocessor, needle folded to K by the preprocessor is rejected too
 [1,2]
 [1,2]
+array tokenizer, same needle restriction
+[1,2]
+[1,2]
+0
+1
 Which predicates still reach the dictionary scan
 ILIKE %monde%	1	1
 ILIKE %monkey%	0
