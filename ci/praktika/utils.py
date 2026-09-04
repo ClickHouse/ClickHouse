@@ -299,19 +299,22 @@ class Shell:
         time_wait = 0
         wait_interval = 5
 
-        # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
+        # Waits on the GROUP, not on the leader: a descendant that survives SIGTERM keeps
+        # the inherited pipes open, and that is what blocks the caller's reader threads.
+        while time_wait < 100:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return
             print("Waiting for process to exit...")
             time.sleep(wait_interval)
             time_wait += wait_interval
 
-        # Force kill if still running
-        if process.poll() is None:
-            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                print("Process already terminated.")
+        print("WARNING: Process still running after SIGTERM, sending SIGKILL")
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            print("Process already terminated.")
 
     @classmethod
     def _check_timeout(cls, timeout, idle_timeout, process, finished, state) -> None:
@@ -394,6 +397,7 @@ class Shell:
         log_file = log_file or "/dev/null"
         proc = None
         err_output = []
+        returncode = 1
         delay = 1
 
         for retry in range(retries):
@@ -423,6 +427,7 @@ class Shell:
                     # Start the timeout thread if specified
                     finished = Event()
                     watchdog = None
+                    watchdog_expired = False
                     started = time.monotonic()
                     watchdog_state = {
                         "started": started,
@@ -493,6 +498,7 @@ class Shell:
                         # Joining before reading is what makes the cause observable at all.
                         watchdog.join(30)
                         if watchdog_state["expired"]:
+                            watchdog_expired = True
                             message = (
                                 SHELL_TOTAL_TIMEOUT_MESSAGE
                                 if watchdog_state["expired"] == "total"
@@ -503,12 +509,18 @@ class Shell:
                             log_fp.write(message + "\n")
                             err_output.append(message + "\n")
 
-                if proc.returncode == 0:
+                # A bound that fired is authoritative: a command that traps SIGTERM and
+                # exits 0 has not finished, whatever it reported.
+                returncode = (
+                    1 if (watchdog_expired and proc.returncode == 0) else proc.returncode
+                )
+
+                if returncode == 0:
                     return 0
 
                 if verbose and retries > 1:
                     print(
-                        f"Retry {retry+1}/{retries}: command failed, exit code: {proc.returncode}"
+                        f"Retry {retry+1}/{retries}: command failed, exit code: {returncode}"
                     )
 
                 if not retry_errors:
@@ -559,16 +571,16 @@ class Shell:
 
         if verbose:
             print(
-                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {returncode}"
             )
 
         if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                f"command failed, exit code {returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode
+        return returncode
 
     @classmethod
     def run_async(

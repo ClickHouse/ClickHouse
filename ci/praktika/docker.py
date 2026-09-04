@@ -40,7 +40,7 @@ _IMAGE_PULL_RETRIES = 3
 # fast on the first attempt.
 # A tuple, not a list: both docker build jobs read this one object, so `+=` in either
 # of them would extend the other one's retry class too.
-BUILDX_TRANSIENT_ERRORS = (
+_BUILDX_REGISTRY_TRANSIENT_ERRORS = (
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
     # One containerd error, formatted `unexpected status from <method> request to <url>:
@@ -57,10 +57,15 @@ BUILDX_TRANSIENT_ERRORS = (
     "connection reset by peer",
     "connection refused",
     "unexpected EOF",
+)
+_BUILDX_APT_TRANSIENT_ERRORS = (
     # apt-get package mirrors
     "Failed to fetch",
     "Connection failed",
     "Connection timed out",
+)
+BUILDX_TRANSIENT_ERRORS = (
+    _BUILDX_REGISTRY_TRANSIENT_ERRORS + _BUILDX_APT_TRANSIENT_ERRORS
 )
 
 # A single apt mirror can stay broken for longer than `BUILDX_RETRIES` attempts
@@ -154,10 +159,10 @@ def is_apt_mirror_failure(info: str) -> bool:
     )
 
 
-# Registry and push failures happen while resolving the base and SBOM-scanner images or
-# while uploading layers, which is outside every Dockerfile step, so they are anchored on
-# the terminal error instead of on a fenced block.
-_IMAGE_BUILD_REGISTRY_ERRORS = BUILDX_TRANSIENT_ERRORS + (
+# Read from buildx's terminal error, which embeds the failing `RUN` recipe verbatim, so a
+# recipe naming a mirror error would match on its own text. The apt class is decided inside
+# the failing step's fenced block at `E:` severity instead.
+_IMAGE_BUILD_REGISTRY_ERRORS = _BUILDX_REGISTRY_TRANSIENT_ERRORS + (
     # The one signature `Docker.build` retried before this ladder existed.
     "Error response from daemon: manifest unknown: manifest unknown",
 )
@@ -248,11 +253,19 @@ class Docker:
         `job_timeout` and `elapsed` are the leg's own budget and how much of it is gone.
         Given them, every attempt is bounded by what is left, so the retry ladder cannot
         outlast the job; left at 0 nothing is bounded, which is the behaviour of every
-        caller that does not know its budget.
+        caller that does not know its budget. The deadline is stamped before the metadata
+        probe below, so that probe is charged against the budget like everything else.
         """
         from .result import Result
 
         sw = Utils.Stopwatch()
+        # One deadline for the whole ladder. Every bound below is derived from what is left
+        # of it, so no attempt can outlive the runner's own kill.
+        job_deadline = (
+            time.monotonic() + max(0, job_timeout - elapsed - _IMAGE_BUILD_JOB_RESERVE_S)
+            if job_timeout
+            else None
+        )
         tag = digests[config.name]
         if amd_only:
             aarch_suffix = "_amd"
@@ -310,7 +323,7 @@ class Docker:
 
             command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11 {config.path}{push_out}"
 
-            return cls._build_with_retries(name, command, job_timeout, elapsed, sw)
+            return cls._build_with_retries(name, command, job_deadline, sw)
         else:
             return Result(
                 name=name,
@@ -321,17 +334,10 @@ class Docker:
             )
 
     @classmethod
-    def _build_with_retries(cls, name, command, job_timeout, elapsed, sw):
+    def _build_with_retries(cls, name, command, job_deadline, sw):
         """Run one buildx command, retrying transient failures inside the leg's budget."""
         from .result import Result
 
-        # One deadline for the whole ladder. Every bound below is derived from what is left
-        # of it, so no attempt can outlive the runner's own kill.
-        job_deadline = (
-            time.monotonic() + max(0, job_timeout - elapsed - _IMAGE_BUILD_JOB_RESERVE_S)
-            if job_timeout
-            else None
-        )
         ladder_deadline = None
         result = None
         attempts = 0
@@ -342,9 +348,19 @@ class Docker:
                 f"Out of job budget after {attempts} attempt(s): "
                 f"{int(budget)}s left, an attempt needs {_IMAGE_BUILD_MIN_ATTEMPT_S}s."
             )
+            # The last attempt's log, not just its `info`: `from_commands_run` attaches the
+            # log exactly when it had to truncate `info`, which is when `info` is worst.
+            files = None
             if result is not None:
                 info += f"\nLast attempt:\n{result.info}"
-            return Result.create_from(name=name, status=Result.Status.FAIL, info=info)
+                files = result.files or None
+            return Result.create_from(
+                name=name,
+                status=Result.Status.FAIL,
+                stopwatch=sw,
+                info=info,
+                files=files,
+            )
 
         for attempt in range(_IMAGE_BUILD_ATTEMPTS):
             if job_deadline is None:
@@ -353,7 +369,7 @@ class Docker:
                 # Re-read the clock every attempt: the previous one has spent some of it.
                 budget = job_deadline - time.monotonic()
                 if budget < _IMAGE_BUILD_MIN_ATTEMPT_S:
-                    return exhausted(budget).set_timing(sw)
+                    return exhausted(budget)
                 total = int(budget)
                 idle = min(_IMAGE_BUILD_IDLE_CAP_S, total)
 
@@ -382,7 +398,7 @@ class Docker:
             if SHELL_TOTAL_TIMEOUT_MESSAGE in log_text:
                 # The total bound IS the remaining budget, so this expiry means the budget
                 # is gone. Terminal by construction, never classified.
-                return exhausted(0).set_timing(sw)
+                return exhausted(0)
             if not _is_transient(log_text):
                 break
 
@@ -401,7 +417,7 @@ class Docker:
             if job_deadline is not None and (
                 job_deadline - next_start < _IMAGE_BUILD_MIN_ATTEMPT_S
             ):
-                return exhausted(job_deadline - next_start).set_timing(sw)
+                return exhausted(job_deadline - next_start)
             print(
                 f"Transient failure [{matched}] building {name}, "
                 f"retrying in {_IMAGE_BUILD_RETRY_INTERVAL_S}s"

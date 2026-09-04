@@ -34,6 +34,9 @@ assert Settings.CI_CONFIG_RUNS_ON
 # Every image is built inside this one budget, so `Docker.build` is given what is left
 # of it and sizes its own bounds from that.
 DOCKER_BUILD_JOB_TIMEOUT_S = int(5.5 * 3600)
+# Cleanup runs inside the reserve the build ladder keeps back for recording a result, so
+# it must not be able to consume it: three of these fit in 360s of the 600s reserve.
+DOCKER_CLEANUP_TIMEOUT_S = 120
 
 
 _workflow_config_job = Job.Config(
@@ -203,14 +206,20 @@ def _build_dockers(workflow, job_name):
 
 
 def _clean_buildx_volumes():
-    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
+    Shell.check(
+        "docker buildx rm --all-inactive --force",
+        verbose=True,
+        timeout=DOCKER_CLEANUP_TIMEOUT_S,
+    )
     Shell.check(
         "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
         verbose=True,
+        timeout=DOCKER_CLEANUP_TIMEOUT_S,
     )
     Shell.check(
         "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
         verbose=True,
+        timeout=DOCKER_CLEANUP_TIMEOUT_S,
     )
 
 
@@ -1080,6 +1089,9 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
+            # Before cleanup, not after: cleanup can wedge on the same buildkit the build
+            # did, and then the shaped result would never reach disk.
+            result.dump()
             _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
