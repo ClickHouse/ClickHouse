@@ -32,6 +32,16 @@ void writeNeedRebuildMarker(const String & directory)
 
 }
 
+TEST(AccessEntityIO, RejectsQueryParameters)
+{
+    EXPECT_THROW(deserializeAccessEntity("ATTACH ROLE {r:Identifier};"), Exception);
+    EXPECT_THROW(deserializeAccessEntity("ATTACH USER {u:Identifier};"), Exception);
+    EXPECT_THROW(deserializeAccessEntity("ATTACH USER u1 IDENTIFIED WITH plaintext_password BY {pw:String};"), Exception);
+    EXPECT_THROW(deserializeAccessEntity("ATTACH USER u1 VALID UNTIL {ts:String};"), Exception);
+    EXPECT_THROW(deserializeAccessEntity("ATTACH USER u1 DEFAULT ROLE {r:Identifier};"), Exception);
+    EXPECT_THROW(deserializeAccessEntity("ATTACH ROLE r1; ATTACH GRANT SELECT ON *.* TO {g:Identifier};"), Exception);
+}
+
 TEST(DiskAccessStorageRecovery, RebuildRemovesTempFiles)
 {
     Poco::TemporaryFile temp_dir;
