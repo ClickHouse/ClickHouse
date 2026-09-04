@@ -37,6 +37,12 @@ struct StatsCollectingParams
     const size_t max_size_to_preallocate = 0;
 };
 
+struct HashJoinStatsCollectingParams
+{
+    StatsCollectingParams build;
+    StatsCollectingParams match;
+};
+
 struct AggregationEntry
 {
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
@@ -70,6 +76,15 @@ struct HashJoinEntry
 
     size_t ht_size; // the size of the shared hash table
     size_t source_rows; // the number of rows in the source table
+};
+
+struct HashJoinMatchEntry
+{
+    bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
+
+    std::string dump() const { return fmt::format("matches={}", matches); }
+
+    size_t matches; // number of hash-table matches for a specific hash join.
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
@@ -110,4 +125,5 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
+std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params);
 }

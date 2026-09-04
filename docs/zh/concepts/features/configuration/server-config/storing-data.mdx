@@ -338,7 +338,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### 可选参数
 </div>
 
-| Parameter                                       | Description                                                                                                                                                                        | Default Value                            |
+| 参数                                       | 描述                                                                                                                                                                        | 默认值                            |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `region`                                        | S3 区域名称。                                                                                                                                                                           | -                                        |
 | `support_batch_delete`                          | 控制是否检查对批量删除的支持。使用 Google Cloud Storage (GCS) 时，请将其设为 `false`，因为 GCS 不支持批量删除。                                                                                                       | `true`                                   |
@@ -362,14 +362,12 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `s3_max_put_burst`                              | 达到 RPS 限制前允许的最大并发 PUT 请求数。                                                                                                                                                         | 与 `s3_max_put_rps` 相同                    |
 | `s3_max_get_rps`                                | 开始限流前每秒允许的最大 GET 请求数。                                                                                                                                                              | `0` (无限制)                                |
 | `s3_max_get_burst`                              | 达到 RPS 限制前允许的最大并发 GET 请求数。                                                                                                                                                         | 与 `s3_max_get_rps` 相同                    |
-| `read_resource`                                 | [调度](/zh/concepts/features/configuration/server-config/workload-scheduling)读取请求使用的资源名称。                                                                                               | 空字符串 (已禁用)                               |
-| `write_resource`                                | [调度](/zh/concepts/features/configuration/server-config/workload-scheduling)写入请求使用的资源名称。                                                                                               | 空字符串 (已禁用)                               |
 | `key_template`                                  | 使用 [re2](https://github.com/google/re2/wiki/Syntax) 语法定义对象键的生成格式。要求启用 `storage_metadata_write_full_object_key` 标志。与 `endpoint` 中的 `root path` 不兼容。需要指定 `key_compatibility_prefix`。 | -                                        |
 | `key_compatibility_prefix`                      | 与 `key_template` 配合使用时必需。用于指定 `endpoint` 中先前的 `root path`，以便读取旧版本元数据。                                                                                                              | -                                        |
 | `read_only`                                     | 仅允许从该磁盘读取。                                                                                                                                                                         | -                                        |
 
 <Note>
-  也支持通过 `s3` 类型使用 Google Cloud Storage (GCS)。请参阅[基于 GCS 的 MergeTree](/zh/integrations/connectors/data-sources/gcs)。
+  Google Cloud Storage (GCS) 也支持使用类型 `s3`。请参阅 [基于 GCS 的 MergeTree](/zh/integrations/connectors/data-sources/gcs)。
 </Note>
 
 <div id="plain-storage">
@@ -519,13 +517,11 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   #### 其他参数
 </div>
 
-| Parameter                        | Description                                                                          | Default Value                            |
-| -------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `metadata_path`                  | 用于存储 Blob Storage 元数据文件的本地文件系统路径。                                                    | `/var/lib/clickhouse/disks/<disk_name>/` |
-| `skip_access_check`              | 如果为 `true`，则在启动时跳过磁盘访问检查。                                                            | `false`                                  |
-| `read_resource`                  | 用于[调度](/zh/concepts/features/configuration/server-config/workload-scheduling)读取请求的资源名称。 | 空字符串 (已禁用)                               |
-| `write_resource`                 | 用于[调度](/zh/concepts/features/configuration/server-config/workload-scheduling)写入请求的资源名称。 | 空字符串 (已禁用)                               |
-| `metadata_keep_free_space_bytes` | 为元数据磁盘预留的可用空间大小。                                                                     | -                                        |
+| 参数                        | 描述                       | 默认值                            |
+| -------------------------------- | --------------------------------- | ---------------------------------------- |
+| `metadata_path`                  | 用于存储 blob 存储 元数据文件的本地文件系统路径。 | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | 如果为 `true`，则在启动时跳过磁盘访问检查。         | `false`                                  |
+| `metadata_keep_free_space_bytes` | 为元数据磁盘预留的可用空间大小。                  | -                                        |
 
 可在集成测试目录中找到可用的配置示例 (例如，[test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) 或 [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)) 。
 

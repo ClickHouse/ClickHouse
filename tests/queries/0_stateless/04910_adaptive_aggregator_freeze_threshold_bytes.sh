@@ -20,8 +20,6 @@ SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 65536;
 SET collect_hash_table_stats_during_aggregation = 0;
--- The adaptive admission rejects any group-by row limit, and the CI profiles set one.
-SET max_rows_to_group_by = 0;
 
 -- The byte bound disabled with an unreachable key bound: the tables must never freeze.
 SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null
@@ -64,7 +62,6 @@ SET max_block_size = 4096;
 SET collect_hash_table_stats_during_aggregation = 1;
 SET adaptive_aggregator_freeze_threshold = 1000000000;
 SET adaptive_aggregator_freeze_threshold_bytes = 2097152;
-SET max_rows_to_group_by = 0;
 
 SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
 SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
