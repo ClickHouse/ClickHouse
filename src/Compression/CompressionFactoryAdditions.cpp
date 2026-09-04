@@ -42,6 +42,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool allow_suspicious_codecs;
+extern const SettingsBool allow_experimental_codecs;
 }
 
 
