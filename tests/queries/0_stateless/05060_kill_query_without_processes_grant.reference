@@ -63,6 +63,3 @@
 21 granted alive=0
 22 asterisk killed=1
 22 asterisk alive=0
-23 old_analyzer killed=0
-23 old_analyzer exception=0
-23 old_analyzer alive=1

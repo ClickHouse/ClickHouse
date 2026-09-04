@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -373,8 +374,12 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
 static void unqualifyProcessesColumns(ASTPtr & ast)
 {
     /// A subquery resolves names in a scope of its own, where `processes` may be a relation of the
-    /// caller's. Only this scope is known to hold the rows, so only its qualifiers are shortened.
+    /// caller's, and a lambda parameter may carry that name as well. Only this scope is known to hold
+    /// the rows, so only its qualifiers are shortened.
     if (ast->as<ASTSubquery>())
+        return;
+    const auto * function = ast->as<ASTFunction>();
+    if (function && function->name == "lambda")
         return;
 
     if (auto * identifier = ast->as<ASTIdentifier>())

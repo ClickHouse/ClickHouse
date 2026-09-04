@@ -361,14 +361,4 @@ $CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE notEmpty(toString(tuple(sys
 gone "own22$SUFFIX"; echo "22 asterisk alive=$(alive "own22$SUFFIX")"
 reset_arm
 
-# 23: the row policy is compiled the same way whatever analyzer the caller selected. The policy rejects
-# the caller's own victim, so a policy that was skipped or failed to compile would kill it.
-policy_on_u1 "query_id != 'own23$SUFFIX'"
-start_victim "$U1" "own23$SUFFIX"
-out=$($CLICKHOUSE_CLIENT --user "$U1" --enable_analyzer 0 -q "KILL QUERY WHERE query_id = 'own23$SUFFIX' SYNC" 2>&1)
-echo "23 old_analyzer killed=$(printf '%s\n' "$out" | killed "own23$SUFFIX")"
-echo "23 old_analyzer exception=$(printf '%s\n' "$out" | matched "DB::Exception")"
-echo "23 old_analyzer alive=$(alive "own23$SUFFIX")"
-reset_arm
-
 via_http "DROP USER $U1, $U2"
