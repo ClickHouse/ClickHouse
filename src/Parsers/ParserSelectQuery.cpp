@@ -259,13 +259,16 @@ bool parseLimitRange(IParser::Pos & pos, Expected & expected, ASTPtr & limit_aft
     ParserKeyword s_all(Keyword::ALL);
     ParserExpressionWithOptionalAlias expression_p(false);
 
-    /// Words that may follow a `LIMIT` count.
+    /// Words that may follow a `LIMIT` count: its alias, the rest of the `LIMIT` clause, and the clauses
+    /// and set operations that can come after it.
     static const Keyword count_followers[] = {
+        Keyword::AS,
         Keyword::BY,
         Keyword::OFFSET,
         Keyword::WITH_TIES,
         Keyword::AFTER,
         Keyword::UNTIL,
+        Keyword::FETCH,
         Keyword::SETTINGS,
         Keyword::FORMAT,
         Keyword::INTO_OUTFILE,
