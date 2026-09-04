@@ -107,7 +107,10 @@ SELECT * FROM enum_modify_then_add_different ORDER BY x FORMAT CSV;
 DROP TABLE enum_modify_then_add_different;
 
 CREATE OR REPLACE TABLE enum_add_then_modify (y Int8) ENGINE = Memory;
-ALTER TABLE enum_add_then_modify ADD COLUMN x Enum8('a' = 1), MODIFY COLUMN x ADD ENUM VALUES('b' = 2); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+ALTER TABLE enum_add_then_modify ADD COLUMN x Enum8('a' = 1), MODIFY COLUMN x ADD ENUM VALUES('b' = 2);
+SHOW CREATE TABLE enum_add_then_modify;
+INSERT INTO enum_add_then_modify VALUES (1, 'a'), (2, 'b');
+SELECT * FROM enum_add_then_modify ORDER BY x FORMAT CSV;
 DROP TABLE enum_add_then_modify;
 
 SELECT '======= ALTER AST VALIDATION ===============';
