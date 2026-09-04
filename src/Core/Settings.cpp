@@ -6889,6 +6889,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_with_ties, false, R"(
+Allow query plan lazy materialization optimization for `LIMIT WITH TIES` if the limit value does not exceed `query_plan_max_limit_for_lazy_materialization`.
+)", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0) \

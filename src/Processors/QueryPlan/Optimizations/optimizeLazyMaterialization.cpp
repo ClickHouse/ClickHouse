@@ -481,10 +481,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!limit_step)
         return false;
 
-    /// it's not clear how many values will be read for LIMIT WITH TIES, so disable it
-    if (limit_step->withTies())
-        return false;
-
     auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
     bool reading_in_order = false;
 
@@ -506,6 +502,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     }
 
     const auto limit = limit_step->getLimit();
+    if (limit_step->withTies() && max_limit_for_lazy_materialization != 0 && !settings.optimize_lazy_materialization_with_ties)
+        return false;
+
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
 
