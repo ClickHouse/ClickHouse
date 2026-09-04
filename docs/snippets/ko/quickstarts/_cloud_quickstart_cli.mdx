@@ -1,0 +1,239 @@
+---
+title: Cloud 빠른 시작 CLI
+---
+
+이 페이지에서는 [ClickHouse CLI](/ko/products/cloud/features/cli)(`clickhousectl`)를 사용해 명령줄에서 ClickHouse Cloud 서비스를 프로비저닝하고 연결하며 데이터를 로드하는 방법을 설명합니다. 명령어는 비대화형으로 실행되며, `clickhousectl`는 `--json` 옵션을 사용하면 JSON을 출력합니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+ClickHouse CLI를 설치하십시오:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+`jq`도 필요합니다.
+
+ClickHouse Cloud 계정이 필요합니다. 아직 계정이 없다면 `clickhousectl cloud auth signup` 명령으로 브라우저에서 가입 페이지를 열 수 있습니다.
+
+쓰기 작업(생성, 삭제)에는 [API Key 인증](/ko/products/cloud/features/admin-features/api/openapi)이 필요하며, OAuth 로그인으로는 읽기만 가능합니다:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+또는 `CLICKHOUSE_CLOUD_API_KEY` 및 `CLICKHOUSE_CLOUD_API_SECRET` 환경 변수를 설정하십시오. `clickhousectl cloud auth status`를 실행하여 확인하십시오. 범위가 `read/write`인 항목이 표시되어야 합니다.
+
+<div id="create-service">
+  ## ClickHouse 서비스 생성
+</div>
+
+서비스를 생성하고 응답을 저장하십시오. `default` 사용자의 비밀번호는 한 번만 표시됩니다:
+
+```bash
+clickhousectl cloud service create \
+  --name quickstart-ch \
+  --region us-east-1 \
+  --json > ch.json
+```
+
+응답에는 서비스 ID, 엔드포인트, 생성된 비밀번호가 포함됩니다(여기서는 일부만 표시했습니다. 전체 응답에는 스케일링 설정, IP 액세스 목록 및 태그도 포함됩니다):
+
+```json
+{
+  "password": "dK7mPq2x_-TzrL9vNw0s",
+  "service": {
+    "id": "4f7b92f3-4163-403a-b538-b9bc6e2e8f66",
+    "name": "quickstart-ch",
+    "provider": "aws",
+    "region": "us-east-1",
+    "state": "provisioning",
+    "endpoints": [
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 9440,
+        "protocol": "nativesecure"
+      },
+      {
+        "host": "quickstart-abc123.us-east-1.aws.clickhouse.cloud",
+        "port": 8443,
+        "protocol": "https"
+      }
+    ],
+    "numReplicas": 3,
+    "minReplicaMemoryGb": 16.0,
+    "maxReplicaMemoryGb": 120.0
+  }
+}
+```
+
+이 가이드의 나머지 단계에 필요한 정보를 추출합니다:
+
+```bash
+CH_ID=$(jq -r .service.id ch.json)
+CH_PASSWORD=$(jq -r .password ch.json)
+CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .host' ch.json)
+```
+
+비밀번호를 분실한 경우 `clickhousectl cloud service reset-password "$CH_ID"`를 사용하여 새 비밀번호를 생성하십시오.
+
+`clickhousectl`로 생성한 서비스에는 기본적으로 모든 IP 주소(`0.0.0.0/0`)를 허용하는 IP 액세스 목록이 설정됩니다. 액세스를 제한하려면 서비스를 생성할 때 `--ip-allow`를 지정하십시오. [&quot;IP 필터 설정&quot;](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)을 참조하십시오.
+
+<div id="wait-for-provisioning">
+  ## 서비스 프로비저닝이 완료될 때까지 기다리기
+</div>
+
+프로비저닝에는 약 1분이 걸립니다. 상태가 `running`이 될 때까지 폴링하십시오:
+
+```bash
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+<div id="run-sql">
+  ## Query API로 SQL 실행
+</div>
+
+`clickhousectl cloud service query`는 HTTP를 통해 SQL을 실행하며, 로컬 `clickhouse` 바이너리나 서비스 비밀번호가 필요하지 않습니다. 처음 호출하면 Query API 엔드포인트와 서비스 범위 API Key가 자동으로 프로비저닝됩니다:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+```
+
+```text
+Provisioning Query API endpoint + key for service 'quickstart-ch'...
+{"name":"INFORMATION_SCHEMA"}
+{"name":"default"}
+{"name":"information_schema"}
+{"name":"system"}
+```
+
+파이프 출력은 기본적으로 `JSONEachRow` 형식을 사용합니다. 표 형식으로 출력하려면 대신 `--format PrettyCompact`를 전달하십시오.
+
+<div id="create-database-and-table">
+  ## 데이터베이스 및 테이블 생성
+</div>
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE DATABASE IF NOT EXISTS helloworld"
+
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE helloworld.my_first_table (
+    user_id UInt32,
+    message String,
+    timestamp DateTime,
+    metric Float32
+  ) ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)"
+```
+
+두 명령어 모두 `OK`를 출력합니다. 몇 개의 행을 삽입하세요:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!', now(), -1.0),
+    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+```
+
+정상적으로 작동하는지 확인합니다:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
+```
+
+```text
+{"user_id":102,"message":"Insert a lot of rows per batch","timestamp":"2026-08-26 00:00:00","metric":1.41421}
+{"user_id":102,"message":"Sort your data based on your commonly-used queries","timestamp":"2026-08-27 00:00:00","metric":2.718}
+{"user_id":101,"message":"Hello, ClickHouse!","timestamp":"2026-08-27 10:41:28","metric":-1}
+{"user_id":101,"message":"Granules are the smallest chunks of data read","timestamp":"2026-08-27 10:41:33","metric":3.14159}
+```
+
+타임스탬프는 삽입을 실행한 시점에 따라 달라지므로, 실제 값은 예시와 다를 수 있습니다.
+
+<div id="load-csv-file">
+  ## CSV 파일 로드
+</div>
+
+`data.csv`라는 CSV 파일에 다음 텍스트가 있다고 가정합니다.
+
+```text title="data.csv"
+102,This is data in a file,2022-02-22 10:43:28,123.45
+101,It is comma-separated,2022-02-23 00:00:00,456.78
+103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+```
+
+`INSERT ... FORMAT`은 stdin에서 데이터를 읽으므로 쿼리와 파일을 함께 파이프로 연결하십시오:
+
+```bash
+printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+새 행이 정상적으로 저장되었는지 확인합니다:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM helloworld.my_first_table"
+```
+
+```text
+{"count()":7}
+```
+
+<div id="native-client">
+  ## clickhouse client로 연결
+</div>
+
+[**clickhouse client**](/ko/concepts/features/interfaces/client)를 사용해 네이티브 프로토콜로 연결할 수도 있습니다. ClickHouse CLI가 `clickhouse` 바이너리를 관리하므로 별도의 클라이언트를 설치할 필요가 없습니다.
+
+```bash
+clickhousectl local use latest
+```
+
+최신 `clickhouse` 바이너리를 설치하고 `~/.local/bin/clickhouse`에 심볼릭 링크를 생성합니다. 따라서 `PATH` 어디에서나 일반 `clickhouse` 명령을 사용할 수 있습니다.
+
+그런 다음 생성 응답의 호스트명과 비밀번호를 사용해 연결합니다. `--query`를 사용하면 결과가 출력된 후 클라이언트가 종료되고, 사용하지 않으면 대화형 프롬프트(`:)`)가 표시됩니다. 프롬프트에서는 `exit`로 종료할 수 있습니다:
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp FORMAT TabSeparated"
+```
+
+```text
+102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
+102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
+101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
+101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
+```
+
+동일한 명령 형식으로 파일을 업로드할 수 있습니다:
+
+```bash
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+```
+
+<div id="cleanup">
+  ## 정리
+</div>
+
+서비스를 삭제하면 모든 데이터가 영구적으로 삭제됩니다. `--force`는 실행 중인 서비스를 먼저 중지합니다:
+
+```bash
+clickhousectl cloud service delete "$CH_ID" --force
+```
+
+데이터는 유지하면서 컴퓨트 비용을 중단하려면 대신 `clickhousectl cloud service stop "$CH_ID"`를 사용하여 서비스를 중지하십시오.

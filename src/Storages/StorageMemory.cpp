@@ -25,6 +25,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -53,7 +54,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace MemorySetting
@@ -336,19 +337,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
-    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
-    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
-    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
-    const auto final_status = executor.getExecutionStatus();
-    const bool cancelled
-        = final_status == PipelineExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutionStatus::CancelledByUser;
-
+    const auto process_list_element = pipeline.getProcessListElement();
+    const bool cancelled = process_list_element && !process_list_element->checkTimeLimitSoft();
     auto throw_on_cancellation = [&]
     {
-        if (final_status == PipelineExecutionStatus::CancelledByTimeout)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+        if (process_list_element->isKilled() && process_list_element->getCancelReason() != CancelReason::TIMEOUT)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
     };
 
     std::unique_ptr<Blocks> new_data;
@@ -615,8 +611,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
     }
 
     TemporaryDataOnDiskSettings tmp_data_settings;
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+    tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
     auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
     const auto & read_settings = backup_entries_collector.getReadSettings();
 

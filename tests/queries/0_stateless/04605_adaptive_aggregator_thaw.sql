@@ -7,10 +7,8 @@
 -- too often for staging to pay. Every cell compares the same query with the feature off and on,
 -- so the expected output is a column of 1s.
 
-SET max_rows_to_group_by = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
-SET enable_sharding_aggregator = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 -- The hash-table statistics remember the thaw verdict and later runs of a marked query skip the
 -- adaptive engagement, so with them on only the first run of each cell would exercise the thaw.

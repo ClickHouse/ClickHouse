@@ -42,12 +42,12 @@ wire를 통해 행을 전달하는 모든 것은 **블록**입니다. **블록**
 
 Native 형식은 4가지 기본 인코딩을 기반으로 합니다.
 
-| Primitive       | Size                 | Description                  |
-| --------------- | -------------------- | ---------------------------- |
-| VarUInt         | 1–10 B               | LEB-128 가변 길이 부호 없는 정수       |
-| Fixed-width int | 1, 2, 4, 8, 16, 32 B | 리틀 엔디언, 부호 있는 정수에는 2의 보수를 사용 |
-| String          | variable             | VarUInt 길이 프리픽스 + raw bytes  |
-| Bool            | 1 B                  | `0x00` = false, 0이 아니면 true  |
+| Primitive       | Size                 | Description                                                                             |
+| --------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| VarUInt         | 1–10 B               | LEB-128 가변 길이 부호 없는 정수                                                                  |
+| 고정 길이 int | 1, 2, 4, 8, 16, 32 B | 리틀 엔디언, 부호 있는 정수에는 2의 보수를 사용                                                            |
+| String          | variable             | 값당 VarUInt 길이 프리픽스 + raw bytes, revision `54492`+에서는 별도의 [offsets stream](#string-type) |
+| Bool            | 1 B                  | `0x00` = false, 0이 아니면 true                                                             |
 
 <div id="varuint">
   ### VarUInt
@@ -334,27 +334,28 @@ Native 바이트 스트림의 형태는 무엇보다도 writer와 reader가 사�
 
 각 기능에는 `DBMS_MIN_REVISION_WITH_*` 임계값이 있습니다. writer는 revision이 해당 임계값에 도달했을 때만 그 기능을 기록하고, reader도 정확히 같은 규칙으로 이를 확인하므로 양쪽이 보조를 맞춥니다. 어느 한쪽에서든 revision을 잘못 적용하면 서로 어긋나게 됩니다. Native 형식에서 중요한 제어 항목은 다음과 같습니다.
 
-| 기능                                           | 임계값 상수                                                             | revision | 임계값 미만일 때의 영향                                                                                                                                                                                 |
-| -------------------------------------------- | ------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BlockInfo` 접두사                           | (임의의 값 `> 0`)                                                      | `1`      | [`BlockInfo`](#blockinfo) 접두사가 완전히 생략되며, 블록은 `num_columns`, `num_rows`, 컬럼만으로 구성됩니다.                                                                                               |
-| `has_custom_serialization` 바이트              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | 컬럼별 [`has_custom_serialization`](#column-wire-layout) 바이트가 생략되며, 모든 컬럼이 기본 직렬화를 사용합니다(희소, 복제된, 분리된 형식 없음).                                                                                   |
-| wire 상의 `LowCardinality`                     | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 특수한 경우로, 단순한 임계값 미만 규칙을 **따르지 않습니다**. `LowCardinality(T)`는 revision이 *0이 아니고* `54405` 미만일 때만 기본 타입 `T`로 벗겨지며, 또는 별도로 강제 제거될 때만 제거됩니다. revision `0`에서는 유지됩니다. 아래 참고를 확인하십시오.                   |
-| V2 `Dynamic` / `JSON` 직렬화                    | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` 및 `JSON`/`Object`는 V2 대신 V1 직렬화(`max_dynamic_*` 매개변수 포함)을 사용합니다.                                                                                                                    |
-| 집계 함수 버전 관리                                  | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state가 내장된 버전 없이 기록됩니다.                                                                                                                                                   |
-| `quantileDeterministic` state의 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | `AggregateFunction(quantileDeterministic, ...)` state(및 같은 함수의 `quantiles`/`median` 표기)는 뒤따르는 `UInt8 skip_degree` 없이 state version `0`으로 기록됩니다. [type aliases](#type-aliases) 아래의 참고를 확인하십시오. |
-| `BlockInfo`의 `out_of_order_buckets`          | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` field ID `3`이 기록되지 않습니다([BlockInfo](#blockinfo) 참고).                                                                                                                              |
-| 병렬 블록 마샬링 (`DETACHED`)                    | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | 컬럼은 `ColumnBLOB`으로 래핑되지 않으며, `DETACHED` / `DETACHED_OVER_SPARSE` kind도 나타나지 않습니다([kind&#95;stack](#kind-stack-and-sparse-encoding) 참고).                                                       |
-| `DateTime(tz)` type parameter                | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `타입 문자열`에서 시간대 매개변수가 빠져 `DateTime('UTC')`가 단순한 `DateTime`으로 전달됩니다.                                                                                                                            |
+| 기능                                           | 임계값 상수                                                             | revision | 임계값 미만일 때의 영향                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BlockInfo` 접두사                              | (임의의 값 `> 0`)                                                      | `1`      | [`BlockInfo`](#blockinfo) 접두사가 완전히 생략되며, 블록은 `num_columns`, `num_rows`, 컬럼만으로 구성됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `has_custom_serialization` 바이트               | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | 컬럼별 [`has_custom_serialization`](#column-wire-layout) 바이트가 생략되며, 모든 컬럼이 기본 직렬화를 사용합니다(희소, 복제된, 분리된 형식 없음).                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| wire 상의 `LowCardinality`                     | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 특수한 경우로, 단순한 임계값 미만 규칙을 **따르지 않습니다**. `LowCardinality(T)`는 revision이 *0이 아니고* `54405` 미만일 때만 기본 타입 `T`로 벗겨지며, 또는 별도로 강제 제거될 때만 제거됩니다. revision `0`에서는 유지됩니다. 아래 참고를 확인하십시오.                                                                                                                                                                                                                                                                                                                                                                      |
+| V2 `Dynamic` / `JSON` 직렬화                    | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` 및 `JSON`/`Object`는 V2 대신 V1 직렬화(`max_dynamic_*` 매개변수 포함)을 사용합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Offsets `String` 직렬화                         | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`     | `54492`  | 임계값 미만에서는 `String` 컬럼 데이터가 [offsets 레이아웃](#string-type)(`UInt64` 누적 바이트 오프셋 다음에 모든 데이터를 연결) 대신 값별 레이아웃(행마다 `VarUInt` 길이 접두사 + raw bytes)을 사용합니다. 컬럼별 wire 마커 없이 revision만으로 제어됩니다. 임계값 이상에서는 offsets 레이아웃이 복합 타입(`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) 내부에 중첩된 `String`에도 적용되지만, `LowCardinality` 컬럼의 딕셔너리에는 **적용되지 않습니다**. `LowCardinality` 딕셔너리는 항상 기본 중첩 직렬화로 기록되므로 `String` 값은 값별 레이아웃을 유지합니다(`LowCardinality(String)` 및 `LowCardinality(Nullable(String))` 포함). `Buffers` 포맷은 프로토콜의 일부가 아니며 항상 값별 레이아웃을 사용합니다. |
+| 집계 함수 버전 관리                                  | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state가 내장된 버전 없이 기록됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `quantileDeterministic` state의 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491`  | `AggregateFunction(quantileDeterministic, ...)` state(및 같은 함수의 `quantiles`/`median` 표기)는 뒤따르는 `UInt8 skip_degree` 없이 state version `0`으로 기록됩니다. [type aliases](#type-aliases) 아래의 참고를 확인하십시오.                                                                                                                                                                                                                                                                                                                                                    |
+| `BlockInfo`의 `out_of_order_buckets`          | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` field ID `3`이 기록되지 않습니다([BlockInfo](#blockinfo) 참고).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 병렬 블록 마샬링 (`DETACHED`)                       | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | 컬럼은 `ColumnBLOB`으로 래핑되지 않으며, `DETACHED` / `DETACHED_OVER_SPARSE` kind도 나타나지 않습니다([kind&#95;stack](#kind-stack-and-sparse-encoding) 참고).                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `DateTime(tz)` type parameter                | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | `타입 문자열`에서 시간대 매개변수가 빠져 `DateTime('UTC')`가 단순한 `DateTime`으로 전달됩니다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 즉, revision `0`은 거의 모든 항목에서 가장 보수적인 인코딩입니다. 스트림에는 `BlockInfo`가 없고, `has_custom_serialization` 바이트도 없으며, V1 `Dynamic`/`JSON`, 집계 함수 버전 정보 없음, 그리고 시간대 매개변수가 빠진 단순한 `DateTime`만 전달됩니다. 집계 함수 *state* version은 revision `0`에서 예외입니다. version을 도출할 상대가 없습니다. 스트림은 이를 생성한 주체(`StripeLog` data file, `Set`/`Join` backup, `Native` 형식 file)가 기록하고 다시 읽기 때문입니다. 따라서 writer는 state를 version `0`으로 낮추는 대신 type에 고정된 version을 유지하며(평소처럼 타입 문자열에 명시), version을 고정하지 않는 type만 version `0`으로 기록됩니다.
 
 예외는 `LowCardinality` 하나뿐이며, 이 점이 중요합니다. writer의 검사 조건은 `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`입니다. 여기서 핵심은 앞부분의 `client_revision &&`입니다. revision이 정확히 `0`이면 전체 조건은 단락 평가되어 false가 됩니다.
 
-따라서 revision `0` — `FORMAT Native`의 기본값 — 에서는 `LowCardinality(T)`가 **제거되지 않습니다**. 해당 타입 문자열과 블록별 상태 접두사는 스트림에 그대로 남고, revision-`0` reader는 이를 그대로 다시 읽습니다. 제거는 `54405` 미만인 0이 아닌 revision에서만 시작되거나, revision과 무관하게 강제로 제거될 때만 적용됩니다.
+따라서 `FORMAT Native`의 기본값인 revision `0`에서는 `LowCardinality(T)`가 **제거되지 않습니다**. 해당 타입 문자열과 블록별 state 접두사는 스트림에 유지되며, revision `0` reader가 이를 그대로 다시 읽습니다. 제거는 0이 아닌 revision이 `54405` 미만일 때 또는 revision과 관계없이 강제될 때만 적용됩니다.
 
-이 강제 동작을 제어하는 것이 `remove_low_cardinality` flag입니다. `FORMAT Native` 출력에서는 이 값을 절대 설정하지 않지만, 네이티브 TCP 경로에서는 `low_cardinality_allow_in_native_format = 0`일 때 설정합니다(기본값은 `1`). 다시 말해, 이 setting은 네이티브 TCP 출력에는 영향을 주지만 `FORMAT Native`에는 아무 영향도 주지 않습니다.
+이 강제 제거는 `remove_low_cardinality` flag로 수행됩니다. `FORMAT Native` 출력에서는 이 flag가 설정되지 않지만, `low_cardinality_allow_in_native_format = 0`일 때(기본값은 `1`) 네이티브 TCP 경로에서는 설정됩니다. 즉, 이 setting은 네이티브 TCP 출력만 변경하며 `FORMAT Native`에는 아무런 영향을 주지 않습니다.
 
-실무적으로 중요한 요점은 다음과 같습니다. 기본 `FORMAT Native` 스트림에는 `LowCardinality`가 정상적으로 포함될 수 있으므로, revision `0`에서 이 기능이 없다고 간주해서는 안 됩니다.
+실무적으로 중요한 점은 기본 `FORMAT Native` 스트림에 `LowCardinality`가 정상적으로 포함될 수 있으므로, 이를 revision `0`에서 없는 기능으로 취급해서는 안 된다는 것입니다.
 
 <div id="revision-per-channel">
   ### 데이터가 이동하는 경로에 따라 revision이 어디서 결정되는지
@@ -374,37 +375,42 @@ Native 바이트 스트림의 형태는 무엇보다도 writer와 reader가 사�
   #### `FORMAT Native` 출력 — 기본값은 revision 0이며, HTTP에서는 더 높일 수 있습니다
 </div>
 
-`Native` *출력* 포맷의 기본 revision은 **`0`**입니다. 여기에는 HTTP를 통한 `SELECT ... FORMAT Native`, `INTO OUTFILE ... FORMAT Native`, 그리고 `clickhouse-client`가 기록하는 `Native` 출력이 포함됩니다. 각 경우 모두 출력 팩토리가 `FormatSettings::client_protocol_version`을 그대로 `NativeWriter`에 전달합니다.
+`Native` *출력* 포맷의 기본 revision은 **`0`**입니다. 여기에는 HTTP를 통한 `SELECT ... FORMAT Native`, `INTO OUTFILE ... FORMAT Native`, 그리고 `clickhouse-client`가 기록하는 `Native` 출력이 포함됩니다. 각 경우 모두 출력 팩토리가 `FormatSettings::client_protocol_version`을 그대로 `NativeWriter`에 전달하며, 이는 `BlockInfo` / `has_custom_serialization` 프레이밍과 offsets `String` 레이아웃을 모두 결정합니다. 따라서 높인 `client_protocol_version`(≥ `54492`)을 사용하는 HTTP `SELECT ... FORMAT Native`는 offsets 레이아웃을 기록하는 반면, 기본 revision `0`은 이식 가능한 값별 레이아웃을 유지합니다.
 
-하지만 HTTP에서는 기본값이 항상 고정되는 것은 아닙니다. 클라이언트는 `?client_protocol_version=<n>` 쿼리 매개변수로 이 값을 높일 수 있으며, HTTP handler는 이를 SQL 설정이 아니라 예약된 매개변수로 처리합니다. 이 값은 쿼리 Context에 저장되고, 포맷 계층이 이를 `FormatSettings`로 복사합니다. 값을 충분히 높이면 HTTP `FORMAT Native` 출력에도 TCP 경로와 마찬가지로 `BlockInfo` 접두부와 `has_custom_serialization` 바이트가 포함되기 시작합니다. 따라서 HTTP `FORMAT Native` payload가 항상 revision `0`이라고 단정해서는 안 됩니다. 반면 파일 내보내기와 로컬 `clickhouse-client` 출력에는 이런 조정 수단이 없으므로 `0`으로 유지됩니다.
+하지만 HTTP에서는 기본값이 항상 고정되는 것은 아닙니다. 클라이언트는 `?client_protocol_version=<n>` 쿼리 매개변수로 이 값을 높일 수 있으며, HTTP handler는 이를 SQL 설정이 아니라 예약된 매개변수로 처리합니다. 이 값은 쿼리 Context에 저장되고, 포맷 계층이 이를 `FormatSettings`로 복사합니다. 값을 충분히 높이면 HTTP `FORMAT Native` 출력에도 TCP 경로와 마찬가지로 `BlockInfo` 접두부와 `has_custom_serialization` 바이트가 포함되기 시작합니다. 따라서 HTTP `FORMAT Native` payload가 항상 revision `0`이라고 단정해서는 안 됩니다.
+
+매개변수는 전체 쿼리 Context에 저장되므로 결과 스트림뿐 아니라 해당 요청을 위해 생성된 모든 `NativeWriter`에 적용됩니다. 특히 높인 `?client_protocol_version=`을 사용한 HTTP의 `INSERT INTO FUNCTION file('x.native', 'Native', ...) SELECT ...`와 같은 서버 측 쓰기는 해당 revision으로 파일을 기록합니다. 이는 오래전부터 존재한 동작으로(`String` offsets 직렬화보다 먼저 도입되었으며 `BlockInfo`와 `has_custom_serialization`에도 적용됨), 비대칭적입니다. 읽기 측(아래 참조)은 같은 방식으로 높아지지 않으므로 이러한 파일은 `file(...)`을 통해 다시 읽을 수 없습니다. 다시 읽을 데이터를 기록하는 요청에서는 `client_protocol_version`을 지정하지 마십시오. `INTO OUTFILE`과 로컬 `clickhouse-client` 출력에는 이런 조정 수단이 없으므로 `0`으로 유지됩니다.
 
 <div id="revision-input">
   #### `FORMAT Native` 입력 — 항상 revision 0
 </div>
 
-`Native` *입력* 포맷은 반대로 동작합니다. 즉, **revision `0`으로 하드코딩**되어 있으며 `client_protocol_version`은 전혀 참조하지 않습니다. `INSERT ... FORMAT Native`의 본문(body)을 파싱하든 `Native` 파일을 읽든, `NativeReader`를 리터럴 `0`으로 생성하므로 `BlockInfo` 접두사를 전혀 예상하지 않고, `has_custom_serialization` 바이트도 읽지 않으며, 항상 기본 serialization을 가정합니다.
+`Native` *입력* 포맷은 항상 revision **`0`**으로 `NativeReader`를 생성합니다. `BlockInfo` 접두사를 예상하지 않고 `has_custom_serialization` 바이트도 읽지 않으며, `INSERT ... FORMAT Native` 본문을 파싱하거나 `Native` 파일을 읽거나 스키마를 추론하는 경우를 포함해 항상 기본 직렬화를 가정합니다. `?client_protocol_version=<n>`은 입력 revision을 높이지 않습니다(이 매개변수는 출력 측에서만 읽습니다).
 
-따라서 `client_protocol_version`은 출력 전용입니다. `INSERT ... FORMAT Native` 요청에 높은 `?client_protocol_version=` 값(예: `DBMS_TCP_PROTOCOL_VERSION`)을 붙여도 본문을 읽는 방식에는 아무런 영향이 없습니다. 본문은 여전히 revision `0`이어야 합니다. `BlockInfo` 접두사나 `has_custom_serialization` 바이트가 포함된 본문을 입력하면 리더의 동기화가 어긋나고, 그 결과 성공적으로 삽입되는 것이 아니라 parse 오류(`INCORRECT_DATA` 또는 `CANNOT_READ_ALL_DATA`)가 발생합니다.
+입력 revision은 항상 `0`이므로 입력 포맷은 언제나 값별 `String` 레이아웃을 읽습니다. offsets 레이아웃으로 기록된 스트림(네이티브 TCP 프로토콜을 통하거나 `client_protocol_version`을 높인 `SELECT ... FORMAT Native`를 통해)은 `FORMAT Native` 입력으로 다시 읽을 수 없습니다. 이는 `BlockInfo` 프레이밍과 동일한 비대칭성입니다.
 
 <div id="revision-round-trip">
   ### 왕복 처리 시의 영향
 </div>
 
-`FORMAT Native`에서는 양쪽 모두 revision `0`을 사용하는 것이 가장 안전하며, 이것이 기본값입니다. revision `0`에서 `SELECT ... FORMAT Native`로 기록한 데이터는 문제 없이 그대로 `INSERT ... FORMAT Native`로 다시 읽어들일 수 있습니다.
+`FORMAT Native`에서는 양쪽 모두 revision `0`이 기본값입니다. revision `0`에서 `SELECT ... FORMAT Native`로 기록한 데이터는 문제 없이 그대로 `INSERT ... FORMAT Native`로 다시 읽어들일 수 있습니다.
 
-문제가 생기는 경우는 출력 revision을 의도적으로 높였을 때뿐입니다. `?client_protocol_version=<large>`를 사용한 `SELECT ... FORMAT Native`는 `BlockInfo` 및 `has_custom_serialization` 바이트를 포함하는 스트림을 생성하며, revision-`0` 입력 경로에서는 이를 다시 읽을 수 없습니다. 이런 데이터가 왕복되어야 한다면, 데이터를 생성하는 `SELECT`에서 `client_protocol_version`을 지정하지 않거나, `FORMAT Native` 대신 각 방향에서 handshake로 협상된 revision을 사용하는 네이티브 TCP 프로토콜로 데이터를 전송하십시오.
+출력 revision을 높이면(`SELECT`에서 `?client_protocol_version=<n>`) 생성되는 스트림에는 `BlockInfo` 및 `has_custom_serialization` 프레이밍과 offsets `String` 레이아웃이 포함되지만, 항상 revision `0`인 입력 형식은 이들을 다시 읽지 않습니다. 따라서 `client_protocol_version`을 높이는 것은 HTTP를 통한 `FORMAT Native` 왕복 처리에는 의미가 없으며, 네이티브 TCP 프로토콜을 사용하는 consumer에만 의미가 있습니다.
 
-| 채널                                                        | 쓰기 revision                         | 읽기 revision                            | `BlockInfo` / custom serialization                                    |
-| --------------------------------------------------------- | ----------------------------------- | -------------------------------------- | --------------------------------------------------------------------- |
-| Native TCP 데이터 패킷                                         | 피어가 알린 revision(방향별)                | 피어가 알린 revision(방향별)                   | revision이 `> 0`이면 `BlockInfo`, `≥ 54454`이면 `has_custom_serialization` |
-| HTTP를 통한 `SELECT ... FORMAT Native`                       | `client_protocol_version` (기본값 `0`) | 해당 없음                                  | `client_protocol_version`을 높인 경우에만                                    |
-| HTTP를 통한 `INSERT ... FORMAT Native`                       | 해당 없음                               | `0` (고정, `client_protocol_version` 무시) | 읽지 않음                                                                 |
-| `INTO OUTFILE` / 파일 / `clickhouse-client` `FORMAT Native` | `0`                                 | `0`                                    | 없음(단, `LowCardinality`는 유지됨 — 위 참고 사항 참조)                             |
+파일은 비대칭적인 경우입니다. 서버 측 `INSERT INTO FUNCTION file(...)`(또는 `s3`, `url`)에서 높인 `?client_protocol_version=`은 해당 revision으로 파일을 *기록*하지만, `file(...)` *읽기*는 항상 revision `0`으로 파싱하므로 이러한 파일은 왕복 처리되지 않습니다. 파일을 기록하는 request에서 `client_protocol_version`을 지정하지 않아 파일이 일반 revision `0`이 되도록 하거나, 각 방향에서 핸드셰이크로 협상된 revision을 사용하는 네이티브 TCP 프로토콜로 데이터를 전송하십시오.
+
+| 채널                                                             | 쓰기 revision                         | 읽기 revision          | `BlockInfo` / custom serialization                                    |
+| -------------------------------------------------------------- | ----------------------------------- | -------------------- | --------------------------------------------------------------------- |
+| Native TCP 데이터 패킷                                              | 피어가 알린 revision(방향별)                | 피어가 알린 revision(방향별) | revision이 `> 0`이면 `BlockInfo`, `≥ 54454`이면 `has_custom_serialization` |
+| HTTP를 통한 `SELECT ... FORMAT Native`                            | `client_protocol_version` (기본값 `0`) | 해당 없음                | `client_protocol_version`을 높인 경우에만                                    |
+| HTTP를 통한 `INSERT ... FORMAT Native` (body)                     | 해당 없음                               | `0` (항상)             | 프레이밍 없음; `String`은 항상 값별                                              |
+| HTTP를 통한 `INSERT INTO FUNCTION file`/`s3`/`url(..., 'Native')` | `client_protocol_version` (기본값 `0`) | `0` (항상 읽음)          | 쓰기 시 `client_protocol_version`을 높인 경우에만 — 이러한 파일은 다시 읽을 수 없음          |
+| `INTO OUTFILE` / 로컬 `clickhouse-client` `FORMAT Native`        | `0`                                 | `0`                  | 없음(단, `LowCardinality`는 유지됨 — 위 참고 사항 참조)                             |
 
 <Info>
-  **Protocol revision과 serialization version**
+  **프로토콜 revision과 serialization version**
 
-  여기서 말하는 protocol revision을 [serialization version](#serialization-version-concept)과 혼동하지 마십시오. 여기서의 revision은 connection 또는 request 전체에 적용되며 바이트 자체에는 나타나지 않습니다. 반면 serialization version은 컬럼별로 적용되며, [versioned types](#versioned-types)에 의해 전달되고 비어 있지 않은 모든 block에 기록됩니다. revision은 해당 기능 자체의 존재 여부를 결정하고, serialization version은 versioned 컬럼 내부에서 해당 타입의 인코딩 variant 중 무엇이 뒤따를지를 결정합니다.
+  여기서 말하는 프로토콜 revision을 [serialization version](#serialization-version-concept)과 혼동하지 마십시오. 여기서의 revision은 connection 또는 request 전체에 적용되며 바이트 자체에는 나타나지 않습니다. 반면 serialization version은 컬럼별로 적용되며, [versioned types](#versioned-types)에 의해 전달되고 비어 있지 않은 모든 block에 기록됩니다. revision은 해당 기능 자체의 존재 여부를 결정하고, serialization version은 versioned 컬럼 내부에서 해당 타입의 인코딩 variant 중 무엇이 뒤따를지를 결정합니다.
 </Info>
 
 <div id="data-types">
@@ -758,7 +764,9 @@ null-map 접두사는 표준 `Nullable` 프레이밍입니다([널 허용](#null
   #### String
 </div>
 
-유형 문자열: `String`. `String` 컬럼은 길이 접두사가 붙은 바이트 시퀀스 `num_rows`개로 이루어집니다:
+타입 문자열: `String`. `String` 컬럼에는 프로토콜 revision에 따라 선택되는 두 가지 wire layout이 있습니다([revision이 제어하는 항목](#what-the-revision-gates) 참조). revision은 네이티브 TCP 프로토콜에서 협상된 revision을 의미하며, `FORMAT Native` 출력에서는 `client_protocol_version`입니다(기본값 `0`). `FORMAT Native` 입력의 revision은 항상 `0`이며, `Buffers` 포맷은 항상 값별 layout을 사용합니다.
+
+**값별 layout** — `FORMAT Native`의 revision-`0` 기본값을 포함해 `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION`(`54492`) 미만인 경우: 길이 접두사가 있는 `num_rows`개의 바이트 시퀀스:
 
 ```text
 [VarUInt: byte_length] [byte_length bytes: raw value]
@@ -766,9 +774,9 @@ null-map 접두사는 표준 `Nullable` 프레이밍입니다([널 허용](#null
 ...
 ```
 
-행 사이에는 길이 프리픽스 외에는 구분자가 없고, 행 수준 상태도 없습니다. 빈 문자열은 `0x00` 바이트 1개로 표현됩니다. ClickHouse `String`은 텍스트 지향이 아니라 바이트 지향입니다. 즉, UTF-8 유효성은 강제되지 않으며 값에는 내장 NUL을 포함해 어떤 바이트든 들어갈 수 있습니다. UTF-8 string 유형을 대상으로 하는 디코더는 읽을 때 유효성을 검사하거나 호출자에게 raw bytes를 그대로 노출합니다. 컬럼이 차지하는 총 바이트 수는 모든 행에 대해 `Σ (varuint_size(len_i) + len_i)`입니다.
+길이 프리픽스 외에는 행 사이에 구분자가 없고 행 수준의 상태도 없습니다. 빈 문자열은 `0x00` 바이트 1개로 표현됩니다. 컬럼이 소비하는 총 바이트 수는 모든 행에 대해 `Σ (varuint_size(len_i) + len_i)`입니다.
 
-3개의 문자열 `["ab", "", "c"]`로 이루어진 컬럼(총 6바이트):
+문자열 3개로 구성된 컬럼 `["ab", "", "c"]`(총 6바이트):
 
 ```text
 02 61 62                 row 0: length 2, "ab"
@@ -776,11 +784,33 @@ null-map 접두사는 표준 `Nullable` 프레이밍입니다([널 허용](#null
 01 63                    row 2: length 1, "c"
 ```
 
+**오프셋 레이아웃** — revision `54492` 이상: 누적 바이트 오프셋이 먼저 오고 그 뒤에 모든 데이터가 오는, 연결된 두 개의 스트림:
+
+```text
+[UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
+[last offset bytes: all values concatenated, no separators]
+```
+
+오프셋은 `Array`가 네이티브 프로토콜을 통해 오프셋을 전송하는 것과 같은 방식으로 그대로 전송됩니다. 오프셋 `i`는 데이터 blob에서 값 `i`의 끝 위치이므로 값 `i`의 크기는 `offset[i] - offset[i-1]`(`offset[-1] = 0`)이며, 마지막 오프셋은 데이터 blob의 전체 크기입니다. 디코더는 `8 × num_rows`바이트의 오프셋을 읽은 후 마지막 오프셋을 정확한 길이로 사용해 전체 데이터 blob를 한 번에 읽습니다. 이를 통해 행별 파싱 대신 버퍼를 정확한 크기로 미리 할당하고 대량 복사할 수 있으며, 크기를 오프셋으로 변환할 필요도 없습니다. `num_rows = 0`인 컬럼은 두 스트림 모두에 바이트를 추가하지 않습니다.
+
+동일한 3개의 문자열 `["ab", "", "c"]`(총 27바이트):
+
+```text
+02 00 00 00 00 00 00 00  row 0 offset: 2  (end of "ab")
+02 00 00 00 00 00 00 00  row 1 offset: 2  (end of "", so unchanged)
+03 00 00 00 00 00 00 00  row 2 offset: 3  (end of "c")
+61 62 63                 "ab" + "" + "c"
+```
+
+offsets 레이아웃이 적용되면 복합 타입(`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`)에 중첩된 `String`을 포함해 블록의 모든 `String`에 적용됩니다. 단, 한 가지 예외가 있습니다. [`LowCardinality`](#lowcardinality) 컬럼의 딕셔너리는 항상 기본 중첩 직렬화로 기록되므로, 해당 `String` 값은 모든 revision에서 값별 레이아웃을 유지합니다. 여기에는 `LowCardinality(String)`, `LowCardinality(Nullable(String))` 및 `String`을 포함하는 기타 모든 `LowCardinality` 딕셔너리가 포함됩니다.
+
+두 레이아웃에서 ClickHouse `String`은 텍스트가 아닌 바이트를 기준으로 처리됩니다. UTF-8 유효성은 강제되지 않으며, 값에는 내장 NUL을 포함한 모든 바이트가 포함될 수 있습니다. UTF-8 문자열 타입을 대상으로 하는 디코더는 읽는 동안 유효성을 검사하거나 raw bytes를 caller에 노출합니다.
+
 <div id="fixedstring">
   #### FixedString(N)
 </div>
 
-유형 문자열은 `FixedString(N)`이며, 여기서 `N`은 양의 정수입니다(예: `FixedString(16)`). 이 컬럼은 정확히 `N × num_rows`개의 raw bytes로 구성되며, 길이 프리픽스나 구분자는 없습니다. 디코더는 유형 문자열에서 `N`을 파싱한 뒤 각 행마다 해당 바이트 수만큼 읽습니다.
+타입 문자열은 `FixedString(N)`이며, 여기서 `N`은 양의 정수입니다(예: `FixedString(16)`). 이 컬럼은 정확히 `N × num_rows`개의 raw bytes로 구성되며, 길이 프리픽스나 구분자는 없습니다. 디코더는 타입 문자열에서 `N`을 파싱한 뒤 각 행마다 해당 바이트 수만큼 읽습니다.
 
 SQL에서 `N`바이트보다 짧은 값을 삽입할 때(예: `CAST('abc' AS FixedString(5))`), server는 선언된 길이에 맞게 오른쪽을 NUL 바이트(`0x00`)로 채웁니다. 이 패딩 바이트는 저장된 값의 일부이며, wire로 전송될 때도 그대로 전달됩니다. 트리밍은 클라이언트 측에서 처리해야 합니다. `String`과 마찬가지로 `FixedString(N)`은 텍스트형이라기보다 바이트 배열에 가까우며, 일반적으로 고정 폭 식별자, 주소 바이트, 또는 hash 다이제스트에 사용됩니다.
 
@@ -793,14 +823,14 @@ SQL에서 `N`바이트보다 짧은 값을 삽입할 때(예: `CAST('abc' AS Fix
 
 비교 대상인 두 문자열 타입:
 
-| 속성          | `String`           | `FixedString(N)`    |
-| ----------- | ------------------ | ------------------- |
-| 행별 길이 접두어   | 예 (VarUInt)        | 아니요                 |
-| 행 크기        | 가변                 | 정확히 `N`바이트          |
-| 컬럼 총 바이트 수  | 가변                 | `N × num_rows`      |
-| NUL 바이트 패딩  | 해당 없음              | 서버에서 오른쪽으로 패딩       |
-| UTF-8 사용 예상 | 일반적으로 예 (강제되지는 않음) | 아니요 (raw bytes로 처리) |
-| 타입 매개변수     | None               | 정수 `N` 필수           |
+| 속성          | `String`                                               | `FixedString(N)`    |
+| ----------- | ------------------------------------------------------ | ------------------- |
+| 행별 길이 접두어   | 예 (VarUInt), 또는 revision `54492`+에서 별도의 offsets stream | 아니요                 |
+| 행 크기        | 가변                                                     | 정확히 `N`바이트          |
+| 컬럼 총 바이트 수  | 가변                                                     | `N × num_rows`      |
+| NUL 바이트 패딩  | 해당 없음                                                  | 서버에서 오른쪽으로 패딩       |
+| UTF-8 사용 예상 | 일반적으로 예 (강제되지는 않음)                                     | 아니요 (raw bytes로 처리) |
+| 타입 매개변수     | None                                                   | 정수 `N` 필수           |
 
 <div id="composite-types">
   ### 복합 타입
@@ -1120,7 +1150,7 @@ Field 'b' stream (3 strings, 6 bytes):
 <Note>
   서로 연관된 다음 두 타입은 별칭이 **아닙니다**. 예를 들어 클라이언트는 `-State` 조합자 또는 분산 집계에서 `AggregateFunction` 컬럼을 받을 수 있으므로, 둘 다 유효한 `Native` 컬럼 타입입니다. 하지만 각각 이 페이지의 범위를 벗어나는 고유한 특수 페이로드를 포함합니다.
 
-  * `AggregateFunction(func, ...)`은 *중간* 집계 상태(최종 값이 아님)를 저장합니다. 바이너리 레이아웃은 집계 함수와 버전에 따라 달라집니다. 버전이 지정된 집계 함수는 타입 문자열의 첫 번째 인수로 0이 아닌 상태 버전을 명시합니다. 즉, `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`입니다. 반면 버전 `0`은 출력되지 않으므로 타입 문자열은 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`로 유지됩니다. 협상된 연결(revision이 `0` 초과)에서는 작성기가 프로토콜 revision만을 기준으로 버전을 선택합니다. wire에서 버전 `0`은 &quot;발표된 버전 없음&quot;과 구별할 수 없으므로, 로컬 타입에 고정된 버전이 있더라도 이를 사용하지 않습니다. 따라서 동일한 함수가 연결마다 다른 버전을 발표할 수 있으며, 판독기는 최신 버전이라고 가정하지 말고 타입 문자열에서 버전을 가져와야 합니다. revision `0`에서는 버전을 도출할 피어가 없습니다. 스트림은 자체 기술적이며 작성자가 이를 다시 읽습니다. 따라서 타입에 고정된 버전은 `0`으로 다운그레이드되지 않고 스트림과 발표된 타입 문자열에 유지됩니다. `quantileDeterministic`(`quantilesDeterministic` 및 `medianDeterministic` 표기 포함)은 revision `54491`부터 버전이 지정됩니다. 버전 `1`은 상태 끝에 `UInt8 skip_degree`를 추가하며, 접두사는 버전 `0`과 바이트 수준에서 동일합니다. 이 revision 미만에서는 작성기가 버전 `0` 상태를 내보내므로 이전 피어에는 영향이 없습니다. 이 모든 내용은 컨테이너 타입 내부에 중첩된 상태에도 동일하게 적용됩니다. 즉, `Array`, `Tuple`, `Map`, `Nullable`, `Variant`(대안에 명시된 버전은 판별자 순서는 바꾸지 않고 타입 문자열만 변경함), 또는 `Nested` / `SimpleAggregateFunction` 래퍼 내부의 상태에도 적용됩니다. 한 가지 `Variant` 예외 사례에는 wire 표현이 전혀 없습니다. 두 대안이 명시된 상태 버전만 다른 경우(타입 문자열이 다르므로 컬럼 타입으로는 유효함), 협상된 revision에 맞춰 둘 다 버전을 변경하면 동일한 대안으로 합쳐집니다. 따라서 송신자는 페이로드가 기록된 버전과 다른 버전을 발표하는 대신 전송을 실패시켜야 합니다. `Dynamic`은 revision 기반 버전 관리의 의도적인 예외입니다. `Dynamic` 컬럼은 자체 타입 목록과 명시적 버전 필드에 명시된 상태 버전을 담는 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding)을 통해 중첩 타입을 직접 발표합니다(공유 variant의 값은 저장된 상태에서도 이 방식으로 타입을 포함합니다). 이러한 발표는 컬럼 자체 데이터의 일부이며 모든 피어와 매체에서 동일하므로 협상된 revision에 맞춰 다시 작성되지 않습니다. 따라서 `Dynamic` 값 내부에 중첩된 상태는 타입에 명시된 버전으로 기록됩니다(`-State` 쿼리 결과는 버전을 명시하므로 새 상태에는 이 버전이 포함됩니다). 타입에 버전이 명시되지 않은 경우에는 버전 `0`으로 기록되며, 이는 모든 연결과 매체에서 동일합니다.
+  * `AggregateFunction(func, ...)`은 *중간* 집계 상태(최종 값이 아님)를 저장합니다. 바이너리 레이아웃은 집계 함수와 버전에 따라 달라집니다. 버전이 지정된 집계 함수는 타입 문자열의 첫 번째 인수로 0이 아닌 상태 버전을 명시합니다. 즉, `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`입니다. 반면 버전 `0`은 출력되지 않으므로 타입 문자열은 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`로 유지됩니다. 협상된 연결(revision이 `0` 초과)에서는 작성기가 프로토콜 revision만을 기준으로 버전을 선택합니다. wire에서 버전 `0`은 &quot;발표된 버전 없음&quot;과 구별할 수 없으므로, 로컬 타입에 고정된 버전이 있더라도 이를 사용하지 않습니다. 따라서 동일한 함수가 연결마다 다른 버전을 발표할 수 있으며, 판독기는 최신 버전이라고 가정하지 말고 타입 문자열에서 버전을 가져와야 합니다. revision `0`에서는 버전을 도출할 피어가 없습니다. 스트림은 자체 기술적이며 작성자가 이를 다시 읽습니다. 따라서 타입에 고정된 버전은 `0`으로 다운그레이드되지 않고 스트림과 발표된 타입 문자열에 유지됩니다. `quantileDeterministic`(`quantilesDeterministic` 및 `medianDeterministic` 표기 포함)은 revision `54491`부터 버전이 지정됩니다. 버전 `1`은 상태 끝에 `UInt8 skip_degree`를 추가하며, 접두사는 버전 `0`과 바이트 수준에서 동일합니다. 이 revision 미만에서는 작성기가 버전 `0` 상태를 내보내므로 이전 피어에는 영향이 없습니다. 이 모든 내용은 컨테이너 타입 내부에 중첩된 상태에도 동일하게 적용됩니다. 즉, `Array`, `Tuple`, `Map`, `Nullable`, `Variant`(대안에 명시된 버전은 판별자 순서는 바꾸지 않고 타입 문자열만 변경함), 또는 `Nested` / `SimpleAggregateFunction` 래퍼 내부의 상태에도 적용됩니다. 래퍼의 사용자 지정 이름에는 인수 타입의 두 번째 복사본이 포함되므로, 작성기는 해당 복사본도 동일한 협상된 집계 상태 버전으로 다시 작성해야 합니다. 그렇지 않으면 헤더가 버전 `0` 페이로드에 대해 버전 `1`을 발표할 수 있습니다. 한 가지 `Variant` 예외 사례에는 wire 표현이 전혀 없습니다. 두 대안이 명시된 상태 버전만 다른 경우(타입 문자열이 다르므로 컬럼 타입으로는 유효함), 협상된 revision에 맞춰 둘 다 버전을 변경하면 동일한 대안으로 합쳐집니다. 따라서 송신자는 페이로드가 기록된 버전과 다른 버전을 발표하는 대신 전송을 실패시켜야 합니다. `Dynamic`은 revision 기반 버전 관리의 의도적인 예외입니다. `Dynamic` 컬럼은 자체 타입 목록과 명시적 버전 필드에 명시된 상태 버전을 담는 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding)을 통해 중첩 타입을 직접 발표합니다(공유 variant의 값은 저장된 상태에서도 이 방식으로 타입을 포함합니다). 이러한 발표는 컬럼 자체 데이터의 일부이며 모든 피어와 매체에서 동일하므로 협상된 revision에 맞춰 다시 작성되지 않습니다. 따라서 `Dynamic` 값 내부에 중첩된 상태는 타입에 명시된 버전으로 기록됩니다(`-State` 쿼리 결과는 버전을 명시하므로 새 상태에는 이 버전이 포함됩니다). 타입에 버전이 명시되지 않은 경우에는 버전 `0`으로 기록되며, 이는 모든 연결과 매체에서 동일합니다.
   * `QBit(T, N[, stride])`는 벡터 검색 워크로드를 위해 비트 평면을 전치한 벡터를 저장합니다. wire 스트림 레이아웃(그룹 우선 `FixedString` 비트 평면 스트림, 명시적 `stride`를 포함하는 `element_size * (N / stride)`개)과 바이너리 타입 인코딩(태그 `0x36`, 또는 `stride != N`일 때 `0x37` `QBitWithStride`)은 [`QBit` 데이터 타입 페이지](/ko/reference/data-types/qbit) 및 [바이너리 타입 인코딩](/ko/reference/data-types/data-types-binary-encoding) 참고 문서에 설명되어 있습니다. 따라서 `Native` 판독기는 C++ 소스에서 이를 복원할 필요가 없습니다.
 </Note>
 
@@ -1486,11 +1516,11 @@ ClickHouse는 내부 프레임 포맷을 사용해 `Native` 스트림의 컬럼 
 
 이 세 가지 코덱은 서버가 전체 스트림 `Native` 프레이밍에 사용해 출력하는 코덱입니다. HTTP `compress=1` 출력은 항상 `LZ4`를 사용하며, 네이티브 TCP 프로토콜은 `network_compression_method`에 따라 `LZ4`, `ZSTD` 또는 `NONE`을 사용합니다. 일반적인 `Native` 클라이언트는 이 세 가지만 생성하고 처리할 수 있으면 됩니다.
 
-| Byte   | Method | Body encoding                                              |
-| ------ | ------ | ---------------------------------------------------------- |
+| Byte   | Method | Body encoding                                                |
+| ------ | ------ | ------------------------------------------------------------ |
 | `0x02` | NONE   | body는 원시 바이트입니다(압축 없음). 프레임 자체는 그대로 출력되며, 수신기는 체크섬을 검증합니다.   |
 | `0x82` | LZ4    | body는 **LZ4 block 포맷**이며, *LZ4 frame 포맷이 아닙니다*. 매직 넘버는 없습니다. |
-| `0x90` | ZSTD   | body는 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 body의 일부입니다).       |
+| `0x90` | ZSTD   | body는 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 body의 일부입니다).     |
 
 메서드 바이트는 [컬럼 수준 코덱](/ko/reference/statements/create/table/codec)도 인코딩합니다. 이 코덱들은 전체 스트림 프레이밍이 아니라 MergeTree 온디스크 경로에서 컬럼별로 적용되지만, `decompress=1` HTTP 입력 경로는 각 프레임의 메서드 바이트에서 코덱을 읽어 오므로 입력에서는 이 바이트들 중 어떤 값이든 정상적으로 나타날 수 있습니다. 따라서 규격을 준수하는 디코더는 할당된 전체 범위를 인식해야 하며, 구현하지 않은 바이트는 body를 잘못 해석하지 말고 거부해야 합니다. 이들의 body는 코덱마다 다르며, 이 일반 프레임 계약의 범위 밖에 있습니다.
 
@@ -1510,9 +1540,9 @@ ClickHouse는 내부 프레임 포맷을 사용해 `Native` 스트림의 컬럼 
 | `0x9e` | `Quantized`                        |
 | `0x9f` | `ZXC`                              |
 
-`0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 **실험적** 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(ZXC)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
+`0x9c` (`ALP`)는 `Float32` 및 `Float64`를 위한 **베타** 무손실 코덱입니다(적응형 무손실 부동 소수점 압축). `enable_alp_codec` 설정이 지정된 경우에만 `CODEC(ALP)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `enable_sz3_codec` 설정이 지정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 **실험적** 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. `enable_zxc_codec` 설정이 지정된 경우에만 `CODEC(ZXC)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
 
-`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 body가 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
+`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 body가 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `enable_quantized_codec` 설정이 지정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
 
 <div id="checksum">
   ### 체크섬

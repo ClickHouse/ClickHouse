@@ -126,9 +126,20 @@ done
 # 'password='"). Creating a dedicated user with a non-empty password is the
 # least invasive workaround. Fail loud if either statement errors out -
 # silently swallowing this would leave every oracle hitting an auth wall.
+#
+# The settings are the ones `sqlancer_job.sh` pins on its server (it copies the provider's
+# `.claude/clickhouse-config/*.xml`, which this checkout does not ship): every oracle here compares
+# two reads, so a write issued by one iteration has to be visible to the next read of that same
+# iteration. With the defaults, `mutations_sync = 0` lets an `ALTER ... DELETE` / `DELETE FROM`
+# complete, fail or partially apply *between* the two reads, and `async_insert` is on, so an INSERT
+# need not be visible to the read that follows it. Either one turns a two-query oracle into a race
+# and its mismatch into a false positive. Attaching them to this user rather than to a profile in
+# `config.d/` keeps the change scoped to the fuzzer's own connection - the server here is started
+# from the binary's embedded config with no config directory at all.
 SQLANCER_USER="sqlancer"
 SQLANCER_PASSWORD="sqlancer"
-wget -q -O- --tries=1 --content-on-error --post-data="CREATE USER OR REPLACE ${SQLANCER_USER} IDENTIFIED WITH plaintext_password BY '${SQLANCER_PASSWORD}'" 'http://localhost:8123/'
+SQLANCER_USER_SETTINGS="mutations_sync = 2, alter_sync = 2, async_insert = 0"
+wget -q -O- --tries=1 --content-on-error --post-data="CREATE USER OR REPLACE ${SQLANCER_USER} IDENTIFIED WITH plaintext_password BY '${SQLANCER_PASSWORD}' SETTINGS ${SQLANCER_USER_SETTINGS}" 'http://localhost:8123/'
 # Grant everything the `default` user itself holds (CURRENT GRANTS) rather than
 # `GRANT ALL`: on the embedded-config server the default user does not hold the
 # full ALL set (e.g. it lacks `SHOW NAMED COLLECTIONS SECRETS`), so a plain

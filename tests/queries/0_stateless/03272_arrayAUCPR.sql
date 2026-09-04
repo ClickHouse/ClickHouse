@@ -74,3 +74,28 @@ select arrayAUCPR(x, y, z) from (
   UNION ALL
   select [1] as x, [1] as y, [0, 0, 0, 0] as z
 ); -- { serverError BAD_ARGUMENTS }
+
+-- A NaN score makes the result NaN, whatever order the (score, label) pairs are given in.
+select arrayAUCPR([nan, 0.5, 0.1], [1, 0, 1]);
+select arrayAUCPR([0.5, nan, 0.1], [0, 1, 1]);
+select arrayAUCPR([0.5, 0.1, nan], [0, 1, 1]);
+select arrayAUCPR([nan, 0.5], [1, 1]);
+select arrayAUCPR([0.5, nan], [1, 1]);
+select arrayAUCPR([nan], [1]);
+select arrayAUCPR([nan, nan], [1, 0]);
+select arrayAUCPR(cast([nan, 0.5, 0.1] as Array(Float32)), [1, 0, 1]);
+select arrayAUCPR(cast([0.5, 0.1, nan] as Array(Float32)), [0, 1, 1]);
+select arrayAUCPR([nan, 0.5, 0.5], [1, 0, 1]);
+select arrayAUCPR([0.5, 0.5, nan], [0, 1, 1]);
+select arrayAUCPR([nan, inf, 0.1], [1, 0, 1]);
+select arrayAUCPR([inf, 0.1, nan], [0, 1, 1]);
+select arrayPRAUC([nan, 0.5, 0.1], [1, 0, 1]);
+select arrayPRAUC([0.5, 0.1, nan], [0, 1, 1]);
+
+-- Infinities are ordered like any other score, so they keep their value.
+select floor(arrayAUCPR([inf, 0.5, 0.1], [1, 0, 1]), 10);
+select floor(arrayAUCPR([0.5, 0.1, inf], [0, 1, 1]), 10);
+select floor(arrayAUCPR([-inf, 0.5, 0.1], [1, 0, 1]), 10);
+select floor(arrayAUCPR([0.5, 0.1, -inf], [0, 1, 1]), 10);
+select floor(arrayAUCPR([0.9, 0.5, 0.1], [1, 0, 1]), 10);
+select floor(arrayAUCPR([0.5, 0.1, 0.9], [0, 1, 1]), 10);

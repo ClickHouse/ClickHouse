@@ -43,6 +43,7 @@ ClickHouse는 사용자 관리를 위해 4개의 조직 수준 역할을 제공�
 </div>
 
 SQL 콘솔 역할을 할당하는 방법은 [SQL 콘솔 역할 할당 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)를 참조하십시오.
+개별 SQL 콘솔 사용자의 데이터베이스 권한을 사용자 정의하려면 [SQL 콘솔 사용자 및 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)을 참조하십시오.
 
 | 역할           | 설명                                                  |
 | ------------ | --------------------------------------------------- |
@@ -64,7 +65,7 @@ SQL 콘솔 역할을 할당하는 방법은 [SQL 콘솔 역할 할당 관리](/k
 | **청구** ([자세한 정보](/ko/products/cloud/reference/billing/billing-overview))                                                    | 청구 및 인보이스 관리                                                                                                                 |
 | control-plane:organization:manage-billing                                                                                | 청구 설정, 결제 수단, 인보이스를 관리합니다.                                                                                                   |
 | control-plane:organization:view-billing                                                                                  | 청구 사용량과 인보이스를 확인합니다.                                                                                                         |
-| **API keys** ([자세한 정보](/ko/products/cloud/features/admin-features/api/api-overview))                                        | 조직 API Key 관리                                                                                                                |
+| **API Key** ([자세한 정보](/ko/products/cloud/features/admin-features/api/api-overview))                                        | 조직 API Key 관리                                                                                                                |
 | control-plane:organization:view-api-keys                                                                                 | 조직의 API Key를 확인합니다.                                                                                                          |
 | control-plane:organization:create-api-keys                                                                               | 조직의 새 API Key를 생성합니다.                                                                                                        |
 | control-plane:organization:update-api-keys                                                                               | 기존 API Key와 해당 권한을 업데이트합니다.                                                                                                  |
@@ -80,7 +81,7 @@ SQL 콘솔 역할을 할당하는 방법은 [SQL 콘솔 역할 할당 관리](/k
 | control-plane:service:manage-backups                                                                                     | 서비스 백업을 생성, 관리, 복원합니다.                                                                                                       |
 | **IP 액세스 목록** ([자세한 정보](/ko/products/cloud/guides/security/connectivity/setting-ip-filters))                                | IP 액세스 목록 및 네트워크 필터링 관리                                                                                                      |
 | control-plane:service:manage-ip-access-list                                                                              | 서비스의 IP 액세스 목록과 네트워크 필터링을 관리합니다.                                                                                             |
-| **Generative AI** ([자세한 정보](/ko/products/cloud/features/ai-ml/ask-ai))                                                      | Generative AI 기능 구성                                                                                                          |
+| **Generative AI** ([자세한 정보](/ko/products/cloud/features/ai-ml/aichat/using-ai-chat))                                        | Generative AI 기능 구성                                                                                                          |
 | control-plane:service:manage-generative-ai                                                                               | 서비스의 Generative AI 기능과 설정을 구성하고 관리합니다.                                                                                       |
 | **Query API endpoints** ([자세한 정보](/ko/products/cloud/guides/sql-console/query-endpoints))                                   | Query API 엔드포인트                                                                                                              |
 | control-plane:service:view-query-api-endpoints                                                                           | Query API 엔드포인트와 해당 구성을 확인합니다.                                                                                               |

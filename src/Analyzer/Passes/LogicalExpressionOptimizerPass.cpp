@@ -899,9 +899,17 @@ static AddComparisonFilterResult addComparisonFilter(
         return AddComparisonFilterResult::ADDED;
     }
 
+    /// A comparison with a nullable result is ambiguous under NULL and must not be pruned or folded;
+    /// keep it as-is. Test the comparison node's result type, not the raw operand type, so nested and
+    /// carrier-hidden nullability (e.g. `LowCardinality(Nullable)`, `Dynamic`, `Variant`) is caught.
+    if (isNullableOrLowCardinalityNullable(new_filter.original_node->getResultType()))
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
-    chassert(!raw_type->isNullable());
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
@@ -1961,7 +1969,7 @@ private:
                 expression = lhs;
             }
 
-            /// Both sides are non-constant — keep as-is.
+            /// Both sides are non-constant (or the constant is NULL-valued) — keep as-is.
             if (!constant)
             {
                 all_operands.emplace_back(argument_index, argument);

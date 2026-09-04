@@ -195,7 +195,7 @@ ClickHouse 不会直接使用人类可读格式；必须先将其转换为下文
   ## evalMLMethod
 </div>
 
-首次引入于：v20.1.0
+引入版本：v20.1.0
 
 将训练好的机器学习模型应用于输入特征，生成预测结果。
 
@@ -219,22 +219,39 @@ evalMLMethod(model, x1[, x2, ...])
 **使用示例**
 
 ```sql title=Query
+CREATE TABLE trips (pickup_datetime DateTime('UTC'), trip_distance Float64, total_amount Float64) ENGINE = Memory;
+
+-- A fare of 3, plus 2.5 for every unit of distance.
+INSERT INTO trips
+SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + number * 60, number % 10 + 1, 2.5 * (number % 10 + 1) + 3
+FROM numbers(1000);
+
+-- One model per year of the data.
+CREATE TABLE models ENGINE = Memory AS
 SELECT
-evalMLMethod(model, trip_distance),
-total_amount
+    toYear(pickup_datetime) AS year,
+    stochasticLinearRegressionState(0.01, 0.0, 10, 'SGD')(total_amount, trip_distance) AS model
+FROM trips
+GROUP BY year;
+
+SELECT
+    trip_distance,
+    round(evalMLMethod(model, trip_distance), 2) AS predicted,
+    total_amount
 FROM trips
 LEFT JOIN models ON year = toYear(pickup_datetime)
+ORDER BY pickup_datetime
 LIMIT 5
 ```
 
 ```response title=Response
-┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
-│ 8.087692004204174                  │ 5.4          │
-│ 7.861181608305352                  │ 4.6          │
-│ 26.661544467907536                 │ 23.4         │
-│ 8.767223191900637                  │ 5.8          │
-│ 10.80581675499003                  │ 9            │
-└────────────────────────────────────┴──────────────┘
+┌─trip_distance─┬─predicted─┬─total_amount─┐
+│             1 │      4.05 │          5.5 │
+│             2 │      6.79 │            8 │
+│             3 │      9.53 │         10.5 │
+│             4 │     12.28 │           13 │
+│             5 │     15.02 │         15.5 │
+└───────────────┴───────────┴──────────────┘
 ```
 
 <div id="naivebayesclassifier">
@@ -243,7 +260,7 @@ LIMIT 5
 
 引入版本：v25.11.0
 
-使用 [`NAIVE_BAYES`](/zh/reference/statements/create/dictionary/layouts/naive-bayes) 字典对输入文本进行分类。返回与 `dictGet(dictionary_name, class_attribute, input_text)` 相同的预测类别值，其中 class&#95;attribute 是在字典 [layout](/zh/reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters) 中配置的类别标签属性名称。与 `dictGet` 不同，返回结果的类型始终为 `UInt32`，而不是类别属性的声明类型；并且 `input_text` 必须是 `String` (不进行键类型转换) 。
+使用 [`NAIVE_BAYES`](/zh/reference/statements/create/dictionary/layouts/naive-bayes) 字典对输入文本进行分类。返回与 `dictGet(dictionary_name, class_attribute, input_text)` 相同的预测类别值，其中 class&#95;attribute 是在字典 [布局](/zh/reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters) 中配置的类别标签属性名称。与 `dictGet` 不同，返回结果的类型始终为 `UInt32`，而不是类别属性的声明类型；并且 `input_text` 必须是 `String` (不进行键类型转换) 。
 
 <Note>
   此函数是非确定性的：对于相同的参数，可能返回不同的结果。
@@ -269,18 +286,30 @@ naiveBayesClassifier(dictionary_name, input_text)
 **文本分类**
 
 ```sql title=Query
-SELECT naiveBayesClassifier('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
 ```
 
 ```response title=Response
-0
+┌─class_id─┐
+│        0 │
+└──────────┘
 ```
 
 <div id="naiveBayesClassifierWithAllProbs">
   ## naiveBayesClassifierWithAllProbs
 </div>
 
-Introduced in：v26.7.0
+引入版本：v26.7.0
 
 使用 [`NAIVE_BAYES`](/zh/reference/statements/create/dictionary/layouts/naive-bayes) 字典对输入文本进行分类，并返回所有类别及其对应的概率，按概率从高到低排列。
 
@@ -288,7 +317,7 @@ Introduced in：v26.7.0
   此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
 </Note>
 
-**Syntax**
+**语法**
 
 ```sql
 naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
@@ -308,18 +337,30 @@ naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
 **所有类别的概率**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithAllProbs('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'a good and great film')) AS predictions;
 ```
 
 ```response title=Response
-[(0,0.85),(1,0.15)]
+┌─predictions─────────────┐
+│ [(0,0.9677),(1,0.0323)] │
+└─────────────────────────┘
 ```
 
 <div id="naiveBayesClassifierWithProb">
   ## naiveBayesClassifierWithProb
 </div>
 
-Introduced in：v26.7.0
+引入版本：v26.7.0
 
 使用 [`NAIVE_BAYES`](/zh/reference/statements/create/dictionary/layouts/naive-bayes) 字典对输入文本进行分类，并返回预测类别及其概率。
 
@@ -327,7 +368,7 @@ Introduced in：v26.7.0
   此函数是非确定性的：对于相同的参数，可能会返回不同的结果。
 </Note>
 
-**Syntax**
+**语法**
 
 ```sql
 naiveBayesClassifierWithProb(dictionary_name, input_text)
@@ -347,11 +388,24 @@ naiveBayesClassifierWithProb(dictionary_name, input_text)
 **输出分类及其概率**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithProb('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+WITH naiveBayesClassifierWithProb('sentiment', 'a good and great film') AS p
+SELECT (p.1, round(p.2, 4)) AS prediction;
 ```
 
 ```response title=Response
-(0,0.85)
+┌─prediction─┐
+│ (0,0.9677) │
+└────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}
