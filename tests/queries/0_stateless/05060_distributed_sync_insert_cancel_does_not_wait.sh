@@ -81,6 +81,42 @@ wait "$INS_PID" 2>/dev/null ||:
 
 rm -f "$err"
 
+# A cancelled writing job must not push its block. `prefer_localhost_replica=0` makes the shard-side
+# INSERT a separate query, so the bytes it received are an external witness: none if the job stopped
+# before pushing, the block's worth if it pushed anyway. The client's own error does not distinguish
+# the two, because the cancelled query reports QUERY_WAS_CANCELLED either way.
+# The shard-side query runs on the connection the cluster provides, so its own database is not this
+# test's; it is identified by initial_query_id, which carries this test's unique name and therefore
+# cannot match another test's rows. The initiator's row is checked in this database as a control that
+# the insert under test is the one being measured.
+initiator_rows=0
+shard_rows=0
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+    initiator_rows=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type != 'QueryStart'")
+    shard_rows=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.query_log
+        WHERE initial_query_id = '$query_id' AND is_initial_query = 0 AND type != 'QueryStart'")
+    [ "$initiator_rows" -gt 0 ] && [ "$shard_rows" -gt 0 ] && break
+    sleep 1
+done
+
+if [ "$initiator_rows" -eq 0 ] || [ "$shard_rows" -eq 0 ]; then
+    # Without both rows the byte check below would hold vacuously, so this is a failure of its own.
+    echo "query_log is missing the insert (initiator rows $initiator_rows, shard rows $shard_rows)"
+    failed=1
+else
+    received=$($CLICKHOUSE_CLIENT --query "
+        SELECT sum(ProfileEvents['NetworkReceiveBytes']) FROM system.query_log
+        WHERE initial_query_id = '$query_id' AND is_initial_query = 0 AND type != 'QueryStart'")
+    if [ "$received" != "0" ]; then
+        echo "cancelled writing job still sent its block to the shard ($received bytes)"
+        failed=1
+    fi
+fi
+
 # Separate liveness check: the server survived the cancelled insert.
 $CLICKHOUSE_CLIENT --query "SELECT 'ok'"
 

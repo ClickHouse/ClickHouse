@@ -41,7 +41,6 @@
 
 #include <base/range.h>
 
-#include <chrono>
 #include <climits>
 #include <filesystem>
 #include <functional>
@@ -353,18 +352,6 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
 
 void DistributedSink::waitForJobs()
 {
-    /// A job captures this sink's `job` and the caller's block, so it can never be abandoned - but a job
-    /// that no worker has started yet can be discarded: `finish` drops exactly those, while the `wait`
-    /// below still joins the ones already running.
-    while (!pool->waitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(100)))
-    {
-        if (isCancelled() || (insert_timeout && static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout))
-        {
-            pool->finish();
-            break;
-        }
-    }
-
     pool->wait();
 
     /// Neither the elapsed-time verdict below nor the job count says anything useful about an insert
@@ -736,8 +723,8 @@ void DistributedSink::onFinish()
 void DistributedSink::onCancel() noexcept
 {
     /// Never waits: `writeSync` holds `execution_mutex` across its own wait for the writing jobs, so
-    /// waiting here would make cancellation as slow as the insert it is meant to interrupt. When the
-    /// lock is taken, the thread holding it cancels the executors once it has drained the pool.
+    /// waiting here would make cancellation as slow as the insert it is meant to interrupt. This runs
+    /// at most once, so when the lock is contended it cancels nothing and the destructor does it.
     std::unique_lock lock(execution_mutex, std::try_to_lock);
     if (lock.owns_lock())
         cancelExecutors();
@@ -773,9 +760,9 @@ void DistributedSink::throwIfCancelled()
 
 DistributedSink::~DistributedSink()
 {
-    /// `~PushingPipelineExecutor` requires each executor to be finished or the stack to be unwinding, and
-    /// a cancelled insert reaches neither: `onFinish` is not called, and `onCancel` leaves the executors
-    /// of a sink that was mid-write to the thread that was writing.
+    /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
+    /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
     std::lock_guard lock(execution_mutex);
     cancelExecutors();
 }
