@@ -8,6 +8,9 @@
 
 #include <limits>
 
+#include <string_view>
+#include <vector>
+
 
 namespace DB
 {
@@ -180,6 +183,11 @@ struct DataLakeStorageSettings
     void loadFromQuery(ASTSetQuery & settings_ast);
 
     void loadFromSettingsChanges(const SettingsChanges & changes);
+
+    /// Names of the deprecated `storage_*` catalog aliases that are set on this table. Bare
+    /// Iceberg*/DeltaLake* engines accept but never consume them, so callers reject them to
+    /// surface the misconfiguration instead of silently ignoring the values.
+    std::vector<std::string_view> getChangedDeprecatedCatalogSettings() const;
 
     Field get(const std::string & name);
 
