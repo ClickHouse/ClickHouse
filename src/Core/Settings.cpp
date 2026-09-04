@@ -27,6 +27,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <bit>
 #include <cstring>
 
 namespace
@@ -9363,14 +9364,49 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void set(std::string_view name, const Field & value) override;
 
-    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
     void resetSettingsChangedByCompatibility();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    /// Indexes (not names) of the settings, so that reverting them needs no name lookup.
-    UnorderedSetWithMemoryTracking<size_t> settings_changed_by_compatibility_setting;
+    /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
+    /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
+    /// meant a lookup per setting and an allocated node per setting, on top of copying them all whenever
+    /// the settings are copied.
+    VectorWithMemoryTracking<UInt64> settings_changed_by_compatibility_setting;
+    size_t num_settings_changed_by_compatibility_setting = 0;
+
+    bool isChangedByCompatibility(size_t index) const
+    {
+        return num_settings_changed_by_compatibility_setting != 0
+            && (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
+    }
+
+    void markChangedByCompatibility(size_t index)
+    {
+        if (settings_changed_by_compatibility_setting.empty())
+            settings_changed_by_compatibility_setting.resize((Traits::Accessor::instance().size() + 63) / 64, 0);
+
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (!(word & bit))
+        {
+            word |= bit;
+            ++num_settings_changed_by_compatibility_setting;
+        }
+    }
+
+    void unmarkChangedByCompatibility(size_t index)
+    {
+        UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
+        const UInt64 bit = 1ULL << (index % 64);
+        if (word & bit)
+        {
+            word &= ~bit;
+            --num_settings_changed_by_compatibility_setting;
+        }
+    }
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9525,11 +9561,11 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (!settings_changed_by_compatibility_setting.empty())
+    else if (num_settings_changed_by_compatibility_setting != 0)
     {
         const auto & accessor = Traits::Accessor::instance();
         if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
-            settings_changed_by_compatibility_setting.erase(index);
+            unmarkChangedByCompatibility(index);
     }
 
     BaseSettings::set(name, value);
@@ -9537,11 +9573,21 @@ void SettingsImpl::set(std::string_view name, const Field & value)
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t index : settings_changed_by_compatibility_setting)
-        accessor.resetValueToDefault(*this, index);
+    if (num_settings_changed_by_compatibility_setting == 0)
+        return;
 
-    settings_changed_by_compatibility_setting.clear();
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t word = 0; word < settings_changed_by_compatibility_setting.size(); ++word)
+    {
+        UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
+        while (bits)
+        {
+            accessor.resetValueToDefault(*this, word * 64 + std::countr_zero(bits));
+            bits &= bits - 1;
+        }
+    }
+
+    num_settings_changed_by_compatibility_setting = 0;
 }
 
 namespace
@@ -9615,7 +9661,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         for (const auto & change : it->second)
         {
             /// If this setting was changed manually, we don't change it
-            if (accessor.isValueChanged(*this, change.index) && !settings_changed_by_compatibility_setting.contains(change.index))
+            if (accessor.isValueChanged(*this, change.index) && !isChangedByCompatibility(change.index))
                 continue;
 
             /// Don't mark as changed if the value isn't really changed
@@ -9623,7 +9669,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
                 continue;
 
             accessor.setValue(*this, change.index, *change.previous_value);
-            settings_changed_by_compatibility_setting.insert(change.index);
+            markChangedByCompatibility(change.index);
         }
     }
 }
