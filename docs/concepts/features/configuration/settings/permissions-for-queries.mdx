@@ -53,7 +53,8 @@ Granting a privilege with `GRANT` is refused too, but not every access managemen
 a privilege it holds with grant option and propagate its own grants to another user.
 `REVOKE ... ON CLUSTER` is refused.
 
-Temporary tables are exempt: a session that may create one may also insert into it and drop it.
+Temporary tables are exempt from both settings: a session that may create one may also `ALTER` it,
+insert into it and drop it.
 
 <Note>
 
@@ -78,27 +79,31 @@ tables, views, dictionaries, user-defined functions, workloads, resources and SQ
 
 Possible values:
 
-- 0 — Executing a query that needs any of the following privileges is blocked: `CREATE DATABASE`,
-  `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`, `ALTER VIEW`, `DROP TABLE`,
-  `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`, `CREATE FUNCTION`, `DROP FUNCTION`,
-  `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`, `DROP RESOURCE`, `CREATE HANDLER`,
-  `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`, `ATTACH` and `DETACH` need these privileges
-  too, so they are blocked as well, except that `ALTER TABLE ... ATTACH PARTITION` and `ATTACH PART`
-  need only `INSERT` and are not blocked by this setting, although `readonly` blocks them.
-  `ATTACH PARTITION ... FROM` needs `ALTER DELETE` as well and is blocked. Granting and revoking these
-  privileges is not blocked.
+- 0 — Executing a query on a persistent object that needs any of the following privileges is
+  blocked: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
+  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
+  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
+  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
+  `ATTACH` and `DETACH` need these privileges too, so they are blocked as well, except that
+  `ALTER TABLE ... ATTACH PARTITION` and `ATTACH PART` need only `INSERT` and are not blocked by
+  this setting, although `readonly` blocks them on a persistent table.
+  `ATTACH PARTITION ... FROM` needs `ALTER DELETE` as well and is blocked. Granting and revoking
+  these privileges is not blocked.
 - 1 — Nothing is blocked by this setting.
 
 Default value: 1
 
 <Note>
+
 You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
 `allow_ddl` does not restrict access management queries: `GRANT`, `REVOKE` and `CREATE`, `ALTER` and
 `DROP` of users, roles, row policies, masking policies, quotas and settings profiles are unaffected by
 it. `CREATE TEMPORARY TABLE` and named collection management are unaffected too, as are
 `ALTER DATABASE ... MODIFY SETTING` and `ALTER DATABASE ... MODIFY COMMENT`, which `readonly` does not
-restrict either.
+restrict either. A `SETTINGS allow_ddl` clause inside a `CREATE` or `ALTER` of a user, a role or a
+settings profile is refused when it changes the value, for the same reason `SET allow_ddl` is: an
+embedded setting is checked against the session's own settings constraints.
 </Note>
 
 <Info>
