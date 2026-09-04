@@ -424,15 +424,11 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
 void CPULeaseAllocation::setParked(size_t thread_num)
 {
     // Move a running thread to parked (a non-CPU wait: I/O or idle). Lighter than setPreempted
-    // (no clock read, no waitForGrant).
-    // Unlike preemption, parking does NOT touch `granted`/`acquirable`: the parked thread keeps its
-    // leased slot_id (reserved for its own unpark), so it frees no slot for another thread of this
-    // lease. The invariant `granted == allocated - leased.count()` must hold so that `granted > 0`
-    // always implies a free slot_id exists (otherwise upscale() would hand out an out-of-range id
-    // and ExecutorTasks::upscale would index out of bounds). The CPU quantum is released for OTHER
-    // leases by parkLease's give-back (requests.finish), not via `granted`.
-    // (setPreempted can `++granted` safely only because it runs after consume(), where `granted` is
-    // already negative; parking does no consume, so `++granted` here would be a real over-grant.)
+    // (no clock read, no waitForGrant). Unlike preemption it must NOT touch `granted`/`acquirable`:
+    // the parked thread keeps its leased slot_id (for its own unpark) and frees no slot for another
+    // thread of this lease, so the invariant `granted == allocated - leased.count()` still holds
+    // (`granted > 0` must always imply a free slot_id, else upscale() hands out an out-of-range id).
+    // The CPU quantum is freed for other leases by parkLease's give-back (requests.finish).
     chassert(threads.isRunning(thread_num));
     threads.parked.set(thread_num);
     ++threads.parked_count;

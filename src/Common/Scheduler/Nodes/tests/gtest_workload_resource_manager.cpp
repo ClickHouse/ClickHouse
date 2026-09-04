@@ -1385,14 +1385,10 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkFreesSlotForOtherQuery)
 
 TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
 {
-    // Regression for a release-only crash (libc++ hardening abort in ExecutorTasks::upscale):
-    // parking used to `++granted` (copied from setPreempted, which is safe only after consume(),
-    // when granted is already negative). Parking does no consume, so that stray grant left
-    // `granted > 0` while the parked thread still held its leased slot_id. The executor then tried
-    // to acquire another slot; CPULeaseAllocation::upscale() found no free slot_id and returned the
-    // out-of-range `max_threads`, which the executor used to index its per-slot arrays out of
-    // bounds. Here a single query occupies all its worker slots and parks them all at once (a long
-    // sequential phase); it must not acquire any out-of-range slot and must finish cleanly.
+    // Regression: a single query occupies all its worker slots and parks them all at once (a long
+    // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
+    // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
+    // query must finish cleanly.
     ResourceTest t;
 
     t.query("CREATE RESOURCE cpu (WORKER THREAD)");
