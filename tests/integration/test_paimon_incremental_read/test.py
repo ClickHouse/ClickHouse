@@ -450,9 +450,15 @@ def test_paimon_incremental_read_lost_lock_fails_loudly(started_cluster):
 def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
     """The watermark must never move backwards.
 
-    A read is parked before its commit while the watermark is advanced underneath
-    it, so its own commit would move the cursor back and re-deliver snapshots that
-    another consumer already acknowledged. It must fail instead."""
+    A read is parked before its commit while the watermark is advanced underneath it,
+    so its own commit would move the cursor back and re-deliver snapshots that were
+    already acknowledged. It must fail instead.
+
+    The read holds `processing_lock` at that point, so a competing consumer cannot be
+    what moves the cursor - it could not acquire the lock. What reaches the cursor
+    anyway is the documented operator recovery, `set '<paimon_keeper_path>/committed_snapshot'`,
+    which is a plain Keeper write and does not consult the lock. This check is the only
+    thing standing between that and a silently rewound cursor."""
     writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
 
     warehouse_name = "warehouse_monotonic"
@@ -488,7 +494,7 @@ def test_paimon_incremental_read_watermark_is_monotonic(started_cluster):
         assert reader.is_alive(), (
             f"the reader returned before the watermark was moved: {reader_result!r}"
         )
-        # Another consumer got to snapshot 2 first.
+        # An operator resets the cursor forward while this read is in flight.
         zk.set(f"{keeper_path}/committed_snapshot", b"2")
 
         node.query(
@@ -541,9 +547,16 @@ def test_paimon_incremental_read_cursor_ahead_of_warehouse(started_cluster):
     try:
         assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"3"
 
-        # Rewind the warehouse to snapshot 1, as restoring an older backup would.
-        # The LATEST hint is deliberately left pointing at 3: getLatestTableSnapshotInfo
-        # must notice it is stale and fall back to listing the snapshot directory.
+        # Drop the top of the snapshot range so it ends below the cursor. No Paimon
+        # operation produces this: expiration removes a prefix, and rollback lowers the
+        # LATEST hint before deleting anything (RollbackHelper.cleanSnapshots), so a
+        # rollback that died mid-way leaves LATEST too low, never too high. Getting the
+        # cursor ahead of the warehouse is out-of-band by nature anyway - no Paimon
+        # operation knows the Keeper cursor exists - so the state is built by hand.
+        #
+        # LATEST is deliberately left at 3 rather than lowered with the deletion, which
+        # makes this a torn state on purpose: getLatestTableSnapshotInfo has to notice the
+        # hint is stale and fall back to listing instead of trusting it.
         _warehouse_shell(
             writer_container_id,
             f"rm -f {table_path}/snapshot/snapshot-2 {table_path}/snapshot/snapshot-3",
