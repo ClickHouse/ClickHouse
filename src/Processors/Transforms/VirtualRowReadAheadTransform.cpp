@@ -66,6 +66,8 @@ VirtualRowReadAheadTransform::VirtualRowReadAheadTransform(
     }
 }
 
+/// ── Keys ─────────────────────────────────────────────────────────────────────────────────────
+
 bool VirtualRowReadAheadTransform::BoundLess::operator()(size_t lhs, size_t rhs) const
 {
     int cmp = self->compareKeys(self->lanes[lhs].bound, self->lanes[rhs].bound);
@@ -125,26 +127,19 @@ Columns VirtualRowReadAheadTransform::lastRowKey(const Chunk & chunk) const
     return key;
 }
 
-/// A lane outside the set that can still read. A lane whose input is finished is neither in
-/// the set nor a frontier: the merge drains its buffer without any further read, so data
-/// beyond its bound is not premature for anyone.
-bool VirtualRowReadAheadTransform::isFrontierCandidate(size_t lane_num) const
-{
-    const Lane & lane = lanes[lane_num];
-    return !lane.in_set && !lane.input->isFinished();
-}
+/// ── Policy: who may read ─────────────────────────────────────────────────────────────────────
 
 /// The frontier as `lane_num` sees it. A lane reading outside the set (the one the merge is
-/// draining, or any demanded lane when K = 0) may itself be the smallest-bound outsider, and
+/// draining, or any demanded lane when K = 0) may itself be the smallest-bound outsider and
 /// must not be stopped by its own bound: it takes the next one in order.
 ssize_t VirtualRowReadAheadTransform::frontierFor(size_t lane_num) const
 {
-    if (frontier_lane != static_cast<ssize_t>(lane_num))
-        return frontier_lane;
+    if (decision.frontier_lane != static_cast<ssize_t>(lane_num))
+        return decision.frontier_lane;
 
     auto it = ranked_lanes.find(lane_num);
     for (++it; it != ranked_lanes.end(); ++it)
-        if (isFrontierCandidate(*it))
+        if (!lanes[*it].in_set && !lanes[*it].input->isFinished())
             return *it;
     return -1;
 }
@@ -152,167 +147,78 @@ ssize_t VirtualRowReadAheadTransform::frontierFor(size_t lane_num) const
 bool VirtualRowReadAheadTransform::passedFrontier(size_t lane_num) const
 {
     ssize_t frontier = frontierFor(lane_num);
-    return lanes[lane_num].ranked && frontier >= 0 && BoundLess{this}(static_cast<size_t>(frontier), lane_num);
+    return lanes[lane_num].ranked() && frontier >= 0 && BoundLess{this}(static_cast<size_t>(frontier), lane_num);
 }
 
-/// Whether the lane may pull another chunk now. Demand is always served, a warm-up grant too;
-/// otherwise only a set member with the window open, or the lane the merge is draining, reads,
-/// and stops at the budget, at its caps, or once its bound passes the frontier.
+/// Demand and a warm-up grant always read. Otherwise only a set member with the window open, or
+/// the lane the merge is draining, reads, and it stops when the budget is spent, at its caps,
+/// or once its bound passes the frontier.
 bool VirtualRowReadAheadTransform::mayRead(size_t lane_num) const
 {
     const Lane & lane = lanes[lane_num];
-    if (lane.isDemanded() || lane.warmup_credit)
+    if (lane.isDemanded() || lane.warmup)
         return true;
 
-    bool active = (window_open && lane.in_set) || last_demanded_lane == static_cast<ssize_t>(lane_num);
-    if (!active)
-        return false;
-
-    if (limit && budget_rows >= limit)
-        return false;
-
-    if (!lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
-        return false;
-
-    return !passedFrontier(lane_num);
+    bool active = (window_open && lane.in_set) || demanded_lane == static_cast<ssize_t>(lane_num);
+    return active && !budgetSpent() && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer) && !passedFrontier(lane_num);
 }
 
-void VirtualRowReadAheadTransform::enqueue(size_t lane_num)
+bool VirtualRowReadAheadTransform::sameDecision(const Decision & lhs, const Decision & rhs) const
 {
-    Lane & lane = lanes[lane_num];
-    if (lane.queued)
-        return;
-    lane.queued = true;
-    candidates.push_back(lane_num);
+    return lhs.set_lanes == rhs.set_lanes && lhs.frontier_lane == rhs.frontier_lane
+        && lhs.demanded_lane == rhs.demanded_lane
+        && lhs.window_open == rhs.window_open && lhs.budget_spent == rhs.budget_spent
+        && (lhs.frontier_lane < 0 || compareKeys(lhs.frontier_bound, rhs.frontier_bound) == 0);
 }
 
-/// Walks the lanes in bound order. The first K that can read now, i.e. under their caps, form
-/// the set; the first one passed over because it is at its caps, or the (K + 1)-th, is the
-/// frontier. Lanes whose input is finished are skipped altogether (see `isFrontierCandidate`).
-/// The walk stops as soon as both are known, so it costs K + 1 steps and not N.
-void VirtualRowReadAheadTransform::recomputeSet()
+/// Walks the lanes in bound order: the first K that can read now, i.e. under their caps, form the
+/// set, and the first one passed over, or the (K + 1)-th, is the frontier. A lane whose input is
+/// finished is neither: the merge drains its buffer without any further read, so data beyond its
+/// bound is premature for no one. Returns whether the decision differs from the one in force.
+bool VirtualRowReadAheadTransform::chooseReaders()
 {
-    std::swap(previous_set_lanes, set_lanes);
-    for (size_t lane_num : previous_set_lanes)
-        lanes[lane_num].in_set = false;
-
-    set_lanes.clear();
-    frontier_lane = -1;
-
+    Decision next;
+    next.demanded_lane = demanded_lane;
+    next.window_open = window_open;
+    next.budget_spent = budgetSpent();
     for (size_t lane_num : ranked_lanes)
     {
-        Lane & lane = lanes[lane_num];
+        const Lane & lane = lanes[lane_num];
         if (lane.input->isFinished())
             continue;
 
-        if (set_lanes.size() < read_ahead_window && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
-        {
-            lane.in_set = true;
-            set_lanes.push_back(lane_num);
-        }
-        else if (frontier_lane < 0)
-        {
-            frontier_lane = lane_num;
-        }
+        if (next.set_lanes.size() < read_ahead_window && lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
+            next.set_lanes.push_back(lane_num);
+        else if (next.frontier_lane < 0)
+            next.frontier_lane = lane_num;
 
-        if (frontier_lane >= 0 && set_lanes.size() == read_ahead_window)
+        if (next.frontier_lane >= 0 && next.set_lanes.size() == read_ahead_window)
             break;
     }
+    if (next.frontier_lane >= 0)
+        next.frontier_bound = lanes[next.frontier_lane].bound;
 
-    /// Lanes that left must release their input; members must re-check the frontier and the budget.
-    for (size_t lane_num : previous_set_lanes)
-        enqueue(lane_num);
-    for (size_t lane_num : set_lanes)
-        enqueue(lane_num);
+    if (sameDecision(next, decision))
+        return false;
+
+    for (size_t lane_num : decision.set_lanes)
+        lanes[lane_num].in_set = false;
+    for (size_t lane_num : next.set_lanes)
+        lanes[lane_num].in_set = true;
+    previous_decision = std::move(decision);
+    decision = std::move(next);
+    return true;
 }
 
-/// Drives every lane with something to do, then repeats while a pass has changed who may read,
-/// so a single call settles the whole processor: the executor does not reschedule a processor
-/// for its own port updates. Every raise of `set_stale` is a state transition of finite supply
-/// (a chunk pulled or pushed, a lane finished, the window opened), so this ends.
-void VirtualRowReadAheadTransform::runLanes()
-{
-    while (true)
-    {
-        if (set_stale)
-        {
-            set_stale = false;
-            recomputeSet();
-            if (last_demanded_lane >= 0)
-                enqueue(last_demanded_lane);
-        }
-
-        /// `candidates` may grow while it is walked (warm-up grants).
-        for (size_t pos = 0; pos < candidates.size(); ++pos)
-            driveLane(candidates[pos]);
-
-        for (size_t lane_num : candidates)
-            lanes[lane_num].queued = false;
-        candidates.clear();
-
-        if (!set_stale)
-            return;
-    }
-}
-
-void VirtualRowReadAheadTransform::pushFromBuffer(Lane & lane)
-{
-    while (!lane.buffer.empty() && lane.output->canPush())
-    {
-        Chunk chunk = std::move(lane.buffer.front());
-        lane.buffer.pop_front();
-
-        if (!isVirtualRow(chunk))
-        {
-            lane.buffered_rows -= chunk.getNumRows();
-            lane.buffered_bytes -= chunk.bytes();
-            /// A lane parked at its caps may be under them again.
-            if (!lane.in_set)
-                invalidateSet();
-        }
-
-        lane.output->push(std::move(chunk));
-    }
-}
-
-void VirtualRowReadAheadTransform::noteDemand(size_t lane_num)
-{
-    const Lane & lane = lanes[lane_num];
-    /// The merge's initialisation demands every lane before any bound is known; those demands
-    /// are served with the first chunk and grant nothing beyond it.
-    if (!lane.ranked)
-        return;
-
-    /// The window opens when the merge moves on to a second lane parked behind a virtual row.
-    if (limit && !window_open && lane.bound_from_virtual_row)
-    {
-        if (first_demanded_lane < 0)
-        {
-            first_demanded_lane = lane_num;
-        }
-        else if (first_demanded_lane != static_cast<ssize_t>(lane_num))
-        {
-            window_open = true;
-            invalidateSet();
-        }
-    }
-
-    if (last_demanded_lane != static_cast<ssize_t>(lane_num))
-    {
-        /// The previous holder loses its reading rights and must release its input.
-        if (last_demanded_lane >= 0)
-            enqueue(last_demanded_lane);
-        last_demanded_lane = lane_num;
-    }
-}
+/// ── Mechanics: moving chunks ─────────────────────────────────────────────────────────────────
 
 /// Moves one lane as far as it can go right now: pushes what the merge will take, pulls while
-/// the lane may read and data is there, and leaves the input port needed only if the lane may
-/// still read (a port left needed lets the source read one block into it).
-void VirtualRowReadAheadTransform::driveLane(size_t lane_num)
+/// the lane may read and data is there, and leaves the input needed only if the lane may still
+/// read (a port left needed lets the source read one block into it).
+void VirtualRowReadAheadTransform::serve(size_t lane_num)
 {
     Lane & lane = lanes[lane_num];
-    if (lane.output_finished)
+    if (lane.finished)
         return;
 
     if (lane.output->isFinished())
@@ -321,7 +227,7 @@ void VirtualRowReadAheadTransform::driveLane(size_t lane_num)
         return;
     }
 
-    pushFromBuffer(lane);
+    pushReady(lane);
     if (lane.isDemanded())
         noteDemand(lane_num);
 
@@ -332,29 +238,27 @@ void VirtualRowReadAheadTransform::driveLane(size_t lane_num)
             return;
 
         consume(lane_num, lane.input->pull(/* set_not_needed */ true));
-        pushFromBuffer(lane);
+        pushReady(lane);
     }
 
-    if (lane.input->isFinished())
-        onInputExhausted(lane_num);
-    else
+    if (!lane.input->isFinished())
         lane.input->setNotNeeded();
+    else if (lane.buffer.empty())
+        finishLane(lane_num);
 }
 
-void VirtualRowReadAheadTransform::onInputExhausted(size_t lane_num)
+void VirtualRowReadAheadTransform::pushReady(Lane & lane)
 {
-    Lane & lane = lanes[lane_num];
-    if (lane.buffer.empty())
+    while (!lane.buffer.empty() && lane.output->canPush())
     {
-        finishLane(lane_num);
-        return;
-    }
-
-    /// Nothing more to read: the lane leaves the set while the merge drains its buffer.
-    if (!lane.exhausted_noted)
-    {
-        lane.exhausted_noted = true;
-        invalidateSet();
+        Chunk chunk = std::move(lane.buffer.front());
+        lane.buffer.pop_front();
+        if (!isVirtualRow(chunk))
+        {
+            lane.buffered_rows -= chunk.getNumRows();
+            lane.buffered_bytes -= chunk.bytes();
+        }
+        lane.output->push(std::move(chunk));
     }
 }
 
@@ -364,18 +268,17 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
 
     if (isVirtualRow(chunk))
     {
-        bool filtered_stretch = lane.announced && lane.rows_since_virtual_row == 0;
-        lane.announced = true;
-        lane.rows_since_virtual_row = 0;
-        setBound(lane_num, virtualRowKey(chunk), /* from_virtual_row */ true);
+        /// Two announcements in a row: the block between them was fully filtered.
+        bool filtered_stretch = lane.bound_is_virtual_row;
+        setBound(lane_num, virtualRowKey(chunk), /* is_virtual_row */ true);
 
-        /// A newer announcement replaces a pending one: the merge needs only the latest.
+        /// The merge needs only the latest announcement.
         if (lane.holdsVirtualRow())
             lane.buffer.back() = std::move(chunk);
         else
             lane.buffer.push_back(std::move(chunk));
 
-        if (filtered_stretch && limit && !window_open && last_demanded_lane == static_cast<ssize_t>(lane_num))
+        if (filtered_stretch && limit && !window_open && demanded_lane == static_cast<ssize_t>(lane_num))
             grantWarmup(lane_num);
         return;
     }
@@ -384,113 +287,109 @@ void VirtualRowReadAheadTransform::consume(size_t lane_num, Chunk chunk)
     /// only the virtual row after it, so the grant lasts through a filtered stretch: it is meant
     /// to leave the lane's first block buffered for the merge, and the filtered blocks pull no
     /// rows, which is the currency the waste bound is stated in.
-    lane.warmup_credit = false;
+    lane.warmup = false;
 
     if (!chunk.hasRows())
         return;
 
     size_t rows = chunk.getNumRows();
-    setBound(lane_num, lastRowKey(chunk), /* from_virtual_row */ false);
+    setBound(lane_num, lastRowKey(chunk), /* is_virtual_row */ false);
     lane.rows_pulled += rows;
-    lane.rows_since_virtual_row += rows;
-
-    bool budget_was_left = !limit || budget_rows < limit;
     budget_rows += rows;
-    if (budget_was_left && limit && budget_rows >= limit)
-        invalidateSet();
 
     /// Data supersedes the announcement ahead of it.
     if (lane.holdsVirtualRow())
         lane.buffer.pop_back();
-
     lane.buffered_rows += rows;
     lane.buffered_bytes += chunk.bytes();
     lane.buffer.push_back(std::move(chunk));
-    if (!lane.underCaps(max_rows_to_buffer, max_bytes_to_buffer))
-        invalidateSet();
 
     /// A merge never needs more than `limit` rows from one source.
     if (limit && lane.rows_pulled >= limit)
         lane.input->close();
 }
 
-void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool from_virtual_row)
+void VirtualRowReadAheadTransform::setBound(size_t lane_num, Columns key, bool is_virtual_row)
 {
     Lane & lane = lanes[lane_num];
     /// The order of `ranked_lanes` reads the bound, so the lane is out of it while the bound changes.
-    if (lane.ranked)
+    if (lane.ranked())
         ranked_lanes.erase(lane_num);
-
     lane.bound = std::move(key);
-    lane.bound_from_virtual_row = from_virtual_row;
+    lane.bound_is_virtual_row = is_virtual_row;
+    ranked_lanes.insert(lane_num);
+}
 
-    lane.ranked = !lane.output_finished;
-    if (lane.ranked)
-        ranked_lanes.insert(lane_num);
+/// With a limit the set may read only once the merge has moved on to a second lane parked
+/// behind a virtual row; until then everything it does not ask for stays unread. The lane asked
+/// for last keeps reading ahead on its own; the one before it loses that right and is served
+/// again by `prepare` once the decision records the change.
+void VirtualRowReadAheadTransform::noteDemand(size_t lane_num)
+{
+    const Lane & lane = lanes[lane_num];
+    /// The merge's initialisation asks every lane before any bound is known; those requests are
+    /// served with the first chunk and grant nothing beyond it.
+    if (!lane.ranked())
+        return;
 
-    /// A member that stays below the frontier changes neither the set nor the frontier; a lane
-    /// outside the set may be the frontier itself, and a member past it has to leave.
-    if (!lane.in_set || passedFrontier(lane_num))
-        invalidateSet();
+    if (limit && !window_open && lane.bound_is_virtual_row)
+    {
+        if (first_demanded_lane < 0)
+            first_demanded_lane = lane_num;
+        else if (first_demanded_lane != static_cast<ssize_t>(lane_num))
+            window_open = true;
+    }
+
+    demanded_lane = lane_num;
 }
 
 /// The K - 1 lanes with the smallest bounds other than the demanded one may each pull one
 /// block of data, so that the merge finds it buffered when the demanded lane runs out.
 void VirtualRowReadAheadTransform::grantWarmup(size_t lane_num)
 {
-    if (read_ahead_window <= 1 || (limit && budget_rows >= limit))
+    if (read_ahead_window <= 1 || budgetSpent())
         return;
 
-    size_t granted = 0;
+    std::vector<size_t> granted;
     for (size_t other_num : ranked_lanes)
     {
-        if (granted + 1 >= read_ahead_window)
+        if (granted.size() + 1 >= read_ahead_window)
             break;
-        if (other_num == lane_num)
+        const Lane & other = lanes[other_num];
+        if (other_num == lane_num || other.input->isFinished())
             continue;
-
-        Lane & other = lanes[other_num];
-        if (other.output_finished || other.input->isFinished())
-            continue;
-
-        ++granted;
         /// A lane that already holds a block keeps its place in the count but pulls no more.
-        if (other.buffered_rows > 0 || other.warmup_credit)
-            continue;
-
-        other.warmup_credit = true;
-        enqueue(other_num);
+        if (other.buffered_rows == 0 && !other.warmup)
+            lanes[other_num].warmup = true;
+        granted.push_back(other_num);
     }
+
+    /// Served after the walk: reading moves a lane in `ranked_lanes`.
+    for (size_t other_num : granted)
+        serve(other_num);
 }
 
 void VirtualRowReadAheadTransform::finishLane(size_t lane_num)
 {
     Lane & lane = lanes[lane_num];
-    if (lane.output_finished)
-        return;
+    if (lane.ranked())
+        ranked_lanes.erase(lane_num);
+    lane.finished = true;
+    ++finished_lanes;
 
-    lane.output_finished = true;
-    ++finished_outputs;
     lane.output->finish();
     lane.input->close();
-
     lane.buffer.clear();
     lane.buffered_rows = 0;
     lane.buffered_bytes = 0;
-    lane.warmup_credit = false;
     lane.in_set = false;
 
-    if (lane.ranked)
-    {
-        ranked_lanes.erase(lane_num);
-        lane.ranked = false;
-    }
-
     budget_rows -= lane.rows_pulled;
-    if (last_demanded_lane == static_cast<ssize_t>(lane_num))
-        last_demanded_lane = -1;
-    invalidateSet();
+    if (demanded_lane == static_cast<ssize_t>(lane_num))
+        demanded_lane = -1;
 }
+
+/// ── Entry point ──────────────────────────────────────────────────────────────────────────────
 
 IProcessor::Status VirtualRowReadAheadTransform::prepare()
 {
@@ -516,23 +415,33 @@ IProcessor::Status VirtualRowReadAheadTransform::prepareImpl(const UpdatedInputP
     {
         initialized = true;
         for (size_t lane_num = 0; lane_num < lanes.size(); ++lane_num)
-            enqueue(lane_num);
+            serve(lane_num);
+    }
+    for (const auto * output : updated_outputs)
+        serve(lane_by_port.at(output));
+    for (const auto * input : updated_inputs)
+        serve(lane_by_port.at(input));
+
+    /// Serving a lane can change who may read: a bound moved, a lane finished or filled its
+    /// buffer, the window opened, the budget ran out. The executor does not call back for that,
+    /// so the lanes concerned are served again here until the decision stands still.
+    while (chooseReaders())
+    {
+        for (const Decision * d : {&previous_decision, &decision})
+        {
+            for (size_t lane_num : d->set_lanes)
+                serve(lane_num);
+            if (d->demanded_lane >= 0)
+                serve(d->demanded_lane);
+        }
     }
 
-    for (const auto * output : updated_outputs)
-        enqueue(lane_by_port.at(output));
-    for (const auto * input : updated_inputs)
-        enqueue(lane_by_port.at(input));
-
-    runLanes();
-
-    if (finished_outputs == lanes.size())
+    if (finished_lanes == lanes.size())
     {
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
     }
-
     return Status::NeedData;
 }
 

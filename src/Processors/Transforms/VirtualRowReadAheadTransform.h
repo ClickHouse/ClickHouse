@@ -66,25 +66,19 @@ private:
 
         /// See the class comment; empty until the first chunk.
         Columns bound;
-        bool bound_from_virtual_row = false;
-        bool ranked = false; /// in `ranked_lanes`
+        bool bound_is_virtual_row = false;
 
         /// Rows of data pulled since the start: the budget under a limit, and what closes the
         /// input once it reaches the limit.
         UInt64 rows_pulled = 0;
-        /// Rows of data pulled since the latest virtual row. A virtual row arriving while this
-        /// is still 0 means the blocks between the two announcements were fully filtered.
-        UInt64 rows_since_virtual_row = 0;
-        bool announced = false; /// has pulled a virtual row at all
 
         bool in_set = false;
         /// May pull one block of data regardless of the window: granted to the lanes next in
         /// line when the demanded lane passes a fully filtered stretch.
-        bool warmup_credit = false;
-        bool output_finished = false;
-        bool exhausted_noted = false;
-        bool queued = false;
+        bool warmup = false;
+        bool finished = false;
 
+        bool ranked() const { return !bound.empty() && !finished; }
         /// The output can take a chunk and nothing is buffered: the merge is waiting on this lane.
         bool isDemanded() const;
         /// A virtual row waits at the tail of the buffer.
@@ -99,28 +93,38 @@ private:
         bool operator()(size_t lhs, size_t rhs) const;
     };
 
+    /// Who may read ahead, as decided from the ranking: the set, the frontier with the bound it
+    /// had, and the two switches that gate the set. Two decisions compare equal when nothing that
+    /// gates reading has changed between them.
+    struct Decision
+    {
+        std::vector<size_t> set_lanes;
+        ssize_t frontier_lane = -1;
+        Columns frontier_bound;
+        ssize_t demanded_lane = -1;
+        bool window_open = false;
+        bool budget_spent = false;
+    };
+
     Status prepareImpl(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs);
 
     int compareKeys(const Columns & lhs, const Columns & rhs) const;
     Columns virtualRowKey(const Chunk & chunk) const;
     Columns lastRowKey(const Chunk & chunk) const;
 
-    bool mayRead(size_t lane_num) const;
-    bool isFrontierCandidate(size_t lane_num) const;
+    bool budgetSpent() const { return limit && budget_rows >= limit; }
     ssize_t frontierFor(size_t lane_num) const;
     bool passedFrontier(size_t lane_num) const;
+    bool mayRead(size_t lane_num) const;
+    bool sameDecision(const Decision & lhs, const Decision & rhs) const;
+    bool chooseReaders();
 
-    void enqueue(size_t lane_num);
-    void invalidateSet() { set_stale = true; }
-    void runLanes();
-    void recomputeSet();
-    void driveLane(size_t lane_num);
-    void pushFromBuffer(Lane & lane);
+    void serve(size_t lane_num);
+    void pushReady(Lane & lane);
     void consume(size_t lane_num, Chunk chunk);
-    void setBound(size_t lane_num, Columns key, bool from_virtual_row);
+    void setBound(size_t lane_num, Columns key, bool is_virtual_row);
     void noteDemand(size_t lane_num);
     void grantWarmup(size_t lane_num);
-    void onInputExhausted(size_t lane_num);
     void finishLane(size_t lane_num);
 
     SharedHeader header;
@@ -140,25 +144,18 @@ private:
     /// so lanes are re-keyed all the time, and because the set and the frontier are the first
     /// K + 1 lanes of this order, which a heap cannot walk.
     std::set<size_t, BoundLess> ranked_lanes;
-    std::vector<size_t> set_lanes;
-    std::vector<size_t> previous_set_lanes;
-    /// The smallest-bound lane outside the set, -1 if there is none.
-    ssize_t frontier_lane = -1;
+    /// The decision in force and the one before it; lanes in either are served after a change.
+    Decision decision;
+    Decision previous_decision;
 
     bool window_open;
-    ssize_t first_demanded_lane = -1;
-    ssize_t last_demanded_lane = -1;
     /// Rows pulled over lanes whose output is not finished.
     UInt64 budget_rows = 0;
-    size_t finished_outputs = 0;
+    ssize_t first_demanded_lane = -1;
+    /// The lane the merge asked for last: it keeps reading ahead like a set member.
+    ssize_t demanded_lane = -1;
+    size_t finished_lanes = 0;
     bool initialized = false;
-    /// The set and the frontier must be recomputed before lanes are driven again. Raised by
-    /// `invalidateSet` on every transition that can change who may read: a bound moving past the
-    /// frontier or on a lane outside the set, a lane reaching or leaving its caps, the budget
-    /// running out, a lane finishing or running out of input, the window opening.
-    bool set_stale = true;
-
-    std::vector<size_t> candidates;
 };
 
 }
