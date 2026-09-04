@@ -24,6 +24,10 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
+
+    /// The algorithm of the join that is running now: it starts as `HASH` and becomes
+    /// `PARTIAL_MERGE` once `switchJoin` has moved the right table to disk.
+    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 

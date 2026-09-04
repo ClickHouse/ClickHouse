@@ -1,0 +1,56 @@
+join in a subquery in FROM
+1	['HASH']	['INNER']	['ALL']	[]
+join in a subquery in IN
+1	['HASH']	['INNER']	['ALL']	[]
+join in the right side of a join
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+join in a common table expression
+3	['HASH']	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[]
+join in a scalar subquery
+1	['HASH']	['INNER']	['ALL']	[]
+join inside a view
+1	['HASH']	['INNER']	['ALL']	[]
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+join inside a view of a view
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+join inside a materialized view
+1	['HASH']	['INNER']	['ALL']	[]
+join inside a chain of materialized views
+2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+join inside a materialized view with its own inner table
+1	['HASH']	['INNER']	['ALL']	[]
+join inside a materialized view that reads a view
+05042_join_views_mv_over_view_a_plain	2	['HASH']	['INNER','INNER']	['ALL','ALL']	[]
+05042_join_views_mv_over_view_b_insert_with_join	3	['HASH']	['INNER','INNER','INNER']	['ALL','ALL','ALL']	[]
+join in the SELECT of CREATE MATERIALIZED VIEW POPULATE
+Create	1	['HASH']	['INNER']	['ALL']	[]
+join in the SELECT of an INSERT with no view attached
+1	['HASH']	['INNER']	['ALL']	[]
+parallel hash
+1	['PARALLEL_HASH']	['INNER']	['ALL']	[]
+parallel hash for the other kinds it is picked for
+05042_join_algorithms_ph_kind_a_left	1	['PARALLEL_HASH']	['LEFT']	['ALL']	[]
+05042_join_algorithms_ph_kind_b_right	1	['PARALLEL_HASH']	['RIGHT']	['ALL']	[]
+05042_join_algorithms_ph_kind_c_full	1	['PARALLEL_HASH']	['FULL']	['ALL']	[]
+05042_join_algorithms_ph_kind_d_asof_left	1	['PARALLEL_HASH']	['LEFT']	['ASOF']	[]
+parallel hash switching to grace hash
+1	['GRACE_HASH','PARALLEL_HASH']	['INNER']	['ALL']	['join']
+direct join with a dictionary
+05042_join_algorithms_direct_a_left	1	['DIRECT']	['LEFT']	['ALL']	[]
+05042_join_algorithms_direct_b_inner	1	['DIRECT']	['INNER']	['ALL']	[]
+05042_join_algorithms_direct_c_any_left	1	['DIRECT']	['LEFT']	['ANY']	[]
+05042_join_algorithms_direct_d_semi_left	1	['DIRECT']	['LEFT']	['SEMI']	[]
+05042_join_algorithms_direct_e_anti_left	1	['DIRECT']	['LEFT']	['ANTI']	[]
+algorithms that were asked for but not executed
+05042_join_algorithms_declined_a_parallel_hash_disjuncts	1	['HASH']	['INNER']	['ALL']	[]
+05042_join_algorithms_declined_b_parallel_hash_special_storage	1	['HASH']	['LEFT']	['ANY']	[]
+05042_join_algorithms_declined_c_direct_right	1	['HASH']	['RIGHT']	['ALL']	[]
+05042_join_algorithms_declined_d_direct_mixed_condition	1	['HASH']	['LEFT']	['ALL']	[]
+a query that succeeds
+QueryStart	0	[]	[]	[]	[]
+QueryFinish	1	['HASH']	['INNER']	['ALL']	[]
+a query that fails while its pipeline runs
+QueryStart	0	[]	[]	[]	[]
+ExceptionWhileProcessing	1	['HASH']	['INNER']	['ALL']	[]
+a query that fails before it starts
+ExceptionBeforeStart	0	[]	[]	[]	[]

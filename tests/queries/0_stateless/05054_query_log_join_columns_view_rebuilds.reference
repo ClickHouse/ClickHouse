@@ -1,0 +1,16 @@
+one join in a materialized view, an insert of several blocks
+10
+1
+one join in a materialized view, with parallel_view_processing enabled
+10
+two joins in a materialized view, an insert of several blocks
+10
+a join in each materialized view of a chain, an insert of several blocks
+10
+a join in the INSERT itself next to the join of the view
+10
+05054_view_rebuilds_a_one_join	1	['HASH']	['INNER']	['ALL']
+05054_view_rebuilds_b_parallel_view_processing	1	['HASH']	['INNER']	['ALL']
+05054_view_rebuilds_c_two_joins	2	['HASH']	['INNER','INNER']	['ALL','ALL']
+05054_view_rebuilds_d_chain	2	['HASH']	['INNER','INNER']	['ALL','ALL']
+05054_view_rebuilds_e_insert_with_a_join	2	['HASH']	['INNER','INNER']	['ALL','ALL']

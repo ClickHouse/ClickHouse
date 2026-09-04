@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -100,7 +101,8 @@ public:
             StoragePtr inner_storage_,
             ASTPtr inner_table_function_ast_,
             size_t max_block_size_,
-            size_t num_streams_)
+            size_t num_streams_,
+            String repeated_build_scope_name_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
             , column_names(column_names_)
             , query_info(query_info_)
@@ -111,6 +113,7 @@ public:
             , inner_table_function_ast(std::move(inner_table_function_ast_))
             , max_block_size(max_block_size_)
             , num_streams(num_streams_)
+            , repeated_build_scope_name(std::move(repeated_build_scope_name_))
     {
     }
 
@@ -155,6 +158,19 @@ public:
 
         if (plan.isInitialized())
         {
+            /// The loop restarts the inner relation every time its pipeline is exhausted, and every one
+            /// of those builds reports into the counters of the query, because `inner_context` is a copy
+            /// of its context and shares them. Mark the region, so that the joins of the looped relation
+            /// are counted once instead of once per pass, which would otherwise make
+            /// `used_number_of_joins` depend on how many rows the query asked for.
+            ///
+            /// The scope names this `loop` and not the relation it wraps: one query can hold several
+            /// `loop` of the same table or view, for instance in two `UNION ALL` branches, and those are
+            /// different joins that must be counted apart. The name was taken while the pipeline that
+            /// holds this `loop` was assembled, so it also stays the same when that pipeline is itself
+            /// assembled again, e.g. a `loop` in the `SELECT` of a materialized view.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(repeated_build_scope_name);
+
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -213,6 +229,8 @@ private:
     ASTPtr inner_table_function_ast;
     size_t max_block_size;
     size_t num_streams;
+    /// Names this `loop` for the deduplication of the joins it rebuilds, see `initLoop`.
+    String repeated_build_scope_name;
     ContextPtr inner_context;
     // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
@@ -258,7 +276,8 @@ ReadFromLoopStep::ReadFromLoopStep(
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size, num_streams));
+            column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, inner_table_function_ast, max_block_size,
+            num_streams, QueryExecutionCounters::makeScopeForPipelineBuiltLater("loop")));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
@@ -76,6 +78,8 @@ public:
     virtual ~IJoin() = default;
 
     virtual std::string getName() const = 0;
+
+    virtual std::string getAlgorithm() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
 

@@ -157,6 +157,12 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
         {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
+        {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed for this query. It is collected from the pipelines as they are built, so it reflects the joins that are left after all optimizations, not the number of JOIN clauses in the query text. A join is counted no matter how deeply it is nested: subqueries, common table expressions, views, views of views and the SELECT of a materialized view triggered by an INSERT all report into the row of the query that was sent, so this can be non-zero for a query whose own text holds no JOIN at all. A query that builds a pipeline without running it, such as EXPLAIN PIPELINE, reports the joins of the query it explains. The pipeline of the SELECT of a materialized view is built again for every block of the INSERT that triggers it and by every insert stream, and each of its joins is counted once all the same."},
+        {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins counted in used_number_of_joins: 'HASH', 'PARALLEL_HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'PARALLEL_FULL_SORTING_MERGE', 'IE_JOIN', 'DIRECT', 'PASTE' and 'CONSTANT', sorted and deduplicated, so an algorithm shared by several joins appears once. This is the algorithm that was chosen to execute each join, not the algorithms that the join_algorithm setting allows. An algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
+        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins counted in used_number_of_joins, one element per join, so a kind shared by several joins appears several times. The elements are sorted rather than in execution order. Each kind is the one that was executed, which can differ from the query text, because the optimizer may run a join with its sides swapped and thereby turn LEFT into RIGHT."},
+        {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins counted in used_number_of_joins, one element per join, in the same order as used_join_kinds: the element at a given index describes the same join in both arrays."},
+        {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory."},
+
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
@@ -341,6 +347,12 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
+
+        typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(used_number_of_joins);
+        fill_column(used_join_algorithms, typeid_cast<ColumnArray &>(*columns[i++]));
+        fill_column(used_join_kinds, typeid_cast<ColumnArray &>(*columns[i++]));
+        fill_column(used_join_strictness, typeid_cast<ColumnArray &>(*columns[i++]));
+        fill_column(spilled_to_disk, typeid_cast<ColumnArray &>(*columns[i++]));
     }
 
     {

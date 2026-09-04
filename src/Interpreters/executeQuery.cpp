@@ -77,6 +77,7 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -501,6 +502,20 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
+
+    /// A single snapshot, for the same reason as for `QueryFactoriesInfo` above: a late update, e.g. by a
+    /// processor of a dependent view, must not be able to land in the middle of these assignments and make
+    /// the logged row self-contradictory.
+    if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
+    {
+        auto counters = query_execution_counters->getSnapshot();
+        element.used_number_of_joins = counters.number_of_joins;
+        element.used_join_algorithms = std::move(counters.join_algorithms);
+        element.used_join_kinds = std::move(counters.join_kinds);
+        element.used_join_strictness = std::move(counters.join_strictness);
+        element.spilled_to_disk = std::move(counters.spilled_to_disk);
+    }
+
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
