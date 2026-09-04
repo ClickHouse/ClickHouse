@@ -1481,18 +1481,22 @@ Provides a table-like interface to Apache [Iceberg](https://iceberg.apache.org/)
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,extra_credentials])
 icebergS3(named_collection[, option=value [,..]])
 
-icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 icebergAzure(named_collection[, option=value [,..]])
 
-icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(path_to_table, [,format])
 icebergHDFS(named_collection[, option=value [,..]])
 
-icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(path_to_table, [,format])
 icebergLocal(named_collection[, option=value [,..]])
 ```
+
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -2236,16 +2240,20 @@ Provides a read-only table-like interface to Apache [Paimon](https://paimon.apac
 ## Syntax {#syntax}
 
 ```sql
-paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,extra_credentials])
 
-paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,extra_credentials])
 
-paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
-paimonHDFS(path_to_table, [,format] [,compression_method])
+paimonHDFS(path_to_table, [,format])
 
-paimonLocal(path_to_table, [,format] [,compression_method])
+paimonLocal(path_to_table, [,format])
 ```
+
+`format` accepts only `Parquet`, `ORC` or `Avro`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -2380,14 +2388,18 @@ Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delt
 `deltaLake` is an alias of `deltaLakeS3` which is supported for compatibility.
 
 ```sql
-deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 
-deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 
-deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 deltaLakeLocal(path, [,format])
 ```
+
+`format` accepts only `Parquet`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -2487,7 +2499,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
-            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
@@ -2511,8 +2523,12 @@ Provides a read-only table-like interface to Apache [Hudi](https://hudi.apache.o
 ## Syntax {#syntax}
 
 ```sql
-hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 ```
+
+`format` accepts only `Parquet` or `ORC`; any other value is rejected with `BAD_ARGUMENTS`. Omitting the argument or passing `auto` selects `Parquet`.
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
@@ -2522,7 +2538,6 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `aws_access_key_id`, `aws_secret_access_key` | Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).  |
 | `format`                                     | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                         |
 | `structure`                                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                          |
-| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, compression will be autodetected by the file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                           |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                    |
 
 ## Returned value {#returned-value}

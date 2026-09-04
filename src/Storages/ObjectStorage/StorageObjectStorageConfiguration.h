@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -85,12 +86,21 @@ public:
     using Paths = std::vector<Path>;
 
     /// Initialize configuration from either AST or NamedCollection.
+    /// `mode` distinguishes a fresh `CREATE TABLE` from `ATTACH`/server-startup paths; some
+    /// validations (for example the data lake `compression_method` rejection) only apply
+    /// when the user supplies a fresh definition, i.e. `mode == LoadingStrictnessLevel::CREATE`.
+    /// Every other mode replays a definition that was already accepted when the table was
+    /// created - `ATTACH`/`FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE` (`RESTORE TABLE`
+    /// and `DatabaseReplicated::recoverLostReplica`) - and skips the validation, so old persisted
+    /// metadata still loads after an upgrade.
     static void initialize(
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        const StorageID * table_id = nullptr);
+        const StorageID * table_id = nullptr,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE,
+        bool is_restore_from_backup = false);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -149,6 +159,13 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
+
+    /// Data file formats a data lake engine can actually read back. A data lake stores its data
+    /// files in one of a few columnar/row formats named by the table format's own specification;
+    /// anything else either corrupts the table on write or is silently misread, because the
+    /// readers never consult the file extension to decide how to parse a data file.
+    /// Empty means "no restriction" - that is the case for the plain object storage engines.
+    virtual Strings getSupportedDataLakeFormats() const { return {}; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
@@ -332,6 +349,12 @@ public:
 
     String format = "auto";
     String compression_method = "auto";
+    /// Set by the parsing paths when the user explicitly supplied a
+    /// `compression_method`/`compression` argument (positional, key-value,
+    /// or named-collection key). Used by `initialize` to reject the argument
+    /// on data lake engines at CREATE time while still letting ATTACH/RESTORE
+    /// of existing tables succeed.
+    bool compression_method_user_provided = false;
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
     /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.

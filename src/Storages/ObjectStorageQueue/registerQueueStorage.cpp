@@ -53,7 +53,14 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto configuration = std::make_shared<Configuration>();
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args.engine_args,
+        args.getLocalContext(),
+        false,
+        &args.table_id,
+        args.mode,
+        args.is_restore_from_backup);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

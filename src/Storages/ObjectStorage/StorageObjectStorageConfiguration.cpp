@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -12,7 +13,12 @@
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/StorageURL.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+
+#include <fmt/ranges.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -100,7 +106,9 @@ void StorageObjectStorageConfiguration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    const StorageID * table_id)
+    const StorageID * table_id,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -138,6 +146,60 @@ void StorageObjectStorageConfiguration::initialize(
         if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
+        }
+
+        /// Reject only a fresh user-supplied definition: `CREATE TABLE` or a table function
+        /// (which always loads with `CREATE`). Every other mode replays metadata that was
+        /// already accepted when the table was originally created, and is deliberately exempt
+        /// as a compatibility path so pre-fix tables still load after an upgrade:
+        ///  - every `ATTACH` form (`ATTACH`/`FORCE_ATTACH`/`FORCE_RESTORE`), including a
+        ///    user-supplied full-definition `ATTACH TABLE ... ENGINE = ...`, which can therefore
+        ///    still persist a definition carrying `compression_method`; per review the gate is
+        ///    intentionally kept simple rather than special-casing the `ATTACH` shapes;
+        ///  - `SECONDARY_CREATE`, which covers both `RESTORE TABLE` and the replay of stored
+        ///    `CREATE TABLE` text by `DatabaseReplicated::recoverLostReplica`. A fresh
+        ///    `CREATE` in a `Replicated` database is still rejected, because the initiator runs
+        ///    it as an initial query and therefore with `mode == CREATE`.
+        /// The `is_restore_from_backup` guard is kept so that a restore is never rejected even
+        /// if it is ever executed with another mode.
+        if (mode == LoadingStrictnessLevel::CREATE
+            && !is_restore_from_backup
+            && configuration_to_initialize.compression_method_user_provided)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `compression_method` argument is not supported by data lake engines. "
+                "Data lake formats use their own internal compression codec; set it via the "
+                "format-specific setting (for example, `output_format_parquet_compression_method`) instead.");
+        }
+
+        /// Same reasoning for an explicit `format` that the lake cannot store its data files in.
+        /// A `DeltaLake` table written with, say, `format = 'RowBinary'` is corrupted for good:
+        /// the file is committed into the Delta log as an ordinary data file, and every reader -
+        /// including ClickHouse itself - parses it as `Parquet`, because the log records no
+        /// per-file format. Reading with such a format is worse still: it silently returns
+        /// garbage rows instead of throwing.
+        /// `auto` is left alone here - it is resolved to the lake's default below.
+        if (mode == LoadingStrictnessLevel::CREATE
+            && !is_restore_from_backup
+            && configuration_to_initialize.format != "auto")
+        {
+            const auto supported_formats = configuration_to_initialize.getSupportedDataLakeFormats();
+            const auto is_supported = std::any_of(
+                supported_formats.begin(),
+                supported_formats.end(),
+                [&](const auto & supported) { return boost::iequals(supported, configuration_to_initialize.format); });
+
+            if (!supported_formats.empty() && !is_supported)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The `{}` format is not supported by the {} data lake engine, which stores its data files as {}. "
+                    "Accepting it would write data files that no reader of this table format can parse.",
+                    configuration_to_initialize.format,
+                    configuration_to_initialize.getEngineName(),
+                    fmt::join(supported_formats, ", "));
+            }
         }
     }
     else if (!configuration_to_initialize.partition_strategy_was_set
@@ -390,6 +452,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
 {
     format = parsed_arguments.format;
     compression_method = parsed_arguments.compression_method;
+    compression_method_user_provided = parsed_arguments.compression_method_user_provided;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_strategy_was_set = parsed_arguments.partition_strategy_was_set;

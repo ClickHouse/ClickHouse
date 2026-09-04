@@ -95,6 +95,33 @@ public:
 #endif
     }
 
+    Strings getSupportedDataLakeFormats() const override
+    {
+#if USE_AVRO
+        if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
+        {
+            /// Iceberg records the format of every data file in its manifest and honours it on
+            /// read, so all three data file formats of the Iceberg specification work.
+            return {"Parquet", "ORC", "Avro"};
+        }
+        if constexpr (std::is_same_v<DataLakeMetadata, PaimonMetadata>)
+        {
+            /// The data file formats of the Paimon specification.
+            return {"Parquet", "ORC", "Avro"};
+        }
+#endif
+        if constexpr (std::is_same_v<DataLakeMetadata, HudiMetadata>)
+        {
+            /// `format` selects the extension of the base files that are listed, and Hudi base
+            /// files are columnar.
+            return {"Parquet", "ORC"};
+        }
+        /// Delta Lake. Its log carries no per-file format, so the reader always falls back to the
+        /// configured one: writing anything but `Parquet` corrupts the table for every reader,
+        /// and reading with anything but `Parquet` silently returns garbage.
+        return {"Parquet"};
+    }
+
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }

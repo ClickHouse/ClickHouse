@@ -102,11 +102,13 @@ void HDFSStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool w
         if (args.size() > 3)
         {
             compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
+            compression_method_user_provided = true;
         }
     }
     else if (args.size() > 2)
     {
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
+        compression_method_user_provided = true;
     }
 }
 
@@ -119,8 +121,12 @@ void HDFSStorageParsedArguments::fromNamedCollection(const NamedCollection & col
         url_str = collection.get<String>("url");
 
     format = collection.getOrDefault<String>("format", "auto");
-    compression_method = collection.getOrDefault<String>("compression_method",
-                                                         collection.getOrDefault<String>("compression", "auto"));
+    if (collection.hasAny({"compression_method", "compression"}))
+    {
+        compression_method = collection.getOrDefault<String>("compression_method",
+                                                             collection.getOrDefault<String>("compression", "auto"));
+        compression_method_user_provided = true;
+    }
     structure = collection.getOrDefault<String>("structure", "auto");
 }
 
