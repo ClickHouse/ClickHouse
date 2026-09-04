@@ -1,11 +1,14 @@
 #include <Coordination/KeeperCommon.h>
 
+#include <array>
 #include <limits>
+#include <optional>
 #include <string>
 #include <filesystem>
 #include <thread>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -14,9 +17,18 @@
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/HashingReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <base/find_symbols.h>
+
+namespace ProfileEvents
+{
+    extern const Event S3CompleteMultipartUploadAdoptedExistingObject;
+}
 
 namespace DB
 {
@@ -25,6 +37,35 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
+    extern const CoordinationSettingsBool disk_move_verify_destination_read_back;
+}
+
+namespace
+{
+constexpr std::string_view keeper_move_marker_magic = "KEEPERMV";
+constexpr uint8_t keeper_move_marker_version = 1;
+constexpr size_t keeper_move_marker_size = 33;
+
+std::string markerPathForDestination(const std::string & path_to)
+{
+    const fs::path destination(path_to);
+    return (destination.parent_path() / (std::string{tmp_keeper_file_prefix} + destination.filename().string())).generic_string();
+}
+
+void syncLocalParentDirectory(const DiskPtr & disk, const std::string & path)
+{
+    if (const auto * local_disk = dynamic_cast<const DiskLocal *>(disk.get()))
+        local_disk->syncDirectory(fs::path(path).parent_path().generic_string());
+}
+
+void syncLocalFileAndParentDirectory(const DiskPtr & disk, const std::string & path)
+{
+    if (const auto * local_disk = dynamic_cast<const DiskLocal *>(disk.get()))
+    {
+        local_disk->syncFile(path);
+        local_disk->syncDirectory(fs::path(path).parent_path().generic_string());
+    }
+}
 }
 
 bool isLocalDisk(const IDisk & disk)
@@ -63,7 +104,84 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
     return static_cast<int32_t>(value);
 }
 
-void moveFileBetweenDisks(
+/// Keeper move marker format (33 bytes):
+///
+/// | Bytes | 0 .. 7     | 8         | 9 .. 16        | 17 .. 24       | 25 .. 32        |
+/// |-------|------------|-----------|----------------|----------------|-----------------|
+/// | Field | `KEEPERMV` | version   | file size      | hash low 64    | hash high 64    |
+/// | Type  | 8 bytes    | `uint8_t` | `uint64_t` LE  | `uint64_t` LE  | `uint64_t` LE   |
+std::string serializeKeeperMoveMarker(const KeeperFileDigest & digest)
+{
+    WriteBufferFromOwnString output;
+    output.write(keeper_move_marker_magic.data(), keeper_move_marker_magic.size());
+    writeBinaryLittleEndian(keeper_move_marker_version, output);
+    writeBinaryLittleEndian(digest.size, output);
+    writeBinaryLittleEndian(digest.hash.low64, output);
+    writeBinaryLittleEndian(digest.hash.high64, output);
+    output.finalize();
+    chassert(output.str().size() == keeper_move_marker_size);
+    return output.str();
+}
+
+KeeperMoveMarkerParseResult parseKeeperMoveMarker(std::string_view marker)
+{
+    if (marker.empty())
+        return std::unexpected(KeeperMoveMarkerParseError::LegacyEmpty);
+
+    if (marker.size() != keeper_move_marker_size || !marker.starts_with(keeper_move_marker_magic))
+        return std::unexpected(KeeperMoveMarkerParseError::Malformed);
+
+    ReadBufferFromString input(marker.substr(keeper_move_marker_magic.size()));
+    uint8_t version = 0;
+    readBinaryLittleEndian(version, input);
+    if (version != keeper_move_marker_version)
+        return std::unexpected(KeeperMoveMarkerParseError::UnknownVersion);
+
+    KeeperFileDigest digest;
+    readBinaryLittleEndian(digest.size, input);
+    readBinaryLittleEndian(digest.hash.low64, input);
+    readBinaryLittleEndian(digest.hash.high64, input);
+    return digest;
+}
+
+KeeperMoveMarkerParseResult readKeeperMoveMarker(const DiskPtr & disk, const std::string & path)
+{
+    auto input = disk->readFile(path, getReadSettings());
+    std::array<char, keeper_move_marker_size + 1> contents{};
+    size_t size = 0;
+    while (size < contents.size())
+    {
+        const size_t bytes_read = input->readBig(contents.data() + size, contents.size() - size);
+        if (bytes_read == 0)
+            break;
+        size += bytes_read;
+    }
+
+    return parseKeeperMoveMarker(std::string_view(contents.data(), size));
+}
+
+KeeperFileDigest computeKeeperFileDigest(ReadBuffer & input)
+{
+    HashingReadBuffer hashing_input(input, DBMS_DEFAULT_HASHING_BLOCK_SIZE);
+    hashing_input.ignoreAll();
+    return {.size = hashing_input.count(), .hash = hashing_input.getHash()};
+}
+
+KeeperFileDigest computeKeeperFileDigest(const DiskPtr & disk, const std::string & path)
+{
+    ReadSettings settings = getReadSettings();
+    settings.enable_filesystem_cache = false;
+    auto input = disk->readFile(path, settings);
+    return computeKeeperFileDigest(*input);
+}
+
+void removeKeeperFileIfExists(const DiskPtr & disk, const std::string & path)
+{
+    SyncGuardPtr directory_sync_guard = disk->getDirectorySyncGuard(fs::path(path).parent_path().generic_string());
+    disk->removeFileIfExists(path);
+}
+
+KeeperMoveResult moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
@@ -73,12 +191,8 @@ void moveFileBetweenDisks(
     const KeeperContextPtr & keeper_context)
 {
     LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", path_from, path_to, disk_from->getName(), disk_to->getName());
-    /// we use empty file with prefix tmp_ to detect incomplete copies
-    /// if a copy is complete we don't care from which disk we use the same file
-    /// so it's okay if a failure happens after removing of tmp file but before we remove
-    /// the file from the source disk
-    auto from_path = fs::path(path_from);
-    auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
+    const auto from_path = fs::path(path_from);
+    const auto tmp_file_name = markerPathForDestination(path_to);
 
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
     auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
@@ -119,29 +233,102 @@ void moveFileBetweenDisks(
         return false;
     };
 
+    std::optional<KeeperFileDigest> source_digest;
+    if (!run_with_retries(
+            [&] { source_digest = computeKeeperFileDigest(disk_from, path_from); },
+            "calculating source file digest"))
+        return std::unexpected(KeeperMoveError::FailedBeforeMarkerPublication);
+
+    chassert(source_digest.has_value());
+    const std::string marker = serializeKeeperMoveMarker(*source_digest);
+
     if (!run_with_retries(
             [&]
             {
-                auto buf = disk_to->writeFile(tmp_file_name);
+                auto buf = disk_to->writeFile(tmp_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+                buf->write(marker.data(), marker.size());
                 buf->finalize();
+                if (isLocalDisk(*disk_to))
+                {
+                    buf->sync();
+                    syncLocalParentDirectory(disk_to, tmp_file_name);
+                }
             },
             "creating temporary file"))
-        return;
+        return std::unexpected(KeeperMoveError::FailedBeforeMarkerPublication);
 
-    if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"))
-        return;
+    const auto adopted_existing_object_before = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject];
+    if (!run_with_retries(
+            [&]
+            {
+                disk_from->copyFile(from_path, *disk_to, path_to, {});
+                if (isLocalDisk(*disk_to))
+                    syncLocalFileAndParentDirectory(disk_to, path_to);
+            },
+            "copying file"))
+        return std::unexpected(KeeperMoveError::MarkerPublishedCopyNotCompleted);
 
-    if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
-        return;
-
-    if (before_file_remove_op && !before_file_remove_op())
+    try
     {
-        LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
-        return;
+        if (disk_to->getFileSize(path_to) != source_digest->size)
+        {
+            LOG_ERROR(logger, "Copied destination {} on disk {} has an unexpected size", path_to, disk_to->getName());
+            return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);
+        }
+
+        /// The profile event is process-wide. An unrelated concurrent multipart completion can add
+        /// an unnecessary read-back, but cannot skip the mandatory verification for an adopted object.
+        const bool adopted_existing_object
+            = ProfileEvents::global_counters[ProfileEvents::S3CompleteMultipartUploadAdoptedExistingObject] > adopted_existing_object_before;
+        const bool verify_read_back
+            = coordination_settings[CoordinationSetting::disk_move_verify_destination_read_back].value || adopted_existing_object;
+        if (verify_read_back && computeKeeperFileDigest(disk_to, path_to) != *source_digest)
+        {
+            LOG_ERROR(logger, "Copied destination {} on disk {} has an unexpected digest", path_to, disk_to->getName());
+            return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, fmt::format("Failed to validate copied destination {}", path_to));
+        return std::unexpected(KeeperMoveError::CopyCompletedDestinationValidationFailed);
     }
 
-    if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
-        return;
+    if (!run_with_retries(
+            [&]
+            {
+                disk_to->removeFileIfExists(tmp_file_name);
+                if (isLocalDisk(*disk_to))
+                    syncLocalParentDirectory(disk_to, tmp_file_name);
+            },
+            "removing temporary file"))
+        return std::unexpected(KeeperMoveError::MarkerRemovalFailed);
+
+    try
+    {
+        if (before_file_remove_op && !before_file_remove_op())
+        {
+            LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
+            return std::unexpected(KeeperMoveError::CallbackRejectedOrThrew);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, fmt::format("Move callback failed for {}", path_from));
+        return std::unexpected(KeeperMoveError::CallbackRejectedOrThrew);
+    }
+
+    if (!run_with_retries(
+            [&]
+            {
+                disk_from->removeFileIfExists(path_from);
+                if (isLocalDisk(*disk_from))
+                    syncLocalParentDirectory(disk_from, path_from);
+            },
+            "removing file from source disk"))
+        return std::unexpected(KeeperMoveError::DestinationPublishedSourceRemovalFailed);
+
+    return {};
 }
 
 /// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!

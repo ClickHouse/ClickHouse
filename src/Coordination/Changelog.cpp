@@ -20,7 +20,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <base/errnoToString.h>
 #include <base/scope_guard.h>
-#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -104,7 +103,7 @@ void moveChangelogBetweenDisks(
     const KeeperContextPtr & keeper_context)
 {
     auto path_from = description->path;
-    moveFileBetweenDisks(
+    const auto move_result = moveFileBetweenDisks(
         disk_from,
         path_from,
         disk_to,
@@ -123,6 +122,18 @@ void moveChangelogBetweenDisks(
         },
         getLogger("Changelog"),
         keeper_context);
+
+    if (!move_result)
+        LOG_WARNING(
+            getLogger("Changelog"),
+            "Failed to move changelog {} from disk {} to {} on disk {} at stage {}; keeping it at {} on disk {}",
+            path_from,
+            disk_from->getName(),
+            path_to,
+            disk_to->getName(),
+            static_cast<unsigned>(move_result.error()),
+            description->path,
+            description->disk->getName());
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
@@ -138,6 +149,12 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
     if (record.header.blob_size != 0)
         hash.update(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
     return hash.get64();
+}
+
+bool isChangelogGapCoveredBySnapshot(uint64_t next_from_log_index, uint64_t last_commited_log_index)
+{
+    chassert(next_from_log_index > 0);
+    return next_from_log_index - 1 <= last_commited_log_index;
 }
 
 struct RemoveChangelog
@@ -190,7 +207,11 @@ void ChangelogFileDescription::waitAllAsyncOperations()
     for (const auto & op : file_operations)
     {
         if (auto op_locked = op.lock())
+        {
             op_locked->done.wait(false);
+            if (auto error = op_locked->getError())
+                std::rethrow_exception(error);
+        }
     }
 
     file_operations.clear();
@@ -314,9 +335,9 @@ public:
                 cancelCurrentFile();
             }
 
-            auto latest_log_disk = getLatestLogDisk();
-            chassert(file_description->disk == latest_log_disk);
-            file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
+            auto file_disk = file_description->disk;
+            chassert(file_disk);
+            file_buf = file_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             chassert(file_buf);
             last_index_written.reset();
             current_file_description = std::move(file_description);
@@ -326,8 +347,8 @@ public:
                     std::move(file_buf),
                     /* compression level = */ 3,
                     /* append_to_existing_file_ = */ mode == WriteMode::Append,
-                    [latest_log_disk, path = current_file_description->path, read_settings = getReadSettings()]
-                    { return latest_log_disk->readFile(path, read_settings); });
+                    [file_disk, path = current_file_description->path, read_settings = getReadSettings()]
+                    { return file_disk->readFile(path, read_settings); });
 
             prealloc_done = false;
         }
@@ -921,7 +942,7 @@ void checkFirstChangelogFile(
     LOG_INFO(
         log, "from log index: {}, to log index: {}, last committed log index: {}", from_log_index, to_log_index, last_commited_log_index);
 
-    if (from_log_index > last_commited_log_index && (from_log_index - last_commited_log_index) > 1)
+    if (!isChangelogGapCoveredBySnapshot(from_log_index, last_commited_log_index))
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Some records were lost, last committed log index {}, smallest available log index on disk {}. Manual intervention "
@@ -1022,7 +1043,7 @@ StitchState replayStartupMetadata(
         else if (file_description->from_log_index > stitch_state.last_read_index
                  && (file_description->from_log_index - stitch_state.last_read_index) > 1)
         {
-            if (file_description->from_log_index <= last_commited_log_index)
+            if (isChangelogGapCoveredBySnapshot(file_description->from_log_index, last_commited_log_index))
             {
                 LOG_INFO(
                     log,
@@ -3513,9 +3534,31 @@ void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, Ch
     writer.finalize();
 }
 
+namespace
+{
+
+struct ChangelogRecoveryMarker
+{
+    DiskPtr disk;
+    String path;
+};
+
+struct ChangelogRecoveryCandidate
+{
+    ChangelogFileDescriptionPtr description;
+    size_t precedence = 0;
+    std::optional<ChangelogRecoveryMarker> marker;
+    bool has_unknown_marker_version = false;
+};
+
+}
 
 Changelog::Changelog(
-    LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
+    LoggerPtr log_,
+    LogFileSettings log_file_settings,
+    FlushSettings flush_settings_,
+    ReadAheadSettings readahead_settings_,
+    KeeperContextPtr keeper_context_)
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
@@ -3548,87 +3591,270 @@ Changelog::Changelog(
                 latest_log_disk->getName());
         }
 
-        /// Load all files on changelog disks
-
-        std::unordered_set<DiskPtr> read_disks;
-
-        const auto load_from_disk = [&](const auto & disk)
+        /// Inventory every distinct configured disk without reading contents or mutating storage.
+        struct DiskInventory
         {
-            if (read_disks.contains(disk))
-                return;
-
-            LOG_TRACE(log, "Reading from disk {}", disk->getName());
-            std::unordered_map<std::string, std::string> incomplete_files;
-
-            const auto clean_incomplete_file = [&](const auto & file_path)
-            {
-                if (auto incomplete_it = incomplete_files.find(fs::path(file_path).filename()); incomplete_it != incomplete_files.end())
-                {
-                    LOG_TRACE(log, "Removing {} from {}", file_path, disk->getName());
-                    disk->removeFile(file_path);
-                    disk->removeFile(incomplete_it->second);
-                    incomplete_files.erase(incomplete_it);
-                    return true;
-                }
-
-                return false;
-            };
-
-            std::vector<std::string> changelog_files;
-            for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
-            {
-                const auto & file_name = it->name();
-                if (file_name == changelogs_detached_dir)
-                    continue;
-
-                if (file_name.starts_with(tmp_keeper_file_prefix))
-                {
-                    incomplete_files.emplace(file_name.substr(tmp_keeper_file_prefix.size()), it->path());
-                    continue;
-                }
-
-                if (file_name.starts_with(DEFAULT_PREFIX))
-                {
-                    if (!clean_incomplete_file(it->path()))
-                        changelog_files.push_back(it->path());
-                }
-                else
-                {
-                    LOG_WARNING(log, "Unknown file found in log directory: {}", file_name);
-                }
-            }
-
-            for (const auto & changelog_file : changelog_files)
-            {
-                if (clean_incomplete_file(fs::path(changelog_file).filename()))
-                    continue;
-
-                auto file_description = getChangelogFileDescription(changelog_file);
-                file_description->disk = disk;
-
-                LOG_TRACE(log, "Found {} on {}", changelog_file, disk->getName());
-                auto [changelog_it, inserted] = existing_changelogs.insert_or_assign(file_description->from_log_index, std::move(file_description));
-
-                if (!inserted)
-                    LOG_WARNING(log, "Found duplicate entries for {}, will use the entry from {}", changelog_it->second->path, disk->getName());
-            }
-
-            for (const auto & [name, path] : incomplete_files)
-                disk->removeFile(path);
-
-            read_disks.insert(disk);
+            DiskPtr disk;
+            size_t precedence = 0;
+            std::vector<ChangelogFileDescriptionPtr> files;
+            std::vector<std::pair<String, String>> markers; /// target basename, marker path
         };
 
-        /// Load all files from old disks
-        for (const auto & disk : keeper_context->getOldLogDisks())
-            load_from_disk(disk);
-
+        std::vector<DiskInventory> inventories;
+        const auto add_disk = [&](const DiskPtr & candidate, size_t precedence)
+        {
+            auto it = std::ranges::find(inventories, candidate, &DiskInventory::disk);
+            if (it == inventories.end())
+                inventories.push_back({.disk = candidate, .precedence = precedence, .files = {}, .markers = {}});
+            else
+                it->precedence = std::max(it->precedence, precedence);
+        };
+        size_t precedence = 0;
+        for (const auto & old_disk : keeper_context->getOldLogDisks())
+            add_disk(old_disk, precedence++);
         auto disk = getDisk();
-        load_from_disk(disk);
-
+        add_disk(disk, precedence++);
         auto latest_log_disk = getLatestLogDisk();
-        if (disk != latest_log_disk)
-            load_from_disk(latest_log_disk);
+        add_disk(latest_log_disk, precedence++);
+
+        const auto inventory_disk = [&](DiskInventory & inventory)
+        {
+            LOG_TRACE(log, "Inventorying changelog disk {}", inventory.disk->getName());
+            for (auto it = inventory.disk->iterateDirectory(""); it->isValid(); it->next())
+            {
+                const auto & name = it->name();
+                if (name == changelogs_detached_dir)
+                    continue;
+                if (name.starts_with(tmp_keeper_file_prefix))
+                {
+                    LOG_TRACE(log, "Found changelog move marker {} on disk {}", it->path(), inventory.disk->getName());
+                    inventory.markers.emplace_back(name.substr(tmp_keeper_file_prefix.size()), it->path());
+                    continue;
+                }
+                if (!name.starts_with(DEFAULT_PREFIX))
+                {
+                    LOG_WARNING(log, "Unknown file found in log directory: {}", name);
+                    continue;
+                }
+                auto description = getChangelogFileDescription(it->path());
+                description->disk = inventory.disk;
+                LOG_TRACE(log, "Found changelog {} on disk {}", description->path, inventory.disk->getName());
+                inventory.files.push_back(std::move(description));
+            }
+        };
+
+        if (inventories.size() == 1)
+        {
+            inventory_disk(inventories.front());
+        }
+        else
+        {
+            const size_t pool_size = std::min<size_t>(startup_read_max_streams, inventories.size() - 1);
+            ThreadPool pool(
+                CurrentMetrics::KeeperChangelogStartupReadThreads,
+                CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+                CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+                pool_size,
+                /*max_free_threads_*/ 0,
+                /*queue_size_*/ 0);
+            for (auto & inventory : inventories | std::views::drop(1))
+                pool.scheduleOrThrowOnError([&inventory, &inventory_disk] { inventory_disk(inventory); });
+            inventory_disk(inventories.front());
+            pool.wait();
+        }
+
+        /// Group changelog files based on the starting index
+        std::map<uint64_t, std::vector<ChangelogRecoveryCandidate>> groups;
+        std::vector<std::pair<DiskPtr, String>> orphan_markers;
+        for (auto & inventory : inventories)
+        {
+            std::unordered_map<String, String> markers;
+            for (auto & [target_name, marker_path] : inventory.markers)
+                markers.emplace(target_name, marker_path);
+
+            for (auto & description : inventory.files)
+            {
+                ChangelogRecoveryCandidate candidate{
+                    .description = description,
+                    .precedence = inventory.precedence,
+                    .marker = std::nullopt};
+                const String basename = fs::path(description->path).filename();
+                if (auto marker_it = markers.find(basename); marker_it != markers.end())
+                {
+                    candidate.marker = ChangelogRecoveryMarker{.disk = inventory.disk, .path = marker_it->second};
+                    markers.erase(marker_it);
+                }
+                groups[description->from_log_index].push_back(std::move(candidate));
+            }
+            for (auto & [name, marker_path] : markers)
+                orphan_markers.emplace_back(inventory.disk, marker_path);
+        }
+
+        /// Process independent logical groups concurrently. Markers are resolved before disk precedence.
+        std::vector<std::vector<ChangelogRecoveryCandidate> *> unresolved_group_refs;
+        for (auto & [index, candidates] : groups)
+        {
+            if (candidates.size() == 1 && !candidates.front().marker)
+            {
+                const auto & candidate = candidates.front();
+                LOG_TRACE(log, "Using changelog {} from disk {}", candidate.description->path, candidate.description->disk->getName());
+                existing_changelogs.emplace(index, candidate.description);
+            }
+            else
+                unresolved_group_refs.emplace_back(&candidates);
+        }
+        std::vector<ChangelogFileDescriptionPtr> selected_changelogs(unresolved_group_refs.size());
+        std::vector<std::vector<ChangelogFileDescriptionPtr>> duplicate_changelogs(unresolved_group_refs.size());
+
+        if (!unresolved_group_refs.empty())
+        {
+            const size_t pool_size = std::min<size_t>(startup_read_max_streams, unresolved_group_refs.size());
+            ThreadPool pool(
+                CurrentMetrics::KeeperChangelogStartupReadThreads,
+                CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+                CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+                pool_size,
+                /*max_free_threads_*/ 0,
+                /*queue_size_*/ 0);
+            for (size_t group_index = 0; group_index < unresolved_group_refs.size(); ++group_index)
+            {
+                pool.scheduleOrThrowOnError(
+                    [&, group_index]
+                    {
+                        auto & candidates = *unresolved_group_refs[group_index];
+                        for (auto it = candidates.begin(); it != candidates.end();)
+                        {
+                            if (!it->marker)
+                            {
+                                ++it;
+                                continue;
+                            }
+
+                            const auto marker = readKeeperMoveMarker(it->marker->disk, it->marker->path);
+                            const bool matches_marker = marker
+                                && it->description->disk->getFileSize(it->description->path) == marker->size
+                                && computeKeeperFileDigest(it->description->disk, it->description->path) == *marker;
+                            if (matches_marker)
+                            {
+                                LOG_TRACE(
+                                    log,
+                                    "Changelog {} on disk {} matches move marker {}, removing the marker",
+                                    it->description->path,
+                                    it->description->disk->getName(),
+                                    it->marker->path);
+                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+                                it->marker.reset();
+                                ++it;
+                                continue;
+                            }
+
+                            if (!marker && marker.error() == KeeperMoveMarkerParseError::UnknownVersion)
+                            {
+                                it->has_unknown_marker_version = true;
+                                ++it;
+                                continue;
+                            }
+
+                            if (candidates.size() == 1)
+                            {
+                                LOG_WARNING(
+                                    log,
+                                    "Changelog {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
+                                    it->description->path,
+                                    it->description->disk->getName(),
+                                    it->marker->path);
+                                removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+                                it->marker.reset();
+                                ++it;
+                                continue;
+                            }
+
+                            LOG_TRACE(
+                                log,
+                                "Changelog {} on disk {} does not match move marker {}, removing the changelog and marker",
+                                it->description->path,
+                                it->description->disk->getName(),
+                                it->marker->path);
+                            removeKeeperFileIfExists(it->description->disk, it->description->path);
+                            removeKeeperFileIfExists(it->marker->disk, it->marker->path);
+                            it = candidates.erase(it);
+                        }
+
+                        if (candidates.empty())
+                            return;
+
+                        if (std::ranges::all_of(candidates, &ChangelogRecoveryCandidate::has_unknown_marker_version))
+                        {
+                            const auto fallback = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
+                            LOG_WARNING(
+                                log,
+                                "All changelog recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
+                                fallback->description->from_log_index,
+                                fallback->marker->path,
+                                fallback->description->path,
+                                fallback->description->disk->getName());
+                            removeKeeperFileIfExists(fallback->marker->disk, fallback->marker->path);
+                            fallback->marker.reset();
+                            fallback->has_unknown_marker_version = false;
+                        }
+
+                        std::erase_if(candidates, [&](const auto & candidate)
+                        {
+                            if (!candidate.has_unknown_marker_version)
+                                return false;
+
+                            LOG_WARNING(
+                                log,
+                                "Keeping changelog {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
+                                candidate.description->path,
+                                candidate.marker->path,
+                                candidate.description->disk->getName());
+                            candidate.description->recovery_marker_path = candidate.marker->path;
+                            duplicate_changelogs[group_index].push_back(candidate.description);
+                            return true;
+                        });
+
+                        const auto selected = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
+                        for (const auto & candidate : candidates)
+                        {
+                            if (&candidate != &*selected)
+                            {
+                                LOG_WARNING(
+                                    log,
+                                    "Keeping duplicate changelog {} on disk {} as a recovery copy; using {} on disk {}",
+                                    candidate.description->path,
+                                    candidate.description->disk->getName(),
+                                    selected->description->path,
+                                    selected->description->disk->getName());
+                                duplicate_changelogs[group_index].push_back(candidate.description);
+                            }
+                        }
+                        LOG_TRACE(
+                            log,
+                            "Using changelog {} from disk {}",
+                            selected->description->path,
+                            selected->description->disk->getName());
+                        selected_changelogs[group_index] = selected->description;
+                    });
+            }
+            pool.wait();
+        }
+
+        for (size_t group_index = 0; group_index < selected_changelogs.size(); ++group_index)
+        {
+            const auto & selected = selected_changelogs[group_index];
+            if (selected)
+            {
+                existing_changelogs.emplace(selected->from_log_index, selected);
+                if (!duplicate_changelogs[group_index].empty())
+                    retained_duplicate_changelogs.emplace(selected->from_log_index, std::move(duplicate_changelogs[group_index]));
+            }
+        }
+        for (const auto & marker : orphan_markers)
+        {
+            LOG_TRACE(log, "Removing orphaned changelog move marker {} from disk {}", marker.second, marker.first->getName());
+            removeKeeperFileIfExists(marker.first, marker.second);
+        }
 
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
@@ -3722,7 +3948,7 @@ void Changelog::readChangelogAndInitWriterSerialLocked(uint64_t last_commited_lo
             {
                 /// If the gap is before the last committed log index, we can remove the logs before the gap
                 /// because they are already present in the existing snapshot
-                if (changelog_description.from_log_index <= last_commited_log_index)
+                if (isChangelogGapCoveredBySnapshot(changelog_description.from_log_index, last_commited_log_index))
                 {
                     LOG_INFO(
                         log,
@@ -3788,7 +4014,11 @@ void Changelog::readChangelogAndInitWriterSerialLocked(uint64_t last_commited_lo
             .error = last_log_read_result->error,
             .compressed_log = last_log_read_result->compressed_log};
 
-    finalizeChangelogsAfterRead(last_commited_log_index, remove_logs_before_index, last_log_read_outcome, last_log_is_not_complete);
+    finalizeChangelogsAfterRead(
+        last_commited_log_index,
+        remove_logs_before_index,
+        last_log_read_outcome,
+        last_log_is_not_complete);
 }
 
 void Changelog::finalizeChangelogsAfterRead(
@@ -3814,7 +4044,7 @@ void Changelog::finalizeChangelogsAfterRead(
     if (!last_log_read_outcome || entry_storage.empty()) /// We just may have no logs (only snapshot or nothing)
     {
         /// Just to be sure they don't exist
-        removeAllLogs();
+        removeAllLogs(/*remove_recovery_copies=*/false);
         max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
     }
     else if (max_log_id.load(std::memory_order_relaxed) < last_commited_log_index) /// If we have more fresh snapshot than our logs
@@ -3825,7 +4055,7 @@ void Changelog::finalizeChangelogsAfterRead(
             max_log_id.load(std::memory_order_relaxed),
             last_commited_log_index);
 
-        removeAllLogs();
+        removeAllLogs(/*remove_recovery_copies=*/true);
         max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
@@ -3881,22 +4111,47 @@ void Changelog::finalizeChangelogsAfterRead(
     auto latest_start_index = current_writer->getStartIndex();
     auto latest_log_disk = getLatestLogDisk();
     auto disk = getDisk();
+    std::vector<ChangelogFileDescriptionPtr> placement_moves;
     for (const auto & [start_index, description] : existing_changelogs)
     {
-        /// latest log should already be on latest_log_disk
+        /// The active log stays on the disk where the writer opened it.
+        /// A move to latest_log_disk can fail during initialization.
         if (start_index == latest_start_index)
         {
-            chassert(description->disk == latest_log_disk);
+            chassert(description == current_writer->getCurrentFileDescription());
             continue;
         }
 
         if (description->disk != disk)
-            moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+            placement_moves.push_back(description);
+    }
+    if (!placement_moves.empty())
+    {
+        ThreadPool pool(
+            CurrentMetrics::KeeperChangelogStartupReadThreads,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsActive,
+            CurrentMetrics::KeeperChangelogStartupReadThreadsScheduled,
+            std::min<uint64_t>(startup_read_max_streams, placement_moves.size()),
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (const auto & description : placement_moves)
+        {
+            pool.scheduleOrThrowOnError(
+                [&, description]
+                {
+                    const auto source_disk = description->disk;
+                    const auto source_path = description->path;
+                    moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+                });
+        }
+        pool.wait();
     }
 }
 
 void Changelog::readChangelogAndInitWriterParallelLocked(
-    uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
+    uint64_t last_commited_log_index,
+    uint64_t start_to_read_from,
+    std::vector<ChangelogFileDescriptionPtr> in_scope_files)
 {
     chassert(in_scope_files.size() > 1);
     chassert(startup_read_max_streams > 0);
@@ -3959,7 +4214,10 @@ void Changelog::readChangelogAndInitWriterParallelLocked(
             .compressed_log = stitch_state.last_log_read_result->compressed_log};
 
     finalizeChangelogsAfterRead(
-        last_commited_log_index, stitch_state.remove_logs_before_index, last_log_read_outcome, stitch_state.last_log_is_not_complete);
+        last_commited_log_index,
+        stitch_state.remove_logs_before_index,
+        last_log_read_outcome,
+        stitch_state.last_log_is_not_complete);
 
     /// (5) seed the cache with the last live entry (skipped in unlimited mode). Reads max_log_id,
     /// not stitch_state.last_read_index, since finalizeChangelogsAfterRead may have trimmed it.
@@ -4019,7 +4277,7 @@ DiskPtr Changelog::getLatestLogDisk() const
     return keeper_context->getLatestLogDisk();
 }
 
-void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
+void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies)
 {
     auto disk = getDisk();
 
@@ -4027,6 +4285,7 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 
     for (auto itr = begin; itr != end;)
     {
+        const uint64_t from_log_index = itr->first;
         auto & changelog_description = itr->second;
 
         if (!disk->existsDirectory(timestamp_folder))
@@ -4055,6 +4314,8 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
         else
             moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
+        if (remove_recovery_copies)
+            removeRetainedChangelogCopies(from_log_index);
         itr = existing_changelogs.erase(itr);
     }
 }
@@ -4069,7 +4330,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
 
     /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
     LOG_WARNING(log, "Removing changelogs that go after broken changelog entry");
-    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end());
+    removeExistingLogs(start_to_remove_from_itr, existing_changelogs.end(), /*remove_recovery_copies=*/true);
 
     entry_storage.cleanAfter(start_to_remove_from_log_id - 1);
 }
@@ -4082,13 +4343,13 @@ void Changelog::removeAllLogFilesBefore(uint64_t remove_before_log_start_index)
 
     /// Remove all changelogs that come before the specified index
     LOG_WARNING(log, "Removing changelogs that go before specified changelog entry");
-    removeExistingLogs(existing_changelogs.begin(), end_to_remove_to_itr);
+    removeExistingLogs(existing_changelogs.begin(), end_to_remove_to_itr, /*remove_recovery_copies=*/true);
 }
 
-void Changelog::removeAllLogs()
+void Changelog::removeAllLogs(bool remove_recovery_copies)
 {
     LOG_WARNING(log, "Removing all changelogs");
-    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end());
+    removeExistingLogs(existing_changelogs.begin(), existing_changelogs.end(), remove_recovery_copies);
     entry_storage.clear();
 }
 
@@ -4325,7 +4586,11 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                pending_superseded_removes.push_back(removeChangelogAsync(itr->second));
+                auto pending_removes = removeChangelogAndRecoveryCopiesAsync(itr->first, itr->second);
+                pending_superseded_removes.insert(
+                    pending_superseded_removes.end(),
+                    std::make_move_iterator(pending_removes.begin()),
+                    std::make_move_iterator(pending_removes.end()));
                 itr = existing_changelogs.erase(itr);
             }
         }
@@ -4391,7 +4656,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", path);
-            removeChangelogAsync(itr->second);
+            removeChangelogAndRecoveryCopiesAsync(itr->first, itr->second);
             changelog_description.marked_as_deleted = true;
 
             itr = existing_changelogs.erase(itr);
@@ -4661,6 +4926,8 @@ void Changelog::backgroundChangelogOperationsThread()
                     try
                     {
                         changelog.disk->removeFile(changelog.path);
+                        if (changelog.recovery_marker_path)
+                            changelog.disk->removeFileIfExists(*changelog.recovery_marker_path);
                         LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
                     }
                     catch (Exception & e)
@@ -4693,6 +4960,8 @@ void Changelog::backgroundChangelogOperationsThread()
                             catch (...)
                             {
                                 tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
+                                changelog_operation->setError(std::current_exception());
+                                return;
                             }
                             changelog->path = std::move(move_operation->new_path);
                         });
@@ -4700,7 +4969,15 @@ void Changelog::backgroundChangelogOperationsThread()
             }
             else
             {
-                moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                try
+                {
+                    moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Failed to move changelog {}", changelog->path));
+                    changelog_operation->setError(std::current_exception());
+                }
             }
         }
         else
@@ -4730,6 +5007,44 @@ ChangelogFileOperationPtr Changelog::removeChangelogAsync(ChangelogFileDescripti
     auto operation = std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{});
     modifyChangelogAsync(operation);
     return operation;
+}
+
+std::vector<ChangelogFileOperationPtr> Changelog::removeChangelogAndRecoveryCopiesAsync(
+    uint64_t from_log_index, ChangelogFileDescriptionPtr changelog)
+{
+    std::vector<ChangelogFileOperationPtr> operations;
+    operations.push_back(removeChangelogAsync(std::move(changelog)));
+
+    if (auto duplicate_it = retained_duplicate_changelogs.find(from_log_index); duplicate_it != retained_duplicate_changelogs.end())
+    {
+        operations.reserve(operations.size() + duplicate_it->second.size());
+        for (auto & duplicate : duplicate_it->second)
+            operations.push_back(removeChangelogAsync(std::move(duplicate)));
+        retained_duplicate_changelogs.erase(duplicate_it);
+    }
+
+    return operations;
+}
+
+void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index)
+{
+    auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
+    if (duplicate_it == retained_duplicate_changelogs.end())
+        return;
+
+    for (const auto & duplicate : duplicate_it->second)
+    {
+        LOG_INFO(
+            log,
+            "Removing retained recovery copy {} on disk {} for changelog range starting at {}",
+            duplicate->path,
+            duplicate->disk->getName(),
+            from_log_index);
+        duplicate->disk->removeFileIfExists(duplicate->path);
+        if (duplicate->recovery_marker_path)
+            duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
+    }
+    retained_duplicate_changelogs.erase(duplicate_it);
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)

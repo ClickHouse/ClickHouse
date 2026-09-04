@@ -305,6 +305,9 @@
     M(KeeperChangelogStartupReadThreads, "Number of threads in the threadpool for Keeper changelog parallel startup reads.") \
     M(KeeperChangelogStartupReadThreadsActive, "Number of active threads in the threadpool for Keeper changelog parallel startup reads.") \
     M(KeeperChangelogStartupReadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog parallel startup reads.") \
+    M(KeeperSnapshotRecoveryThreads, "Number of threads used for Keeper snapshot startup recovery.") \
+    M(KeeperSnapshotRecoveryThreadsActive, "Number of active threads used for Keeper snapshot startup recovery.") \
+    M(KeeperSnapshotRecoveryThreadsScheduled, "Number of queued or active Keeper snapshot startup recovery jobs.") \
     M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
     M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \

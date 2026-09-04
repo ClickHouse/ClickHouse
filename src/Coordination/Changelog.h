@@ -100,6 +100,9 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    /// Unknown-version move marker retained with an unselected startup recovery copy.
+    std::optional<std::string> recovery_marker_path;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;
@@ -674,28 +677,32 @@ private:
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
+    /// Same-range recovery copies retained at startup and removed with the registered range.
+    std::unordered_map<uint64_t, std::vector<ChangelogFileDescriptionPtr>> retained_duplicate_changelogs;
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
 
-    void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
+    void removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies);
 
     /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
     void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
-    void removeAllLogs();
+    void removeAllLogs(bool remove_recovery_copies);
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
     /// Serial startup read: files streamed one by one, each record inserted via addEntryWithLocation.
     /// Fallback for compression, a single in-scope file, streams=0, or forced testing.
-    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from) TSA_REQUIRES(writer_mutex);
+    void readChangelogAndInitWriterSerialLocked(uint64_t last_commited_log_index, uint64_t start_to_read_from)
+        TSA_REQUIRES(writer_mutex);
 
     /// Parallel metadata read (all in-scope files concurrently) + serial stitch.
     void readChangelogAndInitWriterParallelLocked(
-        uint64_t last_commited_log_index, uint64_t start_to_read_from, std::vector<ChangelogFileDescriptionPtr> in_scope_files)
-        TSA_REQUIRES(writer_mutex);
+        uint64_t last_commited_log_index,
+        uint64_t start_to_read_from,
+        std::vector<ChangelogFileDescriptionPtr> in_scope_files) TSA_REQUIRES(writer_mutex);
 
     /// Outcome of reading the last in-scope changelog file, as needed by finalizeChangelogsAfterRead.
     /// A trimmed-down, header-visible stand-in for the serial/parallel readers' own (.cpp-local)
@@ -724,6 +731,11 @@ private:
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
     /// Queues asynchronous removal; returns the operation so callers can wait for completion.
     ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// Queues removal of the registered changelog and all retained recovery copies for its range.
+    std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
+        uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
+    /// Removes retained recovery copies synchronously during startup cleanup.
+    void removeRetainedChangelogCopies(uint64_t from_log_index);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

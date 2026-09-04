@@ -334,6 +334,11 @@ void KeeperContext::setLogDisk(DiskPtr disk)
     latest_log_storage = std::move(disk);
 }
 
+void KeeperContext::setLatestLogDisk(DiskPtr disk)
+{
+    latest_log_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getLatestSnapshotDisk() const
 {
     return getDisk(latest_snapshot_storage);

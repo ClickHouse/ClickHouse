@@ -52,6 +52,8 @@ public:
     DiskPtr getLogDisk() const;
     std::vector<DiskPtr> getOldLogDisks() const;
     void setLogDisk(DiskPtr disk);
+    /// Test-only: set the latest-log storage alone (`setLogDisk` overwrites both).
+    void setLatestLogDisk(DiskPtr disk);
 
     DiskPtr getLatestSnapshotDisk() const;
     DiskPtr getSnapshotDisk() const;
