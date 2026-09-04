@@ -99,9 +99,9 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. "
-            "For profiler-collected trace types, on ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
-            "and other addresses are virtual memory addresses inside the ClickHouse server process. "
-            "Instrumentation trace rows are an exception: they store raw virtual memory addresses."},
+            "Each element is a virtual memory address inside the ClickHouse server process; this is the same representation for all trace types, including `Instrumentation`. "
+            "These are absolute (ASLR-dependent) runtime addresses, so symbolization (`symbols`, `lines`, `arrayMap(addressToSymbol, trace)`) is reliable only while the same process that collected the row is alive. "
+            "Rows persisted across a server restart of a position-independent (PIE) binary may no longer symbolize, because the load base changes."},
         {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory/MemoryPeak): {}", context_description)},
@@ -161,22 +161,25 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
+            /// Resolve the object that actually contains the address. The trace stores absolute
+            /// virtual addresses, so a frame may belong to a shared library rather than the main
+            /// binary, and the DWARF lookup has to use that object's `elf`/`dsym` and load base.
+            const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
 #if defined(OS_DARWIN)
             /// DWARF for source locations lives in a .dSYM bundle on macOS (the Mach-O linker leaves it
             /// out of the binary). Without a dSYM there is no file:line info, so `lines` stays empty for
             /// this frame (the `symbols` column is still filled from the symbol table by the caller).
-            const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
             if (!object || !object->dsym)
                 return {};
             auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
             /// Convert the runtime address to the linked (pre-ASLR) address the dSYM's DWARF uses.
             const uintptr_t dwarf_addr = addr - object->slide;
 #else
-            const auto * object = symbol_index.thisObject();
             if (!object || !std::filesystem::exists(object->name))
                 return {};
             auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-            const uintptr_t dwarf_addr = addr;
+            /// DWARF uses file-relative addresses, so convert from the absolute virtual address.
+            const uintptr_t dwarf_addr = addr - uintptr_t(object->address_begin);
 #endif
             Dwarf::LocationInfo location;
             VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.

@@ -31,8 +31,8 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
         {"symbol_demangled", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Demangled symbol used for XRay instrumentation."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "Function ID in the XRay instrumentation map."},
 #endif
-        {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
-        {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
+        {"address_begin", std::make_shared<DataTypeUInt64>(), "Absolute virtual address of the start of the symbol in the running process. For position-independent (PIE) builds this is an ASLR-dependent runtime address that depends on the load base; for the default non-PIE build it matches the address in the binary."},
+        {"address_end", std::make_shared<DataTypeUInt64>(), "Absolute virtual address of the end of the symbol in the running process. For position-independent (PIE) builds this is an ASLR-dependent runtime address that depends on the load base; for the default non-PIE build it matches the address in the binary."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
