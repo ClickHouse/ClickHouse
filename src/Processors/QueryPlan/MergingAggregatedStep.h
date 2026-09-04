@@ -45,6 +45,20 @@ public:
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
+
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
+    /// No DAG and no wire guard to fail on, but `memory_efficient_aggregation` - a merge-strategy
+    /// knob the logical digest deliberately excludes - decides whether a configured truncation is
+    /// applied at all: the memory-efficient path merges whole chunks through
+    /// `Aggregator::mergeBlocks(AggregatedChunks &, ...)`, which never calls `Aggregator::checkLimits`
+    /// and reaches `prepareChunkAndFillSingleLevel` rather than the `bucket_top_k` branch of
+    /// `convertOneBucketToChunk`, while the plain path applies both. So an instance that configures
+    /// either truncation stays out of group deduplication, and an untruncated one still merges with
+    /// its memory-efficient twin - which is the point of excluding the knob.
+    bool hasLogicalDigest() const override { return params.max_rows_to_group_by == 0 && params.bucket_top_k == 0; }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

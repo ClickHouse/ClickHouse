@@ -531,7 +531,35 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
+    bool hasLogicalDigest() const override;
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
+    /// One prepared part as the logical digest identifies it: what the part holds, plus the
+    /// query-wide numbering the `_part_index` / `_part_offset` virtual columns expose.
+    struct LogicalPartIdentity
+    {
+        String name;
+        String parent_name;
+        Int64 data_version = 0;
+        Int64 metadata_version = 0;
+        size_t index_in_query = 0;
+        size_t starting_offset_in_query = 0;
+        MarkRanges ranges;
+    };
+
+    /// The part-list component of the logical digest. Static and public because a test cannot build
+    /// real data parts; see the definition for the ordering and the soundness argument.
+    static String encodeLogicalPartIdentities(std::vector<LogicalPartIdentity> parts);
+
 private:
+    /// Whether this instance's read state can be written as canonical content; see the definition.
+    bool canWriteContentDigest() const;
+
+    /// Whether `prepared_parts` is a plain part list the logical digest can encode; see the definition.
+    bool arePreparedPartsLogicallyEncodable() const;
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 

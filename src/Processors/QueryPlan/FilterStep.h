@@ -59,6 +59,12 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
+    /// The logical digest writes the DAG, so the correlated-`PLACEHOLDER` guard stays.
+    bool hasLogicalDigest() const override { return !hasCorrelatedExpressions(); }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;

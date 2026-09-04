@@ -26,6 +26,11 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 /// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
+/// Payloads shared by the logical digests of `AggregatingStep` and `MergingAggregatedStep`. Only the
+/// used keys of a grouping set are encoded; the missing ones are derived from the full key list.
+String encodeAggregateDescriptionsForDigest(const AggregateDescriptions & aggregates);
+String encodeGroupingSetsForDigest(const GroupingSetsParamsList & grouping_sets_params);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -122,6 +127,19 @@ public:
     {
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
+
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
+    /// Two instance opt-outs. `skip_merging` finalizes each stream on its own, which is correct only
+    /// when the input streams carry disjoint key sets - a property of the input layout that the memo
+    /// does not model yet (plan section 4.2; Stage C removes this).
+    /// `params.bucket_top_k` truncates each bucket in `Aggregator::convertOneBucketToChunk`, which
+    /// runs on two-level data only, and whether the aggregation can go two-level is decided by
+    /// `params.group_by_two_level_threshold` / `_bytes` - execution-only thresholds the logical digest
+    /// excludes. So a step that configures the truncation stays out of group deduplication rather
+    /// than merge with a twin whose thresholds keep it single-level and untruncated.
+    bool hasLogicalDigest() const override { return isSerializable() && !skip_merging && params.bucket_top_k == 0; }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 

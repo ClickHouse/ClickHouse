@@ -44,6 +44,8 @@
 #include <Interpreters/HashTablesStatistics.h>
 
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
@@ -55,6 +57,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -2219,6 +2222,217 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `JoinStepLogical`. Unique within the step; never reused.
+enum JoinStepLogicalIdentityTag : UInt64
+{
+    OPTIMIZED_TAG = 1,
+    DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG = 2,
+    RESULT_ROWS_ESTIMATION_TAG = 3,
+    IMPRECISE_ESTIMATE_TAG = 4,
+    RESULT_COLUMN_STATS_TAG = 5,
+    RIGHT_HASH_TABLE_CACHE_KEY_TAG = 6,
+    LEFT_ESTIMATED_ROWS_TAG = 7,
+    RIGHT_ESTIMATED_ROWS_TAG = 8,
+    TABLE_STATS_HINT_TAG = 9,
+    SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG = 10,
+    JOIN_ANALYZE_MODE_TAG = 11,
+    READ_IN_ORDER_USE_BUFFERING_TAG = 12,
+    READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG = 13,
+    JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG = 14,
+    JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG = 15,
+    JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG = 16,
+    JOIN_OUTPUT_CACHE_KEY_TAG = 17,
+};
+
+/// Sorted by column name: the map's iteration order is not part of its value.
+String encodeColumnStats(const std::unordered_map<String, ColumnStats> & column_stats)
+{
+    std::vector<const std::pair<const String, ColumnStats> *> sorted;
+    sorted.reserve(column_stats.size());
+    for (const auto & entry : column_stats)
+        sorted.push_back(&entry);
+    std::ranges::sort(sorted, [](const auto * lhs, const auto * rhs) { return lhs->first < rhs->first; });
+
+    WriteBufferFromOwnString payload;
+    writeVarUInt(sorted.size(), payload);
+    for (const auto * entry : sorted)
+    {
+        writeStringBinary(entry->first, payload);
+        writeVarUInt(entry->second.num_distinct_values, payload);
+        writeFloatBinary(entry->second.avg_bytes, payload);
+    }
+    return payload.str();
+}
+
+String encodeRuntimeFilterDescriptors(const std::vector<std::pair<String, String>> & descriptors)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(descriptors.size(), payload);
+    for (const auto & [filter_name, key_name] : descriptors)
+    {
+        writeStringBinary(filter_name, payload);
+        writeStringBinary(key_name, payload);
+    }
+    return payload.str();
+}
+
+void addOptionalRows(StepDigestWriter & writer, UInt64 tag, const std::optional<UInt64> & rows)
+{
+    if (rows)
+        writer.addVarUInt(tag, *rows);
+    else
+        writer.addAbsent(tag);
+}
+}
+
+/// The wire guards of the content digest, all fail-closed to the whole-object witness:
+/// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node, and a zero in any of the four
+/// `NonZeroUInt64` plan settings `serializeSettings` assigns throws there. `isSerializable()` is
+/// unconditionally true, and is kept only so a future override is not silently bypassed.
+bool JoinStepLogical::canWriteWireEncoding() const
+{
+    return isSerializable()
+        && !hasCorrelatedExpressions()
+        && join_settings.grace_hash_join_initial_buckets != 0
+        && join_settings.grace_hash_join_max_buckets != 0
+        && join_settings.temporary_files_buffer_size != 0
+        && sorting_settings.temporary_files_buffer_size != 0;
+}
+
+void JoinStepLogical::writeFullDigest(StepDigestWriter & writer) const
+{
+    if (!canWriteWireEncoding())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
+    /// `optimizeJoin` refuses to reorder a join that is already optimized, and correlated-subquery
+    /// decorrelation relies on that to pin the layout of its result join (see `clone`).
+    writer.addBool(OPTIMIZED_TAG, optimized);
+
+    /// `filterPushDown` refuses to push a filter through a join that has it set.
+    writer.addBool(DISJUNCTIONS_OPTIMIZATION_APPLIED_TAG, disjunctions_optimization_applied);
+
+    /// Read by the Cascades `StatisticsDerivation` (in preference to its own derivation) and reused by
+    /// `optimizeJoin` as the statistics of an already-optimized sub-join. Included even though they
+    /// are cost-only; revisit once a join-rebuild path that clears estimates lands (the
+    /// eager-aggregation branch's `rebuildJoinWithNewInput` in `AggregationPushdown`), otherwise a
+    /// rebuilt join will never deduplicate against an ingested one.
+    addOptionalRows(writer, RESULT_ROWS_ESTIMATION_TAG, result_rows_estimation);
+    writer.addBool(IMPRECISE_ESTIMATE_TAG, imprecise_estimate);
+    writer.addString(RESULT_COLUMN_STATS_TAG, encodeColumnStats(result_column_stats));
+
+    /// `buildPhysicalJoin` turns it into the `JoinAlgorithmParams` hash-table key and the
+    /// `StatsCollectingParams` key that seeds the right-side size estimate; `joinRuntimeFilter` reads
+    /// it too.
+    writer.addVarUInt(RIGHT_HASH_TABLE_CACHE_KEY_TAG, right_hash_table_cache_key);
+
+    /// The same, for the second `StatsCollectingParams` key `buildPhysicalJoin` derives - the one that
+    /// preallocates the join output. Also off the wire, also set by `optimizeJoin`.
+    writer.addVarUInt(JOIN_OUTPUT_CACHE_KEY_TAG, join_output_cache_key);
+
+    /// The right side's estimate becomes `JoinAlgorithmParams::rhs_size_estimation`, which picks the
+    /// join algorithm; the left side's is read by `joinRuntimeFilter`.
+    addOptionalRows(writer, LEFT_ESTIMATED_ROWS_TAG, left_relation.estimated_rows);
+    addOptionalRows(writer, RIGHT_ESTIMATED_ROWS_TAG, right_relation.estimated_rows);
+
+    /// `optimizeJoin` passes it to the query-graph builder, which replaces the relation estimates.
+    writer.addString(TABLE_STATS_HINT_TAG, table_stats_hint);
+
+    /// Set by `joinRuntimeFilter`; makes `HashJoin` publish shared runtime filters that prune rows.
+    writer.addString(
+        SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG, encodeRuntimeFilterDescriptors(join_operator.shared_runtime_filter_descriptors));
+
+    /// Not covered by `JoinSettings::updatePlanSettings`; `MergeJoinTransform` and `MatchedRowsStats`
+    /// branch on it.
+    writer.addVarUInt(JOIN_ANALYZE_MODE_TAG, static_cast<UInt64>(join_settings.join_analyze_mode));
+
+    /// `JoinSettings::updatePlanSettings` assigns these three, but `serializeSettings` then runs
+    /// `sorting_settings.updatePlanSettings`, which assigns the same three plan-setting names, so the
+    /// sorting values overwrite them and the join's never reach the wire. The join algorithms read
+    /// them when they spill, and nothing forces the two settings structs to agree.
+    writer.addVarUInt(JOIN_SETTINGS_MAX_BLOCK_SIZE_TAG, join_settings.max_block_size);
+    writer.addString(JOIN_SETTINGS_TEMPORARY_FILES_CODEC_TAG, join_settings.temporary_files_codec);
+    writer.addVarUInt(JOIN_SETTINGS_TEMPORARY_FILES_BUFFER_SIZE_TAG, join_settings.temporary_files_buffer_size);
+
+    /// Not covered by `SortingStep::Settings::updatePlanSettings`; handed to the sorting steps the
+    /// physical join builds.
+    writer.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sorting_settings.read_in_order_use_buffering);
+    writer.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sorting_settings.read_in_order_use_virtual_row_per_block);
+}
+
+namespace
+{
+/// Logical digest tags for `JoinStepLogical`. Own enum, unique within this writer; never reused.
+enum JoinStepLogicalDigestTag : UInt64
+{
+    LOGICAL_EXPRESSION_ACTIONS_TAG = 1,
+    LOGICAL_JOIN_OPERATOR_TAG = 2,
+    LOGICAL_ACTIONS_AFTER_JOIN_TAG = 3,
+    LOGICAL_SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG = 4,
+    LOGICAL_MAX_ROWS_IN_JOIN_TAG = 5,
+    LOGICAL_MAX_BYTES_IN_JOIN_TAG = 6,
+    LOGICAL_DEFAULT_MAX_BYTES_IN_JOIN_TAG = 7,
+    LOGICAL_JOIN_OVERFLOW_MODE_TAG = 8,
+    LOGICAL_JOIN_ANY_TAKE_LAST_ROW_TAG = 9,
+    LOGICAL_ALLOW_DYNAMIC_TYPE_IN_JOIN_KEYS_TAG = 10,
+};
+}
+
+void JoinStepLogical::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    const auto actions_dag = expression_actions.getActionsDAG();
+
+    /// The relation: the pre-join expressions, the join operator itself (kind, strictness, locality,
+    /// the ON expression and the residual filter, all as node references into the DAG above), and the
+    /// nodes that split what is computed after the join from what is computed before it.
+    writer.addDAG(LOGICAL_EXPRESSION_ACTIONS_TAG, actions_dag.get());
+
+    WriteBufferFromOwnString join_operator_payload;
+    join_operator.serialize(join_operator_payload, actions_dag.get());
+    writer.addString(LOGICAL_JOIN_OPERATOR_TAG, join_operator_payload.str());
+
+    WriteBufferFromOwnString actions_after_join_payload;
+    serializeNodeList(actions_after_join_payload, actions_dag->getNodeToIdMap(), actions_after_join);
+    writer.addString(LOGICAL_ACTIONS_AFTER_JOIN_TAG, actions_after_join_payload.str());
+
+    /// `HashJoin` publishes these as shared runtime filters that prune rows on the other side. The
+    /// pruning is meant to be exact, but the descriptors are what makes it happen at all, so they are
+    /// kept in - the fail-closed direction, matching the read side of plan section 8.
+    writer.addString(
+        LOGICAL_SHARED_RUNTIME_FILTER_DESCRIPTORS_TAG, encodeRuntimeFilterDescriptors(join_operator.shared_runtime_filter_descriptors));
+
+    /// The result-affecting slice of `join_settings`: the size limits truncate (`break`) or fail
+    /// (`throw`) the join, `join_any_take_last_row` picks the other row for an `ANY` join, and the
+    /// dynamic-key permission decides between a result and an exception.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_IN_JOIN_TAG, join_settings.max_rows_in_join);
+    writer.addVarUInt(LOGICAL_MAX_BYTES_IN_JOIN_TAG, join_settings.max_bytes_in_join);
+    writer.addVarUInt(LOGICAL_DEFAULT_MAX_BYTES_IN_JOIN_TAG, join_settings.default_max_bytes_in_join);
+    writer.addVarUInt(LOGICAL_JOIN_OVERFLOW_MODE_TAG, static_cast<UInt64>(join_settings.join_overflow_mode));
+    writer.addBool(LOGICAL_JOIN_ANY_TAKE_LAST_ROW_TAG, join_settings.join_any_take_last_row);
+    writer.addBool(LOGICAL_ALLOW_DYNAMIC_TYPE_IN_JOIN_KEYS_TAG, join_settings.allow_dynamic_type_in_join_keys);
+
+    /// Out, planner bookkeeping - it informs later passes and does not change this join's rows:
+    /// `optimized`, `disjunctions_optimization_applied`, `result_rows_estimation`,
+    /// `imprecise_estimate`, `result_column_stats`, `left_relation` / `right_relation`,
+    /// `table_stats_hint`, `right_hash_table_cache_key`, `join_output_cache_key`, `join_analyze_mode`.
+    /// Excluding them lets two joins that differ only in how far the reordering pass got share one
+    /// group; it does not make a rule-rebuilt join match an ingested one, whose input group list
+    /// differs by construction.
+    /// Out, algorithm and execution: `join_algorithms` and every threshold that steers it, the block
+    /// sizes, the partial-merge and grace-hash bucketing, the spill thresholds, the temporary-file
+    /// codec and buffer size, `max_rows_in_set_to_optimize_join` (an exact pre-filter),
+    /// `use_join_disjunctions_push_down`, the lazy-column, prefetch and fixed-hash-table switches,
+    /// `enable_hash_join_row_store` and `min_rows_ratio_for_hash_join_row_store` (they only pick the
+    /// hash join payload's memory layout), and the whole `sorting_settings` struct - the physical
+    /// join re-derives its sorts from it.
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)

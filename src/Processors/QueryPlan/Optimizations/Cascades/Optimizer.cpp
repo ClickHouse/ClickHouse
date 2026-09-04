@@ -1,6 +1,7 @@
 #include <Common/ThreadStatus.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StepDigestCounters.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -102,6 +103,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
+    context.cascades_memo_deduplication = optimization_settings.cascades_memo_deduplication;
 
     return context;
 }
@@ -169,17 +171,45 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
 
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
 
-    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
-    auto group_id = memo.addGroup(group_expression);
+    /// Recurse before inserting this expression, so inputs are final groups by the time the
+    /// expression enters the memo (a future memo-wide index fingerprints inputs at insertion).
+    std::vector<GroupExpression::Input> inputs;
+    inputs.reserve(node.children.size());
     for (auto * child_node : node.children)
     {
         auto [input_group_id, pending_props] = addGroup(*child_node);
-        group_expression->inputs.push_back({input_group_id, pending_props});
+        inputs.push_back({input_group_id, pending_props});
     }
 
-    /// Set statistics on the group (shared by all expressions in the group)
+    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
+    group_expression->inputs = std::move(inputs);
+    /// New group ids are handed out in order, so this is exactly "the intern created a group".
+    const GroupId next_new_group_id = memo.getGroupCount();
+    auto group_id = memo.internExpression(group_expression);
+
+    /// Statistics belong to the group, shared by all its expressions. An interned expression that
+    /// joined an existing group keeps that group's estimate: the two compute the same relation, so
+    /// the estimates may differ only by estimator noise, which a debug assertion pins.
     auto group = memo.getGroup(group_id);
-    group->statistics = std::move(prepopulated_statistics);
+    if (group_id == next_new_group_id)
+    {
+        group->statistics = std::move(prepopulated_statistics);
+    }
+    else if (group->statistics.has_value() && prepopulated_statistics.has_value())
+    {
+        /// A loose factor: a violation is not estimator noise, it is a logical identity that
+        /// classified two different relations as equal.
+        chassert(group->statistics->estimated_row_count <= 10.0 * prepopulated_statistics->estimated_row_count + 1.0
+                && prepopulated_statistics->estimated_row_count <= 10.0 * group->statistics->estimated_row_count + 1.0,
+            "Cascades group deduplication merged two expressions with disagreeing row estimates");
+    }
+    else if (!group->statistics.has_value() && prepopulated_statistics.has_value())
+    {
+        /// The group was created without an estimate (its first expression had none) and this one
+        /// has one for the same relation. Adopt it: dropping it would be silent information loss,
+        /// leaving the group uncosted for no reason.
+        group->statistics = std::move(prepopulated_statistics);
+    }
 
     return {group_id, {}};
 }
@@ -287,6 +317,10 @@ void CascadesOptimizer::optimize()
     Stopwatch optimizer_timer;
     auto query_context = getQueryContextOrThrow();
 
+    /// Makes this run's counters the target for the step-digest machinery (StepIdentity.cpp,
+    /// GroupExpression.cpp), which has no context parameter of its own.
+    CurrentStepDigestCounters step_digest_counters_scope(memo.getContext().step_digest_counters);
+
     LOG_TRACE(log, "Cost config: {}, cluster node count: {}",
         memo.getContext().cost_config.dump(), memo.getContext().cluster_node_count);
 
@@ -329,6 +363,17 @@ void CascadesOptimizer::optimize()
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
+
+    const auto & step_digest_counters = memo.getContext().step_digest_counters;
+    LOG_TRACE(log, "Step digests written: {}, bytes written: {}, confirmations: {}",
+        step_digest_counters.digests_written, step_digest_counters.digest_bytes_written, step_digest_counters.digest_confirmations);
+
+    /// Orphan groups are groups no extracted plan can reach; a caller that creates a group and then
+    /// drops the only expression consuming it leaves one behind. Logged, not asserted, in production.
+    const auto & memo_counters = memo.getContext().memo_counters;
+    LOG_TRACE(log, "Groups created: {}, reused: {}, duplicate group detections: {}, unreachable groups: {}",
+        memo_counters.groups_created, memo_counters.groups_reused, memo_counters.duplicate_group_detections,
+        memo.countGroupsUnreachableFrom(root_group_id));
 
     LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }

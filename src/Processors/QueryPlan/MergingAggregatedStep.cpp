@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -306,6 +307,124 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `MergingAggregatedStep`. Unique within the step; never reused.
+/// `params.only_merge` needs no tag: every construction site forces it to `true`.
+/// Re-audit this step when the eager-aggregation feature branch merges: it adds new state here.
+enum MergingAggregatedStepIdentityTag : UInt64
+{
+    MAX_THREADS_TAG = 1,
+    MEMORY_EFFICIENT_MERGE_THREADS_TAG = 2,
+    BUCKET_TOP_K_TAG = 3,
+    BUCKET_TOP_K_ASCENDING_TAG = 4,
+    BUCKET_TOP_K_COUNT_INDEX_TAG = 5,
+    MAX_ROWS_TO_GROUP_BY_TAG = 6,
+    GROUP_BY_OVERFLOW_MODE_TAG = 7,
+    PARAMS_MAX_BLOCK_SIZE_TAG = 8,
+};
+}
+
+void MergingAggregatedStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// Unguarded: no DAG and no `NonZeroUInt64` plan setting, so neither wire method can throw for
+    /// any instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
+    /// No tag for `params.enable_adaptive_aggregator` and the two freeze thresholds, which this
+    /// step's `serializeSettings` does not write either: they are inert on the merge path.
+    /// `Aggregator::mergeBlocks` calls `result.init(method_chosen)` directly, never
+    /// `initDataVariantsWithSizeHint` - the one reader of the flag - and the thresholds are read
+    /// only from the `executeImpl` freeze and drain paths, which no merge reaches. Re-audit if
+    /// merging ever gains an adaptive path.
+
+    /// Not on the wire (`deserialize` re-derives both from session settings): they are the
+    /// parallelism of the physical plan - how many streams `transformPipeline` resizes to, and the
+    /// thread count of its memory-efficient merge branch. `max_threads` covers `params.max_threads`
+    /// too: the two are equal at construction and re-resolved together in `transformPipeline`.
+    writer.addVarUInt(MAX_THREADS_TAG, max_threads);
+    writer.addVarUInt(MEMORY_EFFICIENT_MERGE_THREADS_TAG, memory_efficient_merge_threads);
+
+    /// `Aggregator::convertOneBucketToChunk` reads these unconditionally on `final` (already on
+    /// the wire), regardless of `only_merge` - reachable from `MergingAggregatedTransform::generate`
+    /// via `convertToChunks`. A provably-exact truncation is still a different result set.
+    writer.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+
+    /// `Aggregator::checkLimits` reads these for the single-level ("unknown bucket") sub-path of
+    /// `mergeBlocks(BucketToChunks, ...)`, i.e. `MergingAggregatedTransform::generate`'s plain merge
+    /// - it can throw, drop rows, or route them to the overflow row depending on the value.
+    writer.addVarUInt(MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    writer.addVarUInt(GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+
+    /// `Aggregator::convertToChunks` calls `prepareChunkAndFillSingleLevel<false>`, i.e. with
+    /// `return_single_block = false`, so `params.max_block_size` (not necessarily equal to this
+    /// step's own, wire-covered `max_block_size` - nothing enforces that the two stay in sync)
+    /// controls how the single-level merge result is split into chunks.
+    writer.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
+}
+
+namespace
+{
+/// Logical digest tags for `MergingAggregatedStep`. Own enum, unique within this writer; never reused.
+enum MergingAggregatedStepLogicalDigestTag : UInt64
+{
+    LOGICAL_KEYS_TAG = 1,
+    LOGICAL_AGGREGATES_TAG = 2,
+    LOGICAL_GROUPING_SETS_TAG = 3,
+    LOGICAL_FINAL_TAG = 4,
+    LOGICAL_OVERFLOW_ROW_TAG = 5,
+    LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG = 6,
+    LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG = 7,
+    LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG = 8,
+    LOGICAL_BUCKET_TOP_K_TAG = 9,
+    LOGICAL_BUCKET_TOP_K_ASCENDING_TAG = 10,
+    LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG = 11,
+    LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG = 12,
+    LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG = 13,
+    LOGICAL_MEMORY_BOUND_MERGING_TAG = 14,
+};
+}
+
+void MergingAggregatedStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The relation itself. `params.only_merge` needs no tag: every construction site forces it true.
+    writer.addStrings(LOGICAL_KEYS_TAG, params.keys);
+    writer.addString(LOGICAL_AGGREGATES_TAG, encodeAggregateDescriptionsForDigest(params.aggregates));
+    writer.addString(LOGICAL_GROUPING_SETS_TAG, encodeGroupingSetsForDigest(grouping_sets_params));
+
+    /// Stage marker: `final` decides between finalized values and aggregate states, and with them the
+    /// output header (plan section 3). `overflow_row` adds a row.
+    writer.addBool(LOGICAL_FINAL_TAG, final);
+    writer.addBool(LOGICAL_OVERFLOW_ROW_TAG, params.overflow_row);
+
+    /// `Aggregator::checkLimits` on the single-level sub-path of the plain merge throws, drops rows
+    /// or routes them to the overflow row. This group and the `bucket_top_k` one below are written
+    /// for completeness only: `hasLogicalDigest` rejects any instance that sets either truncation,
+    /// because the excluded `memory_efficient_aggregation` decides whether it is applied at all.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    writer.addVarUInt(LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+    writer.addBool(LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG, params.empty_result_for_aggregation_by_empty_set);
+
+    /// `Aggregator::convertOneBucketToChunk` truncates each bucket to the top `k` on `final`.
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(LOGICAL_BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+
+    /// Order claim, not a knob: together they decide `getSortDescription()`, the order this step
+    /// promises its consumers, which nothing else in the logical frame carries.
+    writer.addSortDescription(LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+    writer.addBool(LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG, should_produce_results_in_order_of_bucket_number);
+    writer.addBool(LOGICAL_MEMORY_BOUND_MERGING_TAG, memory_bound_merging_of_aggregation_results_enabled);
+
+    /// Out, parallelism and chunking: `max_threads`, `memory_efficient_merge_threads`,
+    /// `memory_efficient_aggregation` (which merge transform runs), `max_block_size`,
+    /// `params.max_block_size`, `memory_bound_merging_max_block_bytes`.
+    /// Out, execution-only: the hash-table stats collection, the consecutive-keys optimization and
+    /// the string memory layouts - none of them changes a merged row.
 }
 
 QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)

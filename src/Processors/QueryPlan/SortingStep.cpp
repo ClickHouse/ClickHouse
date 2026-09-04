@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
@@ -782,6 +783,140 @@ void SortingStep::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "A bounded sort in a distributed plan requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT);
+}
+
+namespace
+{
+/// Cascades identity extras tags for `SortingStep`. Unique within the step; never reused.
+/// `threshold_tracker` needs no tag: it has no stable value to encode, and a starved tracker only
+/// means less top-N pruning, never wrong rows.
+/// `SortingStep::use_buffering` needs no tag either (unlike the `sort_settings` flag below):
+/// `serialize` writes it exactly where it is read, for `FinishSorting`; `enableBuffering` can also
+/// set it on a `Full` sort, where its only reader (`mergingSorted`) is never called, so it is inert.
+enum SortingStepIdentityTag : UInt64
+{
+    SKIP_SCATTER_BY_PARTITION_TAG = 1,
+    IS_SORTING_FOR_MERGE_JOIN_TAG = 2,
+    IS_PARTIAL_TOP_N_TAG = 3,
+    ALWAYS_READ_TILL_END_TAG = 4,
+    APPLY_VIRTUAL_ROW_CONVERSIONS_TAG = 5,
+    LIMIT_BY_COLUMNS_TAG = 6,
+    LIMIT_BY_GROUP_LENGTH_TAG = 7,
+    READ_IN_ORDER_USE_BUFFERING_TAG = 8,
+    READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG = 9,
+};
+}
+
+void SortingStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// Two guards, both fail-closed to the whole-object witness. `isSerializable()` excludes the
+    /// shapes `serialize` cannot encode: it throws outright for a type other than `Full` /
+    /// `FinishSorting`, and it has no place for a fixed-shard-count scatter, which would then digest
+    /// as an ordinary partitioned sort. `serializeSettings` throws where `isSerializable()` does not: the
+    /// `Settings(size_t)` constructor leaves `temporary_files_buffer_size` at 0, its plan setting is a
+    /// `NonZeroUInt64`, and `optimizeGroupByTopK` builds exactly such a sort.
+    if (!isSerializable() || sort_settings.temporary_files_buffer_size == 0)
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
+    /// `scatterByPartitionIfNeeded` returns immediately when set, so a partitioned full sort either
+    /// reshuffles rows across streams by the partition hash or does not.
+    writer.addBool(SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
+
+    /// Both flags only tell the optimizer what the sort is for, but that is what decides whether other
+    /// passes may reshard or reparallelize it, and `TwoStageTopN` builds its partial stage by cloning
+    /// the sort and flipping only `is_partial_top_n` - an identity blind to it would let memo-wide
+    /// deduplication fold the partial stage back into its source group and create a self-cycle.
+    writer.addBool(IS_SORTING_FOR_MERGE_JOIN_TAG, is_sorting_for_merge_join);
+    writer.addBool(IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
+
+    /// Passed to the final `MergingSortedTransform` on both serializable branches, where it decides
+    /// whether exhausted-but-unneeded inputs are still drained. Not derivable from `type`: only the
+    /// `MergingSorted` constructor sets it, but `convertToFinishSorting` can convert that instance.
+    writer.addBool(ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+
+    /// On the wire only for `FinishSorting`, but `fullSort` reads it too (it adds a
+    /// `RemoveVirtualRowTransform` when no final merge is inserted).
+    writer.addBool(APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
+
+    /// `addPerStreamLimitByIfNeeded` installs a row-dropping per-stream `LimitBySortedStreamTransform`
+    /// when these describe a prefix of the stream sort order.
+    writer.addStrings(LIMIT_BY_COLUMNS_TAG, limit_by_columns);
+    writer.addVarUInt(LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
+
+    /// `Settings::updatePlanSettings` writes neither, and `mergingSorted` reads both.
+    writer.addBool(READ_IN_ORDER_USE_BUFFERING_TAG, sort_settings.read_in_order_use_buffering);
+    writer.addBool(READ_IN_ORDER_USE_VIRTUAL_ROW_PER_BLOCK_TAG, sort_settings.read_in_order_use_virtual_row_per_block);
+}
+
+namespace
+{
+/// Logical digest tags for `SortingStep`. Own enum, unique within this writer; never reused.
+enum SortingStepLogicalDigestTag : UInt64
+{
+    LOGICAL_TYPE_TAG = 1,
+    LOGICAL_RESULT_DESCRIPTION_TAG = 2,
+    LOGICAL_PREFIX_DESCRIPTION_TAG = 3,
+    LOGICAL_PARTITION_BY_DESCRIPTION_TAG = 4,
+    LOGICAL_SKIP_SCATTER_BY_PARTITION_TAG = 5,
+    LOGICAL_LIMIT_TAG = 6,
+    LOGICAL_IS_PARTIAL_TOP_N_TAG = 7,
+    LOGICAL_LIMIT_BY_COLUMNS_TAG = 8,
+    LOGICAL_LIMIT_BY_GROUP_LENGTH_TAG = 9,
+    LOGICAL_ALWAYS_READ_TILL_END_TAG = 10,
+    LOGICAL_APPLY_VIRTUAL_ROW_CONVERSIONS_TAG = 11,
+    LOGICAL_MAX_ROWS_TO_SORT_TAG = 12,
+    LOGICAL_MAX_BYTES_TO_SORT_TAG = 13,
+    LOGICAL_SORT_OVERFLOW_MODE_TAG = 14,
+};
+}
+
+void SortingStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The order the step delivers, plus the input order it assumes (`prefix_description` is read
+    /// only for `FinishSorting`, but it is written unconditionally so the tag set never varies).
+    writer.addVarUInt(LOGICAL_TYPE_TAG, static_cast<UInt64>(type));
+    writer.addSortDescription(LOGICAL_RESULT_DESCRIPTION_TAG, result_description);
+    writer.addSortDescription(LOGICAL_PREFIX_DESCRIPTION_TAG, prefix_description);
+
+    /// A partitioned sort sorts each partition on its own, and `skip_scatter_by_partition` asserts
+    /// the input is already split that way; under a limit both decide which rows survive.
+    writer.addSortDescription(LOGICAL_PARTITION_BY_DESCRIPTION_TAG, partition_by_description);
+    writer.addBool(LOGICAL_SKIP_SCATTER_BY_PARTITION_TAG, skip_scatter_by_partition);
+
+    /// The top-N bound and its stage marker: a partial top-N emits up to `limit` rows per node while
+    /// the merged one emits `limit` rows in total, so it denotes a different relation (plan section
+    /// 3) - and `TwoStageTopN` builds the partial stage by cloning the sort and flipping only this
+    /// flag, so a blind digest would fold the partial stage back into its source group.
+    writer.addVarUInt(LOGICAL_LIMIT_TAG, limit);
+    writer.addBool(LOGICAL_IS_PARTIAL_TOP_N_TAG, is_partial_top_n);
+
+    /// `addPerStreamLimitByIfNeeded` installs a row-dropping per-stream transform from these.
+    writer.addStrings(LOGICAL_LIMIT_BY_COLUMNS_TAG, limit_by_columns);
+    writer.addVarUInt(LOGICAL_LIMIT_BY_GROUP_LENGTH_TAG, limit_by_group_length);
+
+    /// `always_read_till_end` drains exhausted-but-unneeded inputs, which is what makes `totals` see
+    /// every row; `apply_virtual_row_conversions` adds a `RemoveVirtualRowTransform`, i.e. it decides
+    /// whether the marker rows of read-in-order leave this step.
+    writer.addBool(LOGICAL_ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+    writer.addBool(LOGICAL_APPLY_VIRTUAL_ROW_CONVERSIONS_TAG, apply_virtual_row_conversions);
+
+    /// Result-affecting limits: `break` truncates the sorted input, `throw` fails the query.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TO_SORT_TAG, sort_settings.size_limits.max_rows);
+    writer.addVarUInt(LOGICAL_MAX_BYTES_TO_SORT_TAG, sort_settings.size_limits.max_bytes);
+    writer.addVarUInt(LOGICAL_SORT_OVERFLOW_MODE_TAG, static_cast<UInt64>(sort_settings.size_limits.overflow_mode));
+
+    /// Out, an optimizer hint only: `is_sorting_for_merge_join` tells later passes what the sort is
+    /// for; the executed sort and its rows are the same either way.
+    /// Out, buffering and spill: `use_buffering`, `sort_settings.read_in_order_use_buffering`,
+    /// `read_in_order_use_virtual_row_per_block`, `max_block_size`, `max_block_bytes`, the remerge
+    /// thresholds, the external-sort thresholds, `min_free_disk_space`, the temporary-file codec and
+    /// buffer size. Out, derived: `threshold_tracker` (a starved tracker only prunes less).
+    /// Out by predicate: `scatter_partitions`, excluded with the whole instance by `isSerializable()`.
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)

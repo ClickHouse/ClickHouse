@@ -39,6 +39,8 @@ BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
 
     std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
 private:
     void updateOutputHeader() override
     {

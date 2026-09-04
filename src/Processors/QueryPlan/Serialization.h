@@ -9,6 +9,11 @@ namespace DB
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+/// Writes a plan step's header as column names and types only; constants are refilled by the step.
+/// Shared with the Cascades step full digest, which must stay byte-identical to the plan wire
+/// format, so this must remain the single definition.
+void serializeQueryPlanStepHeader(const Block & header, WriteBuffer & out);
+
 /// Serialization context passed to `IQueryPlanStep::serialize`.
 /// Settings are handled separately via `serializeSettings` method.
 struct IQueryPlanStep::Serialization

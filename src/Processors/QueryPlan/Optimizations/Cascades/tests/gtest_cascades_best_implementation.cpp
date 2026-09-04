@@ -216,6 +216,31 @@ TEST(CascadesBestImplementation, CheapestWins)
     EXPECT_EQ(group.getBestCostForProperties(propsAt(4), cost_config), 10.0);
 }
 
+/// At exactly equal cost the earlier-inserted expression wins, whichever of the two that is. Group
+/// deduplication makes exact ties common (two expressions differing only in a physical knob live in
+/// one group and can price identically), and the winner must not depend on the search schedule.
+TEST(CascadesBestImplementation, EqualCostKeepsTheIncumbent)
+{
+    CostConfig cost_config;
+
+    for (bool challenger_first : {false, true})
+    {
+        Group group(0);
+        auto one = costedExpr(propsAt(4), 42);
+        auto other = costedExpr(propsAt(4), 42);
+        const auto & incumbent = challenger_first ? other : one;
+        const auto & challenger = challenger_first ? one : other;
+
+        group.updateBestImplementation(incumbent, cost_config);
+        group.updateBestImplementation(challenger, cost_config);
+
+        EXPECT_EQ(group.getBestImplementation(propsAt(4), cost_config).expression, incumbent);
+        EXPECT_EQ(
+            group.selectInputImplementation(propsAt(4), cost_config, {}, /*input_is_self_referential=*/false).expression,
+            incumbent);
+    }
+}
+
 /// A stronger sorting satisfies a weaker requirement (prefix), but not vice versa.
 TEST(CascadesBestImplementation, SortingSatisfactionSelectsImplementation)
 {

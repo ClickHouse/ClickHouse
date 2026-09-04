@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -126,6 +127,49 @@ void ExpressionStep::updateOutputHeader()
 void ExpressionStep::serialize(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);
+}
+
+namespace
+{
+/// Full digest tags for `ExpressionStep`. Unique within the step; never reused.
+enum ExpressionStepIdentityTag : UInt64
+{
+    PREVENT_INPUT_REMOVAL_TAG = 1,
+};
+}
+
+void ExpressionStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// `ActionsDAG::serialize` throws on a correlated `PLACEHOLDER` node. `isSerializable()` is
+    /// unconditionally true here, so this is the whole guard.
+    if (hasCorrelatedExpressions())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    writer.addStepWireEncoding(*this);
+
+    /// Blocks the input pruning a `FINAL` child depends on.
+    writer.addBool(PREVENT_INPUT_REMOVAL_TAG, prevent_input_removal);
+}
+
+namespace
+{
+/// Logical digest tags for `ExpressionStep`. Own enum, unique within this writer; never reused.
+enum ExpressionStepLogicalDigestTag : UInt64
+{
+    LOGICAL_ACTIONS_DAG_TAG = 1,
+};
+}
+
+void ExpressionStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The whole relation: the DAG maps input rows to output rows and names the output columns.
+    writer.addDAG(LOGICAL_ACTIONS_DAG_TAG, &actions_dag);
+
+    /// Out: `prevent_input_removal` - it only forbids a later pass from pruning this step's inputs
+    /// and cannot change the rows this step produces from the inputs it has.
 }
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)

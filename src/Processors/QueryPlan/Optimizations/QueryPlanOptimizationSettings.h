@@ -120,6 +120,7 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool enable_cascades_optimizer = false;
+    bool cascades_memo_deduplication = false; /// Deduplicate Cascades memo groups on logical expression identity
 
     bool make_distributed_plan = false;
     bool serialize_query_plan = false;

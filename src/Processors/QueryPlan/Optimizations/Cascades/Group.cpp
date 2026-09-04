@@ -10,11 +10,11 @@ namespace DB
 
 bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 {
-    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
-    auto & same_fingerprint = logical_expressions_by_fingerprint[group_expression->fingerprint()];
+    /// Drop only a fully-equal duplicate; a mere fingerprint hash collision keeps both.
+    auto & same_fingerprint = logical_expressions_by_full_fingerprint[group_expression->fullFingerprint()];
     for (const auto * existing : same_fingerprint)
     {
-        if (existing->structurallyEqualTo(*group_expression))
+        if (existing->fullyEqualTo(*group_expression))
             return false;
     }
 
@@ -26,11 +26,13 @@ bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 
 bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 {
-    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
-    auto & same_fingerprint = physical_expressions_by_fingerprint[group_expression->fingerprint()];
+    /// Drop only a fully-equal duplicate; a mere fingerprint hash collision keeps both. This is what
+    /// bounds the enforcer fixed-point loop in `Task.cpp`: an enforcer that re-derives an expression
+    /// the group already holds inserts nothing, so it is not counted as progress.
+    auto & same_fingerprint = physical_expressions_by_full_fingerprint[group_expression->fullFingerprint()];
     for (const auto * existing : same_fingerprint)
     {
-        if (existing->structurallyEqualTo(*group_expression))
+        if (existing->fullyEqualTo(*group_expression))
             return false;
     }
 
@@ -88,6 +90,12 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
     /// Only the matching distribution-shape bucket needs checking - `isSatisfiedBy` requires
     /// exact match on (node_count, is_replicated).
+    ///
+    /// At exactly equal cost the incumbent - the earlier-inserted expression - wins: the first
+    /// comparison keeps it (`<=`) and the second does not evict it (`>`). Group deduplication makes
+    /// exact ties common, since two expressions differing only in a physical knob now live in one
+    /// group and can price identically; without this rule the winner would depend on insertion
+    /// order, which is search-schedule state, and plans would move for no costed reason.
     for (auto best_it = bucket.begin(); best_it != bucket.end();)
     {
         if (expression->properties.isSatisfiedBy((*best_it)->properties) &&

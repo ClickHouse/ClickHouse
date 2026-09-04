@@ -65,6 +65,9 @@ public:
     virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
+    /// Filters added but not yet folded into `filter_actions_dag` by `applyFilters`.
+    bool hasPendingFilters() const { return !filter_dags.empty(); }
+
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 

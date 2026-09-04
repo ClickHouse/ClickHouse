@@ -23,4 +23,22 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> BroadcastExchangeStep::createSinkA
     return {std::move(sink), std::move(source)};
 }
 
+namespace
+{
+/// Full digest tags for `BroadcastExchangeStep`, numbered after the base's; never reused.
+enum BroadcastExchangeStepIdentityTag : UInt64
+{
+    RESULT_BUCKET_COUNT_TAG = LogicalExchangeStep::FIRST_DERIVED_FULL_DIGEST_TAG,
+};
+}
+
+void BroadcastExchangeStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    writeExchangeBaseFullDigest(writer);
+
+    /// How many copies of the input the exchange produces; `makeDistributed` prices and wires it on
+    /// this. `getSourceBucketCount()` needs no tag: it is the constant 1 for this class.
+    writer.addVarUInt(RESULT_BUCKET_COUNT_TAG, result_bucket_count);
+}
+
 }

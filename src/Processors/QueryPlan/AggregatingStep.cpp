@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -24,6 +26,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -1090,6 +1093,223 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+namespace
+{
+/// Cascades digest extras tags for `AggregatingStep`. Unique within the step, and renumbered freely:
+/// a digest is compared only against digests taken in the same process, never stored or shipped.
+/// `final` and `params.stats_collecting_params.key` need no tag: both are gated on `for_cache_key`,
+/// which the full digest always sets to `false`, so both are on the wire.
+enum AggregatingStepIdentityTag : UInt64
+{
+    MERGE_THREADS_TAG = 1,
+    TEMPORARY_DATA_MERGE_THREADS_TAG = 2,
+    SKIP_MERGING_TAG = 3,
+    STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG = 4,
+    GROUP_BY_SORT_DESCRIPTION_TAG = 5,
+    LIMIT_HINT_TAG = 6,
+    PARAMS_MAX_THREADS_TAG = 7,
+    PARAMS_MAX_BLOCK_SIZE_TAG = 8,
+    PARAMS_ONLY_MERGE_TAG = 9,
+    BUCKET_TOP_K_TAG = 10,
+    BUCKET_TOP_K_ASCENDING_TAG = 11,
+    BUCKET_TOP_K_COUNT_INDEX_TAG = 12,
+    PARAMS_TOP_K_TAG = 13,
+};
+
+String encodeTopKParams(const Aggregator::Params::TopKParams & top_k)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(top_k.k, payload);
+    writeVarUInt(top_k.key_columns, payload);
+    writeVarUInt(top_k.observation_rows, payload);
+    writeVarUInt(top_k.directions.size(), payload);
+    for (int direction : top_k.directions)
+        writeIntBinary(static_cast<Int32>(direction), payload);
+    writeVarUInt(top_k.nulls_directions.size(), payload);
+    for (int direction : top_k.nulls_directions)
+        writeIntBinary(static_cast<Int32>(direction), payload);
+    return payload.str();
+}
+}
+
+void AggregatingStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// The field audit behind this content digest covers only the shapes `isSerializable()` admits:
+    /// the aggregation-in-order state (`sort_description_for_merging`,
+    /// `explicit_sorting_required_for_aggregation_in_order`, and the meaning `group_by_sort_description`
+    /// takes on beside them) was left out of it, so such an instance keeps pointer identity instead of
+    /// a digest that would ignore those fields. Not a throw guard: at the digest's serialization
+    /// version `serialize` does encode them.
+    if (!isSerializable())
+    {
+        writer.addWholeObjectWitness(this);
+        return;
+    }
+
+    /// This covers the three adaptive-aggregator params without a tag of their own:
+    /// `serializeSettings` writes them from
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR` on, and the digest always
+    /// serializes at `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`. `transformPipeline` clears
+    /// `params.enable_adaptive_aggregator` when the pipeline rejects the admission, which runs after
+    /// interning and plan extraction and so never moves a value already digested.
+    writer.addStepWireEncoding(*this);
+
+    /// Not on the wire (`deserialize` passes 0 and `updateThreadsValues` re-derives both from session
+    /// settings): the parallelism of the merge stage of the physical plan.
+    writer.addVarUInt(MERGE_THREADS_TAG, merge_threads);
+    writer.addVarUInt(TEMPORARY_DATA_MERGE_THREADS_TAG, temporary_data_merge_threads);
+
+    /// Finalize each stream on its own instead of merging them - only correct for disjoint streams.
+    writer.addBool(SKIP_MERGING_TAG, skip_merging);
+
+    /// Suppresses the `resize` before the aggregation.
+    writer.addBool(STORAGE_HAS_EVENLY_DISTRIBUTED_READ_TAG, storage_has_evenly_distributed_read);
+
+    /// Written by `serialize` only together with a non-empty `sort_description_for_merging`, which
+    /// `isSerializable` excludes; a free field otherwise.
+    writer.addSortDescription(GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+
+    /// Truncates the aggregation result where it is read; a free field, set by
+    /// `optimizeLimitForAggregationInOrder`.
+    writer.addVarUInt(LIMIT_HINT_TAG, limit_hint);
+
+    /// `deserialize` passes 0; `transformPipeline` resizes to it and derives the shard count from it.
+    writer.addVarUInt(PARAMS_MAX_THREADS_TAG, params.max_threads);
+
+    /// `serializeSettings` writes only the step's own `max_block_size`; nothing keeps the two in sync,
+    /// and this one splits the aggregation result into chunks.
+    writer.addVarUInt(PARAMS_MAX_BLOCK_SIZE_TAG, params.max_block_size);
+
+    /// Set by `requestOnlyMergeForAggregateProjection`; changes the step's header and the `Aggregator`
+    /// path that runs.
+    writer.addBool(PARAMS_ONLY_MERGE_TAG, params.only_merge);
+
+    /// `Aggregator::convertOneBucketToChunk` reads these on `final` (already on the wire), so two
+    /// aggregations differing only here produce different row counts.
+    writer.addVarUInt(BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+
+    /// The GROUP BY top-K heap keeps only `k` groups, so it changes the result.
+    if (params.top_k)
+        writer.addString(PARAMS_TOP_K_TAG, encodeTopKParams(*params.top_k));
+    else
+        writer.addAbsent(PARAMS_TOP_K_TAG);
+}
+
+String encodeAggregateDescriptionsForDigest(const AggregateDescriptions & aggregates)
+{
+    WriteBufferFromOwnString payload;
+    serializeAggregateDescriptions(aggregates, payload);
+    return payload.str();
+}
+
+String encodeGroupingSetsForDigest(const GroupingSetsParamsList & grouping_sets_params)
+{
+    WriteBufferFromOwnString payload;
+    writeVarUInt(grouping_sets_params.size(), payload);
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        writeVarUInt(grouping_set.used_keys.size(), payload);
+        for (const auto & used_key : grouping_set.used_keys)
+            writeStringBinary(used_key, payload);
+    }
+    return payload.str();
+}
+
+namespace
+{
+/// Logical digest tags for `AggregatingStep`. Own enum, unique within this writer; never reused.
+enum AggregatingStepLogicalDigestTag : UInt64
+{
+    LOGICAL_KEYS_TAG = 1,
+    LOGICAL_AGGREGATES_TAG = 2,
+    LOGICAL_GROUPING_SETS_TAG = 3,
+    LOGICAL_FINAL_TAG = 4,
+    LOGICAL_ONLY_MERGE_TAG = 5,
+    LOGICAL_GROUP_BY_USE_NULLS_TAG = 6,
+    LOGICAL_OVERFLOW_ROW_TAG = 7,
+    LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG = 8,
+    LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG = 9,
+    LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG = 10,
+    LOGICAL_LIMIT_HINT_TAG = 11,
+    LOGICAL_BUCKET_TOP_K_TAG = 12,
+    LOGICAL_BUCKET_TOP_K_ASCENDING_TAG = 13,
+    LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG = 14,
+    LOGICAL_TOP_K_TAG = 15,
+    LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG = 16,
+    LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG = 17,
+    LOGICAL_MEMORY_BOUND_MERGING_TAG = 18,
+};
+}
+
+void AggregatingStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The relation itself: what is grouped, what is computed over each group, and which grouping
+    /// sets are unioned into the output.
+    writer.addStrings(LOGICAL_KEYS_TAG, params.keys);
+    writer.addString(LOGICAL_AGGREGATES_TAG, encodeAggregateDescriptionsForDigest(params.aggregates));
+    writer.addString(LOGICAL_GROUPING_SETS_TAG, encodeGroupingSetsForDigest(grouping_sets_params));
+
+    /// Stage marker: a partial aggregation emits states, up to one row per key per node; a final one
+    /// emits finalized values, one row per key (plan section 3). `only_merge` selects the
+    /// projection path, which changes the header and the `Aggregator` branch that runs.
+    writer.addBool(LOGICAL_FINAL_TAG, final);
+    writer.addBool(LOGICAL_ONLY_MERGE_TAG, params.only_merge);
+
+    /// `group_by_use_nulls` changes the key column types; `overflow_row` adds a row.
+    writer.addBool(LOGICAL_GROUP_BY_USE_NULLS_TAG, group_by_use_nulls);
+    writer.addBool(LOGICAL_OVERFLOW_ROW_TAG, params.overflow_row);
+
+    /// Result-affecting limits `serializeSettings` carries on the wire, which the logical digest
+    /// does not call: `Aggregator::checkLimits` throws, drops rows or routes them to the overflow
+    /// row, and the empty-set flag decides between zero and one row for a keyless aggregation.
+    writer.addVarUInt(LOGICAL_MAX_ROWS_TO_GROUP_BY_TAG, params.max_rows_to_group_by);
+    writer.addVarUInt(LOGICAL_GROUP_BY_OVERFLOW_MODE_TAG, static_cast<UInt64>(params.group_by_overflow_mode));
+    writer.addBool(LOGICAL_EMPTY_RESULT_FOR_EMPTY_SET_TAG, params.empty_result_for_aggregation_by_empty_set);
+
+    /// Truncations: each keeps only some of the groups. `limit_hint` truncates where the result is
+    /// read and `params.top_k` is the GROUP BY heap of `executeImpl`; neither depends on the
+    /// hash-table method. The `bucket_top_k` triple is written for completeness only -
+    /// `hasLogicalDigest` rejects any instance that sets it, because it fires on two-level data whose
+    /// thresholds the digest excludes.
+    writer.addVarUInt(LOGICAL_LIMIT_HINT_TAG, limit_hint);
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_TAG, params.bucket_top_k);
+    writer.addBool(LOGICAL_BUCKET_TOP_K_ASCENDING_TAG, params.bucket_top_k_ascending);
+    writer.addVarUInt(LOGICAL_BUCKET_TOP_K_COUNT_INDEX_TAG, params.bucket_top_k_count_index);
+    if (params.top_k)
+        writer.addString(LOGICAL_TOP_K_TAG, encodeTopKParams(*params.top_k));
+    else
+        writer.addAbsent(LOGICAL_TOP_K_TAG);
+
+    /// `should_produce_results_in_order_of_bucket_number` is in because
+    /// `getTraits(...).returns_single_stream` is built from it - a declared trait later passes read -
+    /// and because `transformPipeline` collapses the aggregation output to a single stream on it;
+    /// `setProduceResultsInBucketOrder` can also flip it after construction.
+    /// The other two are inert for every opted-in instance: `memoryBoundMergingWillBeUsed`, the only
+    /// reader left, needs a non-empty `sort_description_for_merging`, which `isSerializable()`
+    /// excludes, so `getSortDescription()` never returns `group_by_sort_description` here (unlike in
+    /// `MergingAggregatedStep`, where it does). They are written anyway, so the tag set does not
+    /// depend on that coupling and widening the predicate later cannot silently drop them; at worst
+    /// they cost a merge.
+    writer.addSortDescription(LOGICAL_GROUP_BY_SORT_DESCRIPTION_TAG, group_by_sort_description);
+    writer.addBool(LOGICAL_RESULTS_IN_BUCKET_ORDER_TAG, should_produce_results_in_order_of_bucket_number);
+    writer.addBool(LOGICAL_MEMORY_BOUND_MERGING_TAG, memory_bound_merging_of_aggregation_results_enabled);
+
+    /// Out, parallelism and chunking: `merge_threads`, `temporary_data_merge_threads`,
+    /// `params.max_threads`, `max_block_size`, `params.max_block_size`,
+    /// `aggregation_in_order_max_block_bytes`, `storage_has_evenly_distributed_read` (suppresses a
+    /// resize).
+    /// Out, memory and spill: the two-level thresholds, `max_bytes_before_external_group_by`,
+    /// `min_free_disk_space`, the hash-table stats collection, `enable_prefetch`, the adaptive
+    /// aggregator and its two freeze thresholds, the packed-string-key and zero-byte string layouts,
+    /// the consecutive-keys optimization, `optimize_group_by_constant_keys` - all exact, all
+    /// execution-only.
+    /// Out by predicate: `sort_description_for_merging` and
+    /// `explicit_sorting_required_for_aggregation_in_order` (in-order aggregation), excluded with
+    /// the whole instance by `isSerializable()`; `skip_merging`, see `hasLogicalDigest`.
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)

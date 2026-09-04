@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -181,6 +182,54 @@ void LimitByStep::serialize(Serialization & ctx) const
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
         writeStringBinary(column, ctx.out);
+}
+
+namespace
+{
+/// Full digest tags for `LimitByStep`. Unique within the step; never reused.
+enum LimitByStepIdentityTag : UInt64
+{
+    SORTED_COLUMNS_DESCR_TAG = 1,
+    SKIP_STREAM_MERGING_TAG = 2,
+};
+}
+
+void LimitByStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// Unguarded: no DAG and no plan settings at all, so neither wire method can throw for any
+    /// instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
+    /// Both decide whether `transformPipeline` may run one transform per stream instead of resizing
+    /// to a single stream, and which of the two LIMIT BY transforms it instantiates.
+    writer.addSortDescription(SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
+    writer.addBool(SKIP_STREAM_MERGING_TAG, skip_stream_merging);
+}
+
+namespace
+{
+/// Logical digest tags for `LimitByStep`. Own enum, unique within this writer; never reused.
+enum LimitByStepLogicalDigestTag : UInt64
+{
+    LOGICAL_GROUP_LENGTH_TAG = 1,
+    LOGICAL_GROUP_OFFSET_TAG = 2,
+    LOGICAL_COLUMNS_TAG = 3,
+    LOGICAL_SORTED_COLUMNS_DESCR_TAG = 4,
+};
+}
+
+void LimitByStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// Which rows of each group survive, and what a group is.
+    writer.addVarUInt(LOGICAL_GROUP_LENGTH_TAG, group_length);
+    writer.addVarUInt(LOGICAL_GROUP_OFFSET_TAG, group_offset);
+    writer.addStrings(LOGICAL_COLUMNS_TAG, columns);
+
+    /// An input assumption, not a knob: it selects `LimitBySortedStreamTransform`, which is correct
+    /// only when the input really arrives grouped in this order.
+    writer.addSortDescription(LOGICAL_SORTED_COLUMNS_DESCR_TAG, sorted_columns_descr);
+
+    /// Out by predicate: `skip_stream_merging`, see `hasLogicalDigest`.
 }
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)

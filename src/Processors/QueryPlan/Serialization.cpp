@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void serializeHeader(const Block & header, WriteBuffer & out)
+void serializeQueryPlanStepHeader(const Block & header, WriteBuffer & out)
 {
     /// Write only names and types.
     /// Constants should be filled by step.
@@ -43,8 +43,8 @@ static bool haveSameSerializedHeader(const Block & lhs, const Block & rhs)
 {
     WriteBufferFromOwnString lhs_buf;
     WriteBufferFromOwnString rhs_buf;
-    serializeHeader(lhs, lhs_buf);
-    serializeHeader(rhs, rhs_buf);
+    serializeQueryPlanStepHeader(lhs, lhs_buf);
+    serializeQueryPlanStepHeader(rhs, rhs_buf);
     return lhs_buf.stringView() == rhs_buf.stringView();
 }
 
@@ -156,9 +156,9 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
-            serializeHeader(*node->step->getOutputHeader(), out);
+            serializeQueryPlanStepHeader(*node->step->getOutputHeader(), out);
         else
-            serializeHeader({}, out);
+            serializeQueryPlanStepHeader({}, out);
 
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings, flags.version);

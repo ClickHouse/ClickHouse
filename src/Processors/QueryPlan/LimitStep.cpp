@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepIdentity.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -121,6 +122,61 @@ void LimitStep::serialize(Serialization & ctx) const
 
     if (with_ties)
         serializeSortDescription(description, ctx.out);
+}
+
+namespace
+{
+/// Full digest tags for `LimitStep`. Unique within the step; never reused.
+enum LimitStepIdentityTag : UInt64
+{
+    IS_SHARD_LIMIT_TAG = 1,
+};
+}
+
+void LimitStep::writeFullDigest(StepDigestWriter & writer) const
+{
+    /// Unguarded: no DAG and no `NonZeroUInt64` plan setting, so neither wire method can throw for
+    /// any instance (`isSerializable()` is unconditionally true).
+    writer.addStepWireEncoding(*this);
+
+    /// Not on the wire (`markAsShardLimit` sets it after construction).
+    /// `QueryPipeline::initRowsBeforeLimit` special-cases a shard limit, so the rows it discards
+    /// still count toward the parent limit's `rows_before_limit_at_least`, a user-visible field.
+    writer.addBool(IS_SHARD_LIMIT_TAG, is_shard_limit);
+}
+
+namespace
+{
+/// Logical digest tags for `LimitStep`. Own enum, unique within this writer; never reused.
+enum LimitStepLogicalDigestTag : UInt64
+{
+    LOGICAL_LIMIT_TAG = 1,
+    LOGICAL_OFFSET_TAG = 2,
+    LOGICAL_WITH_TIES_TAG = 3,
+    LOGICAL_TIES_DESCRIPTION_TAG = 4,
+    LOGICAL_ALWAYS_READ_TILL_END_TAG = 5,
+    LOGICAL_IS_SHARD_LIMIT_TAG = 6,
+};
+}
+
+void LimitStep::writeLogicalDigest(StepDigestWriter & writer) const
+{
+    /// The window of rows that survives.
+    writer.addVarUInt(LOGICAL_LIMIT_TAG, limit);
+    writer.addVarUInt(LOGICAL_OFFSET_TAG, offset);
+
+    /// `with_ties` extends the window past `limit` by the rows equal to the last one under
+    /// `description`, so both are relation-defining.
+    writer.addBool(LOGICAL_WITH_TIES_TAG, with_ties);
+    writer.addSortDescription(LOGICAL_TIES_DESCRIPTION_TAG, description);
+
+    /// Both change user-visible output beyond this step's own rows, so both are in: with
+    /// `always_read_till_end` the input keeps running after the limit is reached, which is what
+    /// makes `totals` see every row, and `QueryPipeline::initRowsBeforeLimit` special-cases a shard
+    /// limit so its discarded rows still count into the parent limit's `rows_before_limit_at_least`.
+    /// `is_shard_limit` is also the stage marker of a split limit (plan section 4.2).
+    writer.addBool(LOGICAL_ALWAYS_READ_TILL_END_TAG, always_read_till_end);
+    writer.addBool(LOGICAL_IS_SHARD_LIMIT_TAG, is_shard_limit);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)

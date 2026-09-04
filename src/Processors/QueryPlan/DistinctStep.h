@@ -45,6 +45,14 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
+    void writeFullDigest(StepDigestWriter & writer) const override;
+
+    /// `skip_stream_merging` asserts the input streams already hold disjoint key sets - a property of
+    /// the input layout the memo does not model yet, so such an instance stays out of group
+    /// deduplication (plan section 4.2; Stage C removes this).
+    bool hasLogicalDigest() const override { return !skip_stream_merging; }
+    void writeLogicalDigest(StepDigestWriter & writer) const override;
+
     static QueryPlanStepPtr deserialize(Deserialization & ctx, bool pre_distinct_);
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);
