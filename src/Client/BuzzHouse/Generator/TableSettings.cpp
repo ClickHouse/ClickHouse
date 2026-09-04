@@ -295,7 +295,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"0", "1", "5", "25"},
          false)},
     {"max_replicated_fetches_network_bandwidth", bytesRangeSetting},
-    {"max_replicated_logs_to_keep", highRangeSetting},
+    {"max_replicated_logs_to_keep", highRangeNonZeroSetting},
     {"max_replicated_merges_in_queue",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },

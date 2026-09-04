@@ -62,8 +62,6 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
 
-    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
-
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
 

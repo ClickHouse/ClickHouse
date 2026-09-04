@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
@@ -702,11 +701,6 @@ void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, con
     Arena & dst_arena = createOrGetArena();
     pushBackAndCreateState(data, dst_arena, func.get());
     func->deserialize(data.back(), in, version, &dst_arena);
-}
-
-void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
 
 void ColumnAggregateFunction::popBack(size_t n)

@@ -46,7 +46,7 @@ from errno import EPERM, ESRCH
 from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
-from time import sleep, time
+from time import monotonic, sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
@@ -219,6 +219,9 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
+# Appended to output rescued from a timed-out command: the dump is incomplete.
+TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
+
 def shell_get_output(
     cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
 ) -> str:
@@ -247,6 +250,19 @@ def shell_get_output(
             return (e.output or "").strip()
         print(
             f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
+    except subprocess.TimeoutExpired as e:
+        # A separate branch because TimeoutExpired is not a CalledProcessError
+        # subclass, and its output is bytes even under text=True.
+        output = e.output or b""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        if keep_output_on_error and output.strip():
+            return f"{output.strip()}\n{TRUNCATED_ON_TIMEOUT_MARKER}"
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(output)}",
             file=sys.stderr,
         )
         return ""
@@ -1067,12 +1083,17 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+# Per-PID lldb budget: the release value is also the fallback for a caller that
+# cannot tell which flavor the server is.
+LLDB_TIMEOUT = 30
+LLDB_SLOW_BUILD_TIMEOUT = 120
+
+
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
-def get_stacktraces_from_lldb(pid):
-    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
-    # debug build with many threads; anything beyond that means lldb itself
-    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
-    # leaves the server process untouched.
+def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
+    # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
+    # inferior); it is not an estimate of the work, which scales with the
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1087,7 +1108,7 @@ def get_stacktraces_from_lldb(pid):
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
         f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
-        timeout=30,
+        timeout=timeout,
         keep_output_on_error=True,
     )
 
@@ -1259,6 +1280,37 @@ def is_asan_build(args):
     return out.strip() not in ("", "0")
 
 
+def is_slow_build_binary(args) -> bool:
+    """Debug/sanitizer/coverage flavor read from the binary, not the server.
+
+    Mirrors the flag set `collect_build_flags` derives, so the answer matches
+    what `args.build_flags` would have said had the server come up. An
+    unreadable or unparseable result is reported as not-slow, keeping the
+    tighter of the two budgets.
+    """
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    # Name the same four sanitizers `collect_build_flags` maps, not every
+    # `-fsanitize=`: a CFI build carries `-fsanitize=cfi-vcall` on top of
+    # RelWithDebInfo, and the collected-flags path calls that a release build.
+    sanitizers = " OR ".join(
+        f"position('sanitize={san}' IN value)"
+        for san in ("thread", "address", "undefined", "memory")
+    )
+    out = shell_get_output(
+        f"{local} --query \""
+        "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
+        "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
+        f"+ countIf(name = 'CXX_FLAGS' AND ({sanitizers})) "
+        'FROM system.build_options"',
+        timeout=60,
+    )
+    try:
+        return int(out.strip()) > 0
+    except ValueError:
+        return False
+
+
 # Full server stacktraces are written here — one file per collector, not per
 # test: print_*_stacktraces also run from the end-of-run hung check, where no
 # single test owns the dump. The CI job runs clickhouse-test from its output
@@ -1278,15 +1330,49 @@ def _append_stacktrace_log(filename: str, block: str) -> None:
         print(f"Could not write {filename}: {e}", file=sys.stderr)
 
 
-def print_c_stacktraces(args) -> None:
+def lldb_timeout_for_build(args) -> float:
+    """Per-PID lldb budget for this server's build flavor.
+
+    Debug, sanitizer and coverage builds are far more expensive to unwind and
+    symbolize, the same reason `MergeTreeSettingsRandomizer.get_random_settings`
+    raises its granularity bounds on a `slow_build`.
+
+    Must read `args.build_flags`, not the module-level RELEASE_NON_SANITIZED /
+    SANITIZED globals, which a spawned worker re-imports at their defaults while
+    `args` is transferred intact.  When the flags were never collected (server
+    never started), read the flavor from the binary via `clickhouse local`, the
+    same server-independent route `is_asan_build` takes; the release budget is
+    only the last resort, when even that read fails.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is None:
+        return LLDB_SLOW_BUILD_TIMEOUT if is_slow_build_binary(args) else LLDB_TIMEOUT
+    slow_build = (
+        any(flag in build_flags for flag in BuildFlags.SANITIZERS)
+        or BuildFlags.DEBUG in build_flags
+        or BuildFlags.WITH_COVERAGE in build_flags
+    )
+    return LLDB_SLOW_BUILD_TIMEOUT if slow_build else LLDB_TIMEOUT
+
+
+def print_c_stacktraces(
+    args,
+    per_pid_timeout: Optional[float] = None,
+    total_timeout: float = LLDB_SLOW_BUILD_TIMEOUT,
+) -> None:
     """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, liveness check, hung-check, check_server_started)
-    or terminating the one wedged test (timeout_handler).  lldb's "thread
-    backtrace all" pause is on the order of seconds - acceptable in both
-    cases against the diagnostic value.
+    or terminating the one wedged test (timeout_handler).
+
+    `per_pid_timeout` None means derive it from the build flavor, which on a
+    server that never started costs a `clickhouse local` read of the binary.
+    `total_timeout` bounds the whole pid loop, which can span up to 20
+    processes; it is an independent limit, not a multiple of the per-PID one.
+    A caller inside a fired one-shot `signal.alarm` must pass both, because
+    that alarm cannot bound work running in its own handler.
 
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
@@ -1319,15 +1405,34 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    for pid in all_pids:
+    # Costs a `clickhouse local` read of the binary when the flags are missing,
+    # and neither return above consumes it.
+    if per_pid_timeout is None:
+        per_pid_timeout = lldb_timeout_for_build(args)
+
+    deadline = monotonic() + total_timeout
+    for index, pid in enumerate(all_pids):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            # Name the skipped pids: silence here reads as "nothing to dump".
+            print(
+                f"Ran out of the {total_timeout:.0f}s lldb budget: "
+                f"skipping {len(all_pids) - index} of {len(all_pids)} processes "
+                f"({', '.join(str(p) for p in all_pids[index:])})."
+            )
+            break
         label = "main server" if pid == server_pid else "replica"
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
-        bt = get_stacktraces_from_lldb(pid)
+        bt = get_stacktraces_from_lldb(pid, timeout=min(per_pid_timeout, remaining))
         if bt and len(bt) >= 1000:
+            truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
             print(trim_for_log(block, 100))
-            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
+            print(
+                f"({'partial' if truncated else 'full'} lldb backtrace saved to "
+                f"{C_STACKTRACES_LOG})"
+            )
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -4939,7 +5044,12 @@ def run_tests_array(
                         # stay around either way and can be captured at
                         # end-of-run.
                         print_sql_stacktraces(args)
-                        print_c_stacktraces(args)
+                        # Explicit budget: this runs from the fired one-shot
+                        # alarm, which cannot bound its own handler, and
+                        # stop_tests() below still needs the outer timeout.
+                        print_c_stacktraces(
+                            args, per_pid_timeout=LLDB_TIMEOUT, total_timeout=60
+                        )
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
@@ -5003,8 +5113,8 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    # Claim before collecting: the sweep below blocks up to 30s per
-                    # server process, and a cause claimed after it loses to any
+                    # Claim before collecting: the sweep below can block for the
+                    # whole lldb budget, and a cause claimed after it loses to any
                     # cause claimed during it.
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
@@ -5581,8 +5691,8 @@ def do_run_tests(
             if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
                     print("Hung check failed: server liveness check failed")
-                    # Claim before collecting: the sweep below can block ~30s per
-                    # server process.
+                    # Claim before collecting: the sweep below can block for the
+                    # whole lldb budget.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
@@ -6133,7 +6243,10 @@ ORDER BY (test_name, callee_offset)
         if selftest_rows == 0:
             raise Exception(
                 "Coverage self-test FAILED: coverage_log has 0 rows for _selftest — "
-                "coverage mapping is not working (binary built without WITH_COVERAGE_DEPTH?)"
+                "read the coverageDiag tuples printed above: zero name_refs means the "
+                "static counters were not updated (LLVM_PROFILE_FILE with %c relocates "
+                "counter updates out of that section); non-zero name_refs with zero "
+                "non_empty_file_regions means no coverage region resolved them"
             )
         print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
         # Validate that the coverage mapping parser produced no bogus line numbers.

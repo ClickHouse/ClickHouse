@@ -86,7 +86,12 @@ public:
     /// Extracts the value of a specified tag, or an empty string if there is no such tag in the group.
     String extractTag(Group group, const String & tag_to_extract) const;
     VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
-    void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
+    /// Fills `null_map` with 1 for groups without the specified tag.
+    void extractTag(
+        const VectorWithMemoryTracking<Group> & groups_,
+        const String & tag_to_extract,
+        ColumnString & out_column,
+        PaddedPODArray<UInt8> & null_map) const;
 
     /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
     /// with identifiers from a column. Throws an exception if some identifier is unknown.
