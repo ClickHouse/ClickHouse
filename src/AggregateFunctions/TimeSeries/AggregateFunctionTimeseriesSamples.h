@@ -155,6 +155,9 @@ public:
     template <typename RangeType>
     void checkTimestampsInRange(const RangeType & range) const
     {
+        if (sorted && !buffer.empty() && range.contains(buffer.front().first) && range.contains(buffer.back().first))
+            return;
+
         forEachSample([&range](TimestampType timestamp, ValueType)
         {
             if (!range.contains(timestamp))
