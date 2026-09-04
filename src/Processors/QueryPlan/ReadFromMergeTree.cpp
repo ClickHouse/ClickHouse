@@ -2738,7 +2738,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             {
                 if (sorting_key_columns[sk] == minmax_column_names[mm])
                 {
-                    partition_sort_key_reverse = !sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[sk];
+                    /// Partitions must be consumed in the order the streams produce rows: a
+                    /// `reverse` sorting key column flips it, and so does reading in reverse
+                    /// order (`Replacing` with `optimize_read_in_reverse_order_final`). Both
+                    /// at once cancel out.
+                    const bool sorting_key_column_reverse = !sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[sk];
+                    partition_sort_key_reverse = sorting_key_column_reverse != read_in_reverse;
                     minmax_col_index = mm;
                     break;
                 }
