@@ -435,7 +435,7 @@ static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPt
             UserDefinedSQLFunctionVisitor::visit(inlined, context);
             predicate = std::move(inlined);
         }
-        catch (const Exception &)
+        catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
         {
             /// The analyzer substitutes argument forms this visitor rejects, a matcher among them.
         }
