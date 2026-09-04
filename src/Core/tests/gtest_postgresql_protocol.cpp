@@ -19,11 +19,6 @@ namespace Messaging = DB::PostgreSQLProtocol::Messaging;
 namespace
 {
 
-void putUInt8(std::string & s, UInt8 v)
-{
-    s.push_back(static_cast<char>(v));
-}
-
 void putInt16(std::string & s, Int16 v)
 {
     s.push_back(static_cast<char>((v >> 8) & 0xFF));
@@ -36,14 +31,26 @@ void putInt32(std::string & s, Int32 v)
         s.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
 }
 
-/// Run `body` over the bytes and report whether it threw UNKNOWN_PACKET_FROM_CLIENT.
+/// A frontend message frame: the four-byte length field, which counts itself, followed by the payload.
+/// The message type byte is read separately by `receiveMessageType`, so it is not part of the frame.
+std::string frame(const std::string & payload)
+{
+    std::string bytes;
+    putInt32(bytes, static_cast<Int32>(payload.size() + sizeof(Int32)));
+    bytes += payload;
+    return bytes;
+}
+
+/// Run `body` over the bytes and report whether it threw `UNKNOWN_PACKET_FROM_CLIENT`.
 template <typename F>
 bool throwsUnknownPacket(const std::string & bytes, F && body)
 {
     ReadBufferFromMemory in(bytes.data(), bytes.size());
+    WriteBufferFromOwnString out;
+    Messaging::MessageTransport mt(&in, &out);
     try
     {
-        body(in);
+        body(mt);
         return false;
     }
     catch (const Exception & e)
@@ -62,153 +69,231 @@ TEST(PostgreSQLProtocol, DropMessageRejectsLengthBelowFour)
     {
         std::string bytes;
         putInt32(bytes, size);
-        WriteBufferFromOwnString out;
-        EXPECT_TRUE(throwsUnknownPacket(bytes, [&](ReadBuffer & in)
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](Messaging::MessageTransport & mt)
         {
-            Messaging::MessageTransport mt(&in, &out);
             mt.dropMessage();
         })) << "size = " << size;
     }
 
     /// A well-formed length skips the declared number of trailing bytes.
-    std::string bytes;
-    putInt32(bytes, 8);
-    bytes += "abcd";
+    std::string bytes = frame("abcd");
     ReadBufferFromMemory in(bytes.data(), bytes.size());
     WriteBufferFromOwnString out;
     Messaging::MessageTransport mt(&in, &out);
     EXPECT_NO_THROW(mt.dropMessage());
 }
 
-TEST(PostgreSQLProtocol, SASLResponseRejectsLengthBelowFour)
+TEST(PostgreSQLProtocol, ReceiveRejectsLengthBelowFour)
 {
     for (Int32 size = 0; size < 4; ++size)
     {
         std::string bytes;
-        putUInt8(bytes, 'p');
         putInt32(bytes, size);
-        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](Messaging::MessageTransport & mt)
         {
-            Messaging::SASLResponse msg;
-            msg.deserialize(in);
+            mt.receive<Messaging::SyncQuery>();
         })) << "size = " << size;
     }
 
-    /// size == 4 means an empty SASL payload.
-    std::string bytes;
-    putUInt8(bytes, 'p');
-    putInt32(bytes, 4);
+    /// A `Sync` carries no payload, so its frame is exactly the length field.
+    std::string bytes = frame("");
     ReadBufferFromMemory in(bytes.data(), bytes.size());
-    Messaging::SASLResponse msg;
-    EXPECT_NO_THROW(msg.deserialize(in));
-    EXPECT_TRUE(msg.sasl_mechanism.empty());
+    WriteBufferFromOwnString out;
+    Messaging::MessageTransport mt(&in, &out);
+    EXPECT_NO_THROW(mt.receive<Messaging::SyncQuery>());
+}
+
+TEST(PostgreSQLProtocol, SASLResponseReadsWholeFrame)
+{
+    /// The payload of a `SASLResponse` is the rest of its frame, with no terminator.
+    {
+        std::string bytes = frame("");
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::SASLResponse> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::SASLResponse>());
+        EXPECT_TRUE(msg->sasl_mechanism.empty());
+    }
+
+    {
+        std::string bytes = frame("c=biws,r=nonce,p=proof");
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::SASLResponse> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::SASLResponse>());
+        EXPECT_EQ(msg->sasl_mechanism, "c=biws,r=nonce,p=proof");
+    }
 }
 
 TEST(PostgreSQLProtocol, SASLInitialResponseHandlesMechanismLength)
 {
     auto build = [](Int32 size_sasl_mechanism, const std::string & data)
     {
-        std::string bytes;
-        putUInt8(bytes, 'p');
-        putInt32(bytes, 0); /// the outer size field is not used for bounds here
-        bytes += "SCRAM-SHA-256";
-        bytes.push_back('\0');
-        putInt32(bytes, size_sasl_mechanism);
-        bytes += data;
-        return bytes;
+        std::string payload = "SCRAM-SHA-256";
+        payload.push_back('\0');
+        putInt32(payload, size_sasl_mechanism);
+        payload += data;
+        return frame(payload);
     };
 
     /// Below -1 is malformed.
-    EXPECT_TRUE(throwsUnknownPacket(build(-2, ""), [](ReadBuffer & in)
+    EXPECT_TRUE(throwsUnknownPacket(build(-2, ""), [](Messaging::MessageTransport & mt)
     {
-        Messaging::SASLInitialResponse msg;
-        msg.deserialize(in);
+        mt.receive<Messaging::SASLInitialResponse>();
     }));
 
     /// -1 is the protocol sentinel for "no initial response".
     {
         std::string bytes = build(-1, "");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::SASLInitialResponse msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_TRUE(msg.sasl_mechanism.empty());
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::SASLInitialResponse> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::SASLInitialResponse>());
+        EXPECT_TRUE(msg->sasl_mechanism.empty());
     }
 
     /// A non-negative length reads exactly that many bytes.
     {
         std::string bytes = build(3, "abc");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::SASLInitialResponse msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_EQ(msg.sasl_mechanism, "abc");
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::SASLInitialResponse> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::SASLInitialResponse>());
+        EXPECT_EQ(msg->sasl_mechanism, "abc");
     }
+
+    /// A field declaring more bytes than the frame carries is rejected on the message boundary
+    /// instead of being allocated up front.
+    EXPECT_TRUE(throwsUnknownPacket(build(1000000, "abc"), [](Messaging::MessageTransport & mt)
+    {
+        mt.receive<Messaging::SASLInitialResponse>();
+    }));
 }
 
 TEST(PostgreSQLProtocol, BindHandlesParameterLength)
 {
     auto build = [](Int32 sz_param, const std::string & data)
     {
-        std::string bytes;
-        putInt32(bytes, 0); /// the outer size field is not used for bounds here
-        bytes.push_back('\0'); /// empty portal name
-        bytes.push_back('\0'); /// empty statement name
-        putInt16(bytes, 0); /// no parameter format codes
-        putInt16(bytes, 1); /// one parameter
-        putInt32(bytes, sz_param);
-        bytes += data;
-        putInt16(bytes, 0); /// no result format codes
-        return bytes;
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 0); /// no parameter format codes
+        putInt16(payload, 1); /// one parameter
+        putInt32(payload, sz_param);
+        payload += data;
+        putInt16(payload, 0); /// no result format codes
+        return frame(payload);
     };
 
     /// Below -1 is malformed.
-    EXPECT_TRUE(throwsUnknownPacket(build(-2, ""), [](ReadBuffer & in)
+    EXPECT_TRUE(throwsUnknownPacket(build(-2, ""), [](Messaging::MessageTransport & mt)
     {
-        Messaging::BindQuery msg;
-        msg.deserialize(in);
+        mt.receive<Messaging::BindQuery>();
     }));
 
     /// -1 is the protocol sentinel for a NULL parameter; no value bytes follow.
     {
         std::string bytes = build(-1, "");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "NULL");
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::BindQuery> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::BindQuery>());
+        ASSERT_EQ(msg->parameters.size(), 1u);
+        EXPECT_EQ(msg->parameters[0], "NULL");
     }
 
     /// A non-negative length reads exactly that many bytes.
     {
         std::string bytes = build(2, "hi");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "hi");
+        WriteBufferFromOwnString out;
+        Messaging::MessageTransport mt(&in, &out);
+        std::unique_ptr<Messaging::BindQuery> msg;
+        ASSERT_NO_THROW(msg = mt.receive<Messaging::BindQuery>());
+        ASSERT_EQ(msg->parameters.size(), 1u);
+        EXPECT_EQ(msg->parameters[0], "hi");
     }
+
+    /// A parameter declaring more bytes than the frame carries is rejected.
+    EXPECT_TRUE(throwsUnknownPacket(build(1000000, "hi"), [](Messaging::MessageTransport & mt)
+    {
+        mt.receive<Messaging::BindQuery>();
+    }));
 }
 
-TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)
+TEST(PostgreSQLProtocol, CopyDataReadsWholeFrame)
 {
     for (Int32 size = 0; size < 4; ++size)
     {
         std::string bytes;
         putInt32(bytes, size);
-        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](Messaging::MessageTransport & mt)
         {
-            Messaging::CopyInData msg;
-            msg.deserialize(in);
+            mt.receive<Messaging::CopyInData>();
         })) << "size = " << size;
     }
 
-    /// A well-formed length carries `size - 4` payload bytes.
-    std::string bytes;
-    putInt32(bytes, 6);
-    bytes += "ab";
+    /// A well-formed frame carries `size - 4` payload bytes.
+    std::string bytes = frame("ab");
     ReadBufferFromMemory in(bytes.data(), bytes.size());
-    Messaging::CopyInData msg;
-    EXPECT_NO_THROW(msg.deserialize(in));
-    EXPECT_EQ(msg.query, "ab");
+    WriteBufferFromOwnString out;
+    Messaging::MessageTransport mt(&in, &out);
+    std::unique_ptr<Messaging::CopyInData> msg;
+    ASSERT_NO_THROW(msg = mt.receive<Messaging::CopyInData>());
+    EXPECT_EQ(msg->query, "ab");
+}
+
+TEST(PostgreSQLProtocol, ReceiveRejectsTrailingBytesAndRealigns)
+{
+    /// A `Query` frame that ends early and smuggles a whole second `Query` in its tail: the declared
+    /// length is a frame boundary, so the tail is rejected instead of being read as the next message.
+    std::string smuggling_payload = "SELECT 1";
+    smuggling_payload.push_back('\0');
+    smuggling_payload += "SELECT 2";
+    smuggling_payload.push_back('\0');
+
+    std::string good_payload = "SELECT 3";
+    good_payload.push_back('\0');
+
+    std::string bytes = frame(smuggling_payload) + frame(good_payload);
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    WriteBufferFromOwnString out;
+    Messaging::MessageTransport mt(&in, &out);
+
+    EXPECT_THROW(mt.receive<Messaging::Query>(), Exception);
+
+    /// The rejected frame was skipped in full, so the next message is read from its start.
+    std::unique_ptr<Messaging::Query> next;
+    ASSERT_NO_THROW(next = mt.receive<Messaging::Query>());
+    EXPECT_EQ(next->query, "SELECT 3");
+}
+
+TEST(PostgreSQLProtocol, ReceiveRealignsAfterFailedParsing)
+{
+    /// The first frame fails in the middle of parsing; the rest of it must still be skipped.
+    std::string bad_payload = "SCRAM-SHA-256";
+    bad_payload.push_back('\0');
+    putInt32(bad_payload, -2); /// malformed mechanism length
+    bad_payload += "trailing garbage";
+
+    std::string good_payload = "SELECT 4";
+    good_payload.push_back('\0');
+
+    std::string bytes = frame(bad_payload) + frame(good_payload);
+    ReadBufferFromMemory in(bytes.data(), bytes.size());
+    WriteBufferFromOwnString out;
+    Messaging::MessageTransport mt(&in, &out);
+
+    EXPECT_THROW(mt.receive<Messaging::SASLInitialResponse>(), Exception);
+
+    std::unique_ptr<Messaging::Query> next;
+    ASSERT_NO_THROW(next = mt.receive<Messaging::Query>());
+    EXPECT_EQ(next->query, "SELECT 4");
 }
 
 TEST(PostgreSQLProtocol, CommandCompletePreservesUInt64RowCount)
