@@ -1,0 +1,68 @@
+-- analyzer=1: 01 control
+ACCESS_DENIED
+-- analyzer=1: 02 filter over denied column
+ACCESS_DENIED
+-- analyzer=1: 03 filter over denied column, qualified key and expression
+ACCESS_DENIED
+-- analyzer=1: 04 filter over denied tuple subcolumn
+ACCESS_DENIED
+-- analyzer=1: 05 filter over alias of a denied column
+ACCESS_DENIED
+-- analyzer=1: 06 filter over alias with alias grant
+1
+-- analyzer=1: 07 filter over denied column with PREWHERE
+ACCESS_DENIED
+-- analyzer=1: 08 filter over granted column
+1
+-- analyzer=1: 09 constant filter
+2
+-- analyzer=1: 10 invoker view, filter keyed by underlying table over denied column
+ACCESS_DENIED
+-- analyzer=1: 11 definer view, filter keyed by underlying table over denied column
+2
+-- analyzer=1: 12 definer view, filter keyed by the view itself
+1
+-- analyzer=1: 13 distributed table, filter keyed by itself over denied column
+ACCESS_DENIED
+-- analyzer=1: 14 distributed table, filter keyed by itself over granted column
+1
+-- analyzer=1: 15 parallel replicas custom key (sampling) over denied column
+ACCESS_DENIED
+-- analyzer=1: 16 parallel replicas custom key (range) over denied column
+ACCESS_DENIED
+-- analyzer=1: 17 parallel replicas custom key (sampling) over granted column
+1
+-- analyzer=0: 01 control
+ACCESS_DENIED
+-- analyzer=0: 02 filter over denied column
+ACCESS_DENIED
+-- analyzer=0: 03 filter over denied column, qualified key and expression
+UNKNOWN_IDENTIFIER
+-- analyzer=0: 04 filter over denied tuple subcolumn
+ACCESS_DENIED
+-- analyzer=0: 05 filter over alias of a denied column
+ACCESS_DENIED
+-- analyzer=0: 06 filter over alias with alias grant
+1
+-- analyzer=0: 07 filter over denied column with PREWHERE
+ACCESS_DENIED
+-- analyzer=0: 08 filter over granted column
+1
+-- analyzer=0: 09 constant filter
+2
+-- analyzer=0: 10 invoker view, filter keyed by underlying table over denied column
+ACCESS_DENIED
+-- analyzer=0: 11 definer view, filter keyed by underlying table over denied column
+2
+-- analyzer=0: 12 definer view, filter keyed by the view itself
+1
+-- analyzer=0: 13 distributed table, filter keyed by itself over denied column
+ACCESS_DENIED
+-- analyzer=0: 14 distributed table, filter keyed by itself over granted column
+1
+-- analyzer=0: 15 parallel replicas custom key (sampling) over denied column
+ACCESS_DENIED
+-- analyzer=0: 16 parallel replicas custom key (range) over denied column
+ACCESS_DENIED
+-- analyzer=0: 17 parallel replicas custom key (sampling) over granted column
+1
