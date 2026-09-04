@@ -1709,13 +1709,14 @@ bool wouldReadInOrderBeUseful(
 }
 
 /// `pushLimitByIntoSort` runs on the parent `LimitByStep`, which the pre-order traversal in
-/// `optimizeTree` visits before this `SortingStep`, so the `LIMIT BY` hint is already attached by
-/// the time read-in-order is applied here. When the read-in-order prefix covers the whole
-/// `ORDER BY`, `SortingStep::transformPipeline` runs `LimitBySortedStreamTransform` on every input
-/// stream before merging them, exactly like the bare `LIMIT BY` (no `ORDER BY`) shape handled in
-/// `optimizeLimitByInOrder`. That prefilter scales with the number of streams, so ask the reader to
-/// keep them: per-part `PrefetchingConcat` would otherwise collapse a multi-stream part read into a
-/// single stream per part and serialize the prefilter.
+/// `optimizeTree` visits before this `SortingStep`, so the `LIMIT BY` hint is attached by the time
+/// read-in-order is applied by the pass that shares that traversal with it. When the read-in-order
+/// prefix covers the whole `ORDER BY`, `SortingStep::transformPipeline` runs
+/// `LimitBySortedStreamTransform` on every input stream before merging them, exactly like the bare
+/// `LIMIT BY` (no `ORDER BY`) shape handled in `optimizeLimitByInOrder`. That prefilter scales with
+/// the number of streams, so ask the reader to keep them: per-part `PrefetchingConcat` would
+/// otherwise collapse a multi-stream part read into a single stream per part and serialize the
+/// prefilter.
 static void preferMultipleStreamsForPushedDownLimitBy(
     const SortingStep & sorting,
     QueryPlan::Node & node,
@@ -1752,6 +1753,24 @@ static void preferMultipleStreamsForPushedDownLimitBy(
     }
 }
 
+/// `findReadingStep` stops at a `UnionStep`, so fan out over its branches, matching the union branch
+/// of `optimizeReadInOrder` which builds an input order for every branch separately.
+static void preferMultipleStreamsForPushedDownLimitByBelowSorting(
+    const SortingStep & sorting,
+    QueryPlan::Node & node,
+    const SortDescription & sort_description_for_merging,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (typeid_cast<UnionStep *>(node.step.get()))
+    {
+        for (auto * child : node.children)
+            preferMultipleStreamsForPushedDownLimitBy(sorting, *child, sort_description_for_merging, optimization_settings);
+        return;
+    }
+
+    preferMultipleStreamsForPushedDownLimitBy(sorting, node, sort_description_for_merging, optimization_settings);
+}
+
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
@@ -1764,7 +1783,17 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
+    {
+        /// `optimizeTree` runs this pass on two traversals: an early one that does not contain
+        /// `pushLimitByIntoSort`, and a later one that does. Only one of them converts the sorting, and
+        /// it is the other one that sees both the applied input order and the `LIMIT BY` hint, so the
+        /// pushed-down `LIMIT BY` request has to be reachable through an already converted sorting too.
+        /// Its `prefix_description` is exactly the read-in-order prefix it was converted with.
+        if (sorting->getType() == SortingStep::Type::FinishSorting)
+            preferMultipleStreamsForPushedDownLimitByBelowSorting(
+                *sorting, *node.children.front(), sorting->getPrefixDescription(), optimization_settings);
         return;
+    }
 
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
@@ -1863,8 +1892,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
 
-        for (auto * child : union_node->children)
-            preferMultipleStreamsForPushedDownLimitBy(*sorting, *child, *max_sort_descr, optimization_settings);
+        preferMultipleStreamsForPushedDownLimitByBelowSorting(*sorting, *union_node, *max_sort_descr, optimization_settings);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
     {
@@ -1872,7 +1900,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         bool use_buffering = order_info->limit == 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
 
-        preferMultipleStreamsForPushedDownLimitBy(
+        preferMultipleStreamsForPushedDownLimitByBelowSorting(
             *sorting, *node.children.front(), order_info->sort_description_for_merging, optimization_settings);
     }
 }

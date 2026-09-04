@@ -78,6 +78,7 @@ QID_AGG_NESTED="${CLICKHOUSE_DATABASE}_agg_nested"
 QID_PLAIN_NESTED="${CLICKHOUSE_DATABASE}_plain_nested"
 QID_JOIN_NESTED="${CLICKHOUSE_DATABASE}_join_nested"
 QID_LIMIT_BY="${CLICKHOUSE_DATABASE}_limit_by"
+QID_ORDER_LIMIT_BY="${CLICKHOUSE_DATABASE}_order_limit_by"
 
 # Aggregation-in-order over a `Merge` table on top of a multi-part table.
 $CLICKHOUSE_CLIENT --query_id "$QID_AGG" --query \
@@ -118,6 +119,14 @@ $CLICKHOUSE_CLIENT --query_id "$QID_JOIN" --query \
 # streaming `LimitBySortedStreamTransform`).
 $CLICKHOUSE_CLIENT --query_id "$QID_LIMIT_BY" --query \
     "SELECT * FROM t_concat_merge_lb LIMIT 3 BY grp FORMAT Null SETTINGS $SETTINGS"
+
+# `ORDER BY ... LIMIT BY` through the `Merge` table reaches the same per-stream prefilter by a
+# different route: `pushLimitByIntoSort` hands the `LIMIT BY` hint to the `SortingStep`, which
+# attaches `LimitBySortedStreamTransform` to every input stream before merging them. That request
+# is applied by whichever read-in-order pass does not convert the sorting itself, and it has to
+# reach the `Merge` child readers, so per-part `PrefetchingConcat` must stay disabled here too.
+$CLICKHOUSE_CLIENT --query_id "$QID_ORDER_LIMIT_BY" --query \
+    "SELECT * FROM t_concat_merge_lb ORDER BY grp, key LIMIT 3 BY grp FORMAT Null SETTINGS $SETTINGS"
 
 # The same shapes through a nested `Merge` table (a `Merge` whose child is a `Merge`).
 # The safeguards are propagated through the nested `ReadFromMerge` step to the inner readers
@@ -182,6 +191,13 @@ SELECT 'limit_by_reads_in_order_merge', countIf(name = 'LimitBySortedStreamTrans
 -- ... but setPreferMultipleStreams keeps per-part PrefetchingConcat disabled on the child reader.
 SELECT 'limit_by_no_prefetching_merge', countIf(name = 'PrefetchingConcat') = 0
     FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_LIMIT_BY';
+-- ORDER BY ... LIMIT BY through the Merge table runs the prefilter per stream (guards against a
+-- vacuous pass: with a single stream there would be nothing for PrefetchingConcat to collapse) ...
+SELECT 'order_by_limit_by_reads_in_order_merge', countIf(name = 'LimitBySortedStreamTransform') > 1
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_ORDER_LIMIT_BY';
+-- ... and per-part PrefetchingConcat stays disabled on the child reader.
+SELECT 'order_by_limit_by_no_prefetching_merge', countIf(name = 'PrefetchingConcat') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_ORDER_LIMIT_BY';
 "
 
 # Correctness: aggregation and distinct produce the expected results.
@@ -208,6 +224,11 @@ SELECT 'limit_by_correctness';
 -- returned row is self-consistent (key % 100 is the group it was placed in).
 SELECT count() = 300 AND uniqExact(grp) = 100 AND countIf(key % 100 != grp) = 0 FROM (SELECT grp, key FROM t_concat_merge_lb LIMIT 3 BY grp);
 SELECT min(c) = 3 AND max(c) = 3 FROM (SELECT count() AS c FROM (SELECT grp, key FROM t_concat_merge_lb LIMIT 3 BY grp) GROUP BY grp);
+SELECT 'order_by_limit_by_correctness';
+-- With an outer ORDER BY the result is fully deterministic: the 3 smallest keys of every group.
+-- Group g holds the keys g, g + 100, g + 200, ...; the three smallest are the first three of
+-- those, so the expected sum is sum(3 * g + 300) over g in [0, 100) = 44850.
+SELECT count() = 300 AND uniqExact(grp) = 100 AND sum(key) = 44850 FROM (SELECT grp, key FROM t_concat_merge_lb ORDER BY grp, key LIMIT 3 BY grp);
 "
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_concat_merge_nested; DROP TABLE t_concat_merge; DROP TABLE t_concat_merge_data; DROP TABLE t_concat_merge_join_right; DROP TABLE t_concat_merge_lb; DROP TABLE t_concat_merge_lb_data;"
