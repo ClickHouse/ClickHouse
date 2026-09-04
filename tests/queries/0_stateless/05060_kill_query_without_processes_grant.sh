@@ -381,4 +381,15 @@ gone "own23b$SUFFIX"; echo "23 granted alive=$(alive "own23b$SUFFIX")"
 via_http "DROP FUNCTION $F1"
 reset_arm
 
+# 24: a matcher argument is a form that substitution refuses, and the analyzer accepts it, so the
+# predicate has to reach the read unsubstituted rather than carrying the refusal.
+via_http "CREATE OR REPLACE FUNCTION $F1 AS (x) -> x = 'own24$SUFFIX'"
+start_victim "$U1" "own24$SUFFIX"
+echo -n "24 matcher_arg killed="
+$CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE $F1(COLUMNS('^query_id\$')) SYNC
+    SETTINGS enable_analyzer = 1" 2>&1 | killed "own24$SUFFIX"
+gone "own24$SUFFIX"; echo "24 matcher_arg alive=$(alive "own24$SUFFIX")"
+via_http "DROP FUNCTION $F1"
+reset_arm
+
 via_http "DROP USER $U1, $U2"

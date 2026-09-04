@@ -427,8 +427,18 @@ static Block selectFromKillableProcesses(const ContextPtr & context, const ASTPt
         /// A copy: the statement's AST is shared and outlives this read.
         auto predicate = where_expression->clone();
         /// A function body is substituted where the text below is parsed, which is past the point
-        /// where a qualifier inside that body can still be shortened.
-        UserDefinedSQLFunctionVisitor::visit(predicate, context);
+        /// where a qualifier inside that body can still be shortened. Substituting it here is a
+        /// normalization, so a form this substitution refuses keeps the shape it arrived in.
+        auto inlined = predicate->clone();
+        try
+        {
+            UserDefinedSQLFunctionVisitor::visit(inlined, context);
+            predicate = std::move(inlined);
+        }
+        catch (const Exception &)
+        {
+            /// The analyzer substitutes argument forms this visitor rejects, a matcher among them.
+        }
         unqualifyProcessesColumns(predicate);
         select_query += " WHERE " + predicate->formatWithSecretsOneLine();
     }
