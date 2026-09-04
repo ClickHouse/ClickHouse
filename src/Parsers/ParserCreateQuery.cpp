@@ -2764,6 +2764,86 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
+## Tuple element codecs {#tuple-element-codecs}
+
+<ExperimentalBadge/>
+
+For a stored column with [`Tuple`](/reference/data-types/tuple) elements, you can assign a different codec to each element. Enable the [`enable_tuple_element_codecs`](/reference/settings/session-settings/enable#enable_tuple_element_codecs) setting before creating or altering such a column:
+
+```sql
+SET enable_tuple_element_codecs = 1;
+
+CREATE TABLE tuple_codec_example
+(
+    id UInt64,
+    payload Tuple(
+        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
+        value Float64 CODEC(Gorilla, ZSTD),
+        source String
+    ) CODEC(LZ4)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+The codec after the closing parenthesis belongs to the whole `payload` column. An element-level declaration overrides it for that element. In this example, `payload.timestamp` and `payload.value` use their own codecs, while `payload.source` inherits `CODEC(LZ4)`.
+
+An explicit `CODEC(Default)` on an element selects the part's default codec instead of inheriting the column codec.
+
+Element codecs are also supported for nested `Tuple` types and for a `Tuple` reached through `Array` or `SimpleAggregateFunction`. These wrappers do not add a name to the codec path. For example:
+
+```sql
+CREATE TABLE tuple_array_codec_example
+(
+    values Array(Tuple(
+        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
+        value Float64 CODEC(Gorilla, ZSTD)
+    )) CODEC(LZ4)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+To add or change an element codec, use `MODIFY COLUMN` and restate the type of the owning top-level column:
+
+```sql
+ALTER TABLE tuple_codec_example
+MODIFY COLUMN payload Tuple(
+    timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(3)),
+    value Float64,
+    source String
+);
+```
+
+In a typed `MODIFY COLUMN`, element codec clauses form a patch. `CODEC(...)` adds or replaces the declaration on that element. Omitting `CODEC` preserves any existing declaration; it does not remove it.
+
+Use the ALTER-only `REMOVE CODEC` modifier to remove an element's own declaration:
+
+```sql
+ALTER TABLE tuple_codec_example
+MODIFY COLUMN payload Tuple(
+    timestamp DateTime64(3) REMOVE CODEC,
+    value Float64,
+    source String
+);
+```
+
+The declaration must exist directly on that element. After it is removed, the element inherits the nearest enclosing declaration, or uses the part default if there is none. Existing column-level forms such as `MODIFY COLUMN payload CODEC(ZSTD)` and `MODIFY COLUMN payload REMOVE CODEC` continue to affect only the column-level declaration.
+
+Changing codec metadata does not recompress existing data immediately. New parts use the new policy, and existing parts use it after a merge or mutation rewrites them. The codec stored in each compressed block is used when that block is read.
+
+`SHOW CREATE TABLE` and the `compression_codec` column of [`system.columns`](/reference/system-tables/columns) show the complete stored policy. Codec annotations are storage metadata and are not included in the value returned by `toTypeName`.
+
+The following limitations apply:
+
+- Tuple element codecs are currently supported by the `MergeTree` engine family.
+- Element declarations are accepted only in stored column definitions, not in general type expressions such as `CAST`.
+- `Array` and `SimpleAggregateFunction` are the supported transparent wrappers. Declarations below other wrappers, including `Map`, `Nullable`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected.
+- The `Quantized` codec cannot be assigned to a Tuple element.
+- There is no dotted codec target or `MODIFY SUBCOLUMN` syntax. Alter the owning top-level column instead.
+
+The `enable_tuple_element_codecs` setting controls adding or changing element codec declarations. Existing metadata can still be attached, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally.
+
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 </Tip>

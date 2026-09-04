@@ -463,6 +463,28 @@ Tuples are used for temporary column grouping. Columns can be grouped when an IN
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
+## Compression codecs for stored Tuple elements {#tuple-element-codecs}
+
+Stored `Tuple` columns can assign a different [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) to each element. This feature is experimental and requires [`enable_tuple_element_codecs`](/reference/settings/session-settings/enable#enable_tuple_element_codecs) = 1 when adding or changing an element codec.
+
+```sql
+SET enable_tuple_element_codecs = 1;
+
+CREATE TABLE events
+(
+    id UInt64,
+    payload Tuple(
+        timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD),
+        value Float64 CODEC(Gorilla, ZSTD),
+        source String
+    ) CODEC(LZ4)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+An element declaration overrides the codec on the whole column. An element without a declaration inherits the nearest enclosing declaration or the part default. See [Tuple element codecs](/reference/statements/create/table/codec#tuple-element-codecs) for `ALTER TABLE` syntax, supported wrappers, and current limitations.
+
 ## Creating Tuples {#creating-tuples}
 
 You can use a function to create a tuple:

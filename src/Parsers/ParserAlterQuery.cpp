@@ -1572,6 +1572,8 @@ This query changes the `name` column properties:
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](/reference/statements/create/table/codec).
 
+To change a codec on a `Tuple` element, restate the type of its owning top-level column and put `CODEC(...)` or `REMOVE CODEC` on the element. Element codec clauses use patch semantics: an omitted clause preserves the stored declaration. The feature is experimental and does not add dotted `MODIFY COLUMN` targets or a `MODIFY SUBCOLUMN` command. See [Tuple element codecs](/reference/statements/create/table/codec#tuple-element-codecs) for syntax and limitations.
+
 For examples of columns TTL modifying, see [Column TTL](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
 For examples of column-level settings modifying, see [Column-level Settings](/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
