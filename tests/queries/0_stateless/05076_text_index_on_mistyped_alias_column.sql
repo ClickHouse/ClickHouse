@@ -70,6 +70,16 @@ ATTACH TABLE db_05076_ord.t_grandfathered
 ALTER TABLE db_05076_ord.t_grandfathered ADD COLUMN x UInt8;
 SELECT count() FROM system.columns WHERE database = 'db_05076_ord' AND table = 't_grandfathered' AND name = 'x';
 
+-- Inheriting the violation is not a licence to rewrite it. Retyping the alias, redirecting it at a
+-- different expression, or replacing the index under the same name all introduce a fresh unusable
+-- index, so the name of the index and the name of the offending column are not enough to decide
+-- that a violation was inherited - the definitions behind both have to be unchanged.
+ALTER TABLE db_05076_ord.t_grandfathered
+    MODIFY COLUMN paths String ALIAS splitByChar(',', event); -- { serverError BAD_ARGUMENTS }
+
+ALTER TABLE db_05076_ord.t_grandfathered
+    DROP INDEX fts_paths, ADD INDEX fts_paths paths TYPE text(tokenizer = splitByNonAlpha); -- { serverError BAD_ARGUMENTS }
+
 -- The escape hatch stays open: the index can still be dropped.
 ALTER TABLE db_05076_ord.t_grandfathered DROP INDEX fts_paths;
 SELECT count() FROM system.data_skipping_indices WHERE database = 'db_05076_ord' AND table = 't_grandfathered';

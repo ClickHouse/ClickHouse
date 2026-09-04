@@ -1255,19 +1255,46 @@ void MergeTreeData::checkProperties(
                         ///
                         /// On the create path `setProperties` is called with the same metadata as both
                         /// arguments, so there is no older state to inherit from and nothing to exempt.
+                        const auto & new_column = new_metadata.columns.get(*mistyped_column);
+
                         const bool inherited = &old_metadata != &new_metadata
                             && std::ranges::any_of(
                                    old_metadata.secondary_indices,
                                    [&](const auto & old_index)
                                    {
-                                       return old_index.name == index.name
-                                           && findMistypedAliasColumnOfTextIndex(old_index, old_metadata.columns)
-                                               == mistyped_column;
+                                       if (old_index.name != index.name)
+                                           return false;
+
+                                       /// The violation is produced by the index declaration together
+                                       /// with the column's declared type and alias expression. It is
+                                       /// inherited only when all three are carried over untouched, so
+                                       /// each is compared: editing any one of them is what introduces
+                                       /// a violation, and editing any one of them must be caught.
+                                       if (!old_index.definition_ast || !index.definition_ast
+                                           || old_index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
+                                               != index.definition_ast->getTreeHash(/*ignore_aliases=*/true))
+                                           return false;
+
+                                       if (findMistypedAliasColumnOfTextIndex(old_index, old_metadata.columns)
+                                           != mistyped_column)
+                                           return false;
+
+                                       const auto * old_column = old_metadata.columns.tryGet(*mistyped_column);
+                                       if (!old_column || !old_column->type->equals(*new_column.type))
+                                           return false;
+
+                                       const auto & old_expression = old_column->default_desc.expression;
+                                       const auto & new_expression = new_column.default_desc.expression;
+                                       if (!old_expression || !new_expression)
+                                           return false;
+
+                                       return old_expression->getTreeHash(/*ignore_aliases=*/true)
+                                           == new_expression->getTreeHash(/*ignore_aliases=*/true);
                                    });
 
                         if (!inherited)
                         {
-                            const auto & declared_type = new_metadata.columns.get(*mistyped_column).type;
+                            const auto & declared_type = new_column.type;
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
                                 "Text index {} is defined over ALIAS column {}, which is declared as {} while its "
