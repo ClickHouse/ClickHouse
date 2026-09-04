@@ -14,7 +14,17 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
+import PostgresClickPipeCli from '/snippets/clickpipes/_postgres_clickpipe_cli.mdx';
 import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
+
+<Visibility for="agents">
+
+<PostgresClickPipeCli />
+
+</Visibility>
+
+<Visibility for="humans">
+<View title="Cloud UI">
 
 You can use ClickPipes to ingest data from your source Postgres database into ClickHouse Cloud. The source Postgres database can be hosted on-premises or in the cloud including Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase and others.
 
@@ -148,3 +158,14 @@ You can configure the Advanced settings if needed. A brief description of each s
 Once you've set up your ClickPipe to replicate data from PostgreSQL to ClickHouse Cloud, you can focus on how to query and model your data for optimal performance. See the [migration guide](/get-started/migrate/postgres/overview) to assess which strategy best suits your requirements, as well as the [Deduplication strategies (using CDC)](/integrations/clickpipes/postgres/deduplication) and [Ordering Keys](/integrations/clickpipes/postgres/ordering-keys) pages for best practices on CDC workloads.
 
 For common questions around PostgreSQL CDC and troubleshooting, see the [Postgres FAQs page](/integrations/clickpipes/postgres/faq).
+
+</View>
+
+<View title="CLI">
+
+You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
+
+<PostgresClickPipeCli />
+
+</View>
+</Visibility>
