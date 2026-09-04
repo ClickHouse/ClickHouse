@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/Executors/ExecutingGraph.h>
-#include <Processors/Executors/PipelineExecutionStatus.h>
+#include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/ExecutorTasks.h>
+#include <Processors/Executors/Runtime/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
@@ -54,8 +54,6 @@ public:
     /// Execution is happened in a single thread.
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
-
-    const Processors & getProcessors() const;
 
     using ExecutionStatus = PipelineExecutionStatus;
 
