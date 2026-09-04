@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- The source arrays are deliberately wider than the one-element-per-row result. -->
+    <query>SELECT sum(arrayFirst(x -> 1, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT sum(arrayLast(x -> 1, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT sum(arrayFirst(x -> x % 2 = 0, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT sum(arrayLast(x -> x % 2 = 0, arrayResize([toUInt64(number)], 32))) FROM numbers(2000000) FORMAT Null</query>
+
+    <query>SELECT sum(arrayFirst(x -> 1, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT sum(arrayLast(x -> 1, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT sum(arrayFirst(x -> x % 2 = 0, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
+    <query>SELECT sum(arrayLast(x -> x % 2 = 0, arrayResize([toUInt64(number)], 128))) FROM numbers(500000) FORMAT Null</query>
+</test>
