@@ -1,0 +1,17 @@
+<test>
+    <!--
+        Coverage for the `Decimal` path of `AggregateFunctionVarianceSimple::addBatchSinglePlace`,
+        where the values carry a scale and so have to be converted before they can be accumulated.
+    -->
+    <create_query>CREATE TABLE t (f64 Float64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO t SELECT number, number % 1000000, number, number FROM numbers_mt(100000000) SETTINGS max_threads = 4</fill_query>
+
+    <drop_query>DROP TABLE IF EXISTS t</drop_query>
+
+    <query>SELECT varPop(d32), varSamp(d32), stddevPop(d32) FROM t</query>
+    <query>SELECT varPop(d64), varSamp(d64), stddevPop(d64) FROM t</query>
+    <query>SELECT varPop(d128), varSamp(d128), stddevPop(d128) FROM t</query>
+    <query>SELECT skewPop(d64), kurtPop(d64) FROM t</query>
+    <query>SELECT varPop(f64), stddevPop(f64) FROM t</query>
+</test>

@@ -11,6 +11,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -55,6 +56,7 @@ struct StatFuncOneArg
     using Data = VarMoments<ResultType, _level>;
 
     static constexpr UInt32 num_args = 1;
+    static constexpr size_t level = _level;
 };
 
 template <typename T1, typename T2, template <typename> typename Moments>
@@ -88,7 +90,11 @@ public:
     {
         chassert(!argument_types_.empty());
         if (isDecimal(argument_types_.front()))
+        {
             src_scale = getDecimalScale(*argument_types_.front());
+            if constexpr (is_decimal<T1>)
+                decimal_divisor = static_cast<Float64>(DecimalUtils::scaleMultiplier<typename T1::NativeType>(src_scale));
+        }
     }
 
     String getName() const override
@@ -105,16 +111,60 @@ public:
                 static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
                 static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
+            this->data(place).add(
+                convertOne(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], decimal_divisor));
+    }
+
+    template <typename Src>
+    static ALWAYS_INLINE ResultType convertOne(const Src & v, Float64 decimal_divisor)
+    {
+        if constexpr (std::is_same_v<Src, ResultType>)
+            return v;
+        else if constexpr (is_decimal<Src>)
+            return static_cast<ResultType>(static_cast<Float64>(v.value) / decimal_divisor);
+        else
+            return static_cast<ResultType>(v);
+    }
+
+    /// Accumulate a `Decimal` range through the batched path, optionally masked by `flags`, which
+    /// follows `addManyConditional`: a row counts when `!flags[i] == add_if_zero`. The comment in
+    /// `addBatchSinglePlace` explains why the conversion sits where it does.
+    template <bool conditional, bool add_if_zero>
+    void addManyDecimal(
+        typename StatFunc::Data & data,
+        const T1 * __restrict vec,
+        [[maybe_unused]] const UInt8 * __restrict flags,
+        size_t row_begin,
+        size_t row_end) const
+    {
+#if defined(__x86_64__)
+        static constexpr bool convert_into_buffer = true;
+#else
+        static constexpr bool convert_into_buffer = is_big_int_v<typename T1::NativeType>;
+#endif
+        static constexpr size_t TILE = 1024; /// `ResultType[TILE]` stays in L1
+
+        [[maybe_unused]] ResultType buf[convert_into_buffer ? TILE : 1];
+        for (size_t off = row_begin; off < row_end; off += TILE)
         {
-            if constexpr (is_decimal<T1>)
+            const size_t tile = std::min(TILE, row_end - off);
+            if constexpr (convert_into_buffer)
             {
-                this->data(place).add(
-                    convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(
-                        static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], src_scale));
+                for (size_t k = 0; k < tile; ++k)
+                    buf[k] = convertOne(vec[off + k], decimal_divisor);
+                if constexpr (conditional)
+                    data.template addManyConditional<ResultType, add_if_zero>(buf, flags + off, /*row_begin=*/0, tile);
+                else
+                    data.addMany(buf, /*row_begin=*/0, tile);
             }
             else
-                this->data(place).add(
-                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
+            {
+                if constexpr (conditional)
+                    data.template addManyConditionalDivided<T1, add_if_zero>(
+                        vec + off, decimal_divisor, flags + off, /*row_begin=*/0, tile);
+                else
+                    data.addManyDivided(vec + off, decimal_divisor, /*row_begin=*/0, tile);
+            }
         }
     }
 
@@ -126,9 +176,73 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        /// Decimal arguments need a per-row conversion with the source scale; keep them on the generic path.
         if constexpr (is_decimal<T1>)
         {
+            /// A `Decimal` column holds unscaled integers, so a value is only recovered as
+            /// `value / 10^scale`, and the kernel knows nothing about scale. That division either
+            /// rides along inside the accumulation loop or runs ahead of it over a tile, and which
+            /// wins comes down to what the loop can still hold: it already carries sixteen lane
+            /// accumulators, so anything else competing for vector registers spills them.
+            ///
+            /// AArch64 has the room, with 32 SIMD registers and a conversion that works in place on
+            /// the loaded vector: 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
+            /// x86-64 does not, at any level, so it converts into a tile at every width - including
+            /// `Decimal32`, which has a packed convert. At `v3` its 16 `ymm` cannot hold the lanes
+            /// and the conversion at once: the fused loop spills every iteration and drops to a mix
+            /// of two-wide and scalar glued with shuffles, 11 scalar `vcvtsi2sd` against 3 packed
+            /// `vcvtdq2pd`. `v4` lifts both of those - the fused kernel there does get `vcvtqq2pd`
+            /// on `zmm` and stops spilling - but it still vectorizes only lanes 0 to 7 and leaves
+            /// the rest scalar, so the tile stays ahead. Measured on a `v4` host, `Decimal32`:
+            /// 0.194s buffered against 0.238s fused; `Decimal64` 0.220s against 0.276s. Hence the
+            /// compile-time branch rather than a runtime one - no x86-64 level wants the fused
+            /// shape. Fewer lanes do not rescue it either: at 8 the spilling stops but the
+            /// vectorization goes with it, 0.205s, and at 4 too few chains remain to hide the
+            /// add latency, 0.218s.
+            ///
+            /// `wide::integer` has no conversion instruction at all and lowers to soft-float quad
+            /// calls, which clobber the vector registers by calling convention - 102 calls and 291
+            /// stack accesses against 37 - so it takes the tile on either target. The calls still
+            /// run once per element; the tile only keeps them away from the accumulators, which was
+            /// worth 0.950s against 1.004s. Tiles are sized to stay in L1, the buffer costing a
+            /// store and a load per element.
+            ///
+            /// Either shape folds the moments at the same points and returns the same bits, so the
+            /// choice never changes a result. And it is the batched loop these two levels gain
+            /// from, not the conversion: precomputing `decimal_divisor` is worth nothing for
+            /// `Decimal32` and `Decimal64` - isolated with `varPopIf`, which stays per-row, they
+            /// measure the same before and after - while for `Decimal128` it is most of the win.
+            ///
+            /// `skewPop` and `kurtPop` are left out on every target rather than just on AArch64.
+            /// The per-row path gives each moment its own dependency chain, so the third and fourth
+            /// are free to it - it measures the same at every level - while the lane kernel pays for
+            /// them in arithmetic, and on AArch64 no lane count catches up, +7.2% at level 3 being
+            /// the best. Taking the path on x86-64 alone, where it measured -7.2%, would leave the
+            /// two targets disagreeing.
+            if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
+            {
+                const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
+                auto & data = this->data(place);
+
+                if (if_argument_pos < 0)
+                {
+                    addManyDecimal<false, false>(data, vec.data(), nullptr, row_begin, row_end);
+                    return;
+                }
+
+                /// Masked, the batch converts rows the condition then discards, which only pays
+                /// while the conversion is cheap. For a wide integer it is the dominant cost, and
+                /// converting twice as many elements cost more than the batching saved - 1.033s
+                /// against 0.554s on `varPopIf` over `Decimal128` - so those keep the per-row path,
+                /// which converts only what it accumulates.
+                if constexpr (!is_big_int_v<typename T1::NativeType>)
+                {
+                    const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                    addManyDecimal<true, false>(data, vec.data(), flags, row_begin, row_end);
+                    return;
+                }
+            }
+
+            /// The two-argument kinds and the higher moments stay on the generic per-row path.
             Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
         }
         else
@@ -170,6 +284,31 @@ public:
     {
         if constexpr (is_decimal<T1>)
         {
+            /// Same reasoning as the masked case in `addBatchSinglePlace`: the batch converts rows
+            /// the null map discards, so wide decimals stay on the per-row path.
+            if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2 && !is_big_int_v<typename T1::NativeType>)
+            {
+                const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
+                auto & data = this->data(place);
+
+                if (if_argument_pos < 0)
+                {
+                    addManyDecimal<true, true>(data, vec.data(), null_map, row_begin, row_end);
+                    return;
+                }
+
+                /// Merging the two sets of flags into a temporary buffer vectorizes better
+                /// than fusing both flags into the accumulation loop.
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+                std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+                for (size_t i = row_begin; i < row_end; ++i)
+                    final_flags[i] = (!null_map[i]) & !!if_flags[i];
+
+                addManyDecimal<true, false>(data, vec.data(), final_flags.get(), row_begin, row_end);
+                return;
+            }
+
             Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
         }
         else
@@ -314,6 +453,7 @@ public:
 
 private:
     UInt32 src_scale;
+    Float64 decimal_divisor = 1; /// 10^src_scale as Float64, for the inline Decimal -> Float64 convert
     StatisticsFunctionKind kind;
 };
 
