@@ -119,7 +119,19 @@ struct InputOrderInfo
     {
     }
 
-    bool operator==(const InputOrderInfo &) const = default;
+    /// `num_leading_fixed_sort_key_columns` is a planning hint for the sequential-partition
+    /// optimization, not a property of the produced order, so it does not take part in the
+    /// comparison. `ReadFromMerge` compares the `InputOrderInfo` of its children to decide
+    /// whether they can be read in order together, and two children may fix a different
+    /// number of leading key columns (e.g. through a row policy) while still producing the
+    /// same order.
+    bool operator==(const InputOrderInfo & other) const
+    {
+        return sort_description_for_merging == other.sort_description_for_merging
+            && used_prefix_of_sorting_key_size == other.used_prefix_of_sorting_key_size
+            && direction == other.direction
+            && limit == other.limit;
+    }
 };
 
 class IMergeTreeDataPart;
