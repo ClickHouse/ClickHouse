@@ -229,6 +229,12 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     return result;
 }
 
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data.empty() || offsets_data.back() == 0;
+}
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /// Similarly - only for arrays of fixed length values.
@@ -439,12 +445,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::insertManyDefaults(size_t length)
 {
-    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
-    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
-    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
-    auto last_offset = getOffsets().back();
-    for (size_t i = 0; i < length; ++i)
-        getOffsets().push_back(last_offset);
+    /// Not `IColumn::insertManyDefaults`: its `reserve(size() + length)` would also size the nested column, which a
+    /// default array never fills. Only the offsets grow, so only they are pre-sized.
+    auto & offsets_data = getOffsets();
+    const auto last_offset = offsets_data.back(); /// By value: `resize_fill` may reallocate.
+    offsets_data.resize_fill(offsets_data.size() + length, last_offset);
 }
 
 

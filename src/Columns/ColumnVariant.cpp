@@ -455,6 +455,11 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
+bool ColumnVariant::hasOnlyTypeDefaults() const
+{
+    return hasOnlyNulls();
+}
+
 std::string_view ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());

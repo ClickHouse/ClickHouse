@@ -6133,7 +6133,10 @@ ORDER BY (test_name, callee_offset)
         if selftest_rows == 0:
             raise Exception(
                 "Coverage self-test FAILED: coverage_log has 0 rows for _selftest — "
-                "coverage mapping is not working (binary built without WITH_COVERAGE_DEPTH?)"
+                "read the coverageDiag tuples printed above: zero name_refs means the "
+                "static counters were not updated (LLVM_PROFILE_FILE with %c relocates "
+                "counter updates out of that section); non-zero name_refs with zero "
+                "non_empty_file_regions means no coverage region resolved them"
             )
         print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
         # Validate that the coverage mapping parser produced no bogus line numbers.

@@ -64,6 +64,8 @@ public:
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
+
+    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;

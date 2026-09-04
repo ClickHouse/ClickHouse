@@ -8391,8 +8391,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
+    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 

@@ -56,6 +56,8 @@ struct QueryPlanOptimizationSettings
     bool merge_filters;
     bool filter_push_down;
     bool fuse_filter_into_array_join;
+    bool lower_array_join_function;
+    bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
