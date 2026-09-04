@@ -26,3 +26,10 @@ DESCRIBE url(
     'http://google.com',
     headers('R ange' = 'bytes=0-1')
 ); -- {serverError BAD_ARGUMENTS}
+
+-- A listable wildcard ('*' in the path) delegates to the web backend, which is a different code
+-- path; the Range ban must hold there too.
+DESCRIBE url(
+    'http://localhost:11111/foo*',
+    headers('R ange' = 'bytes=0-1')
+) SETTINGS allow_experimental_url_wildcard_from_index_pages = 1; -- {serverError BAD_ARGUMENTS}

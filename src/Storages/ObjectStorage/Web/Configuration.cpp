@@ -140,6 +140,9 @@ void StorageWebConfiguration::check(ContextPtr context)
             context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     }
     headers_from_ast = context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(std::move(headers_from_ast));
+    /// The listable-wildcard url()/URL path delegates here instead of StorageURL, so enforce the
+    /// same Range ban on the normalized names (a padded "R ange" normalizes to "Range").
+    rejectRangeHeaders(headers_from_ast);
 }
 
 ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context, bool, CredentialsConfigurationCallback) /// NOLINT
