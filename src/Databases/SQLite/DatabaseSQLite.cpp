@@ -55,7 +55,7 @@ DatabaseSQLite::DatabaseSQLite(
 
 bool DatabaseSQLite::empty() const
 {
-    /// Fails closed when the database file is unavailable: an unreadable file must not be reported as an
+    /// Refuse when the database file is unavailable: an unreadable file must not be reported as an
     /// empty database. This does not make a database attached over a missing file impossible to remove,
     /// because `shouldBeEmptyOnDetach` is `false` for this engine (like for the other external database
     /// engines), so `DROP DATABASE` and `DETACH DATABASE` never probe emptiness here.
