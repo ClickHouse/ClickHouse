@@ -180,4 +180,42 @@ inline bool maskPresignedURLParameters(std::string & url)
     return masked;
 }
 
+/** Mask the value of the `sig` query parameter of an Azure shared access signature, so that
+  * `https://account.blob.core.windows.net/container?sv=2025-01-05&sig=abc` becomes
+  * `...&sig=[HIDDEN]`. Every occurrence is masked. Returns whether anything was masked.
+  *
+  * `sig` is the HMAC over the signed fields, and the only part of a shared access signature that
+  * cannot be guessed: without it the remaining parameters (version, permissions, expiry, resource)
+  * grant nothing, and they are worth keeping visible for diagnostics. Azure spells the parameter
+  * names in lower case, so the comparison is case-sensitive, as in `maskPresignedURLParameters`.
+  */
+inline bool maskAzureSASSignature(std::string & url)
+{
+    bool masked = false;
+    for (size_t position = url.find_first_of("?&"); position != std::string::npos;
+         position = url.find_first_of("?&", position + 1))
+    {
+        size_t name_begin = position + 1;
+        size_t equal_sign = url.find('=', name_begin);
+        if (equal_sign == std::string::npos)
+            break;
+
+        if (std::string_view(url).substr(name_begin, equal_sign - name_begin) != "sig")
+            continue;
+
+        size_t value_begin = equal_sign + 1;
+        size_t value_end = url.find_first_of("&#", value_begin);
+        if (value_end == std::string::npos)
+            value_end = url.length();
+
+        static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
+        url.replace(value_begin, value_end - value_begin, REPLACEMENT);
+        masked = true;
+        /// Continue after the replacement, not inside it.
+        position = value_begin + REPLACEMENT.length() - 1;
+    }
+
+    return masked;
+}
+
 }
