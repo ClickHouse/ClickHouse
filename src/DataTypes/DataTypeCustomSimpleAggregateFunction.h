@@ -45,6 +45,8 @@ public:
     const Array & getParameters() const { return parameters; }
     String getName() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
+    /// Whether applying the function to a single value yields exactly that value.
+    static bool isIdentityOnSingleValue(const AggregateFunctionPtr & function);
 };
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
