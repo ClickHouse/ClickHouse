@@ -166,7 +166,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
 
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionViewIfPermitted>({.description = R"DOC(Returns the result of a SELECT query as a view, but only if the current user has the permissions required to run it; otherwise it returns the result of the ELSE table function. The privileges needed to resolve the structure of the `ELSE` table function are required either way.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }
