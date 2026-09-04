@@ -1446,7 +1446,7 @@ def print_c_stacktraces(
             # The attach summary lists every thread too, so a dump that stopped
             # before the marker holds thread headers but no backtrace to count.
             threads = (
-                f" for {len(re.findall(r'^[* ] *thread #', backtraces, re.M))} threads"
+                f" for {len(re.findall(r'^[* ] *thread #\d+', backtraces, re.M))} threads"
                 if LLDB_BACKTRACE_MARKER in block
                 else ""
             )
