@@ -856,7 +856,7 @@ void StorageObjectStorage::truncate(
 
     if (configuration->isDataLakeConfiguration())
     {
-        auto * data_lake_metadata = getExternalMetadata(context);
+        auto data_lake_metadata = getExternalMetadata(context);
         if (!data_lake_metadata || !data_lake_metadata->supportsTruncate())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported for this data lake engine");
 
