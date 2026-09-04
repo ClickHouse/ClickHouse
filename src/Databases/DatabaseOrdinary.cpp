@@ -799,7 +799,12 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
                 max_query_size);
     }
 
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    /// The stored definition is re-parsed here, so unqualified names in it must be resolved against the
+    /// database that owns the table (as on the metadata loading path), not against the current database
+    /// of the session that issued the `ALTER`. Otherwise a metadata-only `ALTER` (e.g. `MODIFY COMMENT`)
+    /// issued from another database would move the dependencies of the table to same-named tables there.
+    /// `MODIFY QUERY` qualifies the new query with the table's own database as well.
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(

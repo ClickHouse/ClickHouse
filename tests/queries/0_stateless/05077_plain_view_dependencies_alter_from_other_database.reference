@@ -1,0 +1,5 @@
+source is stored unqualified	1
+before alter	other_db	[]
+before alter	views_db	['alter_other_db_view']
+after alter	other_db	[]
+after alter	views_db	['alter_other_db_view']
