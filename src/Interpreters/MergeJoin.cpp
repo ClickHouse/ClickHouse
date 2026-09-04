@@ -1011,9 +1011,12 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
     bool with_left_inequals = (is_left && !is_semi_join) || is_full;
     size_t matched_rows = 0;
 
-    /// ALL INNER/RIGHT joins with a mixed condition do not need the flags: they emit neither
-    /// non-matched left rows nor at-most-one-pair outputs.
-    bool need_left_row_matched = mixed_join_expression && (with_left_inequals || !is_all);
+    /// ALL INNER/RIGHT joins with a mixed condition do not need the flags for the join itself:
+    /// they emit neither non-matched left rows nor at-most-one-pair outputs. They still need
+    /// them under EXPLAIN ANALYZE: `matched_left_rows` counts a left row when a pair passes
+    /// the condition (bit transition), like the hash join does.
+    bool need_left_row_matched = mixed_join_expression
+        && (with_left_inequals || !is_all || table_join->collectAnalyzeStats());
     if (need_left_row_matched && left_row_matched.empty())
         left_row_matched.resize_fill(block.rows(), 0);
 
@@ -1090,7 +1093,7 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
 
             if constexpr (is_all)
             {
-                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows))
+                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows, left_row_matched_ptr))
                 {
                     matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
                     not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
@@ -1154,7 +1157,10 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         if (range.empty())
             break;
 
-        if (left_unequal_position <= range.left_start)
+        /// With a mixed condition the matched left rows are counted inside the mixed helpers,
+        /// on the bit transitions of `left_row_matched`: a left row counts as matched only when
+        /// a candidate pair passes the condition, not on key equality.
+        if (!mixed_join_expression && left_unequal_position <= range.left_start)
             matched_rows += range.left_length;
 
         if constexpr (is_all)
@@ -1165,7 +1171,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             if (mixed_join_expression)
             {
                 range_is_complete = joinEqualsWithMixedCondition(
-                    left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, left_row_matched);
+                    left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, left_row_matched, matched_rows);
             }
             else
             {
@@ -1184,7 +1190,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         else
         {
             if (mixed_join_expression)
-                joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched);
+                joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched, matched_rows);
             else
                 joinEqualsAnyLeft(r_columns_to_add, right_columns, range);
         }
@@ -1217,7 +1223,8 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 }
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                             IColumn::Filter * left_row_matched)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1238,7 +1245,9 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
-        if (starting_position <= range.left_start)
+        /// With a mixed condition the matched left rows are counted inside the mixed helper,
+        /// on the bit transitions of `left_row_matched` (null when the stats are not collected).
+        if (!mixed_join_expression && starting_position <= range.left_start)
             matched_rows += range.left_length;
 
         size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
@@ -1247,7 +1256,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (mixed_join_expression)
         {
             range_is_complete = joinEqualsWithMixedCondition(
-                left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, /*left_row_matched=*/ nullptr);
+                left_block, right_block_info, r_columns_to_add, left_columns, right_columns, range, max_rows, left_row_matched, matched_rows);
         }
         else
         {
@@ -1295,12 +1304,10 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
         if (mixed_join_expression)
         {
-            /// One output row appears for each left row that gets its first passing pair here.
-            /// Counting the range length would count the same rows again when the equal-key run
-            /// continues in the next right block (the left_key_tail revisit below).
-            size_t rows_before = left_columns.empty() ? 0 : left_columns[0]->size();
-            joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched);
-            matched_rows += (left_columns.empty() ? 0 : left_columns[0]->size()) - rows_before;
+            /// The helper counts one matched row for each left row that gets its first passing
+            /// pair here. Counting the range length would count the same rows again when the
+            /// equal-key run continues in the next right block (the left_key_tail revisit below).
+            joinAnyWithMixedCondition(left_block, right_block, r_columns_to_add, left_columns, right_columns, range, *left_row_matched, matched_rows);
         }
         else
         {
@@ -1455,9 +1462,9 @@ ColumnPtr MergeJoin::evaluateMixedJoinExpression(const Block & left_block, size_
 bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
                                              const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                              MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
-                                             IColumn::Filter * left_row_matched)
+                                             IColumn::Filter * left_row_matched, size_t & matched_rows)
 {
-    bool one_more = true; /// TODO(antaljanosbenjamin): review from here
+    bool one_more = true;
 
     /// Cap the candidate batch the same way joinEquals caps the emitted cross product:
     /// at least one right row per call to guarantee progress.
@@ -1496,8 +1503,16 @@ bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBloc
 
             copyLeftRange(left_block, left_columns, range.left_start + run_start, i - run_start);
             if (left_row_matched)
+            {
                 for (size_t j = run_start; j < i; ++j)
-                    (*left_row_matched)[range.left_start + j] = 1;
+                {
+                    if (!(*left_row_matched)[range.left_start + j])
+                    {
+                        (*left_row_matched)[range.left_start + j] = 1;
+                        ++matched_rows;
+                    }
+                }
+            }
             rows_added += i - run_start;
         }
 
@@ -1514,7 +1529,7 @@ bool MergeJoin::joinEqualsWithMixedCondition(const Block & left_block, RightBloc
 void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
                                           const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                           MutableColumns & right_columns, const MergeJoinEqualRange & range,
-                                          IColumn::Filter & left_row_matched) const
+                                          IColumn::Filter & left_row_matched, size_t & matched_rows) const
 {
     size_t left_length = range.left_length;
 
@@ -1548,6 +1563,7 @@ void MergeJoin::joinAnyWithMixedCondition(const Block & left_block, const Block 
                     copyLeftRange(left_block, left_columns, range.left_start + i, 1);
                     copyRightRange(right_columns_to_add_, right_columns, range.right_start + chunk_start + right_row, 1);
                     left_row_matched[range.left_start + i] = 1;
+                    ++matched_rows;
                     break;
                 }
             }

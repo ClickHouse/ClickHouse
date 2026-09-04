@@ -198,7 +198,8 @@ private:
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
                   IColumn::Filter * left_row_matched);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows,
+                  IColumn::Filter * left_row_matched);
 
     /// Support for a mixed JOIN ON condition (`mixed_join_expression`).
 
@@ -211,19 +212,23 @@ private:
                                           const Block & right_block, size_t right_start, size_t right_length) const;
 
     /// ALL-strictness analog of joinEquals: emits only candidate pairs that pass the condition.
-    /// Marks used right rows per row and sets bits of joined left rows in `left_row_matched` (if not null).
+    /// Marks used right rows per row and sets bits of joined left rows in `left_row_matched`
+    /// (if not null). `matched_rows` counts the left rows whose bit changes to 1 here: like the
+    /// hash join, a left row counts as matched only when a pair passes the condition, and the
+    /// bit transition removes double counting when an equal-key run spans right blocks.
     /// Returns false when the range was cut by `max_rows` (same contract as joinEquals).
     bool joinEqualsWithMixedCondition(const Block & left_block, RightBlockInfo & right_block_info,
                                       const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                       MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows,
-                                      IColumn::Filter * left_row_matched);
+                                      IColumn::Filter * left_row_matched, size_t & matched_rows);
 
     /// ANY/SEMI analog: emits the first passing pair for each left row of the range that has no
-    /// output yet (per `left_row_matched`), and marks emitted rows in it.
+    /// output yet (per `left_row_matched`), and marks emitted rows in it. `matched_rows` counts
+    /// the emitted rows (each emission is a bit transition).
     void joinAnyWithMixedCondition(const Block & left_block, const Block & right_block,
                                    const Columns & right_columns_to_add_, MutableColumns & left_columns,
                                    MutableColumns & right_columns, const MergeJoinEqualRange & range,
-                                   IColumn::Filter & left_row_matched) const;
+                                   IColumn::Filter & left_row_matched, size_t & matched_rows) const;
 
     Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);
