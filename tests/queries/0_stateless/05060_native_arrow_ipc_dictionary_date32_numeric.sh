@@ -15,8 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Covers the top-level dictionary under plain and `LowCardinality` numeric targets and under a `Decimal`
 # target (the Int -> Decimal cast needs the raw read too), dictionaries nested in Array/Tuple/Map, a
-# `Nested` subcolumn target resolved through the dotted column name, and that a `Date32` target still
-# rejects the value.
+# `Nested` subcolumn target resolved through the dotted column name — with the dictionary inside the struct
+# and with the whole `Nested` column dictionary-encoded — and that a `Date32` target still rejects the value.
 
 PREFIX="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
@@ -59,8 +59,19 @@ n = pa.ListArray.from_arrays(pa.array([0, 2, 3], type=pa.int32()), pa.StructArra
 schema = pa.schema([pa.field("n", n.type)])
 with new_writer(f"{prefix}_nested.{fmt}", schema) as w:
     w.write_batch(pa.record_batch([n], schema=schema))
+
+# The whole `Nested` column dictionary-encoded: dictionary<list<struct<d: date32>>>, again read through `n.d`.
+inner = pa.StructArray.from_arrays([pa.array([3000000, 19000, 3000000], type=pa.date32())], names=["d"])
+lists = pa.ListArray.from_arrays(pa.array([0, 2, 3], type=pa.int32()), inner)
+dictionary_nested = pa.DictionaryArray.from_arrays(pa.array([0, 1, 0], type=pa.int32()), lists)
+schema = pa.schema([pa.field("n", dictionary_nested.type)])
+with new_writer(f"{prefix}_dictionary_nested.{fmt}", schema) as w:
+    w.write_batch(pa.record_batch([dictionary_nested], schema=schema))
 PY
     echo "--- ${FORMAT}: Nested subcolumn target n.d Array(Int32) ---"
     ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${PREFIX}_nested.${FORMAT}', '${FORMAT}', '\`n.d\` Array(Int32)')"
     rm -f "${PREFIX}_nested.${FORMAT}"
+    echo "--- ${FORMAT}: dictionary-encoded Nested column, subcolumn target n.d Array(Int32) ---"
+    ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${PREFIX}_dictionary_nested.${FORMAT}', '${FORMAT}', '\`n.d\` Array(Int32)')"
+    rm -f "${PREFIX}_dictionary_nested.${FORMAT}"
 done
