@@ -116,6 +116,17 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toNullable(m.val) = toNullable(s.val)
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
+SELECT '-- `toLowCardinality` propagates NULLs and converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toLowCardinality(m.val) = s.val
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toLowCardinality(m.val) = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON toLowCardinality(m.val) = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
 SELECT '-- A CAST to a non-Nullable type throws on a NULL instead of returning one, so no filter is derived.';
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1

@@ -40,6 +40,11 @@ Type: INNER
 10	420
 Type: INNER
 Type: INNER
+-- `toLowCardinality` propagates NULLs and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
 -- A CAST to a non-Nullable type throws on a NULL instead of returning one, so no filter is derived.
 Type: INNER
 Type: LEFT
