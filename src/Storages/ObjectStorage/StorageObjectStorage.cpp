@@ -166,8 +166,8 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool catalog_manages_created_location
         = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
-    const bool attaching_described_table = mode >= LoadingStrictnessLevel::ATTACH;
-    const bool do_lazy_init = (lazy_init || catalog_manages_created_location || attaching_described_table)
+    const bool is_attach = mode >= LoadingStrictnessLevel::ATTACH;
+    const bool do_lazy_init = (lazy_init || catalog_manages_created_location || is_attach)
         && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "

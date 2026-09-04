@@ -663,9 +663,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->hasTotalsInMemory()
-                                        ? table.second->totalRows(context)
-                                        : std::nullopt)
+                                    if (auto total_rows = table.second->isDataLake() ? std::nullopt : table.second->totalRows(context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -683,9 +681,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->hasTotalsInMemory()
-                                        ? table.second->totalBytes(context)
-                                        : std::nullopt)
+                                    if (auto total_bytes = table.second->isDataLake() ? std::nullopt : table.second->totalBytes(context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -948,7 +944,7 @@ protected:
                 {
                     try
                     {
-                        auto total_rows = table && table->hasTotalsInMemory()
+                        auto total_rows = table && !table->isDataLake()
                             ? table->totalRows(context_without_sequential_consistency)
                             : std::nullopt;
                         if (total_rows)
@@ -969,7 +965,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table && table->hasTotalsInMemory()
+                        auto total_bytes = table && !table->isDataLake()
                             ? table->totalBytes(context_without_sequential_consistency)
                             : std::nullopt;
                         if (total_bytes)

@@ -793,8 +793,6 @@ public:
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
-    virtual bool hasTotalsInMemory() const { return true; }
-
     /// Number of rows INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
