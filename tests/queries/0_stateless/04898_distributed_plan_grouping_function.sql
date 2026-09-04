@@ -7,9 +7,11 @@
 -- constants bakes in `force_grouping_standard_compatibility`.
 
 DROP TABLE IF EXISTS t_grouping_dist;
--- Pin the granularity: the EXPLAIN below prints the granule count of the read.
+-- Pin the granularity: the EXPLAIN below prints the granule count of the read. `index_granularity`
+-- alone is not enough - a randomized `index_granularity_bytes` caps a granule by size and splits the
+-- single expected granule, so adaptive granularity has to be switched off as well.
 CREATE TABLE t_grouping_dist (k1 String, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 INSERT INTO t_grouping_dist SELECT 'k' || (number % 3)::String, number % 2, number FROM numbers(1000);
 
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
