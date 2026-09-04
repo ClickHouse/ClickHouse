@@ -8920,7 +8920,9 @@ Patterns shorter than this threshold match too many dictionary tokens and are sk
 Dictionary-scanned predicates require `use_text_index_like_evaluation_by_dictionary_scan`; `jsonPathValues` `startsWith` uses an ordered lookup instead.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+Maximum number of large postings to read when evaluating pattern predicates by scanning the text index dictionary.
+For `jsonPathValues`, this also limits `endsWith`, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`.
+It does not limit `jsonPathValues` `startsWith`, which uses an ordered dictionary lookup.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
