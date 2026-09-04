@@ -273,32 +273,19 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    /// A numeric cast narrows without reporting loss, so Int8(-1) reaches the dictionary as UInt8(255)
-    /// and would be answered from an element 255 that the comparison this function stands for would
-    /// have widened both sides to tell apart. A constant that did not survive the cast equals no
-    /// element, whichever slot its image happens to hit, so decline before looking it up.
-    /// Only numbers are checked this way: casting a String to a FixedString pads it, and the padded
-    /// form is exactly the element the function is meant to match.
+    /// The cast narrows without reporting loss, so Int8(-1) reaches the dictionary as UInt8(255) and a
+    /// DateTime reaches a Date dictionary with its time of day dropped, and either would be answered
+    /// from an element that the comparison this function stands for tells apart. A constant that did
+    /// not survive the cast equals no element, whichever slot its image happens to hit -- the default
+    /// one, which holds its value whether or not any row references it, as much as any other -- so
+    /// decline before looking it up.
+    /// Padding a String to a FixedString is not such a loss, and is not treated as one: the two meet
+    /// as String, where the padding the cast added is trimmed back off.
     if (!target_type->equals(*value_type_without_low_cardinality)
-        && isNumber(removeNullable(value_type_without_low_cardinality)) && isNumber(removeNullable(target_type))
         && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
         return false;
 
-    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
-    {
-        /// The default slot holds its value whether or not any row references it, and a cast outside
-        /// the numeric domain checked above narrows just as silently, so an empty String reaches a
-        /// FixedString(3) dictionary as the default '\0\0\0'. Answering from that slot requires the
-        /// constant to have survived the cast; one that did not equals no element.
-        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
-            && !target_type->equals(*value_type_without_low_cardinality)
-            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
-            return {};
-
-        return dictionary.getOrFindValueIndex(elem);
-    };
-
-    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
+    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;

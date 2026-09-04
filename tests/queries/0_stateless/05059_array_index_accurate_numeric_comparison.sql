@@ -70,6 +70,20 @@ SELECT id, indexOf(a8, 255), countEqual(a64, 18446744073709551615) FROM t_array_
 SELECT 'LowCardinality strings keep their padding semantics';
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(FixedString(3)))')), 'ab');
 SELECT has(materialize(CAST(['ab'], 'Array(LowCardinality(String))')), 'ab');
+SELECT has(materialize(CAST(['o'], 'Array(LowCardinality(FixedString(3)))')), CAST('o', 'Enum8(\'\' = 0, \'o\' = 1)'));
+
+SELECT 'LowCardinality lossy casts outside the numeric domain';
+-- https://github.com/ClickHouse/ClickHouse/issues/117316
+-- A cast loses just as silently outside the numeric domain, and the slot its image lands on says
+-- nothing about whether the constant survived it, so a needle that did not survive must be declined
+-- wherever it lands. The timezone is pinned because the cast to Date drops the needle's time of day
+-- and which day that lands on is offset-dependent. Every row prints the plain-array oracle beside it.
+SELECT has(materialize(CAST([toDate('2020-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2020-01-01 00:00:05')) AS lc, has(materialize(CAST([toDate('2020-01-01')], 'Array(Date)')), toDateTime('2020-01-01 00:00:05')) AS oracle SETTINGS session_timezone = 'UTC';
+SELECT indexOf(materialize(CAST([toDate('2020-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2020-01-01 00:00:05')) AS lc, indexOf(materialize(CAST([toDate('2020-01-01')], 'Array(Date)')), toDateTime('2020-01-01 00:00:05')) AS oracle SETTINGS session_timezone = 'UTC';
+SELECT countEqual(materialize(CAST([toDate('2020-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2020-01-01 00:00:05')) AS lc, countEqual(materialize(CAST([toDate('2020-01-01')], 'Array(Date)')), toDateTime('2020-01-01 00:00:05')) AS oracle SETTINGS session_timezone = 'UTC';
+-- A Date32 needle that the Date element represents exactly is still found, on a slot that is not the
+-- default one.
+SELECT has(materialize(CAST([toDate('2020-01-01')], 'Array(LowCardinality(Date))')), toDate32('2020-01-01')) AS lc, has(materialize(CAST([toDate('2020-01-01')], 'Array(Date)')), toDate32('2020-01-01')) AS oracle;
 
 SELECT 'LowCardinality NULL needle';
 -- Slot 0 is the NULL value only in a nullable dictionary; in a non-nullable one it holds the nested
