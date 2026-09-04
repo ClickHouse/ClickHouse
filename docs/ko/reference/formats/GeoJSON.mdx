@@ -34,13 +34,13 @@ doc_type: 'reference'
 | `geometry`   | `Geometry`         | 피처의 geometry로, `Geometry` variant type에 저장됩니다.                                                         |
 | `properties` | `Nullable(JSON)`   | 피처의 `properties` 객체로, 반정형 `JSON` 컬럼에 저장됩니다. 명시적인 `"properties": null`은 `NULL`로 유지됩니다.                  |
 
-각 geometry는 ClickHouse의 `Geometry` 타입(`Variant`)에 저장됩니다. 지원되는 GeoJSON geometry 타입은 `Point`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`입니다. 나머지 두 GeoJSON geometry 타입인 `GeometryCollection`과 `MultiPoint`는 `Geometry` 타입으로 표현할 수 없으므로, 이를 `geometry` 컬럼으로 읽으면 기본적으로 예외가 발생합니다. 이 동작은 대신 `NULL`을 삽입하도록 변경할 수 있습니다. 자세한 내용은 아래의 [지원되지 않는 geometry 타입 처리](#unsupported-geometry)를 참조하십시오. 기본적으로 `geometry` 컬럼이 `NULL`이 되는 경우는 피처의 geometry가 명시적인 JSON `null`일 때뿐입니다. `input_format_geojson_unsupported_geometry_handling = 'null'`에서는 지원되지 않는 geometry 타입인 경우에도 `NULL`이 됩니다.
+각 geometry는 ClickHouse의 `Geometry` 타입(`Variant`)에 저장됩니다. 지원되는 GeoJSON geometry 타입은 `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`입니다. 나머지 GeoJSON geometry 타입인 `GeometryCollection`은 `Geometry` 타입으로 표현할 수 없으므로, 이를 `geometry` 컬럼으로 읽으면 기본적으로 예외가 발생합니다. 이 동작은 대신 `NULL`을 삽입하도록 변경할 수 있습니다. 자세한 내용은 아래의 [지원되지 않는 geometry 타입 처리](#unsupported-geometry)를 참조하십시오. 기본적으로 `geometry` 컬럼이 `NULL`이 되는 경우는 피처의 geometry가 명시적인 JSON `null`일 때뿐입니다. `input_format_geojson_unsupported_geometry_handling = 'null'` 설정 시에는 지원되지 않는 geometry 타입인 경우에도 `NULL`이 됩니다.
 
-문서 구조는 검증됩니다. 최상위 `type`은 반드시 `FeatureCollection`이어야 하며, `features`의 모든 요소는 `type`이 `Feature`여야 합니다. 기본적으로 좌표는 GeoJSON shape 불변 조건을 만족해야 합니다. 즉, `LineString`(및 각 `MultiLineString`의 선)은 최소 2개의 Point를 가져야 하고, `Polygon` ring(및 각 `MultiPolygon`의 ring)은 닫혀 있어야 하며 최소 4개의 Point를 가져야 합니다([Geometry 검증](#geometry-validation) 참조). 잘못된 형식의 문서는 조용히 적재되지 않고 거부됩니다.
+문서 구조는 검증됩니다. 최상위 `type`은 반드시 `FeatureCollection`이어야 하며, `features`의 모든 요소는 `type`이 `Feature`여야 합니다. 기본적으로 좌표는 GeoJSON shape 불변 조건을 만족해야 합니다. 즉, `LineString`(및 각 `MultiLineString`의 선)은 최소 2개의 Point를 가져야 하고, `Polygon` ring(및 각 `MultiPolygon`의 ring)은 닫혀 있어야 하며 최소 4개의 Point를 가져야 합니다([Geometry 유효성 검사](#geometry-validation) 참조). 잘못된 형식의 문서는 조용히 적재되지 않고 거부됩니다.
 
-키 순서는 유연합니다. 최상위 `type`은 `features` 배열보다 앞이나 뒤에 올 수 있으며, geometry 객체 내부에서도 `coordinates`는 `type`보다 앞이나 뒤에 올 수 있습니다.
+키 순서는 유연합니다: 최상위 `type`은 `features` 배열의 앞이나 뒤에 올 수 있으며, geometry 객체 내부에서 `coordinates`도 `type`의 앞이나 뒤에 올 수 있습니다.
 
-스키마 추론은 위의 고정 스키마를 반환하므로, 테이블 정의 없이도 `DESCRIBE`와 `SELECT ... FROM format(...)`를 사용할 수 있습니다.
+스키마 추론은 위의 고정 스키마를 반환하므로 `DESCRIBE`와 `SELECT ... FROM format(...)`를 테이블 정의 없이 사용할 수 있습니다.
 
 다음은 여러 Geometry 타입이 혼합된 GeoJSON 파일 `london.geojson`입니다:
 
@@ -76,7 +76,7 @@ doc_type: 'reference'
 }
 ```
 
-파일에 쿼리를 실행해 Geometry 타입을 확인할 수 있습니다.
+파일에 쿼리를 실행해 Geometry 타입을 확인할 수 있습니다:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-파일 확장자 `.geojson`은 자동으로 감지되므로 포맷 인수는 생략할 수 있습니다:
+`.geojson` 파일 확장자는 자동으로 감지되므로, 포맷 인수를 생략할 수 있습니다:
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -179,7 +179,7 @@ SELECT id, geometry, properties
 FROM file('london.geojson', GeoJSON);
 ```
 
-다음으로 피처 유형별로 쿼리합니다:
+다음으로 기능 유형별로 쿼리합니다:
 
 ```sql title="Query"
 SELECT name, feature_type, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### 지원되지 않는 Geometry 타입 처리
 </div>
 
-`GeometryCollection` 및 `MultiPoint`와 같은 일부 유효한 GeoJSON Geometry 타입은 ClickHouse의 `Geometry` 타입으로 표현할 수 없습니다. 이러한 geometry를 `geometry` 컬럼에 저장해야 할 때 어떤 방식으로 처리할지는 `input_format_geojson_unsupported_geometry_handling` 설정으로 제어할 수 있습니다. 가능한 값은 다음과 같습니다:
+`GeometryCollection`와 같은 일부 유효한 GeoJSON Geometry 타입은 ClickHouse의 `Geometry` 타입으로 표현할 수 없습니다. 이러한 geometry를 `geometry` 컬럼에 저장해야 할 때 어떤 방식으로 처리할지는 `input_format_geojson_unsupported_geometry_handling` 설정으로 제어할 수 있습니다. 가능한 값은 다음과 같습니다:
 
 * `'throw'` — 예외를 발생시킵니다(기본값)
 * `'null'` — `geometry` 컬럼에 `NULL` 값을 삽입하고 파싱을 계속합니다
@@ -230,7 +230,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 * 위치의 세 번째(고도) 좌표와 그 이후 좌표는 삭제되므로, 위치는 `[longitude, latitude]`만 남습니다.
 * `bbox`와 외부 멤버(예: 최상위 `name` 또는 `crs`, 또는 `Feature` 내부의 추가 멤버)는 무시됩니다.
 * 숫자형 `id`는 텍스트로 저장되므로 문자열과 숫자의 구분이 사라집니다. `id`가 없거나 `null`이면 `NULL`이 됩니다.
-* `GeometryCollection`과 `MultiPoint`는 표현할 수 없습니다. [지원되지 않는 Geometry 타입 처리](#unsupported-geometry)를 참조하십시오.
+* `GeometryCollection`은 표현할 수 없습니다. [지원되지 않는 Geometry 타입 처리](#unsupported-geometry)를 참조하십시오.
 
 <div id="writing-data">
   ## 데이터 쓰기
@@ -252,6 +252,7 @@ geometry 유형의 컬럼은 `Geometry` Variant이거나 특정 geo 유형일 �
 | ClickHouse type   | GeoJSON `"type"`                          |
 | ----------------- | ----------------------------------------- |
 | `Point`           | `Point`                                   |
+| `MultiPoint`      | `MultiPoint`                              |
 | `LineString`      | `LineString`                              |
 | `MultiLineString` | `MultiLineString`                         |
 | `Polygon`         | `Polygon`                                 |

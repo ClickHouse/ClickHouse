@@ -17,6 +17,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -42,7 +43,9 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto [value_column, value_type] = evaluateConstantExpressionAsColumn(args[i], context);
+            const auto value = evaluateConstantExpressionAsColumn(args[i], context);
+            const auto & value_column = value.getColumn();
+            const auto & value_type = value.getType();
 
             ColumnPtr converted = convertColumnToTypeOrThrow(
                 *value_column, value_type, sample_block.getByPosition(0).type, {}, /*convert_inexact_floats=*/true);
@@ -53,7 +56,9 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
     {
         for (size_t i = start; i < args.size(); ++i)
         {
-            const auto [value_column, value_type] = evaluateConstantExpressionAsColumn(args[i], context);
+            const auto value = evaluateConstantExpressionAsColumn(args[i], context);
+            const auto & value_column = value.getColumn();
+            const auto & value_type = value.getType();
 
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get());
             if (!type_tuple)
@@ -80,7 +85,7 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
 
 DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
 {
-    const auto value_type = evaluateConstantExpressionAsColumn(arg, context).second;
+    const auto value_type = evaluateConstantExpressionAsColumn(arg, context).getType();
     if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type.get()))
         return type_tuple->getElements();
 

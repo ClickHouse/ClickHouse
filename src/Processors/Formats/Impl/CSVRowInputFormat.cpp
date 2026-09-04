@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -402,15 +401,8 @@ bool CSVFormatReader::readField(
 
 bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
 {
-    /// A `Tuple` whose elements are separated by the field delimiter takes one cell per element, so a
-    /// leading null is that element, not the whole column. `HiveText` keeps the comma as
-    /// `tuple_delimiter` but not as its field delimiter, so there the tuple is one field.
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-    const bool is_separate_columns_tuple = tuple_type && !tuple_type->getElements().empty()
-        && format_settings.csv.deserialize_separate_columns_into_tuple
-        && format_settings.csv.tuple_delimiter == format_settings.csv.delimiter;
-
-    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !is_separate_columns_tuple)
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type)
+        && !isCSVSeparateColumnsTuple(type, format_settings))
     {
         /// If value is null but type is not nullable then use default value instead.
         return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization);
@@ -610,7 +602,7 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames).
 
 ## Example usage {#example-usage}
 

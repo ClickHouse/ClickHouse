@@ -34,7 +34,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Estructura de la tabla en el formato `'UserID UInt64, Name String'`. Determina los nombres de las columnas y sus tipos. Tipo: [String](/es/reference/data-types/string).                                                                                                                                                                                                                                                                                                             |
 | `headers`   | Encabezados en el formato `'headers('key1'='value1', 'key2'='value2')'`. Puede configurar encabezados para la llamada HTTP.                                                                                                                                                                                                                                                                                                                                                       |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -74,7 +74,7 @@ La función `url` actúa como un envoltorio unificado sobre las demás funciones
 
 Solo se enrutan los esquemas de S3 que el mapeador de URI de S3 resuelve a un endpoint concreto sin necesidad de configuración adicional (`s3`, además de `gs`/`gcs`/`oss`). Otros esquemas de proveedores compatibles con S3 (`cos`, `obs`, `eos`, …) son específicos de la región y no tienen una asignación de endpoint predeterminada, por lo que una URL `cos://…` se trata como un esquema no reconocido y se informa como un error; use directamente la función [`s3`](/es/reference/functions/table-functions/s3) (con `url_scheme_mappers` configurado) para esos backends.
 
-Para `file://`, una ruta relativa (`file://data.csv`) se resuelve dentro del directorio [user&#95;files](/es/reference/settings/server-settings/settings#user_files_path), y una ruta absoluta (`file:///home/user/data.csv`) debe apuntar dentro de él, como es habitual.
+Para `file://`, una ruta relativa (`file://data.csv`) se resuelve dentro del directorio [user&#95;files](/es/reference/settings/server-settings/settings/user#user_files_path), y una ruta absoluta (`file:///home/user/data.csv`) debe apuntar dentro de él, como es habitual.
 
 Los argumentos `format`, `structure` y `compression_method`, así como la opción [url&#95;base](#resolving-relative-urls), funcionan igual independientemente del destino del enrutamiento.
 
@@ -90,7 +90,7 @@ La selección por esquema aún no está implementada en [`urlCluster`](/es/refer
 </div>
 
 Los patrones entre `{ }` se utilizan para generar un conjunto de segmentos o para especificar direcciones de conmutación por error. Para ver los tipos de patrones admitidos y ejemplos, consulte la descripción de la función [remote](/es/reference/functions/table-functions/remote#globs-in-addresses).
-El carácter `|` dentro de los patrones se utiliza para especificar direcciones de conmutación por error. Se recorren en el mismo orden en que aparecen en el patrón. El número de direcciones generadas está limitado por la configuración [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings#glob_expansion_max_elements).
+El carácter `|` dentro de los patrones se utiliza para especificar direcciones de conmutación por error. Se recorren en el mismo orden en que aparecen en el patrón. El número de direcciones generadas está limitado por la configuración [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings/other#glob_expansion_max_elements).
 Para la sintaxis de globs en la ruta de la URL (como `*`, `{a,b}`, `{N..M}` y `**`), consulte [Globs en la ruta](/es/reference/functions/table-functions/file#globs-in-path). Tenga en cuenta que `?` inicia la cadena de consulta en una URL y no puede usarse como comodín en el componente de ruta.
 
 <div id="wildcards-with-http-index-pages">
@@ -107,8 +107,8 @@ Notas:
 * La coincidencia de comodines se aplica al componente de ruta de la URL.
 * Si una URL listada ya contiene una cadena de consulta o un fragmento, estos tienen prioridad sobre los de la URL de origen. En caso contrario, se usan la cadena de consulta y el fragmento de la URL de origen.
 * Se permite un listado vacío; los errores HTTP (p. ej., 404) en las páginas de índice generan excepciones.
-* El tamaño máximo de la página de índice está limitado por [max&#95;http&#95;index&#95;page&#95;size](/es/reference/settings/server-settings/settings#max_http_index_page_size).
-* El número máximo de directorios leídos durante la expansión recursiva está limitado por [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/es/reference/settings/session-settings#url_wildcard_max_directories_to_read).
+* El tamaño máximo de la página de índice está limitado por [max&#95;http&#95;index&#95;page&#95;size](/es/reference/settings/server-settings/settings/max#max_http_index_page_size).
+* El número máximo de directorios leídos durante la expansión recursiva está limitado por [url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/es/reference/settings/session-settings/url#url_wildcard_max_directories_to_read).
 
 Ejemplo:
 
@@ -146,7 +146,7 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE da
   ## Resolución de URL relativas
 </div>
 
-La configuración [url&#95;base](/es/reference/settings/session-settings#url_base) permite pasar una URL relativa a la función `url`. Cuando se establece `url_base` y el argumento de la función es una referencia relativa, esta se resuelve con respecto a la URL base según [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+La configuración [url&#95;base](/es/reference/settings/session-settings/url#url_base) permite pasar una URL relativa a la función `url`. Cuando se establece `url_base` y el argumento de la función es una referencia relativa, esta se resuelve con respecto a la URL base según [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
 Las reglas de resolución son:
 
@@ -156,7 +156,8 @@ Las reglas de resolución son:
 * **Solo cadena de consulta** (p. ej., `?x=1`): se añade a la ruta base completa y reemplaza cualquier cadena de consulta o fragmento existente.
 * **Solo fragmento** (p. ej., `#frag`): se añade a la URL base, conserva la cadena de consulta y reemplaza cualquier fragmento existente.
 * **Vacía**: devuelve la URL base sin fragmento.
-* **URL absoluta**: se pasa sin cambios; `url_base` se ignora.
+* **URL absoluta**: se pasa sin cambios; `url_base` se ignora. Una URL se considera absoluta solo cuando comienza con `scheme://`: un nombre cuyo primer segmento de ruta contiene dos puntos (p. ej., `report:2026.csv`), que RFC 3986 analizaría como una URI absoluta con el esquema `report`, se resuelve en su lugar como una referencia relativa a la ruta, ya que dicho nombre no es una URL utilizable.
+* **Base con solo esquema** (p. ej., `file://`): una URL relativa a la ruta se añade directamente a la base: `file://` + `data.csv` = `file://data.csv`, lo que para el esquema `file://` significa una ruta relativa al directorio [user&#95;files](/es/reference/settings/server-settings/settings/user#user_files_path) (el directorio actual para clickhouse-local). Los segmentos de punto se conservan tal cual en este caso.
 
 **Ejemplo**
 
@@ -169,9 +170,9 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
   ## Configuración de almacenamiento
 </div>
 
-* [engine&#95;url&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#engine_url_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Desactivado de forma predeterminada.
-* [enable&#95;url&#95;encoding](/es/reference/settings/session-settings#enable_url_encoding) - permite activar/desactivar la codificación y decodificación de la ruta en el URI. Activado de forma predeterminada.
-* [url&#95;base](/es/reference/settings/session-settings#url_base) - URL base para resolver las URL relativas que se pasan a la función `url`.
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/other#engine_url_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Desactivado de forma predeterminada.
+* [enable&#95;url&#95;encoding](/es/reference/settings/session-settings/enable#enable_url_encoding) - permite activar/desactivar la codificación y decodificación de la ruta en el URI. Activado de forma predeterminada.
+* [url&#95;base](/es/reference/settings/session-settings/url#url_base) - URL base para resolver las URL relativas que se pasan a la función `url`.
 
 <div id="permissions">
   ## Permisos

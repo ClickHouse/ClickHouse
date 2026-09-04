@@ -42,3 +42,10 @@ static_assert(
 
 #undef FOR_INTEGER_TYPES
 #undef INSTANTIATION
+
+char * writeFixedDigits(UInt64 value, UInt32 width, char * p);
+char * writeFixedDigits(UInt128 value, UInt32 width, char * p);
+char * writeFixedDigits(UInt256 value, UInt32 width, char * p);
+
+void setUseAVX512ItoaForTests(bool value);
+bool getUseAVX512ItoaForTests();

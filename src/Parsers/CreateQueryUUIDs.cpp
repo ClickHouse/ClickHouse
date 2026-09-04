@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
@@ -56,9 +57,9 @@ namespace
 }
 
 
-CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
+CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
 {
-    if (!generate_random || !force_random)
+    if (!generate_random || !for_restore)
     {
         uuid = query.uuid;
         if (query.targets)
@@ -109,6 +110,17 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
+
+                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
+                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
+                {
+                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
+                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
+                    /// so a fresh UUID is not stamped on RESTORE.
+                    recent_samples_enabled = false;
+                }
+                if (recent_samples_enabled)
+                    generate_target_uuid(ViewTarget::RecentSamples);
             }
         }
     }

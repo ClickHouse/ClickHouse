@@ -49,7 +49,7 @@ INSERT INTO parquet_test VALUES
 Code: 641. DB::Exception: Received from localhost:9000. DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. You can allow to create a new file on each insert by enabling setting engine_file_allow_create_multiple_files. (CANNOT_APPEND_TO_FILE)
 ```
 
-ClickHouse では Parquet file に追記できません。ただし、[`engine_file_allow_create_multiple_files` 設定](/ja/reference/settings/session-settings#engine_file_allow_create_multiple_files)を有効にすると、`INSERT` ごとに新しいファイルを作成するよう ClickHouse に指示できます。有効にすると、insert のたびに次の pattern に従った名前で新しいファイルが作成されます。
+ClickHouse では Parquet file に追記できません。ただし、[`engine_file_allow_create_multiple_files` 設定](/ja/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files)を有効にすると、`INSERT` ごとに新しいファイルを作成するよう ClickHouse に指示できます。有効にすると、insert のたびに次の pattern に従った名前で新しいファイルが作成されます。
 
 `data.Parquet` -&gt; `data.1.Parquet` -&gt; `data.2.Parquet` など:
 

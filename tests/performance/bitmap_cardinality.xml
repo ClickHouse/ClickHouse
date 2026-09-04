@@ -1,0 +1,142 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!--
+        Exercises rb_and_cardinality and rb_intersect.
+
+        Operands are built once into a Memory table, so construction is outside the
+        measured queries entirely. One operand of every measured call is wrapped in
+        materialize(): bitmapAndCardinality and bitmapHasAny use the default
+        implementation for constants, so with both operands constant the call would be
+        evaluated once on a single row and broadcast as a constant, and the loop would
+        measure nothing but the sum. The remaining constant operand is not expanded,
+        because the function reads it through its own is_column_const path.
+
+        Elements are UInt32 because UInt64 operands are backed by Roaring64Map, which
+        takes a different code path.
+    -->
+
+    <create_query>
+        CREATE TABLE bitmap_cardinality_operands
+        (
+            name String,
+            bm AggregateFunction(groupBitmap, UInt32)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <!-- Dense: ~46 bitset containers per side, half of them overlapping. -->
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'dense_a', groupBitmapState(toUInt32(number)) FROM numbers(3000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'dense_b', groupBitmapState(toUInt32(number + 1500000)) FROM numbers(3000000)
+    </fill_query>
+    <!-- A separate operand equal to dense_a, so that the two sides share their lowest element. -->
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'dense_a_copy', groupBitmapState(toUInt32(number)) FROM numbers(3000000)
+    </fill_query>
+
+    <!-- Sparse: ~458 array containers per side, half of them overlapping. -->
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'sparse_a', groupBitmapState(toUInt32(number * 100)) FROM numbers(300000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'sparse_b', groupBitmapState(toUInt32(number * 100 + 15000000)) FROM numbers(300000)
+    </fill_query>
+
+    <!-- Same container keys on both sides, no shared element. -->
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'evens', groupBitmapState(toUInt32(number * 2)) FROM numbers(1500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'odds', groupBitmapState(toUInt32(number * 2 + 1)) FROM numbers(1500000)
+    </fill_query>
+
+    <!-- Stays in the small-set representation, whose threshold is 32 elements. -->
+    <fill_query>
+        INSERT INTO bitmap_cardinality_operands
+        SELECT 'small', groupBitmapState(x)
+        FROM (SELECT arrayJoin([toUInt32(7), toUInt32(1000000), toUInt32(2999999)]) AS x)
+    </fill_query>
+
+    <!-- Dense operands: bitset containers. -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_a') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_b') AS b
+        SELECT sum(bitmapAndCardinality(materialize(a), b))
+        FROM numbers(5000)
+        FORMAT Null
+    </query>
+
+    <!-- Sparse operands: array containers. -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'sparse_a') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'sparse_b') AS b
+        SELECT sum(bitmapAndCardinality(materialize(a), b))
+        FROM numbers(2000)
+        FORMAT Null
+    </query>
+
+    <!-- bitmapOrCardinality reaches rb_and_cardinality through inclusion-exclusion. -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_a') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_b') AS b
+        SELECT sum(bitmapOrCardinality(materialize(a), b))
+        FROM numbers(5000)
+        FORMAT Null
+    </query>
+
+    <!--
+        bitmapHasAny where the operands share their lowest element, so the predicate can
+        answer from the first container pair instead of intersecting the whole operand.
+    -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_a') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_a_copy') AS b
+        SELECT sum(bitmapHasAny(materialize(a), b))
+        FROM numbers(2000)
+        FORMAT Null
+    </query>
+
+    <!--
+        bitmapHasAny on evens against odds: both operands occupy the same container keys
+        but share no element, so there is no early exit and every container pair has to
+        be examined. This is the worst case for the predicate.
+    -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'evens') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'odds') AS b
+        SELECT sum(bitmapHasAny(materialize(a), b))
+        FROM numbers(2000)
+        FORMAT Null
+    </query>
+
+    <!-- Large x Small operand order, which previously promoted the small set to Roaring. -->
+    <query>
+        WITH
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'dense_a') AS a,
+            (SELECT bm FROM bitmap_cardinality_operands WHERE name = 'small') AS b
+        SELECT sum(bitmapAndCardinality(materialize(a), b))
+        FROM numbers(10000)
+        FORMAT Null
+    </query>
+
+    <drop_query>
+        DROP TABLE bitmap_cardinality_operands
+    </drop_query>
+</test>

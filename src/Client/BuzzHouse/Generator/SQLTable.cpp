@@ -1988,7 +1988,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
             static const DB::Strings tokenizerVals
-                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams", "asciiCJK", "unicodeWord"};
+                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "keyword", "sparseGrams", "asciiCJK", "unicodeWord"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);

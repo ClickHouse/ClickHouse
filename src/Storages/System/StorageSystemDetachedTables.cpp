@@ -2,6 +2,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,6 +26,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace
 {
@@ -79,7 +85,18 @@ protected:
                 = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!detached_tables_it || !detached_tables_it->isValid())
-                detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+            {
+                try
+                {
+                    detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                        continue;
+                    throw;
+                }
+            }
 
             for (; rows_count < max_block_size && detached_tables_it->isValid(); detached_tables_it->next())
             {

@@ -224,7 +224,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 #### Omitted values processing {#omitted-values-processing}
 
-ClickHouse substitutes omitted values with the default values for the corresponding [data types](/sql-reference/data-types/index.md).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](/reference/data-types).
 
 If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting.
 
@@ -263,7 +263,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
 
-Unlike the [JSON](/interfaces/formats/JSON) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
+Unlike the [JSON](/reference/formats/JSON/JSON) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 :::info
 Any set of bytes can be output in the strings. Use the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format if you are sure that the data in the table can be formatted as JSON without losing any information.

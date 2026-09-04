@@ -5,44 +5,48 @@
     "es/clickstack/index",
     {
       "expanded": true,
-      "group": "Primeros pasos",
+      "group": "Get started",
       "pages": [
+        "es/clickstack/overview",
         {
           "expanded": true,
-          "group": "Guías de inicio rápido",
+          "group": "Quickstarts",
           "pages": [
+            "es/clickstack/getting-started/index",
             "es/clickstack/getting-started/managed",
             "es/clickstack/getting-started/oss"
-          ],
-          "root": "es/clickstack/getting-started/index"
+          ]
         },
         {
-          "group": "Conjuntos de datos de ejemplo",
+          "group": "Sample datasets",
           "pages": [
+            "es/clickstack/example-datasets/index",
             "es/clickstack/example-datasets/sample-data",
             "es/clickstack/example-datasets/kubernetes",
             "es/clickstack/example-datasets/local-data",
             "es/clickstack/example-datasets/remote-demo-data",
             "es/clickstack/example-datasets/session-replay",
             "es/clickstack/example-datasets/chrome-extension",
-            "es/clickstack/example-datasets/otelgen"
-          ],
-          "root": "es/clickstack/example-datasets/index"
+            "es/clickstack/example-datasets/otelgen",
+            "es/clickstack/example-datasets/telemetrygen",
+            "es/clickstack/example-datasets/instrument-application"
+          ]
         },
         "es/clickstack/architecture",
         "es/clickstack/faq"
-      ],
-      "root": "es/clickstack/overview"
+      ]
     },
     {
-      "group": "Características",
+      "group": "Features",
       "pages": [
         {
-          "group": "Implementación",
+          "group": "Deployment",
           "pages": [
+            "es/clickstack/deployment/overview",
             {
-              "group": "Código abierto",
+              "group": "Open Source",
               "pages": [
+                "es/clickstack/deployment/oss",
                 "es/clickstack/deployment/all-in-one",
                 {
                   "group": "Helm",
@@ -50,22 +54,22 @@
                     {
                       "group": "v2.x",
                       "pages": [
+                        "es/clickstack/deployment/helm",
                         "es/clickstack/deployment/helm-configuration",
                         "es/clickstack/deployment/helm-deployment-options",
                         "es/clickstack/deployment/helm-cloud",
                         "es/clickstack/deployment/helm-additional-manifests",
                         "es/clickstack/deployment/helm-upgrade"
-                      ],
-                      "root": "es/clickstack/deployment/helm"
+                      ]
                     },
                     {
-                      "group": "v1.x (en desuso)",
+                      "group": "v1.x (deprecated)",
                       "pages": [
+                        "es/clickstack/deployment/helm-v1",
                         "es/clickstack/deployment/helm-configuration-v1",
                         "es/clickstack/deployment/helm-deployment-options-v1",
                         "es/clickstack/deployment/helm-cloud-v1"
-                      ],
-                      "root": "es/clickstack/deployment/helm-v1"
+                      ]
                     }
                   ]
                 },
@@ -73,22 +77,21 @@
                 "es/clickstack/deployment/hyperdx-only",
                 "es/clickstack/deployment/local-mode-only",
                 "es/clickstack/deployment/clickhouse-embedded"
-              ],
-              "root": "es/clickstack/deployment/oss"
+              ]
             },
             "es/clickstack/deployment/managed"
-          ],
-          "root": "es/clickstack/deployment/overview"
+          ]
         },
         "es/clickstack/features/search",
         {
-          "group": "Paneles",
+          "group": "Dashboards",
           "pages": [
+            "es/clickstack/features/dashboards/overview",
             "es/clickstack/features/dashboards/dashboard-templates",
             "es/clickstack/features/dashboards/sql-visualizations",
-            "es/clickstack/features/dashboards/row-click-drilldowns"
-          ],
-          "root": "es/clickstack/features/dashboards/overview"
+            "es/clickstack/features/dashboards/row-click-drilldowns",
+            "es/clickstack/features/dashboards/release-markers"
+          ]
         },
         "es/clickstack/notebooks",
         "es/clickstack/text-to-chart",
@@ -98,14 +101,23 @@
         "es/clickstack/service-maps",
         "es/clickstack/features/session-replay",
         "es/clickstack/mcp",
+        "es/clickstack/url-parameters",
         {
           "group": "Demo days",
           "pages": [
+            "es/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                "es/clickstack/demo-days/2026/2026-08-15",
+                "es/clickstack/demo-days/2026/2026-08-07",
+                "es/clickstack/demo-days/2026/2026-07-31",
+                "es/clickstack/demo-days/2026/2026-07-24",
+                "es/clickstack/demo-days/2026/2026-07-17",
                 "es/clickstack/demo-days/2026/2026-07-10",
                 "es/clickstack/demo-days/2026/2026-07-02",
+                "es/clickstack/demo-days/2026/2026-06-26",
+                "es/clickstack/demo-days/2026/2026-06-18",
                 "es/clickstack/demo-days/2026/2026-06-12",
                 "es/clickstack/demo-days/2026/2026-06-05",
                 "es/clickstack/demo-days/2026/2026-05-29",
@@ -117,15 +129,15 @@
                 "es/clickstack/demo-days/2026/2026-04-03"
               ]
             }
-          ],
-          "root": "es/clickstack/demo-days/index"
+          ]
         }
       ]
     },
     {
       "expanded": true,
-      "group": "Administración de ClickStack",
+      "group": "Managing ClickStack",
       "pages": [
+        "es/clickstack/managing/overview",
         "es/clickstack/managing/admin",
         "es/clickstack/managing/config",
         "es/clickstack/managing/estimating-resources",
@@ -134,14 +146,14 @@
         "es/clickstack/managing/production",
         "es/clickstack/managing/rbac",
         "es/clickstack/managing/ttl"
-      ],
-      "root": "es/clickstack/managing/overview"
+      ]
     },
     {
-      "group": "Guías",
+      "group": "Guides",
       "pages": [
         {
-          "group": "Ingesta de datos",
+          "expanded": true,
+          "group": "Ingesting data",
           "pages": [
             "es/clickstack/ingesting-data/overview",
             "es/clickstack/ingesting-data/opentelemetry",
@@ -151,8 +163,9 @@
             "es/clickstack/ingesting-data/schema/map-vs-json",
             "es/clickstack/ingesting-data/trace-sampling",
             {
-              "group": "Integraciones",
+              "group": "Integrations",
               "pages": [
+                "es/clickstack/integration-examples/index",
                 "es/clickstack/integration-examples/nginx-logs",
                 "es/clickstack/integration-examples/nginx-traces",
                 "es/clickstack/integration-examples/redis-logs",
@@ -160,7 +173,7 @@
                 "es/clickstack/integration-examples/cloudwatch",
                 "es/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Logs del host",
+                  "group": "Host logs",
                   "pages": [
                     "es/clickstack/integration-examples/host-logs",
                     "es/clickstack/integration-examples/host-logs/ec2"
@@ -178,12 +191,12 @@
                 "es/clickstack/integration-examples/cloudflare",
                 "es/clickstack/integration-examples/kafka-logs",
                 "es/clickstack/integration-examples/mongodb-logs"
-              ],
-              "root": "es/clickstack/integration-examples/index"
+              ]
             },
             {
-              "group": "SDK de lenguajes",
+              "group": "Language SDKs",
               "pages": [
+                "es/clickstack/ingesting-data/sdks/index",
                 "es/clickstack/ingesting-data/sdks/browser",
                 "es/clickstack/ingesting-data/sdks/nodejs",
                 "es/clickstack/ingesting-data/sdks/python",
@@ -196,19 +209,19 @@
                 "es/clickstack/ingesting-data/sdks/nextjs",
                 "es/clickstack/ingesting-data/sdks/react-native",
                 "es/clickstack/ingesting-data/sdks/aws-lambda"
-              ],
-              "root": "es/clickstack/ingesting-data/sdks/index"
+              ]
             }
-          ],
-          "root": "es/clickstack/ingesting-data/index"
+          ]
         },
         {
           "expanded": true,
-          "group": "Guías de migración",
+          "group": "Migration guides",
           "pages": [
+            "es/clickstack/migration/index",
             {
-              "group": "Migración desde Elastic",
+              "group": "Migrating from Elastic",
               "pages": [
+                "es/clickstack/migration/elastic/index",
                 "es/clickstack/migration/elastic/intro",
                 "es/clickstack/migration/elastic/concepts",
                 "es/clickstack/migration/elastic/types",
@@ -216,27 +229,26 @@
                 "es/clickstack/migration/elastic/migrating-data",
                 "es/clickstack/migration/elastic/migrating-agents",
                 "es/clickstack/migration/elastic/migrating-sdks"
-              ],
-              "root": "es/clickstack/migration/elastic/index"
+              ]
             },
             "es/clickstack/migration/datadog/index"
-          ],
-          "root": "es/clickstack/migration/index"
+          ]
         }
       ]
     },
     {
       "expanded": true,
-      "group": "Socios de integración",
+      "group": "Integration partners",
       "pages": [
+        "es/clickstack/integration-partners/index",
         "es/clickstack/integration-partners/bindplane",
+        "es/clickstack/integration-partners/bitdrift",
         "es/clickstack/integration-partners/odigos"
-      ],
-      "root": "es/clickstack/integration-partners/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "Referencia de la API",
+      "group": "API reference",
       "openapi": {
         "directory": "es/clickstack/api-reference",
         "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"

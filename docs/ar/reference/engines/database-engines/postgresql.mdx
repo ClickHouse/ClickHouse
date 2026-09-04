@@ -32,7 +32,11 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 * `schema` — مخطط PostgreSQL.
 * `use_table_cache` — يحدّد ما إذا كانت بنية جدول قاعدة البيانات مخزنة مؤقتًا أم لا. اختياري. القيمة الافتراضية: `0`.
 
-<div id="data_types-support">
+تُمرَّر معلمات TLS/SSL إلى `libpq` ويمكن توفيرها عبر [مجموعة مسماة](/ar/concepts/features/configuration/server-config/named-collections) أو كوسيطات مفتاح-قيمة لاحقة: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`)، والشهادات والمفتاح بأحد شكلين. تمثل `sslrootcert` (شهادة CA)، و`sslcert` (شهادة العميل)، و`sslkey` (المفتاح الخاص للعميل) مسارات إلى ملفات محلية على الخادم، ولا تُقبل إلا من مجموعة مسماة معرّفة في ملف تكوين الخادم. تقبل `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` المحتويات الحرفية للملف المقابل بدلًا من ذلك، ويمكن تحديدها من SQL (على سبيل المثال، `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`)، وتُخفى في السجلات واستعلامات `SHOW` مثل كلمة المرور. عند عدم تعيينها، تُطبَّق القيم الافتراضية لـ `libpq` (`sslmode=prefer`).
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## دعم أنواع البيانات
 </div>
 

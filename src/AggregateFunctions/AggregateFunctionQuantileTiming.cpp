@@ -59,7 +59,7 @@ The result is deterministic (it does not depend on the query processing order).
 The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
 
 **Accuracy**
 
@@ -71,11 +71,11 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note
-For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/sql-reference/aggregate-functions/reference/quantile).
+For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/reference/functions/aggregate-functions/quantile).
 :::
 
 :::note
-If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](/reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -113,7 +113,7 @@ SELECT quantileTiming(response_time) FROM t;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision.
 
-This function is equivalent to [`quantileTiming`](/sql-reference/aggregate-functions/reference/quantiletiming) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileTiming`](/reference/functions/aggregate-functions/quantileTiming) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 The result is deterministic (it does not depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
@@ -127,7 +127,7 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note
-For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles).
+For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/reference/functions/aggregate-functions/quantiles).
 :::
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(

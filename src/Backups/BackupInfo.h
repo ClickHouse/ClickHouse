@@ -26,11 +26,13 @@ struct BackupInfo
 
     String toStringForLogging() const;
 
-    void copyS3CredentialsTo(BackupInfo & dest) const;
+    /// The context resolves non-literal `extra_credentials` keys and values the way
+    /// `collectCredentials` does when the locator is opened; without one only literals are read.
+    void copyS3CredentialsTo(BackupInfo & dest, ContextPtr context = nullptr) const;
 
     /// Whether `copyS3CredentialsTo` would succeed (both sides are `S3` without named collections
     /// and this backup locator carries explicit credentials).
-    bool canCopyS3CredentialsTo(const BackupInfo & dest) const;
+    bool canCopyS3CredentialsTo(const BackupInfo & dest, ContextPtr context = nullptr) const;
 
     /// Returns a copy without `S3` credentials: positional key/secret arguments are removed,
     /// credential key-value arguments and trailing `extra_credentials` are removed, and credentials

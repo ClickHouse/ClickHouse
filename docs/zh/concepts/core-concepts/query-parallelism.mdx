@@ -35,7 +35,7 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 <br />
 
-`n` 个并行处理通道的数量由 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 设置控制，默认情况下，该值与服务器上 ClickHouse 可用的单个 CPU 的核心数 (线程数) 相同。在上面的示例中，我们假设有 `4` 个核心。
+`n` 个并行处理通道的数量由 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 设置控制，默认情况下，该值与服务器上 ClickHouse 可用的单个 CPU 的核心数 (线程数) 相同。在上面的示例中，我们假设有 `4` 个核心。
 
 在一台具有 `8` 个核心的机器上，查询处理吞吐量大致会翻倍 (但内存占用也会相应增加) ，因为会有更多通道并行处理数据：
 
@@ -138,7 +138,7 @@ ClickHouse 的[嵌入式 web UI](/zh/concepts/features/interfaces/http) (可通�
 请注意，上述物理计划中的 `Resize` 算子会在各处理通道之间对数据块流进行[重新分区和重新分发](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)，以保持各通道的负载均衡。当不同数据范围中满足查询谓词的行数差异较大时，这种重新平衡尤为重要；否则，某些通道可能负载过高，而其他通道则处于空闲状态。通过重新分配工作，较快的通道实际上可以帮助较慢的通道分担负载，从而优化整体查询运行时间。
 
 <div id="why-max-threads-isnt-always-respected">
-  ## 为什么 max_threads 并不总会生效
+  ## 为什么 max_threads 并不总是被遵守
 </div>
 
 如上所述，`n` 条并行处理通道的数量由 `max_threads` 设置控制，默认情况下，它与服务器上 ClickHouse 可用的 CPU 核心数一致：
@@ -184,11 +184,11 @@ WHERE town = 'LONDON';
 
 ```txt
    ┌─max(price)─┐
-1. │  594300000 │ -- 5.943 亿
+1. │  594300000 │ -- 594.30 million
    └────────────┘
    
-1 行记录。耗时: 0.013 秒。处理了 231 万行, 13.66 MB (1.7312 亿行/秒, 1.02 GB/s.)
-峰值内存占用: 27.24 MiB.   
+1 row in set. Elapsed: 0.013 sec. Processed 2.31 million rows, 13.66 MB (173.12 million rows/s., 1.02 GB/s.)
+Peak memory usage: 27.24 MiB.   
 ```
 
 如上面的输出所示，该查询处理了 231 万行数据，并读取了 13.66MB 数据。这是因为在索引分析阶段，ClickHouse 选择了 **282 个粒度** 进行处理，每个粒度包含 8,192 行，总计约 231 万行：
@@ -219,23 +219,23 @@ WHERE town = 'LONDON';
     └───────────────────────────────────────────────────────┘  
 ```
 
-无论 `max_threads` 配置为多少，ClickHouse 只有在数据量足以支撑时，才会分配额外的并行处理通道。`max_threads` 中的 “max” 表示上限，并不意味着一定会使用这么多线程。
+无论 `max_threads` 配置为多少，ClickHouse 只有在数据量足以支撑时，才会分配额外的并行处理通道。`max_threads` 中的 &quot;max&quot; 表示上限，并不意味着一定会使用这么多线程。
 
-这里“足够的数据”主要由两个设置决定：它们定义了每个处理通道需要处理的最小行数 (默认 163,840) 和最小字节数 (默认 2,097,152) ：
+这里&quot;足够的数据&quot;主要由两个设置决定：它们定义了每个处理通道需要处理的最小行数 (默认 163,840) 和最小字节数 (默认 2,097,152) ：
 
 对于 shared-nothing 集群：
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read)
 
 对于使用共享存储的集群 (例如 ClickHouse Cloud) ：
 
-* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
-* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
 
 此外，读取任务大小还有一个硬性下限，由以下设置控制：
 
-* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/zh/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/zh/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading)
 
 <Warning>
   **不要修改这些设置**

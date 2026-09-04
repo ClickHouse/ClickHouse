@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/fr/_system_table_cloud.mdx';
   ## Description
 </div>
 
-Contient des statistiques de sélectivité échantillonnées collectées lors de la lecture de tables `MergeTree`. La table n&#39;est renseignée que lorsque [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings#predicate_statistics_sample_rate) est supérieur à `0`.
+Contient des statistiques de sélectivité échantillonnées collectées lors de la lecture de tables `MergeTree`. La table n&#39;est renseignée que lorsque [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings/other#predicate_statistics_sample_rate) est supérieur à `0`.
 
 Utilisez cette table pour examiner le degré de sélectivité des prédicats utilisateur dans des charges de travail réelles, ainsi que le nombre de granules restant après le filtrage par clé primaire ou index de saut. Ces données sont destinées à alimenter des recommandations d&#39;index et de projections fondées sur les charges de travail.
 
@@ -34,7 +34,7 @@ Les lignes de filtre et les lignes d’index d’une même requête partagent le
   ## Échantillonnage et surcoût
 </div>
 
-L&#39;échantillonnage est contrôlé par [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings#predicate_statistics_sample_rate) :
+L&#39;échantillonnage est contrôlé par [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings/other#predicate_statistics_sample_rate) :
 
 * `0` désactive la collecte.
 * `1` échantillonne chaque requête.
@@ -100,5 +100,5 @@ LIMIT 10;
   ## Voir aussi
 </div>
 
-* [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings#predicate_statistics_sample_rate)
+* [`predicate_statistics_sample_rate`](/fr/reference/settings/session-settings/other#predicate_statistics_sample_rate)
 * [system.query&#95;log](/fr/reference/system-tables/query_log)

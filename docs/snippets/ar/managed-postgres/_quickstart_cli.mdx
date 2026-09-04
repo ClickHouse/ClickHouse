@@ -38,7 +38,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ clickhousectl cloud postgres create \
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-يكتمل إدراج مليون صف خلال نحو 7 ثوانٍ على `c6gd.large` (أصغر فئة) بفضل تخزين NVMe. تحقّق من ذلك بإجراء استعلام؛ إذ تختلف أعداد الصفوف بين مرات التشغيل لأن البيانات تُولَّد باستخدام `random()`:
+يكتمل إدراج مليون صف خلال نحو 7 ثوانٍ على `m6gd.large` (أصغر فئة) بفضل تخزين NVMe. تحقّق من ذلك بإجراء استعلام؛ إذ تختلف أعداد الصفوف بين مرات التشغيل لأن البيانات تُولَّد باستخدام `random()`:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ done
   ### انسخ الجداول إلى ClickHouse
 </div>
 
-أنشئ ClickPipe لـ Postgres CDC على خدمة ClickHouse، مع توجيهه إلى اسم مضيف الخاص بـ Managed Postgres. ينسخ هذا الـ pipe الصفوف الحالية، ثم يُبقي ClickHouse متزامنًا مع التغييرات اللاحقة:
+أنشئ ClickPipe لـ Postgres CDC على خدمة ClickHouse، مع توجيهه إلى اسم مضيف الخاص بـ ClickHouse Managed Postgres. ينسخ هذا الـ قناة الصفوف الحالية، ثم يُبقي ClickHouse متزامنًا مع التغييرات اللاحقة:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 تم ترك Heredoc بدون علامات اقتباس عمدًا، لكي يستبدل مفسّر الأوامر `$CH_HOST` و`$CH_PASSWORD` قبل أن يصل SQL إلى Postgres. أصبحت الجداول المُكرَّرة الآن مرئية كجداول خارجية في مخطط `organization`؛ وتُنفَّذ الاستعلامات عليها في ClickHouse.
 
-عند القياس على `c6gd.large` باستخدام مجموعة البيانات هذه، تعمل الاستعلامات التحليلية أسرع بمقدار 6–9 مرات عبر الجداول الخارجية (على سبيل المثال، GROUP BY مع 5 عمليات تجميع: ‏176 مللي ثانية عبر ClickHouse مقابل 1,133 مللي ثانية محليًا؛ وJOIN مع عمليات تجميع: ‏298 مللي ثانية مقابل 2,764 مللي ثانية).
+عند القياس على `m6gd.large` باستخدام مجموعة البيانات هذه، تعمل الاستعلامات التحليلية أسرع بمقدار 6–9 مرات عبر الجداول الخارجية (على سبيل المثال، GROUP BY مع 5 عمليات تجميع: ‏176 مللي ثانية عبر ClickHouse مقابل 1,133 مللي ثانية محليًا؛ وJOIN مع عمليات تجميع: ‏298 مللي ثانية مقابل 2,764 مللي ثانية).
 
 <div id="cleanup-resources">
   ## التنظيف

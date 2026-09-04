@@ -1,11 +1,11 @@
 {
   "directory": "none",
-  "group": "MergeTree テーブル設定",
+  "group": "MergeTree tables settings",
   "pages": [
     "ja/reference/settings/merge-tree-settings/add-minmax",
     "ja/reference/settings/merge-tree-settings/allow",
     "ja/reference/settings/merge-tree-settings/allow-experimental",
-    "ja/reference/settings/merge-tree-settings/always",
+    "ja/reference/settings/merge-tree-settings/always-fetch",
     "ja/reference/settings/merge-tree-settings/async",
     "ja/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "ja/reference/settings/merge-tree-settings/check",

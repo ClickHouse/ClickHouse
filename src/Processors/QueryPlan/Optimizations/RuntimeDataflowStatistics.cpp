@@ -120,13 +120,21 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     return counter % 5 == 0 && counter < 25;
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols)
+void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
+    Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes)
 {
     Stopwatch watch;
 
     size_t block_bytes = 0;
-    for (const auto & col : cols)
-        block_bytes += col.column->byteSize();
+    if (full_bytes)
+    {
+        block_bytes = *full_bytes;
+    }
+    else
+    {
+        for (const auto & col : cols)
+            block_bytes += col.column->byteSize();
+    }
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
@@ -194,6 +202,17 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
     recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes)
+{
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
