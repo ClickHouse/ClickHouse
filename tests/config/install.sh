@@ -8,6 +8,13 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
+# Below we rm -rf config.d before repopulating it; refuse if that would wipe the source configs.
+if [ "$(readlink -f "$DEST_SERVER_PATH/config.d" 2>/dev/null || echo "$DEST_SERVER_PATH/config.d")" = "$(readlink -f "$SRC_PATH/config.d")" ]; then
+    echo "Refusing to install: DEST_SERVER_PATH/config.d ($DEST_SERVER_PATH/config.d) resolves to the same directory as SRC_PATH/config.d ($SRC_PATH/config.d). This script deletes and repopulates that directory, which would destroy the tracked test configs." >&2
+    exit 1
+fi
+
 if [ $# -ge 2 ]; then
     shift 2
 fi
