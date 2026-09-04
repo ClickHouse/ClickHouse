@@ -148,6 +148,17 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
+
+        /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
+        /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
+        /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
+        if (normalized.string() != file_name)
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is not a normalized path, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
     }
 }
 
