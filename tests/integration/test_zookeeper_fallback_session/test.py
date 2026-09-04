@@ -57,6 +57,26 @@ def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
     assert host.strip() == zk_node
 
 
+def assert_uses_new_zk_session(node: ClickHouseInstance, zk_node, previous):
+    """Wait until `node` holds a session other than `previous`, and on `zk_node`.
+
+    The host on its own would also be satisfied by `previous`, which was established
+    while zoo1 was the only Keeper reachable.
+    """
+
+    def check_callback(session):
+        session = session.strip()
+        return session != previous and session.split("\t")[0] == zk_node
+
+    session = node.query_with_retry(
+        "select host, client_id from system.zookeeper_connection",
+        check_callback=check_callback,
+    ).strip()
+
+    assert session != previous, f"{node.name} kept the session it had before the heal"
+    assert session.split("\t")[0] == zk_node, f"{node.name} is connected as {session!r}"
+
+
 def get_zk_applied_zxid(cluster: ClickHouseCluster, zk_node):
     """Last zxid applied by `zk_node` itself, or None if it cannot be read.
 
@@ -187,18 +207,23 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
                 node, action="REJECT --reject-with tcp-reset"
             )
 
+        sessions = {}
         for node in [node1, node2, node3]:
             # Synchronisation, not the assertion: zoo1 is the only Keeper reachable.
             assert_uses_zk_node(node, "zoo1")
+            sessions[node.name] = node.query_with_retry(
+                "select host, client_id from system.zookeeper_connection",
+                check_callback=lambda session: session.strip() != "",
+            ).strip()
 
-    # Every Keeper is reachable again, and every zxid these nodes have seen came from
-    # zoo1, so none of them is ahead of what zoo1 has applied and zoo1 cannot refuse
-    # their new sessions. `in_order` alone decides the host they land on.
+    # A node's `last_zxid_seen` was at or below what zoo1 had applied when it connected
+    # to it, and everything it has seen since came from zoo1, so zoo1 cannot refuse the
+    # new sessions. `in_order` alone decides the host they land on.
     for node in [node1, node2, node3]:
         node.query("SYSTEM RECONNECT ZOOKEEPER")
 
     for node in [node1, node2, node3]:
-        assert_uses_zk_node(node, "zoo1")
+        assert_uses_new_zk_session(node, "zoo1", sessions[node.name])
 
     node1.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
     for node in [node2, node3]:
