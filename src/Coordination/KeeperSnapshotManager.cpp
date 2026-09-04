@@ -364,6 +364,8 @@ KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr dis
                 if (p->retired_for_removal.load(std::memory_order_acquire))
                 {
                     p->disk->removeFileIfExists(p->path);
+                    if (p->recovery_marker_path)
+                        p->disk->removeFileIfExists(*p->recovery_marker_path);
                     LOG_DEBUG(logger, "Removed retired snapshot {} at path {}", log_idx, p->path);
                 }
             }
@@ -452,6 +454,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     {
         SnapshotFileInfoPtr info;
         std::optional<String> marker_path;
+        bool has_unknown_marker_version = false;
     };
 
     std::map<uint64_t, std::vector<SnapshotRecoveryCandidate>> groups;
@@ -495,6 +498,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     }
 
     std::vector<SnapshotFileInfoPtr> selected_snapshots(unresolved_group_refs.size());
+    std::vector<std::vector<SnapshotFileInfoPtr>> duplicate_snapshots(unresolved_group_refs.size());
     if (!unresolved_group_refs.empty())
     {
         ThreadPool pool(
@@ -535,6 +539,27 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                         continue;
                     }
 
+                    if (!marker && marker.error() == KeeperMoveMarkerParseError::UnknownVersion)
+                    {
+                        it->has_unknown_marker_version = true;
+                        ++it;
+                        continue;
+                    }
+
+                    if (candidates.size() == 1)
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Snapshot {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
+                            it->info->path,
+                            it->info->disk->getName(),
+                            *it->marker_path);
+                        it->info->disk->removeFileIfExists(*it->marker_path);
+                        it->marker_path.reset();
+                        ++it;
+                        continue;
+                    }
+
                     LOG_TRACE(
                         log,
                         "Snapshot {} on disk {} does not match move marker {}, removing the snapshot and marker",
@@ -549,6 +574,40 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                 if (candidates.empty())
                     return;
 
+                if (std::ranges::all_of(candidates, &SnapshotRecoveryCandidate::has_unknown_marker_version))
+                {
+                    const auto fallback = std::ranges::max_element(candidates, {}, [](const auto & candidate)
+                    {
+                        return candidate.info->recovery_precedence;
+                    });
+                    LOG_WARNING(
+                        log,
+                        "All snapshot recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
+                        getLogIdxFromSnapshotPath(fallback->info->path),
+                        *fallback->marker_path,
+                        fallback->info->path,
+                        fallback->info->disk->getName());
+                    fallback->info->disk->removeFileIfExists(*fallback->marker_path);
+                    fallback->marker_path.reset();
+                    fallback->has_unknown_marker_version = false;
+                }
+
+                std::erase_if(candidates, [&](const auto & candidate)
+                {
+                    if (!candidate.has_unknown_marker_version)
+                        return false;
+
+                    LOG_WARNING(
+                        log,
+                        "Keeping snapshot {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
+                        candidate.info->path,
+                        *candidate.marker_path,
+                        candidate.info->disk->getName());
+                    candidate.info->recovery_marker_path = *candidate.marker_path;
+                    duplicate_snapshots[group_index].push_back(candidate.info);
+                    return true;
+                });
+
                 const auto selected = std::ranges::max_element(candidates, {}, [](const auto & candidate)
                 {
                     return candidate.info->recovery_precedence;
@@ -557,14 +616,14 @@ KeeperSnapshotManager::KeeperSnapshotManager(
                 {
                     if (&candidate != &*selected)
                     {
-                        LOG_TRACE(
+                        LOG_WARNING(
                             log,
-                            "Removing duplicate snapshot {} from disk {}; keeping {} on disk {}",
+                            "Keeping duplicate snapshot {} on disk {} as a recovery copy; using {} on disk {}",
                             candidate.info->path,
                             candidate.info->disk->getName(),
                             selected->info->path,
                             selected->info->disk->getName());
-                        candidate.info->disk->removeFileIfExists(candidate.info->path);
+                        duplicate_snapshots[group_index].push_back(candidate.info);
                     }
                 }
                 auto selected_snapshot = selected->info;
@@ -579,6 +638,39 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     {
         if (selected)
             existing_snapshots.emplace(getLogIdxFromSnapshotPath(selected->path), selected);
+    }
+
+    std::optional<uint64_t> oldest_retained_idx;
+    if (!existing_snapshots.empty() && snapshots_to_keep > 0)
+    {
+        const size_t purged_count
+            = existing_snapshots.size() > snapshots_to_keep ? existing_snapshots.size() - snapshots_to_keep : 0;
+        oldest_retained_idx = std::next(existing_snapshots.begin(), purged_count)->first;
+    }
+    for (size_t group_index = 0; group_index < duplicate_snapshots.size(); ++group_index)
+    {
+        if (!selected_snapshots[group_index] || duplicate_snapshots[group_index].empty())
+            continue;
+
+        const uint64_t log_idx = getLogIdxFromSnapshotPath(selected_snapshots[group_index]->path);
+        if (oldest_retained_idx && log_idx >= *oldest_retained_idx)
+        {
+            retained_duplicate_snapshots.emplace(log_idx, std::move(duplicate_snapshots[group_index]));
+            continue;
+        }
+
+        for (const auto & duplicate : duplicate_snapshots[group_index])
+        {
+            LOG_WARNING(
+                log,
+                "Removing duplicate snapshot {} on disk {} for log index {} outside the retained window",
+                duplicate->path,
+                duplicate->disk->getName(),
+                log_idx);
+            duplicate->disk->removeFileIfExists(duplicate->path);
+            if (duplicate->recovery_marker_path)
+                duplicate->disk->removeFileIfExists(*duplicate->recovery_marker_path);
+        }
     }
     for (const auto & marker : orphan_markers)
     {
@@ -867,11 +959,22 @@ void KeeperSnapshotManager::setProtectedPendingSnapshotIndex(uint64_t log_idx)
 std::vector<SnapshotFileInfoPtr>
 KeeperSnapshotManager::detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator itr)
 {
+    const uint64_t log_idx = itr->first;
     std::vector<SnapshotFileInfoPtr> retired;
     auto snapshot_file_info = itr->second;
     snapshot_file_info->retired_for_removal.store(true, std::memory_order_release);
     existing_snapshots.erase(itr);
     retired.push_back(std::move(snapshot_file_info));
+
+    if (auto duplicate_it = retained_duplicate_snapshots.find(log_idx); duplicate_it != retained_duplicate_snapshots.end())
+    {
+        for (auto & duplicate : duplicate_it->second)
+        {
+            duplicate->retired_for_removal.store(true, std::memory_order_release);
+            retired.push_back(std::move(duplicate));
+        }
+        retained_duplicate_snapshots.erase(duplicate_it);
+    }
 
     return retired;
 }

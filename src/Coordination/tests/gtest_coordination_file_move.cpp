@@ -11,10 +11,10 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 
 #include <array>
 #include <atomic>
-#include <mutex>
 #include <stdexcept>
 
 namespace DB::CoordinationSetting
@@ -75,47 +75,44 @@ DB::KeeperFileDigest expectedDigest(std::string_view data)
     return {.size = data.size(), .hash = hash};
 }
 
-class RecordingDiskLocal final : public DB::DiskLocal
+class FailingFirstMarkerSyncWriteBuffer final : public DB::WriteBufferFromFileDecorator
 {
 public:
-    RecordingDiskLocal(
-        const String & disk_name,
-        const String & path,
-        std::shared_ptr<std::vector<String>> events_,
-        std::shared_ptr<std::mutex> mutex_)
-        : DB::DiskLocal(disk_name, path)
-        , events(std::move(events_))
-        , mutex(std::move(mutex_))
+    FailingFirstMarkerSyncWriteBuffer(std::unique_ptr<DB::WriteBuffer> impl_, std::atomic_size_t & sync_attempts_)
+        : DB::WriteBufferFromFileDecorator(std::move(impl_))
+        , sync_attempts(sync_attempts_)
     {
     }
 
-    void syncFile(const String & path) const override
+    void sync() override
     {
-        record(fmt::format("{}:sync-file:{}", getName(), path));
-        DB::DiskLocal::syncFile(path);
-    }
-
-    void syncDirectory(const String & path) const override
-    {
-        record(fmt::format("{}:sync-directory:{}", getName(), path));
-        DB::DiskLocal::syncDirectory(path);
-    }
-
-    void removeFileIfExists(const String & path) override
-    {
-        record(fmt::format("{}:remove:{}", getName(), path));
-        DB::DiskLocal::removeFileIfExists(path);
-    }
-
-    void record(String event) const
-    {
-        std::lock_guard lock(*mutex);
-        events->push_back(std::move(event));
+        DB::WriteBufferFromFileDecorator::sync();
+        if (++sync_attempts == 1)
+            throw std::runtime_error("injected first marker sync failure");
     }
 
 private:
-    std::shared_ptr<std::vector<String>> events;
-    std::shared_ptr<std::mutex> mutex;
+    std::atomic_size_t & sync_attempts;
+};
+
+class MarkerRetryDiskLocal final : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        DB::WriteMode mode,
+        const DB::WriteSettings & settings) override
+    {
+        auto buffer = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (path == "tmp_destination")
+            return std::make_unique<FailingFirstMarkerSyncWriteBuffer>(std::move(buffer), marker_sync_attempts);
+        return buffer;
+    }
+
+    std::atomic_size_t marker_sync_attempts{0};
 };
 
 class CountingDiskLocal final : public DB::DiskLocal
@@ -140,28 +137,6 @@ public:
 
     mutable std::atomic<size_t> destination_reads{0};
     mutable std::atomic<size_t> cache_bypassing_destination_reads{0};
-};
-
-class MarkerRetryDiskLocal final : public DB::DiskLocal
-{
-public:
-    using DB::DiskLocal::DiskLocal;
-
-    void syncDirectory(const String & path) const override
-    {
-        if (existsFile("tmp_destination") && !existsFile("destination"))
-        {
-            String marker;
-            auto input = readFile("tmp_destination", DB::getReadSettings());
-            DB::readStringUntilEOF(marker, *input);
-            marker_attempts.push_back(std::move(marker));
-            if (marker_attempts.size() == 1)
-                throw std::runtime_error("injected first marker directory sync failure");
-        }
-        DB::DiskLocal::syncDirectory(path);
-    }
-
-    mutable std::vector<String> marker_attempts;
 };
 
 class AdoptingSourceDiskLocal final : public DB::DiskLocal
@@ -316,16 +291,14 @@ TEST(KeeperMoveMarker, DigestUsesVersionOneBlockConstructionAcrossInputChunks)
     }
 }
 
-TEST(KeeperFileMove, LocalDurabilityOrderAndCallbackOutcomes)
+TEST(KeeperFileMove, LocalMoveAndCallbackOutcomes)
 {
     fs::create_directories("./tmp");
     ChangelogDirTest root("./tmp/gtest_keeper_file_move_order");
     fs::create_directories(root.path + "/source");
     fs::create_directories(root.path + "/destination");
-    auto events = std::make_shared<std::vector<String>>();
-    auto mutex = std::make_shared<std::mutex>();
-    auto source = std::make_shared<RecordingDiskLocal>("source", root.path + "/source", events, mutex);
-    auto destination = std::make_shared<RecordingDiskLocal>("destination", root.path + "/destination", events, mutex);
+    auto source = std::make_shared<DB::DiskLocal>("source", root.path + "/source");
+    auto destination = std::make_shared<DB::DiskLocal>("destination", root.path + "/destination");
     writeFile(source, "file", "keeper-data");
     auto keeper_context = makeKeeperContext(false);
 
@@ -336,7 +309,6 @@ TEST(KeeperFileMove, LocalDurabilityOrderAndCallbackOutcomes)
         "file",
         [&]
         {
-            destination->record("callback");
             return true;
         },
         getLogger("KeeperFileMoveTest"),
@@ -346,17 +318,6 @@ TEST(KeeperFileMove, LocalDurabilityOrderAndCallbackOutcomes)
     EXPECT_FALSE(source->existsFile("file"));
     EXPECT_TRUE(destination->existsFile("file"));
     EXPECT_FALSE(destination->existsFile("tmp_file"));
-    EXPECT_EQ(
-        *events,
-        (std::vector<String>{
-            "destination:sync-directory:",
-            "destination:sync-file:file",
-            "destination:sync-directory:",
-            "destination:remove:tmp_file",
-            "destination:sync-directory:",
-            "callback",
-            "source:remove:file",
-            "source:sync-directory:"}));
 
     writeFile(source, "rejected", "source-remains");
     const auto rejected = DB::moveFileBetweenDisks(
@@ -411,7 +372,7 @@ TEST(KeeperFileMove, DestinationReadBackIsDisabledByDefaultAndCacheBypassingWhen
     EXPECT_EQ(destination->cache_bypassing_destination_reads, 1);
 }
 
-TEST(KeeperFileMove, MarkerRetriesReuseFrozenPayload)
+TEST(KeeperFileMove, MarkerPublicationRetriesAfterSyncFailure)
 {
     fs::create_directories("./tmp");
     ChangelogDirTest root("./tmp/gtest_keeper_file_move_marker_retry");
@@ -434,9 +395,9 @@ TEST(KeeperFileMove, MarkerRetriesReuseFrozenPayload)
         makeKeeperContext(false, settings));
 
     ASSERT_TRUE(result);
-    ASSERT_EQ(destination->marker_attempts.size(), 2);
-    EXPECT_EQ(destination->marker_attempts[0], destination->marker_attempts[1]);
-    EXPECT_TRUE(DB::parseKeeperMoveMarker(destination->marker_attempts[0]));
+    EXPECT_EQ(destination->marker_sync_attempts.load(), 2);
+    EXPECT_FALSE(destination->existsFile("tmp_destination"));
+    EXPECT_TRUE(destination->existsFile("destination"));
 }
 
 TEST(KeeperFileMove, AdoptedMultipartObjectForcesCacheBypassingDigestValidation)

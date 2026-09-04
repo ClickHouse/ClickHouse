@@ -100,6 +100,9 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    /// Unknown-version move marker retained with an unselected startup recovery copy.
+    std::optional<std::string> recovery_marker_path;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;
@@ -674,6 +677,8 @@ private:
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
+    /// Same-range recovery copies retained at startup and removed with the registered range.
+    std::unordered_map<uint64_t, std::vector<ChangelogFileDescriptionPtr>> retained_duplicate_changelogs;
 
     using ChangelogIter = decltype(existing_changelogs)::iterator;
 
@@ -726,6 +731,9 @@ private:
     void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
     /// Queues asynchronous removal; returns the operation so callers can wait for completion.
     ChangelogFileOperationPtr removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
+    /// Queues removal of the registered changelog and all retained recovery copies for its range.
+    std::vector<ChangelogFileOperationPtr> removeChangelogAndRecoveryCopiesAsync(
+        uint64_t from_log_index, ChangelogFileDescriptionPtr changelog);
     void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
 
     const String changelogs_detached_dir;

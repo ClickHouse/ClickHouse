@@ -4542,15 +4542,15 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryInventoriesDistinctDisksInP
     EXPECT_EQ(latch->arrivals, 2);
 }
 
-TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRemovesInvalidMarkersAndOrphans)
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPreservesOnlyCandidateWithInvalidMarker)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "the recovery matrix is independent of compression";
 
-    for (const bool unknown_version : {false, true})
+    for (const std::string_view marker_kind : {"malformed", "unknown", "mismatch"})
     {
-        SCOPED_TRACE(std::string("unknown_version=") + (unknown_version ? "true" : "false"));
-        ChangelogDirTest logs(unknown_version ? "./logs_unknown_marker" : "./logs_malformed_marker");
+        SCOPED_TRACE(std::string(marker_kind));
+        ChangelogDirTest logs(fmt::format("./logs_{}_marker", marker_kind));
         DB::DiskPtr disk = std::make_shared<DB::DiskLocal>("logs", logs.path);
         this->keeper_context->setLogDisk(disk);
         const DB::LogFileSettings settings{
@@ -4567,10 +4567,14 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRemovesInvalidMarkersAndOrp
         }
 
         String marker_contents = "malformed";
-        if (unknown_version)
+        if (marker_kind != "malformed")
         {
-            marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(disk, "changelog_1_10.bin"));
-            marker_contents[8] = 2;
+            auto digest = DB::computeKeeperFileDigest(disk, "changelog_1_10.bin");
+            if (marker_kind == "mismatch")
+                ++digest.size;
+            marker_contents = DB::serializeKeeperMoveMarker(digest);
+            if (marker_kind == "unknown")
+                marker_contents[8] = 2;
         }
         auto marker = disk->writeFile("tmp_changelog_1_10.bin");
         marker->write(marker_contents.data(), marker_contents.size());
@@ -4579,11 +4583,73 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryRemovesInvalidMarkersAndOrp
         orphan->finalize();
 
         DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
-        EXPECT_FALSE(disk->existsFile("changelog_1_10.bin"));
+        EXPECT_TRUE(disk->existsFile("changelog_1_10.bin"));
         EXPECT_FALSE(disk->existsFile("tmp_changelog_1_10.bin"));
         EXPECT_FALSE(disk->existsFile("tmp_changelog_999_999.bin"));
         ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
-        EXPECT_EQ(recovered.getNextEntryIndex(), 1);
+        EXPECT_EQ(recovered.getNextEntryIndex(), 2);
+    }
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRecoveryHandlesInvalidMarkedCandidateWhenAlternativeExists)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    for (const bool unknown_version : {false, true})
+    {
+        SCOPED_TRACE(std::string("unknown_version=") + (unknown_version ? "true" : "false"));
+        const std::string suffix = unknown_version ? "unknown" : "malformed";
+        ChangelogDirTest regular("./logs_invalid_marker_regular_" + suffix);
+        ChangelogDirTest latest("./logs_invalid_marker_latest_" + suffix);
+        DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+        DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .startup_read_max_streams = 4,
+        };
+        this->keeper_context->setLogDisk(regular_disk);
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            writer.appendEntry(1, getLogEntry("one", 1));
+            writer.flush();
+        }
+
+        constexpr std::string_view path = "changelog_1_10.bin";
+        {
+            auto output = latest_disk->writeFile(String(path));
+            constexpr std::string_view partial = "partial";
+            output->write(partial.data(), partial.size());
+            output->finalize();
+        }
+        String marker_contents = "malformed";
+        if (unknown_version)
+        {
+            marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(regular_disk, String(path)));
+            marker_contents[8] = 2;
+        }
+        {
+            auto marker = latest_disk->writeFile("tmp_" + String(path));
+            marker->write(marker_contents.data(), marker_contents.size());
+            marker->finalize();
+        }
+
+        this->keeper_context->setLatestLogDisk(latest_disk);
+        DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        EXPECT_TRUE(regular_disk->existsFile(String(path)));
+        EXPECT_EQ(latest_disk->existsFile(String(path)), unknown_version);
+        EXPECT_EQ(latest_disk->existsFile("tmp_" + String(path)), unknown_version);
+        ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(recovered.getNextEntryIndex(), 2);
+
+        recovered.compact(10);
+        recovered.shutdown();
+        EXPECT_FALSE(regular_disk->existsFile(String(path)));
+        EXPECT_FALSE(latest_disk->existsFile(String(path)));
+        EXPECT_FALSE(latest_disk->existsFile("tmp_" + String(path)));
     }
 }
 
@@ -4619,8 +4685,13 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPrefersHigherPrecedenceMark
     DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
     ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(recovered.getNextEntryIndex(), 2);
-    EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_TRUE(regular_disk->existsFile("changelog_1_10.bin"));
     EXPECT_TRUE(latest_disk->existsFile("changelog_1_10.bin"));
+
+    recovered.compact(10);
+    recovered.shutdown();
+    EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_FALSE(latest_disk->existsFile("changelog_1_10.bin"));
 }
 
 

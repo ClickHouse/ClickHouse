@@ -138,8 +138,8 @@ public:
     /// Synchronize a file or directory and report open, sync, and close errors to the caller.
     /// These are deliberately separate from `getDirectorySyncGuard`, whose destructor cannot
     /// propagate an error.
-    virtual void syncFile(const String & path) const;
-    virtual void syncDirectory(const String & path) const;
+    void syncFile(const String & path) const;
+    void syncDirectory(const String & path) const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 

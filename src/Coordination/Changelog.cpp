@@ -3536,6 +3536,7 @@ struct ChangelogRecoveryCandidate
     ChangelogFileDescriptionPtr description;
     size_t precedence = 0;
     std::optional<ChangelogRecoveryMarker> marker;
+    bool has_unknown_marker_version = false;
 };
 
 }
@@ -3691,6 +3692,7 @@ Changelog::Changelog(
                 unresolved_group_refs.emplace_back(&candidates);
         }
         std::vector<ChangelogFileDescriptionPtr> selected_changelogs(unresolved_group_refs.size());
+        std::vector<std::vector<ChangelogFileDescriptionPtr>> duplicate_changelogs(unresolved_group_refs.size());
 
         if (!unresolved_group_refs.empty())
         {
@@ -3729,6 +3731,28 @@ Changelog::Changelog(
                                     it->description->disk->getName(),
                                     it->marker->path);
                                 it->marker->disk->removeFileIfExists(it->marker->path);
+                                it->marker.reset();
+                                ++it;
+                                continue;
+                            }
+
+                            if (!marker && marker.error() == KeeperMoveMarkerParseError::UnknownVersion)
+                            {
+                                it->has_unknown_marker_version = true;
+                                ++it;
+                                continue;
+                            }
+
+                            if (candidates.size() == 1)
+                            {
+                                LOG_WARNING(
+                                    log,
+                                    "Changelog {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
+                                    it->description->path,
+                                    it->description->disk->getName(),
+                                    it->marker->path);
+                                it->marker->disk->removeFileIfExists(it->marker->path);
+                                it->marker.reset();
                                 ++it;
                                 continue;
                             }
@@ -3747,19 +3771,50 @@ Changelog::Changelog(
                         if (candidates.empty())
                             return;
 
+                        if (std::ranges::all_of(candidates, &ChangelogRecoveryCandidate::has_unknown_marker_version))
+                        {
+                            const auto fallback = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
+                            LOG_WARNING(
+                                log,
+                                "All changelog recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
+                                fallback->description->from_log_index,
+                                fallback->marker->path,
+                                fallback->description->path,
+                                fallback->description->disk->getName());
+                            fallback->marker->disk->removeFileIfExists(fallback->marker->path);
+                            fallback->marker.reset();
+                            fallback->has_unknown_marker_version = false;
+                        }
+
+                        std::erase_if(candidates, [&](const auto & candidate)
+                        {
+                            if (!candidate.has_unknown_marker_version)
+                                return false;
+
+                            LOG_WARNING(
+                                log,
+                                "Keeping changelog {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
+                                candidate.description->path,
+                                candidate.marker->path,
+                                candidate.description->disk->getName());
+                            candidate.description->recovery_marker_path = candidate.marker->path;
+                            duplicate_changelogs[group_index].push_back(candidate.description);
+                            return true;
+                        });
+
                         const auto selected = std::ranges::max_element(candidates, {}, &ChangelogRecoveryCandidate::precedence);
                         for (const auto & candidate : candidates)
                         {
                             if (&candidate != &*selected)
                             {
-                                LOG_TRACE(
+                                LOG_WARNING(
                                     log,
-                                    "Removing duplicate changelog {} from disk {}; keeping {} on disk {}",
+                                    "Keeping duplicate changelog {} on disk {} as a recovery copy; using {} on disk {}",
                                     candidate.description->path,
                                     candidate.description->disk->getName(),
                                     selected->description->path,
                                     selected->description->disk->getName());
-                                candidate.description->disk->removeFileIfExists(candidate.description->path);
+                                duplicate_changelogs[group_index].push_back(candidate.description);
                             }
                         }
                         LOG_TRACE(
@@ -3773,9 +3828,16 @@ Changelog::Changelog(
             pool.wait();
         }
 
-        for (const auto & selected : selected_changelogs)
+        for (size_t group_index = 0; group_index < selected_changelogs.size(); ++group_index)
+        {
+            const auto & selected = selected_changelogs[group_index];
             if (selected)
+            {
                 existing_changelogs.emplace(selected->from_log_index, selected);
+                if (!duplicate_changelogs[group_index].empty())
+                    retained_duplicate_changelogs.emplace(selected->from_log_index, std::move(duplicate_changelogs[group_index]));
+            }
+        }
         for (const auto & marker : orphan_markers)
         {
             LOG_TRACE(log, "Removing orphaned changelog move marker {} from disk {}", marker.second, marker.first->getName());
@@ -4508,7 +4570,11 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                pending_superseded_removes.push_back(removeChangelogAsync(itr->second));
+                auto pending_removes = removeChangelogAndRecoveryCopiesAsync(itr->first, itr->second);
+                pending_superseded_removes.insert(
+                    pending_superseded_removes.end(),
+                    std::make_move_iterator(pending_removes.begin()),
+                    std::make_move_iterator(pending_removes.end()));
                 itr = existing_changelogs.erase(itr);
             }
         }
@@ -4574,7 +4640,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", path);
-            removeChangelogAsync(itr->second);
+            removeChangelogAndRecoveryCopiesAsync(itr->first, itr->second);
             changelog_description.marked_as_deleted = true;
 
             itr = existing_changelogs.erase(itr);
@@ -4844,6 +4910,8 @@ void Changelog::backgroundChangelogOperationsThread()
                     try
                     {
                         changelog.disk->removeFile(changelog.path);
+                        if (changelog.recovery_marker_path)
+                            changelog.disk->removeFileIfExists(*changelog.recovery_marker_path);
                         LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
                     }
                     catch (Exception & e)
@@ -4915,6 +4983,24 @@ ChangelogFileOperationPtr Changelog::removeChangelogAsync(ChangelogFileDescripti
     auto operation = std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{});
     modifyChangelogAsync(operation);
     return operation;
+}
+
+std::vector<ChangelogFileOperationPtr> Changelog::removeChangelogAndRecoveryCopiesAsync(
+    uint64_t from_log_index, ChangelogFileDescriptionPtr changelog)
+{
+    std::vector<ChangelogFileOperationPtr> operations;
+    operations.push_back(removeChangelogAsync(std::move(changelog)));
+
+    if (auto duplicate_it = retained_duplicate_changelogs.find(from_log_index);
+        duplicate_it != retained_duplicate_changelogs.end())
+    {
+        operations.reserve(operations.size() + duplicate_it->second.size());
+        for (auto & duplicate : duplicate_it->second)
+            operations.push_back(removeChangelogAsync(std::move(duplicate)));
+        retained_duplicate_changelogs.erase(duplicate_it);
+    }
+
+    return operations;
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
