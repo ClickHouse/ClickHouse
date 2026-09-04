@@ -455,8 +455,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// `prewhere_info->columns_overwritten_by_chain` is the set of columns the chain
     /// will overwrite. Null those out around `performRequiredConversions` so they are
     /// skipped, then restore them so the step's action sees them in their on-disk form.
-    /// An empty skip set means the chain has nothing to skip, so the conversion is a
-    /// no-op for this step and we leave the columns untouched.
+    /// When the skip set is empty (e.g. a metadata-only / lazy `ALTER MODIFY COLUMN` with no
+    /// chained UPDATE/DELETE) the loop below is a pass-through and every read column is
+    /// converted. Not converting here would leave an on-disk column (e.g. a lazy JSON
+    /// type-hint path still stored as `Dynamic`) advertising the post-`MODIFY` metadata type,
+    /// which later trips `materialize` in `evaluateMissingDefaults` when the column is read
+    /// through the text-index paths (exact-equals direct read or the LIKE fallback).
     ///
     /// A column is exempt from conversion ONLY when its on-disk value is about to be
     /// discarded and replaced before anything genuinely reads it. If a mutation step consumes
@@ -469,7 +473,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     {
         merge_tree_reader->performRequiredConversions(read_columns);
     }
-    else if (!prewhere_info->columns_overwritten_by_chain.empty())
+    else
     {
         const auto & reader_columns = merge_tree_reader->getColumns();
         const auto & skip = prewhere_info->columns_overwritten_by_chain;

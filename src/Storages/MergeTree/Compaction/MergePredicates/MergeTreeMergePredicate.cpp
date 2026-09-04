@@ -156,7 +156,7 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
     }
 
     {
-        uint32_t max_possible_level = storage.getMaxLevelInBetween(left, right);
+        auto [max_possible_level, max_possible_mutation] = storage.getMaxLevelMutationInBetween(left, right);
 
         if (max_possible_level > std::max(left.info.level, right.info.level))
             return std::unexpected(
@@ -166,6 +166,15 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
                     left.name,
                     right.name,
                     max_possible_level));
+
+        if (max_possible_mutation > std::max(left.info.mutation, right.info.mutation))
+            return std::unexpected(
+                PreformattedMessage::create(
+                    "There is an outdated part in a gap between two active parts ({}, {}) with mutation version {} higher than these "
+                    "active parts have",
+                    left.name,
+                    right.name,
+                    max_possible_mutation));
     }
 
     return {};

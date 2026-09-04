@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ja/get-started/index",
-        "ja/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "クイックスタート",
+          "pages": [
+            "ja/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "すべてのユースケース",
+              "pages": [
+                "ja/get-started/setup/cloud",
+                "ja/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ja/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ja/get-started/quickstarts/creating-tables",
+                "ja/get-started/quickstarts/writing-queries",
+                "ja/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "リアルタイム分析",
+              "pages": [
+                "ja/get-started/quickstarts/create-your-first-materialized-view",
+                "ja/get-started/quickstarts/create-your-first-projection",
+                "ja/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "データウェアハウジング",
+              "pages": [
+                "ja/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ja/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "オブザーバビリティ",
+              "pages": [
+                "ja/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
