@@ -4382,6 +4382,14 @@ Possible values:
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
+    DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+
+Possible values:
+
+- 0 — Reading in reverse order with `FINAL` is disabled.
+- 1 — Reading in reverse order with `FINAL` is enabled.
+)", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, true, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only the parts that can actually contribute to the result are read, plus a bounded read-ahead window of at most `max_threads` parts that keeps reads parallel.
 )", 0) \
@@ -8902,9 +8910,12 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+
+The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
+Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
+required to use the text index LIKE evaluation by the dictionary scan.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
@@ -9070,6 +9081,14 @@ Possible values:
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_read_in_order, false, R"(
+Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
+table's sorting key can skip the sort and stop early instead of scanning and sorting.
+
+Off by default: the rewrite that distributes a sort assumes the sort it wraps does not depend on its input
+already being ordered, and a sort that does can be fed rows through an exchange that does not preserve
+order. Only shapes where no exchange survives between the read and the sort are safe today.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
