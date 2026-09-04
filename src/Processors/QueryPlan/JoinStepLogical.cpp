@@ -12,6 +12,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -2208,6 +2209,48 @@ static void serializeNodeList(
     }
 }
 
+static void serializeRelationEstimateInfo(const RelationEstimateInfo & relation, WriteBuffer & out)
+{
+    UInt8 flags = 0;
+    if (relation.estimated_rows.has_value())
+        flags |= 1;
+    if (relation.imprecise_estimate)
+        flags |= 2;
+    if (relation.composite)
+        flags |= 4;
+    writeIntBinary(flags, out);
+
+    writeStringBinary(relation.name, out);
+    if (relation.estimated_rows.has_value())
+        writeVarUInt(*relation.estimated_rows, out);
+    writeIntBinary(static_cast<UInt8>(relation.source), out);
+}
+
+static RelationEstimateInfo deserializeRelationEstimateInfo(ReadBuffer & in)
+{
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+
+    RelationEstimateInfo relation;
+    readStringBinary(relation.name, in);
+    if (flags & 1)
+    {
+        UInt64 estimated_rows = 0;
+        readVarUInt(estimated_rows, in);
+        relation.estimated_rows = estimated_rows;
+    }
+
+    UInt8 source = 0;
+    readIntBinary(source, in);
+    if (source > static_cast<UInt8>(RowEstimateSource::HashTableCache))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown row estimate source {}", static_cast<UInt16>(source));
+    relation.source = static_cast<RowEstimateSource>(source);
+
+    relation.imprecise_estimate = bool(flags & 2);
+    relation.composite = bool(flags & 4);
+    return relation;
+}
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
@@ -2219,6 +2262,41 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+
+    /// The optimizer state that `clone` preserves, minus `disjunctions_optimization_applied`. It is
+    /// omitted for a cache key: `right_hash_table_cache_key` is the output of that hashing, and
+    /// `optimized` and the estimates differ between the single-node and the distributed plan build,
+    /// which is the hash matching that mode exists to keep intact.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE && !ctx.for_cache_key)
+    {
+        UInt8 optimizer_flags = 0;
+        if (optimized)
+            optimizer_flags |= 1;
+        if (imprecise_estimate)
+            optimizer_flags |= 2;
+        if (result_rows_estimation.has_value())
+            optimizer_flags |= 4;
+        writeIntBinary(optimizer_flags, ctx.out);
+
+        if (result_rows_estimation.has_value())
+            writeVarUInt(*result_rows_estimation, ctx.out);
+
+        writeVarUInt(result_column_stats.size(), ctx.out);
+        for (const auto & [column_name, column_stats] : result_column_stats)
+        {
+            writeStringBinary(column_name, ctx.out);
+            writeVarUInt(column_stats.num_distinct_values, ctx.out);
+            writeFloatBinary(column_stats.avg_bytes, ctx.out);
+        }
+
+        writeIntBinary(right_hash_table_cache_key, ctx.out);
+        writeIntBinary(join_output_cache_key, ctx.out);
+
+        serializeRelationEstimateInfo(left_relation, ctx.out);
+        serializeRelationEstimateInfo(right_relation, ctx.out);
+
+        writeStringBinary(table_stats_hint, ctx.out);
+    }
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
@@ -2271,7 +2349,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto result_step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2279,6 +2357,44 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE)
+    {
+        UInt8 optimizer_flags = 0;
+        readIntBinary(optimizer_flags, ctx.in);
+
+        if (optimizer_flags & 4)
+        {
+            UInt64 result_rows_estimation = 0;
+            readVarUInt(result_rows_estimation, ctx.in);
+            result_step->result_rows_estimation = result_rows_estimation;
+        }
+
+        size_t num_column_stats = 0;
+        readVarUInt(num_column_stats, ctx.in);
+        for (size_t i = 0; i < num_column_stats; ++i)
+        {
+            String column_name;
+            readStringBinary(column_name, ctx.in);
+            ColumnStats column_stats;
+            readVarUInt(column_stats.num_distinct_values, ctx.in);
+            readFloatBinary(column_stats.avg_bytes, ctx.in);
+            result_step->result_column_stats.emplace(std::move(column_name), column_stats);
+        }
+
+        readIntBinary(result_step->right_hash_table_cache_key, ctx.in);
+        readIntBinary(result_step->join_output_cache_key, ctx.in);
+
+        result_step->left_relation = deserializeRelationEstimateInfo(ctx.in);
+        result_step->right_relation = deserializeRelationEstimateInfo(ctx.in);
+
+        readStringBinary(result_step->table_stats_hint, ctx.in);
+
+        result_step->optimized = bool(optimizer_flags & 1);
+        result_step->imprecise_estimate = bool(optimizer_flags & 2);
+    }
+
+    return result_step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const

@@ -100,7 +100,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
 /// Version 11 adds the ReadInOrder info in the reading step in the plan
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 11;
+/// Version 12 carries the join optimizer state of `JoinStepLogical`, so a step that arrives over the
+/// wire is in the same optimizer state as one produced by `clone`. A receiver re-optimizes the plan it
+/// receives, and join reordering is not a deterministic function of the fragment alone, so the state
+/// has to travel rather than be re-derived.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -121,6 +125,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 10;
 /// First query-plan serialization version that carries the ReadInOrder info
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 11;
+/// First query-plan serialization version that carries the join optimizer state of `JoinStepLogical`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_OPTIMIZER_STATE = 12;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
