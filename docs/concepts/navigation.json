@@ -235,6 +235,7 @@
             "concepts/features/interfaces/schema-inference",
             "concepts/features/interfaces/documentation-search",
             "concepts/features/interfaces/web-sql",
+            "concepts/features/interfaces/sql-console",
             "concepts/features/interfaces/web-ui-color-coding",
             "concepts/features/interfaces/web-ui-pinned-columns",
             "concepts/features/interfaces/web-ui-result-shaping",
