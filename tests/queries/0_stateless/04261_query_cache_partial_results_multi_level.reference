@@ -1,0 +1,10 @@
+--- multi-level write ---
+--- multi-level creates multiple entries ---
+1
+--- same query hit ---
+A	249500
+--- different aggregation, shared filter ---
+A	499
+--- single-level write ---
+--- single-level count ---
+1
