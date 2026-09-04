@@ -1,7 +1,9 @@
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <TableFunctions/registerTableFunctions.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -18,6 +20,8 @@
 #include <Storages/ObjectStorage/Web/Configuration.h>
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
+#include <Poco/Net/HTTPRequest.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -109,8 +113,31 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        if (!function_node)
+            continue;
+
+        if (function_node->getFunctionName() == "headers")
+        {
             result.push_back(i);
+            continue;
+        }
+
+        if (function_node->getFunctionName() == "equals")
+        {
+            const auto & equals_arguments = function_node->getArguments().getNodes();
+            if (equals_arguments.size() != 2)
+                continue;
+
+            String key;
+            if (const auto * identifier_node = equals_arguments[0]->as<IdentifierNode>())
+                key = identifier_node->getIdentifier().getFullName();
+            else if (const auto * constant_node = equals_arguments[0]->as<ConstantNode>();
+                     constant_node && constant_node->getValue().getType() == Field::Types::Which::String)
+                key = constant_node->getValue().safeGet<String>();
+
+            if (key == "http_method" || key == "method")
+                result.push_back(i);
+        }
     }
 
     return result;
@@ -138,20 +165,15 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
-        {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
-        }
+        size_t count = StorageURL::evalArgsAndCollectHeaders(
+            args, configuration.headers, context, /*evaluate_arguments=*/ true, &configuration.http_method);
+
+        ASTs key_value_args(args.begin() + count, args.end());
+        args.resize(count);
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
 
-        if (headers_ast)
-            args.push_back(headers_ast);
+        args.insert(args.end(), key_value_args.begin(), key_value_args.end());
     }
 
     /// Resolve relative URLs against the url_base setting.
@@ -327,12 +349,16 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
-    /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
-    /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
-    /// take over such queries via the parallel-replicas path — that would silently fall back to the
-    /// old literal/template expansion and read different (or no) files than the non-cluster path.
-    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+    if ((!is_insert_query || columns.empty()) && urlPathHasListableGlobs(source)
+        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+            source);
+
+    const bool use_web_wildcard = !is_insert_query
+        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+        && urlPathHasListableGlobs(source);
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
@@ -414,7 +440,15 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
         String sample_path = filename;
 
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        if (urlPathHasListableGlobs(filename)
+            && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+                filename);
+
+        if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+            && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
 
@@ -442,6 +476,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.http_method,
                 std::nullopt,
                 context).first;
         }
@@ -451,6 +486,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.http_method,
                 std::nullopt,
                 context);
         }
@@ -497,17 +533,18 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 ```
 
 ## Parameters {#parameters}
 
 | Parameter   | Description                                                                                                                                            |
 |-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
+| `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly; the method can be overridden with the `http_method` argument); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`. `PUT` applies to writes only. Also available as the `http_method`/`method` key of a [named collection](/reference/operations/named-collections). |
 
 ## Returned value {#returned-value}
 
@@ -519,6 +556,12 @@ Getting the first 3 lines of a table that contains columns of `String` and [UInt
 
 ```sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+Reading from an HTTP server that accepts only `POST` requests:
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', http_method='POST') LIMIT 3;
 ```
 
 Inserting data from a `URL` into a table:
