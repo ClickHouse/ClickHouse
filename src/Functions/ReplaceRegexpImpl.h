@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
@@ -159,7 +160,8 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
-    static void processString(
+    /// Returns whether at least one match was found.
+    static bool processString(
         const char * haystack_data,
         size_t haystack_length,
         ColumnString::Chars & res_data,
@@ -172,6 +174,7 @@ struct ReplaceRegexpImpl
         std::string_view haystack(haystack_data, haystack_length);
         std::string_view matches[max_captures];
 
+        bool found_match = false;
         size_t copy_pos = 0;
         size_t match_pos = 0;
 
@@ -183,6 +186,8 @@ struct ReplaceRegexpImpl
 
             if (searcher.Match(haystack, match_pos, haystack_length, re2::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
+                found_match = true;
+
                 const auto & match = matches[0]; /// Complete match
                 size_t bytes_to_copy = (match.data() - haystack.data()) - copy_pos;
 
@@ -257,6 +262,8 @@ struct ReplaceRegexpImpl
                 break;
             }
         }
+
+        return found_match;
     }
 
     /// `processString` for a JIT-compiled matcher (see `CompileRegexp.h`). Mirrors the loop above,
@@ -360,6 +367,238 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value and copy the
+    /// cached result for repeats. Only worth it for RE2 matches: a JIT-compiled match is about as cheap as
+    /// the hash table probe it would save, which is why the JIT loop processes every row directly.
+    /// A row without a match comes out identical to its input, so caching it saves only the match attempt,
+    /// and for short-circuiting patterns such as '^foo' that attempt is cheaper than hashing the haystack.
+    /// Once a block proves to be almost entirely non-matching, a capture-free existence check therefore runs
+    /// first and rejected rows are copied through directly, at the cost of the plain loop. While the cache
+    /// is enabled, rejects are cached like matches, so repeats of a rejecting value skip the re-check; only
+    /// after the distinct-ratio guard disables the cache do rejected rows bypass hashing entirely.
+    /// `get_haystack(i)` must stay valid for the whole call.
+    template <typename GetHaystack>
+    static void processStringsDeduplicated(
+        GetHaystack && get_haystack,
+        size_t input_rows_count,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        ColumnString::Offset & res_offset,
+        const re2::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions,
+        CancellationBudget & budget)
+    {
+        struct CachedResult
+        {
+            UInt64 start;
+            UInt64 length;
+            bool matched;
+        };
+
+        HashMap<std::string_view, CachedResult> results_cache;
+        bool map_enabled = true;
+        /// The heuristics are re-evaluated once per window of rows. The window is small so that even a
+        /// block far shorter than the default `max_block_size` samples its match ratio, and so that a
+        /// wrong decision is corrected within a bounded number of rows.
+        static constexpr size_t ratio_check_window = 32;
+        /// The distinct ratio needs a longer sample: values that repeat with a longer cycle would be
+        /// written off as distinct before the first repeat can arrive.
+        static constexpr size_t distinct_ratio_window = 256;
+        static_assert(distinct_ratio_window % ratio_check_window == 0);
+        /// The number of rows following a sampled haystack that are compared against it, and so the
+        /// longest cycle of values the sample can catch.
+        static constexpr size_t sample_probe_rows = 32;
+        static_assert(sample_probe_rows < distinct_ratio_window);
+
+        bool precheck_non_matching = false;
+        size_t rows_in_window = 0;
+        size_t matched_in_window = 0;
+        size_t cache_size_at_distinct_check = 0;
+
+        std::string_view prev_haystack;
+        bool has_prev_haystack = false;
+        CachedResult prev_result{0, 0, false};
+
+        /// While the cache is off, one haystack per distinct-ratio window is kept as a sample and the
+        /// cache comes back on the spot as soon as a row equal to it arrives, so that a block whose
+        /// remainder turns repetitive after a mostly-distinct window is not stuck on the plain path for
+        /// the rest of the block. Only the rows right after the sample are compared against it: a compare
+        /// of distinct values runs to the first differing byte, which for equal-length values sharing a
+        /// long prefix (URLs that differ only in the tail) is about the cost of the copy every row pays
+        /// anyway, so comparing every row would slow the mostly-distinct blocks the guard exists to
+        /// protect. Comparing the consecutive rows that follow the sample rather than one row per ratio
+        /// window catches every cycle of up to `sample_probe_rows` values regardless of its length: probes
+        /// spaced at a fixed stride only ever land on the cycle positions the stride happens to reach (a
+        /// stride of 32 never meets a cycle of 9). An all-distinct block never re-enables the cache at
+        /// all, and a value that recurs only after more rows than the probes cover escapes the sample
+        /// just as a value that recurs after more than a window escapes the distinct ratio.
+        std::string_view sample_haystack;
+
+        /// `haystack_bytes_read` is the size of the haystack the compare or lookup scanned to find the
+        /// entry. Charging only the copied result would let a run of repeated multi-megabyte haystacks
+        /// with a tiny cached result advance the budget by little more than the per-row unit.
+        auto copy_cached = [&](const CachedResult & cached, size_t haystack_bytes_read)
+        {
+            res_data.resize(res_data.size() + cached.length);
+            /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
+            /// slack that memcpySmallAllowReadWriteOverflow15 requires.
+            if (cached.length)
+                memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
+            res_offset += cached.length;
+            budget.chargeUnits((haystack_bytes_read + cached.length) / CancellationBudget::bytes_per_unit);
+        };
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            budget.charge();
+
+            const std::string_view haystack = get_haystack(i);
+
+            /// The checkpoint runs ahead of every fast path below, so every row advances it and no
+            /// `continue` can starve it: a block of pre-check rejects, of adjacent duplicates, or of
+            /// cache-disabled rows all keep re-evaluating the heuristics on schedule. The match ratio
+            /// covers only the last window, so the pre-check follows a shift between rejecting and
+            /// matching runs within at most two windows regardless of the block's shape.
+            if (rows_in_window == ratio_check_window)
+            {
+                precheck_non_matching = matched_in_window * 20 < ratio_check_window;
+                if (i % distinct_ratio_window == 0)
+                {
+                    /// While the cache is enabled every row either reaches it or is an adjacent duplicate
+                    /// (a repeat the caching strategy serves), so the insertions since the previous check
+                    /// count the distinct rows of the last window. The ratio covers only that window rather
+                    /// than the whole prefix: a repetitive prefix must not keep the cache on for a
+                    /// mostly-distinct remainder of the block, where the lookups would pay for nothing.
+                    if (map_enabled)
+                    {
+                        const size_t distinct_in_window = results_cache.size() - cache_size_at_distinct_check;
+                        if (distinct_in_window * 10 > distinct_ratio_window * 9)
+                        {
+                            map_enabled = false;
+                            /// Not `clearAndShrink`: that frees the buffer and leaves the table unusable,
+                            /// while the sample below may bring the cache back later in the block.
+                            results_cache.clear();
+                        }
+                        cache_size_at_distinct_check = results_cache.size();
+                    }
+
+                    if (!map_enabled)
+                        sample_haystack = haystack;
+                }
+                rows_in_window = 0;
+                matched_in_window = 0;
+            }
+            ++rows_in_window;
+
+            /// The sample is taken on the first row of a distinct-ratio window, so the probed rows are
+            /// the ones right after it and the sampled row never counts as a repeat of itself.
+            /// The recurrence proves the rows are not all-distinct, so the cache is rebuilt from this row
+            /// on rather than at the next distinct-ratio boundary: a block shorter than a boundary apart
+            /// would otherwise end before the recurrence could be acted on. The distinct ratio of the
+            /// window the rebuilt cache runs into judges it again, so a wrong re-enable costs a window of
+            /// lookups, while a cycle of a few values keeps the cache for good.
+            const size_t offset_in_distinct_window = i % distinct_ratio_window;
+            if (!map_enabled && offset_in_distinct_window != 0 && offset_in_distinct_window <= sample_probe_rows
+                && haystack == sample_haystack)
+                map_enabled = true;
+
+            const UInt64 result_start = res_offset;
+            bool row_matched = false;
+
+            if (map_enabled)
+            {
+                /// Ahead of the lookup: an adjacent duplicate is served by a compare against a value that
+                /// is still cache-hot, which costs about as much as the copy both paths pay, while hashing
+                /// the haystack reads all of it again. A distinct row loses only a compare that exits at
+                /// the first differing byte (or at the length check), and while the cache is enabled the
+                /// window is repetitive enough for the hits to pay for those misses.
+                if (has_prev_haystack && haystack == prev_haystack)
+                {
+                    copy_cached(prev_result, haystack.size());
+                    matched_in_window += prev_result.matched;
+                    res_offsets[i] = res_offset;
+                    continue;
+                }
+
+                typename HashMap<std::string_view, CachedResult>::LookupResult it;
+                bool inserted = false;
+                results_cache.emplace(haystack, it, inserted);
+                if (!inserted)
+                {
+                    copy_cached(it->getMapped(), haystack.size());
+                    row_matched = it->getMapped().matched;
+                }
+                else
+                {
+                    /// Hashing the key read the whole haystack before any of the paths below charge for it.
+                    budget.chargeUnits(haystack.size() / CancellationBudget::bytes_per_unit);
+                    /// A rejected row is cached exactly like a processed one: it produces the same
+                    /// output either way, and caching it is what spares its later repeats the reject.
+                    /// The reject runs here rather than ahead of the lookup so that non-adjacent repeats
+                    /// of a rejecting value are served by the cache instead of re-running a reject that
+                    /// may have to scan the whole haystack.
+                    /// The check scans the haystack whichever way it goes, and a hit then scans it a
+                    /// second time inside `processString`, which charges only what it copies. Charged
+                    /// ahead of the outcome so that a matching row does not advance the budget by less
+                    /// than a rejected one and postpone the cancellation checkpoint by a whole scan.
+                    bool precheck_rejected = false;
+                    if (precheck_non_matching)
+                    {
+                        budget.charge(haystack.size());
+                        precheck_rejected
+                            = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+                    }
+
+                    if (precheck_rejected)
+                    {
+                        res_data.resize(res_data.size() + haystack.size());
+                        memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                        res_offset += haystack.size();
+                        budget.charge();
+                        row_matched = false;
+                    }
+                    else
+                        row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                    it->getMapped() = {result_start, res_offset - result_start, row_matched};
+                }
+            }
+            else
+            {
+                /// No per-row compare against the previous value here: the cache is off because the
+                /// window was mostly distinct, so an adjacent duplicate is rare while every distinct row
+                /// would pay the compare, and the sample probe above brings the cache (and with it the
+                /// adjacent-duplicate compare) back once the rows turn repetitive. A rejected row plus
+                /// the copy is exactly the plain loop's cost. It is non-matching by definition, so
+                /// leaving `matched_in_window` untouched counts it correctly.
+                /// The attempt is charged ahead of its outcome, as on the cached path above.
+                bool precheck_rejected = false;
+                if (precheck_non_matching)
+                {
+                    budget.charge(haystack.size());
+                    precheck_rejected
+                        = !searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0);
+                }
+
+                if (precheck_rejected)
+                {
+                    res_data.resize(res_data.size() + haystack.size());
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+                    res_offset += haystack.size();
+                    budget.charge();
+                }
+                else
+                    row_matched = processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+            }
+
+            matched_in_window += row_matched;
+            prev_haystack = haystack;
+            has_prev_haystack = true;
+            prev_result = {result_start, res_offset - result_start, row_matched};
+            res_offsets[i] = res_offset;
+        }
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -425,21 +664,32 @@ struct ReplaceRegexpImpl
             capture_ends.resize(n);
         }
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (matcher)
         {
-            budget.charge();
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                budget.charge();
 
-            size_t from = haystack_offsets[i - 1];
+                size_t from = haystack_offsets[i - 1];
 
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+                const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
 
-            if (matcher)
                 processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions, budget);
-            else
-                processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-            res_offsets[i] = res_offset;
+                res_offsets[i] = res_offset;
+            }
+            return;
         }
+
+        processStringsDeduplicated(
+            [&](size_t i)
+            {
+                const size_t from = haystack_offsets[i - 1];
+                return std::string_view(
+                    reinterpret_cast<const char *>(haystack_data.data() + from),
+                    static_cast<size_t>(haystack_offsets[i] - from));
+            },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
     }
 
     static void vectorVectorConstant(
@@ -661,17 +911,9 @@ struct ReplaceRegexpImpl
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures, budget);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            budget.charge();
-
-            size_t from = i * n;
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = n;
-
-            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-            res_offsets[i] = res_offset;
-        }
+        processStringsDeduplicated(
+            [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
     }
 };
 
