@@ -95,7 +95,7 @@ struct WireCodec<ActionsDAG>
     static void write(const ActionsDAG & value, IQueryPlanStep::Serialization & ctx) { value.serialize(ctx.out, ctx.registry); }
     static void read(ActionsDAG & value, IQueryPlanStep::Deserialization & ctx)
     {
-        value = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        value = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
     }
 };
 
@@ -664,18 +664,17 @@ typename Manifest::Wire readManifestPayload(const Manifest & manifest, IQueryPla
     return wire;
 }
 
-/// Fills the settings channel: an entry is written exactly when the value differs from the
-/// registered default. The frame raises the reader requirement for a setting a target does not know.
+/// Fills the settings channel: every setting a step declares is written, whatever its value. A
+/// reader takes the value off the wire rather than reconstructing an absent one from its own
+/// default, so a default that differs between two builds cannot change what the reader applies.
+/// These per-step setting lists are small next to the payloads. The frame raises the reader
+/// requirement for a setting a target does not know.
 template <typename Manifest>
 void writeManifestSettings(const Manifest & manifest, const typename Manifest::Wire & wire, QueryPlanSerializationSettings & settings)
 {
-    static const QueryPlanSerializationSettings defaults;
     WireDetail::forEach(manifest.setting_entries, [&](const auto & entry)
     {
-        using Value = typename std::remove_cvref_t<decltype(entry)>::Value;
-        const Value & value = wire.*entry.member;
-        if (value != static_cast<Value>(defaults[*entry.setting]))
-            settings[*entry.setting] = value;
+        settings[*entry.setting] = wire.*entry.member;
     });
 }
 

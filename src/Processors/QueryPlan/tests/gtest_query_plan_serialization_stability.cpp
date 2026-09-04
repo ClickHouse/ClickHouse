@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
@@ -130,4 +131,43 @@ TEST(QueryPlanSerializationStability, ActionsDAGEncoding)
         dag.serialize(out, registry);
     });
     EXPECT_EQ(actual, "03000178040000000179040000040a706c757328782c207929040200010004706c75730200010102");
+}
+
+/// A count inside a codec cannot exceed the bytes left in the frame: every element it introduces
+/// takes at least one wire byte. A payload that claims a huge count must be refused before it
+/// allocates, not read as a request for gigabytes. A per-step payload reads from a fixed-size
+/// buffer, so the bytes remaining are the hard ceiling.
+TEST(QueryPlanCodecAllocation, ACountAbeyondTheFrameIsRefusedNotAllocated)
+{
+    const UInt64 absurd_count = UInt64{1} << 60;
+
+    {
+        WriteBufferFromOwnString out;
+        writeVarUInt(absurd_count, out);
+        out.finalize();
+        ReadBufferFromString in(out.str());
+        SortDescription sort_description;
+        EXPECT_THROW(deserializeSortDescription(sort_description, in), Exception);
+    }
+
+    {
+        WriteBufferFromOwnString out;
+        writeVarUInt(absurd_count, out);
+        out.finalize();
+        ReadBufferFromString in(out.str());
+        AggregateDescriptions aggregates;
+        EXPECT_THROW(deserializeAggregateDescriptions(aggregates, in, /*max_type_complexity=*/0), Exception);
+    }
+
+    {
+        WriteBufferFromOwnString out;
+        writeVarUInt(absurd_count, out); /// nodes_size
+        out.finalize();
+        ReadBufferFromString in(out.str());
+        DeserializedSetsRegistry registry;
+        /// `max_elements` is the frame size: the whole payload is only a few bytes here.
+        EXPECT_THROW(
+            ActionsDAG::deserialize(in, registry, getContext().context, /*max_type_complexity=*/0, /*max_elements=*/out.str().size()),
+            Exception);
+    }
 }

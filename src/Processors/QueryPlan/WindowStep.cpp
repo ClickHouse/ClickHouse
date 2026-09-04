@@ -272,6 +272,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
+    /// Each function takes at least one wire byte, so a count above what is left is malformed;
+    /// caps the allocation against a payload that reads from a bounded in-memory frame.
+    if (num_functions > in.available())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "WindowStep claims {} functions but only {} payload bytes remain", num_functions, in.available());
 
     std::vector<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
@@ -280,6 +285,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_argument_names = 0;
         readVarUInt(num_argument_names, in);
+        if (num_argument_names > in.available())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "WindowStep function claims {} argument names but only {} payload bytes remain",
+                num_argument_names, in.available());
         func.argument_names.resize(num_argument_names);
         for (auto & argument_name : func.argument_names)
             readStringBinary(argument_name, in);

@@ -258,26 +258,33 @@ TEST(StepManifest, DescriptionNamesEveryNode)
     EXPECT_NE(description.find("  initializers 00000000\n"), String::npos);
 }
 
-TEST(StepManifest, DistinctSettingsAreWrittenOnlyWhenChanged)
+TEST(StepManifest, DistinctSettingsAreAlwaysWritten)
 {
     registerStepsOnce();
     auto header = makeHeader();
 
+    /// Every setting a step declares is written whatever its value, so a reader takes it off the
+    /// wire instead of reconstructing it from a default that may differ between versions.
+    const std::vector<String> declared{"distinct_overflow_mode", "max_bytes_in_distinct", "max_rows_in_distinct"};
+
+    auto changed_names = [](const QueryPlanSerializationSettings & settings)
+    {
+        std::vector<String> names;
+        for (const auto & entry : settings.getChangedEntries())
+            names.push_back(entry.name);
+        std::sort(names.begin(), names.end());
+        return names;
+    };
+
     DistinctStep at_defaults(header, SizeLimits{}, 0, Names{"x"}, false);
     QueryPlanSerializationSettings settings;
     at_defaults.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    EXPECT_TRUE(settings.getChangedEntries().empty());
+    EXPECT_EQ(changed_names(settings), declared);
 
     DistinctStep limited(header, SizeLimits{5, 0, OverflowMode::BREAK}, 0, Names{"x"}, false);
     QueryPlanSerializationSettings changed;
     limited.serializeSettings(changed, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    auto entries = changed.getChangedEntries();
-    ASSERT_EQ(entries.size(), 2u);
-    std::vector<String> names;
-    for (const auto & entry : entries)
-        names.push_back(entry.name);
-    std::sort(names.begin(), names.end());
-    EXPECT_EQ(names, (std::vector<String>{"distinct_overflow_mode", "max_rows_in_distinct"}));
+    EXPECT_EQ(changed_names(changed), declared);
 
     /// The wire struct's initializers are the registered defaults of the settings it binds.
     QueryPlanSerializationSettings defaults;

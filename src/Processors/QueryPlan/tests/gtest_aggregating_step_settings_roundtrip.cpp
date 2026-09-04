@@ -150,23 +150,20 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
 
 /// A receiver predating the name serializes String keys the way `false` does, so both values must reach
 /// the receiver, and at every version: `v25.8.12.129-lts` lacks the name while `v25.8.13.73-lts` has it, yet
-/// both advertise version 0. A legacy stream names the setting whatever its value; the framed format names it
-/// only when the value differs from the default, and the receiver reconstructs the default for an absent name.
+/// both advertise version 0. The framed format sends every setting a step declares whatever its value, and
+/// the legacy stream names this one unconditionally too, so the name is on the wire in every case.
 TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheReceiverAtEveryVersion)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    const bool default_value = QueryPlanSerializationSettings{}[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
     for (UInt64 version : {UInt64{0}, UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
     {
-        const bool framed = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
         for (bool value : {false, true})
         {
-            const bool named_on_wire = !framed || value != default_value;
-            EXPECT_EQ(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(value), version), named_on_wire)
+            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(value), version))
                 << "version " << version << ", value " << value;
-            EXPECT_EQ(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version), named_on_wire)
+            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version))
                 << "version " << version << ", value " << value;
 
             /// And survive the full write -> read round trip, not merely appear on the wire.

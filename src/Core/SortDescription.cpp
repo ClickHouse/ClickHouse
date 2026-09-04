@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
 }
 
 void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
@@ -316,6 +317,11 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
 {
     size_t size = 0;
     readVarUInt(size, in);
+    /// Each column takes at least one wire byte, so a count above what is left is malformed; caps
+    /// the resize against a payload that reads from a bounded in-memory frame.
+    if (size > in.available())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Sort description claims {} columns but only {} payload bytes remain", size, in.available());
     sort_description.resize(size);
     for (auto & desc : sort_description)
     {

@@ -282,7 +282,7 @@ QueryPlanStepPtr TotalsHavingStep::deserializeLegacy(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, ctx.in.available());
     }
 
     return std::make_unique<TotalsHavingStep>(

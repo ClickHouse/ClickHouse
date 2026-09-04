@@ -15,6 +15,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+    /// Every element takes at least one wire byte, so a count above what is left is malformed.
+    /// Caps a resize against a payload that reads from a bounded in-memory frame.
+    void checkCountFitsPayload(UInt64 count, const ReadBuffer & in, const char * what)
+    {
+        if (count > in.available())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Aggregate descriptions claim {} {} but only {} payload bytes remain", count, what, in.available());
+    }
 }
 
 void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
@@ -199,6 +212,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
+    checkCountFitsPayload(num_aggregates, in, "aggregates");
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
@@ -206,6 +220,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 
         UInt64 num_args = 0;
         readVarUInt(num_args, in);
+        checkCountFitsPayload(num_args, in, "argument names");
         aggregate.argument_names.resize(num_args);
 
         DataTypes argument_types;
@@ -222,6 +237,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 
         UInt64 num_params = 0;
         readVarUInt(num_params, in);
+        checkCountFitsPayload(num_params, in, "parameters");
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
             param = readFieldBinary(in);
@@ -257,6 +273,7 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
+    checkCountFitsPayload(num_aggregates, in, "aggregates");
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
@@ -274,6 +291,7 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
 
         UInt64 num_params = 0;
         readVarUInt(num_params, in);
+        checkCountFitsPayload(num_params, in, "parameters");
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)
             param = readFieldBinary(in);
