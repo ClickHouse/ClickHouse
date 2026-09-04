@@ -12,7 +12,7 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=[
-        "configs/cpu_slot_parking.xml",
+        "configs/00_cpu_slot_parking.xml",
     ],
     with_zookeeper=True,
 )
