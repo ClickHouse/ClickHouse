@@ -55,6 +55,22 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, v FROM ${TABLE} ORDER BY id FORMAT TSV"
+
+# The manifest `data_file.partition` record must be declared from the persisted partition
+# spec: the field name and `field-id` written into the manifest Avro schema have to match
+# the spec in the table metadata (the spec assigns ids from 1001, so a manifest that falls
+# back to the `1000 + i` default would not match). The reader is positional and would not
+# notice a mismatch, so inspect the written files directly.
+SPEC_FIELD_ID=$(grep -ho '"field-id" : [0-9]*' "${TABLE_PATH}metadata/"*.json | grep -o '[0-9]*$' | sort -u)
+echo "spec field-id: ${SPEC_FIELD_ID}"
+for manifest in "${TABLE_PATH}metadata/"*.avro; do
+    # Skip manifest lists: only manifest files carry the `data_file.partition` record.
+    if grep -a -q '"data_file"' "${manifest}"; then
+        # The Avro `int` partition field must be the spec field, keyed by the spec `field-id`.
+        grep -a -o "{\"field-id\":${SPEC_FIELD_ID},\"name\":\"[^\"]*\",\"type\":\"int\"}" "${manifest}" | sed 's/^/manifest schema: /'
+        ${CLICKHOUSE_CLIENT} --query "SELECT DISTINCT 'manifest partition names: ' || arrayStringConcat(tupleNames(data_file.partition), ',') FROM file('${manifest}', Avro) FORMAT TSV"
+    fi
+done | sort -u
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
 
 echo "--- Float32 partition (Avro float from Field::Float64) ---"

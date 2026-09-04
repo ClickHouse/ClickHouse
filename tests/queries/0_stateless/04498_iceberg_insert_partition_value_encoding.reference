@@ -12,6 +12,9 @@ y
 2	b
 3	c
 4	d
+spec field-id: 1001
+manifest partition names: id
+manifest schema: {"field-id":1001,"name":"id","type":"int"}
 --- Float32 partition (Avro float from Field::Float64) ---
 1.25	a
 2.5	b
