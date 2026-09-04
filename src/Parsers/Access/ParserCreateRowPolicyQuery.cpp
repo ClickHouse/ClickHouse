@@ -442,11 +442,11 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the conditions from the permissive policies that apply to the user are non-zero) AND
-                 (all of the conditions from the restrictive policies that apply to the user are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
 
-With the default server configuration, if no permissive condition applies to the user, the first condition is not applied and only the restrictive policies decide, so a user to whom no policy applies at all sees every row.
+If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom none of a table's policies apply therefore sees every row in it, unless `access_control_improvements.throw_on_unmatched_row_policies` is enabled, which throws an exception instead.
 
 For example, the following policies:
 
