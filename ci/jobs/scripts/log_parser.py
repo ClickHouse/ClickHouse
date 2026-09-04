@@ -28,6 +28,11 @@ class FuzzerLogParser:
     # of any kind, so keep every failure-carrying pattern listed here.
     ERROR_PATTERNS = [
         (
+            "AST Fuzzer oracle mismatch",
+            "is_oracle_mismatch",
+            r"AST Fuzzer oracle mismatch detected.*",
+        ),
+        (
             "Sanitizer",
             "is_sanitizer_error",
             SANITIZER_ERROR_PATTERN,
@@ -193,6 +198,7 @@ class FuzzerLogParser:
         is_killed_by_signal = False
         is_segfault = False
         is_memory_limit_exceeded = False
+        is_oracle_mismatch = False
 
         error_output = None
         matched_pattern = None
@@ -234,9 +240,28 @@ class FuzzerLogParser:
                     is_segfault = True
                 elif flag_name == "is_memory_limit_exceeded":
                     is_memory_limit_exceeded = True
+                elif flag_name == "is_oracle_mismatch":
+                    is_oracle_mismatch = True
                 break
 
         if not error_output:
+            # None of the specific patterns matched, but the server may still have
+            # logged a <Fatal> message the parser does not classify (e.g. a new
+            # fuzzer oracle). Surface that message so the report shows what actually
+            # happened, and only fall back to "Unknown error" when there is no
+            # <Fatal> at all.
+            generic_fatal = self.get_generic_fatal()
+            if generic_fatal:
+                fatal_lines = generic_fatal.splitlines()
+                result_name = fatal_lines[0].removesuffix(".")
+                stack_trace = self.get_stack_trace()
+                stack_trace_id = self.get_stack_trace_id(stack_trace)
+                if stack_trace_id:
+                    result_name += f" (STID: {stack_trace_id})"
+                info = f"Error:\n{generic_fatal}\n"
+                if stack_trace:
+                    info += "---\n\nStack trace:\n" + stack_trace + "\n"
+                return result_name, info, files
             return (
                 self.UNKNOWN_ERROR,
                 "Lost connection to server. See the logs.\n",
@@ -316,6 +341,18 @@ class FuzzerLogParser:
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
             result_name = "Server unresponsive: memory limit exceeded"
+        elif is_oracle_mismatch:
+            # The oracle kind (e.g. "TLP Aggregate") is logged on a line of the
+            # form "<kind> oracle mismatch!" after the "Fuzzed query:" line. Fold
+            # it into the failure name so distinct oracles group separately in CI
+            # DB, while a missing kind still yields a stable generic name. The
+            # "Fuzzed query:" line captured in `error_output` is kept as the info.
+            result_name = "AST Fuzzer oracle mismatch"
+            for line in error_lines:
+                match = re.search(r"(\w[\w ]*?) oracle mismatch!", line)
+                if match and "AST Fuzzer" not in match.group(1):
+                    result_name = f"AST Fuzzer oracle mismatch: {match.group(1).strip()}"
+                    break
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
@@ -417,6 +454,33 @@ class FuzzerLogParser:
             info += stack_trace + "\n"
 
         return result_name, info, files
+
+    def get_generic_fatal(self):
+        # Fallback used when no specific pattern matched but the server still
+        # logged a <Fatal> message. Return the message (with a few following
+        # lines of context) with the "<Fatal> " prefix stripped, so the report
+        # shows the real message instead of a bare "Unknown error". Returns None
+        # when there is no <Fatal> line to surface.
+        if not self.server_log:
+            return None
+        output = Shell.get_output(
+            f"rg --text -A 10 -o '<Fatal> .*' {self.server_log} | head -n10"
+        ).strip()
+        if not output:
+            return None
+        lines = output.splitlines()
+        marker = "<Fatal> "
+        marker_pos = lines[0].find(marker)
+        if marker_pos != -1:
+            lines[0] = lines[0][marker_pos + len(marker) :]
+        # Stop at the next server log line so an unrelated later message is not
+        # folded into this one.
+        for i, line in enumerate(lines):
+            if i > 0 and "] {" in line and "} <" in line:
+                lines = lines[:i]
+                break
+        message = "\n".join(lines).strip()
+        return message or None
 
     def get_sanitizer_stack_trace(self):
         # Extract the full sanitizer report: description, all stack traces,
