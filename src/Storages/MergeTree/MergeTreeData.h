@@ -480,6 +480,10 @@ public:
         /// For Summing, Coalescing and Aggregating modes.
         bool allow_tuple_element_aggregation = false;
 
+        /// Derive `allow_tuple_element_aggregation` from the settings, with the same engine-mode gating as
+        /// table construction. Must be called after parseFromEngineAST, which takes no settings.
+        void setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings);
+
         /// Check that needed columns are present and have correct types.
         /// `sanity_checks` is true only when the table is being created (not attached/loaded); some
         /// checks that would break the loading of already-existing tables are gated on it.
@@ -500,6 +504,11 @@ public:
                 && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
                 && graphite_params == rhs.graphite_params;
         }
+
+        /// Build MergingParams from an engine name and its argument list AST (may be null). Accepts only
+        /// modern extended-syntax merge parameters, not legacy positional date/granularity/zookeeper ones.
+        /// Throws on an unknown or non-MergeTree engine name, or on malformed arguments.
+        static MergingParams parseFromEngineAST(const String & engine_name, const ASTPtr & arguments, ContextPtr context);
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -1260,6 +1269,11 @@ public:
     {
         return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
     }
+
+    /// Validate the MODIFY ENGINE target against the metadata this same ALTER produces. Must be called
+    /// before the rewritten CREATE is persisted, so a rejection leaves no invalid engine clause on disk.
+    /// Does not swap the live `merging_params`: the new semantics apply on the next table load.
+    void applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context);
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,

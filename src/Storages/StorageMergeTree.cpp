@@ -27,6 +27,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
@@ -480,7 +481,8 @@ void StorageMergeTree::alter(
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata old_metadata_for_rollback = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = old_metadata_for_rollback;
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
@@ -537,6 +539,12 @@ void StorageMergeTree::alter(
         /// Mirrors the pattern in `StorageReplicatedMergeTree::alter`.
         {
             auto create_ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, local_context);
+            /// Engine replacement in applyMetadataChangesToCreateQuery is driven by `new_engine`, so a
+            /// rollback needs the pre-ALTER clause to be able to put it back.
+            if (new_metadata.new_engine)
+                if (const auto * create = create_ast->as<ASTCreateQuery>())
+                    if (create->storage && create->storage->engine)
+                        old_metadata_for_rollback.new_engine = create->storage->engine->clone();
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
         }
 
@@ -599,6 +607,11 @@ void StorageMergeTree::alter(
                 /// after the commit, leaving durable metadata ahead of the in-memory state.
                 /// The CREATE-AST pre-validation above does not cover these checks. See #80648.
                 checkMetadataProperties(new_metadata, old_metadata, local_context);
+
+                /// Must run before alterTable() (so a rejection leaves no invalid engine clause on disk)
+                /// and after changeSettings (so getSettings() sees a MODIFY SETTING in the same statement).
+                if (new_metadata.new_engine)
+                    applyEngineModification(new_metadata.new_engine, new_metadata, local_context);
 
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
@@ -697,7 +710,10 @@ void StorageMergeTree::alter(
                     /// durably succeeds. See #80648.
                     try
                     {
-                        setProperties(old_metadata, new_metadata, false, local_context);
+                        /// `*metadata_snapshot`, not `old_metadata`: the latter carries the pre-ALTER
+                        /// engine for the durable rewrite below, and a live `new_engine` would read as
+                        /// an engine change still pending.
+                        setProperties(*metadata_snapshot, new_metadata, false, local_context);
                     }
                     catch (...)
                     {
