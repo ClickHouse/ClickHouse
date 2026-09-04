@@ -227,7 +227,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
     {
         checksums.addFile(
-            projection_name + ".proj",
+            IDataPartProjectionStorage::getProjectionDirectoryName(projection_name, /*is_temp=*/false),
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
     }

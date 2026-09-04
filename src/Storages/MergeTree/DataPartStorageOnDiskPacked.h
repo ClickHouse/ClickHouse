@@ -11,7 +11,7 @@ namespace DB
 
 /// A storage for data part that stores all files of part in one archive
 /// (except projections and several files listed below).
-class DataPartStorageOnDiskPacked final : public DataPartStorageOnDiskBase
+class DataPartStorageOnDiskPacked : public DataPartStorageOnDiskBase
 {
 public:
     static constexpr auto DATA_FILE_EXTENSION = PackedFilesIO::ARCHIVE_EXTENSION;
@@ -33,9 +33,9 @@ public:
 
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Packed; }
 
-    MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    MutableDataPartStoragePtr getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    DataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartProjectionStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
+    MutableDataPartProjectionStoragePtr getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
+    DataPartProjectionStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
     bool existsDirectory(const std::string & file_name) const override;
@@ -151,18 +151,6 @@ private:
         const ReadSettings & settings,
         std::optional<size_t> read_hint) const override;
 
-    /// Override the base-class disk probe: on packed-part storage skp_idx.packed is a virtual
-    /// file inside data.packed and can't be opened via disk->readFile against its part-relative
-    /// path. We route the inner-archive header read through the outer reader instead. The archive
-    /// helpers (copy/filter/seedFrom/hasSkipIndicesPackedArchive) rely on this returning the inner
-    /// reader for packed source parts.
-    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const override;
-
-    /// Disable the base file-read overlay for packed storage: its standalone-archive read
-    /// composition can't reach a skp_idx.packed that lives inside data.packed. The *Impl hooks above
-    /// serve the index substreams instead (via the inner-archive composition).
-    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
-
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();
     void finalizeWriter();
@@ -175,7 +163,14 @@ private:
     template <typename Op>
     void executeBinaryWriteOperation(const String & from_name, const String & to_name, Op && op);
 
-    /// Private constructor to create a storage for projection with shared transaction.
+    MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;
+    NameSet getActualFileNamesOnDisk(const NameSet & file_names) const override;
+
+    /// The index component reads the inner skp_idx.packed through this storage's outer reader.
+    friend class DataPartIndexStorageOnDiskPacked;
+
+protected:
+    /// Constructor for a storage with a shared transaction; also used by the projection storage below.
     DataPartStorageOnDiskPacked(
         VolumePtr volume_,
         std::string root_path_,
@@ -183,9 +178,49 @@ private:
         DiskTransactionPtr transaction_,
         const ReadSettings & read_settings_,
         bool initialize = true);
+};
 
-    MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;
-    NameSet getActualFileNamesOnDisk(const NameSet & file_names) const override;
+/// Skip-index component of packed part storage. skp_idx.packed is a virtual file inside data.packed
+/// here, so the standalone-file probe of the base index component would always miss; the inner
+/// archive is read through the storage's outer reader instead, and the base file-read overlay is
+/// disabled (the storage's *Impl hooks serve the index substreams via the inner-archive composition).
+class DataPartIndexStorageOnDiskPacked final : public DataPartIndexStorageOnDisk
+{
+public:
+    explicit DataPartIndexStorageOnDiskPacked(const DataPartStorageOnDiskPacked & packed_storage_)
+        : DataPartIndexStorageOnDisk(packed_storage_), packed_storage(packed_storage_)
+    {
+    }
+
+    /// Route the inner-archive header read through the outer reader. The archive helpers
+    /// (copy/filter/seedFrom/hasSkipIndicesPackedArchive) rely on this returning the inner reader
+    /// for packed source parts.
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const override;
+
+    /// Disable the base file-read overlay (see the class comment).
+    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
+
+private:
+    const DataPartStorageOnDiskPacked & packed_storage;
+};
+
+/// Storage of a projection sub-part on packed part storage: physically identical to a part storage,
+/// joined with the projection identity (see IDataPartProjectionStorage). Constructed only by
+/// DataPartStorageOnDiskPacked::getProjection*.
+class DataPartProjectionStorageOnDiskPacked final : public DataPartStorageOnDiskPacked, public IDataPartProjectionStorage
+{
+public:
+    DataPartProjectionStorageOnDiskPacked(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        DiskTransactionPtr transaction_,
+        const ReadSettings & read_settings_,
+        bool initialize = true)
+        : DataPartStorageOnDiskPacked(
+            std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_), read_settings_, initialize)
+    {
+    }
 };
 
 }
