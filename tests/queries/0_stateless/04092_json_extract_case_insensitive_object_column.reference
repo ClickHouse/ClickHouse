@@ -1,0 +1,89 @@
+string lower	value
+string upper	value
+int nested	42
+raw	"value"
+exact match	value
+wrong case	
+multi-key match	1
+multi-key int match	1
+mixed rows string	1	alice
+mixed rows string	2	bob
+mixed rows string	3	charlie
+mixed rows string	4	
+mixed rows raw	1	"alice"
+mixed rows raw	2	"bob"
+mixed rows raw	3	"charlie"
+mixed rows raw	4	
+mixed rows int	1	11
+mixed rows int	2	22
+mixed rows int	3	33
+mixed rows int	4	0
+nested object raw	{"InnerKey":42}
+nested object raw exact	{"InnerKey":42}
+nested object deep raw	{"Deep":7}
+typed shadow string	1	alice
+typed shadow string	2	bob
+typed shadow string	3	
+typed shadow raw	1	"alice"
+typed shadow raw	2	"bob"
+typed shadow raw	3	""
+typed shadow int	5
+json drops null	{}
+null raw cs	
+null raw ci	
+null raw string input	null
+null rows cs	1	"value"	value
+null rows cs	2		
+null rows cs	3		
+null rows ci	1	"value"	value
+null rows ci	2		
+null rows ci	3		
+null mixed rows	1	"alice"	alice
+null mixed rows	2		
+null mixed rows	3	"bob"	bob
+root raw	{"a":1}	{"a":1}
+root extract	('hello',[1])
+root scalars	2	Object	1	1
+root rows	1	{"Key":"value"}	{"Key":"value"}	1
+root rows	2	{}	{}	0
+root rows	3	{"n":{"x":1}}	{"n":{"x":1}}	1
+empty key cs	empty key	empty key
+empty key ci	empty key	empty key
+empty key raw	"empty key"	1
+empty key nested	1	1
+empty key nested ci	1	1
+empty key trailing	1	1
+empty key missing		0
+empty key rows	1	empty	empty
+empty key rows	2		
+empty key rows	3	other	other
+escaped dots root	{"a.b":42}	{"a.b":42}
+escaped dots root keys	['a.b']	1
+nav length	2	2
+nav type object	Object	Object
+nav type nested	Array	Array
+nav keys	['b','d']	['b','d']
+nav keys and values	[('b',1),('d',2)]	[('b',1),('d',2)]
+nav keys and values raw	[('b','1')]	[('b','1')]
+nav array raw	['1','2']	['1','2']
+nav keys ci	['b']	['b']
+nav array raw ci	['1','2']	['1','2']
+nav keys and values raw ci	[('b','1')]	[('b','1')]
+nav keys and values ci	[('b',1)]	[('b',1)]
+index array	20	20
+index raw	10	10
+index key	a	a
+nonconst key	1	1	1	1
+nonconst key	2	1	1	1
+nonconst key	3	1	1	1
+quoted 64bit type	UInt64	UInt64	Double	Double	Int64	Int64
+quoted 64bit raw	{"f":1.5,"n":18446744073709551615}	{"n":18446744073709551615,"f":1.5}
+quoted 64bit index	18446744073709551615	18446744073709551615
+quoted 64bit typed path	Double	{"d":1.5}
+escaped dots literal key	x	x	y	y
+escaped dots literal key has	1	1	0	0
+escaped dots literal key raw	{"c":1}	{"c":1}	2	2
+escaped dots literal key ci	x	x	y	y
+escaped dots literal key ci rows	1	x	x	y	y		
+escaped dots literal key ci rows	2	z	z	w	w		
+escaped dots literal key ci rows	3			v	v		
