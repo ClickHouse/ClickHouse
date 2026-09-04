@@ -103,9 +103,7 @@ run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_
 echo "-- analyzer=$analyzer: 17 parallel replicas custom key (sampling) over granted column"
 run "$u_low" "SELECT count() FROM t SETTINGS enable_analyzer=$analyzer, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id', parallel_replicas_count = 2, parallel_replica_offset = 1"
 
-# `d3` spans one shard with three replicas, so the initiator ships the key to the replicas instead of applying it.
-# The read is wrapped in a subquery because the initiator sets `distributed_group_by_no_merge` on this path and would
-# otherwise return one unmerged partial count per replica, in a non-deterministic order.
+# One shard, three replicas: the key is shipped to the replicas; sum() merges the per-replica partial counts.
 echo "-- analyzer=$analyzer: 18 custom key shipped to the replicas, over denied column"
 run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM d3) SETTINGS enable_analyzer=$analyzer, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
 
