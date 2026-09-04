@@ -49,7 +49,7 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context, bool throw_on_error) const;
 
-    StoragePtr tryGetTableFromCache(const std::string & name) const;
+    StoragePtr tryGetTableFromCache(const std::string & name, const ContextPtr & context) const;
 
     std::string getTablePath(const std::string & table_name) const;
 

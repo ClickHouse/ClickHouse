@@ -427,35 +427,6 @@ void checkCreationIsAllowedResolvingDotDot(
     checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
 }
 
-/// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
-/// the first ("archive.zip") and second ("file*.parquet") parts.
-/// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
-std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source)
-{
-    size_t pos = source.find("::");
-    if (pos == String::npos)
-        return {{}, source};
-
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    while (path_to_archive_view.ends_with(' '))
-        path_to_archive_view.remove_suffix(1);
-
-    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.starts_with(' '))
-        filename_view.remove_prefix(1);
-
-    if (filename_view.empty() || path_to_archive_view.empty())
-        return {{}, source};
-
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported archive extension
-    /// - it contains characters that could mean glob expression
-    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
-        return {{}, source};
-
-    return {String{path_to_archive_view}, String{filename_view}};
-}
-
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {

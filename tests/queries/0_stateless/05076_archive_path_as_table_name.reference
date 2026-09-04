@@ -1,0 +1,27 @@
+-- The table function and the table name agree
+1	Hello
+2	World
+1	Hello
+2	World
+-- Every archive format
+1	Hello
+2	World
+1	Hello
+2	World
+1	Hello
+2	World
+-- A glob over the archives
+1	Hello
+1	Hello
+2	World
+2	World
+-- Explicitly through the URL and the Filesystem database engines
+1	Hello
+2	World
+1	Hello
+2	World
+-- The archive syntax can be switched off
+1
+-- A missing archive and a missing file inside an archive
+1
+1
