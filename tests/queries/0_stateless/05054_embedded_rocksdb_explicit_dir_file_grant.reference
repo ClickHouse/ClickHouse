@@ -1,0 +1,28 @@
+--- the victim rows are protected: reading the table itself is denied ---
+select-denied
+--- a read_only table over the victim directory without READ ON FILE is denied ---
+read-only-denied
+not-created
+--- with READ ON FILE the same statement is allowed, sharing the live directory ---
+read-only-allowed
+marker	secret
+--- a read_only table over a missing directory needs WRITE and does not create it ---
+missing-dir-denied
+not-created
+dir-absent
+--- a writable table needs WRITE ON FILE as well ---
+writable-denied
+not-created
+writable-allowed
+--- the argument-less form has no user_files exposure and needs no grant ---
+default-form-allowed
+ttl-only-form-allowed
+--- a short ATTACH replays stored metadata and stays loadable after a revoke ---
+short-attach-allowed
+--- an ATTACH carrying a full definition is checked like CREATE ---
+full-attach-denied
+not-created
+--- a RESTORE carries a fresh definition and is checked like CREATE ---
+restore-denied
+not-created
+restore-allowed

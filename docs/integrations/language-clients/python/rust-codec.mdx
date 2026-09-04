@@ -1,0 +1,98 @@
+---
+sidebarTitle: 'Rust codec'
+keywords: ['clickhouse', 'python', 'rust', 'native', 'codec', 'performance']
+description: 'Opt-in compiled Rust codec for ClickHouse Connect'
+slug: /integrations/language-clients/python/rust-codec
+title: 'Rust native codec'
+doc_type: 'reference'
+---
+
+ClickHouse Connect can decode query results and encode inserts with a compiled Rust codec instead of the default Python and Cython implementation. The Rust codec applies only to client-managed `FORMAT Native` traffic, which covers `query`, `query_np`, `query_df`, their block and row streaming variants, and inserts including `insert_df`. The Arrow methods use `FORMAT Arrow` and are unaffected, as are raw queries, raw inserts, and non-Native formats.
+
+The codec is experimental and opt in. The Python codec remains the default.
+
+## Installation {#installation}
+
+The compiled codec ships as a separate wheel named `clickhouse-connect-core`, which provides the `_ch_core` extension module. For evaluation, install the codec and PyArrow together:
+
+```bash
+pip install "clickhouse-connect[rust,arrow]"
+```
+
+In 1.8, every Rust path that produces NumPy or Pandas output requires PyArrow. This includes `query_np`, `query_df`, their streaming variants, and `query(..., use_numpy=True)`. Without PyArrow, `native_codec="rust"` logs a warning and runs those queries with the Python codec. `native_codec="rust_strict"` raises `NotSupportedError` instead.
+
+The `rust` extra alone stays lean for applications that use standard Python row results, row or column block streams, and inserts without requesting NumPy or Pandas output. Those paths do not require PyArrow:
+
+```bash
+pip install "clickhouse-connect[rust]"
+```
+
+The codec, its packaging, and its dependency set are experimental. A smaller Arrow interoperability dependency is being evaluated for a future release.
+
+If a Rust codec is selected and the compiled module is not installed, client creation raises a `NotSupportedError` naming this install command.
+
+## Enabling the codec {#enabling-the-codec}
+
+Select the codec with the `native_codec` client option:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
+```
+
+Accepted values:
+
+| Value | Behavior |
+|---|---|
+| `python` | Default. The existing Python and Cython codec. |
+| `rust` | Prefer the Rust codec. Queries with unsupported options and inserts with unsupported types route to the Python codec. |
+| `rust_strict` | Require the Rust codec. Unsupported options and types raise instead of routing. |
+
+The default can also be seeded with the `native_codec` common setting or the `CLICKHOUSE_CONNECT_NATIVE_CODEC` environment variable. Precedence is the client keyword argument, then the common setting, then the environment variable.
+
+The option is ignored for `interface="chdb"` clients, which always use the Python codec.
+
+## When to use the Rust codec {#when-to-use-the-rust-codec}
+
+The Rust codec is most useful for large DataFrame results with text, container, and complex types such as `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal`, and `UUID`. It can also help large row and column block streams, concurrent query workloads, and bulk inserts.
+
+Small results and network-bound queries may see little change. Flat numeric results already use efficient bulk paths in the Python codec, so they may also see less benefit.
+
+Buffered `query()` calls on very wide or all-numeric results can currently be slower and use more peak memory with the Rust codec. Prefer `query_df`, `query_row_block_stream`, or `query_column_block_stream` for those workloads. Streaming keeps memory bounded.
+
+Benchmark your own workload before adopting the codec. Use `native_codec="rust_strict"` while measuring so an unsupported option or missing dependency raises instead of silently routing the query to Python.
+
+## Fallback rules {#fallback-rules}
+
+Fallback decisions are made before any bytes are read or sent, so there is never a mid-stream codec switch. For queries the choice happens before the response body is consumed. For inserts the Rust encoder is only selected when every column type is supported, otherwise the whole insert runs on the Python codec.
+
+When `naive_datetime_insert="server"` is active, `rust` routes an insert containing any `DateTime` or `DateTime64` column to the Python codec so the declared column timezone or server timezone is applied. `rust_strict` rejects that combination. The default `naive_datetime_insert="local"` mode continues to use the Rust encoder.
+
+Driver-internal metadata queries, including SQLAlchemy dialect reflection statements, always use the Python codec, silently, in every mode.
+
+Malformed Native payloads detected by the Rust codec raise `DataError`.
+
+## Versioning {#versioning}
+
+`clickhouse-connect-core` versions independently of `clickhouse-connect`. The driver declares a compatible range through the `rust` extra, and the module exports a binding API version that the driver checks when a Rust codec is selected. If the installed wheel is too old for the driver, client creation raises a `NotSupportedError` naming the upgrade command:
+
+```bash
+pip install --upgrade clickhouse-connect-core
+```
+
+Codec fixes and performance improvements ship as `clickhouse-connect-core` releases and can be picked up with a wheel upgrade alone, without waiting for a `clickhouse-connect` release.
+
+## Known behavior differences {#known-behavior-differences}
+
+The Rust codec targets cell for cell parity with the Python codec. The following differences are known.
+
+- `query_np` and `query_df` results for `Variant` columns contain plain Python objects rather than numpy scalar values. The values are equal, the cell types differ.
+- `Dynamic` values that contain `Time64` materialize as `datetime.timedelta` in Rust `query_np` and `query_df` results. At scales 0, 3, 6, and 9 the values equal the Python codec's `numpy.timedelta64` cells, but the cell types differ. At other scales the Rust codec returns `datetime.timedelta` while the Python codec raises `ProgrammingError` because NumPy has no matching unit. Dynamic member metadata is not exposed to the driver after Rust decoding, so use `native_codec="python"` when NumPy cell types or unsupported-scale validation are required.
+- For `query_df`, the Python codec may stringify compound values stored in JSON shared data. The Rust codec returns decoded objects, matching both codecs' `query_np` results.
+- A `LowCardinality` alternative inside a container that materializes per cell, such as `Array(Variant(...))`, produces value-equal cells that do not share the per-dictionary-slot object identity the Python codec exhibits.
+- `Nullable(Tuple(...))` columns with one or more elements decode correctly on the Rust codec. The Python codec misreads this layout and the Rust result is the reference behavior. Both codecs support `Nullable(Tuple())`.
+- `rust_strict` rejects query options the Rust path does not implement, such as custom per-query `query_formats`, rather than silently changing behavior.
+- Rust insert conversion and validation errors can raise `DataError` where the Python codec raises `ValueError`, and the message text can differ. Examples include invalid `Time` and `Time64` values, IPv6 addresses, QBit dimensions, `FixedString` lengths, `Float64` strings, and attempts to insert elements into a `Tuple()` column.
+- The Rust encoder rejects `b""` for `FixedString(N)` and numeric strings such as `"2"` for integer columns. The Python codec zero-fills an empty `FixedString` value and coerces numeric strings.
+- The Rust codec decodes some `Dynamic` shared-variant values to their Python types when the Python codec leaves the value as raw bytes. For example, a stored `Date` can return as `datetime.date` from Rust and as a binary value from Python.
