@@ -46,13 +46,17 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
+# S3 directory of that commit's artifacts. Praktika owns the prefix layout and
+# has changed it, so the location is pinned next to the commit instead of being
+# spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
+ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
         amd64) tarch=amd64 ;; \
         arm64) tarch=aarch64 ;; \
     esac && \
-    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TOOLCHAIN_COMMIT}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
       | zstd -d | tar -xf - -C /usr/local/ && \
     echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
     ; fi
@@ -69,7 +73,7 @@ RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
     esac && \
     mkdir -p /opt/clickhouse-profiles && \
     for profile in clickhouse-pgo.profdata.zst clickhouse-bolt.fdata.zst; do \
-        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
+        url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${CLICKHOUSE_PROFILES_COMMIT}/optimizeclickhouse/collect_clickhouse_profiles_pgo_bolt_${tarch}/${profile}" && \
         if curl -fsSL -o "/opt/clickhouse-profiles/${profile}" "$url"; then \
             zstd -d --rm "/opt/clickhouse-profiles/${profile}" && \
             echo "Downloaded ${profile}" ; \
