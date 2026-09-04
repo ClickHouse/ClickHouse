@@ -79,7 +79,7 @@ bool astContainsArrayJoinFunction(const ASTPtr & ast)
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
     /// Reject negative, fractional, and zero limits for pushdown, and limits whose
-    /// `limit_length + limit_offset` does not fit in `UInt64` and so restrict nothing.
+    /// `limit_length + limit_offset` does not fit in `UInt64`, leaving no representable bound.
     if (lim_info.is_limit_length_negative
         || lim_info.fractional_limit > 0
         || lim_info.fractional_offset > 0

@@ -28,8 +28,9 @@ public:
     size_t getLimit() const { return limit; }
     size_t getOffset() const { return offset; }
 
-    /// Number of leading rows that must be retained to satisfy this `LIMIT`, i.e. `limit + offset`.
-    /// Empty when that sum does not fit in `UInt64`, in which case the `LIMIT` cannot restrict anything.
+    /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
+    /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
+    /// representable bound to push down.
     std::optional<size_t> getLimitWithOffset() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
