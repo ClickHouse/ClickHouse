@@ -68,6 +68,65 @@ then
     exit 1
 fi
 
+detect_shell_profile() {
+    target_os="$1"
+    user_shell=""
+    if [ -n "${SHELL}" ]; then
+        user_shell=$(basename "${SHELL}")
+    fi
+
+    profile=""
+
+    case "${user_shell}" in
+        zsh)
+            if [ -f "${HOME}/.zshrc" ]; then
+                profile="${HOME}/.zshrc"
+            elif [ -f "${HOME}/.zprofile" ]; then
+                profile="${HOME}/.zprofile"
+            else
+                profile="${HOME}/.zshrc"
+            fi
+            ;;
+        bash)
+            if [ -f "${HOME}/.bashrc" ]; then
+                profile="${HOME}/.bashrc"
+            elif [ -f "${HOME}/.bash_profile" ]; then
+                profile="${HOME}/.bash_profile"
+            elif [ -f "${HOME}/.profile" ]; then
+                profile="${HOME}/.profile"
+            else
+                if [ "${target_os}" = "Darwin" ]; then
+                    profile="${HOME}/.bash_profile"
+                else
+                    profile="${HOME}/.bashrc"
+                fi
+            fi
+            ;;
+        fish)
+            profile="${HOME}/.config/fish/config.fish"
+            ;;
+        *)
+            if [ -f "${HOME}/.zshrc" ]; then
+                profile="${HOME}/.zshrc"
+            elif [ -f "${HOME}/.bashrc" ]; then
+                profile="${HOME}/.bashrc"
+            elif [ -f "${HOME}/.bash_profile" ]; then
+                profile="${HOME}/.bash_profile"
+            elif [ -f "${HOME}/.profile" ]; then
+                profile="${HOME}/.profile"
+            else
+                if [ "${target_os}" = "Darwin" ]; then
+                    profile="${HOME}/.zshrc"
+                else
+                    profile="${HOME}/.bashrc"
+                fi
+            fi
+            ;;
+    esac
+
+    echo "${profile}"
+}
+
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
@@ -161,13 +220,73 @@ then
                 case ":$PATH:" in
                     *":${chctl_install_dir}:"*) ;;
                     *)
-                        echo
-                        echo "NOTE: ${chctl_install_dir} is not in your PATH."
-                        echo "Add it by running:"
-                        echo
-                        echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
-                        echo
-                        echo "You may want to add that line to your shell profile (~/.bashrc, ~/.zshrc, etc.)"
+                        profile_file=$(detect_shell_profile "${OS}")
+                        pretty_profile=$(echo "${profile_file}" | sed "s|^${HOME}|~|")
+                        user_shell=""
+                        if [ -n "${SHELL}" ]; then
+                            user_shell=$(basename "${SHELL}")
+                        fi
+
+                        in_profile=0
+                        if [ -f "${profile_file}" ]; then
+                            if grep -F -q "${chctl_install_dir}" "${profile_file}" 2>/dev/null \
+                               || grep -F -q "\$HOME/.local/bin" "${profile_file}" 2>/dev/null \
+                               || grep -F -q "~/.local/bin" "${profile_file}" 2>/dev/null; then
+                                in_profile=1
+                            fi
+                        fi
+
+                        if [ "${in_profile}" = "1" ]; then
+                            echo
+                            echo "NOTE: ${chctl_install_dir} is not in your current PATH, but it is configured in ${pretty_profile}."
+                            echo "Restart your terminal session or run:"
+                            echo
+                            echo "  source ${pretty_profile}"
+                        else
+                            asked=0
+                            if [ -c /dev/tty ] && [ -z "${NONINTERACTIVE}" ]; then
+                                echo
+                                printf "Do you want to add '%s' to PATH in %s? [Y/n] " "${chctl_install_dir}" "${pretty_profile}" > /dev/tty
+                                if read -r reply < /dev/tty 2>/dev/null; then
+                                    asked=1
+                                    case "${reply}" in
+                                        [yY]*|"")
+                                            mkdir -p "$(dirname "${profile_file}")"
+                                            if [ -f "${profile_file}" ] && [ -n "$(tail -c 1 "${profile_file}" 2>/dev/null)" ]; then
+                                                echo "" >> "${profile_file}"
+                                            fi
+                                            echo "# Added by ClickHouse installer" >> "${profile_file}"
+                                            case "${user_shell}" in
+                                                fish)
+                                                    echo "set -gx PATH \"${chctl_install_dir}\" \$PATH" >> "${profile_file}"
+                                                    ;;
+                                                *)
+                                                    echo "export PATH=\"${chctl_install_dir}:\$PATH\"" >> "${profile_file}"
+                                                    ;;
+                                            esac
+                                            echo "Added export PATH=\"${chctl_install_dir}:\$PATH\" to ${pretty_profile}"
+                                            echo "Run 'source ${pretty_profile}' or restart your shell to update PATH."
+                                            ;;
+                                        *)
+                                            echo "Skipped updating ${pretty_profile}."
+                                            echo "You can manually add it by running:"
+                                            echo
+                                            echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                                            ;;
+                                    esac
+                                fi
+                            fi
+
+                            if [ "${asked}" = "0" ]; then
+                                echo
+                                echo "NOTE: ${chctl_install_dir} is not in your PATH."
+                                echo "Add it by running:"
+                                echo
+                                echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                                echo
+                                echo "You may want to add that line to your shell profile (${pretty_profile})."
+                            fi
+                        fi
                         ;;
                 esac
             else
