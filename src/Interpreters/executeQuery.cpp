@@ -2898,20 +2898,20 @@ static BlockIO executeQueryImpl(
             }
             else if (settings[Setting::dialect] == Dialect::kusto && !internal)
             {
-                const char * kql_pos = begin;
+                const char * kql_pos = new_begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
             {
                 /// A plain `SET` passes even when the gate is off, so a session that is
                 /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
                 /// (or turn the gate back on) instead of being stranded until reconnect.
                 out_ast = tryParseKQLSetStatement(
-                    kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    kql_pos, new_end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 if (!out_ast)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             }
             else
                 out_ast = parseKQLQuery(
-                    kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    kql_pos, new_end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             }
             else if (settings[Setting::dialect] == Dialect::prql && !internal)
             {
@@ -2947,21 +2947,21 @@ static BlockIO executeQueryImpl(
                 /// Allow `SET` queries in plain SQL so users can switch back to another dialect
                 /// without being locked into JSON-only input. The experimental gate must be
                 /// applied only to the JSON-deserialization branch — otherwise a session with
-                /// `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
+                /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
                 /// cannot execute `SET dialect = 'clickhouse'` to recover.
-                if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+                if (isClickHouseJSONSetEscape(new_begin, new_end, settings[Setting::max_query_size]))
                 {
-                    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-                    out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                    ParserQuery parser(new_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                    out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 }
                 else
                 {
-                    if (!settings[Setting::allow_experimental_json_ast_dialect])
+                    if (!settings[Setting::enable_json_ast_dialect])
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Support for clickhouse_json dialect is disabled "
-                            "(turn on setting 'allow_experimental_json_ast_dialect')");
+                            "(turn on setting 'enable_json_ast_dialect')");
 
-                    if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                    if (max_query_size != 0 && static_cast<size_t>(new_end - new_begin) > max_query_size)
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
@@ -2970,17 +2970,17 @@ static BlockIO executeQueryImpl(
                     /// any trailing non-whitespace ("Excess characters found after JSON end"), so strip one
                     /// trailing `;` (and surrounding whitespace) before deserializing. Anything else after the
                     /// object is still rejected by the JSON parser as excess input.
-                    const char * json_end = end;
-                    while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    const char * json_end = new_end;
+                    while (json_end > new_begin && isWhitespaceASCII(json_end[-1]))
                         --json_end;
-                    if (json_end > begin && json_end[-1] == ';')
+                    if (json_end > new_begin && json_end[-1] == ';')
                     {
                         --json_end;
-                        while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                        while (json_end > new_begin && isWhitespaceASCII(json_end[-1]))
                             --json_end;
                     }
 
-                    out_ast = IAST::createFromJSON(String(begin, json_end),
+                    out_ast = IAST::createFromJSON(String(new_begin, json_end),
                         settings[Setting::max_ast_depth],
                         settings[Setting::max_ast_elements]);
                     checkASTSizeLimits(*out_ast, settings);
@@ -2997,7 +2997,7 @@ static BlockIO executeQueryImpl(
                     {
                         /// Verify that AST formatting is consistent:
                         /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
-                        std::string_view original_query{begin, static_cast<size_t>(end - begin)};
+                        std::string_view original_query{new_begin, static_cast<size_t>(new_end - new_begin)};
 
                         auto format_ast = [](ASTPtr ast)
                         {
