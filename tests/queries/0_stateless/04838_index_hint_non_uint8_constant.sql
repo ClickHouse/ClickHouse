@@ -41,6 +41,15 @@ SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHi
 SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(CAST(NULL, 'Nullable(UInt8)'));
 SELECT 'null', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(NULL, 1);
 
+-- The declared type decides whether a NULL reads as a condition, not the value: a NULL of a type
+-- that reads as one prunes everything, a NULL of a type that does not contributes no filter.
+-- system.tables prunes only through this code path, so the pair is what tells the two apart; on a
+-- MergeTree table the key condition prunes on the constant NULL either way.
+SELECT 'typed null', count() > 0 FROM system.tables
+WHERE database = currentDatabase() AND indexHint(CAST(NULL, 'Nullable(UInt8)'));
+SELECT 'typed null', count() > 0 FROM system.tables
+WHERE database = currentDatabase() AND indexHint(CAST(NULL, 'Nullable(String)'));
+
 -- A falsy hint must still prune everything (pinned by 02841/02892/02962). Each carrier here is the
 -- falsy twin of a truthy one above; a hint whose type carries no boolean reading is dropped instead,
 -- which leaves every row, so the twin is what tells the two apart.
