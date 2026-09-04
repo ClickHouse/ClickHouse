@@ -34,7 +34,20 @@ For Postgres workloads that are primarily throttled by disk IOPS and latency, th
 Learn how fast Postgres is on NVMe disks from [performance benchmarks](https://clickhouse.com/blog/postgresbench).
 </Note>
 
-For local NVMe limits on AWS see [Memory optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html#mo_instance-store), [Storage optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html#so_instance-store), [CPU optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_instance-store).
+For local NVMe limits on AWS see [Memory optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html#mo_instance-store), [Storage optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html#so_instance-store), [CPU optimized](https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_instance-store). For GCP, see [Local SSD disks](https://cloud.google.com/compute/docs/disks/local-ssd).
+
+## Supported cloud providers {#supported-cloud-providers}
+
+ClickHouse Managed Postgres is available on the following cloud providers:
+
+| Cloud provider | Availability |
+|----------------|--------------|
+| AWS | Public Beta |
+| GCP | Private Preview |
+
+<Note>
+ClickHouse Managed Postgres on GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](TODO KG GCP Waitlist HERE). Read the [announcement](TODO KG GCP Blog HERE) to learn more.
+</Note>
 
 ## Native ClickHouse integration {#clickhouse-integration}
 

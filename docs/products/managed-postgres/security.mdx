@@ -80,19 +80,19 @@ By default, connections use TLS encryption without certificate verification. For
 
 For more details on TLS configuration and connection options, see the [Connection](/products/managed-postgres/connection#tls) page.
 
-## Private Link {#private-link}
+## AWS PrivateLink {#private-link}
 
-Private Link enables private connectivity between your ClickHouse Managed Postgres instance and your Virtual Private Cloud (VPC) without exposing traffic to the public internet. This provides an additional layer of network isolation and security.
+AWS PrivateLink enables private connectivity between your ClickHouse Managed Postgres instance and your AWS Virtual Private Cloud (VPC) without exposing traffic to the public internet. This provides an additional layer of network isolation and security.
 
 <Info>
 **Manual setup required**
 
-Private Link support is available but requires manual configuration by ClickHouse support. This feature is ideal for enterprise customers with strict network isolation requirements.
+AWS PrivateLink support is available but requires manual configuration by ClickHouse support. This feature is ideal for enterprise customers with strict network isolation requirements.
 </Info>
 
-### Requesting Private Link setup {#requesting-private-link}
+### Requesting AWS PrivateLink setup {#requesting-private-link}
 
-To enable Private Link for your ClickHouse Managed Postgres instance:
+To enable AWS PrivateLink for your ClickHouse Managed Postgres instance:
 
 1. **Contact ClickHouse support** by creating a support ticket
 2. **Provide the following information**:
@@ -105,9 +105,15 @@ To enable Private Link for your ClickHouse Managed Postgres instance:
    - Provision the Private Link endpoint on the ClickHouse Managed Postgres side
    - Provide you with endpoint connection details which you can use to create an endpoint interface.
 
-4. **Setup your Private Link**:
-   - Create the Private Link by heading over to endpoint interface in AWS settings and using the configuration provided by the ClickHouse support.
-   - Once your Private Link is in an "Available" state, you can connect to it by using the Private DNS name provided in the AWS UI.
+4. **Setup your AWS PrivateLink**:
+   - Create the AWS PrivateLink by heading over to endpoint interface in AWS settings and using the configuration provided by the ClickHouse support.
+   - Once your AWS PrivateLink is in an "Available" state, you can connect to it by using the Private DNS name provided in the AWS UI.
+
+## GCP Private Service Connect {#gcp-private-service-connect}
+
+Private Service Connect enables private connectivity between your ClickHouse Managed Postgres instance and your GCP Virtual Private Cloud (VPC) without exposing traffic to the public internet.
+
+To enable Private Service Connect for your ClickHouse Managed Postgres instance, contact ClickHouse support by creating a support ticket.
 
 ## Backup retention {#backup-retention}
 

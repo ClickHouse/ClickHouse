@@ -90,7 +90,7 @@ The table below summarizes the features, capabilities, and limits included in ea
 
 ### Instance types {#instance-types}
 
-Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics. Not all instance types are available in every AWS region.
+Instance configurations are grouped into three categories to simplify infrastructure selection based on workload characteristics. Not all instance types are available in every region. The instance families listed below apply to AWS. GCP is in Private Preview, and its instance types are shared with you during onboarding.
 
 - **Memory Optimized:** Designed for memory-intensive workloads with a memory-to-CPU ratio of 1:8. Supports x86-based `r8id` and `r6id` families, and ARM64 (AWS Graviton-based) `r8gd` and `r6gd` families. Best suited for large working sets, high cache hit ratios, and memory-bound database workloads.
 - **Storage Optimized:** Designed for workloads that require large amounts of local NVMe storage without scaling compute proportionally. Supports ARM64 (AWS Graviton-based) `i8g` and `i8ge` families, and x86-based `i7i` and `i7ie` families, with configurations offering up to 60 TB of local NVMe storage. Best suited for large datasets, time-series workloads, log and event storage, and storage-heavy OLTP workloads.
@@ -111,12 +111,18 @@ This allows you to compare pricing across more than 50 supported configuration p
 
 ## Beta pricing highlights {#beta-pricing-highlights}
 
-During the Beta period:
+### AWS Public Beta pricing {#aws-public-beta-pricing}
+
+During the Beta period on AWS:
 
 - The service is free until usage metering begins on **June 15, 2026**
 - Native CDC via **ClickPipes** is included at no additional cost
 - No charges currently apply for **network egress** or **backups**
 - All plans currently include **50% Beta pricing**
+
+### GCP Private Preview pricing {#gcp-private-preview-pricing}
+
+Pricing details for ClickHouse Managed Postgres on GCP will be published soon. You can sign up for the GCP Private Preview waitlist [here](TODO KG GCP Waitlist HERE).
 
 ## Disclaimers {#disclaimers}
 
