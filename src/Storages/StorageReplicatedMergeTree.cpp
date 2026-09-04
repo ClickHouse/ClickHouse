@@ -7837,6 +7837,22 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
     if (unfinished_replicas.empty())
         return;
 
+    auto zookeeper = getZooKeeper();
+    bool all_unfinished_replicas_are_inactive = std::ranges::all_of(unfinished_replicas, [&](const String & replica)
+    {
+        return !zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
+    });
+
+    if (!is_dropped && all_unfinished_replicas_are_inactive)
+    {
+        throw Exception(
+            ErrorCodes::UNFINISHED,
+            "{}Log entry {} is not finished because replicas are inactive right now: {}. It will be processed asynchronously",
+            error_context,
+            entry.znode_name,
+            fmt::join(unfinished_replicas, ", "));
+    }
+
     throw Exception(ErrorCodes::UNFINISHED, "{}Timeout exceeded while waiting for replicas {} to process entry {}. "
                     "Probably some replicas are inactive", error_context, fmt::join(unfinished_replicas, ", "), entry.znode_name);
 }

@@ -89,6 +89,19 @@ namespace ErrorCodes
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
 
+// NOTE: we don't want to introduce new kind of error instead of UNFINISHED
+// because it would likely break clients expecting UNFINISHED and we'll break contract
+// of async operations by explicit error => better to keep this internal machinery
+static bool isAsynchronousReplicatedOperation(const Exception & exception)
+{
+    if (exception.code() != ErrorCodes::UNFINISHED)
+        return false;
+
+    auto message_format = exception.tryGetMessageFormatString();
+    return message_format == "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously"
+        || message_format == "{}Log entry {} is not finished because replicas are inactive right now: {}. It will be processed asynchronously";
+}
+
 
 DDLWorker::DDLWorker(
     int pool_size_,
@@ -604,6 +617,12 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             throw;
 
         task.execution_status = ExecutionStatus::fromCurrentException();
+
+        if (isAsynchronousReplicatedOperation(e))
+        {
+            LOG_WARNING(log, "Query {} will be completed asynchronously: {}", query_to_show_in_logs, e.message());
+            return true;
+        }
 
         /// We use return value of tryExecuteQuery(...) in tryExecuteQueryOnSingleReplica(...) to determine
         /// if replica has stopped being leader and we should retry query.
