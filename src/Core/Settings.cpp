@@ -27,6 +27,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <array>
 #include <bit>
 #include <cstring>
 
@@ -9373,21 +9374,20 @@ private:
     /// Which settings the compatibility setting changed, as a bitmap over setting indexes. An old
     /// `compatibility` value marks hundreds of them on every query that sets it, so a hash set of names
     /// meant a lookup per setting and an allocated node per setting, on top of copying them all whenever
-    /// the settings are copied.
-    VectorWithMemoryTracking<UInt64> settings_changed_by_compatibility_setting;
+    /// the settings are copied. The number of settings is known at compile time, so the bitmap lives in
+    /// the settings themselves and never allocates.
+    static constexpr size_t num_setting_bitmap_words
+        = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
+    std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
     size_t num_settings_changed_by_compatibility_setting = 0;
 
     bool isChangedByCompatibility(size_t index) const
     {
-        return num_settings_changed_by_compatibility_setting != 0
-            && (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
+        return (settings_changed_by_compatibility_setting[index / 64] & (1ULL << (index % 64))) != 0;
     }
 
     void markChangedByCompatibility(size_t index)
     {
-        if (settings_changed_by_compatibility_setting.empty())
-            settings_changed_by_compatibility_setting.resize((Traits::Accessor::instance().size() + 63) / 64, 0);
-
         UInt64 & word = settings_changed_by_compatibility_setting[index / 64];
         const UInt64 bit = 1ULL << (index % 64);
         if (!(word & bit))
@@ -9577,7 +9577,7 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
         return;
 
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t word = 0; word < settings_changed_by_compatibility_setting.size(); ++word)
+    for (size_t word = 0; word < num_setting_bitmap_words; ++word)
     {
         UInt64 bits = std::exchange(settings_changed_by_compatibility_setting[word], 0);
         while (bits)
