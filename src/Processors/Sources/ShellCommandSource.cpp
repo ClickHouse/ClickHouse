@@ -70,6 +70,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// How much a shared-memory region is enlarged at once while the query's memory limit cannot be
+/// enforced (see `ensureRegionFits`). Small enough that going over the limit stays bounded, large
+/// enough that flushing a buffer's worth of trailing bytes does not remap the region per byte.
+static constexpr size_t UNENFORCED_GROWTH_STEP = 1024 * 1024;
+
 /// Version of the shared-memory control protocol between the server and an executable UDF.
 /// Sent as the first varint of every request so the child can detect an incompatible protocol
 /// version and answer with an error status.
@@ -667,12 +672,14 @@ namespace
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
-            , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
-            , command_holder(std::move(command_holder_))
+            /// Reads the descriptors out of the command without taking it yet - see the declaration
+            /// of `command` for why this object takes ownership as late as it can.
+            , timeout_command_out(command_->out.getFD(), command_->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
+            , command(std::move(command_))
+            , command_holder(std::move(command_holder_))
         {
             /// Everything the constructor does lives in this try: a borrowed process holder is
             /// already owned by this object (the caller's local was moved from in the member
@@ -740,14 +747,33 @@ namespace
             }
             catch (...)
             {
-                cleanup();
+                /// A failure of the teardown itself must not replace the failure that got us here,
+                /// and must not skip handing the borrowed worker back to the pool.
+                try
+                {
+                    cleanup();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
                 throw;
             }
         }
 
         ~ShellCommandSource() override
         {
-            cleanup();
+            /// Destructors are noexcept and `cleanup` allocates (an empty `QueryPipeline` allocates
+            /// its processor list, returning the holder to the pool grows a vector), so under a
+            /// memory limit it can throw - which would terminate the server.
+            try
+            {
+                cleanup();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
         }
 
     protected:
@@ -756,6 +782,20 @@ namespace
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
+
+            /// Stop reading the child's stdout before anything can take the descriptors away. The
+            /// input format reads them through `timeout_command_out` - with
+            /// `input_format_parallel_parsing` from its own segmentator thread - while `command`,
+            /// which owns those descriptors and reaps the child, is destroyed before this pipeline
+            /// (it has to be constructed last, see its declaration). Destroying the executor here
+            /// joins those threads while the descriptors are still open.
+            ///
+            /// Moved into a temporary rather than assigned an empty pipeline: assignment would
+            /// construct one, and that allocates, on a path that runs from a destructor.
+            executor.reset();
+            {
+                QueryPipeline discarded = std::move(pipeline);
+            }
 
             /// Record this borrow's resource usage before the child is gone. The two
             /// executable UDF types measure it differently.
@@ -824,6 +864,12 @@ namespace
 
                 if (command && valid_command)
                     command_holder->returnCommand(std::move(command));
+
+                /// A worker that is not going back to the pool has to die before its slot does: the
+                /// query waiting for that slot starts a replacement at once, so leaving this process
+                /// to be destroyed later - with a `command_termination_timeout` wait in front of it -
+                /// lets the pool run over `pool_size` for as long as that takes.
+                command = nullptr;
 
                 process_pool->returnObject(std::move(command_holder));
             }
@@ -937,14 +983,12 @@ namespace
         std::string format;
         SharedHeader sample_block;
 
-        std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
 
         TimeoutReadBufferFromFileDescriptor timeout_command_out;
 
         size_t current_read_rows = 0;
 
-        ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
 
         bool check_exit_code = false;
@@ -958,6 +1002,16 @@ namespace
         std::exception_ptr exception_during_send_data;
 
         std::atomic<bool> command_is_invalid {false};
+
+        /// Taken over after every other member, because every other member has to be able to throw
+        /// without costing a healthy pooled worker: until this object owns these two they still
+        /// belong to `createPipe`, whose scope guard hands them back to the pool. `timeout_command_out`
+        /// allocates its buffer and `pipeline` allocates in its default constructor, so this is not
+        /// a theoretical ordering. Destroyed first for the same reason they are constructed last,
+        /// which is safe: `cleanup` has already joined the send-data threads and handed the command
+        /// back, and ~TimeoutReadBufferFromFileDescriptor deliberately does not touch its descriptors.
+        std::unique_ptr<ShellCommand> command;
+        ShellCommandHolderPtr command_holder;
     };
 
     class SendingChunkHeaderTransform final : public ISimpleTransform
@@ -1037,6 +1091,13 @@ namespace
         /// its pages without `max_memory_usage` ever being enforced. Draining the spare byte is the
         /// writer's job (any `next` does it, under the memory limit) - see serializeInto, which is
         /// also why this buffer is never finalized implicitly from a destructor.
+        ///
+        /// This only covers growth this buffer starts itself. A format that wraps this one
+        /// (`WriteBufferValidUTF8`, `PeekableWriteBuffer`) flushes into it from inside its own
+        /// `finalize`, under the same blocked limit, and a growth from there cannot be checked
+        /// against `max_memory_usage` either - the bytes are still charged to the query, only the
+        /// limit is not enforced for them. `ensureRegionFits` keeps that bounded by growing in a
+        /// small step instead of doubling whenever it sees the limit blocked.
         void finalizeImpl() override
         {
             if (offset() != 0 && working_buffer.begin() == overflow.data())
@@ -1101,16 +1162,18 @@ namespace
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
-            , command(std::move(command_))
             , configuration(configuration_)
             , is_pooled(is_pooled_)
             , shared_memory_size(shared_memory_size_)
             , shared_memory_max_size(shared_memory_max_size_)
             , pipeline_mode(pipeline_mode_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
-            , command_holder(std::move(command_holder_))
+            /// Reads the descriptors out of the command without taking it yet - see the declaration
+            /// of `command` for why this object takes ownership as late as it can.
+            , timeout_command_out(command_->out.getFD(), command_->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
+            , command(std::move(command_))
+            , command_holder(std::move(command_holder_))
         {
             try
             {
@@ -1197,16 +1260,35 @@ namespace
             catch (...)
             {
                 /// Construction cannot send a protocol request, so a pooled command is still at a
-                /// clean boundary and can be returned together with the holder.
+                /// clean boundary and can be returned together with the holder. A failure of the
+                /// teardown itself must not replace the failure that got us here.
                 command_can_be_reused = true;
-                cleanup();
+                try
+                {
+                    cleanup();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSharedMemorySource");
+                }
                 throw;
             }
         }
 
         ~ShellCommandSharedMemorySource() override
         {
-            cleanup();
+            /// Destructors are noexcept, so nothing may escape - and `cleanup` is not allocation
+            /// free (assigning an empty `QueryPipeline` allocates its processor list, handing the
+            /// holder back to the pool grows a vector), which under a memory limit is exactly where
+            /// an exception comes from.
+            try
+            {
+                cleanup();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSharedMemorySource");
+            }
         }
 
         String getName() const override { return "ShellCommandSharedMemorySource"; }
@@ -1246,7 +1328,13 @@ namespace
                         }
 
                         output_executor.reset();
-                        output_pipeline = QueryPipeline();
+                        {
+                            /// Moved into a temporary rather than assigned an empty pipeline:
+                            /// assignment would construct one, and that allocates - here, right
+                            /// after a perfectly good answer was read, that would fail the query and
+                            /// throw away a healthy worker over cleaning up the result.
+                            QueryPipeline discarded = std::move(output_pipeline);
+                        }
                         output_read_buffer.reset();
 
                         /// The current buffer is fully drained; hand it back to the producer so it
@@ -1318,8 +1406,9 @@ namespace
                     {
                         /// The same decision as the stdin close above: a worker that goes back to
                         /// the pool must not be reaped here, and one that does not had its stdin
-                        /// closed, so this blocking wait can actually finish.
-                        if (!commandIsReused())
+                        /// closed, so this blocking wait can actually finish. `commandIsReused`
+                        /// reads a missing command as "not reused", so check it before the wait.
+                        if (command && !commandIsReused())
                             command->wait();
                     }
                     catch (Exception & e)
@@ -1374,6 +1463,9 @@ namespace
 
             if (!have_input)
                 return std::nullopt;
+
+            /// Writing into a region the command has shrunk would fault, so check before touching it.
+            checkRegionIsIntact(index);
 
             /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
             /// whenever it fills up. The command asks for more room later if its result does not fit
@@ -1432,6 +1524,10 @@ namespace
                 UInt64 status = 0;
                 readVarUInt(status, timeout_command_out);
 
+                /// The command has just had the region to itself; make sure it left it whole before
+                /// anything below (a growth, or reading the output) touches the mapping again.
+                checkRegionIsIntact(index);
+
                 if (status == SHARED_MEMORY_STATUS_NEED_MORE_SPACE)
                 {
                     /// The result does not fit next to the input; the server is the only side that
@@ -1470,6 +1566,12 @@ namespace
                     /// Cap the error message so a buggy or malicious command cannot force a huge
                     /// allocation on the failure path.
                     readStringBinary(message, timeout_command_out, SHARED_MEMORY_MAX_ERROR_MESSAGE_SIZE);
+
+                    /// The response was read in full, so the command is back to waiting for the next
+                    /// request: this is the command reporting that it cannot process this input, not
+                    /// the command misbehaving, and a pooled worker survives it. (A truncated
+                    /// message would have thrown out of the read above and discarded the worker.)
+                    command_can_be_reused = true;
                     throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
                         "Executable UDF reported an error (status {}): {}", status, message);
                 }
@@ -1599,6 +1701,16 @@ namespace
             /// configured maximum for a chunk that needs a little more room.
             size_t new_size = std::max(required, std::min(region.size() * 2, shared_memory_max_size));
 
+            /// Unless memory-limit exceptions are blocked right now. That happens when the growth is
+            /// driven from inside someone else's `finalize` - a format's wrapping buffer
+            /// (`WriteBufferValidUTF8`, `PeekableWriteBuffer`) flushing what it still holds into this
+            /// region - because `WriteBuffer::finalize` blocks them for its whole body. The charge
+            /// below then cannot fail, so `max_memory_usage` is not enforced for these bytes, and a
+            /// doubling would put a whole region size past the limit. Take a modest step instead:
+            /// what escapes the limit is then bounded by what the writer is actually flushing.
+            if (LockMemoryExceptionInThread::isBlocked(VariableContext::Process, /*fault_injection=*/ false))
+                new_size = std::max(required, std::min(region.size() + UNENFORCED_GROWTH_STEP, shared_memory_max_size));
+
             size_t added = new_size - region.size();
 
             /// Charge first (may throw MEMORY_LIMIT_EXCEEDED), then grow; roll the charge back if
@@ -1638,6 +1750,71 @@ namespace
                 && !command_is_invalid
                 && (command_can_be_reused
                     || (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read));
+        }
+
+        /// The command opens the region by path and needs write access to it, which also lets it
+        /// resize the file - an `O_TRUNC` in a client implementation is enough. The server keeps
+        /// mapping the old, larger extent, and touching a page the file no longer backs raises
+        /// `SIGBUS`, which is fatal for the whole server: the response bounds check cannot catch it,
+        /// because it compares against the size the server believes the region still has.
+        ///
+        /// So the file is checked against the mapping before the region is used, on both sides of a
+        /// request - its size has to match exactly, and its path has to still lead to the very same
+        /// file - and a command that broke either is treated like any other protocol violation. A
+        /// file that grew is not a fault hazard, but its extra pages are committed and charged to
+        /// nobody; a file that lost its name would make the next borrow hand the command a path that
+        /// leads nowhere. That covers what actually happens: a command that damages the region while
+        /// it answers, or between requests (the check before serialization).
+        ///
+        /// What it does not cover is a command that truncates from another thread in the instant
+        /// between this check and the access - the classic time-of-check/time-of-use gap. Closing
+        /// that takes a backing store the command cannot shrink at all, with consequences for the
+        /// protocol and for the lifetime of a pooled region; the design note on `SharedMemoryRegion`
+        /// spells out what it would involve.
+        ///
+        /// It is deliberately not done: an executable UDF is server-side code, configured by the
+        /// administrator and run as the ClickHouse user, so a command that wants the server dead
+        /// does not need this race - it can signal the process it is a child of. These checks are
+        /// here to keep a *mistake* in a command from taking the server down, not to contain a
+        /// hostile one; containing one would take the command sandboxed, and then this transport
+        /// should be revisited as a whole.
+        void checkRegionIsIntact(size_t index)
+        {
+            auto & region = *regions[index];
+            SharedMemoryRegion::BackingFileState file{};
+            try
+            {
+                file = region.backingFileState();
+            }
+            catch (...)
+            {
+                /// Inspection itself failing is not evidence that the region is safe to reuse.
+                /// Fail closed so a pooled worker with an inaccessible path is discarded.
+                command_is_invalid = true;
+                throw;
+            }
+
+            if (file.size == region.size() && file.path_is_ours)
+                return;
+
+            /// Whatever the command did, this region cannot be used any further, and a pooled worker
+            /// that does it must not be handed to another query - otherwise the next borrow gets a
+            /// region whose path leads nowhere and fails the same way, poisoning the pool slot.
+            command_is_invalid = true;
+
+            if (!file.path_is_ours)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Executable UDF removed or replaced its shared-memory file {}; the command must "
+                    "only read and write the region, never touch its name",
+                    region.path());
+
+            /// A shorter file is the dangerous one - the mapping over the pages it dropped faults -
+            /// but a longer one is not acceptable either: those pages are committed in the `tmpfs`
+            /// and charged to nobody, and the trim on the way back to the pool would not free them.
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable UDF resized its shared-memory region from {} to {} bytes; "
+                "only the server may resize the region",
+                region.size(), file.size);
         }
 
         /// Closes the command's stdin, so that the child exits when it sees EOF. `command_is_reused`
@@ -1711,13 +1888,16 @@ namespace
             /// does this in order on the normal path; here it also covers the destructor path (query
             /// cancellation, an exception downstream) where the pipeline is still alive.
             output_executor.reset();
-            output_pipeline = QueryPipeline();
+            {
+                /// Moved into a temporary rather than assigned an empty pipeline: assignment would
+                /// construct one, and that allocates, on a path that runs from a destructor.
+                QueryPipeline discarded = std::move(output_pipeline);
+            }
             output_read_buffer.reset();
 
-            /// Decide once, here: everything below - the stdin close, the regions, the hand-back to
-            /// the pool - has to agree on whether this worker survives the borrow, and the decision
-            /// stops being readable as soon as a discarded command is dropped further down.
-            const bool keep_command = commandIsReused();
+            /// Make the preliminary reuse decision needed for stdin teardown. It is finalized
+            /// immediately before the worker and its regions are handed back below.
+            bool keep_command = commandIsReused();
 
             /// A child that is not going back to the pool exits on stdin EOF, so its stdin must be
             /// closed here as well: generate() closes it on the normal path, but not when the source
@@ -1781,6 +1961,28 @@ namespace
                 }
             }
 
+            /// Once all readers of the response and sampler bookkeeping have stopped, validate
+            /// every retained region one last time. The per-response check happens before the
+            /// response offset and size are read, so a command can damage its region after that
+            /// check yet still finish a syntactically valid response. Such a worker must be
+            /// discarded here instead of poisoning the next borrow.
+            if (keep_command)
+            {
+                try
+                {
+                    for (size_t i = 0; i < regions.size(); ++i)
+                    {
+                        if (regions[i])
+                            checkRegionIsIntact(i);
+                    }
+                }
+                catch (...)
+                {
+                    keep_command = false;
+                    tryLogCurrentException("ShellCommandSharedMemorySource");
+                }
+            }
+
             if (command_is_invalid)
                 command = nullptr;
 
@@ -1828,11 +2030,6 @@ namespace
                     for (size_t i = 0; i < regions.size(); ++i)
                         command_holder->shrinkSharedMemory(i, shared_memory_size);
                 }
-
-                /// Whatever regions the holder still owns outlive this borrow, so hand their charge
-                /// back to it before the per-borrow charge below goes away. Doing it in this order
-                /// means the bytes are never uncharged everywhere at once, and never charged twice.
-                command_holder->acquireChargeFromBorrower();
             }
 
             /// Release the per-borrow memory charge on the query thread. The producer thread is
@@ -1840,10 +2037,29 @@ namespace
             if (size_t charge = query_memory_charge.load(std::memory_order_relaxed))
                 unchargeQueryMemory(charge);
 
+            /// Whatever regions the holder still owns outlive this borrow, so they are charged
+            /// again - globally this time - now that the borrow's charge is gone. There is no way
+            /// to move a charge between trackers atomically, so one of the two orders has to be
+            /// picked: this one leaves the bytes uncounted for the moment in between, the other
+            /// would count them twice. Undercounting for a moment can at most let a concurrent
+            /// allocation through (memory limits are approximate anyway - see
+            /// `max_untracked_memory`), while double counting could fail a query that fits and
+            /// would inflate the peak the server reports. The borrow side of the hand-over
+            /// (`releaseChargeToBorrower`) errs the same way, for the same reason.
+            if (command_holder)
+                command_holder->acquireChargeFromBorrower();
+
             if (command_holder && process_pool)
             {
                 if (keep_command)
                     command_holder->returnCommand(std::move(command));
+
+                /// A worker that is not going back to the pool has to die before its slot does: the
+                /// query waiting for that slot starts a replacement at once, so leaving this process
+                /// to be destroyed later - with a `command_termination_timeout` wait in front of it -
+                /// lets the pool run over `pool_size` for as long as that takes. Its stdin was closed
+                /// above, so the child is already on its way out.
+                command = nullptr;
 
                 process_pool->returnObject(std::move(command_holder));
             }
@@ -1854,7 +2070,6 @@ namespace
         SharedHeader sample_block;
         Block input_header;
 
-        std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
 
         /// regions[0] is used by both transports; regions[1] is the second double-buffer used only
@@ -1885,7 +2100,6 @@ namespace
         size_t current_read_rows = 0;
         bool stdin_closed = false;
 
-        ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
 
         bool check_exit_code = false;
@@ -1902,9 +2116,22 @@ namespace
 
         std::atomic<bool> command_is_invalid {false};
 
-        /// Background prefetcher for pipelined mode. Declared last so it is destroyed first; its
-        /// destructor stops and joins the producer thread (cleanup() also does this explicitly).
+        /// Background prefetcher for pipelined mode. Destroyed early (see the declaration order);
+        /// its destructor stops and joins the producer thread (cleanup() also does this explicitly).
         DoubleBufferedProducer producer;
+
+        /// The worker process and its pool holder are taken over after EVERY other member, because
+        /// every other member has to be able to throw without costing a healthy pooled worker: until
+        /// this object owns these two they still belong to the caller, whose scope guard hands them
+        /// back to the pool. `timeout_command_out` allocates its buffer, and both `QueryPipeline`
+        /// members allocate in their default constructor, so this is not a theoretical ordering.
+        ///
+        /// Being last also makes them the first members destroyed, which is safe: `cleanup` runs
+        /// before any of that and has already stopped the producer, torn the pipelines down and
+        /// handed the command back, and ~TimeoutReadBufferFromFileDescriptor deliberately does not
+        /// touch the descriptors the command owns.
+        std::unique_ptr<ShellCommand> command;
+        ShellCommandHolderPtr command_holder;
     };
 
 }
@@ -1947,7 +2174,14 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     /// holder: on the normal path the source has taken it and this is a no-op.
     SCOPE_EXIT_SAFE({
         if (process_holder)
+        {
+            /// Hand the worker back to its holder as well when the source never took it: nothing
+            /// was sent to it, so it is still at a clean protocol boundary, and killing it would
+            /// cost the next query a process spawn over a failure that never reached this one.
+            if (process)
+                process_holder->returnCommand(std::move(process));
             process_pool->returnObject(std::move(process_holder));
+        }
     });
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};

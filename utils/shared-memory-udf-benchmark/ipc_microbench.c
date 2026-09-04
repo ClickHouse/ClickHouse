@@ -74,6 +74,15 @@ static void full_read(int fd, void *buf, size_t n)
     while (n) { ssize_t r = read(fd, p, n); if (r <= 0) { perror("read"); _exit(1); } p += r; n -= (size_t)r; }
 }
 
+// Make the contents of a buffer observable to the compiler without adding another pass over it.
+// The benchmark is Linux/GNU-specific already (`memfd_create`, `vmsplice`), so an empty GNU asm
+// with a memory clobber is appropriate here. In particular, this prevents the child-side memcpy in
+// bench_shared from being removed as a dead store before the process exits.
+static void consume_buffer(const void *buf)
+{
+    __asm__ __volatile__("" : : "r"(buf) : "memory");
+}
+
 static void report(const char *name, double secs, int crosses_kernel)
 {
     double gib = (double)CHUNK * (double)ITERS / (1u << 30);
@@ -118,7 +127,7 @@ static void bench_shared(const char *name, int fd)
     pid_t pid = fork();
     if (pid == 0) {
         close(go[1]); close(ack[0]);
-        for (size_t i = 0; i < ITERS; i++) { char c; full_read(go[0], &c, 1); memcpy(rcv, region, CHUNK); full_write(ack[1], "x", 1); }
+        for (size_t i = 0; i < ITERS; i++) { char c; full_read(go[0], &c, 1); memcpy(rcv, region, CHUNK); consume_buffer(rcv); full_write(ack[1], "x", 1); }
         _exit(0);
     }
     close(go[0]); close(ack[1]);

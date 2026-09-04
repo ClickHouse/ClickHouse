@@ -137,7 +137,7 @@ private:
         {
             while (true)
             {
-                size_t index;
+                size_t index = 0;
                 {
                     std::unique_lock lock(mutex);
                     producer_cv.wait(lock, [this] { return stop_requested || (!ready.has_value() && anyFree()); });

@@ -10,6 +10,7 @@
 #include <limits>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include <fcntl.h>
@@ -29,15 +30,24 @@ using namespace DB;
 
 namespace
 {
-std::string tempDir()
+constexpr std::string_view REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory";
+
+/// A directory the regions can actually live in. They need `O_TMPFILE` and `posix_fallocate`, which
+/// not every filesystem provides: `/dev/shm` is tmpfs, always provides both, and is where the feature
+/// puts its regions by default, so prefer it and fall back to the system temporary directory only
+/// where there is no `/dev/shm` at all.
+std::string regionDir()
 {
-    return std::filesystem::temp_directory_path().string();
+    static const std::string dir = std::filesystem::is_directory("/dev/shm")
+        ? std::string("/dev/shm")
+        : std::filesystem::temp_directory_path().string();
+    return dir;
 }
 }
 
 TEST(SharedMemoryRegion, CreateReadWrite)
 {
-    SharedMemoryRegion region(tempDir(), 4096);
+    SharedMemoryRegion region(regionDir(), 4096);
 
     EXPECT_EQ(region.size(), 4096u);
     EXPECT_NE(region.data(), nullptr);
@@ -57,9 +67,9 @@ TEST(SharedMemoryRegion, CreateReadWrite)
 /// guards the atomic open(O_TMPFILE | O_CLOEXEC) creation against regression.
 TEST(SharedMemoryRegion, BackingDescriptorIsCloseOnExec)
 {
-    SharedMemoryRegion region(tempDir(), 4096);
+    SharedMemoryRegion region(regionDir(), 4096);
 
-    struct stat region_stat;
+    struct stat region_stat{};
     ASSERT_EQ(::stat(region.path().c_str(), &region_stat), 0);
 
     bool found = false;
@@ -67,7 +77,7 @@ TEST(SharedMemoryRegion, BackingDescriptorIsCloseOnExec)
     {
         const int fd = std::stoi(entry.path().filename().string());
 
-        struct stat fd_stat;
+        struct stat fd_stat{};
         if (::fstat(fd, &fd_stat) != 0 || fd_stat.st_dev != region_stat.st_dev || fd_stat.st_ino != region_stat.st_ino)
             continue;
 
@@ -86,13 +96,17 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
 {
     /// A fresh directory keeps the test isolated from other region creation in this process.
     const std::string directory
-        = tempDir() + "/clickhouse_shm_leftovers_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
+        = regionDir() + "/clickhouse_shm_leftovers_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
     std::filesystem::create_directories(directory);
     SCOPE_EXIT({ std::filesystem::remove_all(directory); });
     ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
 
+    const std::string private_directory = directory + "/" + std::string(REGION_DIRECTORY_NAME);
+    std::filesystem::create_directories(private_directory);
+    ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
+
     /// Nobody holds a lock on this one, exactly like a file left by a process that is gone.
-    const std::string leftover = directory + "/clickhouse_udf_shm_leftover";
+    const std::string leftover = private_directory + "/clickhouse_udf_shm_leftover";
     {
         int fd = ::open(leftover.c_str(), O_CREAT | O_RDWR, 0600);
         ASSERT_NE(fd, -1);
@@ -101,14 +115,14 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
     }
 
     /// This one is locked, exactly like a region whose owner is still running: it must survive.
-    const std::string locked = directory + "/clickhouse_udf_shm_locked";
+    const std::string locked = private_directory + "/clickhouse_udf_shm_locked";
     int locked_fd = ::open(locked.c_str(), O_CREAT | O_RDWR, 0600);
     ASSERT_NE(locked_fd, -1);
     SCOPE_EXIT({ ::close(locked_fd); });
     ASSERT_EQ(::flock(locked_fd, LOCK_EX | LOCK_NB), 0);
 
     /// A file that is not a region must not be touched, locked or not.
-    const std::string unrelated = directory + "/not_a_region";
+    const std::string unrelated = private_directory + "/not_a_region";
     {
         int fd = ::open(unrelated.c_str(), O_CREAT | O_RDWR, 0600);
         ASSERT_NE(fd, -1);
@@ -116,15 +130,24 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
     }
 
     /// A matching prefix is not sufficient evidence that an entry belongs to this mechanism.
-    const std::string unrelated_matching_file = directory + "/clickhouse_udf_shm_unrelated";
+    const std::string unrelated_matching_file = private_directory + "/clickhouse_udf_shm_unrelated";
     {
         int fd = ::open(unrelated_matching_file.c_str(), O_CREAT | O_RDWR, 0644);
         ASSERT_NE(fd, -1);
         ::close(fd);
     }
 
-    const std::string matching_fifo = directory + "/clickhouse_udf_shm_fifo";
+    const std::string matching_fifo = private_directory + "/clickhouse_udf_shm_fifo";
     ASSERT_EQ(::mkfifo(matching_fifo.c_str(), 0600), 0);
+
+    /// Even a same-user 0600 file with the region prefix is unrelated when it lives directly in
+    /// the configured parent directory. The stale sweep must be confined to its private namespace.
+    const std::string matching_file_outside_namespace = directory + "/clickhouse_udf_shm_unrelated_0600";
+    {
+        int fd = ::open(matching_file_outside_namespace.c_str(), O_CREAT | O_RDWR, 0600);
+        ASSERT_NE(fd, -1);
+        ::close(fd);
+    }
 
     SharedMemoryRegion region(directory, 4096);
 
@@ -133,11 +156,13 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
     EXPECT_TRUE(std::filesystem::exists(unrelated));
     EXPECT_TRUE(std::filesystem::exists(unrelated_matching_file));
     EXPECT_TRUE(std::filesystem::exists(matching_fifo));
+    EXPECT_TRUE(std::filesystem::exists(matching_file_outside_namespace));
     EXPECT_TRUE(std::filesystem::exists(region.path()));
+    EXPECT_EQ(std::filesystem::path(region.path()).parent_path(), std::filesystem::path(private_directory));
 
     /// A burst of region creations scans this directory only once. Without throttling, N
     /// non-pooled UDF calls would each scan the N live region files and perform O(N^2) work.
-    const std::string later_leftover = directory + "/clickhouse_udf_shm_later_leftover";
+    const std::string later_leftover = private_directory + "/clickhouse_udf_shm_later_leftover";
     {
         int fd = ::open(later_leftover.c_str(), O_CREAT | O_RDWR, 0600);
         ASSERT_NE(fd, -1);
@@ -150,7 +175,7 @@ TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
 
 TEST(SharedMemoryRegion, SizeZeroThrows)
 {
-    EXPECT_THROW(SharedMemoryRegion(tempDir(), 0), DB::Exception);
+    EXPECT_THROW(SharedMemoryRegion(regionDir(), 0), DB::Exception);
 }
 
 TEST(SharedMemoryRegion, UnsupportedDirectoryRejectedDuringConfigurationValidation)
@@ -162,7 +187,7 @@ TEST(SharedMemoryRegion, UnsupportedDirectoryRejectedDuringConfigurationValidati
 TEST(SharedMemoryRegion, SharedDirectoryWithoutStickyBitRejected)
 {
     const std::string directory
-        = tempDir() + "/clickhouse_shm_unsafe_permissions_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
+        = regionDir() + "/clickhouse_shm_unsafe_permissions_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
     std::filesystem::create_directories(directory);
     SCOPE_EXIT({ std::filesystem::remove_all(directory); });
     ASSERT_EQ(::chmod(directory.c_str(), 0777), 0);
@@ -184,14 +209,14 @@ TEST(SharedMemoryRegion, SharedDirectoryWithoutStickyBitRejected)
 TEST(SharedMemoryRegion, OversizedThrows)
 {
     const size_t too_large = static_cast<size_t>(std::numeric_limits<off_t>::max()) + 1;
-    EXPECT_THROW(SharedMemoryRegion(tempDir(), too_large), DB::Exception);
+    EXPECT_THROW(SharedMemoryRegion(regionDir(), too_large), DB::Exception);
 }
 
 TEST(SharedMemoryRegion, UnlinkOnDestroy)
 {
     std::string path;
     {
-        SharedMemoryRegion region(tempDir(), 1024);
+        SharedMemoryRegion region(regionDir(), 1024);
         path = region.path();
         EXPECT_TRUE(std::filesystem::exists(path));
     }
@@ -202,7 +227,7 @@ TEST(SharedMemoryRegion, UnlinkOnDestroy)
 /// process does) observes writes made through the region, and vice versa.
 TEST(SharedMemoryRegion, SharedAcrossMappings)
 {
-    SharedMemoryRegion region(tempDir(), 4096);
+    SharedMemoryRegion region(regionDir(), 4096);
 
     int fd = ::open(region.path().c_str(), O_RDWR);
     ASSERT_NE(fd, -1);
@@ -230,7 +255,7 @@ TEST(SharedMemoryRegion, SharedAcrossMappings)
 /// does on its next request).
 TEST(SharedMemoryRegion, GrowPreservesDataAndEnlargesFile)
 {
-    SharedMemoryRegion region(tempDir(), 1024);
+    SharedMemoryRegion region(regionDir(), 1024);
     const std::string path = region.path();
 
     const std::string payload = "payload-before-growth";
@@ -257,7 +282,7 @@ TEST(SharedMemoryRegion, GrowPreservesDataAndEnlargesFile)
 
 TEST(SharedMemoryRegion, GrowToSmallerOrEqualThrows)
 {
-    SharedMemoryRegion region(tempDir(), 4096);
+    SharedMemoryRegion region(regionDir(), 4096);
     EXPECT_THROW(region.grow(4096), DB::Exception);
     EXPECT_THROW(region.grow(1024), DB::Exception);
     EXPECT_EQ(region.size(), 4096u);
@@ -269,7 +294,7 @@ TEST(SharedMemoryRegion, GrowToSmallerOrEqualThrows)
 /// region and a mapping made by another process.
 TEST(SharedMemoryRegion, ShrinkReleasesBackingFileAndKeepsPrefix)
 {
-    SharedMemoryRegion region(tempDir(), 8192);
+    SharedMemoryRegion region(regionDir(), 8192);
     const std::string path = region.path();
 
     const std::string payload = "payload-before-shrink";
@@ -333,7 +358,7 @@ TEST(SharedMemoryRegion, GrowRollsBackFileSizeOnReserveFailure)
 /// handoff is fully synchronized, so the access is race-free (a clean target for ThreadSanitizer).
 TEST(SharedMemoryRegion, SynchronizedHandoff)
 {
-    SharedMemoryRegion region(tempDir(), 4096);
+    SharedMemoryRegion region(regionDir(), 4096);
 
     std::mutex mutex;
     std::condition_variable cv;

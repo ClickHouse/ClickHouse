@@ -91,7 +91,20 @@ public:
         {
             std::lock_guard lock(objects_mutex);
 
-            objects.emplace_back(std::move(object_to_return));
+            try
+            {
+                objects.emplace_back(std::move(object_to_return));
+            }
+            catch (...)
+            {
+                /// The object does not make it back into the pool, so the pool must not keep
+                /// counting it: otherwise every such failure permanently costs one slot of
+                /// `max_size`, and after enough of them borrowing only ever times out.
+                --allocated_objects_size;
+                --borrowed_objects_size;
+                throw;
+            }
+
             --borrowed_objects_size;
         }
 
@@ -134,7 +147,18 @@ private:
         ++allocated_objects_size;
         ++borrowed_objects_size;
 
-        return std::forward<FactoryFunc>(func)();
+        try
+        {
+            return std::forward<FactoryFunc>(func)();
+        }
+        catch (...)
+        {
+            /// No object was created or borrowed, so a failed factory must not consume one of the
+            /// pool's slots permanently.
+            --allocated_objects_size;
+            --borrowed_objects_size;
+            throw;
+        }
     }
 
     T borrowFromObjects(const std::unique_lock<std::mutex> &)

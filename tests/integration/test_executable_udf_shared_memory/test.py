@@ -10,6 +10,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory"
+LATE_UNLINK_MARKER = "/tmp/clickhouse_shm_udf_late_unlink_once"
 node = cluster.add_instance(
     "node",
     stay_alive=True,
@@ -17,8 +19,13 @@ node = cluster.add_instance(
     tmpfs=[
         "/shm_udf_tiny:size=1M",
         "/shm_udf_accounting:size=1M",
+        "/shm_udf_pipeline_accounting:size=32M",
         "/shm_udf_discard:size=1M",
         "/shm_udf_trim:size=4M",
+        "/shm_udf_shrink:size=1M",
+        "/shm_udf_error:size=1M",
+        "/shm_udf_die:size=1M",
+        "/shm_udf_tamper:size=128M",
     ],
 )
 
@@ -47,7 +54,11 @@ def profile_event_value(event):
 def shm_file_count(path):
     return int(
         node.exec_in_container(
-            ["bash", "-c", f"find {path} -maxdepth 1 -name 'clickhouse_udf_shm_*' | wc -l"]
+            [
+                "bash",
+                "-c",
+                f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' | wc -l",
+            ]
         ).strip()
     )
 
@@ -60,8 +71,19 @@ def discard_shm_file_count():
     return shm_file_count("/shm_udf_discard")
 
 
+def shm_file_names(path):
+    listing = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%f\\n'",
+        ]
+    ).split()
+    return sorted(listing)
+
+
 def shm_file_sizes(path):
-    find = f"find {path} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%s\\n'"
+    find = f"find {path}/{REGION_DIRECTORY_NAME} -maxdepth 1 -name 'clickhouse_udf_shm_*' -printf '%s\\n'"
     listing = node.exec_in_container(["bash", "-c", find]).split()
     return sorted(int(size) for size in listing)
 
@@ -164,6 +186,30 @@ def test_shared_memory_udf_pool_region_is_charged_to_query(started_cluster):
     assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
 
 
+def test_shared_memory_udf_pipeline_charges_both_regions_to_query(started_cluster):
+    skip_test_msan(node)
+
+    # Both functions use 8 MiB regions. The limit leaves almost 8 MiB for the one-region control's
+    # query overhead, but it is still one byte short of the 16 MiB region charge incurred by
+    # `shared_memory_pipeline`. The pipeline query can only pass if its second region is unaccounted.
+    memory_limit = 16 * 1048576 - 1
+    assert (
+        node.query(
+            "SELECT test_function_shm_accounting_control_python(1) "
+            f"SETTINGS max_memory_usage={memory_limit}, max_untracked_memory=0"
+        )
+        == "Key 1\n"
+    )
+
+    with pytest.raises(Exception) as exc:
+        node.query(
+            "SELECT test_function_shm_pipeline_accounting_python(1) FORMAT Null "
+            f"SETTINGS max_memory_usage={memory_limit}, max_untracked_memory=0"
+        )
+
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
+
+
 def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started_cluster):
     skip_test_msan(node)
 
@@ -194,7 +240,10 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
         )
 
     assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
-    assert node.query(successful_query).strip().isdigit()
+    # No request reached the worker, so the pool must hand back the very same process - a new pid
+    # here would mean a healthy worker was discarded (and its region rebuilt) over a failure that
+    # never touched it.
+    assert node.query(successful_query).strip() == worker_pid
 
 
 def test_shared_memory_udf_pool_short_result_does_not_hang(started_cluster):
@@ -421,6 +470,45 @@ def test_shared_memory_udf_command_reports_an_error(started_cluster):
     assert "the command cannot process this request" in str(exc.value)
 
 
+def test_shared_memory_udf_pool_survives_an_error_response(started_cluster):
+    skip_test_msan(node)
+
+    # A command that answers with the protocol's error status has told the server it cannot process
+    # this input and is back to waiting for the next request - a report, not a protocol violation.
+    # The pooled worker must survive it, which shows as the same region file (a discarded worker
+    # takes its region with it and the next borrow creates a new one under a new random name).
+    assert shm_file_names("/shm_udf_error") == []
+
+    regions = []
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_pool_error_python(1) FORMAT Null")
+        assert "reported an error" in str(exc.value)
+        regions.append(shm_file_names("/shm_udf_error"))
+
+    assert len(regions[0]) == 1
+    assert regions[0] == regions[1] == regions[2]
+
+
+def test_shared_memory_udf_pool_command_died(started_cluster):
+    skip_test_msan(node)
+
+    # The pooled command exits without answering. Every such borrow has to fail quickly, drop the
+    # dead worker together with its region, and give the pool slot back - so more failures than
+    # `pool_size` (2 here) must not start timing out, and the pool must still be usable afterwards.
+    assert shm_file_names("/shm_udf_die") == []
+
+    for _ in range(5):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_pool_die_python(1) FORMAT Null")
+        message = str(exc.value)
+        assert "test_function_shm_pool_die_python" in message
+        assert "Could not get process from pool" not in message
+        assert shm_file_names("/shm_udf_die") == []
+
+    assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
+
+
 def test_shared_memory_udf_invalid_offset(started_cluster):
     skip_test_msan(node)
 
@@ -440,7 +528,14 @@ def test_shared_memory_udf_size_too_large(started_cluster):
     with pytest.raises(Exception) as exc:
         node.query("SELECT test_function_shm_huge_python(1) FORMAT Null")
 
+    # The function must not exist at all — otherwise any unrelated runtime error mentioning the same
+    # name would keep this test green after the signed-range guard is gone.
     assert "test_function_shm_huge_python" in str(exc.value)
+    assert "does not exist" in str(exc.value)
+    assert node.contains_in_log(
+        "Could not load external user defined function 'test_function_shm_huge_python'"
+    )
+    assert node.contains_in_log("`shared_memory_size` (18446744073709551615) must not exceed")
 
 
 def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
@@ -449,17 +544,24 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
     # Each of these functions has an invalid combination of shared-memory options and must be
     # rejected at config load, so the function is never created and using it fails. The rejection
     # is isolated (the other functions in the same config still work).
-    for name in [
-        "test_function_shm_bad_chunk_header",       # use_shared_memory + send_chunk_header
-        "test_function_shm_bad_pipeline_no_shm",     # shared_memory_pipeline without use_shared_memory
-        "test_function_shm_bad_max_lt_size",         # shared_memory_max_size < shared_memory_size
-        "test_function_shm_bad_empty_path",          # empty shared_memory_path
-        "test_function_shm_bad_relative_path",       # relative shared_memory_path
-        "test_function_shm_unsupported_path",        # filesystem without O_TMPFILE support
+    for name, diagnostic in [
+        ("test_function_shm_bad_chunk_header", "`use_shared_memory` is incompatible with `send_chunk_header`"),
+        ("test_function_shm_bad_pipeline_no_shm", "`shared_memory_pipeline` requires `use_shared_memory`"),
+        ("test_function_shm_bad_max_lt_size", "`shared_memory_max_size` (524288) must not be smaller"),
+        ("test_function_shm_bad_empty_path", "`shared_memory_path` must not be empty"),
+        ("test_function_shm_bad_relative_path", "must be an absolute path"),
+        ("test_function_shm_unsupported_path", "SharedMemoryRegion"),
     ]:
+        # The function must not exist at all: a config the loader rejected leaves no function
+        # behind, so this is UNKNOWN_FUNCTION rather than some runtime failure that happens to
+        # mention the same name.
         with pytest.raises(Exception) as exc:
             node.query(f"SELECT {name}(1) FORMAT Null")
         assert name in str(exc.value)
+        assert "does not exist" in str(exc.value)
+        # ... and the loader said why, naming this function.
+        assert node.contains_in_log(f"Could not load external user defined function '{name}'")
+        assert node.contains_in_log(diagnostic)
 
     # A valid shared-memory UDF from the same config still works.
     assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
@@ -471,7 +573,15 @@ def test_shared_memory_udf_pipeline_size_too_large(started_cluster):
     with pytest.raises(Exception) as exc:
         node.query("SELECT test_function_shm_pipeline_huge_python(1) FORMAT Null")
 
+    # As above: the function must be missing because the loader refused the config, not because
+    # something else failed at run time. Here the guard being checked is the one on the *sum* of the
+    # two regions the pipelined mode maps.
     assert "test_function_shm_pipeline_huge_python" in str(exc.value)
+    assert "does not exist" in str(exc.value)
+    assert node.contains_in_log(
+        "Could not load external user defined function 'test_function_shm_pipeline_huge_python'"
+    )
+    assert node.contains_in_log("total shared-memory charge (2 regions of up to")
 
 
 def test_shared_memory_udf_initial_region_reserves_backing_storage(started_cluster):
@@ -526,6 +636,86 @@ def test_shared_memory_udf_pipeline_pool_failed_constructor_drops_partial_region
 
     assert "Cannot reserve backing storage" in str(exc.value)
     assert tiny_shm_file_count() == 0
+
+
+def test_shared_memory_udf_command_shrinks_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # The command truncates the region file and then answers with an offset the server still
+    # believes to be inside it. Those pages are no longer backed by the file, so reading them would
+    # raise SIGBUS and take the whole server down; the server must notice the resize instead.
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_shrink_python(1) FORMAT Null")
+        assert "resized its shared-memory region" in str(exc.value)
+
+    # The point of the test: the server is still there.
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_shrinks_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # Same, through the pool: such a worker is discarded rather than handed to the next query, so it
+    # takes its region with it and nothing is left behind in the shared-memory directory.
+    assert shm_file_count("/shm_udf_shrink") == 0
+
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_shrink_pool_python(1) FORMAT Null")
+        assert "resized its shared-memory region" in str(exc.value)
+        assert shm_file_count("/shm_udf_shrink") == 0
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_enlarges_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # The command enlarges the region file and touches the new pages. Nothing faults and the answer
+    # itself is valid, so this is only caught by comparing the file against the mapping — and it has
+    # to be caught: those pages are committed in the tmpfs and charged to nobody, and trimming the
+    # region on the way back to the pool would leave them behind.
+    assert shm_file_names("/shm_udf_tamper") == []
+
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_enlarge_pool_python(1) FORMAT Null")
+        assert "resized its shared-memory region" in str(exc.value)
+        # The worker is discarded, so it takes the enlarged file with it.
+        assert shm_file_names("/shm_udf_tamper") == []
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_unlinks_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # The command deletes the region file after mapping it. The server's descriptor keeps the file
+    # alive, so the request itself could still succeed — but the path is gone, and reusing such a
+    # worker would hand the next borrow a name that leads nowhere and poison the pool slot.
+    assert shm_file_names("/shm_udf_tamper") == []
+
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_unlink_pool_python(1) FORMAT Null")
+        assert "removed or replaced its shared-memory file" in str(exc.value)
+        assert shm_file_names("/shm_udf_tamper") == []
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_rechecks_region_during_cleanup(started_cluster):
+    skip_test_msan(node)
+
+    # The first response sends its status, waits for the normal response-side integrity check to
+    # finish, then unlinks the region before completing the otherwise valid response. Cleanup must
+    # re-check the region and discard this worker. The replacement sees the marker and behaves.
+    node.exec_in_container(["rm", "-f", LATE_UNLINK_MARKER])
+    assert node.query("SELECT test_function_shm_late_unlink_pool_python(1)") == "1\n"
+    assert node.query("SELECT test_function_shm_late_unlink_pool_python(2)") == "2\n"
+
+    assert node.query("SELECT 1") == "1\n"
 
 
 def test_shared_memory_udf_command_died(started_cluster):

@@ -28,11 +28,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_FCNTL;
     extern const int CANNOT_LINK;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_FSTAT;
+    extern const int CANNOT_STAT;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_IMPLEMENTED;
 }
@@ -40,8 +44,13 @@ namespace ErrorCodes
 namespace
 {
 
-/// Every region file is named `<directory>/clickhouse_udf_shm_<random>`, and its owner holds an
-/// exclusive `flock` on it for the whole lifetime of the region.
+/// Keep region files in a directory owned exclusively by this mechanism. In particular, the stale
+/// file sweep must never apply its filename/lock heuristic to arbitrary files placed directly in a
+/// shared directory such as `/dev/shm`.
+const std::string_view REGION_DIRECTORY_NAME = ".clickhouse-udf-shared-memory";
+
+/// Every region file is named `clickhouse_udf_shm_<random>`, and its owner holds an exclusive
+/// `flock` on it for the whole lifetime of the region.
 const std::string_view REGION_FILE_PREFIX = "clickhouse_udf_shm_";
 
 /// Region creation can be frequent for non-pooled executable UDFs. Scanning the whole directory
@@ -95,6 +104,65 @@ void validateDirectory(const std::string & directory)
             directory);
 }
 
+std::string getRegionDirectory(const std::string & parent_directory)
+{
+    validateDirectory(parent_directory);
+
+    const std::string directory = (std::filesystem::path(parent_directory) / REGION_DIRECTORY_NAME).string();
+    bool created = false;
+    if (0 == ::mkdir(directory.c_str(), 0700))
+    {
+        created = true;
+    }
+    else if (errno != EEXIST)
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_CREATE_DIRECTORY,
+            saved_errno,
+            "SharedMemoryRegion: Cannot create private region directory {}",
+            directory);
+    }
+
+    /// As with region files, a restrictive server umask may clear owner bits from the requested
+    /// mode. The new directory is not used until it has the exact private mode.
+    if (created && 0 != ::chmod(directory.c_str(), 0700))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_CREATE_DIRECTORY,
+            saved_errno,
+            "SharedMemoryRegion: Cannot set the mode of private region directory {}",
+            directory);
+    }
+
+    /// Do not follow a pre-existing symlink: the directory is the positive ownership boundary for
+    /// stale-file reclamation, so accepting a link would let the sweep escape that boundary.
+    struct stat directory_stat{};
+    if (0 != ::lstat(directory.c_str(), &directory_stat))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_OPEN_FILE,
+            saved_errno,
+            "SharedMemoryRegion: Cannot inspect private region directory {}",
+            directory);
+    }
+
+    if (!S_ISDIR(directory_stat.st_mode)
+        || directory_stat.st_uid != ::geteuid()
+        || (directory_stat.st_mode & 07777) != 0700)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_OPEN_FILE,
+            "SharedMemoryRegion: private region directory {} must be a directory owned by uid {} with mode 0700",
+            directory,
+            ::geteuid());
+    }
+
+    return directory;
+}
+
 void unlinkNoThrow(const std::string & path, std::string_view operation) noexcept
 {
     if (0 != ::unlink(path.c_str()) && errno != ENOENT)
@@ -106,6 +174,19 @@ void unlinkNoThrow(const std::string & path, std::string_view operation) noexcep
             path,
             operation,
             errnoToString(unlink_errno));
+    }
+}
+
+void closeNoThrow(int fd, std::string_view operation) noexcept
+{
+    if (0 != ::close(fd))
+    {
+        const int close_errno = errno;
+        LOG_WARNING(
+            getLogger("SharedMemoryRegion"),
+            "Cannot close shared-memory region file descriptor during {}: {}",
+            operation,
+            errnoToString(close_errno));
     }
 }
 
@@ -134,13 +215,27 @@ LinkedRegionFile createLinkedRegionFile(const std::string & directory)
     auto close_fd = make_scope_guard([&]
     {
         if (fd != -1)
-            ::close(fd);
+            closeNoThrow(fd, "region-file creation cleanup");
     });
+
+    /// The mode passed to `open` is masked by the process umask (`<umask>` in the server config), and
+    /// this file has to be exactly 0600: the command opens it by path for reading and writing, and
+    /// the stale-region sweep below only reclaims files with exactly that mode. A umask that clears
+    /// an owner bit (0277, say) would otherwise make every call fail with `EACCES` and leave
+    /// leftovers behind forever. The file has no name yet, so it is never visible with another mode.
+    if (0 != ::fchmod(fd, 0600))
+    {
+        const int saved_errno = errno;
+        closeNoThrow(fd, "failed mode setup");
+        fd = -1;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_FCNTL, saved_errno, "SharedMemoryRegion: Cannot set the mode of a region file in {}", directory);
+    }
 
     if (0 != ::flock(fd, LOCK_EX | LOCK_NB))
     {
         const int saved_errno = errno;
-        ::close(fd);
+        closeNoThrow(fd, "failed lock setup");
         fd = -1;
         ErrnoException::throwWithErrno(
             ErrorCodes::CANNOT_FCNTL, saved_errno, "SharedMemoryRegion: Cannot lock a region file in {}", directory);
@@ -163,7 +258,7 @@ LinkedRegionFile createLinkedRegionFile(const std::string & directory)
         if (errno != EEXIST || attempt + 1 == link_attempts)
         {
             const int saved_errno = errno;
-            ::close(fd);
+            closeNoThrow(fd, "failed region-file linking");
             fd = -1;
             ErrnoException::throwWithErrno(
                 ErrorCodes::CANNOT_LINK, saved_errno, "SharedMemoryRegion: Cannot link a region file as {}", candidate);
@@ -256,7 +351,7 @@ void removeStaleRegions(const std::string & directory)
             || (candidate_stat.st_mode & 0777) != 0600
             || candidate_stat.st_nlink != 1)
         {
-            ::close(path_fd);
+            closeNoThrow(path_fd, "stale-region candidate rejection");
             continue;
         }
 
@@ -265,7 +360,7 @@ void removeStaleRegions(const std::string & directory)
         int fd = ::open(fd_path.c_str(), O_RDWR | O_CLOEXEC);
         /// Snapshot the reason before closing the inspected descriptor: `close` can overwrite errno.
         const int open_errno = errno;
-        ::close(path_fd);
+        closeNoThrow(path_fd, "stale-region candidate inspection");
         if (fd == -1)
         {
             LOG_DEBUG(log, "Cannot reopen {} while looking for leftover shared-memory regions: {}", path, errnoToString(open_errno));
@@ -303,7 +398,7 @@ void removeStaleRegions(const std::string & directory)
             }
         }
 
-        ::close(fd);
+        closeNoThrow(fd, "stale-region scan");
     }
 
     if (error)
@@ -326,7 +421,7 @@ void SharedMemoryRegion::checkSupported(const std::string & directory)
 {
     checkSupported();
 
-    auto [fd, path] = createLinkedRegionFile(directory);
+    auto [fd, path] = createLinkedRegionFile(getRegionDirectory(directory));
     try
     {
         /// A minimal allocation verifies that the filesystem implements `posix_fallocate` without
@@ -336,18 +431,23 @@ void SharedMemoryRegion::checkSupported(const std::string & directory)
     catch (...)
     {
         unlinkNoThrow(path, "configuration validation cleanup");
-        ::close(fd);
+        closeNoThrow(fd, "failed configuration validation");
         throw;
     }
 
     if (0 != ::unlink(path.c_str()))
     {
         const int saved_errno = errno;
-        ::close(fd);
+        closeNoThrow(fd, "failed configuration-validation cleanup");
         ErrnoException::throwWithErrno(
             ErrorCodes::CANNOT_UNLINK, saved_errno, "SharedMemoryRegion: Cannot remove probe file {}", path);
     }
-    ::close(fd);
+    if (0 != ::close(fd))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_CLOSE_FILE, saved_errno, "SharedMemoryRegion: Cannot close probe file {}", path);
+    }
 }
 
 SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t size)
@@ -366,17 +466,17 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t siz
         throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
             "SharedMemoryRegion: size {} exceeds the maximum {}", size, static_cast<size_t>(std::numeric_limits<off_t>::max()));
 
-    /// Reclamation deletes entries by name, so establish the directory-safety precondition before
-    /// inspecting any candidate. Revalidate during file creation below to catch permission changes.
-    validateDirectory(directory);
+    /// Reclamation is confined to a private namespace owned by this mechanism. A matching file in
+    /// the configured parent directory is unrelated and must never be considered for deletion.
+    const std::string region_directory = getRegionDirectory(directory);
 
     /// Periodically reclaim the regions of a server that died without running destructors, before
     /// adding one more file to the same directory.
-    removeStaleRegions(directory);
+    removeStaleRegions(region_directory);
 
     /// `O_CLOEXEC` is set atomically during creation, so another thread cannot leak the backing
     /// descriptor into an unrelated child between `open` and `fcntl`.
-    auto linked_file = createLinkedRegionFile(directory);
+    auto linked_file = createLinkedRegionFile(region_directory);
     int fd = linked_file.fd;
     file_path = std::move(linked_file.path);
 
@@ -384,7 +484,7 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t siz
     auto unlink_on_failure = [&]() noexcept
     {
         unlinkNoThrow(file_path, "region creation cleanup");
-        ::close(fd);
+        closeNoThrow(fd, "region creation cleanup");
         file_path.clear();
     };
 
@@ -423,6 +523,19 @@ SharedMemoryRegion::SharedMemoryRegion(const std::string & directory, size_t siz
 
     /// Keep the descriptor open so that `grow` can `ftruncate` and remap without reopening.
     region_fd = fd;
+
+    /// Remember which file this is. The command is given the path and can unlink it or put another
+    /// file under that name; from then on the path must not be used, and must not be deleted.
+    struct stat file_stat{};
+    if (0 != ::fstat(region_fd, &file_stat))
+    {
+        const int saved_errno = errno;
+        unlink_on_failure();
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_FSTAT, saved_errno, "SharedMemoryRegion: Cannot stat the region file {}", file_path);
+    }
+    file_device = file_stat.st_dev;
+    file_inode = file_stat.st_ino;
 }
 
 void SharedMemoryRegion::grow(size_t new_size)
@@ -469,8 +582,10 @@ void SharedMemoryRegion::grow(size_t new_size)
         /// leaves BOTH the region size and the backing file unchanged. This matters for pooled
         /// processes, which reuse the same SharedMemoryRegion across borrows: otherwise the tmpfs
         /// file would stay larger than region_size, leaking unaccounted memory that outlives the
-        /// failed query. Shrinking back to region_size is safe — the old mapping still covers
-        /// exactly [0, region_size). Preserve the mmap errno for the exception below.
+        /// failed query. Shrinking back to region_size is safe — the old mapping still covers at
+        /// least [0, region_size), which is all this region claims. Preserve the mmap errno for the
+        /// exception below. If even this rollback fails, the file stays longer than `region_size`;
+        /// that is unusable space rather than a hazard, and the next `grow` or `shrink` fixes it.
         const int mmap_errno = errno;
         if (0 != ::ftruncate(region_fd, static_cast<off_t>(region_size)))
         {
@@ -491,6 +606,33 @@ void SharedMemoryRegion::grow(size_t new_size)
     region_data = static_cast<char *>(buf);
     region_size = new_size;
     mapped_size = new_size;
+}
+
+SharedMemoryRegion::BackingFileState SharedMemoryRegion::backingFileState() const
+{
+    struct stat file_stat{};
+    if (0 != ::fstat(region_fd, &file_stat))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_FSTAT, saved_errno, "SharedMemoryRegion: Cannot stat the region file {}", file_path);
+    }
+
+    BackingFileState state{.size = static_cast<size_t>(file_stat.st_size), .path_is_ours = false};
+
+    /// The descriptor keeps the file alive even after it loses its name, so the size above says
+    /// nothing about the path. Look the path up separately: it has to still lead to this very file.
+    struct stat path_stat{};
+    if (0 == ::lstat(file_path.c_str(), &path_stat))
+        state.path_is_ours = path_stat.st_dev == file_device && path_stat.st_ino == file_inode;
+    else if (errno != ENOENT)
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_STAT, saved_errno, "SharedMemoryRegion: Cannot inspect the region path {}", file_path);
+    }
+
+    return state;
 }
 
 void SharedMemoryRegion::shrink(size_t new_size) noexcept
@@ -555,12 +697,24 @@ SharedMemoryRegion::~SharedMemoryRegion()
 
     if (!file_path.empty())
     {
-        if (0 != ::unlink(file_path.c_str()))
+        /// Delete the name only while it still leads to this file: the command could have removed
+        /// it and created something else under it, and that something else is not ours to remove.
+        struct stat path_stat{};
+        if (0 != ::lstat(file_path.c_str(), &path_stat))
+        {
+            if (errno != ENOENT)
+                LOG_WARNING(log, "Cannot inspect {} before removing it: {}", file_path, errnoToString());
+        }
+        else if (path_stat.st_dev != file_device || path_stat.st_ino != file_inode)
+        {
+            LOG_WARNING(log, "Not removing {}: it no longer names the region file this object owns", file_path);
+        }
+        else if (0 != ::unlink(file_path.c_str()))
             LOG_WARNING(log, "Cannot unlink {}: {}", file_path, errnoToString());
     }
 
     if (region_fd != -1)
-        ::close(region_fd);
+        closeNoThrow(region_fd, "region destruction");
 }
 
 }
