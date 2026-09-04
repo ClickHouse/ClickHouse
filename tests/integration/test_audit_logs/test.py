@@ -3,6 +3,7 @@ import re
 import socket
 import struct
 import time
+import uuid
 
 import pymysql
 import pytest
@@ -806,9 +807,9 @@ def test_audit_log_access_control_statements_are_dcl(start_cluster):
 
 def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     """`EXECUTE AS <user> <statement>` runs the wrapped statement through
-    `executeQuery(..., internal = true)`, so it produces no audit record of its own. The audit log
-    must look through the wrapper: node_dml_misc enables DML (and MISC, but not DCL), so the
-    wrapped SELECT must be recorded as DML."""
+    `executeQuery(..., internal = true)`, which by itself would leave it out of the audit log. The
+    wrapped statement must be audited from its own execution: node_dml_misc enables DML (and MISC,
+    but not DCL), so the wrapped SELECT must be recorded as DML with its own text."""
     node_dml_misc.query("DROP TABLE IF EXISTS audit_execute_as_table")
     node_dml_misc.query("CREATE TABLE audit_execute_as_table (a int) ENGINE = Memory")
     node_dml_misc.query("DROP USER IF EXISTS audit_execute_as_user")
@@ -819,9 +820,9 @@ def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
         "EXECUTE AS audit_execute_as_user SELECT count() FROM default.audit_execute_as_table"
     )
 
-    assert_audit_log_contain_with_retry(node_dml_misc, "audit_execute_as_table")
+    assert_audit_log_contain_with_retry(node_dml_misc, "FROM default.audit_execute_as_table")
     log_content = node_dml_misc.grep_in_log(
-        "audit_execute_as_user SELECT", from_host=True, filename="clickhouse-server.audit.log"
+        "FROM default.audit_execute_as_table", from_host=True, filename="clickhouse-server.audit.log"
     )
     lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
     assert lines, "the statement wrapped by EXECUTE AS must produce an audit record"
@@ -838,8 +839,13 @@ def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     assert select_lines, "the wrapped SELECT must be audited with its own COMMAND"
     for fields in select_lines:
         assert fields[0] == "DML", f"the wrapped SELECT must be classified as DML: {fields}"
+        assert fields[2] == "0", f"the wrapped SELECT succeeded: {fields}"
         assert "audit_execute_as_table" in fields[5], (
             f"the wrapped SELECT must record its own OBJECT_NAMES: {fields}"
+        )
+        # The record describes the wrapped statement itself, not the `EXECUTE AS` wrapper.
+        assert "EXECUTE AS" not in fields[6], (
+            f"the wrapped SELECT must be recorded with its own text: {fields}"
         )
 
     node_dml_misc.query("DROP USER IF EXISTS audit_execute_as_user")
@@ -871,7 +877,8 @@ def test_audit_log_bare_execute_as_is_dcl(start_cluster):
 def test_audit_log_parallel_with_statements_are_audited(start_cluster):
     """`statement1 PARALLEL WITH statement2` executes both statements internally, so the wrapper
     alone would be audited as MISC and a DDL-only deployment would see neither drop. Each wrapped
-    statement must get its own DDL record with its own OBJECT_NAMES. node_ddl enables only DDL."""
+    statement must get its own DDL record, with its own text and its own OBJECT_NAMES, while the
+    wrapper itself is MISC and therefore invisible here. node_ddl enables only DDL."""
     node_ddl.query("DROP TABLE IF EXISTS audit_parallel_left")
     node_ddl.query("DROP TABLE IF EXISTS audit_parallel_right")
     node_ddl.query("CREATE TABLE audit_parallel_left (a int) ENGINE = Memory")
@@ -881,22 +888,108 @@ def test_audit_log_parallel_with_statements_are_audited(start_cluster):
         "DROP TABLE audit_parallel_left PARALLEL WITH DROP TABLE audit_parallel_right"
     )
 
-    assert_audit_log_contain_with_retry(node_ddl, "PARALLEL WITH")
+    assert_audit_log_contain_with_retry(node_ddl, "DROP TABLE audit_parallel_right")
     log_content = node_ddl.grep_in_log(
-        "PARALLEL WITH", from_host=True, filename="clickhouse-server.audit.log"
+        "audit_parallel_", from_host=True, filename="clickhouse-server.audit.log"
     )
-    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
-    assert len(lines) >= 2, (
-        f"each statement of a PARALLEL WITH query must be audited separately, got: {lines}"
+    lines = [
+        line
+        for line in log_content.strip().split("\n")
+        if "AUDIT:" in line and "IF EXISTS" not in line
+    ]
+    assert not any("PARALLEL WITH" in line for line in lines), (
+        f"the PARALLEL WITH wrapper is MISC and must not appear on a DDL-only node: {lines}"
     )
 
     dropped_objects = set()
     for line in lines:
         fields = line.split("AUDIT: ", 1)[1].split(", ")
-        assert fields[0] == "DDL", f"each wrapped DROP must be classified as DDL: {line}"
-        assert fields[1] == "Drop", f"each wrapped statement must report its own COMMAND: {line}"
+        assert fields[0] == "DDL", f"each wrapped statement must be classified as DDL: {line}"
+        if fields[1] != "Drop":
+            continue
+        assert fields[2] == "0", f"each wrapped DROP succeeded: {line}"
         # Each wrapped DROP targets exactly one table, so OBJECT_NAMES holds a single name.
         dropped_objects.add(fields[5])
 
-    assert "`default`.`audit_parallel_left`" in dropped_objects, dropped_objects
-    assert "`default`.`audit_parallel_right`" in dropped_objects, dropped_objects
+    # Plain identifiers are not quoted (`backQuoteIfNeed`), exactly like in `system.query_log`.
+    assert dropped_objects == {
+        "default.audit_parallel_left",
+        "default.audit_parallel_right",
+    }, dropped_objects
+
+
+def test_audit_log_partially_executed_parallel_with(start_cluster):
+    """With `max_threads = 1` the statements of a PARALLEL WITH query run one by one and the query
+    stops at the first failure. The audit log must reflect what really happened: a record for the
+    statement that succeeded (with code 0), a record for the one that failed (with its own error
+    code) and no record at all for the statement that was never reached. node_ddl enables only DDL,
+    so the MISC record of the wrapper is filtered out here."""
+    # Unique names: the audit log is append-only and shared by every run of this test on the node.
+    marker = f"audit_partial_{uuid.uuid4().hex[:8]}"
+    table_ok, table_missing, table_never = f"{marker}_ok", f"{marker}_missing", f"{marker}_never"
+
+    error = node_ddl.query_and_get_error(
+        f"CREATE TABLE {table_ok} (a int) ENGINE = Memory"
+        f" PARALLEL WITH DROP TABLE {table_missing}"
+        f" PARALLEL WITH CREATE TABLE {table_never} (a int) ENGINE = Memory",
+        settings={"max_threads": "1"},
+    )
+    assert "UNKNOWN_TABLE" in error, error
+    # Sanity check of the execution itself: the first statement ran, the last one never did.
+    assert node_ddl.query(f"EXISTS TABLE {table_ok}").strip() == "1"
+    assert node_ddl.query(f"EXISTS TABLE {table_never}").strip() == "0"
+
+    assert_audit_log_contain_with_retry(node_ddl, f"DROP TABLE {table_missing}")
+    log_content = node_ddl.grep_in_log(
+        marker, from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert not any("PARALLEL WITH" in line for line in lines), (
+        f"the PARALLEL WITH wrapper is MISC and must not appear on a DDL-only node: {lines}"
+    )
+
+    records = []
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DDL", f"each wrapped statement must be classified as DDL: {line}"
+        # (COMMAND, EXCEPTION_CODE, OBJECT_NAMES)
+        records.append((fields[1], fields[2], fields[5]))
+
+    assert records == [
+        ("Create", "0", f"default.{table_ok}"),
+        ("Drop", "60", f"default.{table_missing}"),  # UNKNOWN_TABLE
+    ], records
+
+    node_ddl.query(f"DROP TABLE {table_ok}")
+
+
+def test_audit_log_parallel_with_wrapper_records_own_outcome(start_cluster):
+    """The PARALLEL WITH wrapper is audited once, as MISC, with the outcome of the query as a whole,
+    while a statement that PARALLEL WITH rejects (a SELECT has output and cannot be combined) gets
+    a record of its own with that error, and the statement never reached gets none. node_dml_misc
+    enables DML and MISC."""
+    # Unique aliases: the audit log is append-only and shared by every run of this test on the node.
+    marker = f"audit_pw_{uuid.uuid4().hex[:8]}"
+    first, second = f"{marker}_first", f"{marker}_second"
+
+    error = node_dml_misc.query_and_get_error(
+        f"SELECT 1 AS {first} PARALLEL WITH SELECT 2 AS {second}",
+        settings={"max_threads": "1"},
+    )
+    assert "INCORRECT_QUERY" in error, error
+
+    assert_audit_log_contain_with_retry(node_dml_misc, second)
+    log_content = node_dml_misc.grep_in_log(
+        marker, from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line.rstrip() for line in log_content.strip().split("\n") if "AUDIT:" in line]
+
+    # (TYPE, COMMAND, EXCEPTION_CODE, QUERY)
+    records = sorted(
+        (fields[0], fields[1], fields[2], fields[6])
+        for fields in (line.split("AUDIT: ", 1)[1].split(", ") for line in lines)
+    )
+    assert records == [
+        ("DML", "Select", "80", f"SELECT 1 AS {first}"),  # INCORRECT_QUERY
+        ("MISC", "ParallelWithQuery", "80", f"SELECT 1 AS {first} PARALLEL WITH SELECT 2 AS {second}"),
+    ], records
