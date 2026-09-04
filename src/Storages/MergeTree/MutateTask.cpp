@@ -1849,13 +1849,22 @@ static void finalizeMutatedPart(
 
 }
 
-struct MutationContext
+struct MutationContext : public std::enable_shared_from_this<MutationContext>
 {
     MergeTreeData * data{};
     MergeTreeDataMergerMutator * mutator{};
     PartitionActionBlocker * merges_blocker{};
     TableLockHolder * holder{};
     MergeListEntry * mutate_entry{};
+    /// The `PipelineCancelState` this context registered its cancellation hook with, kept as a
+    /// `shared_ptr` so the teardown helpers (`clearPipelineCancelHook`, `resetMutatingPipeline`,
+    /// `cancelMutatingExecutor`) do not depend on the merge list entry still being alive: the raw
+    /// `mutate_entry` generally outlives the context, but a concurrent teardown can destroy the entry
+    /// while this context runs its destructor on the cancellation thread. Holding the state directly
+    /// makes the entry lifetime non-load-bearing. Initialized once in the `MutateTask` constructor
+    /// (before the task becomes externally cancellable), so the member is never written or read from
+    /// two threads without synchronization.
+    PipelineCancelStatePtr cancel_state;
 
     LoggerPtr log{getLogger("MutateTask")};
 
@@ -1948,13 +1957,88 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        bool blocker_cancelled = new_data_part
+            ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId())
+            : merges_blocker->isCancelled();
+        if (blocker_cancelled || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
 
         return true;
+    }
+
+    /// Register a hook that cancels the running mutation pipeline when the merge list entry
+    /// is cancelled (e.g. KILL MUTATION). The hook captures the cancel state by value (not the
+    /// merge list entry), so it can be invoked from another thread even after the entry has been
+    /// destroyed, and it locks only the state's own mutex. The context is captured weakly to avoid
+    /// a reference cycle: the context owns a reference to the merge list entry, so capturing it
+    /// strongly would keep the entry alive forever even after the hook has served its purpose.
+    /// Uses the context's own `cancel_state` copy (initialized in the constructor), which is never
+    /// written again, so `cancel_state` observes the state without any synchronization.
+    void setPipelineCancelHook()
+    {
+        auto state = cancel_state;
+        std::lock_guard lock{state->mutex};
+        state->hook = [state, weak_ctx = weak_from_this()]()
+        {
+            /// `cancel_state` (set together with the captured `state`) keeps `state` alive while the
+            /// context it belongs to is alive; `cancelMutatingExecutor` locks `state->mutex`, so access
+            /// to the executor is guarded against the teardown in `resetMutatingPipeline()`.
+            if (auto ctx = weak_ctx.lock())
+                ctx->cancelMutatingExecutor();
+        };
+    }
+
+    void clearPipelineCancelHook() const
+    {
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            cancel_state->hook = {};
+        }
+    }
+
+    /// Releases the mutation pipeline. Must run under the same mutex that protects the hook slot,
+    /// so a concurrent `cancelPartMutations` (KILL MUTATION) either cancels a still valid executor
+    /// or observes a null one, never a destroyed one.
+    void resetMutatingPipeline()
+    {
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            mutating_executor.reset();
+            mutating_pipeline.reset();
+        }
+    }
+
+    /// Cancels the running mutation pipeline, guarded by the same mutex that protects the hook slot,
+    /// so it cannot race with `resetMutatingPipeline()`. Uses the context's own `cancel_state` copy
+    /// (not the merge list entry), so it is safe even after the entry has been destroyed. Also used
+    /// by the `cancel()` overrides, which can be reached from another thread while the mutation thread
+    /// is finalizing (e.g. `MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage`).
+    void cancelMutatingExecutor() const
+    {
+        if (cancel_state)
+        {
+            std::lock_guard lock{cancel_state->mutex};
+            if (mutating_executor)
+                mutating_executor->cancel();
+        }
+    }
+
+    /// The hook installed in `setPipelineCancelHook` captures the `PipelineCancelState` by value
+    /// (so it can outlive the merge list entry and be invoked from another thread); because the hook
+    /// is stored inside that very state, it forms a reference cycle. On the success path the cycle is
+    /// broken by `finalize()` clearing the hook, but on the cancel/kill/shutdown paths it is not, and
+    /// the whole object graph (state, merge list entry, this context) leaks. This destructor clears
+    /// the hook and releases the pipeline on every teardown path, using the context's own
+    /// `cancel_state` member rather than the raw `mutate_entry`, so it stays safe even when a
+    /// concurrent teardown has already destroyed the entry.
+    ~MutationContext()
+    {
+        clearPipelineCancelHook();
+        resetMutatingPipeline();
     }
 
     /// Whether we need to count lightweight delete rows in this mutation
@@ -2144,6 +2228,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
+            /// If the pipeline ended early, the mutation may have been cancelled while pulling
+            /// (KILL MUTATION). Detect this and abort, otherwise an empty or partial part would
+            /// be committed in place of the original.
+            ctx->checkOperationIsNotCanceled();
             finalizeTempProjectionsAndIndexes();
             return false;
         }
@@ -2568,6 +2656,8 @@ public:
         {
             ctx->out->cancel();
         }
+
+        ctx->cancelMutatingExecutor();
     }
 
 private:
@@ -2858,6 +2948,16 @@ private:
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+        /// Create the inner `PipelineExecutor` now, before the cancellation hook (`setPipelineCancelHook`)
+        /// publishes this pipeline as externally cancellable. `PullingPipelineExecutor::pull` would
+        /// otherwise create it lazily on this same thread only at the first pull, racing with a concurrent
+        /// `KILL MUTATION` that calls `cancelMutatingExecutor` -> `PullingPipelineExecutor::cancel` from
+        /// another thread: that race is both UB on the `executor` member and can miss the only path that
+        /// propagates cancellation into `CheckSortedTransform`. Publishing it here happens-before the hook
+        /// is set (both lock `cancel_state->mutex`), and cancelling a not-yet-started `PipelineExecutor` is
+        /// explicitly allowed.
+        ctx->mutating_executor->ensureExecutor();
+        ctx->setPipelineCancelHook();
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -2867,8 +2967,8 @@ private:
         bool noop = false;
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
-        ctx->mutating_executor.reset();
-        ctx->mutating_pipeline.reset();
+        ctx->clearPipelineCancelHook();
+        ctx->resetMutatingPipeline();
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
@@ -2942,6 +3042,8 @@ public:
         {
             ctx->out->cancel();
         }
+
+        ctx->cancelMutatingExecutor();
     }
 
 private:
@@ -3237,6 +3339,10 @@ private:
             /// Is calculated inside MergeProgressCallback.
             ctx->mutating_pipeline.disableProfileEventUpdate();
             ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+            /// See the comment at the analogous non-replicated site: create the inner `PipelineExecutor`
+            /// before the cancellation hook makes the pipeline externally cancellable.
+            ctx->mutating_executor->ensureExecutor();
+            ctx->setPipelineCancelHook();
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
@@ -3252,8 +3358,8 @@ private:
 
         if (ctx->mutating_executor)
         {
-            ctx->mutating_executor.reset();
-            ctx->mutating_pipeline.reset();
+            ctx->clearPipelineCancelHook();
+            ctx->resetMutatingPipeline();
 
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();
@@ -3464,6 +3570,7 @@ MutateTask::MutateTask(
     ctx->merges_blocker = &merges_blocker_;
     ctx->holder = &table_lock_holder_;
     ctx->mutate_entry = mutate_entry_;
+    ctx->cancel_state = (*mutate_entry_)->pipeline_cancel_state;
     ctx->commands = commands_;
     ctx->context = context_;
     ctx->time_of_mutation = time_of_mutation_;
@@ -3498,6 +3605,13 @@ bool MutateTask::execute()
 
             if (task->executeStep())
                 return true;
+
+            // Re-check after the final `executeStep()`: a `KILL MUTATION` can race in
+            // during that step (for example after the pipeline hook is cleared on
+            // finalize), so a cancelled mutation must not hand its completed temporary
+            // part over to be committed. The thrown exception propagates up to the
+            // caller, which reports the mutation as failed and removes the temp part.
+            ctx->checkOperationIsNotCanceled();
 
             // The `new_data_part` is a shared pointer and must be moved to allow
             // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.

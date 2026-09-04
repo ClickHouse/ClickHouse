@@ -2,8 +2,10 @@
 #include <Common/FailPoint.h>
 
 #include <boost/core/noncopyable.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -366,6 +368,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(check_sorted_transform_pause) \
+    PAUSEABLE_ONCE(check_sorted_transform_after_loop_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
     PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
@@ -519,7 +523,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     });
 }
 
-void FailPointInjection::waitForPause(const String & fail_point_name)
+bool FailPointInjection::waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms)
 {
     /// A mistyped name would otherwise return at once and silently drop the synchronisation the
     /// caller asked for, turning a deterministic test into a race. A registered fail point with no
@@ -530,14 +534,41 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        return;
+        return false;
 
     auto channel = iter->second;
 
-    /// Wait until a thread has paused at this failpoint after the most recent resume.
-    channel->pause_cv.wait(lock, [&] {
-        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
-    });
+    /// The wait predicate must also wake on a disable, otherwise disabling a fail point that no
+    /// thread ever pauses on would leave the waiter blocking forever (e.g. `SYSTEM WAIT FAILPOINT`).
+    /// But the *returned* success value must report only a real pause: a disable bumps `resume_epoch`
+    /// and sets `disabled` without touching `pause_epoch`, so `pause_epoch > resume_epoch` alone tells
+    /// the caller a thread actually re-paused since the most recent resume. Reporting a wake caused
+    /// solely by a disable as success would make "someone disabled the failpoint" indistinguishable
+    /// from "the target really paused there", recreating the false positive this boolean API exists
+    /// to remove.
+    bool paused = false;
+    auto paused_or_disabled = [&] {
+        if (channel->pause_epoch > channel->resume_epoch)
+        {
+            paused = true;
+            return true;
+        }
+        return channel->disabled;
+    };
+
+    /// Wait until a thread has paused at this failpoint after the most recent resume, or the failpoint
+    /// is disabled. `timeout_ms` bounds the wait so a caller cannot hang forever if the target never
+    /// reaches the failpoint.
+    /// Returns whether the pause was actually reached (as opposed to a timeout or a premature disable).
+    if (timeout_ms)
+        channel->pause_cv.wait_until(
+            lock,
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(*timeout_ms),
+            paused_or_disabled);
+    else
+        channel->pause_cv.wait(lock, paused_or_disabled);
+
+    return paused;
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
@@ -627,7 +658,7 @@ void FailPointInjection::notifyFailPoint(const String &)
     throwDisabled();
 }
 
-void FailPointInjection::waitForPause(const String &)
+bool FailPointInjection::waitForPause(const String &, std::optional<UInt64>)
 {
     throwDisabled();
 }

@@ -37,6 +37,12 @@ public:
     bool pull(Chunk & chunk);
     bool pull(Block & block);
 
+    /// Ensure the inner `PipelineExecutor` has been created. `pull` creates it lazily, so
+    /// publishing it here (on the mutation thread) before the executor becomes visible to `cancel()`
+    /// from another thread makes such a concurrent `cancel()` safe and never a no-op. Calling it has
+    /// the same effect and cost as the first `pull`.
+    void ensureExecutor();
+
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
 

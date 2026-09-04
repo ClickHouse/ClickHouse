@@ -20,6 +20,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -115,6 +116,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
+
+                /// A `KILL MUTATION` can land after `mutate_task->execute()` returned (it only
+                /// re-checks cancellation before handing the part over) but before this part is
+                /// renamed into place. Do not publish the result of a mutation that was killed in
+                /// that window: the thrown exception reports the mutation as failed and the executor
+                /// calls `cancel()`, which removes the temporary part.
+                if ((*merge_list_entry)->is_cancelled)
+                    throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
                 auto & data_part_storage = new_part->getDataPartStorage();
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
@@ -131,7 +141,26 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// the PreActive part to Active, "resurrecting" old data.
                 {
                     auto lock = storage.lockParts();
+                    /// Re-check under the parts lock, immediately before the rename: a `KILL MUTATION`
+                    /// that lands between the earlier check above and here must not publish the part
+                    /// either. The `renameTempPartAndReplaceUnlocked` that follows is the publication
+                    /// point for the non-replicated path, so the check has to sit right next to it.
+                    /// Throwing here is safe: the `transaction` object's destructor rolls back the
+                    /// operation if it has not committed when the exception unwinds.
+                    if ((*merge_list_entry)->is_cancelled)
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
+
+                    /// Final guard: a `KILL MUTATION` that lands between the pre-rename check above
+                    /// and the Active promotion at `transaction.commit()` must not publish the part.
+                    /// Throwing is safe: the part is already PreActive inside `transaction`; the
+                    /// non-empty destructor calls `rollback()`, which sets the part to Outdated and
+                    /// removes it from the working set. The exception propagates to `cancel()`,
+                    /// which removes the files on disk.
+                    if ((*merge_list_entry)->is_cancelled)
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
                     transaction.commit(lock);
                 }
 
