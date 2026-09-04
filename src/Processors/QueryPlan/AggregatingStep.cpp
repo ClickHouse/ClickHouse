@@ -595,13 +595,24 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// (the reshuffle buffering is capped by aggregation_in_order_shuffle_max_buffered_bytes). The output
         /// is no longer globally ordered by the GROUP BY keys, so this is only used when the order is not
         /// relied upon downstream (see the gate below).
-        /// The order of the rows *inside* one group is preserved, so order-dependent aggregates
-        /// (`groupArray`, `any`, `anyLast`, `sum` over `Float*`) are not affected: the per-shard
-        /// `MergingSortedTransform` merges on `InputOrderInfo::sort_description_for_merging`, which is always
-        /// a prefix of the GROUP BY keys, so all rows of one group compare equal in that merge and it can only
-        /// concatenate whole per-input runs in input order - exactly what the funnel path does, where
+        /// The order in which the rows of one group reach the aggregate function is preserved, so aggregates
+        /// that are a pure function of that order (`groupArray`, `any`, `anyLast`) are not affected: the
+        /// per-shard `MergingSortedTransform` merges on `InputOrderInfo::sort_description_for_merging`, which
+        /// is always a prefix of the GROUP BY keys, so all rows of one group compare equal in that merge and,
+        /// as `SortCursor` breaks such ties by input index, it can only concatenate whole per-input runs in
+        /// input order - exactly what the funnel path does, where
         /// `FinishAggregatingInOrderAlgorithm::addToAggregation` appends each input's slice in input order
-        /// (see 05055_aggregation_in_order_shuffle_order_dependent_aggregates).
+        /// (see 05055_aggregation_in_order_shuffle_order_dependent_aggregates). What is preserved is the order
+        /// the funnel produces for the *same* input streams; aggregation-in-order does not define a per-group
+        /// order beyond that on its own, since which rows one stream carries already depends on `max_threads`
+        /// and on `read_in_order_two_level_merge_threshold`.
+        /// An aggregate that additionally depends on how the partial states are combined can still differ:
+        /// `sum` over `Float*` is accumulated once per input stream and then merged on the funnel path, but in
+        /// a single pass over the merged rows here, so the two build a different addition tree over the same
+        /// rows in the same order and the results can differ in the last bits. That is the non-determinism
+        /// float aggregation already has across `max_threads` (on the funnel path alone,
+        /// `sum(toFloat64(v) / 3)` differs between `max_threads = 8` and `max_threads = 2`), not something
+        /// this optimization introduces.
         /// aggregation-in-order does not enforce `max_rows_to_group_by`: it keeps only a bounded working set
         /// of keys (completed groups are streamed out as the sorted input advances), so neither the streaming
         /// per-shard path (executeOnBlockSmall / mergeOnBlockSmall) nor the ordinary funnel path (whose
