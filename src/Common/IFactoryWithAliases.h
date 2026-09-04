@@ -25,15 +25,6 @@ class IFactoryWithAliases : public IHints<2>
 protected:
     using Value = ValueType;
 
-    String getAliasToOrName(const String & name) const
-    {
-        if (aliases.contains(name))
-            return aliases.at(name);
-        if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
-            return case_insensitive_aliases.at(name_lowercase);
-        return name;
-    }
-
     std::unordered_map<String, String> case_insensitive_name_mapping{};
 
 public:
@@ -107,7 +98,19 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
     }
 
+    /// Matches the exact spelling only: case-insensitive aliases are stored lower-cased, so a caller that
+    /// accepts any spelling has to probe the lower-cased name as well.
     bool isAlias(const String & name) const { return aliases.contains(name) || case_insensitive_aliases.contains(name); }
+
+    /// The canonical name behind an alias in any spelling; `name` itself when it is not an alias.
+    String getAliasToOrName(const String & name) const
+    {
+        if (aliases.contains(name))
+            return aliases.at(name);
+        if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
+            return case_insensitive_aliases.at(name_lowercase);
+        return name;
+    }
 
     bool hasNameOrAlias(const String & name) const
     {
