@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -211,6 +210,23 @@ additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
 )", BETA) \
+    DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
+If enabled, columns whose values are entirely type-defaults in a given INSERT
+block are not written to the data part on disk. When the part is later read,
+missing columns are filled with the default of their recorded type. This saves
+disk space for sparse-update workloads
+where most columns in each INSERT are left at their type's default value.
+Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
+skipped, because the read path would evaluate the expression instead of
+returning the type-default that was explicitly inserted. Patch parts
+(used by lightweight UPDATE) are also excluded.
+This optimization records the missing columns in the part's
+`serialization.json` using the `with_missing_columns` format version, so it
+only takes effect when `serialization_info_version` is set to
+`with_missing_columns`. With a lower version (for example pinned to a lower
+value for a rolling upgrade so older servers can read freshly written parts)
+no columns are skipped.
+)", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -293,15 +309,18 @@ Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
+- `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
+listing omitted columns and the type whose default represents their values.
+Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `WITH_TYPES` to enable per-type serialization versions.
+switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
 )", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types".
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
@@ -786,9 +805,8 @@ Possible values:
 - Positive integer.
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-setting should be less than the value of the
-[background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+setting must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
+and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, remove_rolled_back_parts_immediately, 1, R"(
@@ -894,6 +912,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
 )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
+)", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
 )", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
@@ -1050,6 +1079,58 @@ and increases ClickHouse boot time. Most often this is a consequence of an
 incorrect design (mistakes when choosing a partitioning strategy - too small
 partitions).
 )", 0) \
+    DECLARE(UInt64, max_table_size_rows, 0, R"(
+If the total number of rows in active data parts of the table exceeds this
+value, an `INSERT` is interrupted with the `Table size limit exceeded`
+exception. The limit is checked at the beginning of `INSERT` and when new
+data parts are committed to the working set, including the results of
+background merges and mutations (so a mutation that increases the table size
+beyond the limit will be retried without finishing). Inserts done by
+materialized views are also checked. The limit is not checked on replicated
+fetches, which permits a race condition when parallel inserts into multiple
+replicas overdraft the limit. Committing empty data parts is always allowed,
+so the data can be removed from a table that exceeds the limit, e.g. with
+`TRUNCATE` or `ALTER TABLE ... DROP PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_compressed, 0, R"(
+If the total number of compressed bytes (the size on disk) across all active
+and inactive data parts of the table exceeds this value, an `INSERT` is
+interrupted with the `Table size limit exceeded` exception. Inactive parts
+are counted as well because the purpose of this setting is to limit disk
+usage. Note that inactive parts are removed in the background (see the
+`old_parts_lifetime` setting), so the observed size can decrease over time.
+The limit is checked at the beginning of `INSERT` and when new data parts
+are committed to the working set, including the results of background merges
+and mutations. Inserts done by materialized views are also checked. The
+limit is not checked on replicated fetches, which permits a race condition
+when parallel inserts into multiple replicas overdraft the limit. Committing
+empty data parts is always allowed, so the data can be removed from a table
+that exceeds the limit, e.g. with `TRUNCATE` or `ALTER TABLE ... DROP
+PARTITION`.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
+    DECLARE(UInt64, max_table_size_bytes_uncompressed, 0, R"(
+The same as `max_table_size_bytes_compressed`, but the limit is applied to
+the total number of uncompressed bytes across all active and inactive data
+parts of the table.
+
+Possible values:
+- Any positive integer.
+- 0 — unlimited.
+
+It is useful for multi-tenant, temporary, and demo services.
+)", 0) \
     DECLARE(Bool, async_insert, false, R"(
 If true, data from INSERT query is stored in queue and later flushed to
 table in background.
@@ -1137,8 +1218,12 @@ reduce memory usage
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
+Compared against the number of streams a wide part writes, which can greatly exceed its number
+of columns: a `Map` with many buckets, or a deeply nested `Array` or `Tuple`, writes many streams
+for a single column, and one write buffer is allocated per stream.
+
 Possible values:
-- 0 - unlimited
+- 0 - disabled
 - 1 - always enabled
 )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
@@ -1256,7 +1341,7 @@ Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one re
 compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
 default; this setting will be removed in a future release.
 )", 0) \
-    DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
+    DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
 replica. An inactive replica becomes lost when when this number exceed.
 
@@ -1614,6 +1699,20 @@ Only available in ClickHouse Cloud
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, R"(
 Enables requesting FS cache hints from in-memory
 cache on other replicas. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_use_blobs_list_for_parts, false, R"(
+Store parts of a SharedMergeTree table (both Wide and Compact) as a single
+consolidated blob-list metadata node instead of one Keeper node per file.
+Collapses per-part Keeper metadata from O(files) to a small constant while
+keeping one object-storage blob per file. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_blobs_list_inline_file_max_bytes, 0, R"(
+Store files of a blob-list part that are at most this many bytes long (e.g.
+count.txt, metadata_version.txt, minmax indexes) directly inside the
+consolidated blobs.list file instead of a separate object-storage blob,
+saving one blob write and read per small file. 0 disables inlining. Takes
+effect only for parts using the blob-list storage (see
+shared_merge_tree_use_blobs_list_for_parts). Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, R"(
 If enabled all the replicas try to fetch part in memory data (like primary
@@ -2191,10 +2290,9 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+    DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
-Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
@@ -2204,9 +2302,6 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", 0) \
-    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
-Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
@@ -2413,6 +2508,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2436,12 +2532,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(
-        size_t background_pool_tasks,
-        bool allow_experimental,
-        bool allow_private_preview,
-        bool allow_beta,
-        bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2546,48 +2637,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_private_preview || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_private_preview && tier == PRIVATE_PREVIEW)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool
     /// may be tuned below the default thresholds, and we do not want to fail table creation in
@@ -2834,6 +2885,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_changes = changes;
@@ -2930,7 +2993,7 @@ VectorWithMemoryTracking<std::string_view> MergeTreeSettings::getAllRegisteredNa
     return setting_names;
 }
 
-std::vector<std::string_view> MergeTreeSettings::getAllAliasNames() const
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
     std::vector<std::string_view> alias_names;
     const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
@@ -2992,14 +3055,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(
-    size_t background_pool_tasks,
-    bool allow_experimental,
-    bool allow_private_preview,
-    bool allow_beta,
-    bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_private_preview, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -3125,6 +3183,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

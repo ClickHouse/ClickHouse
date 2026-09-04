@@ -60,7 +60,7 @@ Calculates Shannon's entropy of byte distribution in a string.
         "SELECT stringBytesEntropy('Hello, world!')",
         R"(
 ┌─stringBytesEntropy('Hello, world!')─┐
-│                         3.07049960  │
+│                   3.180832987205441 │
 └─────────────────────────────────────┘
         )"
     }

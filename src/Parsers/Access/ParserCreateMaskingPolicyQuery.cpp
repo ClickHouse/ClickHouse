@@ -238,22 +238,91 @@ void registerStatementMaskingPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE MASKING POLICY",
     {
-        .description = R"(
-Creates a masking policy, which dynamically transforms or masks the values of columns for specific users or roles when
-they query a table. Masking policies provide column-level data security by transforming sensitive data at query time,
-without modifying the stored data.
+        .description = R"DOCS_MD(
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
-**Examples**
+<CloudOnlyBadge/>
 
-**Mask the values of a column for a role**
+Creates a masking policy, which allows dynamically transforming or masking column values for specific users or roles when they query a table.
 
-```sql title="Query"
+<Tip>
+Masking policies provide column-level data security by transforming sensitive data at query time without modifying the stored data.
+</Tip>
+
+Syntax:
+
+```sql
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+```
+
+## UPDATE Clause {#update-clause}
+
+The `UPDATE` clause specifies which columns to mask and how to transform them. You can mask multiple columns in a single policy.
+
+Examples:
+- Simple masking: `UPDATE email = '***masked***'`
+- Partial masking: `UPDATE email = concat(substring(email, 1, 3), '***@***.***')`
+- Hash-based masking: `UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
+- Multiple columns: `UPDATE email = '***@***.***', phone = '***-***-****'`
+
+## WHERE Clause {#where-clause}
+
+The optional `WHERE` clause allows conditional masking based on row values. Only rows matching the condition will have the masking applied.
+
+Example:
+```sql
 CREATE MASKING POLICY mask_high_salaries ON employees
 UPDATE salary = 0
 WHERE salary > 100000
 TO analyst;
 ```
-)",
+
+## TO Clause {#to-clause}
+
+In the `TO` section, specify which users and roles the policy should apply to.
+
+- `TO user1, user2`: Apply to specific users/roles
+- `TO ALL`: Apply to all users
+- `TO ALL EXCEPT user1, user2`: Apply to all users except specified ones
+
+<Note>
+Unlike row policies, masking policies do not affect users who don't have the policy applied. If no masking policy applies to a user, they see the original data.
+</Note>
+
+## PRIORITY Clause {#priority-clause}
+
+When multiple masking policies target the same column for a user, the `PRIORITY` clause determines the application order. Policies are applied in order from highest to lowest priority.
+
+Default priority is 0. Policies with the same priority are applied in an undefined order.
+
+Example:
+```sql
+-- Applied second (lower priority)
+CREATE MASKING POLICY mask1 ON users
+UPDATE email = 'low@priority.com'
+TO analyst
+PRIORITY 1;
+
+-- Applied first (higher priority)
+CREATE MASKING POLICY mask2 ON users
+UPDATE email = 'high@priority.com'
+TO analyst
+PRIORITY 10;
+
+-- analyst sees 'low@priority.com' because it's applied last
+```
+
+<Info>
+**Performance Considerations**
+
+- Masking policies may impact query performance depending on expression complexity
+- Some optimizations may be disabled for tables with active masking policies
+</Info>
+)DOCS_MD",
         .syntax = R"(
 CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
     UPDATE column1 = expression1 [, column2 = expression2 ...]
@@ -267,17 +336,25 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
 
     factory.registerStatement("ALTER MASKING POLICY",
     {
-        .description = R"(
-Modifies an existing masking policy. All clauses are optional; only the specified clauses are changed.
+        .description = R"DOCS_MD(
+import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
-**Examples**
+<CloudOnlyBadge/>
 
-**Change the roles a masking policy applies to**
+Modifies an existing masking policy.
 
-```sql title="Query"
-ALTER MASKING POLICY mask_high_salaries ON employees TO analyst, accountant;
+Syntax:
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
 ```
-)",
+
+All clauses are optional. Only the specified clauses will be updated.
+)DOCS_MD",
         .syntax = R"(
 ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
     [UPDATE column1 = expression1 [, column2 = expression2 ...]]

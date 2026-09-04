@@ -40,7 +40,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 يهدف المُحلِّل إلى تحويل نص الاستعلام إلى AST (شجرة البنية المجرّدة). ويمكن توضيح هذه الخطوة باستخدام `EXPLAIN AST`:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 الناتج هو شجرة البنية المجرّدة يمكن عرضها بصريًا كما هو موضح أدناه:
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="مخرجات AST" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 لكل عقدة عُقد فرعية مرتبطة بها، وتمثل الشجرة بأكملها البنية العامة لاستعلامك. وهذه بنية منطقية تساعد في معالجة الاستعلام. ومن منظور المستخدم النهائي (ما لم يكن مهتمًا بتنفيذ الاستعلام)، فهي ليست مفيدة كثيرًا؛ إذ تُستخدم هذه الأداة أساسًا من قِبل المطورين.
 
 <div id="analyzer">

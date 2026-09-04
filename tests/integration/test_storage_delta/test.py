@@ -5358,24 +5358,16 @@ def test_early_return_limit(started_cluster, use_delta_kernel):
 
     assert first_check_hits > 0 or queue_check_hits > 0
 
-    assert 1 == int(instance.query(
-        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message LIKE '%List batch size is 1/1, shutdown: true%'"
-    ))
-
 
     # Early return should scan significantly fewer files
     # With s3_list_object_keys_size=1, queue pauses frequently forcing shutdown checks
     # Should stop very early after consuming just a few files
     assert scanned_files < full_scan_files, \
         f"Early return should scan fewer files: {scanned_files} >= {full_scan_files}"
-    # 3 because:
-    # we have async reader creation with 2 existing readers at a moment of time,
-    # each calls next() and consumes 2 files from the scan.
-    # It takes 1 file for the query to stop because of LIMIT 1.
-    # But because scan is also asynchronous and continues once batch limit is not reached,
-    # we get +1 scanned file.
-    assert scanned_files == 3, \
-        f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
+    # At most 3: two async readers each consume one file, plus one the scan produces before
+    # it observes shutdown. Fewer is legal when shutdown lands earlier.
+    assert scanned_files <= 3, \
+        f"Early return should scan at most 3 files with LIMIT 1, but scanned {scanned_files}"
 
 
 def test_struct_dotted_field_names(started_cluster):

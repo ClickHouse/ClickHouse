@@ -44,10 +44,7 @@ TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
     TokenPostingsInfo info;
     info.cardinality = static_cast<UInt32>(doc_ids.size());
 
-    auto bitmap = std::make_shared<roaring::Roaring>();
-    for (auto id : doc_ids)
-        bitmap->add(id);
-    info.embedded_postings = bitmap;
+    info.embedded_postings.assign(doc_ids.begin(), doc_ids.end());
 
     if (!doc_ids.empty())
     {
@@ -74,8 +71,7 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
     auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
-    if (info.embedded_postings)
-        info.embedded_postings->toUint32Array(flat->data());
+    std::copy(info.embedded_postings.begin(), info.embedded_postings.end(), flat->begin());
     return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
@@ -3627,7 +3623,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     WriteBufferFromOwnString out;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexSerializationVersion::V1_WithCodec,
-        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, out);
+        sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, /*positions_codec=*/ 0, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3676,12 +3672,12 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     WriteBufferFromOwnString out_initial;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexSerializationVersion::V0_Initial,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_initial);
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_initial);
 
     WriteBufferFromOwnString out_with_codec;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexSerializationVersion::V1_WithCodec,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, out_with_codec);
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_with_codec);
 
     /// The `Initial` header omits the single-byte codec type, so it is exactly one byte shorter.
     EXPECT_EQ(out_initial.str().size() + 1, out_with_codec.str().size());
@@ -3689,10 +3685,23 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     WriteBufferFromOwnString out_with_positions;
     TextIndexSerialization::serializeHeader(
         MergeTreeTextIndexSerializationVersion::V2_WithPositions,
-        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true, out_with_positions);
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ true,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), out_with_positions);
 
-    /// The `WithPositions` header adds the single-byte positions flag on top of the codec type.
-    EXPECT_EQ(out_with_codec.str().size() + 1, out_with_positions.str().size());
+    /// A positional `WithPositions` header adds the positions flag and the positions codec byte.
+    EXPECT_EQ(out_with_codec.str().size() + 2, out_with_positions.str().size());
+
+    /// Without positions the codec byte is omitted, so the header costs only the flag. This keeps a
+    /// non-positional part the same size as before positions existed.
+    WriteBufferFromOwnString out_no_positions;
+    TextIndexSerialization::serializeHeader(
+        MergeTreeTextIndexSerializationVersion::V2_WithPositions,
+        sparse_index, IPostingListCodec::Type::None, /*has_positions=*/ false, /*positions_codec=*/ 0, out_no_positions);
+    EXPECT_EQ(out_with_codec.str().size() + 1, out_no_positions.str().size());
+
+    ReadBufferFromString in_no_positions(out_no_positions.str());
+    auto no_positions_data = TextIndexSerialization::deserializeHeader(in_no_positions);
+    EXPECT_FALSE(no_positions_data.has_positions);
 
     ReadBufferFromString in(out_initial.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);

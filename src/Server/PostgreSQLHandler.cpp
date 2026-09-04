@@ -320,6 +320,8 @@ PostgreSQLHandler::PostgreSQLHandler(
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
             else if (token == "tlsv1_2")
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
+            else if (token == "tlsv1_3")
+                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
         }
 
         extended_verification = config.getBool(prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
@@ -945,7 +947,7 @@ void PostgreSQLHandler::processQuery()
             out_bytes_before_statement = out->count();
             UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
         }
 
     }
@@ -1046,7 +1048,7 @@ bool PostgreSQLHandler::processExecute(const String & query, ContextMutablePtr q
 
     UInt64 affected_rows = executeQueryWithTracking(std::move(result_query), query_context, command);
 
-    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+    message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
 
     return true;
 }
@@ -1171,7 +1173,7 @@ void PostgreSQLHandler::processExecuteQuery()
 
         UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, affected_rows), true);
     }
     catch (const Exception & e)
     {

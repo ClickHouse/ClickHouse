@@ -119,18 +119,64 @@ void registerStatementRename(StatementFactory & factory)
 {
     factory.registerStatement("RENAME",
     {
-        .description = R"(
-Renames databases, tables or dictionaries. Several entities can be renamed in a single query, but the query is then not
-atomic; to swap the names of two entities atomically, use `EXCHANGE`.
+        .description = R"DOCS_MD(
+Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
+Note that the `RENAME` query with several entities is non-atomic operation. To swap entities names atomically, use the [EXCHANGE](/reference/statements/exchange) statement.
 
-**Examples**
+**Syntax**
 
-**Rename a table**
-
-```sql title="Query"
-RENAME TABLE table_A TO table_A_new;
+```sql
+RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 ```
-)",
+
+## RENAME DATABASE {#rename-database}
+
+Renames databases.
+
+**Syntax**
+
+```sql
+RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
+```
+
+## RENAME TABLE {#rename-table}
+
+Renames one or more tables.
+
+Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned.
+If you rename multiple tables in one query, the operation is not atomic. It may be partially executed, and queries in other sessions may get `Table ... does not exist ...` error.
+
+**Syntax**
+
+```sql
+RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+RENAME TABLE table_A TO table_A_bak, table_B TO table_B_bak;
+```
+
+And you can use a simpler sql:
+```sql
+RENAME table_A TO table_A_bak, table_B TO table_B_bak;
+```
+
+## RENAME DICTIONARY {#rename-dictionary}
+
+Renames one or several dictionaries. This query can be used to move dictionaries between databases.
+
+**Syntax**
+
+```sql
+RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
+```
+
+**See Also**
+
+- [Dictionaries](/reference/statements/create/dictionary)
+)DOCS_MD",
         .syntax = R"(
 RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 )",
@@ -139,19 +185,104 @@ RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 
     factory.registerStatement("EXCHANGE",
     {
-        .description = R"(
-Exchanges the names of two tables or two dictionaries atomically. The same can be achieved with a `RENAME` query using
-a temporary name, but that operation is not atomic. `EXCHANGE` is supported by the `Atomic` and `Shared` database
-engines only.
+        .description = R"DOCS_MD(
+Exchanges the names of two tables or dictionaries atomically.
+This task can also be accomplished with a [`RENAME`](/reference/statements/rename) query using a temporary name, but the operation is not atomic in that case.
 
-**Examples**
+<Note>
+The `EXCHANGE` query is supported by the [`Atomic`](/reference/engines/database-engines/atomic) and [`Shared`](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) database engines only.
+</Note>
 
-**Swap the names of two tables**
+**Syntax**
+
+```sql
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+```
+
+## EXCHANGE TABLES {#exchange-tables}
+
+Exchanges the names of two tables.
+
+**Syntax**
+
+```sql
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
+```
+
+### EXCHANGE MULTIPLE TABLES {#exchange-multiple-tables}
+
+You can exchange multiple table pairs in a single query by separating them with commas.
+
+<Note>
+When exchanging multiple table pairs, the exchanges are performed **sequentially, not atomically**. If an error occurs during the operation, some table pairs may have been exchanged while others have not.
+</Note>
+
+**Example**
 
 ```sql title="Query"
-EXCHANGE TABLES table_A AND table_B;
+-- Create tables
+CREATE TABLE a (a UInt8) ENGINE=Memory;
+CREATE TABLE b (b UInt8) ENGINE=Memory;
+CREATE TABLE c (c UInt8) ENGINE=Memory;
+CREATE TABLE d (d UInt8) ENGINE=Memory;
+
+-- Exchange two pairs of tables in one query
+EXCHANGE TABLES a AND b, c AND d;
+
+SHOW TABLE a;
+SHOW TABLE b;
+SHOW TABLE c;
+SHOW TABLE d;
 ```
-)",
+
+```sql title="Response"
+-- Now table 'a' has the structure of 'b', and table 'b' has the structure of 'a'
+┌─statement──────────────┐
+│ CREATE TABLE default.a↴│
+│↳(                     ↴│
+│↳    `b` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.b↴│
+│↳(                     ↴│
+│↳    `a` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+
+-- Now table 'c' has the structure of 'd', and table 'd' has the structure of 'c'
+┌─statement──────────────┐
+│ CREATE TABLE default.c↴│
+│↳(                     ↴│
+│↳    `d` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.d↴│
+│↳(                     ↴│
+│↳    `c` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+```
+
+## EXCHANGE DICTIONARIES {#exchange-dictionaries}
+
+Exchanges the names of two dictionaries.
+
+**Syntax**
+
+```sql
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
+```
+
+**See Also**
+
+- [Dictionaries](/reference/statements/create/dictionary)
+)DOCS_MD",
         .syntax = R"(
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 )",

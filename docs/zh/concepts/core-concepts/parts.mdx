@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 当 ClickHouse server 处理上图中示意的包含 4 行的示例插入 (例如通过 [INSERT INTO 语句](/zh/reference/statements/insert-into)) 时，会执行以下几个步骤：
 
-① **排序**：按表的排序键 `(town, street)` 对这些行进行排序，并为排序后的行生成一个[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+<Steps>
+  <Step title="排序">
+    按表的排序键 `(town, street)` 对这些行进行排序，并为排序后的行生成一个[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+  </Step>
 
-② **拆分**：将排序后的数据拆分为各列。
+  <Step title="拆分">
+    将排序后的数据拆分为各列。
+  </Step>
 
-③ **压缩**：对每一列进行[压缩](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。
+  <Step title="压缩">
+    对每一列进行[压缩](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。
+  </Step>
 
-④ **写入磁盘**：压缩后的各列会以二进制列文件的形式保存到一个新目录中，该目录对应此次插入生成的数据分区片段。稀疏主索引也会被压缩并存储在同一目录中。
+  <Step title="写入磁盘">
+    压缩后的各列会以二进制列文件的形式保存到一个新目录中，该目录对应此次插入生成的数据分区片段。稀疏主索引也会被压缩并存储在同一目录中。
+  </Step>
+</Steps>
 
 根据表使用的具体引擎，在排序的同时还[可能](/zh/reference/settings/session-settings)会发生其他转换。
 

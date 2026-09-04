@@ -1,0 +1,124 @@
+---
+description: '프레이밍 포맷은 HTTP를 통해 단일 응답 스트림에서 데이터, 합계, 극값, 진행률, 프로필 이벤트 및 서버 로그를 다중화합니다'
+sidebarTitle: '프레이밍 포맷'
+slug: /interfaces/framing-formats
+title: '프레이밍 포맷'
+doc_type: 'reference'
+---
+
+프레이밍 포맷은 데이터 청크, 합계와 극값, 진행률 패킷, 프로필 이벤트(메트릭), 서버 로그 등 네이티브 프로토콜이 지원하는 쿼리의 다양한 응답 부분을 하나의 스트림으로 다중화합니다. 이를 통해 HTTP 프로토콜에서 풍부한 데이터 교환이 가능합니다.
+
+프레이밍 포맷은 [출력 형식](/ko/reference/formats)과 독립적입니다. 모든 출력 형식이 생성하는 바이트를 캡슐화하고, 해당 바이트 청크를 분리하여 필요에 따라 인코딩합니다. 모든 `data`, `totals`, `extremes` 패킷의 페이로드를 연결하면 프레이밍 없이 출력 형식이 생성했을 결과와 정확히 같습니다. 보조 패킷(진행률, 로그, 프로필 이벤트, 예외)은 JSON으로 표현됩니다.
+
+프레이밍을 사용하면 출력 형식을 더 풍부하게 표현할 수도 있습니다. 이는 앞서 설명한 규칙에서 의도적으로 둔 유일한 예외입니다. `JSONCompactEachRow` 형식 제품군은 일반 출력에서 합계와 극값을 제외합니다. 이들의 행은 일반 데이터 행과 구분할 수 없기 때문입니다. 프레이밍 포맷에서는 패킷 종류로 구분할 수 있으므로, 이러한 형식은 `totals` 및 `extremes` 패킷에 합계 및 극값 행을 일반적인 행 구문으로 출력합니다. 이러한 형식에서는 `data` 패킷의 페이로드만 연결한 결과가 프레이밍 없이 출력 형식이 생성했을 결과와 정확히 같습니다. `totals` 및 `extremes` 패킷에는 프레이밍되지 않은 출력에 없는 추가 행이 포함되므로, 이러한 스트림에서 프레이밍되지 않은 출력을 재구성하는 클라이언트는 `data` 페이로드만 연결해야 합니다.
+
+프레이밍 포맷은 쿼리 수준 설정 `framing_output_format`으로 선택합니다. 현재 HTTP 프로토콜에 적용되며, 다른 인터페이스에서는 무시됩니다.
+
+`send_logs_level` 설정을 지정하면 서버 로그가 패킷으로 포함됩니다. `send_profile_events` 설정을 활성화하면(기본값) 프로필 이벤트가 포함됩니다. 진행률 및 프로필 이벤트 패킷은 `interactive_delay`마이크로초마다 최대 한 번 전송됩니다.
+
+성공한 스트림은 네이티브 프로토콜의 최종 진행률 패킷과 마찬가지로 최종 카운터(`result_rows`, `result_bytes`, `memory_usage`)를 담은 최종 `progress` 패킷으로 끝납니다. 이러한 카운터는 쿼리가 완료된 후에만 알 수 있으므로 이전 `progress` 패킷에는 포함되지 않습니다. 최종 `progress` 패킷은 쿼리 완료 로깅에서 생성된 마지막 `log` 및 `profile_events` 패킷(예: &quot;최대 메모리 사용량&quot; 로그 항목) 뒤에 기록되므로, 실제로 스트림의 마지막 패킷입니다. 실패하면 대신 `exception` 패킷이 마지막 패킷이 되며, 최종 카운터를 담은 `progress` 패킷은 전혀 기록되지 않습니다. 이 패킷은 스트림의 성공 종료를 나타내기 때문입니다. 쿼리 자체가 완료되어 최종 카운터를 이미 알고 난 뒤에 실패가 발생한 경우(예: 쿼리 로그 기록 중 실패)에도 마찬가지입니다.
+
+스트림의 이 마지막 부분은 `system.query_log`의 `QueryFinish` 항목이 기록된 후에 작성되므로, 쿼리의 네트워크 전송 프로필 이벤트(`NetworkSendBytes`, `NetworkSendElapsedMicroseconds`)에는 마지막 패킷 전송 및 응답 종료가 포함되지 않습니다. 또한 응답이 버퍼링되는 경우(`http_response_buffer_size` 또는 `wait_end_of_query`)에는 쿼리 완료 후에만 전송되는 버퍼링된 응답 본문의 전송도 포함되지 않습니다. 이는 네이티브 프로토콜도 쿼리 로그 항목 이후에 마지막 로그와 프로필 이벤트를 전송하는 방식과 일치합니다.
+
+쿼리가 자체 `SETTINGS` 절을 통해서만 활성화하는 프레이밍 포맷, `send_logs_level`, `send_profile_events`는 쿼리가 파싱될 때까지 알 수 없습니다. 따라서 해당 로그와 프로필 이벤트는 쿼리 실행 이후부터만 캡처됩니다. 파싱, 계획 및 분석 단계의 로그와 프로필 이벤트는 설정이 세션 또는 URL에서 제공될 때만 캡처됩니다. 특히 분석 중(파이프라인 실행 전)에 실패하는 쿼리(예: 존재하지 않는 테이블 참조)가 `SETTINGS` 절에서만 `send_logs_level`을 활성화하면 분석 단계 로그는 전달되지 않고 `exception` 패킷만 전달됩니다. 이러한 로그를 캡처하려면 세션 또는 URL에서 `send_logs_level`을 설정하십시오.
+
+`send_logs_source_regexp`에도 동일하게 늦게 발견되는 경우의 주의 사항이 적용됩니다. 로그 큐는 각 항목을 캡처하는 시점에 소스별로 필터링하므로, 쿼리 자체의 `SETTINGS` 절에만 설정된 정규식은 쿼리 실행 이후부터 적용됩니다. 파싱, 계획 및 분석 단계의 `log` 패킷은 설정의 세션 또는 URL 값에 따라 필터링됩니다. 해당 위치에 설정되지 않은 경우에는 필터링되지 않으므로, 쿼리 수준 정규식과 일치하지 않는 소스가 포함될 수 있습니다. 반대로 더 좁은 세션 또는 URL 정규식으로 제외된 항목은 사라지며, 더 넓은 쿼리 수준 정규식으로 복구되지 않습니다. 전체 쿼리 수명 주기를 필터링하려면 세션 또는 URL에 `send_logs_source_regexp`를 설정하십시오.
+
+쿼리 실행 중 예외가 발생하면 `http_write_exception_in_output_format` 설정과 관계없이 `exception` 패킷(스트림의 마지막 패킷)으로 전송되므로, 클라이언트는 항상 응답을 패킷 스트림으로 구문 분석할 수 있습니다. 예외가 기록된 후에는 출력 형식이 더 이상 페이로드 바이트를 추가하지 않습니다. 출력을 생성하기 전에 실패한 쿼리는 `data` 패킷을 전혀 전송하지 않으며(포맷의 빈 문서 골격조차 포함되지 않음), 스트림 도중 실패한 쿼리는 포맷의 접미사 없이 실패 지점에서 이어진 페이로드가 잘린 상태로 남습니다. 실패한 쿼리의 페이로드는 완전한 문서처럼 보여서는 안 됩니다.
+
+여기에는 한 가지 예외가 있습니다. 패킷 쓰기 자체가 도중에 실패하면(예를 들어 패킷의 일부 바이트가 이미 클라이언트에 도달한 후 연결이 끊어진 경우) 프레이밍은 안전하게 실패하고 최종 `exception` 패킷 없이 스트림이 종료됩니다. 일부만 기록된 패킷은 재시도하지 않습니다. 다시 전송하면 잘린 바이트 뒤에 중복된 내용이 추가되어 스트림이 손상되기 때문입니다. 이 경우 클라이언트는 올바른 형식의 종료 패킷 대신 잘린 응답과 중단된 HTTP 연결을 확인하게 됩니다. 응답 스트림 자체를 닫는 동안 실패하는 경우에도 동일한 규칙이 적용됩니다(버퍼링된 결과 플러시, HTTP Compression 완료, 소켓 닫기). 이 시점에는 성공 스트림의 일부 또는 전부가 이미 전송 중이므로 `exception` 패킷이나 일반 HTTP 오류 블록 어느 것도 추가되지 않으며, 클라이언트는 잘린 응답과 중단된 연결을 확인하게 됩니다. 예외 전송 자체가 실패하는 경우에도 마찬가지입니다. 패킷 스트림의 일부가 생성된 후(이미 전송되었거나 서버 측 응답 버퍼(`http_response_buffer_size`)에 남아 있는지와 관계없이) 종료 `exception` 패킷을 쓰는 데 실패하면(예를 들어 후행 로그를 비우는 동안) 마찬가지로 아무것도 추가하지 않고 스트림이 종료되므로 일반 HTTP 오류 본문이 부분 패킷 스트림에 절대 섞이지 않습니다. 보조 `log`, `profile_events`, `exception` 패킷의 문자열 필드를 쓰는 중 발생하는 실패도, 해당 문자열의 마지막 바이트를 쓰지 못하는 경우를 포함하여, 일부만 기록된 패킷으로 간주됩니다. 그러면 스트림은 잘린 해당 패킷으로 끝나며 `exception` 패킷이나 최종 카운터 `progress` 패킷과 같은 종료자를 전혀 포함하지 않습니다. 따라서 종료자가 필요한 클라이언트는 쿼리 자체가 성공했더라도 실패를 감지합니다.
+
+프레이밍 포맷은 결과 스트림을 생성하지 않는 쿼리에도 적용됩니다. 성공한 `INSERT`, DDL 쿼리 또는 출력이 없는 기타 쿼리가 여기에 해당합니다. 이러한 응답에는 `data` 패킷이 없지만, 응답 `Content-Type`은 여전히 프레이밍 포맷으로 전환되며 네이티브 프로토콜에 맞춰 `progress`, `log`, `profile_events` 패킷이 스트리밍됩니다. 스트림은 최종 카운터를 포함하는 마지막 `progress` 패킷으로 종료됩니다(예: `INSERT`의 경우 기록된 행 수를 나타내는 `result_rows` 및 `result_bytes`). 페이로드가 포맷되지 않으므로 이러한 쿼리에서는 출력 형식이 무관하며 프레이밍된 스트림에 영향을 주지 않습니다.
+
+<div id="available-framing-formats">
+  ## 사용 가능한 프레이밍 포맷
+</div>
+
+| 이름                                                       | 설명                                          |
+| -------------------------------------------------------- | ------------------------------------------- |
+| [`None`](#framing-format-none)                           | 프레이밍 없음: 기본적으로 모든 항목이 그대로 작동합니다.            |
+| [`EventStream`](#framing-format-eventstream)             | HTTP 서버 전송 이벤트(`text/event-stream`)입니다.     |
+| [`JSONEachPacketBase64`](#framing-format-jsoneachpacket) | 패킷당 JSON 객체 1개이며, 포맷된 데이터는 Base64로 인코딩됩니다.  |
+| [`JSONEachPacketString`](#framing-format-jsoneachpacket) | 패킷당 JSON 객체 1개이며, 포맷된 데이터는 JSON 문자열에 저장됩니다. |
+
+<div id="framing-format-none">
+  ## None
+</div>
+
+기본값입니다. 적용 가능한 모든 항목(데이터, 합계, 극값, 진행률)은 출력 형식으로 그대로 전달하고, 적용되지 않는 항목(메트릭, 로그)은 무시합니다. 따라서 `JSONEachRowWithProgress`처럼 진행률을 자체적으로 표현하는 포맷을 포함해 모든 항목이 기본적으로 그대로 작동합니다.
+
+<div id="framing-format-eventstream">
+  ## EventStream
+</div>
+
+패킷을 [HTTP 서버 전송 이벤트](https://html.spec.whatwg.org/multipage/server-sent-events.html)로 프레이밍하고 응답의 `Content-Type`을 `text/event-stream; charset=UTF-8; payload=base64`로 설정합니다. 모든 패킷은 패킷 종류의 이름을 딴 이벤트(`data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`)로 전송됩니다. 진행률 및 기타 보조 패킷은 JSON으로 전송됩니다.
+
+서버 전송 이벤트는 줄 바꿈(캐리지 리턴 `\r` 포함)을 필드 구분 기호로 처리하는 텍스트 프로토콜이므로, 출력 형식에서 생성된 바이트가 그대로 포함되지는 않습니다. 대신 포맷된 데이터 블록은 단일 `data:` 필드에 base64 인코딩되며, 디코딩하면 모든 줄 바꿈을 포함한 완전히 포맷된 페이로드가 됩니다. 이것이 `Content-Type`의 `payload=base64` 매개변수가 의미하는 바입니다. `data`, `totals`, `extremes` 패킷의 디코딩된 페이로드를 연결한 결과는 프레이밍 없이 출력 형식에서 생성했을 결과와 모든 출력 형식에서 바이트 단위까지 정확히 동일합니다. 여기에는 텍스트, 바이너리(`Native`, `RowBinary`), 원시 패스스루(`RawBLOB`, `TSVRaw`)가 모두 포함됩니다.
+
+보조 JSON 패킷(`progress`, `log`, `profile_events`, `exception`)은 인코딩되지 않습니다. 줄 바꿈이 없는 JSON이 단일 `data:` 필드에 작성됩니다.
+
+`*WithProgress` 출력 형식(`JSONEachRowWithProgress`, `JSONCompactEachRowWithProgress`)은 자체 출력에 포함되는 인밴드 행으로 진행률을 작성합니다. 반면 프레이밍 포맷은 진행률을 별도의 `progress` 패킷으로 전달하므로 이러한 출력 형식과 호환되지 않으며 거부합니다. 프레이밍에는 기본 출력 형식(예: `JSONEachRow`)을 사용하거나, `*WithProgress` 형식에는 `None` 프레이밍을 사용하십시오.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+event: data
+data: eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K
+
+event: profile_events
+data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
+
+```
+
+`EventStream`은 HTTP 프로토콜과 통합되며, 적용할 수 없는 경우 예외를 발생시킵니다.
+
+<div id="framing-format-jsoneachpacket">
+  ## JSONEachPacketBase64 및 JSONEachPacketString
+</div>
+
+각 패킷은 패킷 정보를 담은 별도의 줄에 있는 JSON 객체입니다(newline-delimited JSON, `application/x-ndjson`). 출력 형식이 생성한 바이트는 `data` 필드에 저장됩니다. `JSONEachPacketBase64`에서는 base64로 인코딩되며(바이너리 출력 형식에 적합), `JSONEachPacketString`에서는 JSON 문자열로 저장됩니다.
+
+두 변형은 `data` 필드를 서로 다르게 인코딩하므로, `EventStream`과 마찬가지로 응답의 `Content-Type`으로 구분할 수 있습니다. `JSONEachPacketBase64`는 `application/x-ndjson; charset=UTF-8; payload=base64`를 설정하고, `JSONEachPacketString`은 `application/x-ndjson; payload=string`을 설정합니다. 따라서 클라이언트는 응답 메타데이터만으로 `data` 필드를 base64 디코딩해야 하는지 알 수 있습니다. `charset=UTF-8`은 `JSONEachPacketBase64`에서만 보장됩니다. base64 인코딩만이 페이로드 바이트와 무관하게 전체 스트림을 유효한 UTF-8로 만들기 때문입니다. 아래를 참조하십시오.
+
+`JSONEachPacketString`은 페이로드 바이트를 JSON 문자열에 넣으므로, 유효한 UTF-8 텍스트를 생성하는 출력 형식에 사용하도록 설계되었습니다. `String` 및 `FixedString` 컬럼에는 임의의 바이트를 저장할 수 있으므로, `JSONEachRow`, `TSV`, `CSV`와 같은 텍스트 출력 형식은 이러한 값에 대해 유효하지 않은 UTF-8을 출력할 수 있습니다. 이는 기본 `output_format_json_validate_utf8 = 0` 설정에서 ClickHouse&#39; 자체 `JSONEachRow`가 동작하는 방식과 같습니다. 이 경우 결과 JSON 문자열과 전체 NDJSON 스트림이 유효한 UTF-8임은 보장되지 않습니다. `JSONEachPacketString`은 페이로드를 검증하거나 다시 인코딩하지 않습니다. 임의의 바이트를 바이트 단위까지 정확하게 전송하려면 `JSONEachPacketBase64`를 사용하십시오.
+
+UTF-8이 아닌 바이트를 생성하는 것으로 알려진 출력 형식은 쿼리를 실행하기 전에 `JSONEachPacketString`에서 오류와 함께 사전에 거부됩니다. 여기에는 바이너리 형식(`Native`, `RowBinary`), 원시 패스스루 형식(`RawBLOB`, `TSVRaw`), 쿼리 헤더의 UTF-8이 아닌 컬럼명, 데이터 타입 이름 또는 `Tuple` 원소 이름을 출력에 기록하는 형식, 그리고 직렬화 과정에서 설정 기반 리터럴을 그대로 기록하며 해당 값이 유효한 UTF-8이 아닌 구성이 포함됩니다. 해당 설정은 `format_csv_delimiter`, `format_tsv_null_representation` / `format_csv_null_representation`, `bool_true_representation` / `bool_false_representation`입니다.
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
+`JSONEachPacketBase64`에서 동일한 `data` 패킷은 다음과 같이 표시됩니다:
+
+```text
+{"packet":"data","data":"eyJudW1iZXIiOiIwIn0KeyJudW1iZXIiOiIxIn0KeyJudW1iZXIiOiIyIn0K"}
+```
+
+<div id="framing-format-packet-kinds">
+  ## 패킷 종류
+</div>
+
+| 패킷               | 내용                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`           | 주 결과의 출력 형식에서 생성된 바이트(형식 접두사 및 접미사 포함).                                                                                                         |
+| `totals`         | 합계 행(`WITH TOTALS`)의 출력 형식에서 생성된 바이트.                                                                                                           |
+| `extremes`       | 극값(`extremes` 설정)의 출력 형식에서 생성된 바이트.                                                                                                             |
+| `progress`       | JSON 형식의 쿼리 진행률: `read_rows`, `read_bytes`, `total_rows_to_read`, `result_rows`, `result_bytes`, `elapsed_ns`, `memory_usage`(값이 0인 필드는 생략됨). |
+| `log`            | JSON 형식의 서버 로그 항목: `event_time`, `host_name`, `query_id`, `thread_id`, `priority`, `source`, `text`.                                            |
+| `profile_events` | JSON 형식의 프로필 이벤트 배열: `host_name`, `current_time`, `thread_id`, `type`(`increment` 또는 `gauge`), `name`, `value`.                                 |
+| `exception`      | JSON 형식의 예외 메시지.                                                                                                                                |
+
+`data`, `totals`, `extremes` 페이로드(위의 바이트 정확성 참고 사항 참조)와 달리, 보조 패킷의 문자열 필드(`log`의 `query_id`, `text`, `source`, `profile_events`의 `name`, `exception` 메시지)에는 base64로 이스케이프할 방법이 없습니다. 또한 이들 중 일부(예: 쿼리에서 가져오는 `query_id`)에는 임의의 바이트가 포함될 수 있습니다. 이러한 필드는 항상 유효한 UTF-8로 정리되며, 유효하지 않은 시퀀스는 대체 문자(`U+FFFD`)로 대체됩니다. 따라서 보조 패킷은 항상 유효한 JSON입니다.
+
+여러 쿼리를 동시에 처리하는 기능은 아직 구현되지 않았지만, 설계상 지원할 수 있습니다. 모든 패킷은 여러 쿼리에서의 쿼리 인덱스 정보를 포함하도록 확장할 수 있습니다.

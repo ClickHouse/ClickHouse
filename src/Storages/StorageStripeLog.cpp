@@ -373,6 +373,18 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     return std::chrono::seconds{lock_timeout};
 }
 
+size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
+{
+    const auto lock_timeout = getLockTimeout(local_context);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    return std::min(num_streams, std::max(1uz, indices.blocks.size()));
+}
+
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
 {
     VirtualColumnsDescription desc;

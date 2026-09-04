@@ -185,9 +185,8 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     if (custom_key.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Parallel replicas processing with custom_key has been requested "
-            "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
-            "or it's invalid (setting 'parallel_replicas_custom_key')");
+            "The custom key filtering for the parallel replicas is requested (setting 'parallel_replicas_mode'), "
+            "but the custom key itself is not set (setting 'parallel_replicas_custom_key')");
 
     /// Try to parse expression
     ParserExpression parser;
