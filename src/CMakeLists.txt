@@ -505,6 +505,7 @@ add_object_library(clickhouse_server_distributedquery Server/DistributedQuery)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
+add_object_library(clickhouse_processors_executors_runtime Processors/Executors/Runtime)
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
@@ -524,9 +525,17 @@ add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules 
 # Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
 # At -Og with AVX2+ targets, the compiler miscompiles functions that combine
 # floating-point return values with ymm-based memset zero-initialization.
-# Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
+# Force -O2 for these files in debug x86 builds to avoid the buggy codegen.
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
-    set_source_files_properties(Processors/QueryPlan/Optimizations/joinOrder.cpp PROPERTIES COMPILE_FLAGS "-O2")
+    set_source_files_properties(
+        Processors/QueryPlan/Optimizations/joinOrder.cpp
+        Processors/QueryPlan/Optimizations/joinOrderBitSet.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDP.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDPHyp.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDPSize.cpp
+        Processors/QueryPlan/Optimizations/joinOrderDPSub.cpp
+        Processors/QueryPlan/Optimizations/joinOrderGreedy.cpp
+        PROPERTIES COMPILE_FLAGS "-O2")
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
@@ -555,6 +564,7 @@ endif()
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
 if (TARGET ch_contrib::jemalloc)

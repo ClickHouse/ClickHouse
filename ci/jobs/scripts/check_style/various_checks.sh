@@ -88,6 +88,12 @@ for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ 
 # ClickHouse-owned images with ${VAR:-latest} pattern are excluded since the variable is set in CI.
 find "${ROOT_PATH}/tests/integration/compose" -name '*.yml' -print0 | xargs -0 grep -P 'image:\s*\S+:latest\s*$' | grep -v '\${\|clickhouse/' && echo "Docker compose files should use pinned versions instead of :latest for third-party images"
 
+# A leaf test file cannot share a fixture with another file, so a session-scoped fixture there only
+# defers its teardown to the end of the pytest session, keeping the cluster's containers and their
+# memory for the rest of the job. tests/integration/conftest.py is where session scope belongs.
+grep -rlE --include='test*.py' "scope[[:space:]]*=[[:space:]]*['\"]session['\"]" "${ROOT_PATH}"/tests/integration/test_*/ \
+    && echo "Integration test fixtures should be module-scoped, not session-scoped"
+
 # Check for executable bit on non-executable files
 git ls-files -s $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} | \
     awk '$1 != "120000" && $1 != "100644" { print $4 }' | grep -E '\.(cpp|h|sql|j2|xml|reference|txt|md)$' && echo "These files should not be executable."
