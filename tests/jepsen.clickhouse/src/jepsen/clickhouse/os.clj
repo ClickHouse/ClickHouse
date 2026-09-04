@@ -1,10 +1,18 @@
 (ns jepsen.clickhouse.os
-  "Ubuntu OS setup that makes apt wait for the dpkg locks instead of failing.
+  "Ubuntu OS setup that makes apt wait, rather than fail, for the two things
+  that keep an installation from starting or finishing.
 
   apt's default lock timeout is 0, so an apt-get that finds a lock held exits
   immediately rather than waiting. A node is booted seconds before a test runs
   it, while the automatic apt jobs of a fresh boot still hold those locks, so
-  jepsen.os.ubuntu/setup! needs apt configured to wait before it installs."
+  jepsen.os.ubuntu/setup! needs apt configured to wait before it installs.
+
+  The archive apt downloads the packages from also fails on its own: an EC2
+  Ubuntu mirror rate-limits, answers 503, or drops the connection, and apt
+  exits 100 having fetched nothing. Every test in a run sets its nodes up
+  again, so a mirror unavailable for minutes crashes the tests that start
+  inside that window and none of the rest, which is why the installation is
+  retried here rather than left to fail the test."
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer [info warn]]
             [jepsen.os :as os]
@@ -152,8 +160,68 @@
         (info "apt package lists fetched after"
               (- (System/currentTimeMillis) start) "ms," indexes "package indexes")))))
 
+(def archive-fetch-errors
+  "What apt prints when it could not download a package it resolved from a
+  readable index. Nothing about the node or the request is wrong in that case,
+  so these are worth retrying: the mirror is unavailable, overloaded, or
+  unresolvable for now. `Unable to fetch some archives` is the summary apt adds
+  to every one of them, so on its own it identifies the class; the per-item
+  lines are listed too, so a message carrying only those still matches."
+  ["Unable to fetch some archives"
+   "Failed to fetch"
+   "Could not resolve"
+   "Temporary failure resolving"])
+
+(def apt-install-timeout-seconds 600)
+
+(def apt-install-retry-interval-ms 15000)
+
+(defn archive-fetch-error?
+  "Is this apt stderr a failure to download a package, rather than a rejection
+  of what was asked for? Matched on the message because apt reports both with
+  exit status 100."
+  [err]
+  (and (string? err)
+       (boolean (some #(str/includes? err %) archive-fetch-errors))))
+
+(defn setup-packages!
+  "Runs the Ubuntu setup, retrying while apt cannot download a package. Retries
+  the whole setup and not an install of our own listing of the packages, so the
+  packages covered stay whatever the Ubuntu setup installs; each attempt asks
+  apt only for what is still missing, so a retry resumes rather than restarts.
+  Only an error identifying a download failure is retried - a package apt
+  refuses to install is reported at once, as before. Leaves apt's own message
+  in the exception it throws at the deadline, so a mirror that is broken rather
+  than busy is diagnosed from it."
+  [test node]
+  (let [start (System/currentTimeMillis)
+        deadline (+ start (* 1000 apt-install-timeout-seconds))]
+    (loop [attempt 1]
+      (when-let [err (try+
+                      (os/setup! ubuntu/os test node)
+                      nil
+                      (catch [:type :jepsen.control/nonzero-exit] {:keys [err]}
+                        (if (archive-fetch-error? err)
+                          err
+                          (throw+))))]
+        (if (< (System/currentTimeMillis) deadline)
+          (do (warn "apt could not download a package on" c/*host*
+                    "(attempt" attempt "), retrying:\n" err)
+              (Thread/sleep (long apt-install-retry-interval-ms))
+              (recur (inc attempt)))
+          (let [waited (- (System/currentTimeMillis) start)]
+            (throw+ {:type ::apt-archives-unreachable
+                     :node c/*host*
+                     :attempts attempt
+                     :waited-ms waited
+                     :err err}
+                    nil
+                    "apt could not download a package on %s in %d attempts over %d ms:\n%s"
+                    c/*host* attempt waited err)))))))
+
 (def os
-  "Ubuntu, with apt made to wait for its own locks first."
+  "Ubuntu, with apt made to wait for its own locks, and for the archive it
+  downloads the packages from, first."
   (reify os/OS
     (setup! [_ test node]
       (info node "configuring apt to wait for the dpkg locks")
@@ -161,7 +229,7 @@
       (c/su (cu/write-file! apt-lock-conf-content apt-lock-conf-path))
       (assert-apt-lock-timeout!)
       (ensure-package-lists!)
-      (os/setup! ubuntu/os test node)
+      (setup-packages! test node)
       ;; Recorded last, so the recorded fact is that a whole setup succeeded.
       (swap! apt-updated-hosts conj c/*host*))
 
