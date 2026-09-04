@@ -1,0 +1,7 @@
+-- the samples GROUP BY id is read in order even though the caller did not set optimize_aggregation_in_order
+1
+-- it is a streaming ordered read, not a full sort of the samples
+1
+-- reading back returns each series with all its samples (content is unchanged; array order is not guaranteed, so normalize with arraySort)
+a	[('2024-01-01 00:00:00.000',1),('2024-01-01 00:00:15.000',2),('2024-01-01 00:00:30.000',3)]
+b	[('2024-01-01 00:00:00.000',10),('2024-01-01 00:00:15.000',20),('2024-01-01 00:00:30.000',30)]
