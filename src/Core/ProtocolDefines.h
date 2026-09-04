@@ -101,8 +101,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// execution limits after deserialization.
 /// Version 11 adds the ReadInOrder info in the reading step in the plan
 /// Version 12 carries the join optimizer state of `JoinStepLogical`, so a step taken from the wire is
-/// in the same state as one produced by `clone`. Join reordering is not a function of the fragment
-/// alone, so a receiver cannot re-derive that state.
+/// in the same join optimizer state as one produced by `clone`. Join reordering is not a function of
+/// the fragment alone, so a receiver cannot re-derive that state.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 12;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

@@ -38,16 +38,21 @@ SELECT 'RIGHT', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id SETTINGS 
 -- The initiator keeps its own copy of the shipped fragment as a clone while every replica receives a
 -- serialized copy, and both have to arrive in the same optimizer state: a replica that re-orders an
 -- already ordered join can pick a different join algorithm, hence a different read type for the
--- coordinated side than the one the initiator registered with the coordinator. Every setting below is
--- pinned because the runner randomizes it and the disagreement needs all of them: the seed makes the
--- two sides build the query graph in opposite orders, the algorithm list lets them disagree about
--- sorting, one thread keeps the coordinated read to a single split, and the last four hold the swap,
--- the in-order read, the reordering and the runtime filter the disagreement is built out of.
+-- coordinated side than the one the initiator registered with the coordinator. The seed makes the two
+-- sides build the query graph in opposite orders, the algorithm list lets them disagree about sorting,
+-- and one thread keeps the coordinated read to a single split. `query_plan_join_swap_table`,
+-- `optimize_read_in_order`, `query_plan_optimize_join_order_limit` and `enable_join_runtime_filters`
+-- are pinned against the runner, which otherwise suppresses the disagreement through the swap, the
+-- in-order read, the reordering limit or the runtime filter.
+-- The failpoint slows the initiator's local read, so a remote replica reaches the coordinator for the
+-- coordinated side rather than finding the ranges already taken.
+SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 SELECT 'RIGHT seeded', count() FROM jd_l RIGHT JOIN jd_r ON jd_l.id = jd_r.id
 SETTINGS parallel_replicas_local_plan = 1, query_plan_optimize_join_order_randomize = 906884,
          join_algorithm = 'full_sorting_merge,grace_hash', max_threads = 1,
          query_plan_join_swap_table = 'auto', optimize_read_in_order = 1,
          query_plan_optimize_join_order_limit = 10, enable_join_runtime_filters = 1;
+SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
 -- LEFT SEMI / ANTI: distributed, correct.
 SELECT 'LEFT SEMI', count() FROM jd_l LEFT SEMI JOIN jd_r ON jd_l.id = jd_r.id SETTINGS parallel_replicas_local_plan = 0;
