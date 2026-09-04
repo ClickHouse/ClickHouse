@@ -23,7 +23,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH="${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --session_timezone UTC"
+# The test runner can enable the query result cache, and its key ignores `log_comment`. Every
+# scenario below needs a byte-identical query to answer differently the second time, which a cache
+# hit defeats. On `$CH` so it also covers statements a later scenario adds.
+CH="${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --session_timezone UTC --use_query_cache 0"
 
 # Scenario B counts statements to count verdict uses, which needs one plan build per statement. A
 # non-zero `automatic_parallel_replicas_mode` builds a second complete plan to decide whether
