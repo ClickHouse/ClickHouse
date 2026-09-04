@@ -1175,13 +1175,15 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     if (query_node.isGroupByWithRollup())
     {
         auto rollup_step = std::make_unique<RollupStep>(
-            query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
+            query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls],
+            aggregation_analysis_result.aggregation_key_positions);
         query_plan.addStep(std::move(rollup_step));
     }
     else if (query_node.isGroupByWithCube())
     {
         auto cube_step = std::make_unique<CubeStep>(
-            query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
+            query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls],
+            aggregation_analysis_result.aggregation_key_positions);
         query_plan.addStep(std::move(cube_step));
     }
 }

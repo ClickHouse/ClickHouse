@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -57,10 +58,12 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+CubeStep::CubeStep(
+    const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_, std::vector<size_t> key_positions_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(generateOutputHeader(params_.getHeader(*input_header_, final_), params_.keys, use_nulls_)), getTraits())
     , keys_size(params_.keys_size)
     , params(std::move(params_))
+    , key_positions(std::move(key_positions_))
     , final(final_)
     , use_nulls(use_nulls_)
 {
@@ -107,7 +110,7 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
             return addGroupingSetForTotals(header, params.keys, use_nulls, settings, (UInt64(1) << keys_size) - 1);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
-        return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
+        return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls, key_positions);
     });
 }
 
@@ -165,6 +168,15 @@ void CubeStep::serialize(Serialization & ctx) const
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
+
+    /// The GROUP BY list keeps repeated keys, which `params.keys` does not; an older peer has no
+    /// field for them and reads the deduplicated list alone, which is the behaviour it had anyway.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        writeVarUInt(key_positions.size(), ctx.out);
+        for (size_t position : key_positions)
+            writeVarUInt(position, ctx.out);
+    }
 }
 
 QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
@@ -213,7 +225,23 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     /// planner-built params carry `only_merge = false` as well.
     params.only_merge = false;
 
-    return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
+    std::vector<size_t> key_positions;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        UInt64 num_positions = 0;
+        readVarUInt(num_positions, ctx.in);
+        key_positions.resize(num_positions);
+        for (auto & position : key_positions)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, ctx.in);
+            if (value >= keys.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
+            position = value;
+        }
+    }
+
+    return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls, std::move(key_positions));
 }
 
 void registerCubeStep(QueryPlanStepRegistry & registry);

@@ -146,6 +146,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         available_columns_after_aggregation.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
     Names aggregation_keys;
+    std::vector<size_t> aggregation_key_positions;
+    /// Maps a key's result name to its index in `aggregation_keys`, so that a repeated element is
+    /// recorded as another position rather than dropped.
+    std::unordered_map<std::string_view, size_t> aggregation_key_indexes;
 
     ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     /// Here it is OK to materialize const columns: if column is used in GROUP BY, it may be expected to become non-const
@@ -245,13 +249,22 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 for (auto & expression_dag_node : expression_dag_nodes)
                 {
-                    if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                    /// The key list stays deduplicated: it becomes the aggregation key and the output
+                    /// header, where a repeated name would collide. Record where the repetition was
+                    /// written instead, so CUBE and ROLLUP can expand the list as the user wrote it.
+                    auto existing_key = aggregation_key_indexes.find(expression_dag_node->result_name);
+                    if (existing_key != aggregation_key_indexes.end())
+                    {
+                        aggregation_key_positions.push_back(existing_key->second);
                         continue;
+                    }
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
                     ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
+                    aggregation_key_indexes.emplace(expression_dag_node->result_name, aggregation_keys.size());
+                    aggregation_key_positions.push_back(aggregation_keys.size());
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -298,6 +311,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     AggregationAnalysisResult aggregation_analysis_result;
     aggregation_analysis_result.before_aggregation_actions = before_aggregation_actions;
     aggregation_analysis_result.aggregation_keys = std::move(aggregation_keys);
+    /// Only carried when it says something the key list does not.
+    if (aggregation_key_positions.size() != aggregation_analysis_result.aggregation_keys.size())
+        aggregation_analysis_result.aggregation_key_positions = std::move(aggregation_key_positions);
     aggregation_analysis_result.aggregate_descriptions = std::move(aggregates_descriptions);
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
