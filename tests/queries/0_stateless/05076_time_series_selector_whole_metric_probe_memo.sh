@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+# long: scenario B observes one verdict use per plan build, so it needs as many plan builds as the
+# reuse bound, and a timeSeriesSelector plan build costs seconds on a sanitizer build.
 
 # `timeSeriesSelector` gates its whole-metric primary-key range on a probe query over the tags
 # table, and the probe's counterexample-found verdict is reused for a bounded number of later
@@ -107,8 +109,9 @@ echo "narrow window reuses that verdict: $([ "$(has_id_range ts_b "$NARROW_SELEC
 echo "reuse returns the same rows: $([ "$(selector_rows ts_b "$NARROW_SELECTOR" 0 200)" = "$ROWS_FRESH" ] && echo 1 || echo 0)"
 
 # Build the plan repeatedly in one call and find the first query that is probed again. A verdict
-# that never expires would keep every value at 0.
-MAX_USES=40
+# that never expires would keep every value at 0. Each iteration is a plan build, the dominant cost
+# here, so this stays just above the two uses already spent plus the reuse bound.
+MAX_USES=35
 VERDICTS=$($CH -q "$(for _ in $(seq 1 $MAX_USES); do has_id_range_query ts_b "$NARROW_SELECTOR" 0 200; done)" | tr -d '\n')
 REUSED_IN_LOOP=${VERDICTS%%1*}
 echo "probed again within $MAX_USES queries: $([ "$REUSED_IN_LOOP" != "$VERDICTS" ] && echo 1 || echo 0)"

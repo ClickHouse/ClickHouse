@@ -11,7 +11,7 @@ wide window falls back: 0
 a different shape on the same table still emits the range: 1
 narrow window reuses that verdict: 1
 reuse returns the same rows: 1
-probed again within 40 queries: 1
+probed again within 35 queries: 1
 plan builds that reused the verdict before the re-probe: 31
 rows unchanged after the verdict was retired: 1
 rows in the narrow window:
