@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -1350,6 +1351,15 @@ void MergeJoin::validateMixedJoinExpression()
             "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got '{}'. expression:\n{}",
             expression_sample_block.getByPosition(0).type->getName(),
             mixed_join_expression->dumpActions());
+    }
+
+    if (mixed_join_expression->hasArrayJoin())
+    {
+        throw Exception(
+            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "Non equi condition '{}' from JOIN ON section contains 'arrayJoin', which changes the number of rows. "
+            "If the expansion depends on one side only, use ARRAY JOIN in a subquery before the JOIN",
+            expression_sample_block.getByPosition(0).name);
     }
 
     for (const auto & input : mixed_join_expression->getRequiredColumnsWithTypes())
