@@ -161,6 +161,13 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
         if (uncompressed_size >= 1_GiB)
             throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
+        /// A codec that stores data verbatim has body length equal to the decompressed length.
+        if (codec->isNone() && source_size - COMPRESSED_BLOCK_HEADER_SIZE != uncompressed_size)
+            throw Exception(decompression_error_code,
+                "The compressed data size without header ({}) does not match size_decompressed ({}) "
+                "for a codec that stores data uncompressed",
+                source_size - COMPRESSED_BLOCK_HEADER_SIZE, uncompressed_size);
+
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception(decompression_error_code, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
                 uncompressed_size, decompressed_size);

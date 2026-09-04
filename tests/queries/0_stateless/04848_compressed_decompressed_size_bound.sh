@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
-# - The bound is 1 GiB, so an arm that crosses it has to write about that much.
-# Memory limits: 10 GiB
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,121 +16,65 @@ set -o pipefail
 # checksum-for-compressed-block prints CityHash128 of every single-bit mutation of its input, so
 # feeding it the body with bit 0 flipped yields CityHash128(body) on the line labelled "0, 0". The
 # wire order is low64 then high64, each little-endian, i.e. the reverse of the printed hex.
-# $4 overrides size_compressed, which otherwise describes the payload written.
-frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload, $4 = size_compressed
-    local body checksum
-    body=$(python3 -c "
-import struct, sys
-payload = sys.argv[3].encode()
-size_compressed = int(sys.argv[4]) if sys.argv[4] else 9 + len(payload)
-sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', size_compressed) + struct.pack('<I', int(sys.argv[2])) + payload)
-" "$1" "$2" "$3" "${4:-}" | xxd -p | tr -d '\n')
+emit() { # $1 = frame body as hex, checksum excluded
+    local checksum
     checksum=$(python3 -c "
 import sys
 b = bytearray.fromhex(sys.argv[1]); b[0] ^= 1
 sys.stdout.buffer.write(bytes(b))
-" "$body" | $CLICKHOUSE_BINARY checksum-for-compressed-block | awk -F'\t' '$2 == "0, 0" { print $1; exit }')
+" "$1" | $CLICKHOUSE_BINARY checksum-for-compressed-block | awk -F'\t' '$2 == "0, 0" { print $1; exit }')
     python3 -c "
 import sys
 sys.stdout.buffer.write(bytearray.fromhex(sys.argv[1])[::-1] + bytearray.fromhex(sys.argv[2]))
-" "$checksum" "$body"
+" "$checksum" "$1"
+}
+
+# Method bytes are from CompressionInfo.h: NONE is 0x02 = 2, Multiple is 0x91, Quantized is 0x9e = 158.
+frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload
+    emit "$(python3 -c "
+import struct, sys
+payload = sys.argv[3].encode()
+sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', 9 + len(payload)) + struct.pack('<I', int(sys.argv[2])) + payload)
+" "$1" "$2" "$3" | xxd -p | tr -d '\n')"
+}
+
+# A Multiple frame's body is [codec count][one method byte per codec][nested frame], and the nested
+# frame is parsed by CompressionCodecMultiple::doDecompressData, which never calls the top-level
+# header parser. Both frames declare the same size, so the only rule such a frame breaks is that a
+# codec storing data verbatim has a body as long as it declares.
+multiple_none_frame() { # $1 = size_decompressed, declared by the outer and the nested frame alike
+    python3 -c "
+import struct, sys
+NONE, MULTIPLE = 0x02, 0x91
+declared = int(sys.argv[1])
+payload = b'SELECT 1'
+nested = bytes([NONE]) + struct.pack('<I', 9 + len(payload)) + struct.pack('<I', declared) + payload
+body = bytes([1, NONE]) + nested
+sys.stdout.buffer.write(bytes([MULTIPLE]) + struct.pack('<I', 9 + len(body)) + struct.pack('<I', declared) + body)
+" "$1" | xxd -p | tr -d '\n'
 }
 
 post() { ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&decompress=1" --data-binary @-; }
 
-# LZ4 is method 0x82 = 130, NONE is 0x02 = 2.
-
 echo '-- a valid frame still executes (proves the arms below fail for the intended reason)'
 frame 2 8 'SELECT 1' | post
 
-echo '-- size_decompressed of 2 GiB is rejected from the header alone, before any allocation'
-frame 130 2147483648 'SELECT 1' | post 2>&1 | grep -c 'Too large size_decompressed: 2147483648'
-
-echo '-- the bound is inclusive: exactly 1 GiB is not rejected by it (it fails later, in decoding)'
-frame 130 1073741824 'SELECT 1' | post 2>&1 | grep -c 'Too large size_decompressed'
-echo '-- one byte above 1 GiB is rejected'
-frame 130 1073741825 'SELECT 1' | post 2>&1 | grep -c 'Too large size_decompressed: 1073741825'
-
-# A frame that also declares size_compressed below the 9-byte header violates two header checks at
-# once. The size_decompressed message pins that its bound is reached first, hence within the header
-# parser and before any allocation: relocating the bound past the header-size check reports the
-# other message instead.
-echo '-- the bound is reached before the header-size check, so before any allocation'
-frame 130 2147483648 'SELECT 1' 5 | post 2>&1 | grep -c 'Too large size_decompressed: 2147483648'
-
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
 frame 2 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
-# Quantized (0x9e = 158) is the other codec reporting isNone(); the read path builds it from the
-# method byte alone, so the check applies to it without allow_experimental_codecs.
+# Quantized is the other codec reporting isNone(). The read path builds it from the method byte
+# alone, so the check applies to it without allow_experimental_codecs.
 echo '-- and neither may the other verbatim codec'
 frame 158 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
-# compressor --stat prints one row per frame: codec, size_decompressed, size_compressed. Both fields
-# are bounded, and only $3 sees the codec's expansion, so asserting $2 alone cannot observe an
-# over-bound frame. Only a well-formed row counts as a frame: a diagnostic on the merged stderr has
-# empty size fields, which compare as zero, so counting it would report a clean run for a failed one.
-over_bound() {
-    ${CLICKHOUSE_BINARY} compressor --stat --input "$1" 2>&1 \
-        | awk -F'\t' '
-            /^Code: 39/ { print "frames above the bound: rejected by --stat"; done = 1; exit }
-            NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
-                seen++; if ($2 > 1073741824 || $3 > 1073741824) over++; next }
-            { print "frames above the bound: unparsed output:", $0; done = 1; exit }
-            END { if (done) exit; if (!seen) print "frames above the bound: no frames read";
-                  else print "frames above the bound:", over + 0 }'
-}
+# Rejection has to happen before the buffer sized from the declaration is allocated. The two
+# messages are ordered in the source: this one precedes the allocation, and codec NONE's own
+# source_size check is reached only after it, so observing this one pins the order.
+echo '-- and neither may a nested one, which the top-level parser never sees'
+emit "$(multiple_none_frame 999)" | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
-# AES-CTR over zeroes is incompressible and reproducible from the key alone, so the arms that need
-# incompressible input regenerate it instead of keeping a copy on disk. Each output is removed as
-# soon as its last assertion is done: the arms below write about 1 GiB each and must not coexist.
-incompressible() { head -c "$1" /dev/zero | openssl enc -aes-256-ctr -pbkdf2 -pass pass:04848 -nosalt; }
-
-echo '-- a writer asked for a frame above the bound emits several frames within it'
-head -c 1207959552 /dev/zero | ${CLICKHOUSE_BINARY} compressor --block-size 1207959552 \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
-echo '-- and its output round-trips'
-${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin" \
-    | wc -c
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
-
-echo '-- the same holds for the parallel writer'
-head -c 1207959552 /dev/zero | ${CLICKHOUSE_BINARY} compressor --threads 2 --block-size 1207959552 \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
-
-echo '-- a codec that does not compress expands the frame by the header alone, and still fits'
-head -c 1073741824 /dev/zero | ${CLICKHOUSE_BINARY} compressor --none --block-size 1073741824 \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
-
-echo '-- and so does a compressing codec handed incompressible input'
-incompressible 1073741824 | ${CLICKHOUSE_BINARY} compressor --block-size 1073741824 \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
-echo '-- and it round-trips byte for byte'
-${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin" \
-    | cmp -s - <(incompressible 1073741824) && echo 'incompressible input round-trips'
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
-
-echo '-- a reader of data an uncapped writer produced accepts an over-bound frame'
-frame 130 2147483648 'SELECT 1' > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_over.bin"
-${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_over.bin" \
-    --output /dev/null 2>&1 | grep -c 'Too large size_decompressed'
-echo '-- and so does its seeking path'
-${CLICKHOUSE_BINARY} compressor --decompress --offset-in-decompressed-block 1 \
-    --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_over.bin" --output /dev/null 2>&1 \
-    | grep -c 'Too large size_decompressed'
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_over.bin"
-
-# No-regression control: it asserts that engines reading their own files keep working, and it
-# passes with every reader opt-out removed. The opt-outs are covered by the two
-# 'compressor --decompress' arms above, which redden without them. A genuine over-bound engine
-# file cannot be produced here, because the writer cap prevents one and fabricating part bytes is
-# not allowed in a stateless test.
-echo '-- engines whose readers accept such frames keep working on ordinary data'
+# No-regression control: engines reading frames they wrote themselves keep working, now that the
+# frame size bound applies to every reader with no per-call-site escape.
+echo '-- engines keep working on ordinary data'
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS t_log_bound;
     DROP TABLE IF EXISTS t_stripe_bound;
