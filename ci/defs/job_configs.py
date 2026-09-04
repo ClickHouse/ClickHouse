@@ -1871,7 +1871,7 @@ class JobConfigs:
         # Five hours of fuzzing per target, all targets in parallel, plus
         # artifact download and corpus upload. Praktika's default is exactly
         # five hours, which would kill the job mid-run.
-        timeout=6 * 3600,
+        timeout=5.5 * 3600,
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
