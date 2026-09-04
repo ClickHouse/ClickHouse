@@ -145,11 +145,6 @@ ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const Colu
 
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler)
 {
-    /// `throttle` returns true only when the request was actually blocked (slept) to conform to the rate limit,
-    /// so `YTsaurusLookupThrottled` counts requests that were really throttled rather than every request that passed through.
-    if (lookup_throttler && lookup_throttler->throttle(1))
-        ProfileEvents::increment(ProfileEvents::YTsaurusLookupThrottled);
-
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
     auto out_callback = [lookup_block_input, this](std::ostream & ostr)
     {
@@ -160,10 +155,12 @@ ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Bloc
         formatBlock(output_format, lookup_block_input);
         out_buffer.finalize();
     };
-    return executeQuery(lookup_rows_query, std::move(out_callback));
+    /// The throttler is passed down to `executeQuery` so that every real `lookup_rows` HTTP attempt, including retries
+    /// against other http proxies, consumes its own token; otherwise one logical lookup could exceed the limit on failover.
+    return executeQuery(lookup_rows_query, std::move(out_callback), lookup_throttler);
 }
 
-ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
+ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback, const ThrottlerPtr & request_throttler)
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
@@ -181,6 +178,11 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
                 host_for_request.addQueryParameter(query_param.name, query_param.value);
             }
             LOG_TRACE(log, "URI {} , query type {}", host_for_request.toString(), query->getQueryName());
+
+            /// `throttle` returns true only when the request was actually blocked (slept) to conform to the rate limit,
+            /// so `YTsaurusLookupThrottled` counts requests that were really throttled rather than every request that passed through.
+            if (request_throttler && request_throttler->throttle(1))
+                ProfileEvents::increment(ProfileEvents::YTsaurusLookupThrottled);
 
             auto buf = createQueryRWBuffer(host_for_request, out_callback, query->getHTTPMethod());
             recently_used_url_index.store(url_index, std::memory_order_relaxed);

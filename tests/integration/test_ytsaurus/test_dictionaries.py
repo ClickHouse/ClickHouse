@@ -555,6 +555,57 @@ def test_yt_lookups_throttler_complex_key(started_cluster):
     yt.remove_table(path)
 
 
+def test_yt_lookups_throttler_proxy_failover(started_cluster):
+    """Regression test: the throttler is consumed per real `lookup_rows` HTTP attempt, not per logical lookup.
+
+    With a dead proxy listed first, every lookup makes a failing attempt and then a successful one against the
+    second proxy. Both attempts must pay a token, so the requests-per-second limit holds under failover and
+    `YTsaurusLookupThrottled` still grows even though the failing attempt itself may take longer than the refill period.
+    """
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls 'http://incorrect_endpoint|{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '1'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    old_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(3) SETTINGS http_max_tries = 10, http_retry_max_backoff_ms=2000"
+        )
+        == "20\n40\n30\n"
+    )
+    new_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert old_value < new_value
+    instance.query("DROP DICTIONARY yt_dict")
+
+    yt.remove_table(path)
+
+
 def test_yt_lookups_default_chunk_size_is_unlimited(started_cluster):
     """The default of `lookup_max_rows_per_query` keeps the previous behaviour: one request per selective load.
 

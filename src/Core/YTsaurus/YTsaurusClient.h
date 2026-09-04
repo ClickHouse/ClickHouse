@@ -103,7 +103,10 @@ private:
 
 
     ReadBufferPtr createQueryRWBuffer(const URI& uri,  const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
-    ReadBufferPtr executeQuery(YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
+    /// `request_throttler` (if set) is consumed once per actual HTTP attempt, i.e. also for every retry against
+    /// another http proxy, so a configured requests-per-second limit holds under proxy failover as well.
+    ReadBufferPtr executeQuery(
+        YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr, const ThrottlerPtr & request_throttler = nullptr);
 
     URI getHeavyProxyURI(const URI& uri);
 
