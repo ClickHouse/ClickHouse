@@ -96,6 +96,30 @@ FORMAT Prometheus
 
 파일 시스템 캐시에서 축출된 파일 세그먼트의 총 바이트 수로, 캐시 이름과 사용자 ID를 레이블로 구분합니다. 기본적으로 비활성화되어 있으므로 `expose_prometheus_eviction_metrics` 및 `expose_prometheus_eviction_metrics_per_user`를 사용해 활성화하십시오.
 
+<div id="object-storage-queue-failures-total">
+  ### `object_storage_queue_failures_total`
+</div>
+
+데이터베이스, 테이블, 처리 단계(`read`, `set_processing`, `insert`, `commit`), 오류 코드별 `ObjectStorageQueue`(`S3Queue`/`AzureQueue`) 실패 횟수입니다.
+
+<div id="object-storage-queue-permanently-failed-files-total">
+  ### `object_storage_queue_permanently_failed_files_total`
+</div>
+
+재시도 횟수를 모두 소진했거나 재시도가 비활성화되어 영구적으로 포기된 `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) 파일 수입니다. 데이터베이스와 테이블별로 레이블이 지정되며, 각각의 파일에 포함된 데이터는 더 이상 처리되지 않습니다.
+
+<div id="object-storage-queue-newest-seen-object-timestamp-seconds">
+  ### `object_storage_queue_newest_seen_object_timestamp_seconds`
+</div>
+
+`ObjectStorageQueue`(`S3Queue`/`AzureQueue`) 테이블에서 현재까지 확인된 가장 최신 객체의 마지막 수정 시각을 나타내는 Unix timestamp입니다. 데이터베이스와 테이블별로 레이블이 지정됩니다.
+
+<div id="object-storage-queue-newest-committed-object-timestamp-seconds">
+  ### `object_storage_queue_newest_committed_object_timestamp_seconds`
+</div>
+
+데이터베이스와 테이블을 레이블로 지정한 `ObjectStorageQueue`(`S3Queue`/`AzureQueue`) 테이블에서 지금까지 완전히 처리된 가장 최신 객체의 마지막 수정 시각을 나타내는 Unix timestamp입니다.
+
 <div id="see-also">
   ## 관련 항목
 </div>

@@ -186,11 +186,29 @@ chaves usadas para preencher os parâmetros da função de tabela S3:
 | aws&#95;access&#95;key&#95;id     | O ID da chave de acesso do S3.                                                                                                                                                                         |
 | aws&#95;secret&#95;access&#95;key | A chave secreta do S3.                                                                                                                                                                                 |
 | role&#95;arn                      | O ARN da IAM role criada para acesso seguro ao S3. Consulte esta [documentação](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para mais informações.                                 |
+| external&#95;id                   | O ID externo a ser passado juntamente com `role_arn` ao assumir a IAM role. Requer que `role_arn` esteja definido. Disponível a partir do dbt-clickhouse 1.10.2.                                       |
 | compression                       | O método de compressão usado com os objetos S3. Se não for fornecido, o ClickHouse tentará determinar a compressão com base no nome do arquivo.                                                        |
 
-Consulte
-o [arquivo de teste do S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-para ver exemplos de como usar esta macro.
+<div id="s3source-example">
+  #### Exemplo
+</div>
+
+Defina a configuração compartilhada em `dbt_project.yml` (o nome do dicionário deve terminar em `s3`):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+Em seguida, chame a macro em um modelo. Qualquer um dos argumentos acima também pode ser passado diretamente na chamada, tendo precedência sobre os valores do dicionário:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+Consulte o [arquivo de teste do S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py) para mais exemplos.
 
 <div id="cross-database-macro-support">
   ### Suporte a macros entre bancos de dados

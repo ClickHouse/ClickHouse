@@ -88,9 +88,12 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    for (auto target_kind : getAllTargetKinds())
+    for (auto target_kind : getTargetKinds())
     {
         /// The recent samples target exists only if the normalized create query has a RECENT SAMPLES clause.
+        /// The `recent_samples_ttl_seconds` setting itself cannot be checked here instead: a table created
+        /// before this feature existed has no recent samples table on disk while the setting reads as its
+        /// non-zero default, and ATTACH never creates inner tables.
         if ((target_kind == ViewTarget::RecentSamples)
             && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
             continue;
@@ -114,8 +117,12 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
             if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
             {
                 /// Create the inner target table using the pre-computed inner columns from the create query.
+                /// The normalization always sets them; a query with an inner UUID but no inner columns
+                /// can only come from hand-edited metadata.
                 auto * inner_columns = create_query.getTargetInnerColumns(target_kind);
-                chassert(inner_columns != nullptr);
+                if (!inner_columns)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The {} target of table {} has no inner columns",
+                        magic_enum::enum_name(target_kind), table_id.getNameForLogs());
                 auto inner_engine = boost::static_pointer_cast<ASTStorage>(
                     create_query.getTargetInnerEngine(target_kind)
                         ? create_query.getTargetInnerEngine(target_kind)->ptr()
@@ -169,16 +176,6 @@ StorageTimeSeries::StorageTimeSeries(
 
 
 StorageTimeSeries::~StorageTimeSeries() = default;
-
-
-std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
-{
-    std::vector<ViewTarget::Kind> kinds;
-    kinds.reserve(targets.size());
-    for (const auto & target : targets)
-        kinds.push_back(target.kind);
-    return kinds;
-}
 
 
 const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
@@ -759,6 +756,7 @@ Input the command `set allow_experimental_time_series_table = 1`.
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
@@ -839,12 +837,14 @@ If both forms are used in the same `CREATE TABLE` statement, the declared types 
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
 This is similar to how a [materialized view](/reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
-whereas a `TimeSeries` table has three target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table).
+whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table),
+and an optional [recent samples](#recent-samples-table) target table which is enabled by default
+(see the [recent_samples_ttl_seconds](#settings) setting).
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
 
-Rows inserted into a `TimeSeries` table are transformed, split into blocks, and inserted in these three target tables.
+Rows inserted into a `TimeSeries` table are transformed, split into blocks, and inserted in these target tables.
 
 The target tables are the following:
 
@@ -856,7 +856,7 @@ The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
+| `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
@@ -864,6 +864,18 @@ Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
 See also [Adjusting types of columns](#adjusting-column-types).
+
+### Recent samples table {#recent-samples-table}
+
+The _recent samples_ table is optional and enabled by default (see the [recent_samples_ttl_seconds](#settings) setting;
+setting it to zero disables the table). It contains a copy of the samples newer than the TTL defined by that setting,
+and it must have the same columns as the [samples](#samples-table) table.
+
+Every inserted sample is written both to the samples table and to the recent samples table.
+Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
+because it's much smaller (this can be disabled with the query-level setting `time_series_prefer_recent_samples_table`).
+
+The TTL of the inner recent samples table is always derived from the [recent_samples_ttl_seconds](#settings) setting.
 
 ### Tags table {#tags-table}
 
@@ -873,7 +885,7 @@ The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of all the tags, including the tag `__name__` containing the name of a metric and including the tags with names enumerated in the [tags_to_columns](#settings) setting. Tables created by older versions of ClickHouse stored in this column only the tags without dedicated columns and without the metric name; reading handles both cases |
@@ -916,16 +928,24 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -942,17 +962,19 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-So the columns were generated automatically and also there are three inner target tables with their own column definitions
-stored in the `INNER COLUMNS` clauses.
+So the columns were generated automatically and also there are four inner target tables with their own column definitions
+stored in the `INNER COLUMNS` clauses. The `recent_samples_ttl_seconds` setting was written into the `SETTINGS` clause
+with its default value: the setting defines the TTL of the recent samples table, so its effective value is fixed at creation.
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 and each target table has its own set of columns:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -962,9 +984,23 @@ SETTINGS index_granularity = 32768
 ```
 
 ```sql
+CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp)
+TTL toDateTime(timestamp) + toIntervalSecond(345600)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+```
+
+```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -1028,7 +1064,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 The `id` column can be of any comparable non-Nullable type. The `id` types declared in the samples and tags inner tables must match.
 
-If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, the same types wrapped in `LowCardinality`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
+
+A `LowCardinality` identifier type, e.g. `Tuple(UInt64, LowCardinality(UUID))`, keeps the identifiers dictionary-encoded: the samples table stores small per-block dictionaries with dictionary indexes instead of repeating the full identifier in every row, which reduces the amount of data read by queries.
 
 The `id_generator` setting offers the same customization without using the `INNER COLUMNS` clause:
 
@@ -1065,16 +1103,29 @@ with all the tags except the metric name.
 
 By default inner target tables use the following table engines:
 - the [samples](#samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree);
+- the [recent samples](#recent-samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) partitioned by 5-hour buckets (see the [recent_samples_partition_by](#settings) setting) with a `TTL` derived from
+the [recent_samples_ttl_seconds](#settings) setting and with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole;
 - the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
 - the [metrics](#metrics-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates.
+
+The engine family of the generated inner tables follows the `default_table_engine` query-level setting:
+with `default_table_engine = ReplicatedMergeTree` or `SharedMergeTree` the inner tables use the corresponding
+`Replicated` or `Shared` engines. With `default_table_engine = None` (or any other value) the engines of the inner tables
+must be specified explicitly.
+
+All the inner tables must have the same replication type: if one of them is replicated (or shared), the other inner
+tables must be replicated (or shared) too, otherwise their contents would diverge between replicas. For example,
+declaring `SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` requires the other inner engines to be replicated as well -
+either declared explicitly or generated with `default_table_engine = ReplicatedMergeTree`.
 
 Other table engines also can be used for inner target tables if it's specified so:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
+RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -1106,6 +1157,10 @@ CREATE TABLE metrics_for_my_table ...
 
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
+
+An external table can also be used as the [recent samples](#recent-samples-table) target (the `RECENT SAMPLES my_recent_samples_table` clause).
+Such a table must have the same columns as an external samples table, and it must retain at least
+[recent_samples_ttl_seconds](#settings) seconds of data, which is the user's responsibility.
 
 The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
@@ -1140,10 +1195,10 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
-| `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
-| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
-| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
 
 # Functions {#functions}
 

@@ -305,7 +305,7 @@ Téléchargez le binaire depuis la [page des vérifications de build de la CI](/
 
 Dans les pull requests, la plupart des jobs de sanitizer dont le nom se termine par `selected tests` n&#39;exécutent pas toute la suite de tests.
 Ils exécutent uniquement les tests sélectionnés pour la modification : les tests que la pull request ajoute ou modifie, les tests qui ont déjà échoué dans cette pull request et les tests qui couvrent les lignes modifiées selon la base de données de couverture.
-Les jobs MSan/WasmEdge continuent d&#39;exécuter toute la suite, car les tests UDF Wasm existants ne sont pas compatibles avec MSan. Toute la suite est également exécutée dans les configurations de binaires debug et simples, les builds avec sanitizers sont testés via le [test de stress](#stress-test), et la branche master exécute toute la suite dans chaque configuration.
+Toute la suite est également exécutée dans les configurations de binaires debug et simples, les builds avec sanitizers sont testés via le [test de stress](#stress-test), et la branche master exécute toute la suite dans chaque configuration.
 
 <div id="integration-tests">
   ## Tests d’intégration
