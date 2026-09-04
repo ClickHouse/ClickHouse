@@ -39,3 +39,16 @@ ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
 SELECT '---';
 SELECT * FROM values('x Nullable(Float64)', (nan), (NULL))
 ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3;
+SELECT '---';
+
+-- With no `FILL FROM` the first ordinary value anchors the range, so the gaps after it are still generated.
+SELECT * FROM values('x Nullable(Float64)', (7), (3), (nan))
+ORDER BY x ASC NULLS FIRST WITH FILL;
+SELECT '---';
+
+-- A range holding only prefix rows must emit each generated row exactly once.
+SELECT count() FROM
+(
+    SELECT * FROM values('x Nullable(Float64)', (nan))
+    ORDER BY x ASC NULLS FIRST WITH FILL FROM 1 TO 3
+);
