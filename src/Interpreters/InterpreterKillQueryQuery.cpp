@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -371,14 +372,25 @@ static void applyProcessesRowPolicy(Block & block, const ContextPtr & context, c
 /// resolvable there, while a predicate may name a column with any qualifier the table itself accepts.
 static void unqualifyProcessesColumns(ASTPtr & ast)
 {
+    /// A subquery resolves names in a scope of its own, where `processes` may be a relation of the
+    /// caller's. Only this scope is known to hold the rows, so only its qualifiers are shortened.
+    if (ast->as<ASTSubquery>())
+        return;
+
     if (auto * identifier = ast->as<ASTIdentifier>())
     {
-        const auto & parts = identifier->name_parts;
-        if (parts.size() > 2 && parts[0] == "system" && parts[1] == "processes")
+        /// A table name keeps its database: this shortens the way a column is qualified, not what is read.
+        if (identifier->as<ASTTableIdentifier>())
+            return;
+
+        auto & parts = identifier->name_parts;
+        if (parts.size() >= 2 && parts[0] == "system" && parts[1] == "processes")
         {
-            auto unqualified = make_intrusive<ASTIdentifier>(std::vector<String>(parts.begin() + 1, parts.end()));
-            unqualified->setAlias(identifier->tryGetAlias());
-            ast = std::move(unqualified);
+            /// In place, because a qualified matcher holds the same node in a member of its own.
+            parts.erase(parts.begin());
+            identifier->full_name = parts[0];
+            for (size_t i = 1; i < parts.size(); ++i)
+                identifier->full_name += '.' + parts[i];
         }
         return;
     }
