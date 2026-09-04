@@ -79,6 +79,10 @@ struct SQLQueryPiece
     /// `string_value` is used only if `store_method` is CONST_STRING.
     String string_value;
 
+    /// Name of a subquery (`sort_group`, `sort_rank`) fixing each series' output position at the sort*() call site;
+    /// carried through series-preserving transforms, re-keyed by group-changing ones, applied by finalizeSQL().
+    String sort_rank_subquery;
+
     /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.

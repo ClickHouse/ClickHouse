@@ -2606,24 +2606,23 @@ def test_multiple_series_in_same_resultset():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "sort_by_label(rate(http_errors[100]), 'http_code')",
-    #     200,
-    #     '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "0.04"]}, {"metric": {"http_code": "404"}, "value": [200, "0.07"]}]}',
-    #     [
-    #         [
-    #             "[('http_code','401')]",
-    #             "1970-01-01 00:03:20.000",
-    #             "0.04",
-    #         ],
-    #         [
-    #             "[('http_code','404')]",
-    #             "1970-01-01 00:03:20.000",
-    #             "0.07",
-    #         ],
-    #     ]
-    # )
+    do_query_test(
+        "sort_by_label(rate(http_errors[100]), 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "401"}, "value": [200, "0.04"]}, {"metric": {"http_code": "404"}, "value": [200, "0.07"]}]}',
+        [
+            [
+                "[('http_code','401')]",
+                "1970-01-01 00:03:20.000",
+                "0.04",
+            ],
+            [
+                "[('http_code','404')]",
+                "1970-01-01 00:03:20.000",
+                "0.07",
+            ],
+        ],
+    )
 
     do_query_test_expect_error(
         "rate({http_code='404'}[100])",
@@ -2639,6 +2638,72 @@ def test_multiple_series_in_same_resultset():
     #     "vector cannot contain metrics with the same labelset",
     #     "Multiple series have the same tags {'http_code': '404'}",
     # )
+
+
+def test_sort_functions():
+    # At timestamp 200: http_errors{http_code="401"} == 4, http_errors{http_code="404"} == 5.
+    do_query_test(
+        "sort(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        "sort_desc(http_errors)",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label(http_errors, 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}, {"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+        ],
+    )
+
+    do_query_test(
+        "sort_by_label_desc(http_errors, 'http_code')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # PromQL sort* functions order the vector at the call site, and outer functions keep that order:
+    # sort(-http_errors) is ascending by the negated values (404 first), and abs() must not reorder it.
+    do_query_test(
+        "abs(sort(-http_errors))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"http_code": "404"}, "value": [200, "5"]}, {"metric": {"http_code": "401"}, "value": [200, "4"]}]}',
+        [
+            ["[('http_code','404')]", "1970-01-01 00:03:20.000", 5],
+            ["[('http_code','401')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
+
+    # Label manipulation must also keep the order fixed by an inner sort call.
+    do_query_test(
+        "label_replace(sort_desc(http_errors), 'note', 'x', 'http_code', '.*')",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "http_errors", "http_code": "404", "note": "x"}, "value": [200, "5"]}, {"metric": {"__name__": "http_errors", "http_code": "401", "note": "x"}, "value": [200, "4"]}]}',
+        [
+            ["[('__name__','http_errors'),('http_code','404'),('note','x')]", "1970-01-01 00:03:20.000", 5],
+            ["[('__name__','http_errors'),('http_code','401'),('note','x')]", "1970-01-01 00:03:20.000", 4],
+        ],
+    )
 
 
 def test_alignment_with_subquery_step():
@@ -2899,16 +2964,16 @@ def test_math_binary_operators():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "foo + bar",
-    #     150,
-    #     '{"resultType": "vector", "result": [{"metric": {"shape": "square", "size": "s"}, "value": [150, "740"]}, {"metric": {"shape": "circle", "size": "l"}, "value": [150, "1016"]}]}',
-    #     [
-    #         ["[('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 740],
-    #         ["[('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1016],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(foo + bar, 'shape')",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "size": "l"}, "value": [150, "1016"]}, {"metric": {"shape": "square", "size": "s"}, "value": [150, "740"]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "1970-01-01 00:02:30.000", 1016],
+            ["[('shape','square'),('size','s')]", "1970-01-01 00:02:30.000", 740],
+        ],
+    )
 
     do_query_test(
         "(foo + bar)[50:10]",
@@ -2955,18 +3020,17 @@ def test_math_binary_operators():
         ],
     )
 
-    # FIXME: Function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "foo + on(shape) bar",
-    #     150,
-    #     '{"resultType": "vector", "result": [{"metric": {"shape": "square"}, "value": [150, "740"]}, {"metric": {"shape": "triangle"}, "value": [150, "110"]}, {"metric": {"shape": "circle"}, "value": [150, "1016"]}]}',
-    #     ''
-    #     [
-    #         ["[('shape','triangle')]", "1970-01-01 00:02:30.000", 110],
-    #         ["[('shape','square')]", "1970-01-01 00:02:30.000", 740],
-    #         ["[('shape','circle')]", "1970-01-01 00:02:30.000", 1016]
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(foo + on(shape) bar, 'shape')",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [150, "1016"]}, {"metric": {"shape": "square"}, "value": [150, "740"]}, {"metric": {"shape": "triangle"}, "value": [150, "110"]}]}',
+        [
+            ["[('shape','circle')]", "1970-01-01 00:02:30.000", 1016],
+            ["[('shape','square')]", "1970-01-01 00:02:30.000", 740],
+            ["[('shape','triangle')]", "1970-01-01 00:02:30.000", 110],
+        ],
+    )
 
     do_query_test(
         "(foo + on(shape) bar)[50:10]",
@@ -4216,17 +4280,17 @@ def test_aggregation_operators():
         [],
     )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "sum(bar) without (shape)",
-    #     120,
-    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "25"]}, {"metric": {"size": "s"}, "value": [120, "40"]}, {"metric": {"size": "xl"}, "value": [120, "8"]}]}',
-    #     [
-    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 25],
-    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 40],
-    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 8],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(sum(bar) without (shape), 'size')",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "25"]}, {"metric": {"size": "s"}, "value": [120, "40"]}, {"metric": {"size": "xl"}, "value": [120, "8"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:02:00.000", 25],
+            ["[('size','s')]", "1970-01-01 00:02:00.000", 40],
+            ["[('size','xl')]", "1970-01-01 00:02:00.000", 8],
+        ],
+    )
 
     do_query_test(
         "(sum(last_over_time(bar[10])) without (shape))[50:10]",
@@ -4298,19 +4362,19 @@ def test_aggregation_operators():
         eps=1e-9,
     )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # group replaces all values with 1.
     # {shape="circle", size="l"} and {shape="rectangle", size="l"} are merged to one group.
-    # do_query_test(
-    #     "group(bar) without (shape)",
-    #     120,
-    #     '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "1"]}, {"metric": {"size": "s"}, "value": [120, "1"]}, {"metric": {"size": "xl"}, "value": [120, "1"]}]}',
-    #     [
-    #         ["[('size','l')]", "1970-01-01 00:02:00.000", 1],
-    #         ["[('size','s')]", "1970-01-01 00:02:00.000", 1],
-    #         ["[('size','xl')]", "1970-01-01 00:02:00.000", 1],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(group(bar) without (shape), 'size')",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [120, "1"]}, {"metric": {"size": "s"}, "value": [120, "1"]}, {"metric": {"size": "xl"}, "value": [120, "1"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:02:00.000", 1],
+            ["[('size','s')]", "1970-01-01 00:02:00.000", 1],
+            ["[('size','xl')]", "1970-01-01 00:02:00.000", 1],
+        ],
+    )
 
     do_query_test(
         "(group(last_over_time(bar[10])) without (shape))[50:10]",
@@ -4496,17 +4560,17 @@ def test_aggregation_operators():
     #     [["[]", "[('1970-01-01 00:01:50.000',8.65),('1970-01-01 00:02:00.000',30.4),('1970-01-01 00:02:10.000',76),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',757.5)]"]],
     # )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # topk keeps all tags.
-    # do_query_test(
-    #     "topk(2, bar)",
-    #     140,
-    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [140, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [140, "700"]}]}',
-    #     [
-    #         ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:20.000", 90],
-    #         ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:20.000", 700],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(topk(2, bar), 'shape')",
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "value": [140, "90"]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "value": [140, "700"]}]}',
+        [
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "1970-01-01 00:02:20.000", 90],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "1970-01-01 00:02:20.000", 700],
+        ],
+    )
 
     do_query_test(
         "topk(2, last_over_time(bar[10]))[50:10]",
@@ -4597,16 +4661,16 @@ def test_aggregation_operators():
         [],
     )
 
-    # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
-    # do_query_test(
-    #     "bottomk(2, bar)",
-    #     140,
-    #     '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [140, "50"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [140, "8"]}]}',
-    #     [
-    #         ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:20.000", 50],
-    #         ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:20.000", 8],
-    #     ],
-    # )
+    # sort_by_label() makes the output order deterministic in both systems.
+    do_query_test(
+        "sort_by_label(bottomk(2, bar), 'shape')",
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "value": [140, "50"]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "value": [140, "8"]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "1970-01-01 00:02:20.000", 50],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "1970-01-01 00:02:20.000", 8],
+        ],
+    )
 
     do_query_test(
         "bottomk(2, last_over_time(bar[10]))[50:10]",

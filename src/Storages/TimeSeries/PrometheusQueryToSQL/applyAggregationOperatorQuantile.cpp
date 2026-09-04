@@ -121,6 +121,8 @@ SQLQueryPiece applyAggregationOperatorQuantile(
 
     auto res = vector_arg;
     res.node = operator_node;
+    /// Aggregation makes new series, so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
 
     /// Step 1: aggregate over series, using `new_group` as an intermediate alias to avoid
     /// ambiguity with the input `group` column when the alias and the source column share the same name.

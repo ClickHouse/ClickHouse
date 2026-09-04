@@ -1,0 +1,33 @@
+-- sort(up): ascending by value (10, 20, 30)
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+-- sort_desc(up): descending by value (30, 20, 10)
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- sort(sort_desc(up)): ascending again (cancels out)
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+-- sort on expression: sort(up * 2) ascending (20, 40, 60)
+[('instance','host2')]	2023-11-14 22:13:20.000	20
+[('instance','host3')]	2023-11-14 22:13:20.000	40
+[('instance','host1')]	2023-11-14 22:13:20.000	60
+-- sort_desc(sort_by_label(up, 'instance')): sort() must override the ordering mode entirely,
+-- so this is descending by value (30, 20, 10), not descending by the 'instance' label
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+-- -sort(up): unary minus keeps the order fixed by sort() (10, 20, 30 before negation)
+[('instance','host2')]	2023-11-14 22:13:20.000	-10
+[('instance','host3')]	2023-11-14 22:13:20.000	-20
+[('instance','host1')]	2023-11-14 22:13:20.000	-30
+-- abs(sort(up - 25)): abs() keeps the order fixed by sort() (-15, -5, 5 before abs)
+[('instance','host2')]	2023-11-14 22:13:20.000	15
+[('instance','host3')]	2023-11-14 22:13:20.000	5
+[('instance','host1')]	2023-11-14 22:13:20.000	5
+-- label_replace(sort_desc(up), ...): label changes keep the order fixed by sort_desc()
+[('__name__','up'),('instance','host1'),('note','x')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','host3'),('note','x')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2'),('note','x')]	2023-11-14 22:13:20.000	10

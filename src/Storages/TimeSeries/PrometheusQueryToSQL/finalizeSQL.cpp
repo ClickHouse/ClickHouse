@@ -286,6 +286,21 @@ namespace
 
         builder.where = std::move(where);
 
+        /// If a sort function was applied, order the output by the ranks fixed at the sort*() call site.
+        if (!result.sort_rank_subquery.empty() && (result.store_method == StoreMethod::VECTOR_GRID))
+        {
+            builder.join_table = result.sort_rank_subquery;
+            builder.join_kind = JoinKind::Inner;
+            /// `sort_group` values are unique in the rank map, so ANY INNER JOIN cannot duplicate series rows.
+            builder.join_strictness = JoinStrictness::Any;
+            builder.join_on = makeASTFunction("equals",
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
+
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
+            builder.order_direction = 1;
+        }
+
         builder.with = std::move(context.subqueries);
         if (result.select_query)
         {

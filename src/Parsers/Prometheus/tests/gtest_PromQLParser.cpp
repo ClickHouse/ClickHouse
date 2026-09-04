@@ -1208,6 +1208,55 @@ PrometheusQueryTree(INSTANT_VECTOR):
         Function(time)
 )");
 
+    EXPECT_EQ(parse("sort(demo_memory_usage_bytes)"), R"(
+sort(demo_memory_usage_bytes)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort):
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("sort_desc(demo_memory_usage_bytes)"), R"(
+sort_desc(demo_memory_usage_bytes)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_desc):
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("sort(abs(demo_memory_usage_bytes))"), R"(
+sort(abs(demo_memory_usage_bytes))
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort):
+        Function(abs):
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("sort_by_label(demo_memory_usage_bytes, \"instance\")"), R"(
+sort_by_label(demo_memory_usage_bytes, "instance")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label):
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+        StringLiteral('instance')
+)");
+
+    EXPECT_EQ(parse("sort_by_label_desc(demo_memory_usage_bytes, \"instance\", \"job\")"), R"(
+sort_by_label_desc(demo_memory_usage_bytes, "instance", "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label_desc):
+        InstantSelector:
+            __name__ EQ 'demo_memory_usage_bytes'
+        StringLiteral('instance')
+        StringLiteral('job')
+)");
+
     EXPECT_EQ(parse("histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))"), R"(
 histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[60]))
 

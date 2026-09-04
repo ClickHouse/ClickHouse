@@ -169,6 +169,8 @@ FUNCTION options {
     | 'sgn'
     | 'sort'
     | 'sort_desc'
+    | 'sort_by_label'
+    | 'sort_by_label_desc'
     | 'sqrt'
     | 'time'
     | 'timestamp'
