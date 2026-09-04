@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
@@ -7,7 +8,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -93,10 +93,16 @@ bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-void MaterializedPostgreSQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings MaterializedPostgreSQLSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MaterializedPostgreSQLSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return MaterializedPostgreSQLSettings{}.enumerateSettings();
 }
+TableSettings MaterializedPostgreSQLSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }
 
 #endif

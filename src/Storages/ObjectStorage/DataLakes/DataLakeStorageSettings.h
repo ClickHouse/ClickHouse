@@ -17,7 +17,6 @@ namespace DB
 {
 class ASTSetQuery;
 struct DataLakeStorageSettingsImpl;
-struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
 class SettingsChanges;
 
@@ -192,7 +191,8 @@ struct DataLakeStorageSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     TableSettings enumerateSettings() const;
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
     void serialize(WriteBuffer & out) const;
     static DataLakeStorageSettings deserialize(ReadBuffer & in);

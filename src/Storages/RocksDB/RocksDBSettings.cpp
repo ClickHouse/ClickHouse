@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/RocksDB/RocksDBSettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 
 namespace DB
 {
@@ -71,9 +70,10 @@ void RocksDBSettings::checkCanSet(std::string_view name, const Field & value)
     RocksDBSettingsImpl::checkCanSet(name, value);
 }
 
-void RocksDBSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings RocksDBSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<RocksDBSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return RocksDBSettings{}.enumerateSettings();
 }
 TableSettings RocksDBSettings::enumerateSettings() const
 {

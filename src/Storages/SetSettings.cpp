@@ -1,9 +1,9 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/SetSettings.h>
 #include <Common/Exception.h>
@@ -70,8 +70,14 @@ bool SetSettings::hasBuiltin(std::string_view name)
     return SetSettingsImpl::hasBuiltin(name);
 }
 
-void SetSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings SetSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<SetSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return SetSettings{}.enumerateSettings();
 }
+TableSettings SetSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
+}
+
 }

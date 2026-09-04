@@ -6,8 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemEngineSettings.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
-#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
@@ -64,7 +62,7 @@ static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, c
     MutableColumnPtr engine_column = ColumnString::create();
     for (const auto & [engine_name, creator] : storages)
     {
-        if (!creator.features.fill_engine_settings_fn || !creator.features.supports_settings)
+        if (!creator.features.enumerate_engine_settings_fn || !creator.features.supports_settings)
             continue;
         engine_column->insert(engine_name);
     }
@@ -77,46 +75,51 @@ static ColumnPtr getFilteredEngines(const StorageFactory::Storages & storages, c
 void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
-
-    const auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
-    const auto & constraints = constraints_and_current_profiles->constraints;
-
-    /// A fill function writes every setting column, so the columns it fills into are built from the
-    /// full description rather than from `res_columns`, which holds only the queried ones. The mask
-    /// then decides which of them reach the result. It cannot make a fill function do less work:
-    /// `MergeTreeSettings` shares `dumpToSystemMergeTreeSettingsColumns` with
-    /// `system.merge_tree_settings`, which has no mask to pass on.
-    const auto all_columns = getColumnsDescription().getAllPhysical();
-
     const auto filtered_engines = getFilteredEngines(storages, predicate, context);
 
     for (size_t engine_index = 0; engine_index < filtered_engines->size(); ++engine_index)
     {
         const String engine_name{filtered_engines->getDataAt(engine_index)};
-        const auto fill_fn = storages.at(engine_name).features.fill_engine_settings_fn;
+        const auto enumerate = storages.at(engine_name).features.enumerate_engine_settings_fn;
 
-        /// Every column except `engine_name`, which is per engine rather than per setting.
-        MutableColumns setting_columns;
-        setting_columns.reserve(all_columns.size() - 1);
-        for (auto it = std::next(all_columns.begin()); it != all_columns.end(); ++it)
-            setting_columns.push_back(it->type->createColumn());
-
-        MutableColumnsAndConstraints params(setting_columns, constraints);
-        fill_fn(params, context);
-
-        const size_t num_rows = setting_columns[0]->size();
-        size_t src_index = 0;
-        size_t res_index = 0;
-
-        if (columns_mask[src_index++])
+        for (const auto & setting : enumerate(context))
         {
-            for (size_t row = 0; row < num_rows; ++row)
-                res_columns[res_index]->insert(engine_name);
-            ++res_index;
-        }
-        for (const auto & column : setting_columns)
+            size_t src_index = 0;
+            size_t res_index = 0;
+
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insertRangeFrom(*column, 0, num_rows);
+                res_columns[res_index++]->insert(engine_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.value);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.default_value);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.origin != TableSettingOrigin::Default);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.description);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
+            if (columns_mask[src_index++])
+            {
+                Array disallowed;
+                disallowed.reserve(setting.disallowed_values.size());
+                for (const auto & disallowed_value : setting.disallowed_values)
+                    disallowed.emplace_back(disallowed_value);
+                res_columns[res_index++]->insert(disallowed);
+            }
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.readonly);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.type);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.tier == SettingsTierType::OBSOLETE);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(setting.tier);
+        }
     }
 }
 

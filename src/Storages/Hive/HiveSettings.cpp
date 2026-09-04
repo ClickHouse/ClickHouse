@@ -9,7 +9,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -97,9 +96,10 @@ bool HiveSettings::hasBuiltin(std::string_view name)
     return HiveSettingsImpl::hasBuiltin(name);
 }
 
-void HiveSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings HiveSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<HiveSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return HiveSettings{}.enumerateSettings();
 }
 TableSettings HiveSettings::enumerateSettings() const
 {

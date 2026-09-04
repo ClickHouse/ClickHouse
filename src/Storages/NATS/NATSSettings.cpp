@@ -4,7 +4,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Common/Exception.h>
@@ -126,9 +125,10 @@ bool NATSSettings::hasBuiltin(std::string_view name)
     return NATSSettingsImpl::hasBuiltin(name);
 }
 
-void NATSSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings NATSSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<NATSSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return NATSSettings{}.enumerateSettings();
 }
 TableSettings NATSSettings::enumerateSettings() const
 {

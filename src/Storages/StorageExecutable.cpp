@@ -290,7 +290,7 @@ void registerStorageExecutable(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
     storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
-    storage_features.fill_engine_settings_fn = ExecutableSettings::fillEngineSettingsColumns;
+    storage_features.enumerate_engine_settings_fn = ExecutableSettings::enumerateEngineSettings;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {

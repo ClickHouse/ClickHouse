@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include "config.h"
 
 #if USE_LIBPQXX
@@ -12,7 +14,6 @@
 
 namespace DB
 {
-struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct SettingChange;
 struct MaterializedPostgreSQLSettingsImpl;
@@ -39,7 +40,10 @@ struct MaterializedPostgreSQLSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// Every setting of this instance, for the settings tables. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<MaterializedPostgreSQLSettingsImpl> impl;

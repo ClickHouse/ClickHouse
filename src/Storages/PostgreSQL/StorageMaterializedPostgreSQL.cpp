@@ -789,7 +789,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
-            .fill_engine_settings_fn = MaterializedPostgreSQLSettings::fillEngineSettingsColumns,
+            .enumerate_engine_settings_fn = MaterializedPostgreSQLSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

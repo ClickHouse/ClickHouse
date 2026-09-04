@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/ExecutableSettings.h>
 #include <Common/Exception.h>
 
@@ -84,9 +83,10 @@ bool ExecutableSettings::hasBuiltin(std::string_view name)
     return ExecutableSettingsImpl::hasBuiltin(name);
 }
 
-void ExecutableSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings ExecutableSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<ExecutableSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return ExecutableSettings{}.enumerateSettings();
 }
 TableSettings ExecutableSettings::enumerateSettings() const
 {

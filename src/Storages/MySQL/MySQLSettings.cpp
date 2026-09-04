@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -139,9 +138,10 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
     return MySQLSettingsImpl::hasBuiltin(name);
 }
 
-void MySQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings MySQLSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MySQLSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return MySQLSettings{}.enumerateSettings();
 }
 TableSettings MySQLSettings::enumerateSettings() const
 {

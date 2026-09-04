@@ -5,7 +5,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -108,9 +107,10 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
-void YTsaurusSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings YTsaurusSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<YTsaurusSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return YTsaurusSettings{}.enumerateSettings();
 }
 
 

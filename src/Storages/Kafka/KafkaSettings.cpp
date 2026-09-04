@@ -3,7 +3,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/enumerateSettings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -184,8 +183,9 @@ TableSettings KafkaSettings::enumerateSettings() const
     return enumerateSettingsFromImpl(*impl);
 }
 
-void KafkaSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings KafkaSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<KafkaSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return KafkaSettings{}.enumerateSettings();
 }
 }

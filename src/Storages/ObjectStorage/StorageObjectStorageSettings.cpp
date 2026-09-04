@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -5,7 +6,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
@@ -56,9 +56,15 @@ void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges
     }
 }
 
-void StorageObjectStorageSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings StorageObjectStorageSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<StorageObjectStorageSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return StorageObjectStorageSettings{}.enumerateSettings();
+}
+
+TableSettings StorageObjectStorageSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 }

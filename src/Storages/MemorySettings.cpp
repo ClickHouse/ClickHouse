@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/MemorySettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -98,9 +97,10 @@ bool MemorySettings::hasBuiltin(std::string_view name)
     return MemorySettingsImpl::hasBuiltin(name);
 }
 
-void MemorySettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings MemorySettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<MemorySettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return MemorySettings{}.enumerateSettings();
 }
 TableSettings MemorySettings::enumerateSettings() const
 {

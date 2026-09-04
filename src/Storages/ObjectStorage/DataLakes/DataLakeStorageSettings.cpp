@@ -5,7 +5,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
@@ -75,9 +74,10 @@ DataLakeStorageSettings DataLakeStorageSettings::deserialize(ReadBuffer & in)
     return result;
 }
 
-void DataLakeStorageSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings DataLakeStorageSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<DataLakeStorageSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return DataLakeStorageSettings{}.enumerateSettings();
 }
 
 TableSettings DataLakeStorageSettings::enumerateSettings() const

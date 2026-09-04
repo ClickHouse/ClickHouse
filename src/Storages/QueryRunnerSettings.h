@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -10,7 +12,6 @@
 
 namespace DB
 {
-struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct QueryRunnerSettingsImpl;
 
@@ -37,7 +38,10 @@ struct QueryRunnerSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// Every setting of this instance, for the settings tables. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<QueryRunnerSettingsImpl> impl;

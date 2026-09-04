@@ -1,9 +1,9 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/QueryRunnerSettings.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Common/Exception.h>
 
 
@@ -57,9 +57,15 @@ bool QueryRunnerSettings::hasBuiltin(std::string_view name)
     return QueryRunnerSettingsImpl::hasBuiltin(name);
 }
 
-void QueryRunnerSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings QueryRunnerSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<QueryRunnerSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return QueryRunnerSettings{}.enumerateSettings();
+}
+
+TableSettings QueryRunnerSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 }

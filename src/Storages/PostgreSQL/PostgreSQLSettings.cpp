@@ -1,9 +1,9 @@
+#include <Storages/enumerateSettings.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/PostgreSQL/PostgreSQLSettings.h>
@@ -111,9 +111,15 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
 
-void PostgreSQLSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings PostgreSQLSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<PostgreSQLSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return PostgreSQLSettings{}.enumerateSettings();
+}
+
+TableSettings PostgreSQLSettings::enumerateSettings() const
+{
+    return enumerateSettingsFromImpl(*impl);
 }
 
 }

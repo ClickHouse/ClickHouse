@@ -33,13 +33,14 @@ class AbstractConfiguration;
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
+class SettingsConstraints;
 class ASTStorage;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 struct MergeTreeSettingsImpl;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-struct MutableColumnsAndConstraints;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -114,8 +115,9 @@ struct MergeTreeSettings
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
-    static void fillReplicatedEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
+    static TableSettings enumerateReplicatedEngineSettings(ContextPtr context);
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 
@@ -125,6 +127,10 @@ struct MergeTreeSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     TableSettings enumerateSettings() const;
+    /// Fills in what the user's settings constraints say about each of `settings`. `MergeTreeSettings`
+    /// is the only engine settings type `SettingsConstraints` can describe - a profile reaches it
+    /// through the `merge_tree_` name prefix - so no other struct has an equivalent.
+    void applyConstraints(TableSettings & settings, const SettingsConstraints & constraints) const;
     static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);

@@ -6,7 +6,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
@@ -105,9 +104,10 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
 
-void TimeSeriesSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings TimeSeriesSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<TimeSeriesSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return TimeSeriesSettings{}.enumerateSettings();
 }
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)

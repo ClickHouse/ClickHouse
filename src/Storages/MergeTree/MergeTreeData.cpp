@@ -13910,33 +13910,9 @@ TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
     }
 
     /// The bounds a profile puts on these settings, reported exactly as
-    /// `system.merge_tree_settings` reports them - `MergeTreeSettings` is the only engine settings
-    /// type `SettingsConstraints` can describe, which a profile reaches through the `merge_tree_`
-    /// name prefix.
+    /// `system.merge_tree_settings` reports them.
     const auto constraints_and_profiles = query_context->getSettingsConstraintsAndCurrentProfiles();
-    const auto & constraints = constraints_and_profiles->constraints;
-    const auto & table_settings = *getSettings();
-
-    for (auto & setting : settings)
-    {
-        Field min;
-        Field max;
-        std::vector<Field> disallowed;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(table_settings, setting.name, min, max, disallowed, writability);
-
-        /// Some settings cannot be changed whatever the profile says.
-        if (MergeTreeSettings::isReadonlySetting(setting.name))
-            writability = SettingConstraintWritability::CONST;
-
-        if (!min.isNull())
-            setting.min_value = MergeTreeSettings::valueToStringUtil(setting.name, min);
-        if (!max.isNull())
-            setting.max_value = MergeTreeSettings::valueToStringUtil(setting.name, max);
-        for (const auto & value : disallowed)
-            setting.disallowed_values.push_back(MergeTreeSettings::valueToStringUtil(setting.name, value));
-        setting.readonly = writability == SettingConstraintWritability::CONST;
-    }
+    getSettings()->applyConstraints(settings, constraints_and_profiles->constraints);
 
     /// Last: the table's own `SETTINGS` clause is applied after everything above.
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);

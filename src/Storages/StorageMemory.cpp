@@ -772,7 +772,7 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
-        .fill_engine_settings_fn = MemorySettings::fillEngineSettingsColumns,
+        .enumerate_engine_settings_fn = MemorySettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(

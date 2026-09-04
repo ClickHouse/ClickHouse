@@ -15,7 +15,6 @@ namespace Poco::Util
 
 namespace DB
 {
-struct MutableColumnsAndConstraints;
 class ASTStorage;
 class SettingsChanges;
 struct DistributedSettingsImpl;
@@ -47,7 +46,8 @@ struct DistributedSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     TableSettings enumerateSettings() const;
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<DistributedSettingsImpl> impl;

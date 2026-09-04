@@ -4,7 +4,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
@@ -245,9 +244,10 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
 
-void ObjectStorageQueueSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings ObjectStorageQueueSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<ObjectStorageQueueSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return ObjectStorageQueueSettings{}.enumerateSettings();
 }
 TableSettings ObjectStorageQueueSettings::enumerateSettings() const
 {

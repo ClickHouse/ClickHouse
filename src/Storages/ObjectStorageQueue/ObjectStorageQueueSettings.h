@@ -11,9 +11,9 @@
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct ObjectStorageQueueSettingsImpl;
-struct MutableColumnsAndConstraints;
 class StorageObjectStorageQueue;
 class SettingsChanges;
 struct StorageID;
@@ -78,7 +78,8 @@ struct ObjectStorageQueueSettings
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
     TableSettings enumerateSettings() const;
-    static void fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr context);
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;

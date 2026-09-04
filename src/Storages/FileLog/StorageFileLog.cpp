@@ -907,7 +907,7 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
-            .fill_engine_settings_fn = FileLogSettings::fillEngineSettingsColumns,
+            .enumerate_engine_settings_fn = FileLogSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

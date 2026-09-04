@@ -4,7 +4,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/System/FillEngineSettingsColumns.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Common/Exception.h>
@@ -84,9 +83,10 @@ bool FileLogSettings::hasBuiltin(std::string_view name)
     return FileLogSettingsImpl::hasBuiltin(name);
 }
 
-void FileLogSettings::fillEngineSettingsColumns(MutableColumnsAndConstraints & params, ContextPtr)
+TableSettings FileLogSettings::enumerateEngineSettings(ContextPtr)
 {
-    fillEngineSettingsColumnsFromImpl<FileLogSettingsImpl>(params);
+    /// No server-level instance: the compiled defaults are what the engine uses.
+    return FileLogSettings{}.enumerateSettings();
 }
 TableSettings FileLogSettings::enumerateSettings() const
 {

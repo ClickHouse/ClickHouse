@@ -9,6 +9,7 @@
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/TableSetting.h>
 #include <unordered_map>
 
 
@@ -20,7 +21,6 @@ class ASTCreateQuery;
 class ASTStorage;
 struct StorageID;
 struct ConstraintsDescription;
-struct MutableColumnsAndConstraints;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -36,10 +36,12 @@ public:
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
-    /// Fills the per-setting columns of `system.engine_settings` for one engine.
+    /// The settings this engine has, for `system.engine_settings`. The same enumeration
+    /// `IStorage::getTableSettings` reports per table, from a server-level instance instead of a
+    /// table's - so the two tables describe a setting identically.
     /// Engines that share a settings struct but draw on different server-level instances register
     /// different functions - see the replicated `MergeTree` variants.
-    using FillEngineSettingsFn = void(*)(MutableColumnsAndConstraints & params, ContextPtr context);
+    using EnumerateEngineSettingsFn = TableSettings(*)(ContextPtr context);
 
     struct Arguments
     {
@@ -89,7 +91,7 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
-        FillEngineSettingsFn fill_engine_settings_fn = nullptr;
+        EnumerateEngineSettingsFn enumerate_engine_settings_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -128,7 +130,7 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-        .fill_engine_settings_fn = nullptr,
+        .enumerate_engine_settings_fn = nullptr,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const

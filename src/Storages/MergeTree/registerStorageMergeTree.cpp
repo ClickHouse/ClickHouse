@@ -1219,7 +1219,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        .fill_engine_settings_fn = MergeTreeSettings::fillEngineSettingsColumns,
+        .enumerate_engine_settings_fn = MergeTreeSettings::enumerateEngineSettings,
     };
 
     factory.registerStorage("MergeTree", create, features, Documentation{
@@ -4339,7 +4339,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_unique_key = false;
     /// The replicated family is configured by an additional `replicated_merge_tree` config section,
     /// so it reports a different set of effective settings than the rest of the family.
-    features.fill_engine_settings_fn = MergeTreeSettings::fillReplicatedEngineSettingsColumns;
+    features.enumerate_engine_settings_fn = MergeTreeSettings::enumerateReplicatedEngineSettings;
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(

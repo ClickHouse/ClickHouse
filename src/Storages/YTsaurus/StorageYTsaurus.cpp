@@ -170,7 +170,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin,
-        .fill_engine_settings_fn = YTsaurusSettings::fillEngineSettingsColumns,
+        .enumerate_engine_settings_fn = YTsaurusSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
