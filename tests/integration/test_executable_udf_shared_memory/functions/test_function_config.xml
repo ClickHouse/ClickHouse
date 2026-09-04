@@ -331,6 +331,31 @@
 
     <function>
         <type>executable</type>
+        <name>test_function_shm_shrink_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>4096</shared_memory_size>
+        <command>shm_udf_shrink.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_shrink_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_path>/shm_udf_shrink</shared_memory_path>
+        <shared_memory_size>4096</shared_memory_size>
+        <command>shm_udf_shrink.py</command>
+    </function>
+    <function>
+        <type>executable</type>
         <name>test_function_shm_exact_python</name>
         <return_type>String</return_type>
         <argument>

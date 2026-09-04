@@ -1101,13 +1101,15 @@ namespace
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
-            , command(std::move(command_))
             , configuration(configuration_)
             , is_pooled(is_pooled_)
             , shared_memory_size(shared_memory_size_)
             , shared_memory_max_size(shared_memory_max_size_)
             , pipeline_mode(pipeline_mode_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
+            /// Reads the descriptors out of the command without taking it yet - see the declaration
+            /// of `command` for why this object takes ownership as late as it can.
+            , timeout_command_out(command_->out.getFD(), command_->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
+            , command(std::move(command_))
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -1318,8 +1320,9 @@ namespace
                     {
                         /// The same decision as the stdin close above: a worker that goes back to
                         /// the pool must not be reaped here, and one that does not had its stdin
-                        /// closed, so this blocking wait can actually finish.
-                        if (!commandIsReused())
+                        /// closed, so this blocking wait can actually finish. `commandIsReused`
+                        /// reads a missing command as "not reused", so check it before the wait.
+                        if (command && !commandIsReused())
                             command->wait();
                     }
                     catch (Exception & e)
@@ -1374,6 +1377,9 @@ namespace
 
             if (!have_input)
                 return std::nullopt;
+
+            /// Writing into a region the command has shrunk would fault, so check before touching it.
+            checkRegionWasNotResized(index);
 
             /// Serialize into the region itself, growing it on demand (up to shared_memory_max_size)
             /// whenever it fills up. The command asks for more room later if its result does not fit
@@ -1431,6 +1437,10 @@ namespace
                 /// success), the size it needs (when the region is too small) or an error message.
                 UInt64 status = 0;
                 readVarUInt(status, timeout_command_out);
+
+                /// The command has just had the region to itself; make sure it left it whole before
+                /// anything below (a growth, or reading the output) touches the mapping again.
+                checkRegionWasNotResized(index);
 
                 if (status == SHARED_MEMORY_STATUS_NEED_MORE_SPACE)
                 {
@@ -1640,6 +1650,50 @@ namespace
                     || (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read));
         }
 
+        /// The command opens the region by path and needs write access to it, which also lets it
+        /// resize the file - an `O_TRUNC` in a client implementation is enough. The server keeps
+        /// mapping the old, larger extent, and touching a page the file no longer backs raises
+        /// `SIGBUS`, which is fatal for the whole server: the response bounds check cannot catch it,
+        /// because it compares against the size the server believes the region still has.
+        ///
+        /// So the file is measured against that size before the region is used, on both sides of a
+        /// request, and a command that shrank it is treated like any other protocol violation. That
+        /// covers what actually happens: a command that damages the region while it answers, or
+        /// between requests (the check before serialization).
+        ///
+        /// What it does not cover is a command that truncates from another thread in the instant
+        /// between this check and the access - the classic time-of-check/time-of-use gap. Closing
+        /// that takes a backing store the command cannot shrink at all, with consequences for the
+        /// protocol and for the lifetime of a pooled region; the design note on `SharedMemoryRegion`
+        /// spells out what it would involve.
+        ///
+        /// It is deliberately not done: an executable UDF is server-side code, configured by the
+        /// administrator and run as the ClickHouse user, so a command that wants the server dead
+        /// does not need this race - it can signal the process it is a child of. These checks are
+        /// here to keep a *mistake* in a command from taking the server down, not to contain a
+        /// hostile one; containing one would take the command sandboxed, and then this transport
+        /// should be revisited as a whole.
+        void checkRegionWasNotResized(size_t index)
+        {
+            auto & region = *regions[index];
+            size_t file_size = region.backingFileSize();
+
+            /// Only a file that got SHORTER is the problem: those pages are gone and the mapping
+            /// over them faults. A longer file is harmless for the mapping (and the server's own
+            /// `grow` can leave one behind when its rollback `ftruncate` fails), and the next
+            /// growth or trim truncates it back into shape.
+            if (file_size >= region.size())
+                return;
+
+            /// The region cannot be used by this borrow any more, and a pooled worker that does
+            /// this must not be handed to another query.
+            command_is_invalid = true;
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable UDF shrank its shared-memory region from {} to {} bytes; "
+                "only the server may resize the region",
+                region.size(), file_size);
+        }
+
         /// Closes the command's stdin, so that the child exits when it sees EOF. `command_is_reused`
         /// tells that the process is going back to the pool for another borrow: only then does the
         /// descriptor have to stay open. Every other process - a non-pooled one, or a pooled one
@@ -1828,17 +1882,24 @@ namespace
                     for (size_t i = 0; i < regions.size(); ++i)
                         command_holder->shrinkSharedMemory(i, shared_memory_size);
                 }
-
-                /// Whatever regions the holder still owns outlive this borrow, so hand their charge
-                /// back to it before the per-borrow charge below goes away. Doing it in this order
-                /// means the bytes are never uncharged everywhere at once, and never charged twice.
-                command_holder->acquireChargeFromBorrower();
             }
 
             /// Release the per-borrow memory charge on the query thread. The producer thread is
             /// joined above, so this total is final.
             if (size_t charge = query_memory_charge.load(std::memory_order_relaxed))
                 unchargeQueryMemory(charge);
+
+            /// Whatever regions the holder still owns outlive this borrow, so they are charged
+            /// again - globally this time - now that the borrow's charge is gone. There is no way
+            /// to move a charge between trackers atomically, so one of the two orders has to be
+            /// picked: this one leaves the bytes uncounted for the moment in between, the other
+            /// would count them twice. Undercounting for a moment can at most let a concurrent
+            /// allocation through (memory limits are approximate anyway - see
+            /// `max_untracked_memory`), while double counting could fail a query that fits and
+            /// would inflate the peak the server reports. The borrow side of the hand-over
+            /// (`releaseChargeToBorrower`) errs the same way, for the same reason.
+            if (command_holder)
+                command_holder->acquireChargeFromBorrower();
 
             if (command_holder && process_pool)
             {
@@ -1854,7 +1915,6 @@ namespace
         SharedHeader sample_block;
         Block input_header;
 
-        std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
 
         /// regions[0] is used by both transports; regions[1] is the second double-buffer used only
@@ -1885,6 +1945,14 @@ namespace
         size_t current_read_rows = 0;
         bool stdin_closed = false;
 
+        /// The worker process and its pool holder are taken over last, after every member that can
+        /// throw (`timeout_command_out` allocates a buffer, for one). Until this object owns them
+        /// they still belong to the caller, which hands both back to the pool when construction
+        /// fails - a failure that never reached the child must not cost a healthy pooled worker.
+        /// Being last also makes them the first members destroyed, which is safe: `cleanup` has
+        /// already quiesced everything that uses the command's descriptors, and
+        /// ~TimeoutReadBufferFromFileDescriptor deliberately does not touch them.
+        std::unique_ptr<ShellCommand> command;
         ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
 
@@ -1947,7 +2015,14 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     /// holder: on the normal path the source has taken it and this is a no-op.
     SCOPE_EXIT_SAFE({
         if (process_holder)
+        {
+            /// Hand the worker back to its holder as well when the source never took it: nothing
+            /// was sent to it, so it is still at a clean protocol boundary, and killing it would
+            /// cost the next query a process spawn over a failure that never reached this one.
+            if (process)
+                process_holder->returnCommand(std::move(process));
             process_pool->returnObject(std::move(process_holder));
+        }
     });
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};

@@ -19,6 +19,7 @@ node = cluster.add_instance(
         "/shm_udf_accounting:size=1M",
         "/shm_udf_discard:size=1M",
         "/shm_udf_trim:size=4M",
+        "/shm_udf_shrink:size=1M",
     ],
 )
 
@@ -194,7 +195,10 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
         )
 
     assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
-    assert node.query(successful_query).strip().isdigit()
+    # No request reached the worker, so the pool must hand back the very same process - a new pid
+    # here would mean a healthy worker was discarded (and its region rebuilt) over a failure that
+    # never touched it.
+    assert node.query(successful_query).strip() == worker_pid
 
 
 def test_shared_memory_udf_pool_short_result_does_not_hang(started_cluster):
@@ -526,6 +530,37 @@ def test_shared_memory_udf_pipeline_pool_failed_constructor_drops_partial_region
 
     assert "Cannot reserve backing storage" in str(exc.value)
     assert tiny_shm_file_count() == 0
+
+
+def test_shared_memory_udf_command_shrinks_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # The command truncates the region file and then answers with an offset the server still
+    # believes to be inside it. Those pages are no longer backed by the file, so reading them would
+    # raise SIGBUS and take the whole server down; the server must notice the resize instead.
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_shrink_python(1) FORMAT Null")
+        assert "shrank its shared-memory region" in str(exc.value)
+
+    # The point of the test: the server is still there.
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_pool_command_shrinks_the_region(started_cluster):
+    skip_test_msan(node)
+
+    # Same, through the pool: such a worker is discarded rather than handed to the next query, so it
+    # takes its region with it and nothing is left behind in the shared-memory directory.
+    assert shm_file_count("/shm_udf_shrink") == 0
+
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_shrink_pool_python(1) FORMAT Null")
+        assert "shrank its shared-memory region" in str(exc.value)
+        assert shm_file_count("/shm_udf_shrink") == 0
+
+    assert node.query("SELECT 1") == "1\n"
 
 
 def test_shared_memory_udf_command_died(started_cluster):

@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int CANNOT_LINK;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_IMPLEMENTED;
 }
@@ -469,8 +470,10 @@ void SharedMemoryRegion::grow(size_t new_size)
         /// leaves BOTH the region size and the backing file unchanged. This matters for pooled
         /// processes, which reuse the same SharedMemoryRegion across borrows: otherwise the tmpfs
         /// file would stay larger than region_size, leaking unaccounted memory that outlives the
-        /// failed query. Shrinking back to region_size is safe — the old mapping still covers
-        /// exactly [0, region_size). Preserve the mmap errno for the exception below.
+        /// failed query. Shrinking back to region_size is safe — the old mapping still covers at
+        /// least [0, region_size), which is all this region claims. Preserve the mmap errno for the
+        /// exception below. If even this rollback fails, the file stays longer than `region_size`;
+        /// that is unusable space rather than a hazard, and the next `grow` or `shrink` fixes it.
         const int mmap_errno = errno;
         if (0 != ::ftruncate(region_fd, static_cast<off_t>(region_size)))
         {
@@ -491,6 +494,19 @@ void SharedMemoryRegion::grow(size_t new_size)
     region_data = static_cast<char *>(buf);
     region_size = new_size;
     mapped_size = new_size;
+}
+
+size_t SharedMemoryRegion::backingFileSize() const
+{
+    struct stat file_stat{};
+    if (0 != ::fstat(region_fd, &file_stat))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_FSTAT, saved_errno, "SharedMemoryRegion: Cannot stat the region file {}", file_path);
+    }
+
+    return static_cast<size_t>(file_stat.st_size);
 }
 
 void SharedMemoryRegion::shrink(size_t new_size) noexcept

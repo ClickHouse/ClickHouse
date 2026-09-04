@@ -32,6 +32,32 @@ namespace DB
   * a live region holds is what distinguishes them. `memfd` remains a documented alternative worth
   * revisiting.
   *
+  * A `memfd` is also the only way to make the region impossible for the command to shrink, which a
+  * named file cannot be: sealing is available only for a `memfd` created with `MFD_ALLOW_SEALING`,
+  * and a `memfd` cannot be linked into the shared-memory directory - it lives on its own
+  * filesystem, so `linkat` reports `EXDEV`. This matters because the command opens the region for
+  * writing and can therefore resize it, while the server maps it: a file that gets shorter makes
+  * the server fault (`SIGBUS`). The consumer compares the file against the mapping before it
+  * touches the region (see `backingFileSize`), which catches a command that damages the region and
+  * then answers, but not one that truncates it in the instant between that check and the access.
+  * Adopting `memfd` to close that too means, at least:
+  *   - sealing with `F_SEAL_SHRINK | F_SEAL_SEAL`: shrinking is what has to be denied, and sealing
+  *     the seal set keeps the command - which holds a writable descriptor - from adding
+  *     `F_SEAL_GROW` itself and breaking the server's own growth;
+  *   - handing the descriptor to the command instead of a path: it has to survive `exec` (so no
+  *     `FD_CLOEXEC` on it) and is named `/proc/self/fd/N` in the request, which leaves the
+  *     command's side of the protocol (`open` the path, `mmap` it) unchanged;
+  *   - deciding the lifetime of a pooled region up front. A sealed region cannot be shrunk at all,
+  *     and recreating one does not reach a worker that is already running: it keeps the descriptor
+  *     it inherited. So either a region is never shrunk while its worker lives (giving up the trim
+  *     back to `shared_memory_size`), or the worker is restarted when the region should shrink, or
+  *     a replacement descriptor is delivered to the running worker - which needs a control channel
+  *     that can carry descriptors (`SCM_RIGHTS` over a unix socket), that is, a different protocol.
+  *
+  * Passing descriptors over a unix socket, or giving up the mapping for `pread`/`pwrite`, would
+  * close the same hole; the first needs that protocol change as well, and the second removes the
+  * copy-free exchange this transport exists for.
+  *
   * This class only owns the mapping and the file; it does no memory accounting, because the
   * mapping can outlive a single query (it is reused across `executable_pool` borrows). The
   * consumer charges the query memory tracker per borrow. The destructor unmaps and unlinks
@@ -92,6 +118,16 @@ public:
     const char * data() const { return region_data; }
     size_t size() const { return region_size; }
     const std::string & path() const { return file_path; }
+
+    /** Current size of the backing file, which is not necessarily `size`: the command opens the
+      * region by path and can resize it behind the server's back.
+      *
+      * Only the server is allowed to resize a region, and a file that is shorter than the mapping
+      * is dangerous - touching a page the file no longer backs raises `SIGBUS`, which is fatal for
+      * the whole process - so the consumer compares the two before it uses the region. Throws if
+      * the file cannot be inspected.
+      */
+    size_t backingFileSize() const;
 
 private:
     std::string file_path;
