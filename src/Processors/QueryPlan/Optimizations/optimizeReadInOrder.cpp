@@ -34,7 +34,7 @@
 #include <Storages/StorageMerge.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
 #include <optional>
 
@@ -2128,11 +2128,14 @@ static void tryStreamWindowFunctions(QueryPlan::Node & node)
             const auto * default_col_entry = window_input.findByName(func.argument_names[2]);
             if (!default_col_entry || !default_col_entry->column || !isColumnConst(*default_col_entry->column))
                 return;
-            Field raw = (*default_col_entry->column)[0];
-            Field cast = convertFieldToType(raw, *func.argument_types[0], func.argument_types[2].get());
-            if (cast.isNull() && !func.argument_types[0]->isNullable())
-                return;
-            default_values.push_back(std::move(cast));
+            /// Materialize the default through the same accurate typed-column cast that
+            /// `WindowFunctionLagLeadImpl::castColumn` applies in `WindowTransform`, so the
+            /// streaming path yields the identical value (`convertFieldToType` is not equivalent:
+            /// it loses the source type for nested `Tuple`/`Array`/`Map` elements).
+            ColumnWithTypeAndName default_arg{
+                default_col_entry->column->cloneResized(1), func.argument_types[2], func.argument_names[2]};
+            ColumnPtr cast_column = castColumnAccurate(default_arg, func.argument_types[0]);
+            default_values.push_back((*cast_column)[0]);
         }
         else
             default_values.push_back(std::nullopt);
