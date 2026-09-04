@@ -19,7 +19,7 @@ ClickHouse Cloud's control plane runs your BYOC deployment without reading custo
 | Billing scraper | CPU and memory metrics to an object storage bucket owned by ClickHouse Cloud. |
 | AlertManager | Cluster health alerts to ClickHouse Cloud. |
 
-Query traffic, table contents, and schemas never flow through these channels. Your full monitoring dataset — the Prometheus and Thanos stack, and your logs — stays in your own account; the bounded telemetry in the table above is the only observability data that reaches ClickHouse-owned infrastructure. See [network boundaries](/products/bring-your-own-cloud/reference/network-security#network-boundaries) for the complete inbound and outbound flow reference.
+Query traffic, table contents, and schemas never flow through these channels. Your full monitoring dataset — the Prometheus and Thanos stack, and your logs — stays in your own account; the bounded telemetry in the table above is the only observability data continuously exported into ClickHouse-owned systems. ClickHouse's monitoring dashboards and, on approved escalation, its engineers can additionally query that stack and your logs in place over Tailscale, without anything being persisted on the ClickHouse side — see [Troubleshooting access](#troubleshooting-access). See [network boundaries](/products/bring-your-own-cloud/reference/network-security#network-boundaries) for the complete inbound and outbound flow reference.
 
 ## Troubleshooting access {#troubleshooting-access}
 
