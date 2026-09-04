@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"distinct_set_limit_for_enabling_bloom_filter", 0, 1000000, "New setting."},
+            {"distinct_bloom_filter_bytes", 0, 524288, "New setting."},
+            {"distinct_pass_ratio_threshold_for_disabling_bloom_filter", 0, 0.7, "New setting."},
+            {"distinct_bloom_filter_max_ratio_of_set_bits", 0, 0.7, "New setting."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
@@ -166,10 +170,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"run_query_in_background", false, false, "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"merge_tree_min_bytes_per_read_stream", 0, (64 * 1024), "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."},
-            {"distinct_set_limit_for_enabling_bloom_filter", 0, 1000000, "New setting."},
-            {"distinct_bloom_filter_bytes", 0, 524288, "New setting."},
-            {"distinct_pass_ratio_threshold_for_disabling_bloom_filter", 0, 0.7, "New setting."},
-            {"distinct_bloom_filter_max_ratio_of_set_bits", 0, 0.7, "New setting."},
             {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
