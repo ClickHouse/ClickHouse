@@ -49,3 +49,7 @@ set_property(SOURCE arrayNorm.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -ffp-co
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_array PRIVATE "-g1")
 endif()
+
+if (ENABLE_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
