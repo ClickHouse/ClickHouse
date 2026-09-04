@@ -241,7 +241,7 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
     group->memory_tracker.setDescription("Query");
     // Mint the per-query scheduling context here (real queries only, from the query settings) so
     // the query-aware workload schedulers (`fair`) can weight this query and lower its weight as it
-    // accrues age/CPU/IO. Background thread groups leave `scheduling_context` null (scheduled anonymously).
+    // accrues age/CPU/IO. Background thread groups get their own context in `create()`.
     group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
         clock_gettime_ns(),
         settings[Setting::weight],
@@ -260,6 +260,20 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
     configureMemoryTrackerFromSettings(context->hasTraceCollector(), group->memory_tracker, settings);
+
+    // Long-running background activities (merges, mutations, background materialized views) go
+    // through this helper. Give them a scheduling context from their context's settings so the
+    // query-aware workload schedulers (`fair`/`las`) treat each as an accumulating flow instead of
+    // an infinite stream of fresh, contextless requests — the latter would keep re-entering at
+    // `vstart = system_vruntime` / level 0 and jump ahead of foreground queries, starving them.
+    group->scheduling_context = std::make_shared<ResourceSchedulingContext>(
+        clock_gettime_ns(),
+        settings[Setting::weight],
+        settings[Setting::weight_lowering_factor],
+        settings[Setting::weight_lowering_age_seconds],
+        settings[Setting::weight_lowering_cpu_seconds],
+        settings[Setting::weight_lowering_io_bytes],
+        settings[Setting::priority]);
     return group;
 }
 
