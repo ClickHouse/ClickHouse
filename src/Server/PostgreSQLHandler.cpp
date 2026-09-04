@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
@@ -687,6 +688,67 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 
     LOG_DEBUG(log, "Successfully received Startup message");
     return message;
+}
+
+/// PostgreSQL clients qualify catalog tables and functions with the `pg_catalog`
+/// schema, e.g. `pg_catalog.pg_class` or `pg_catalog.pg_table_is_visible(c.oid)`.
+/// ClickHouse has no `pg_catalog` database: the catalog tables are emulated with
+/// per-session temporary views and the functions are registered globally.
+/// Removing the qualifier at the token level maps such queries onto them.
+/// String literals are left intact - only a `pg_catalog` identifier that is not
+/// itself qualified and is followed by a dot and another identifier is removed.
+static String removePgCatalogQualifier(const String & query)
+{
+    if (query.find("pg_catalog") == String::npos)
+        return query;
+
+    std::vector<Token> tokens;
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        tokens.push_back(token);
+
+    auto is_pg_catalog = [](const Token & token)
+    {
+        std::string_view text(token.begin, token.size());
+        return (token.type == TokenType::BareWord && text == "pg_catalog")
+            || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
+    };
+
+    auto next_significant = [&](size_t i) -> std::optional<size_t>
+    {
+        for (size_t j = i + 1; j < tokens.size(); ++j)
+            if (tokens[j].isSignificant())
+                return j;
+        return std::nullopt;
+    };
+
+    String result;
+    result.reserve(query.size());
+    std::optional<size_t> prev_emitted_significant;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Token & token = tokens[i];
+        if (is_pg_catalog(token)
+            && (!prev_emitted_significant || tokens[*prev_emitted_significant].type != TokenType::Dot))
+        {
+            auto dot = next_significant(i);
+            if (dot && tokens[*dot].type == TokenType::Dot)
+            {
+                auto after_dot = next_significant(*dot);
+                if (after_dot
+                    && (tokens[*after_dot].type == TokenType::BareWord || tokens[*after_dot].type == TokenType::QuotedIdentifier))
+                {
+                    /// Skip the qualifier and the dot (and anything insignificant in between).
+                    i = *dot;
+                    continue;
+                }
+            }
+        }
+        result.append(token.begin, token.end);
+        if (token.isSignificant())
+            prev_emitted_significant = i;
+    }
+    return result;
 }
 
 bool PostgreSQLHandler::processCopyQuery(const String & query)
