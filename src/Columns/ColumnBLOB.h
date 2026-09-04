@@ -177,7 +177,6 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwInapplicable(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
