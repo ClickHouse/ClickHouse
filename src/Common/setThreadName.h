@@ -125,6 +125,7 @@ namespace DB
     M(PARQUET_DECODER, "ParquetDecoder") \
     M(PARQUET_ENCODER, "ParquetEncoder") \
     M(PARQUET_PREFETCH, "ParquetPrefetch") \
+    M(PARTS_COLUMNS_MTIME, "PartsColMtime") \
     M(PLAIN_REWRITABLE_META_LOAD, "PlainRWMetaLoad") \
     M(POLYGON_DICT_LOAD, "PolygonDict") \
     M(POOL_DELAYED_EXECUTION, "PoolDelayExec") \
